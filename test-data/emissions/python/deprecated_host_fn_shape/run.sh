@@ -34,8 +34,12 @@ do
   }
 done
 
+if ! grep -R -qE "^KioHost_V1_M1_C3_apiN3_Str = [[:alnum:]_]+\.TypeVar\('KioHost_V1_M1_C3_apiN3_Str'\)$" "$app_stub"; then
+  printf 'app stub package: missing live exact Python host TypeVar\n' >&2
+  exit 1
+fi
+
 for declaration in \
-  "KioHost_V1_M1_C3_apiN3_Str = typing.TypeVar('KioHost_V1_M1_C3_apiN3_Str')" \
   'KioHostIn_api_Str' \
   'KioHostOut_api_Str' \
   'def open(self) -> KioProtocol_Host_api_B0: ...' \

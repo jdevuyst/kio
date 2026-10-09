@@ -1,0 +1,13 @@
+package value_plan_size;
+
+build {
+  cache ();
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  api
+}

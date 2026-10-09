@@ -1,0 +1,26 @@
+package ffi_incoming_callable_stages;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/"
+  };
+
+  target ts {
+    out "out/ts/"
+  };
+
+  target python {
+    out "out/python/"
+  };
+
+  target kio-prime {
+    out "out/kio-prime/"
+  }
+}
+
+bridge {
+  testapi;
+  testapi/main
+}

@@ -1,0 +1,70 @@
+module api;
+
+import a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a as deep;
+import api/api as repeated;
+import api/types as nested;
+import java/class as reserved;
+
+pub newtype Foo_bar : . { pub constructor make_foo_bar; pub projector read_foo_bar }
+
+pub newtype Foobar : . { pub constructor make_foobar; pub projector read_foobar }
+
+pub newtype Kiomodule_types : . { pub constructor make_module; pub projector read_module }
+
+pub newtype Kiotype_shapes : . { pub constructor make_type; pub projector read_type }
+
+pub newtype Kionominal_host : . { pub constructor make_nominal; pub projector read_nominal }
+
+host type Text role(str);
+
+host type Box[T];
+
+host type Storage[T];
+
+pub newtype Token : Text { pub constructor make_token; pub projector read_token }
+
+pub newtype Pick_first[A][B] : A { pub constructor make_pick; pub projector read_pick }
+
+pub newtype Opaque : Text { constructor make_opaque; projector read_opaque }
+
+pub newtype Object : . { pub constructor make_object; pub projector read_object }
+
+pub newtype String : . { pub constructor make_string; pub projector read_string }
+
+pub newtype Void : . { pub constructor make_void; pub projector read_void }
+
+pub newtype Bottom : ! { pub constructor make_bottom; pub projector read_bottom }
+
+pub newtype Deprecated : . { pub constructor make_deprecated; pub projector read_deprecated }
+
+pub newtype Suppress_warnings : . { pub constructor make_warning; pub projector read_warning }
+
+pub newtype Shapes : . { pub constructor make_shapes; pub projector read_shapes }
+
+pub newtype Product : . { pub constructor make_product; pub projector read_product }
+
+pub newtype Apply1 : . { pub constructor make_apply; pub projector read_apply }
+
+pub newtype Types : . { pub constructor make_types; pub projector read_types }
+
+pub rec newtype Chain : . | Chain { pub constructor make_chain; pub projector read_chain }
+
+host fn relay(value: Token) -> Token;
+
+pub fn round(value: Token) -> Token { relay(value) }
+
+pub fn nested_round(value: nested.Token) -> nested.Token { value }
+
+pub fn repeat_round(value: repeated.Token) -> repeated.Token { value }
+
+pub fn reserved_round(value: reserved.Token) -> reserved.Token { value }
+
+pub fn deep_round(value: deep.Token) -> deep.Token { value }
+
+pub fn chain_round(value: Chain) -> Chain { value }
+
+pub fn box_round[T](value: Box(T)) -> Box(T) { value }
+
+pub fn storage_round[T](value: Storage(T)) -> Storage(T) { value }
+
+pub fn deep_box_round[T](value: deep.Box(T)) -> deep.Box(T) { value }

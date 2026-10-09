@@ -9,8 +9,8 @@ cd workdir || exit
 "$KIO_BIN" build "$KIO_TARGET" || exit
 
 if [ "$KIO_TARGET" = rust ]; then
-  ( cd out/rust && cargo check --offline --quiet ) || {
-    printf 'emitted Rust crate failed cargo check\n' >&2
+  "$KIO_RUNNER" --protocol compile-only "out/$KIO_TARGET" || {
+    printf 'emitted Rust crate failed compile-only runner\n' >&2
     exit 1
   }
 fi

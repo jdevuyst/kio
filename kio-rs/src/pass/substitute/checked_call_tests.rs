@@ -16,6 +16,7 @@ fn visitor(elabs: &Elaborations) -> SubstituteVisitor<'_> {
 
 fn unit() -> Expr<PrePrime> {
     Expr::Unit {
+        source_trivia: Default::default(),
         occurrence: (),
         meta: Meta::new(Span::new(10, 20)),
     }
@@ -134,6 +135,7 @@ fn checked_call_replay_preserves_written_inferred_and_reclassified_slots() {
         meta: Meta::new(span),
     };
     let value = || Expr::<Lowered>::Unit {
+        source_trivia: Default::default(),
         occurrence: ExpressionOccurrence::fresh(),
         meta: Meta::new(span),
     };
@@ -146,6 +148,7 @@ fn checked_call_replay_preserves_written_inferred_and_reclassified_slots() {
     }
     elabs.mark_value_at_type_slot("m", site.id, 3);
     let call = Expr::Call {
+        source_trivia: Default::default(),
         occurrence,
         callee: Box::new(value()),
         args: vec![

@@ -87,7 +87,7 @@ required-features = ["prime", "cli"]
 blake3 = "1"
 # rayon drives the compiler's embarrassingly-parallel fan-outs (parse,
 # op-fold, the per-module optimize / capability-annotate / structural
-# recovery / recover-to-low passes, per-target emit, kiodoc snippet
+# recovery / routing passes, per-target emit, kiodoc snippet
 # checks, and the `kio build`/`test`/`fmt`/`check` drivers). Optional and
 # tied to the `parallel` feature: with it off, the `maybe_par_iter!`
 # family (`src/par.rs`) routes every site through a sequential `.iter()`.
@@ -100,7 +100,7 @@ rayon = { version = "1", optional = true }
 # the byte-stable round-trip the cache's determinism contract
 # requires.
 serde = { version = "1", features = ["derive", "rc"] }
-postcard = { version = "1", features = ["alloc"] }
+postcard = { version = "1", default-features = false, features = ["alloc"] }
 # JSON-encoded host-trait descriptor written alongside the Rust
 # emitter's `host.rs`. The test runner reads it instead of re-
 # parsing the trait source. `to_string_pretty` produces a stable

@@ -305,6 +305,12 @@ annotation with the current live type. See the Python contract's
 
 ## FFI shapes at a glance
 
+Keep shared tuple dictionary fields and nested Kio data unchanged while a retained
+value or closure can still use them, even after a call returns. Construct a
+changed tuple instead. A host-managed mutable `Box` may change through its
+declared `get` and `set` host functions while the tuple keeps the same box.
+See [shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
 Each nullary host type is an exact generic binding selected by the host. A
 role-bearing binding adapts to a private runtime `str`, `bool`, `int`, or
 `float`; the public value can be that primitive or a declaration-specific host
@@ -333,6 +339,18 @@ Longer products and sums nest on the right. These shapes stay the same when
 you pass a value through a generic function or keep it inside a host-owned
 container; Kio does not inspect that container.
 
+Supply values matching the declared types and layouts, including callback
+arguments and results and values kept in generic or opaque containers. Role
+values must have the required range and shape; Kio does not defensively coerce
+them. Typed stubs help check host code, but the runtime does not validate every
+incoming value or promise fresh structural dictionaries. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types)
+and the [FFI surface](../../specs/backends/python.md#ffi-surface).
+
+Reading a tuple or choice field must return the same value without side
+effects. This field rule does not turn calls to declared mutable host-state
+operations into passive reads.
+
 When a generic result has an index absent from its arguments, select that
 index with an expected type using the generated public types. For example,
 after importing the generated sum arms as `Left` and `Right` and the host
@@ -352,7 +370,10 @@ same newtype.
 
 For a newly written callback, use the generated module's `kio_lift` helper.
 The callback receives one argument: `None` for Unit, or one product dictionary
-for a product domain. A callback returned by Kio already has this interface;
+for a product domain. In type annotations, `KioFn[Domain, Result]` is an alias
+for `typing.Callable[[Domain], Result]`: one positional-only argument and its
+result. Write a function or callable object, rather than subclassing `KioFn`.
+A callback returned by Kio already has this interface;
 pass it on directly. Named package methods and host-record methods keep their
 source parameter lists, so a named Unit-only method remains a no-argument call.
 
@@ -366,11 +387,10 @@ Its `advance` returns the selected `KioFn[T, T]` (for an identity callback).
 Python 3.10-compatible generic return annotations can require the narrow
 `# pyright: ignore[reportInvalidTypeVarUse]` on that method; the returned
 callable's input and result still retain the selected type.
-Both helpers
-produce values that support validation when passed between packages without
-forcing a stage or calling your callback early. The
-[callable contract](../../specs/backends/python.md#ffi-surface) describes the
-`adapt` protocol for hosts implementing their own callable objects.
+The lift helpers do not force a stage or call your callback early. Hosts
+implementing their own callable objects follow the same one-domain call or
+`advance()` interface in the
+[callable contract](../../specs/backends/python.md#ffi-surface).
 
 For a structural annotation, use the readable argument/result view instead of
 an encoded shape name: for example,

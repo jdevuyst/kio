@@ -7,13 +7,13 @@
 //! <out_root>/<NN_category>/<case_name>/
 //!   expected.stderr.ignore   (empty marker — no portable stderr oracle)
 //!   expected.exit            (single line: integer)
-//!   expected.stdout          (empty)
+//!   expected.stdout          (finite control trace, otherwise empty)
 //!   run.args                 (generator-selected exact runner protocol)
+//!   run.sh                   (valid I32 results: runtime observation + equiv)
 //!   workdir/
-//!     prog.pkg.kio       (`package prog;`, leading `build { cache +
-//!                      target js + target ts + target python +
-//!                      target java + target rust }`, then a
-//!                      `bridge { prog }` glob block)
+//!     prog.pkg.kio       (`package prog;`, cache and five base targets;
+//!                      invoked control probes add go/swift/haskell,
+//!                      and bridge their standard print capability)
 //!     prog.kio           (module prog; `host type` declarations for
 //!                      every base role type, polymorphic helpers +
 //!                      deftypes + fn gen(...))
@@ -31,13 +31,24 @@ use std::io;
 use std::path::Path;
 
 use kio_gen::ast::{
-    Program, UserElaboratorCapture, UserElaboratorImplementation, UserElaboratorSpec,
-    UserElaboratorTemplate,
+    Base, Program, Term, Type, UserElaboratorCapture, UserElaboratorImplementation,
+    UserElaboratorSpec, UserElaboratorTemplate,
 };
 use kio_gen::render;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 
 pub const GENERATED_CORE_MAIN_PROTOCOL: &str = "generated-core-main";
 pub const GENERATED_SURFACE_MAIN_PROTOCOL: &str = "generated-surface-main";
+pub const GENERATED_CONTROL_MAIN_PROTOCOL: &str = "generated-control-main";
+
+pub fn program_protocol(prog: &Program) -> &'static str {
+    if prog.control_probe.is_some() {
+        GENERATED_CONTROL_MAIN_PROTOCOL
+    } else {
+        runner_protocol(prog.surface_mode)
+    }
+}
 
 pub const fn runner_protocol(surface_mode: bool) -> &'static str {
     if surface_mode {
@@ -104,6 +115,7 @@ host type F32    role(f32);
 host type F64    role(f64);
 host type String role(str);
 host type Bool   role(bool);
+host fn print_i32(value: I32) -> .;
 ";
 
 /// Render a package-level `bridge` block with semicolons between module roots.
@@ -560,6 +572,7 @@ fn indent_lines(s: &str, spaces: usize) -> String {
 /// same vector and edit one of the entries to produce an invalid
 /// case.
 pub fn render_package_files(prog: &Program) -> Vec<(String, String)> {
+    assert!(prog.control_probe.is_none() || prog.surface_mode);
     // Append fixed `equiv` claims in surface mode. Per
     // `specs/language.md` § Equivalence claims, `equiv` items are
     // filtered out at the Lowered→Prime boundary — they contribute
@@ -594,13 +607,42 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
     // imports, so the bridge-completeness check requires bridging it
     // too; the other elaborator modules carry no host items and need no
     // glob.
-    let package_file = if prog.surface_mode {
+    let mut package_file = if prog.surface_mode {
         format!(
             "{PACKAGE_FILE_KIO_PREFIX}\n{}",
             bridge_glob_block(["prog", "testapi"])
         )
     } else {
         format!("{PACKAGE_FILE_KIO_PREFIX}\n{}", bridge_glob_block(["prog"]))
+    };
+    if prog.control_probe.is_some() {
+        package_file = package_file.replace("  target rust {", "  target go { out \"out/go/\" };\n  target swift { out \"out/swift/\" };\n  target haskell { out \"out/haskell/\" };\n\n  target rust {");
+        package_file = package_file.replace("  testapi\n", "  testapi;\n  testapi/io\n");
+    }
+    let control_import = if prog.control_probe.is_some() {
+        "import kio_gen_control as control_probe;\n"
+    } else {
+        ""
+    };
+    let observation = observation_call(prog)
+        .map(|call| format!("fn kio_gen_observed() -> I32 {{ {call} }}\n"))
+        .unwrap_or_default();
+    let main_body = if observation.is_empty() {
+        if prog.control_probe.is_some() {
+            "control_probe.run()"
+        } else {
+            "()"
+        }
+    } else if prog.control_probe.is_some() {
+        "control_probe.run(); print_i32(kio_gen_observed())"
+    } else {
+        "print_i32(kio_gen_observed())"
+    };
+    let generated_fn = render::render_fn_def(prog);
+    let functions = if observation.is_empty() {
+        format!("pub fn main() -> . {{ {main_body} }}\n\n{generated_fn}")
+    } else {
+        format!("{generated_fn}\n{observation}pub fn main() -> . {{ {main_body} }}\n")
     };
     let fills_witness = generated_fills_witness(prog);
     // Import clauses lead the module body (the module grammar requires
@@ -611,16 +653,14 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
 module prog;
 
 import __intrinsics__;
+{control_import}\
 {}
 {HOST_ENV_KIO}
 {}
 {fills_witness}
-pub fn main() -> . {{ () }}
-
-{}{equiv_block}",
+{functions}{equiv_block}",
         elaborator_imports,
         util_kio(prog),
-        render::render_fn_def(prog)
     );
     // Each module's file sits at the path its `module <path>;`
     // declaration implies relative to the package root (`workdir/`): under
@@ -637,7 +677,32 @@ pub fn main() -> . {{ () }}
             files.push((GENERATED_ELABORATORS_PATH.to_string(), content));
         }
     }
+    if let Some(probe) = &prog.control_probe {
+        files.extend(crate::control_render::files(probe));
+    }
     files
+}
+
+/// Close the generated function with the generator's ordinary typed inhabitants.
+/// I32 literals in this cohort are bounded by the existing literal production.
+pub fn observation_call(prog: &Program) -> Option<String> {
+    if prog.ret != Type::Base(Base::I32) {
+        return None;
+    }
+    let mut rng = ChaCha20Rng::seed_from_u64(0xA261_0B5E_2EED_0001);
+    let call = Term::App(
+        Box::new(Term::Var(prog.fn_def_name.clone())),
+        prog.params
+            .iter()
+            .map(|(_, ty)| crate::generate::canonical(&mut rng, ty))
+            .collect(),
+    );
+    Some(render::render_term_opts(
+        &call,
+        &render::RenderOpts {
+            surface: prog.uses_surface,
+        },
+    ))
 }
 
 /// Write a case directory under `<out_root>/<category>/<case_name>/`,
@@ -651,10 +716,11 @@ pub fn write_case(
     category: &str,
     case_name: &str,
     files: &[(String, String)],
-    exit_code: u32,
+    expected: (u32, &str),
     is_kio_prime: bool,
     runner_protocol: &str,
 ) -> io::Result<()> {
+    let (exit_code, expected_stdout) = expected;
     let case_dir = out_root.join(category).join(case_name);
     fs::create_dir_all(&case_dir)?;
 
@@ -663,7 +729,7 @@ pub fn write_case(
     }
     fs::write(case_dir.join("expected.stderr.ignore"), "")?;
     fs::write(case_dir.join("expected.exit"), format!("{exit_code}\n"))?;
-    fs::write(case_dir.join("expected.stdout"), "")?;
+    fs::write(case_dir.join("expected.stdout"), expected_stdout)?;
 
     fs::write(
         case_dir.join("run.args"),
@@ -689,10 +755,32 @@ pub fn write_valid_case(out_root: &Path, case_name: &str, prog: &Program) -> io:
         "00_success",
         case_name,
         &files,
-        0,
+        (
+            0,
+            &prog
+                .control_probe
+                .as_ref()
+                .map(crate::control::expected_stdout)
+                .unwrap_or_default(),
+        ),
         !prog.surface_mode,
-        runner_protocol(prog.surface_mode),
-    )
+        program_protocol(prog),
+    )?;
+    if observation_call(prog).is_some() {
+        let case_dir = out_root.join("00_success").join(case_name);
+        fs::remove_file(case_dir.join("run.args"))?;
+        fs::write(
+            case_dir.join("run.sh"),
+            include_str!("runtime_equiv.sh").replace("@PROTOCOL@", program_protocol(prog)),
+        )?;
+        if !prog.surface_mode {
+            fs::write(
+                case_dir.join("SKIP_KIO_PRIME_RUN"),
+                "The runtime observation is compared by the full CLI kio test; source grammar and configured phase-artifact checks remain applicable.\n",
+            )?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -713,6 +801,7 @@ mod tests {
 
     fn program_with(spec: UserElaboratorSpec) -> Program {
         Program {
+            control_probe: None,
             fn_def_name: "gen".to_string(),
             params: Vec::new(),
             ret: Type::Unit,
@@ -897,6 +986,39 @@ build {
     fn generated_modes_select_exact_runner_protocols() {
         assert_eq!(runner_protocol(false), "generated-core-main");
         assert_eq!(runner_protocol(true), "generated-surface-main");
+    }
+
+    #[test]
+    fn runtime_observations_close_core_and_surface_integer_functions() {
+        let mut prog = program_with(elaborator(Vec::new()));
+        prog.params = vec![(
+            "pair".to_owned(),
+            Type::Product(Box::new(Type::Base(Base::I32)), Box::new(Type::Unit)),
+        )];
+        prog.ret = Type::Base(Base::I32);
+        for surface in [false, true] {
+            prog.surface_mode = surface;
+            prog.uses_surface = surface;
+            let call = observation_call(&prog).expect("integer observation");
+            assert!(call.starts_with("gen("), "{call}");
+            assert_eq!(call, observation_call(&prog).unwrap());
+            let files = render_package_files(&prog);
+            let root = &files
+                .iter()
+                .find(|(p, _)| p == "workdir/prog.kio")
+                .unwrap()
+                .1;
+            assert!(root.contains(&format!("fn kio_gen_observed() -> I32 {{ {call} }}")));
+            assert!(root.contains("print_i32(kio_gen_observed())"));
+            assert!(root.find("\nfn gen(").unwrap() < root.find("\nfn kio_gen_observed(").unwrap());
+            assert!(
+                root.find("\nfn kio_gen_observed(").unwrap() < root.find("\npub fn main(").unwrap()
+            );
+        }
+        for ret in [Type::Unit, Type::Base(Base::F32), Type::Base(Base::U32)] {
+            prog.ret = ret;
+            assert!(observation_call(&prog).is_none());
+        }
     }
 
     #[test]

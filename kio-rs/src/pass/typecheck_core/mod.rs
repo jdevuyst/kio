@@ -16,7 +16,7 @@
 //! - **Per-fn machinery** — `ModuleEnv<'m, P>` (with `build`,
 //!   `populate_env_imports`, `populate_cross_module_imports`,
 //!   `alias_ctx`, `payload_ctx`), `Local<'m, P>`,
-//!   `TypeCtx<'m, 'e, P: TyperPhase>`. The TypeCtx threads the
+//!   `TypeCtx<'m, 'e, P: DeclarationPhase>`. The TypeCtx threads the
 //!   per-phase elaboration table via `P::Elaborations`: the full
 //!   `Elaborations` map at Lowered, and at Prime the narrow
 //!   `PrimeElaborations` table of resolved call type slots, implicit-Unit
@@ -37,7 +37,7 @@
 //!
 //! ## Phase-polymorphism
 //!
-//! Every helper is parametric over `<P>`, with one of three
+//! Every helper is parametric over `<P>`, with one of four
 //! constraint shapes depending on what the body needs:
 //!
 //! - **`<P: Phase + Clone>`** — for helpers that don't
@@ -49,8 +49,10 @@
 //!   walkers) and discharge each via `match *ext {}`. Lowered and
 //!   Prime both satisfy these bounds; Surface and Desugared
 //!   aren't typer input phases.
-//! - **`<P: TyperPhase>`** — for helpers that thread `TypeCtx<P>`
-//!   and recurse via `<P::Typer as Typer<P>>::synth_expr`. The
+//! - **`<P: DeclarationPhase>`** — for declaration and signature checks
+//!   that thread `TypeCtx<P>` without evaluating a function body.
+//! - **`<P: TyperPhase>`** — for expression checks that recurse via
+//!   `<P::Typer as Typer<P>>::synth_expr`. The
 //!   trait method's per-phase wiring is what lets `synth_let`,
 //!   `synth_fn`, `synth_call`, `apply_mono`, etc. all live in
 //!   one place even though their recursive calls land in
@@ -74,6 +76,16 @@ type Expr = crate::ast::Expr<Lowered>;
 
 use crate::error::Error;
 
+#[cfg(feature = "surface")]
+pub(crate) mod capability_signature;
+#[cfg(all(test, feature = "surface"))]
+mod contract_tests;
+pub(crate) mod declarations;
+#[cfg(feature = "surface")]
+pub(crate) use declarations::CapabilitySignatureCheck;
+pub(crate) use declarations::{AuxiliaryItemChecks, BodyItemChecks, NoHeaderRecording};
+pub use declarations::{DeclarationPhase, HeaderRecording};
+
 // The umbrella's substantive content lives in sub-modules. The umbrella
 // keeps only the trait / dispatch infrastructure (`Synth`,
 // `TyperPhase`, `Typer`, `default_check_value_against`)
@@ -95,10 +107,8 @@ use crate::error::Error;
 //   family, polymorphic-inference engine).
 // - [`synth`] — per-expression and per-item synthesis helpers,
 //   bidirectional `check_fn_against`, and intrinsic scheme builders.
-#[cfg(any(feature = "surface", feature = "prime", test))]
 mod call_args;
 mod types;
-#[cfg(any(feature = "surface", feature = "prime", test))]
 pub(crate) use call_args::{CanonicalCallCursor, CanonicalCallSlot, WrittenCallArg};
 #[cfg(any(feature = "surface", test))]
 pub(crate) use types::canonicalize_type_expression_function_abi;
@@ -205,6 +215,7 @@ pub(crate) use env::{PreparedRecOrderCommit, RetainedTypeBinder};
 mod modules;
 pub(crate) use modules::TypecheckExecution;
 pub(crate) use modules::check_host_type_parameters;
+#[cfg(any(feature = "surface", feature = "prime"))]
 pub(crate) use modules::check_module_in_package_with_typecheck_scope_collect_errors;
 #[cfg(feature = "cli")]
 pub(crate) use modules::check_module_signatures;
@@ -213,7 +224,7 @@ pub(crate) use modules::check_package_modules_with_typecheck_scope_collect_error
 pub use modules::{check_equiv, check_fn_def, check_package_signatures};
 
 pub(crate) mod apply;
-pub use apply::{apply_mono, check_call_against, synth_call, synth_ufcs};
+pub use apply::{apply_mono, check_call_against, synth_call};
 
 mod synth;
 pub(crate) use synth::newtype_member_scheme_in_routed_module;
@@ -424,29 +435,9 @@ where
 /// while the Prime impl discharges them via
 /// `match *ext {}`.
 pub trait TyperPhase:
-    crate::ast::Phase<ExprResolved = (), ExpressionOccurrence = crate::ast::ExpressionOccurrence>
-    + crate::pass::resolve::ResolvePhase
-where
-    Self: Sized,
+    DeclarationPhase + crate::ast::Phase<FnBody = crate::ast::Expr<Self>>
 {
-    type Elaborations: Default;
     type Typer: Typer<Self>;
-
-    fn new_elaborations(_scope: &PackageTypecheckScope<Self>) -> Self::Elaborations {
-        Self::Elaborations::default()
-    }
-
-    fn merge_elaborations(target: &mut Self::Elaborations, source: Self::Elaborations);
-
-    fn check_fn_capability_signature<'m>(
-        _definition: &'m crate::ast::FnDef<Self>,
-        _tcx: &TypeCtx<'m, '_, Self>,
-    ) -> Result<(), Error>
-    where
-        Self: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
-    {
-        Ok(())
-    }
 }
 
 /// One literal selection, including optional editor evidence of a lexical
@@ -497,10 +488,6 @@ pub trait Typer<P>
 where
     P: TyperPhase,
 {
-    /// Whether this phase publishes declaration identities for nominal type
-    /// paths into an editor-facing position index.
-    const RECORD_NOMINAL_TYPE_BINDERS: bool;
-
     /// Whether ordinary universal type arguments may be omitted and
     /// inferred at a call site. Surface Kio permits this local
     /// inference; Kio' requires the universal prefix to be explicit.
@@ -692,50 +679,8 @@ where
         tcx: &mut TypeCtx<'m, '_, P>,
     );
 
-    /// Record an opaque per-path-segment binder resolution at
-    /// `segment_span`. `kind` and `name` together identify the
-    /// resolution target (e.g. `"local"`/`"x"`, `"fn"`/`"foo"`,
-    /// `"newtype_member"`/`"Foo.mk_foo"`). Per-phase because the
-    /// recording sink only exists at Lowered (the position-keyed
-    /// index is `typecheck_full::Elaborations`'s field — the
-    /// shared `synth_path` invokes this method on every binder
-    /// resolution but the call is a no-op at Prime since the
-    /// `kio-prime` binary processes input with no surface for an
-    /// editor to query against).
-    ///
-    /// The implementation maps `(kind, name, parent, qualifier)`
-    /// into the phase-specific `ResolvedBinder` variant
-    /// (`Local`, `TypeParam`, `Fn`, `HostEnvFn`, …); `parent`
-    /// carries the head segment's name for two-segment member
-    /// paths (e.g. `Some("Foo")` on the `mk_foo` segment of
-    /// `Foo.mk_foo`), `None` for the head segment. `qualifier` carries
-    /// the leading module alias for the leaf of a three-segment path such as
-    /// `provider.Foo.mk_foo`, whose immediate `parent` alone is not enough to
-    /// recover the resolved module identity.
-    fn record_binder_at<'m>(
-        segment_span: Span,
-        kind: ResolvedBinderKind,
-        name: &str,
-        parent: Option<&str>,
-        qualifier: Option<&str>,
-        tcx: &mut TypeCtx<'m, '_, P>,
-    );
-
-    /// Record the exact declaration identity selected for a nominal type-path
-    /// head. Type paths are checked by the shared kind checker rather than
-    /// `synth_path`, so they have a distinct publication hook from value-path
-    /// binders. `declaring_module_path` is the resolved owner, never the
-    /// consumer module or the source-written import alias.
-    fn record_nominal_type_binder_at<'m>(
-        segment_span: Span,
-        kind: NominalTypeBinderKind,
-        declaring_module_path: &str,
-        name: &str,
-        tcx: &mut TypeCtx<'m, '_, P>,
-    );
-
     /// Record a constructor/projector occurrence at its exact terminal
-    /// newtype identity. This differs from [`Self::record_binder_at`]'s
+    /// newtype identity. This differs from [`HeaderRecording::record_binder_at`]'s
     /// spelling-shaped member hook when a written type head is an
     /// identity-preserving transparent alias: navigation for the head stays
     /// on that alias, while the member resolves to the terminal nominal's
@@ -745,21 +690,6 @@ where
         declaring_module_path: &str,
         newtype: &str,
         member: &str,
-        tcx: &mut TypeCtx<'m, '_, P>,
-    );
-
-    /// Record the declaration span of a local or type-parameter
-    /// binder at its introduction site (the `let`, the `fn` value
-    /// parameter, the `[A]` type-parameter binder). Keyed by the
-    /// module-scoped `(module_path, name)` identity, so the LSP's
-    /// go-to-definition resolves a use to the declaration the use
-    /// refers to. Per-phase for the same reason as
-    /// [`Self::record_binder_at`]: the position index lives at Lowered
-    /// only, so the Prime impl no-ops.
-    fn record_binder_decl_at<'m>(
-        decl_span: Span,
-        kind: ResolvedBinderKind,
-        name: &str,
         tcx: &mut TypeCtx<'m, '_, P>,
     );
 
@@ -823,7 +753,7 @@ where
 }
 
 /// Phase-independent classification of what a path segment resolves
-/// to. Implementations of [`Typer::record_binder_at`] map this into
+/// to. Implementations of [`HeaderRecording::record_binder_at`] map this into
 /// their phase-specific `ResolvedBinder` representation (the
 /// Lowered impl populates `typecheck_full::ResolvedBinder`; the
 /// Prime impl no-ops, since position-indexing is Full-only).
@@ -1297,6 +1227,7 @@ mod tests {
         let span = Span::new(0, 0);
         // The Unit value never doubles as a Unit type argument.
         let unit_expr: Expr = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         };

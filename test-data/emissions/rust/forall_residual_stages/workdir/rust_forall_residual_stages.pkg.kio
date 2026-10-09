@@ -1,0 +1,13 @@
+package rust_forall_residual_stages;
+
+build {
+  cache "out/.kio-cache/";
+
+  target rust {
+    out "out/rust/"
+  }
+}
+
+bridge {
+  api
+}

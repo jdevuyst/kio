@@ -1,0 +1,9 @@
+package main
+
+import p "driver/out/go"
+
+func wrongPartial(pkg *p.Package[int, int, string]) {
+	raw := &storage{p.ValueExp_Api__number_arg0(pkg, 11)}
+	partial := p.UnsafeKioHostType_api__BiFromNative[textIndex, numberIndex](raw)
+	pkg.Api.ReadOtherPartial(p.CallExp_Api__Applied_make(pkg.Api.KioType_Applied, p.PrepareHost_api_Bi(pkg, partial)))
+}

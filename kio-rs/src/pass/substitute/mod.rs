@@ -66,6 +66,7 @@ use rayon::prelude::*;
 pub(crate) struct PrePrime;
 
 impl Phase for PrePrime {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
     type CallDiagnostic = ();
@@ -96,6 +97,8 @@ impl Phase for PrePrime {
     type FnDefRetElided = ();
     type FnPurity = crate::ast::Purity;
     type LeadingTrivia = ();
+    type SourceDelimitedTrivia = ();
+    type SourceSignatureTrivia = ();
     type FnExprCapabilities = ();
     type FnTypeCapabilities = ();
 }
@@ -287,6 +290,7 @@ pub(crate) fn eta_materialize_pre_prime(
             })],
             CallStage::Value(layer) if layer.value_params.is_empty() => {
                 vec![CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 })]
@@ -471,7 +475,7 @@ pub(super) fn substitute_normalized_package(
 pub(crate) fn substitute_package_for_eval(
     normalized: &AlphaNormalizedPackage<Lowered>,
     elaborations: &Elaborations,
-) -> Result<crate::normalization::EvalArtifact, LocatedError> {
+) -> Result<crate::normalization::EvalArtifactInput, LocatedError> {
     let package = normalized.package();
     let mut primitives = crate::normalization::EvalPrimitiveEnv::default();
     for (path, entry) in package.modules() {
@@ -513,7 +517,7 @@ pub(crate) fn substitute_package_for_eval(
         });
     let package = Package::from_parts(entries, package_file);
     package.resolve_imports()?;
-    Ok(crate::normalization::EvalArtifact::from_validated_parts(
+    Ok(crate::normalization::EvalArtifactInput::new(
         package, primitives,
     ))
 }
@@ -1220,6 +1224,7 @@ impl<'a> SubstituteVisitor<'a> {
         let meta = convert_meta(meta);
         if type_is_unit(&annotation) {
             return Ok(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta,
             });
@@ -2048,6 +2053,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             match cursor.advance(written, implicit, resolution.is_some(), value_at_type_slot) {
                 Some(CanonicalCallSlot::ImplicitUnit) => {
                     new_args.push(CallArg::Value(Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: Meta::new(call_span),
                     }))
@@ -2087,6 +2093,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             // the same source rule here without treating a written type-only
             // packet as an implicit value application.
             new_args.push(CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(call_span),
             }));
@@ -2741,10 +2748,12 @@ mod tests {
                 ),
                 annotation: None,
                 value: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 }),
                 body: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 }),
@@ -2760,10 +2769,12 @@ mod tests {
             ty: None,
             pattern: (),
             value: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             }),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             }),
@@ -2846,10 +2857,12 @@ mod tests {
                 ),
                 annotation: None,
                 value: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 }),
                 body: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 }),
@@ -2865,10 +2878,12 @@ mod tests {
             ty: Some(unit_ty()),
             pattern: (),
             value: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             }),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             }),
@@ -3151,7 +3166,7 @@ mod tests {
             [Type::Path { segments, .. }] if segments.as_slice() == ["Qp0_s1"]
         ));
 
-        let emitted = crate::backends::kio_prime::emit_module(&prime);
+        let emitted = crate::backends::kio_prime::emit_module_for_test(&prime);
         assert!(
             emitted.contains("type Kioq1[Qp0_s1] = Hidden(Qp0_s1);"),
             "generated alias declaration and application must retain one parameter identity:\n{emitted}"
@@ -3539,6 +3554,7 @@ mod tests {
     fn eval_substitution_rejects_missing_user_elaborator() {
         let span = Span::new(0, 0);
         let expr: Expr<Lowered> = Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             form: crate::ast::UserElaboratorCallForm::Ordinary,
             name: "demo".to_owned(),
@@ -3555,6 +3571,7 @@ mod tests {
     fn eval_substitution_canonicalizes_only_a_source_empty_call_without_typer_markers() {
         let span = Span::new(0, 6);
         let call = |args: Vec<CallArg<Lowered>>| Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(Expr::Path {
@@ -3622,6 +3639,7 @@ mod tests {
             caps: (),
         };
         let call = Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(Expr::Path {
@@ -3676,6 +3694,7 @@ mod tests {
     fn eval_substitution_rejects_missing_type_infer() {
         let span = Span::new(0, 0);
         let expr: Expr<Lowered> = Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(Expr::Path {

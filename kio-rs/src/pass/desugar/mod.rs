@@ -130,6 +130,25 @@ pub fn desugar_module(module: Module<Surface>) -> Result<Module<Desugared>, Erro
     desugar_module_with_imports(module, &PackageLiteralAliases::default())
 }
 
+pub(crate) fn lower_contract_signature(
+    signature: Signature<Surface>,
+    ret: Type<Surface>,
+) -> Result<(Signature<Desugared>, Type<Desugared>), Error> {
+    DesugarVisitor {
+        state: DesugarState::default(),
+    }
+    .walk_function_header(signature, ret)
+}
+
+pub(crate) fn lower_contract_declaration(
+    declaration: Item<Surface>,
+) -> Result<Vec<Item<Desugared>>, Error> {
+    DesugarVisitor {
+        state: DesugarState::default(),
+    }
+    .walk_item(declaration)
+}
+
 #[allow(clippy::type_complexity)]
 pub fn desugar_package_with_imports(
     modules: Vec<(std::path::PathBuf, Module<Surface>)>,
@@ -221,7 +240,7 @@ fn record_surface_value_name<'a>(
     Ok(())
 }
 
-fn rec_module_type_names(
+fn rec_module_names(
     items: &[Item<Surface>],
     imports: &[Import],
 ) -> std::collections::HashSet<String> {
@@ -231,14 +250,17 @@ fn rec_module_type_names(
     {
         return std::collections::HashSet::new();
     }
-    // A recursive-state wrapper is an ordinary private module type. Reserve
-    // every owner-local spelling that could resolve to such a type (including
+    // Recursive-state types and step helpers are ordinary private declarations.
+    // Reserve every owner-local spelling that could resolve to them (including
     // a currently unresolved use) so lowering cannot make authored code bind
     // to the generated owner. The census depends only on this module's items
     // and explicit imports; declarations added in other modules cannot change
     // the chosen name.
     let mut names = std::collections::HashSet::new();
     for import_ in imports {
+        if let ImportKind::Qualified { alias, .. } = &import_.kind {
+            names.insert(alias.clone());
+        }
         if let ImportKind::Selective { items, .. } = &import_.kind {
             for item in items {
                 if let crate::ast::ImportItem::Name { name, .. } = item {
@@ -248,7 +270,7 @@ fn rec_module_type_names(
         }
     }
     for item in items {
-        collect_surface_item_type_names(item, &mut names);
+        collect_surface_item_names(item, &mut names);
     }
     names
 }
@@ -268,7 +290,7 @@ pub fn desugar_module_with_imports(
         doc,
     } = module;
     let mut state = DesugarState {
-        module_type_names: rec_module_type_names(&items, &imports),
+        module_names: rec_module_names(&items, &imports),
         ..DesugarState::default()
     };
     {
@@ -422,11 +444,9 @@ pub fn desugar_package_file(
 struct DesugarState {
     needs_intrinsics: bool,
     next_synthesized_node_id: u64,
-    /// Recursive-group lowering copies a member body into multiple generated
-    /// step functions. Each copy needs its own replacement-table identity:
-    /// alpha normalization may rename its binders differently in each lexical
-    /// wrapper, so sharing the source NodeId would let one typed elaboration
-    /// overwrite another.
+    /// Recursive lowering moves member bodies into generated lexical owners.
+    /// Each lowered occurrence needs its own replacement-table identity so
+    /// alpha normalization cannot overwrite another occurrence's elaboration.
     refresh_cloned_elaboration_ids: bool,
     /// Monotonic source-occurrence count populated by the ordinary type
     /// lowering walk. RecOrder construction compares snapshots around the
@@ -434,12 +454,12 @@ struct DesugarState {
     /// `Type` prewalk.
     source_type_infer_observations: usize,
     literal_aliases: std::collections::HashMap<String, LiteralAliasDef>,
-    /// Every authored type spelling that could bind to a same-module type
-    /// owner, predictably label-generated owner, and recursive-state owner
+    /// Every authored spelling that could bind to a same-module declaration,
+    /// predictably label-generated owner, and recursive declaration
     /// allocated earlier in source order. Recursive lowering clones this
-    /// owner-local set, which already includes every group's lexical type
+    /// owner-local set, which already includes every group's lexical
     /// names from the initial borrowed census.
-    module_type_names: std::collections::HashSet<String>,
+    module_names: std::collections::HashSet<String>,
     type_bound: Vec<String>,
     /// Stack of currently in-scope local-binder names. Duplicates are
     /// allowed (an inner binder shadows an outer of the same name);
@@ -1131,7 +1151,7 @@ fn elaborator_call_uses_rec_mode(call: &ElaboratorCall<Surface>, mode: RecCallMo
     }
 }
 
-fn collect_surface_signature_type_names(
+fn collect_surface_signature_names(
     sig: &Signature<Surface>,
     names: &mut std::collections::HashSet<String>,
 ) {
@@ -1141,10 +1161,14 @@ fn collect_surface_signature_type_names(
                 names.insert(param.name.clone());
             }
             SignatureParam::Value(param) => {
+                names.insert(param.name.clone());
                 if let Some(ty) = &param.ty {
                     collect_all_type_names(ty, names);
                 }
                 if let Some(pattern) = &param.pattern {
+                    let mut bound = Vec::new();
+                    append_pattern_bound_names(pattern, &mut bound);
+                    names.extend(bound);
                     collect_all_type_names(&pattern.outer_type(), names);
                 }
             }
@@ -1152,92 +1176,101 @@ fn collect_surface_signature_type_names(
     }
 }
 
-fn collect_surface_call_arg_type_names(
+fn collect_surface_call_arg_names(
     arg: &CallArg<Surface>,
     names: &mut std::collections::HashSet<String>,
 ) {
     match arg {
         CallArg::Type(ty) => collect_all_type_names(ty, names),
-        CallArg::Value(value) => collect_surface_expr_type_names(value, names),
+        CallArg::Value(value) => collect_surface_expr_names(value, names),
     }
 }
 
-fn collect_surface_type_member_head<'a>(
+fn collect_surface_path_head<'a>(
     segments: impl IntoIterator<Item = &'a str>,
     names: &mut std::collections::HashSet<String>,
 ) {
-    let mut segments = segments.into_iter();
-    let Some(head) = segments.next() else {
-        return;
-    };
-    if segments.next().is_some() && crate::naming::is_type_name(head) {
+    if let Some(head) = segments.into_iter().next() {
         names.insert(head.to_owned());
     }
 }
 
-fn collect_surface_capture_type_head(
+fn collect_surface_capture_head(
     capture: &crate::ast::UserElaboratorCapture,
     names: &mut std::collections::HashSet<String>,
 ) {
-    if let [head] = capture.segments.as_slice()
-        && crate::naming::is_type_name(head.as_str())
-    {
-        names.insert(head.name.clone());
-        return;
-    }
-    collect_surface_type_member_head(capture.segments.iter().map(PathSegment::as_str), names);
+    collect_surface_path_head(capture.segments.iter().map(PathSegment::as_str), names);
 }
 
-fn collect_surface_expr_type_names(
-    expr: &Expr<Surface>,
-    names: &mut std::collections::HashSet<String>,
-) {
+fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections::HashSet<String>) {
     match expr {
         crate::ast::Expr::BlockCall { .. } => {
             unreachable!("trailing blocks are projected before desugaring")
         }
         Expr::Call { callee, args, .. } => {
-            collect_surface_expr_type_names(callee, names);
+            collect_surface_expr_names(callee, names);
             for arg in args {
-                collect_surface_call_arg_type_names(arg, names);
+                collect_surface_call_arg_names(arg, names);
             }
         }
-        Expr::RecCall { args, .. } | Expr::UserElaborator { args, .. } => {
+        Expr::RecCall { callee, args, .. } => {
+            names.insert(callee.name.clone());
             for arg in args {
-                collect_surface_call_arg_type_names(arg, names);
+                collect_surface_call_arg_names(arg, names);
+            }
+        }
+        Expr::UserElaborator { name, args, .. } => {
+            names.insert(name.clone());
+            for arg in args {
+                collect_surface_call_arg_names(arg, names);
             }
         }
         Expr::FnExpr {
             sig, ret_ty, body, ..
         } => {
-            collect_surface_signature_type_names(sig, names);
+            collect_surface_signature_names(sig, names);
             if let Some(ret_ty) = ret_ty {
                 collect_all_type_names(ret_ty, names);
             }
-            collect_surface_expr_type_names(body, names);
+            collect_surface_expr_names(body, names);
         }
         Expr::FnPlaceholder { body, .. } => {
-            collect_surface_expr_type_names(body, names);
+            collect_surface_expr_names(body, names);
         }
         Expr::Let {
+            name,
             ty,
             pattern,
             value,
             body,
             ..
         } => {
+            names.insert(name.clone());
             if let Some(ty) = ty {
                 collect_all_type_names(ty, names);
             }
             if let Some(pattern) = pattern {
+                let mut bound = Vec::new();
+                append_pattern_bound_names(pattern, &mut bound);
+                names.extend(bound);
                 collect_all_type_names(&pattern.outer_type(), names);
             }
-            collect_surface_expr_type_names(value, names);
-            collect_surface_expr_type_names(body, names);
+            collect_surface_expr_names(value, names);
+            collect_surface_expr_names(body, names);
         }
-        Expr::RowLet { value, body, .. } | Expr::Seq { value, body, .. } => {
-            collect_surface_expr_type_names(value, names);
-            collect_surface_expr_type_names(body, names);
+        Expr::RowLet {
+            entries,
+            value,
+            body,
+            ..
+        } => {
+            names.extend(entries.iter().map(|entry| entry.local.clone()));
+            collect_surface_expr_names(value, names);
+            collect_surface_expr_names(body, names);
+        }
+        Expr::Seq { value, body, .. } => {
+            collect_surface_expr_names(value, names);
+            collect_surface_expr_names(body, names);
         }
         Expr::StrLit { annotation, .. }
         | Expr::IntLit { annotation, .. }
@@ -1249,22 +1282,22 @@ fn collect_surface_expr_type_names(
         }
         Expr::Tuple { items, .. } => {
             for item in items {
-                collect_surface_expr_type_names(item, names);
+                collect_surface_expr_names(item, names);
             }
         }
         Expr::LabelValue { labels, .. } => {
             for label in labels {
-                collect_surface_expr_type_names(&label.value, names);
+                collect_surface_expr_names(&label.value, names);
             }
         }
         Expr::Elaborator { call, .. } => match call {
             ElaboratorCall::FieldAccess { receiver, .. } => {
-                collect_surface_expr_type_names(receiver, names);
+                collect_surface_expr_names(receiver, names);
             }
             ElaboratorCall::FieldUpdate { receiver, updates } => {
-                collect_surface_expr_type_names(receiver, names);
+                collect_surface_expr_names(receiver, names);
                 for update in updates {
-                    collect_surface_expr_type_names(&update.value, names);
+                    collect_surface_expr_names(&update.value, names);
                 }
             }
         },
@@ -1274,29 +1307,26 @@ fn collect_surface_expr_type_names(
             args,
             ..
         } => {
-            collect_surface_expr_type_names(receiver, names);
-            collect_surface_type_member_head(
-                callee_segments.iter().map(PathSegment::as_str),
-                names,
-            );
+            collect_surface_expr_names(receiver, names);
+            collect_surface_path_head(callee_segments.iter().map(PathSegment::as_str), names);
             for arg in args {
-                collect_surface_call_arg_type_names(arg, names);
+                collect_surface_call_arg_names(arg, names);
             }
         }
         Expr::OpChain { kind, .. } => match kind {
             crate::ast::OpChainKind::Normal { slots, .. } => {
                 for slot in slots {
-                    collect_surface_expr_type_names(slot, names);
+                    collect_surface_expr_names(slot, names);
                 }
             }
             crate::ast::OpChainKind::Variadic { elements, .. } => {
                 for slot in elements {
-                    collect_surface_expr_type_names(slot, names);
+                    collect_surface_expr_names(slot, names);
                 }
             }
         },
         Expr::Path { segments, .. } => {
-            collect_surface_type_member_head(segments.iter().map(PathSegment::as_str), names);
+            collect_surface_path_head(segments.iter().map(PathSegment::as_str), names);
         }
         Expr::Unit { .. } => {}
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
@@ -1323,10 +1353,11 @@ fn collect_surface_expr_type_names(
     }
 }
 
-fn collect_surface_label_entry_type_names(
+fn collect_surface_label_entry_names(
     entry: &crate::ast::LabelEntry<Surface>,
     names: &mut std::collections::HashSet<String>,
 ) {
+    names.insert(entry.name.clone());
     names.extend(entry.type_params.iter().map(|param| param.name.clone()));
     names.extend(
         entry
@@ -1337,17 +1368,15 @@ fn collect_surface_label_entry_type_names(
     collect_all_type_names(&entry.payload, names);
 }
 
-fn collect_surface_item_type_names(
-    item: &Item<Surface>,
-    names: &mut std::collections::HashSet<String>,
-) {
+fn collect_surface_item_names(item: &Item<Surface>, names: &mut std::collections::HashSet<String>) {
     match item {
         Item::FnDef(def) => {
-            collect_surface_signature_type_names(&def.sig, names);
+            names.insert(def.name.clone());
+            collect_surface_signature_names(&def.sig, names);
             collect_all_type_names(&def.ret, names);
-            collect_surface_expr_type_names(&def.body, names);
+            collect_surface_expr_names(&def.body, names);
         }
-        Item::RecGroup(group, _) => collect_rec_group_type_names(group, names),
+        Item::RecGroup(group, _) => collect_rec_group_names(group, names),
         Item::TypeRecGroup(group) => {
             for member in &group.members {
                 match member {
@@ -1358,6 +1387,8 @@ fn collect_surface_item_type_names(
                     }
                     crate::ast::TypeRecMember::Newtype(newtype) => {
                         names.insert(newtype.name.clone());
+                        names.insert(newtype.constructor.name.clone());
+                        names.insert(newtype.projector.name.clone());
                         names.extend(
                             newtype
                                 .type_params
@@ -1385,12 +1416,12 @@ fn collect_surface_item_type_names(
                         if let Some(arms) = &labels.type_alias_arms {
                             for arm in arms {
                                 for entry in &arm.entries {
-                                    collect_surface_label_entry_type_names(entry, names);
+                                    collect_surface_label_entry_names(entry, names);
                                 }
                             }
                         }
                         for entry in &labels.entries {
-                            collect_surface_label_entry_type_names(entry, names);
+                            collect_surface_label_entry_names(entry, names);
                         }
                     }
                 }
@@ -1401,9 +1432,14 @@ fn collect_surface_item_type_names(
             names.extend(alias.type_params.iter().map(|param| param.name.clone()));
             collect_all_type_names(&alias.body, names);
         }
-        Item::LiteralAlias(_, _) | Item::LabelForward(_, _) => {}
+        Item::LiteralAlias(alias, _) => {
+            names.insert(alias.name.clone());
+        }
+        Item::LabelForward(_, _) => {}
         Item::Newtype(newtype) => {
             names.insert(newtype.name.clone());
+            names.insert(newtype.constructor.name.clone());
+            names.insert(newtype.projector.name.clone());
             names.extend(
                 newtype
                     .type_params
@@ -1431,26 +1467,28 @@ fn collect_surface_item_type_names(
             if let Some(arms) = &labels.type_alias_arms {
                 for arm in arms {
                     for entry in &arm.entries {
-                        collect_surface_label_entry_type_names(entry, names);
+                        collect_surface_label_entry_names(entry, names);
                     }
                 }
             }
             for entry in &labels.entries {
-                collect_surface_label_entry_type_names(entry, names);
+                collect_surface_label_entry_names(entry, names);
             }
         }
         Item::Equiv(equiv, _) => {
-            collect_surface_signature_type_names(&equiv.sig, names);
+            names.insert(equiv.name.clone());
+            collect_surface_signature_names(&equiv.sig, names);
             for term in &equiv.terms {
-                collect_surface_expr_type_names(&term.body, names);
+                collect_surface_expr_names(&term.body, names);
             }
         }
         Item::Elaborator(elaborator, _) => {
+            names.insert(elaborator.name.clone());
             collect_all_type_names(&elaborator.call_ty, names);
             for capture in &elaborator.captures {
-                collect_surface_capture_type_head(capture, names);
+                collect_surface_capture_head(capture, names);
             }
-            collect_surface_type_member_head(
+            collect_surface_path_head(
                 elaborator
                     .implementation
                     .segments()
@@ -1461,21 +1499,15 @@ fn collect_surface_item_type_names(
         }
         Item::Op(op, _) => match &op.body {
             crate::ast::OpBody::Normal { function, .. } => {
-                collect_surface_type_member_head(function.iter().map(PathSegment::as_str), names);
+                collect_surface_path_head(function.iter().map(PathSegment::as_str), names);
             }
         },
         Item::VariadicOperator(fold, _) => {
             let spec = fold.spec.as_ref();
-            collect_surface_type_member_head(
-                spec.initializer.path.iter().map(PathSegment::as_str),
-                names,
-            );
-            collect_surface_type_member_head(spec.step.path.iter().map(PathSegment::as_str), names);
+            collect_surface_path_head(spec.initializer.path.iter().map(PathSegment::as_str), names);
+            collect_surface_path_head(spec.step.path.iter().map(PathSegment::as_str), names);
             if let Some(finalize) = &spec.finalize {
-                collect_surface_type_member_head(
-                    finalize.path.iter().map(PathSegment::as_str),
-                    names,
-                );
+                collect_surface_path_head(finalize.path.iter().map(PathSegment::as_str), names);
             }
         }
         Item::HostType(host) => {
@@ -1483,12 +1515,14 @@ fn collect_surface_item_type_names(
             names.extend(host.type_params.iter().map(|param| param.name.clone()));
         }
         Item::HostFn(host) => {
+            names.insert(host.name.clone());
             for param in &host.params {
                 match param {
                     crate::ast::HostFnParam::Type(param) => {
                         names.insert(param.name.clone());
                     }
                     crate::ast::HostFnParam::Value(param) => {
+                        names.extend(param.name.iter().cloned());
                         collect_all_type_names(&param.ty, names);
                     }
                 }
@@ -1498,14 +1532,16 @@ fn collect_surface_item_type_names(
     }
 }
 
-fn collect_rec_group_type_names(
+fn collect_rec_group_names(
     group: &RecGroup<Surface>,
     names: &mut std::collections::HashSet<String>,
 ) {
+    collect_surface_path_head(group.loop_path.iter().map(PathSegment::as_str), names);
     for member in &group.members {
-        collect_surface_signature_type_names(&member.sig, names);
+        names.insert(member.name.clone());
+        collect_surface_signature_names(&member.sig, names);
         collect_all_type_names(&member.ret, names);
-        collect_surface_expr_type_names(&member.body, names);
+        collect_surface_expr_names(&member.body, names);
     }
 }
 
@@ -1669,6 +1705,17 @@ fn finish_cont_rec_member_plans(
 }
 
 impl DesugarVisitor {
+    fn walk_function_header(
+        &mut self,
+        sig: Signature<Surface>,
+        ret: Type<Surface>,
+    ) -> Result<(Signature<Desugared>, Type<Desugared>), Error> {
+        self.bind_signature_type_params(&sig.params);
+        let params = self.walk_signature_params(sig.params)?;
+        let ret = self.walk_type(ret)?;
+        Ok((Signature::from_parts(params, sig.groups), ret))
+    }
+
     fn lower_rec_group(
         &mut self,
         mut group: RecGroup<Surface>,
@@ -1678,6 +1725,7 @@ impl DesugarVisitor {
             let body = std::mem::replace(
                 &mut member.body,
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(member.meta.span),
                 },
@@ -1689,7 +1737,7 @@ impl DesugarVisitor {
             member.body = body;
         }
         crate::pass::rec_headers::validate(&group)?;
-        let mut reserved_type_names = self.state.module_type_names.clone();
+        let mut reserved_type_names = self.state.module_names.clone();
         let wrapper_type_names = group
             .members
             .iter()
@@ -1701,7 +1749,7 @@ impl DesugarVisitor {
             })
             .collect::<Vec<_>>();
         self.state
-            .module_type_names
+            .module_names
             .extend(wrapper_type_names.iter().cloned());
         let uses_cont = rec_group_uses_mode(&group, RecCallMode::Cont);
         let mut plans = self.rec_member_plans(
@@ -1729,7 +1777,7 @@ impl DesugarVisitor {
         let resume = uses_cont.then(|| {
             let base = format!("Rec_resume{}", group.meta.span.start);
             let name = crate::pass::typecheck_core::fresh_type_var(&base, &reserved_type_names);
-            self.state.module_type_names.insert(name.clone());
+            self.state.module_names.insert(name.clone());
             RecResumePlan {
                 ty: Type::synth_path(vec![name.clone()], state_type_args.clone(), group.meta.span),
                 name,
@@ -1759,11 +1807,41 @@ impl DesugarVisitor {
             span: group.meta.span,
         };
         let mut out = self.synthetic_rec_state_items(&ctx);
+        let shared_step = if ctx.members.len() > 1 {
+            let base = format!("_rec_step{}", ctx.span.start);
+            let name = crate::pass::typecheck_core::fresh_type_var(&base, &self.state.module_names);
+            self.state.module_names.insert(name.clone());
+            let Expr::FnExpr { sig, body, .. } = self.rec_step_fn(&ctx, None)? else {
+                unreachable!("a recursive step is an ordinary function expression")
+            };
+            let mut params = ctx.members[0]
+                .state_type_params
+                .iter()
+                .cloned()
+                .map(SignatureParam::Type)
+                .collect::<Vec<_>>();
+            params.extend(sig.params);
+            out.push(Item::FnDef(FnDef {
+                vis: crate::ast::Visibility::Private,
+                purity: crate::ast::Purity::Impure,
+                name: name.clone(),
+                sig: Signature::new(params),
+                ret: ctx.step_result_ty.clone(),
+                ret_elided: false,
+                body: *body,
+                meta: Meta::new(ctx.span),
+                doc: None,
+            }));
+            Some(name)
+        } else {
+            None
+        };
         for member in &ctx.members {
             out.push(Item::FnDef(self.rec_wrapper_fn(
                 member,
                 &ctx,
                 group.loop_path.clone(),
+                shared_step.as_deref(),
             )?));
         }
         Ok(out)
@@ -1980,9 +2058,10 @@ impl DesugarVisitor {
         member: &RecMemberPlan,
         ctx: &RecLoweringCtx,
         loop_path: Vec<PathSegment>,
+        shared_step: Option<&str>,
     ) -> Result<FnDef<Desugared>, Error> {
         let initial_state = self.rec_initial_state(member, ctx)?;
-        let step = self.rec_step_fn(ctx)?;
+        let step = self.rec_step_fn(ctx, shared_step)?;
         let selected_path = Span::new(
             loop_path
                 .first()
@@ -2028,7 +2107,26 @@ impl DesugarVisitor {
         })
     }
 
-    fn rec_step_fn(&mut self, ctx: &RecLoweringCtx) -> Result<Expr<Desugared>, Error> {
+    fn rec_step_fn(
+        &mut self,
+        ctx: &RecLoweringCtx,
+        shared_step: Option<&str>,
+    ) -> Result<Expr<Desugared>, Error> {
+        if let Some(name) = shared_step {
+            return Ok(if ctx.state_type_args.is_empty() {
+                path_expr(name.to_owned(), ctx.span)
+            } else {
+                call_path(
+                    vec![PathSegment::new(name, ctx.span)],
+                    ctx.state_type_args
+                        .iter()
+                        .cloned()
+                        .map(CallArg::Type)
+                        .collect(),
+                    ctx.span,
+                )
+            });
+        }
         let state_name = format!("__rec_state{}__", ctx.span.start);
         let state_param = SignatureParam::Value(Param {
             name: state_name.clone(),
@@ -2036,7 +2134,8 @@ impl DesugarVisitor {
             pattern: (),
             meta: Meta::new(ctx.span),
         });
-        let body = self.rec_state_dispatch(&ctx.members, path_expr(state_name, ctx.span), ctx)?;
+        let state = path_expr(state_name, ctx.span);
+        let body = self.rec_state_dispatch(&ctx.members, state, ctx)?;
         Ok(Expr::FnExpr {
             occurrence: Default::default(),
             sig: Signature::new(vec![state_param]),
@@ -2547,6 +2646,7 @@ impl DesugarVisitor {
                 })
             }
             Expr::UserElaborator {
+                source_trivia: _,
                 occurrence: _,
                 name,
                 form,
@@ -2571,6 +2671,7 @@ impl DesugarVisitor {
                 )
             }
             Expr::Ufcs {
+                source_trivia: _,
                 occurrence: _,
                 receiver,
                 callee_segments,
@@ -2642,6 +2743,7 @@ impl DesugarVisitor {
             ctx,
         )?;
         let call = Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
@@ -2698,6 +2800,7 @@ impl DesugarVisitor {
             ctx,
         )?;
         let call = Expr::Ufcs {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             receiver: Box::new(receiver),
             callee_segments,
@@ -3228,6 +3331,7 @@ impl DesugarVisitor {
                     ctx,
                 )?;
                 Ok(Expr::Ufcs {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     receiver: Box::new(receiver),
                     callee_segments,
@@ -3257,6 +3361,7 @@ impl DesugarVisitor {
                     ctx,
                 )?;
                 Ok(Expr::UserElaborator {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     name,
                     form,
@@ -3620,6 +3725,7 @@ impl DesugarVisitor {
                 Some(crate::ast::build_product_right_fold(tys, meta.span))
             }
             Expr::Unit {
+                source_trivia: _,
                 occurrence: _,
                 meta,
             } => Some(Type::Unit {
@@ -3957,6 +4063,7 @@ impl DesugarVisitor {
             // the checked recipe, not the call's source position, decides
             // whether each staged lambda is terminal.
             Expr::UserElaborator {
+                source_trivia: _,
                 occurrence: _,
                 name,
                 form,
@@ -3980,6 +4087,7 @@ impl DesugarVisitor {
                 )
             }
             Expr::UserElaborator {
+                source_trivia: _,
                 occurrence: _,
                 name,
                 form,
@@ -4000,6 +4108,7 @@ impl DesugarVisitor {
             // Bang-UFCS has the same structural tail authority as a direct
             // elaborator call; receiver placement does not narrow it.
             Expr::Ufcs {
+                source_trivia: _,
                 occurrence: _,
                 receiver,
                 callee_segments,
@@ -4030,6 +4139,7 @@ impl DesugarVisitor {
                 )
             }
             Expr::Ufcs {
+                source_trivia: _,
                 occurrence: _,
                 receiver,
                 callee_segments,
@@ -4057,6 +4167,7 @@ impl DesugarVisitor {
                     let type_span = receiver_value.span();
                     let body = self.transform_rec_cps_expr(
                         Expr::Ufcs {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             receiver: Box::new(surface_path_expr(name.clone(), span)),
                             callee_segments,
@@ -4112,6 +4223,7 @@ impl DesugarVisitor {
                     let type_span = arg_value.span();
                     let body = self.transform_rec_cps_expr(
                         Expr::Ufcs {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             receiver,
                             callee_segments,
@@ -4144,6 +4256,7 @@ impl DesugarVisitor {
                     let param_ty = self.rec_expr_type_hint(&receiver_value, current_member, ctx);
                     let body = self.transform_rec_cps_expr(
                         Expr::Ufcs {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             receiver: Box::new(surface_path_expr(name.clone(), span)),
                             callee_segments,
@@ -4186,6 +4299,7 @@ impl DesugarVisitor {
                     let param_ty = self.rec_expr_type_hint(&arg_value, current_member, ctx);
                     let body = self.transform_rec_cps_expr(
                         Expr::Ufcs {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             receiver,
                             callee_segments,
@@ -4218,6 +4332,7 @@ impl DesugarVisitor {
                     )
                 } else {
                     let expr = Expr::Ufcs {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         receiver,
                         callee_segments,
@@ -4313,6 +4428,7 @@ impl DesugarVisitor {
         if args.is_empty() {
             let ext = self.state.cloned_elaboration_id(ext);
             let value = Expr::UserElaborator {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 name,
                 form,
@@ -5429,6 +5545,7 @@ impl SurfaceToDesugared for DesugarVisitor {
 
     fn visit_expr_call(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -5699,6 +5816,7 @@ impl SurfaceToDesugared for DesugarVisitor {
     fn visit_expr_user_elaborator(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         self.state.needs_intrinsics = true;
         let Expr::UserElaborator {
+            source_trivia: _,
             occurrence: _,
             name,
             form,
@@ -5710,6 +5828,7 @@ impl SurfaceToDesugared for DesugarVisitor {
             unreachable!()
         };
         Ok(Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
@@ -5724,6 +5843,7 @@ impl SurfaceToDesugared for DesugarVisitor {
 
     fn visit_expr_ufcs(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Ufcs {
+            source_trivia: _,
             occurrence: _,
             receiver,
             callee_segments,
@@ -5741,6 +5861,7 @@ impl SurfaceToDesugared for DesugarVisitor {
             self.state.needs_intrinsics = true;
         }
         Ok(Expr::Ufcs {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             receiver: Box::new(self.walk_expr(*receiver)?),
             callee_segments,
@@ -5778,14 +5899,10 @@ impl SurfaceToDesugared for DesugarVisitor {
         let groups = sig.groups;
         let (sig_params, body) = expand_pattern_params(sig.params, body, Some(ret.clone()));
         let type_mark = self.state.save_type_bound();
-        self.bind_signature_type_params(&sig_params);
-        let params: Vec<SignatureParam<Desugared>> = sig_params
-            .into_iter()
-            .map(|p| self.walk_signature_param(p))
-            .collect::<Result<_, _>>()?;
-        let ret = self.walk_type(ret)?;
+        let (sig, ret) =
+            self.walk_function_header(Signature::from_parts(sig_params, groups), ret)?;
         let mark = self.state.save_bound();
-        for p in &params {
+        for p in &sig.params {
             if let SignatureParam::Value(vp) = p {
                 self.state.bound.push(vp.name.clone());
             }
@@ -5797,7 +5914,7 @@ impl SurfaceToDesugared for DesugarVisitor {
             vis,
             purity,
             name,
-            sig: Signature::from_parts(params, groups),
+            sig,
             ret,
             ret_elided,
             body,
@@ -6417,6 +6534,7 @@ fn path_expr_segments(segments: Vec<PathSegment>, span: Span) -> Expr<Desugared>
 
 fn unit_expr(span: Span) -> Expr<Desugared> {
     Expr::Unit {
+        source_trivia: Default::default(),
         occurrence: Default::default(),
         meta: Meta::new(span),
     }
@@ -7117,6 +7235,7 @@ fn rename_paths(
             }
         }
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic,
             callee,
@@ -7124,6 +7243,7 @@ fn rename_paths(
             meta,
             ext: _,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic,
             callee: Box::new(rename_paths(*callee, renames)),
@@ -7248,6 +7368,7 @@ fn rename_paths(
             }
         }
         Expr::UserElaborator {
+            source_trivia: _,
             occurrence: _,
             name,
             form,
@@ -7255,6 +7376,7 @@ fn rename_paths(
             meta,
             ext,
         } => Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
@@ -7288,6 +7410,7 @@ fn rename_paths(
             ext,
         },
         Expr::Ufcs {
+            source_trivia: _,
             occurrence: _,
             receiver,
             mut callee_segments,
@@ -7305,6 +7428,7 @@ fn rename_paths(
                 callee_segments[0].name = renamed.clone();
             }
             Expr::Ufcs {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 receiver: Box::new(rename_paths(*receiver, renames)),
                 callee_segments,
@@ -7323,9 +7447,11 @@ fn rename_paths(
             }
         }
         Expr::Unit {
+            source_trivia: _,
             occurrence: _,
             meta,
         } => Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta,
         },
@@ -7840,6 +7966,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
+        assert_eq!(wrappers.len(), 4);
+        assert!(wrappers[0].name.starts_with("_rec_step"));
+        assert_eq!(wrappers[0].vis, Visibility::Private);
+        assert_eq!(wrappers[0].purity, crate::ast::Purity::Impure);
+        let wrappers = &wrappers[1..];
         assert_eq!(
             wrappers
                 .iter()
@@ -7853,6 +7984,176 @@ mod tests {
             Visibility::PublicIn(path) if path.segments == ["x"]
         ));
         assert_eq!(wrappers[2].vis, Visibility::Public);
+    }
+
+    #[test]
+    fn mutual_rec_dispatcher_is_emitted_once_per_group() {
+        for count in [2, 4, 8] {
+            let members = (0..count)
+                .map(|index| {
+                    format!(
+                        "fn member{index}(value: .) -> . {{ \
+                         observe{index}(value); rec member{}(value) }}",
+                        (index + 1) % count
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let module = d(&format!("module x; rec(loop) {{ {members} }}"));
+            let definitions = module
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::FnDef(def) => Some(def),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(definitions.len(), count + 1);
+            let helper = definitions[0];
+            assert!(helper.name.starts_with("_rec_step"));
+            assert_eq!(helper.vis, Visibility::Private);
+            assert_eq!(helper.purity, crate::ast::Purity::Impure);
+            assert_eq!(desugared_path_use_count(&helper.body, &helper.name), 0);
+            for index in 0..count {
+                let wrapper = definitions[index + 1];
+                assert_eq!(wrapper.name, format!("member{index}"));
+                assert!(is_call_to(&wrapper.body, "loop"));
+                assert_eq!(desugared_path_use_count(&wrapper.body, &helper.name), 1);
+                let Expr::Call { args, .. } = &wrapper.body else {
+                    unreachable!()
+                };
+                assert!(
+                    matches!(&args[2], CallArg::Value(Expr::Path { segments, .. })
+                    if segments.len() == 1 && segments[0].as_str() == helper.name)
+                );
+                assert_eq!(desugared_path_use_count(&helper.body, &wrapper.name), 0);
+                let observed = definitions
+                    .iter()
+                    .map(|def| desugared_path_use_count(&def.body, &format!("observe{index}")))
+                    .sum::<usize>();
+                assert_eq!(observed, 1, "each member body appears once, not per entry");
+            }
+        }
+    }
+
+    #[test]
+    fn mutual_rec_step_owns_only_outer_state_type_parameters() {
+        let module = d("module x; rec(loop) { \
+            fn first[A][B](value: A, extra: B) -> A { rec second(A, B, value, extra) }; \
+            fn second[A][B](value: A, extra: B) -> A { value } \
+        }");
+        let helper = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::FnDef(def) if def.name.starts_with("_rec_step") => Some(def),
+                _ => None,
+            })
+            .expect("mutual group has one shared step");
+        let [SignatureParam::Type(outer), SignatureParam::Value(_)] = helper.sig.params.as_slice()
+        else {
+            panic!("only the result-dependent A is an outer state parameter")
+        };
+        assert_eq!(outer.name, "A");
+        let mut existential_unpacks = 0;
+        visit_desugared_expr(&helper.body, &mut |expr| {
+            if let Expr::FnExpr { sig, .. } = expr
+                && matches!(sig.params.first(), Some(SignatureParam::Type(param)) if param.name == "B")
+            {
+                existential_unpacks += 1;
+            }
+        });
+        assert_eq!(existential_unpacks, 2);
+        for name in ["first", "second"] {
+            let mut helper_arguments = None;
+            visit_desugared_expr(desugared_fn_body(&module, name), &mut |expr| {
+                if is_call_to(expr, &helper.name)
+                    && let Expr::Call { args, .. } = expr
+                {
+                    helper_arguments = Some(args);
+                }
+            });
+            assert!(matches!(helper_arguments.map(Vec::as_slice),
+                Some([CallArg::Type(Type::Path { segments, args, .. })])
+                    if args.is_empty() && segments.len() == 1 && segments[0].as_str() == "A"));
+        }
+    }
+
+    #[test]
+    fn single_rec_member_keeps_its_inline_step() {
+        let module = d("module x; rec(loop) fn only(value: .) -> . { \
+            observe(value); rec only(value) \
+        }");
+        let definitions = module
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::FnDef(def) => Some(def),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].name, "only");
+        assert!(is_call_to(&definitions[0].body, "loop"));
+        assert_eq!(desugared_path_use_count(&definitions[0].body, "observe"), 1);
+    }
+
+    #[test]
+    fn mutual_rec_step_name_avoids_module_and_lexical_names() {
+        let prefix = "module x; rec(loop) { \
+            fn first(value: .) -> . { rec second(value) }; \
+            fn second(value: .) -> . { value } }\n";
+        let parsed = parse(prefix).unwrap();
+        let Item::RecGroup(group, _) = &parsed.items[0] else {
+            unreachable!()
+        };
+        let base = format!("_rec_step{}", group.meta.span.start);
+        let source = format!(
+            "{prefix}\
+            fn {base}(value: .) -> . {{ value }}\n\
+            host fn {base}_n2(value: .) -> .;\n\
+            fn occupied({base}_n3: .) -> . {{ \
+                let {base}_n4 = {base}_n3; \
+                {base}_n5({base}_n4) \
+            }}\n"
+        );
+        for _ in 0..2 {
+            let module = d(&source);
+            let helper = module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) => Some(def),
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(helper.name, format!("{base}_n6"));
+            assert!(
+                crate::naming::validate_user_name(&helper.name, crate::naming::NameRole::Value)
+                    .is_ok()
+            );
+            assert_eq!(
+                desugared_path_use_count(
+                    desugared_fn_body(&module, "occupied"),
+                    &format!("{base}_n5")
+                ),
+                1
+            );
+        }
+        for import in [
+            format!("import provider({base});"),
+            format!("import provider as {base};"),
+        ] {
+            let imported = parse(&format!("module x; {import}")).unwrap();
+            let mut parsed = parse(prefix).unwrap();
+            parsed.imports = imported.imports;
+            let module = desugar_module(parsed).unwrap();
+            assert!(
+                module.items.iter().any(
+                    |item| matches!(item, Item::FnDef(def) if def.name == format!("{base}_n2"))
+                )
+            );
+        }
     }
 
     #[test]
@@ -8050,7 +8351,15 @@ mod tests {
                  fn leaf(value: .) -> . {{ value }} }}"
             ));
             let mut schedules = 0;
-            visit_desugared_expr(desugared_fn_body(&module, "outer"), &mut |expr| {
+            let helper = module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name.starts_with("_rec_step") => Some(def),
+                    _ => None,
+                })
+                .expect("mutual recursion has a shared dispatcher");
+            visit_desugared_expr(&helper.body, &mut |expr| {
                 if matches!(expr, Expr::Call { callee, .. }
                     if matches!(callee.as_ref(), Expr::Path { segments, .. }
                         if segments.last().is_some_and(|segment| segment.as_str() == "mk_resume")))
@@ -8172,7 +8481,7 @@ mod tests {
 
     #[cfg(feature = "prime")]
     #[test]
-    fn rec_wrapper_type_name_round_trips_through_fresh_prime_validation() {
+    fn rec_generated_names_round_trip_through_fresh_prime_validation() {
         use crate::backends::kio_prime::emit_module;
         use crate::pass::full::FullPipeline;
         use crate::pass::resolve::Package;
@@ -8182,7 +8491,10 @@ mod tests {
 
         let prefix = "module x;\n\
              host fn loop[S][R](step: S -> S | R, state: S) -> R;\n\
-             rec(loop) fn go(value: .) -> . { rec go(value) }\n";
+             rec(loop) { \
+               fn go[A][B](value: A, extra: B) -> A { rec next(A, B, value, extra) }; \
+               fn next[A][B](value: A, extra: B) -> A { value } \
+             }\n";
         let parsed_prefix = parse(prefix).expect("parse preceding host and recursive group");
         let group_start = parsed_prefix
             .items
@@ -8195,10 +8507,13 @@ mod tests {
         let wrapper = format!("Rec_state{group_start}_mghgp");
         let constructor = format!("mk_rec_state{group_start}_mghgp");
         let projector = format!("un_rec_state{group_start}_mghgp");
+        let step = format!("_rec_step{group_start}");
         let source = format!(
             "{prefix}\
              type {wrapper} = .;\n\
-             type {wrapper}_n2 = .;\n"
+             type {wrapper}_n2 = .;\n\
+             fn {step}(value: .) -> . {{ value }}\n\
+             fn {step}_n2(value: .) -> . {{ value }}\n"
         );
         let parsed = parse(&source).expect("parse recursive source");
         let (lowered, _) =
@@ -8219,7 +8534,11 @@ mod tests {
             .check_in_body_resolution()
             .expect("resolve recursive source bodies");
         let prime = FullPipeline::typecheck(&package).expect("typecheck recursive source");
-        let emitted = emit_module(&prime.module("x").expect("module x").module);
+        let emitted = emit_module(prime.module("x").expect("module x"));
+        assert!(
+            emitted.contains(&format!("fn {step}_n3")),
+            "the shared dispatcher is an ordinary collision-free function: {emitted}"
+        );
         assert!(
             emitted.contains(&format!("newtype {wrapper}_n3")),
             "emitted Kio' must retain the allocated recursive wrapper: {emitted}"
@@ -8593,14 +8912,20 @@ mod tests {
                 _ => {}
             });
         }
-        for (kind, ids) in [
-            ("field", field_ids),
-            ("user elaborator", user_ids),
-            ("UFCS", ufcs_ids),
+        for (kind, ids, count) in [
+            ("field", field_ids, 1),
+            ("user elaborator", user_ids, 2),
+            ("UFCS", ufcs_ids, 1),
         ] {
+            assert_eq!(
+                ids.len(),
+                count,
+                "each {kind} source occurrence is lowered once"
+            );
             assert!(
-                ids.len() > 1,
-                "recursive lowering must clone the {kind} node"
+                ids.iter()
+                    .all(|id| id.0 >= crate::ast::SYNTHESIZED_NODE_ID_START),
+                "moved {kind} nodes must have fresh replacement identities"
             );
             assert_eq!(
                 ids.iter()
@@ -8626,9 +8951,10 @@ mod tests {
                 }
             });
         }
+        assert_eq!(ids.len(), 1, "the source label value is lowered once");
         assert!(
-            ids.len() > 1,
-            "recursive lowering must clone the label value"
+            ids[0].0 >= crate::ast::SYNTHESIZED_NODE_ID_START,
+            "the moved label value must have a fresh replacement identity"
         );
         assert_eq!(
             ids.iter()

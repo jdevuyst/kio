@@ -13,5 +13,59 @@ fn id[A](x: A) -> A { x }
 //
 fn empty_runs() -> . { () }
 
+/// Function documentation remains attached.
+fn header_paragraph() -> // Return contract.
+. { // Body explanation.
+  // Same body paragraph.
+
+  // Second body paragraph.
+  ()
+}
+
+fn header_without_body_comments() -> // Return contract stays adjacent.
+. { () }
+
+fn empty_call() -> . { last( // Inside the call.
+) }
+
+fn empty_unit() -> . { ( // Inside Unit.
+, // Between empty components.
+, // Before Unit closes.
+) }
+
+fn empty_signature( // First signature group.
+)( // Second signature group.
+x: .) -> . { x }
+
+type Pair[A][B] = .;
+
+fn parameter(x // Before the colon.
+: Pair( // Inside the parameter type.
+., .)) -> . { x }
+
+fn return_order() // Before the arrow.
+-> // Before the return type.
+Pair( // Inside the return type.
+., .) // Before the body.
+{ // Inside the body.
+  ()
+}
+
+fn grouped() -> . {
+  let x = ();
+  ((x // Inner grouping.
+  ) // Outer grouping.
+  ) // Enclosing block.
+}
+
+fn grouped_argument() -> . { id(., (last( // Inner call.
+) // Grouped argument.
+) // Outer call.
+) }
+
+fn computed_callee() -> . { (last // Grouped callee.
+)( // Its empty argument list.
+) }
+
 // Trailing item.
 fn last() -> . { () }

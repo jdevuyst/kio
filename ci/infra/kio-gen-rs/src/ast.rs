@@ -510,6 +510,7 @@ pub struct UserElaboratorSpec {
 /// The fn the generator wraps each program's body in.
 #[derive(Debug, Clone)]
 pub struct Program {
+    pub control_probe: Option<crate::control::ControlProbe>,
     pub fn_def_name: String,
     pub params: Vec<(String, Type)>,
     pub ret: Type,

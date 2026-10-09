@@ -1064,7 +1064,7 @@ fn read_dep_sig_file(
 /// Project a checked-out dependency package's live bridge-reachable
 /// contract surface from its **signatures**, without typechecking function
 /// bodies. The package is parsed and reduced to its signature surface
-/// (function and `rec`-member bodies blanked, surface-only auxiliary
+/// (function and `rec`-member bodies discarded, surface-only auxiliary
 /// declarations dropped — see
 /// [`crate::cmd::check::contract_snapshot_via_lower`]), then lowered by the
 /// running binary's front-end: the full `kio` pipeline when `surface` is
@@ -1100,7 +1100,7 @@ fn live_contract_snapshot(
             located.error.diag().1
         ))
     };
-    // Both binaries consume the *same* body-blanked signature surface and
+    // Both binaries consume the same bodyless declaration surface and
     // read only signatures, so they produce the identical contract. Exactly
     // one branch is live per build (`git_dep` is `cli`-gated, and `cli`
     // always pairs with `surface` or `prime`).

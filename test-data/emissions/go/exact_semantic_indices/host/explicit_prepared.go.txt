@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func explicitPrepared(pkg *p.Package[int, int, string]) {
+	_ = p.Prepared[countIndex](p.PrepareHost_api_Number(pkg, 11))
+}

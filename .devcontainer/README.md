@@ -36,6 +36,70 @@ against a real VS Code Server and asserts the extension lands; it points
 the hook at a `.vsix` it builds via `KIO_DEVCONTAINER_VSIX`, since it has
 no image to read `/opt/kio-extension/` from.
 
+## Published-image acceptance
+
+Release preparation uses
+`ci/infra/devcontainer-acceptance.sh` on a native Linux Docker host.
+This opt-in check pulls an immutable published image, creates a clean
+checkout at the image's source revision, runs its configured lifecycle
+as `vscode`, and tests the installed baked VSIX in a real headless editor.
+It repeats the editor checks after reconnect and after refreshing to an
+explicit compiler commit. Removing the installed extension's executable
+must cause an activation failure; restoring it must restore the editor
+checks. It builds the compiler through the
+lifecycle hooks; it does not build an image or replacement VSIX.
+
+Install the official consumer CLI from the optional mise pins:
+
+```sh
+mise -E optional install --locked 'npm:@devcontainers/cli'
+```
+
+Supply cached official VS Code Server and Linux Electron distributions
+from the same editor commit, a full refresh commit that changes compiler
+inputs, a fresh absolute output directory, and explicit Docker CPU and
+memory limits:
+
+```sh
+sh ci/infra/devcontainer-acceptance.sh \
+  'ghcr.io/jdevuyst/kio-devcontainer@sha256:<published-digest>' \
+  '<full-refresh-commit>' "$SERVER_ARCHIVE" "$EDITOR_DIRECTORY" \
+  "$ACCEPTANCE_OUTPUT" "$ACCEPTANCE_CPUS" "$ACCEPTANCE_MEMORY"
+```
+
+Set `TMPDIR` to an existing temporary directory before running the check.
+The host also needs Docker Buildx, Git, Node, and the extension's locked
+Node dependencies (`npm ci` in `tools/vscode-kio`). The editor directory
+contains `code`, `bin/code`, and `resources/app/product.json`; the server
+archive contains the official server's `bin/code-server` and
+`product.json`. A missing tool, required hook, compiler or installed
+extension is a failure, not a successful skip.
+The host checkout owner must have the published image's `vscode` UID;
+the check verifies this before creation and disables UID-adjustment image
+builds so the tested image remains the published artifact.
+
+The output retains phase logs, image and platform-manifest digests,
+checkout commits, baked and installed payload hashes, editor provenance,
+timings, cgroup resource observations and the final container state.
+The script removes only its labelled container and retains its private
+checkout and receipt for inspection. Cold creation fetches dependencies
+and builds tests in five Rust workspaces, so reserve disk and memory for
+those artifacts before launch. CPU and memory limits are experimental
+inputs, not asserted minimum requirements. A SIGKILL without resource
+evidence is not classified as OOM.
+
+This check covers the native Linux image/lifecycle/installed-extension
+composition. Docker Desktop/macOS, the desktop Remote Containers
+transport, Codespaces orchestration, browser remote UI and other
+architectures need separate integration evidence. Review the retained
+receipt independently before treating it as release acceptance.
+
+The orchestration assertions also have a lightweight local selftest:
+
+```sh
+node ci/infra/devcontainer-acceptance/driver.cjs selftest
+```
+
 ## Two pipelines, one Dockerfile
 
 The dev container feeds two pipelines, but only one of them

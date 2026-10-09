@@ -1,7 +1,5 @@
 import {
   createTypeOnlyExports,
-  liftTypeOnlyExportsCallable,
-  liftTypeOnlyExportsPoly,
   type TypeOnlyExportsCallable,
   type TypeOnlyExportsHost,
   type TypeOnlyExportsPoly,
@@ -50,11 +48,11 @@ void ordinary;
 void poly;
 
 const captured: TypeOnlyExportsPoly<<A>() => TypeOnlyExportsPoly<<B>() => TypeOnlyExportsCallable<{ _0: A; _1: B }, A>>> =
-  liftTypeOnlyExportsPoly({
-    advance: <A>() => liftTypeOnlyExportsPoly({
-      advance: <B>() => liftTypeOnlyExportsCallable((value: { _0: A; _1: B }): A => value._0),
+  {
+    advance: <A>() => ({
+      advance: <B>() => (value: { _0: A; _1: B }): A => value._0,
     }),
-  });
+  };
 const selected = captured.advance<string>().advance<number>();
 const selectedText: string = selected({ _0: "outer", _1: 5 });
 // @ts-expect-error the outer binder remains string after advancing the inner binder.
@@ -62,8 +60,8 @@ selected({ _0: 5, _1: 5 });
 // @ts-expect-error the independently selected inner binder remains number.
 selected({ _0: "outer", _1: "inner" });
 // @ts-expect-error a fixed string stage cannot implement a universally selected identity stage.
-const fixedStage: TypeOnlyExportsPoly<<A>() => TypeOnlyExportsCallable<A, A>> = liftTypeOnlyExportsPoly({ advance: () => liftTypeOnlyExportsCallable((value: string) => value) });
-const unit = liftTypeOnlyExportsCallable((value: null): null => value);
+const fixedStage: TypeOnlyExportsPoly<<A>() => TypeOnlyExportsCallable<A, A>> = { advance: () => (value: string) => value };
+const unit: TypeOnlyExportsCallable<null, null> = (value: null): null => value;
 unit(null);
 // @ts-expect-error first-class Unit retains its explicit semantic domain.
 unit();

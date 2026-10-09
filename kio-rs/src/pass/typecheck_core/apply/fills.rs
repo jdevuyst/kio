@@ -738,6 +738,7 @@ impl<'m> MarkedProjection<'m> {
                         inputs.push(Value::CheckedTerm(crate::normalization::EvalRef::new(
                             crate::normalization::CheckedTerm::new(
                                 crate::ast::Expr::Unit {
+                                    source_trivia: Default::default(),
                                     occurrence: Default::default(),
                                     meta: crate::ast::Meta::new(span),
                                 },
@@ -13688,6 +13689,7 @@ mod tests {
             let argument = Value::CheckedTerm(crate::normalization::EvalRef::new(
                 crate::normalization::CheckedTerm::new(
                     crate::ast::Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: crate::ast::Meta::new(span),
                     },
@@ -15172,6 +15174,7 @@ mod tests {
             ext: (),
         };
         let unit = || Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: meta(),
         };
@@ -15182,6 +15185,7 @@ mod tests {
             meta: meta(),
         };
         let call = |callee, args| Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(callee),
@@ -15313,6 +15317,7 @@ mod tests {
             meta: meta(),
         };
         let bang = Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             form: crate::ast::UserElaboratorCallForm::Ordinary,
             name: "user".to_owned(),
@@ -15878,6 +15883,7 @@ mod tests {
             .expect("projected leaf environment");
         let span = crate::span::Span::new(40, 41);
         let source = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         };

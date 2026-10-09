@@ -50,6 +50,20 @@ When `sccache` is the compiler wrapper, read those per-task CPU rows with one ca
 
 Cargo's worktree-local `target/` cache is the main accelerator for repeated Rust checks in one worktree. `cargo build` and `cargo test` share dependency artifacts at the default `dev` profile, and a populated `target/` lets Cargo skip most local crate rebuilds and link work on reruns.
 
+CI-prepared full and reduced compiler snapshots use package-only `kio-lang`
+opt-level 1 with debug assertions and overflow checks enabled. The shared
+`build_corpus_tool_binary` helper owns this choice; ordinary developer builds,
+Cargo tests, Clippy, dependencies and release profiles are unchanged. Keeping
+the dev output layout reuses each tool's existing persistent target without a
+second dependency tree. A warm target can retain both opt0 and opt1 package
+artifacts, so compiler preparation still needs disk and rebuild accounting.
+
+Account for rebuild time and disk separately for the full and reduced feature
+tuples; neither cost follows from the other or from compiler execution speed.
+The profile firing controls are `schedule-entry-selftest.sh` (both compiler
+keys and admission routes, ordinary-tool negatives) and
+`lsp-executable-snapshot-selftest.sh` (exact full argv and immutable lifetime).
+
 For Rust-heavy editing sessions, keep shared binaries warm during editing with:
 
 ```sh

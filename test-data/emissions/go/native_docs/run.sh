@@ -22,7 +22,9 @@ PY
 
 (
   cd out/go
-  GO111MODULE=off go doc -all -u . >"$scratch/native-docs.txt"
+  GO111MODULE=on GOWORK=off go mod init example.com/kio-native-docs
+  GO111MODULE=on GOWORK=off go mod edit -go=1.26
+  GO111MODULE=on GOWORK=off go doc -all -u . >"$scratch/native-docs.txt"
 )
 
 python3 - "$scratch" <<'PY'
@@ -45,7 +47,7 @@ assert not has_marker("GENERIC-DOC")
 assert not has_marker("EXISTENTIAL-DOC")
 def doc(symbol):
     return subprocess.check_output(["go", "doc", "-u", ".", symbol], cwd="out/go",
-                                   env={**os.environ, "GO111MODULE": "off"}, text=True)
+                                   env={**os.environ, "GO111MODULE": "on", "GOWORK": "off"}, text=True)
 def field_type(owner, field):
     match = re.search(r"(?m)^\s*" + re.escape(field) + r"\s+([A-Za-z0-9_]+)", doc(owner))
     assert match, (owner, field)

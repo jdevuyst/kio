@@ -644,7 +644,8 @@ fn lsp_neutral_blocks_format_reanalyse_and_complete_lexical_binders() {
     for token in tokens["data"]
         .as_array()
         .expect("semantic tokens")
-        .chunks_exact(5)
+        .as_chunks::<5>()
+        .0
     {
         let delta_line = token[0].as_u64().unwrap();
         let delta_start = token[1].as_u64().unwrap();

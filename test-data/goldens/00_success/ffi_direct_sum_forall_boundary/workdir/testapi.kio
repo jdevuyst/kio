@@ -1,0 +1,5 @@
+module testapi;
+
+host type Number role(i32);
+
+host type Text role(str);

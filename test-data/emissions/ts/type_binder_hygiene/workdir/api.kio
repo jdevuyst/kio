@@ -1,0 +1,35 @@
+module api;
+
+host type Token;
+
+host fn use[Demo_callable](value: Demo_callable, callback: . -> .) -> Demo_callable;
+
+host fn use_control[A](value: A, callback: . -> .) -> A;
+
+pub fn callable[Demo_callable](value: Demo_callable) -> Demo_callable {
+  use(value, .(unit: .) { unit })
+}
+
+pub fn control[A](value: A) -> A { use_control(value, .(unit: .) { unit }) }
+
+pub fn nested[Demo_poly](
+  , value: Demo_poly
+  , transform: [Demo_callable] Demo_callable -> Demo_callable
+  ) -> Demo_poly { transform(value) }
+
+pub fn higher[*Demo_type_lambda][Demo_apply](value: Demo_type_lambda(Demo_apply)) -> Demo_type_lambda(Demo_apply) {
+  value
+}
+
+pub newtype Wrap[*G] : G(.) { pub constructor wrap; pub projector unwrap }
+
+pub fn partial[**F][Demo_bind](value: Wrap(F(Demo_bind))) -> Wrap(F(Demo_bind)) { value }
+
+pub newtype Nested[A] : A & ([Demo_callable] Demo_callable -> A) {
+  pub constructor make_nested;
+  pub projector read_nested
+  }
+
+pub fn round[Demo_poly](value: Nested(Demo_poly)) -> Nested(Demo_poly) { value }
+
+pub fn binding[B][Kio_b](value: B, other: Kio_b, token: Token) -> B & Kio_b { (value, other) }

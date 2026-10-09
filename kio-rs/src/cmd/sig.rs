@@ -478,12 +478,13 @@ fn run_one(
 
     // The remaining commands need the typechecked package. The `1x`
     // typecheck cascade short-circuits here, before any sig comparison.
-    let package = match typecheck_package(pkg_dir, cap) {
+    let validated = match typecheck_package(pkg_dir, cap) {
         Ok(p) => p,
         Err(code) => return code,
     };
-    let live = ContractSnapshot::from_package(&package);
-    let recorded = RecordedSurface::from_package(&package);
+    let package = validated.package();
+    let live = ContractSnapshot::from_package(package);
+    let recorded = RecordedSurface::from_package(package);
 
     let plan = match sig::compute_draft(&package_name, existing.as_ref(), &recorded, &live) {
         Ok(plan) => plan,
@@ -2561,7 +2562,7 @@ fn load_sig_file(
 fn typecheck_package(
     pkg_dir: &Path,
     cap: &mut CapturedOutput,
-) -> Result<Package<crate::ast::Prime>, ExitCode> {
+) -> Result<crate::prime::typer::ValidatedPrimePackage, ExitCode> {
     let workspace =
         crate::cmd::check::compile_workspace_at_buffered(pkg_dir, false, false, &mut cap.stderr)?;
     // `skip_ok = false` always materializes the root.

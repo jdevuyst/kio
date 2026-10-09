@@ -615,7 +615,12 @@ fn signature_scope(
     }
 }
 
-fn fn_scope(f: &FnDef<Surface>, offset: u32, ns: Namespace, out: &mut impl CandidateSink) {
+fn fn_scope<PurityField>(
+    f: &FnDef<Surface, PurityField>,
+    offset: u32,
+    ns: Namespace,
+    out: &mut impl CandidateSink,
+) {
     expr_scope(&f.body, offset, ns, out);
     if ns == Namespace::Type {
         type_scope(&f.ret, offset, out);

@@ -753,6 +753,7 @@ fn swift_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trai
     let alias = |slot: &str| env_alias(binding.module, binding.leaf, slot);
     let role = |role| swift_role_ref_type(role, host_types);
     match binding.body {
+        HostFnBodyKind::DirectSumForallEcho { .. } => method(vec![alias("arg0")], alias("ret")),
         HostFnBodyKind::CallStep { i32, .. } => method(
             vec![format!("({}) -> Int32", alias("arg0_cbarg0")), role(i32)],
             role(i32),
@@ -772,12 +773,14 @@ fn swift_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trai
         HostFnBodyKind::InvokeSubstitutedUnitCallback { text } => {
             method(vec![format!("(KioUnit) -> {}", role(text))], role(text))
         }
-        HostFnBodyKind::ReturnedForallUnit => method(Vec::new(), alias("ret")),
+        HostFnBodyKind::ReturnedForallUnit | HostFnBodyKind::ForallStageEffects => {
+            method(Vec::new(), alias("ret"))
+        }
         HostFnBodyKind::ObservePacked { i32 } => method(vec![alias("arg0")], role(i32)),
         HostFnBodyKind::TraceUnit { .. } => method(Vec::new(), "()".to_owned()),
         HostFnBodyKind::StagedUnitCall => TraitMethod {
             name: member,
-            type_params: vec!["KioType_0".to_owned()],
+            type_params: vec!["KioType_0".to_owned(), "KioType_1".to_owned()],
             arg_types: vec!["KioType_0".to_owned()],
             ret_type: "()".to_owned(),
             where_clause: String::new(),
@@ -850,7 +853,9 @@ fn swift_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding
         HostFnBodyKind::Print { string } | HostFnBodyKind::Eprint { string } => {
             m(vec![role(string)], "()".to_owned())
         }
-        HostFnBodyKind::PrintI32 { value } => m(vec![role(value)], "()".to_owned()),
+        HostFnBodyKind::PrintI32 { value } | HostFnBodyKind::InstanceMark { value } => {
+            m(vec![role(value)], "()".to_owned())
+        }
         HostFnBodyKind::Exit { status_i32 } => m(vec![role(status_i32)], "Never".to_owned()),
         HostFnBodyKind::NumericToString { value, string } => m(vec![role(value)], role(string)),
         HostFnBodyKind::BoolToString { bool_, string } => m(vec![role(bool_)], role(string)),
@@ -895,13 +900,14 @@ fn swift_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding
             m(vec![role(string), role(string)], "Any".to_owned())
         }
         HostFnBodyKind::ScalarOf { value, .. } => m(vec![role(value)], "Any".to_owned()),
-        HostFnBodyKind::ScalarAs { scalar: _, .. } => m(vec!["Any".to_owned()], ffi("ret")),
+        HostFnBodyKind::ScalarAs { .. } => m(vec!["Any".to_owned()], ffi("ret")),
         HostFnBodyKind::ScalarIsTrue { bool_, .. } => m(vec!["Any".to_owned()], role(bool_)),
         HostFnBodyKind::MakeToken { .. }
         | HostFnBodyKind::TokenValue { .. }
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -916,6 +922,7 @@ fn swift_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -975,6 +982,20 @@ fn export_newtype_member_alias(module: &str, newtype: &str, member: &str, slot: 
 }
 
 fn render_export_driver_support(contract: protocol::ProtocolContract) -> String {
+    if contract
+        .host_fns
+        .iter()
+        .any(|binding| matches!(binding.body, HostFnBodyKind::ForallStageEffects))
+    {
+        return "struct KioRunnerForallStage: Env_testapi_main__produce_retImplementation {\n\
+                \ttypealias H = StubHost\n\
+                \tfunc specialize<A>(_: A.Type) -> KioUnit {\n\
+                \t\tprint(\"apply\")\n\
+                \t\treturn KioUnit()\n\
+                \t}\n\
+                }\n\n"
+            .to_owned();
+    }
     if contract.execution == ProtocolExecution::Invoke(ExportDriver::HostExistentialRoundtrip) {
         let continuation = export_newtype_member_alias(
             "testapi/types",
@@ -1149,6 +1170,9 @@ fn build_driver(module: &str, host: &HostApi, protocol: RunnerProtocol) -> Strin
     }
 
     out.push_str(&format!("struct StubHost: {handle}Host {{\n"));
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str("let exchangeLabel: String\n");
+    }
     if protocol == RunnerProtocol::HostExistentialRoundtrip {
         out.push_str("let state: KioRunnerExistentialState\n");
     }
@@ -1175,7 +1199,9 @@ fn build_driver(module: &str, host: &HostApi, protocol: RunnerProtocol) -> Strin
     out.push_str("}\n\n");
     out.push_str(&render_export_driver_support(contract));
 
-    if protocol == RunnerProtocol::HostExistentialRoundtrip {
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str(&format!("let pkg = create{handle}(host: StubHost(exchangeLabel: \"first\"))\nlet pkgSecond = create{handle}(host: StubHost(exchangeLabel: \"second\"))\n"));
+    } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         out.push_str(&format!("let state = KioRunnerExistentialState()\nlet pkg = create{handle}(host: StubHost(state: state))\n"));
     } else {
         out.push_str(&format!("let pkg = create{handle}(host: StubHost())\n"));
@@ -1202,7 +1228,9 @@ fn render_main_body(contract: protocol::ProtocolContract) -> String {
             let rendered = render_export_driver(driver, &root_ns, export_root.is_some())
                 .unwrap_or_else(|| unreachable!("non-main Swift export driver has no renderer"));
             match driver {
-                ExportDriver::NewtypeVisibilityFacade => {
+                ExportDriver::NewtypeVisibilityFacade
+                | ExportDriver::OpaqueCompoundRoundtrip
+                | ExportDriver::GenericNominalOpaqueRoundtrip => {
                     let binding = contract
                         .host_types
                         .iter()
@@ -1244,6 +1272,7 @@ fn render_export_driver(
         )
     };
     let api_ns = module("api");
+    let second_api_ns = api_ns.replacen("pkg.", "pkgSecond.", 1);
     let main_ns = module("main");
     let utils_ns = module("utils");
     let types_ns = module("types");
@@ -1311,6 +1340,12 @@ fn render_export_driver(
     );
 
     let body = match driver {
+        ExportDriver::IncomingCallableViews => {
+            "fatalError(\"this runner has no incoming-callable-views driver\")\n".to_owned()
+        }
+        ExportDriver::IncomingCallableStages => {
+            "fatalError(\"this runner has no incoming-callable-stages driver\")\n".to_owned()
+        }
         ExportDriver::RustCallbackAliases => {
             "fatalError(\"rust-callback-aliases tests the Rust public naming contract only\")\n"
                 .to_owned()
@@ -1384,6 +1419,42 @@ print("functor dictionary ok")
 "#
             )
         }
+        ExportDriver::DirectSumForallBoundary => format!(
+            r#"
+struct KioRunnerDirectSumIdentity: Exp_testapi_api__relay_arg0_arm1Implementation {{
+    typealias H = StubHost
+    func specialize<T>(_ type: T.Type) -> (T) -> T {{
+        return {{ value in print("poly call"); return value }}
+    }}
+}}
+let unit = Exp_testapi_api__relay_arg0<StubHost>._0({{ (_unit: KioUnit) -> Int32 in print("unit call"); return 17 }})
+let poly = Exp_testapi_api__relay_arg0<StubHost>._1(Exp_testapi_api__relay_arg0_arm1<StubHost>(KioRunnerDirectSumIdentity()))
+let callback: Exp_testapi_api__throughCallback_arg1<StubHost> = {{ value in print("callback"); return value }}
+for viaCallback in [false, true] {{
+    let left = viaCallback ? {api_ns}.throughCallback(unit, callback) : {api_ns}.relay(unit)
+    print("unit ready")
+    switch left {{
+    case ._0(let step):
+        let number = step(KioUnit())
+        precondition(number == 17)
+        print(number)
+    case ._1: fatalError("Unit arm changed")
+    }}
+    let right = viaCallback ? {api_ns}.throughCallback(poly, callback) : {api_ns}.relay(poly)
+    print("poly ready")
+    switch right {{
+    case ._1(let identity):
+        let integer = identity.specialize(asKioType: Int32.self)(Int32(23))
+        precondition(integer == 23)
+        print(integer)
+        let text = identity.specialize(asKioType: String.self)("identity")
+        precondition(text == "identity")
+        print(text)
+    case ._0: fatalError("polymorphic arm changed")
+    }}
+}}
+"#
+        ),
         ExportDriver::CallableSlotsRoundtrip => format!(
             "var productCalls = 0\n\
              let productStep: (Int32) -> Int32 = {{ value in productCalls += 1; return value + 5 }}\n\
@@ -1414,6 +1485,9 @@ print("functor dictionary ok")
              for value: Double in [1.0000000000000002, -3.125] {{ precondition({main_ns}.echoF64(value) == value) }}\n\
              print(\"scalar payloads ok\")\n"
         ),
+        ExportDriver::SameArtifactExchange => format!(
+            "let apiFirst = {api_ns}\nlet apiSecond = {second_api_ns}\nlet result0 = apiSecond.readHidden(apiFirst.makeHidden(17))\nprecondition(result0 == 17)\nprint(\"direct: \" + String(result0))\nlet result1 = apiFirst.readHidden(apiSecond.makeHidden(29))\nprecondition(result1 == 29)\nprint(\"direct: \" + String(result1))\nlet result2 = apiSecond.readBox(apiFirst.boxed(apiFirst.makeHidden(17)))\nprecondition(result2 == 17)\nprint(\"box: \" + String(result2))\nlet result3 = apiFirst.readBox(apiSecond.boxed(apiSecond.makeHidden(29)))\nprecondition(result3 == 29)\nprint(\"box: \" + String(result3))\nlet result4 = apiSecond.readPacked(apiFirst.makePacked(23))\nprecondition(result4 == 23)\nprint(\"packed: \" + String(result4))\nlet result5 = apiFirst.readPacked(apiSecond.makePacked(31))\nprecondition(result5 == 31)\nprint(\"packed: \" + String(result5))\nlet result6 = apiSecond.runBox(apiFirst.boxedLater(apiFirst.makeHidden(17)))\nprecondition(result6 == 17)\nprint(\"callback: \" + String(result6))\nlet result7 = apiFirst.runBox(apiSecond.boxedLater(apiSecond.makeHidden(29)))\nprecondition(result7 == 29)\nprint(\"callback: \" + String(result7))\n"
+        ),
         ExportDriver::HostOwnedRoundtrip => {
             let integer_box =
                 swift_host_carrier(HostTypeIdentity::new("testapi", "Box"), &["Int32"]);
@@ -1426,6 +1500,50 @@ print("functor dictionary ok")
                  let text: {string_box} = {main_ns}.echoBox({string_box}(\"box-value\"))\n\
                  precondition(text.value(as: String.self) == \"box-value\")\n\
                  print(\"host-owned payloads ok\")\n"
+            )
+        }
+        ExportDriver::OpaqueProductRoundtrip => format!(
+            r#"
+let host = KioHostType_testapi__Box<Product<Int32, Int32>>(Product<Int32, Int32>(_0: 11, _1: 17))
+for value in [{main_ns}.direct(host), {main_ns}.relayed(host)] {{ print(value._0, value._1) }}
+let kio = {main_ns}.make()
+for value in [{main_ns}.direct(kio), {main_ns}.relayed(kio)] {{ print(value._0, value._1) }}
+"#
+        ),
+        ExportDriver::GenericNominalOpaqueRoundtrip => {
+            let wrapped = facade_type_selector("Wrapped");
+            format!(
+                r#"
+let nominal = {main_ns}.{wrapped}.mkWrapped(KioRunnerSelectedI32(37))
+print({main_ns}.read(KioHostType_testapi__Box(nominal)).value)
+let kio = {main_ns}.make(KioRunnerSelectedI32(61))
+print({main_ns}.read(kio).value)
+let native = kio.value(as: Exp_testapi_main__unwrap_arg0<StubHost>.self)
+print({main_ns}.unwrap(native).value)
+"#
+            )
+        }
+        ExportDriver::OpaqueCompoundRoundtrip => {
+            let wrapped = facade_type_selector("Wrapped");
+            format!(
+                r#"
+typealias Number = KioRunnerSelectedI32
+typealias Choice = Sum<Number, KioUnit>
+print({main_ns}.readSum(KioHostType_testapi__Box<Choice>(Choice._0(Number(19)))).value)
+print({main_ns}.readSum(KioHostType_testapi__Box<Choice>(Choice._1(KioUnit()))).value)
+print({main_ns}.readSum({main_ns}.makeSum()).value)
+print({main_ns}.readSum({main_ns}.makeEmpty()).value)
+var calls = 0
+let step: (Number) -> Number = {{ value in calls += 1; print("call"); return Number(value.value + 1) }}
+let host = KioHostType_testapi__Box<(Number) -> Number>(step)
+precondition(calls == 0)
+print({main_ns}.call(host, Number(31)).value)
+print({main_ns}.call(host, Number(43)).value)
+precondition(calls == 2)
+print({main_ns}.call({main_ns}.makeCallable(), Number(47)).value)
+let nominal = {main_ns}.{wrapped}.mkWrapped(Product(_0: Number(41), _1: Number(43)))
+for value in [{main_ns}.readNominal(KioHostType_testapi__Box(nominal)), {main_ns}.readNominal({main_ns}.makeNominal())] {{ print(value._0.value, value._1.value) }}
+"#
             )
         }
         ExportDriver::StructuralRoundtrip => format!(
@@ -1870,10 +1988,12 @@ fn render_swift_body_for_binding(
         return body;
     }
     match binding.body {
+        HostFnBodyKind::InstanceMark { .. } => "print(exchangeLabel + \": \" + String(arg0))".to_owned(),
         HostFnBodyKind::CallStep { .. } => {
             let payload = swift_param_type_name(&m.arg_types[0]).unwrap_or_default();
             format!("return arg0({payload}(_0: arg1, _1: Product(_0: \"compound-callback\", _1: true)))")
         }
+        HostFnBodyKind::DirectSumForallEcho { .. } => "print(\"echo\"); return arg0".to_owned(),
         HostFnBodyKind::MakePairCallback { .. } => "return arg0(arg1)._0".to_owned(),
         HostFnBodyKind::MakeStep { .. } => {
             "return { (n: Int32) -> Int32 in n + arg0 }".to_owned()
@@ -1906,6 +2026,9 @@ fn render_swift_body_for_binding(
         }
         HostFnBodyKind::TraceUnit { text } => {
             format!("print({text:?})")
+        }
+        HostFnBodyKind::ForallStageEffects => {
+            format!("print(\"create\")\nreturn {}(KioRunnerForallStage())", m.ret_type)
         }
         HostFnBodyKind::StagedUnitCall => {
             "print(\"staged Unit host call\")".to_owned()
@@ -1948,6 +2071,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         },
         HostFnBodyKind::BoolToString { .. } => CanonicalKind::BoolToString,
         HostFnBodyKind::PrintI32 { .. } => CanonicalKind::PrintI32,
+        HostFnBodyKind::InstanceMark { .. } => CanonicalKind::Custom,
         HostFnBodyKind::StringToInt { .. } => CanonicalKind::StringToInt,
         HostFnBodyKind::Arithmetic { operation, number } => CanonicalKind::Arith {
             op: operation.to_owned(),
@@ -1989,6 +2113,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -2003,6 +2128,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -2647,7 +2773,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_unit_host_method_keeps_its_exact_generic_slot() {
+    fn staged_unit_host_method_keeps_its_generic_slots_and_phantom_selector() {
         let protocol = RunnerProtocol::HostStagedUnitCall;
         let contract = protocol.contract();
         let binding = contract
@@ -2657,17 +2783,17 @@ mod tests {
             .expect("staged-Unit host binding");
         let method = swift_method(binding, contract.host_types);
 
-        assert_eq!(method.type_params, ["KioType_0"]);
+        assert_eq!(method.type_params, ["KioType_0", "KioType_1"]);
         assert_eq!(method.arg_types, ["KioType_0"]);
         assert_eq!(method.ret_type, "()");
         assert_eq!(
             render_method_sig(&method),
-            "testapi_main__staged<KioType_0>(_ arg0: KioType_0)"
+            "testapi_main__staged<KioType_0, KioType_1>(_ arg0: KioType_0, asKioType1 _: KioType_1.Type)"
         );
 
         let driver = build_driver("Demo", &swift_host_api_for_protocol(protocol), protocol);
         assert!(
-            driver.contains("func testapi_main__staged<KioType_0>(_ arg0: KioType_0)"),
+            driver.contains("func testapi_main__staged<KioType_0, KioType_1>(_ arg0: KioType_0, asKioType1 _: KioType_1.Type)"),
             "{driver}"
         );
         assert!(

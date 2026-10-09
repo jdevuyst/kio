@@ -48,6 +48,7 @@ where
         crate::ast::Expr::Call {
             callee, args, ext, ..
         } => crate::ast::Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(reanchor_elaborator_expr(callee, span)),
@@ -101,6 +102,7 @@ where
             meta: crate::ast::Meta::new(node_span),
         },
         crate::ast::Expr::Unit { .. } => crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: crate::ast::Meta::new(node_span),
         },
@@ -243,6 +245,7 @@ mod tests {
             )]),
             ret_ty: None,
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: crate::ast::Meta::new(Span::new(0, 0)),
             }),

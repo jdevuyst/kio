@@ -1,0 +1,21 @@
+signature names v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        host type Gone;
+        host fn archived(value: Gone) -> Gone
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      api.Gone;
+      api.archived
+    }
+  }
+}

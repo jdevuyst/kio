@@ -81,10 +81,12 @@ interface, package handle, namespaces, and factory. The host selects those
 types explicitly; two declarations do not collapse merely because both use the
 same Kio role or the same underlying Go representation.
 
-A free function-local Kio type variable or existential position surfaces as
-`any`. A parameterized host declaration instead uses its own generated
-`KioHostType_...[...]` carrier, preserving both the declaration and its exact
-type arguments while the erased package body continues to store an `any`.
+For generic calls, `Prepared[I]` carries a value at an exact Kio type.
+The generated `Index_...` aliases name declarations, and `IndexExp_...` /
+`IndexEnv_...` aliases name types at public argument and result positions.
+Two declarations keep different indices even when you select the same Go
+type for both. A parameterized host declaration uses its own generated
+`KioHostType_...[...]` carrier with those indices as its type arguments.
 
 ## Loading the package
 
@@ -168,13 +170,27 @@ interface ever drifts from what you implement, your host fails to compile; the
 interface is the contract.
 
 For `host type Box[A]` in module `api`, generated host signatures use the
-declaration-owned `KioHostType_api__Box[A]` carrier. Host integration code may wrap
+declaration-owned `KioHostType_api__Box[I]` carrier, where `I` is the exact
+index for the selected Kio argument. Host integration code may wrap
 and unwrap the erased runtime payload through the carrier's explicitly unsafe
 `UnsafeKioHostType_api__BoxFromNative` and `UnsafeNative` operations; ordinary host
 methods retain the exact carrier application in their signatures. For example,
-`pkg.UnsafeKioHostType_api__BoxFromNative[int32](value)` wraps a native value
-for that declaration, and `box.UnsafeNative()` retrieves it. These helpers do
+`greeter.UnsafeKioHostType_api__BoxFromNative[greeter.Index_api__Number[int]](storage)`
+wraps a native host container for that declaration, and
+`box.UnsafeNative()` retrieves it. Store
+Kio payloads inside that container as `Value`, using the typed helpers below.
+These unsafe operations do
 not check that erased native storage agrees with its selected Go type index.
+Keep that storage consistent with the selected type arguments, including when
+a generic host function returns its payload. See the
+[host-type contract](../../specs/backends/go.md#atomic-types).
+
+A generic host-interface method has no Go method-local type parameters.
+Its unselected payload argument is `Value`; an application such as `Box[A]`
+uses `KioHostType_api__Box[KioErasedIndex_S]` in that method's signature.
+The selected application you pass to a generic export still uses its exact
+index. Follow the generated method signature and keep erased storage
+consistent with the Kio type promised by that operation.
 
 When a later package signature removes a `host fn`, the generated interface
 simply drops that method. Your host may leave its extra method in place because
@@ -218,16 +234,28 @@ Every nested module instead uses
 `KioType_<exact-component>`. Thus `foo_bar` as a root module is `FooBar`,
 the same source component nested under another module is
 `KioModule_fooBar`, and newtype `Foo_bar` is `KioType_FooBar`. Function
-and newtype-member method names keep the natural/exact component rule. An
+and non-generic newtype-member method names keep the natural/exact component
+rule. An
 export `main` from module `greeter/main` is therefore reached as
 `pkg.Greeter.KioModule_main.Main()`. The host value is held for the package's
 lifetime.
 
 ## Structural values at the boundary
 
+Keep shared tuple fields and nested Kio data unchanged while a retained
+value or closure can still use them, even after a call returns. Construct a
+changed tuple instead. A host-managed mutable `Box` may change through its
+declared `get` and `set` host functions while the tuple keeps the same box.
+See [shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
+Keep values consistent with their declared types, including the payloads of
+unsafe erased storage. Go's static types and required assertions do not promise
+an early check of every stored value. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types).
+
 When a host fn or an exported fn takes or returns a structural value,
 use its stable `Env_...` or `Exp_...` alias from `ffi.go`. Compound values,
-`any`, `Unit`, and functions have aliases at every public slot. A direct
+`Value`, `Unit`, and functions have aliases at every public slot. A direct
 nullary host binding uses the package-root type parameter itself because Go
 does not permit a generic alias whose right-hand side is only that parameter.
 
@@ -249,7 +277,26 @@ call; a function returned by that call remains a separate callable value.
 A callback written as `(A & B) -> R` takes one product argument. A callback
 written as `. -> R` is a nullary Go `func() R`. A generic
 one-argument callback such as `A -> R` keeps that argument when `A` is later
-set to Unit, so its Go type is `func(Unit) R`.
+set to Unit. In a selected generic view, pass its exact prepared Unit value.
+
+A polymorphic value `[A] R` has a generated `TypeStage` alias. Select its
+type with `Select<slot-name>[ChosenIndex](stage)`, then use the returned
+function or value. Each selection runs that stage once; repeated calls to a
+returned function reuse the selection. Selecting the original stage again
+runs it again. Its `Invoke()` method runs one stage using its abstract result
+view. Storing, preparing, transporting, or ignoring a stage runs nothing.
+Nested type binders in the selected view require one selection each. After
+`Invoke()`, later binders use ordinary nullary functions in the abstract
+view; call each once to advance to its result.
+
+The selection helper takes the stage alone. It keeps the host conversion
+context already associated with that view. If you request a view through
+another compatible package instance, that view uses the other instance's
+adapters; the Kio callback still retains its original captures and host
+bindings. To supply a Go-authored stage, use its generated
+`New<slot-name>Stage(host, func() R)` helper. The function waits until
+selection or invocation to run. When you pass it into another instance,
+the receiving instance supplies its argument and result conversions.
 
 For example, for illustrative host-function return aliases:
 
@@ -279,8 +326,9 @@ case greeter.Env_Api__choice_ret_0:
 Nested aliases follow the value you are navigating: product field `N` adds
 `_fieldN`, a sum arm payload adds `_N_value`, and a callback adds `_cbargN` or
 `_cbret`. A nested sum gets its own indexed case aliases and `New...`
-constructors at that derived prefix. Polymorphic type binders add no alias
-suffix.
+constructors at that derived prefix. A polymorphic stage's abstract result adds
+`_result`; its selected view adds `_selected`. A host carrier's static type
+argument adds `_typeargN`.
 
 Generic shell names depend on structural keys, not concrete payload types, and
 do not use content hashes or registry-order suffixes. Stable site aliases are
@@ -291,10 +339,76 @@ member boundaries distinct: `A_b.c` in module `api` uses
 `Exp_KioItem_api__AB__c_<slot>`, while `A.b_c` uses the readable
 `Exp_Api__A_bC_<slot>`.
 
+### Passing values through generic slots and host containers
+
+At a slot with an available exact index, use `Prepare<slot-name>` to pass a
+native value through an exact generic slot, and `Unprepare<slot-name>` to
+obtain its native view again. For example,
+`greeter.PrepareExp_Api__pair_ret(pkg, pair)` returns a prepared value whose
+index is `IndexExp_Api__pair_ret`. A nullary host declaration has its own
+`greeter.PrepareHost_api_Number(pkg, number)` helper; this keeps `Number`
+distinct from another declaration that also uses Go `int`. For parameterized host
+declarations, use the free helper, such as
+`greeter.PrepareHost_api_Box(pkg, box)`.
+All slot and host-declaration `Prepare...` / `Unprepare...` helpers are free
+functions with the package handle first. Go normally infers their type parameters from the
+package and the typed value.
+
+The input is an ordinary typed product; its fields need no manual casts or
+conversion tags. The same operations cover sums, callbacks, and public
+nominal carriers. Direct concrete calls still use their native types.
+
+A generic export or public newtype member uses a free `CallExp_...`
+function, because Go methods cannot add type parameters. Pass the module
+namespace or newtype handle first, followed by the value arguments. For
+example, `greeter.CallExp_Api__Box_make(pkg.Api.KioType_Box,
+greeter.PrepareHost_api_Number(pkg, number))` selects the payload's exact type
+from the prepared argument. When inference needs help, give the selected index
+first in the generic argument list. Package host selections follow and
+are normally inferred from the namespace.
+
+For erased storage, `prepared.Erase()` returns a `Value`. The generated
+`Value<slot-name>` and `Native<slot-name>` helpers also move between an exact
+native view and erased storage, for example
+`greeter.ValueExp_Api__pair_ret(pkg, pair)` and
+`greeter.NativeExp_Api__pair_ret(pkg, value)`. All slot and host-declaration
+`Value...`, `Native...`, `Prepare...`, and `Unprepare...` helpers are free
+functions taking the package first. Their native host selections come before
+any captured type indices in the type parameter list. These are normally inferred from
+the package and typed value. A generic `Native<slot-name>` recovery may
+require explicit selected indices: the erased `Value` argument cannot supply
+them for Go inference. Erased storage does not establish
+a new exact type: keep its contents consistent with the view you request.
+
+When a host owns `Box[T]`, it may choose native `Box[Value]` storage. Prepare
+the payload before storing it; the declared `box_get` operation returns the
+stored `Value` unchanged. Use a typed native view only after that extraction.
+The generated package does not look inside your box. Keep the public carrier's
+type index consistent with the stored Kio value.
+
+Preparation runs no role adapters or callbacks. The consuming package uses
+its own adapters when the value enters Kio; a native view uses the instance
+on which you request it. A callback already converted by another compatible
+instance keeps its original captures. Private nominal payloads remain private
+through `Value`, too.
+
+Passing a prepared native view to a generic identity function still enters
+Kio and performs that view's requested conversion. Relaying an already
+converted `Value` or an `Atom` performs no conversion; passing a host box
+does not convert or inspect its contents.
+
+For an otherwise abstract value chosen solely by the host, use
+`greeter.PrepareAtom("text")`, which has index `greeter.AtomIndex[string]`.
+For erased atom storage, use `greeter.Atom("text")` and
+`greeter.NativeAtom[string](value)`. This is opaque
+native storage, not a way to encode a declared Kio product or nominal.
+Use the exact typed slot helpers for those. A nil native interface is a valid atom
+and is distinct from Unit.
+
 ## Newtypes
 
 Every public newtype in a bridged module has its own handle under its module namespace, even
-when that handle has no methods. The methods on it match the members the
+when that handle has no methods. Its public operations match the members the
 package made public:
 
 - With no public constructor or projector, values use an opaque Go type.
@@ -306,22 +420,28 @@ package made public:
   representation. Its ordinary constructor and projector use the payload type
   directly.
 
-The opaque and one-member forms use a concrete, non-generic
+The opaque and one-member forms use a declaration-owned
 `KioNewtype_V1_...` carrier whose name encodes the complete module-and-type
-identity; their storage stays private. Their public methods retain exact host
-bindings and declaration-owned host-type applications. A free method-local
-polymorphic position remains `any`. An
+identity; their storage stays private. Generic declarations carry their exact
+type indices as carrier arguments. Their public operations retain exact host
+bindings and declaration-owned host-type applications. A selected generic
+position uses `Prepared[I]`. An
 existential projector accepts a continuation instead of returning its payload
 directly. Canonical Unit contributes no continuation argument; every other
 payload, including a product, contributes one. This allows the host to use the hidden value without returning
-its hidden type. A recursive both-member newtype uses Go's erased `any` boundary
-representation unless an opaque or one-member carrier cuts the boundary
-cycle first.
+its hidden type. Known declaration arguments keep their exact prepared types
+inside that continuation; hidden existential arguments and its result use
+`Value`. Follow its generated callback signature when supplying the
+continuation. A recursive both-member newtype also uses a declaration-owned
+carrier with exact type indices. Construct and inspect it through its public
+members, using `CallExp_...` for generic members. An opaque or one-member
+carrier inside a transparent newtype stays sealed.
 
 Same-named newtypes in different modules therefore remain different Go types.
 When an enclosing newtype contains such a carrier, it stays a single boundary
 value rather than exposing its hidden payload. Normal host code reaches it
-through the newtype handle's methods and the stable `Exp_...` slot aliases.
+through the newtype handle's public operations and the stable `Exp_...`
+slot aliases.
 
 ## Worked example
 

@@ -512,7 +512,7 @@ where
 /// - **`Forall`** — the kind of its body, computed with the binder in
 ///   lexical scope.
 ///
-/// Phase-polymorphic over [`TyperPhase`]; consults `tcx` for the
+/// Phase-polymorphic over [`DeclarationPhase`]; consults `tcx` for the
 /// in-scope binder kinds and the newtype table.
 pub(crate) trait InferPolicy {
     /// Observe one written source placeholder with the kind required by its
@@ -578,7 +578,7 @@ pub fn compute_kind<P>(
     tcx: &super::TypeCtx<'_, '_, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let mut infer = IgnoreInfer;
@@ -612,7 +612,7 @@ pub(crate) fn compute_checked_kind<P>(
     tcx: &super::TypeCtx<'_, '_, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let mut infer = IgnoreInfer;
@@ -640,7 +640,7 @@ pub(crate) fn check_annotation_kinds_with_policy_and_binders<P>(
     infer: &mut dyn InferPolicy,
 ) -> Result<(), Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let required = crate::ast::Kind::Star;
@@ -720,7 +720,7 @@ pub(crate) fn resolve_nominal_head_kind<P>(
     identity_canonical: bool,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     resolve_nominal_head_kind_with_provider(
@@ -749,7 +749,7 @@ fn resolve_nominal_head_kind_with_provider<'m, P>(
     validate_source_path: bool,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     use crate::ast::Kind;
 
@@ -899,7 +899,7 @@ where
 
 struct KindBinderView<'a, 'b, 'm, 'e, P>
 where
-    P: super::TyperPhase,
+    P: super::DeclarationPhase,
 {
     tcx: &'a super::TypeCtx<'m, 'e, P>,
     embedded: &'a [(&'a str, crate::ast::Kind)],
@@ -911,7 +911,7 @@ use super::kind_scheme::CompleteSchemeProofs;
 
 impl<P> super::aliases::AliasBinderLookup for KindBinderView<'_, '_, '_, '_, P>
 where
-    P: super::TyperPhase,
+    P: super::DeclarationPhase,
 {
     fn contains_alias_binder(&self, name: &str) -> bool {
         self.embedded.iter().rev().any(|(bound, _)| *bound == name)
@@ -944,7 +944,7 @@ fn complete_function_scheme_summary<'a, 'm, 'e, P>(
 ) -> super::kind_scheme::CompleteScheme
 where
     'm: 'a,
-    P: super::TyperPhase
+    P: super::DeclarationPhase
         + crate::pass::resolve::ExportContractPhase
         + crate::ast::Phase<TypeLabelSugar = crate::ast::Never>
         + Clone,
@@ -998,7 +998,7 @@ fn require_admissible_forall_binder<'a, 'm, P>(
 ) -> Result<(), Error>
 where
     'm: 'a,
-    P: super::TyperPhase
+    P: super::DeclarationPhase
         + crate::pass::resolve::ExportContractPhase
         + crate::ast::Phase<TypeLabelSugar = crate::ast::Never>
         + Clone,
@@ -1061,7 +1061,7 @@ fn compute_kind_with_embedded_binders<'a, 'm, P>(
 ) -> Result<crate::ast::Kind, Error>
 where
     'm: 'a,
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     use crate::ast::Kind;
     match ty {
@@ -1315,7 +1315,7 @@ pub fn check_kinds_in_type<'m, P>(
     tcx: &mut super::TypeCtx<'m, '_, P>,
 ) -> Result<(), Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     check_kinds_in_type_with_binder_recorder(ty, tcx, record_type_binder::<P>)
 }
@@ -1326,7 +1326,7 @@ pub(crate) fn check_kinds_in_type_with_provider<'m, P>(
     provider: &NominalProvider<'m, P>,
 ) -> Result<(), Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let kind = compute_checked_kind_with_provider(ty, ty.span(), tcx, provider)?;
     require_star_kind_for_value_type(kind, ty.span())?;
@@ -1347,7 +1347,7 @@ pub(crate) fn check_callable_spine_kinds<'m, P>(
     tcx: &mut super::TypeCtx<'m, '_, P>,
 ) -> Result<(), Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     match ty {
         crate::ast::Type::Forall { param, body, .. } => {
@@ -1377,7 +1377,7 @@ pub(crate) fn check_kind_tree_with_provider<'m, P>(
     provider: &NominalProvider<'m, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let kind = compute_checked_kind_with_provider(ty, ty.span(), tcx, provider)?;
     let mut recorder = record_type_binder::<P>;
@@ -1391,11 +1391,11 @@ fn record_type_binder<'m, 'e, P>(
     record_kind: TypeBinderRecordKind,
     tcx: &mut super::TypeCtx<'m, 'e, P>,
 ) where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     match record_kind {
         TypeBinderRecordKind::Reference => {
-            <P::Typer as super::Typer<P>>::record_binder_at(
+            <P::HeaderRecording as super::HeaderRecording<P>>::record_binder_at(
                 span,
                 super::ResolvedBinderKind::TypeParam,
                 name,
@@ -1405,7 +1405,7 @@ fn record_type_binder<'m, 'e, P>(
             );
         }
         TypeBinderRecordKind::Declaration => {
-            <P::Typer as super::Typer<P>>::record_binder_decl_at(
+            <P::HeaderRecording as super::HeaderRecording<P>>::record_binder_decl_at(
                 span,
                 super::ResolvedBinderKind::TypeParam,
                 name,
@@ -1423,7 +1423,7 @@ pub(crate) fn publish_validated_type_binders<'m, P>(
     ty: &crate::ast::Type<P>,
     tcx: &mut super::TypeCtx<'m, '_, P>,
 ) where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let mut recorder = record_type_binder::<P>;
@@ -1463,7 +1463,7 @@ pub(crate) fn check_kinds_in_type_with_binder_recorder<'m, 'e, P>(
     mut record_binder: impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) -> Result<(), Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let kind = check_kind_tree_with_binder_recorder(ty, tcx, &mut record_binder)?;
     require_star_kind_for_value_type(kind, ty.span())?;
@@ -1476,7 +1476,7 @@ fn check_kind_tree_with_binder_recorder<'m, 'e, P>(
     mut record_binder: impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let provider = NominalProvider::new(Some(tcx.env.module), tcx.env.package);
     let kind = compute_checked_kind_with_provider(ty, ty.span(), tcx, &provider)?;
@@ -1498,9 +1498,10 @@ fn publish_checked_type_binders<'t, 'm, 'e, P>(
     provider: &NominalProvider<'m, P>,
     record_binder: &mut impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
-    let nominal = if <P::Typer as super::Typer<P>>::RECORD_NOMINAL_TYPE_BINDERS {
+    let nominal = if <P::HeaderRecording as super::HeaderRecording<P>>::RECORD_NOMINAL_TYPE_BINDERS
+    {
         let mut records = Vec::new();
         collect_nominal_type_binders(ty, tcx, provider, &mut Vec::new(), &mut records);
         records
@@ -1509,7 +1510,7 @@ fn publish_checked_type_binders<'t, 'm, 'e, P>(
     };
     publish_type_binders_inner(ty, tcx, record_binder);
     for record in nominal {
-        <P::Typer as super::Typer<P>>::record_nominal_type_binder_at(
+        <P::HeaderRecording as super::HeaderRecording<P>>::record_nominal_type_binder_at(
             record.span,
             record.kind,
             &record.module_path,
@@ -1526,7 +1527,7 @@ fn collect_nominal_type_binders<'a, P>(
     bound: &mut Vec<&'a str>,
     out: &mut Vec<NominalTypeBinderRecord>,
 ) where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     match ty {
         crate::ast::Type::Unit { .. }
@@ -1612,7 +1613,7 @@ fn compute_checked_kind_with_provider<'m, P>(
     provider: &NominalProvider<'m, P>,
 ) -> Result<crate::ast::Kind, Error>
 where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let mut infer = IgnoreInfer;
     compute_kind_with_embedded_binders(
@@ -1637,7 +1638,7 @@ fn publish_type_binders_inner<'t, 'm, 'e, P>(
     tcx: &mut super::TypeCtx<'m, 'e, P>,
     record_binder: &mut impl FnMut(Span, &str, TypeBinderRecordKind, &mut super::TypeCtx<'m, 'e, P>),
 ) where
-    P: super::TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     match ty {
         crate::ast::Type::Unit { .. }

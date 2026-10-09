@@ -10,7 +10,9 @@ fn prime_module(source: &str) -> Module<Prime> {
         .expect("source uses Prime grammar")
 }
 
-fn prime_check(sources: &[(&str, &str)]) -> Result<Package<Prime>, LocatedError> {
+fn prime_check(
+    sources: &[(&str, &str)],
+) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
     let modules = sources
         .iter()
         .map(|(file, source)| (PathBuf::from(file), prime_module(source)))
@@ -22,7 +24,9 @@ fn prime_check(sources: &[(&str, &str)]) -> Result<Package<Prime>, LocatedError>
 }
 
 #[cfg(feature = "surface")]
-fn full_check(sources: &[(&str, &str)]) -> Result<Package<Prime>, LocatedError> {
+fn full_check(
+    sources: &[(&str, &str)],
+) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
     use crate::pipeline::Pipeline;
     let parsed = sources
         .iter()

@@ -464,6 +464,7 @@ pub fn value_type_with_locals<P: ReconProfile>(
 ) -> Option<Type<Routed>> {
     match expr {
         Expr::Unit {
+            source_trivia: _,
             occurrence: _,
             meta,
         } => Some(Type::Unit { meta: meta.clone() }),
@@ -1050,6 +1051,7 @@ mod tests {
             meta: Meta::new(span),
         };
         let first = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         };
@@ -1092,6 +1094,7 @@ mod tests {
             },
         };
         let expr = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         };
@@ -1192,6 +1195,7 @@ mod tests {
             sig,
             ret_ty: Some(a_ty),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             }),

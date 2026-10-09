@@ -189,6 +189,26 @@ pub(crate) struct FullModuleTypecheck {
 impl Pipeline for FullPipeline {
     type LoweredPhase = Lowered;
     type LoweringContext = FullLoweringContext;
+    type ContractPhase = crate::pass::contract::Contract<Lowered>;
+
+    fn lower_contract_module(
+        module: Module<Surface>,
+    ) -> Result<Module<Self::ContractPhase>, crate::error::Error> {
+        crate::pass::contract::lower_module(
+            module,
+            |sig, ret| {
+                let (sig, ret) = crate::pass::desugar::lower_contract_signature(sig, ret)?;
+                label_elab::lower_contract_signature(sig, ret)
+            },
+            |declaration| {
+                let mut lowered = Vec::new();
+                for declaration in crate::pass::desugar::lower_contract_declaration(declaration)? {
+                    lowered.extend(label_elab::lower_contract_declaration(declaration)?);
+                }
+                Ok(lowered)
+            },
+        )
+    }
 
     const CACHE_TAG: &'static str = "prime-validated-alpha.";
 
@@ -336,7 +356,9 @@ impl Pipeline for FullPipeline {
     /// Returns the `Package<Prime>` produced by substituting recorded
     /// elaborations and validating the result with the standalone
     /// Kio' typer before any backend consumes it.
-    fn typecheck(package: &Package<Lowered>) -> Result<Package<Prime>, LocatedError> {
+    fn typecheck(
+        package: &Package<Lowered>,
+    ) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
         typecheck_full::check_package(package)
     }
 
@@ -501,7 +523,9 @@ pub(crate) fn typecheck_module_collect_elaborations_with_typecheck_scope(
     typecheck_scope: std::sync::Arc<crate::pass::typecheck_core::PackageTypecheckScope<Lowered>>,
 ) -> Result<FullModuleTypecheck, Vec<LocatedError>> {
     let mut elaborations =
-        <Lowered as crate::pass::typecheck_core::TyperPhase>::new_elaborations(&typecheck_scope);
+        <Lowered as crate::pass::typecheck_core::DeclarationPhase>::new_elaborations(
+            &typecheck_scope,
+        );
     if let Err(errors) =
         crate::pass::typecheck_core::check_module_in_package_with_typecheck_scope_collect_errors(
             &entry.module,
@@ -638,9 +662,8 @@ mod tests {
         let emitted = |lowered| {
             let package = Package::build(Path::new(""), lowered, None).unwrap();
             let prime = FullPipeline::typecheck(&package).unwrap();
-            ["origin", "provider", "consumer"].map(|name| {
-                crate::backends::kio_prime::emit_module(&prime.module(name).unwrap().module)
-            })
+            ["origin", "provider", "consumer"]
+                .map(|name| crate::backends::kio_prime::emit_module(prime.module(name).unwrap()))
         };
         assert_eq!(emitted(contextual), emitted(whole));
     }

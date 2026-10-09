@@ -44,18 +44,20 @@ when it cannot naturally demonstrate the fact, a facade-appropriate
 The HKT axis splits into two distinct cells that must not be conflated — this is the load-bearing distinction the audit exists to keep honest:
 
 - **HKT-internal** — the dictionary / higher-kinded carrier is constructed and consumed *within* package code (a `do`-block, a transformer stack, a `derive!`-built instance threaded as a `fn` value). It never crosses the FFI as a typed host shape. Per `ai/topics/emit.md` § Runtime model, this is what every family realizes today (the erased-static backends — Go, Rust, Swift — ride the carrier on the universal erased rep with no carrier-walk, the worked 3-layer transformer stack included; Haskell threads the rank-N field directly).
-- **HKT-boundary** — a `host fn` whose **parameter or return type is itself a Functor/Monad dictionary** (or a higher-kinded carrier as a typed boundary shape), so the dictionary value crosses the host boundary. **The spec does not require this** (`specs/backends/README.md` § Higher-kinded types is explicit: the dictionary is "an ordinary value Kio passes as a `fn` parameter — never a host typeclass instance — on every backend"). It is therefore *admissible but not mandated* — and it is runtime-covered: `ffi_host_functor_dict_roundtrip` (protocol `host-functor-dict-roundtrip`) crosses a `Functor[*F]` dictionary as both the parameter and the return of `round_functor`, on all shipping backends. Whether to exercise a given HKT-boundary shape is a coverage decision, not a conformance one — but an *uncovered* one is still exactly the "undetected, not unsupported" condition, and the missing golden is the bug to write (§ 3 fail condition, with the § 5 caveat for genuinely-not-mandated shapes).
+- **HKT-boundary** — a host-boundary signature whose **parameter or return type is itself a Functor/Monad dictionary** (or a higher-kinded carrier as a typed boundary shape), so the dictionary value crosses the host boundary. These ordinary values are not host typeclass instances, but that distinction grants no exemption for admitted signatures. `ffi_host_functor_dict_roundtrip` (protocol `host-functor-dict-roundtrip`) exercises a `Functor[*F]` dictionary as both parameter and return of `round_functor`; inspect the actual legs and owners under § 2. An uncovered admitted HKT-boundary shape is a coverage finding under the same completeness rule as every other shape.
 
 ## 2. Enumerate the backend × direction columns
 
 The columns are `(backend × direction)`:
 
 - **Backends** — the shipping backend list from `specs/backends/README.md` § Backend pages. Read it at run time; do not hardcode. Record each backend independently. Group rows only after applicability, result, and evidence agree; family membership alone never discharges a cell or an impossibility claim.
-- **Directions** — the two host-boundary directions the FFI contract distinguishes (`specs/backends/README.md` § 8 Host-trait descriptor; `specs/package.md` § The bridge block):
-  - **host→package (env)** — a `host fn` the package *calls*; the shape crosses as a host-fn parameter or return.
-  - **package→host (export)** — a `pub` item the host *calls*; the shape crosses as an export's parameter or return.
+- **Call kinds** — retain env/export as headline columns (`specs/backends/README.md` § 8 Host-trait descriptor; `specs/package.md` § The bridge block), but they name the call, not the value's conversion direction:
+  - **env** — Kio calls a `host fn`: arguments move Kio→host; results move host→Kio.
+  - **export** — the host calls a `pub` item: arguments move host→Kio; results move Kio→host.
 
-A shape's coverage is per `(shape, backend, direction)`. Many shapes have a natural home in one direction (rank-N value params and host-owned generic types are env-side; exported polymorphic functions are export-side), but products / sums / newtypes / closures cross **both** ways and need both cells covered.
+A shape's coverage is per `(shape, backend, call kind)` with explicit applicable argument/result legs. An argument pass never automatically proves its result leg. Record each leg's semantic conversion owner, origin and actual consuming sink. Distinguish host-created from Kio-created values, concrete recovery through generics/opaque storage, direct/helper use and later callback invocation where they exercise distinct applicable behavior, following [`emit.md` § Conversion placement and cost](../../topics/emit.md#conversion-placement-and-cost). An unchanged echo is transport evidence, not evidence of concrete recovery or computation.
+
+Require independent witnesses for distinct applicable owners or behaviors, not a Cartesian product of every shape and context. Reuse one witness for equivalent shared-owner paths with an explicit equivalence justification; record each backend's applicability and realization independently. A headline cell is green only after every applicable leg/owner is discharged. Mark a leg not applicable only for a genuinely meaningless occurrence or an explicit spec exclusion, citing why; absence of a separately enumerated example is not an exclusion. Below, `direction` in matrix coordinates means this annotated call-kind column.
 
 ## 3. Define the per-cell check and the fail condition
 
@@ -65,7 +67,7 @@ For each `(shape, backend, direction)` cell, the cell is **green** iff it is run
 
 - The golden's `build { ... }` block lists that backend, **and**
 - the case is driven by a protocol that *runs the emitted artifact* — `empty-main`, another main protocol, or a roundtrip protocol that calls an export (per `ci/infra/kio-test-runner-rs/README.md`). It is **not** `construct-only` and **not** a `kio check` / build-only golden (e.g. the `40_build_error/` and `14_type_error/` buckets, or a `00_success` golden with no runtime `run.args`/`run.sh` driver). Construct-only proves the *shape compiles*; it does not prove the *value crosses at runtime*.
-- The protocol's env (host→package) or export-driver (package→host) actually moves the shape across the boundary. A roundtrip protocol whose driver builds the shape, hands it across, and reads it back is the gold standard; a tier whose canonical env contains the shape (e.g. `loop`'s `(S | R)` step crossing a sum, `read_ascii_line` / `array_pop_back` returning `T | .`, `array_*` over `Array[T]`) also counts.
+- The protocol actually exercises the claimed leg and consuming sink under § 2. A roundtrip counts only for its demonstrated transport/conversion/consumption; a canonical env merely containing a shape does not prove its invocation. Empty-host `main` execution can prove internal witnesses but not an arbitrary non-Unit host-boundary crossing.
 - An emission case does not count, even when its fixed host compiles, links, loads, or calls the artifact. Emissions answer whether the generated public interface is independently usable or whether a durable filesystem fact holds; they do not provide cross-implementation language/runtime semantics and cannot turn build-only or absent runtime evidence green.
 
 **Justified impossibility (`I`)** — a non-green cell may be classified as a concrete known caveat only when the host language genuinely cannot express it and the impossibility is stated in matching top banners in `specs/backends/<lang>.md` and `docs/hosts/<lang>.md`, with the detailed spec section named at the emitter degradation site. The impossibility standard is `ai/topics/emit.md` § The escape hatch — genuinely impossible only when the host has *no* escape hatch (no `unsafe`, no FFI, no unchecked cast). Discharge each claimed impossibility (§ 5). An `I` cell keeps the backend visibly caveated; it does not count as green and cannot pass normal `add-backend` acceptance.
@@ -88,21 +90,21 @@ contract failure, not a covered cell.
 A frequent false alarm — and the one a stray `(deferred)` comment can manufacture — is confusing **HKT-internal** coverage with **HKT-boundary** coverage. The audit must keep them as separate cells:
 
 - The HKT-internal cell is covered when a golden builds and runs a higher-kinded program (a functor/monad dictionary, a `do`-block, a transformer stack) on the backend — the dictionary threads through *package code*. This is covered broadly today (`exec_functor_*`, `exec_monad_*`, `exec_do_block_*`, `exec_derive_transformer_stack`, the `poc/hkt` and `poc/dict` cases), on all shipping backends.
-- The HKT-boundary cell is covered only when a `host fn`'s parameter or return type *is* a dictionary / higher-kinded typed shape. **Verify this by inspecting the host-fn signatures**, not by the presence of the word "monad" in a golden name. A golden named `exec_monad_dictionary` whose only `host fn` is `print(String) -> .` covers HKT-**internal**, not HKT-boundary — the dictionary is built and projected internally and only `String` scalars cross.
+- The HKT-boundary cell is covered only when a host-fn or export parameter/result actually crosses a dictionary / higher-kinded typed shape. **Inspect signatures and the executing driver**, not the word "monad" in a golden name. A golden named `exec_monad_dictionary` whose only crossing is `print(String) -> .` covers HKT-**internal**, not HKT-boundary — the dictionary is built and projected internally and only `String` scalars cross.
 
-The grep that separates them: for every HKT-named golden/POC, list its `host fn` declarations and check whether any parameter or return type mentions a dictionary newtype or a higher-kinded application as a typed boundary shape:
+Use a scan to find candidates, then inspect host-fn/export signatures and the
+actual call sites, driver and consuming assertions. For example:
 
 ```sh
 # HKT/dictionary cases:
 ls test-data/goldens/00_success/ | grep -iE 'monad|functor|dict|hkt|do_block|transformer|brand|carrier|app_'
 # For each, does a host fn cross a dictionary / higher-kinded typed shape?
 grep -rhnE 'host fn .*(Monad|Functor)\(|host fn .*-> *(Monad|Functor)\b' test-data/goldens test-data/poc
-# Non-empty ⇒ HKT-boundary is covered by the matching case(s) — today,
-# ffi_host_functor_dict_roundtrip's `round_functor`. Empty result would
-# mean HKT-boundary is uncovered (the dictionary crosses internally only).
+# Hits are candidates, not runtime proof; also inspect aliases, carrier
+# applications and export signatures that this simple pattern can miss.
 ```
 
-Crucially, per § 1, the HKT-boundary cell is **not spec-mandated** — `specs/backends/README.md` says the dictionary is an ordinary `fn`-value on every backend and never a host typeclass instance, so the spec nowhere requires a dictionary to be a host-fn parameter/return. It is covered regardless: `ffi_host_functor_dict_roundtrip` (protocol `host-functor-dict-roundtrip`) runtime-exercises the dictionary across the boundary on all shipping backends. Were some other HKT-boundary shape to go uncovered, it would be reported as a **coverage gap to fill (write the golden)**, with the § 5 not-mandated caveat — *not* as a conformance violation and *not* as a per-backend impossibility.
+An admitted HKT-boundary signature has no special coverage exemption. Missing execution evidence is a completeness finding, not by itself a reproduced wrong-result defect; that evidence-versus-behavior distinction applies uniformly to every shape. `ffi_host_functor_dict_roundtrip` supplies existing dictionary crossing evidence, not permission to leave another applicable occurrence uncovered.
 
 ### Polymorphic application-stage runtime witness
 
@@ -135,6 +137,12 @@ inferred from family or body representation. The realization must preserve the
 current applicable facade and every semantic binder/application boundary.
 Missing evidence is a completeness finding and calls for a focused runtime
 golden, not an inferred claim from the emitter source.
+
+Keep internal application-stage evidence separate from host-supplied and
+host-consumed callable stages. Boundary evidence must exercise the applicable
+incoming/outgoing owner and subsequent invocation; an internal staged call
+alone cannot discharge a host conversion seam. Reuse shared-owner evidence
+under § 2 rather than require duplicate fixtures for identical behavior.
 
 ### Recursive control-flow stack-safety runtime witness
 
@@ -174,14 +182,14 @@ The matrix is built and discharged mechanically-then-manually, exactly as the ca
 1. **Build the row labels** from § 1 (re-read the spec anchors; add any new shape the spec admits).
 2. **Build the column labels** from `specs/backends/README.md` § Backend pages × the two directions.
 3. **For each runtime golden**, record which `(shape, backend, direction)` cells it covers. Mechanically:
-   - Enumerate the runtime goldens: `00_success` cases with a runtime `run.args`/`run.sh` (a `-main` tier, a testapi protocol, or a roundtrip) — exclude `empty-main` and `kio check`-only cases. The `ffi_` / `exec_` prefixes are the bulk; confirm by reading `run.args` for the `--protocol`.
+   - Enumerate the runtime goldens: `00_success` cases with a runtime `run.args`/`run.sh` (including `empty-main`, another main protocol, a testapi protocol, or a roundtrip) — exclude `construct-only` and `kio check`-only cases. Confirm execution and the actual assertion by reading the driver; names alone do not establish crossing coverage.
    - For each, read its `build { ... }` target list (`grep -oE 'target [a-z_-]+'` on the `*.pkg.kio`) and its protocol. The protocol determines which shape crosses and in which direction (the roundtrip table in `ci/infra/kio-test-runner-rs/README.md` § Roundtrip protocols maps each protocol to the shape it exercises; the tier table maps each tier to its env).
    - **Flag any runtime golden whose `build { ... }` omits a backend** that the shape's other goldens cover — a per-backend opt-out is the build-only/absent condition by another name (cross-ref [`audit-corpus`](../audit-corpus/SKILL.md) §§ 1–3).
    - Keep `test-data/emissions/` out of this enumeration. Record relevant emission evidence in a supplemental note, never in the runtime matrix cell.
 4. **Mark each cell** green (runtime-exercised, citing the golden + protocol), caveated-impossible (citing both banners, the spec/emitter mutual-cite, and the discharge), or **red** (no runtime golden, no valid caveat).
 5. **For each red cell, force the discharge question** — is the shape *runtime-exercisable on that host* (escape hatch present, `ai/topics/emit.md` § The escape hatch)? If yes, the red cell is a **finding**: the missing golden is the bug. If the host genuinely cannot express it (no escape hatch), classify it as `I` only after adding the matching concrete banners and spec/emitter mutual-cite; the backend remains caveated rather than green.
 6. **For each claimed-impossible (already-carve-out'd) cell, re-discharge the impossibility** against the escape-hatch standard exactly as `audit-spec-drift` § 7 step 2 — a false-impossibility carve-out passes every signal sweep; only the manual discharge catches it. A `fixable` verdict is a finding even with the mutual-cite intact.
-7. **Record the not-mandated caveat.** A shape the spec admits but does **not** mandate at a given cell is reported as a **coverage gap** — fill it with a golden — rather than a conformance finding, when it is uncovered. (The HKT-boundary cell per § 1 / § 4 is the standing example of this *category* — spec-admitted, not mandated — but that particular cell is itself covered: `ffi_host_functor_dict_roundtrip`.) Do not silently drop an uncovered one: an admissible-but-unexercised shape is still undetected. State explicitly, per cell, whether it is spec-*mandated* (red = conformance finding) or spec-*admitted-not-mandated* (red = coverage gap to fill). This is the one place the audit distinguishes "must" from "should"; everywhere else, red is a finding.
+7. **Record evidence limits uniformly.** An uncovered admitted cell is a completeness finding and blocks acceptance; distinguish that missing evidence from a demonstrated implementation failure. Annotate all applicable legs/owners from § 2, crediting only what the case consumes and asserts. No HKT-specific or unenumerated-example exemption applies.
 8. **Discharge the application-stage witness** from § 4 for every backend.
    Record the running case(s), the four shapes they distinguish, and the
    occurrence-appropriate emitted realization. A green boundary-shape cell does
@@ -205,7 +213,7 @@ This audit is the hard gate in the backend-completion contract: **a backend is n
 - Every shape axis (§ 1) has a runtime-exercising golden whose `build { ... }` block lists the new backend and whose protocol crosses the shape in each applicable direction (§ 2). For most shapes the existing `ffi_` / `exec_` goldens already list every backend, so adding a backend means adding it to those `build { ... }` blocks and making the emitter pass — not writing new goldens. A shape with **no** existing runtime golden on any backend is a corpus gap the new backend surfaces; write the golden (it benefits every backend).
 - Backend-first `HOST_INTERFACE` / `ARTIFACT_SHAPE` cases remain separate acceptance evidence. They cannot compensate for any red, build-only, or absent runtime cell.
 - If the new host genuinely cannot express a shape, stop and surface that caveat to the user before landing. A correctly bannered and discharged impossibility remains an `I` cell; normal acceptance does not turn it green.
-- The new backend's column has **no** build-only, absent, stubbed, or `I` cells. The column must be fully green (modulo § 5.7 not-mandated coverage gaps, which are corpus-wide, not backend-specific).
+- The new backend's column has **no** build-only, absent, stubbed, or `I` cells. Every applicable admitted cell and its legs/owners must be green.
 - The new backend has a green polymorphic application-stage runtime witness
   for all four § 4 shapes; representation erasure has not flattened its
   application tree.
@@ -220,7 +228,7 @@ This audit is the hard gate in the backend-completion contract: **a backend is n
 
 Produce the **matrix** as the headline artifact: rows = shape axes (§ 1), columns = `(backend × direction)` (§ 2), each cell one of:
 
-- `R{golden:protocol}` — runtime-exercised, naming the golden and protocol that covers it.
+- `R{golden:protocol}` — runtime-exercised, naming the golden/protocol and annotating its argument/result leg, owner, origin and consuming assertion under § 2. Cite any justified shared-owner reuse.
 - `I{spec-banner / docs-banner / spec§ / emit§}` — a genuine impossibility recorded as a concrete known caveat, naming both banners and cite sites with the discharge verdict. `I` is not green.
 - `—` — not applicable (shape has no meaningful crossing in that direction; state why).
 - **`RED`** — build-only / absent / stubbed with no carve-out. The finding.
@@ -232,7 +240,7 @@ Then group findings:
 3. **Caveated cells** — each `I` cell, its mirrored banners, and why the backend column is not fully green.
 4. **False-impossibility carve-outs** — claimed-impossible cells whose discharge verdict is `fixable` against the escape-hatch standard (cross-ref `audit-spec-drift` § 7).
 5. **Internal-vs-boundary conflations** — any HKT golden credited with boundary coverage it doesn't have (its host fns don't cross a dictionary), or a `(deferred)`-style comment manufacturing a false alarm about an internal-only carrier.
-6. **Spec-admitted-not-mandated coverage gaps** — red cells for shapes the spec admits but does not mandate at that cell (the *category* the HKT-boundary dictionary cell illustrates, though that cell is itself covered — `ffi_host_functor_dict_roundtrip`). Reported as coverage gaps to fill, distinct from conformance findings.
+6. **Conversion-leg/owner gaps** — arguments credited as results, internal stages credited as host-callable stages, or unchanged echoes credited as concrete recovery/consumption. Identify the distinct applicable owner and missing witness without mechanically multiplying contexts.
 7. **Polymorphic application-stage witness** — per backend, cite the running
    adjacent-direct-binder, singular returned/computed-application,
    adjacent-first-class-binder, and observable-order evidence plus the

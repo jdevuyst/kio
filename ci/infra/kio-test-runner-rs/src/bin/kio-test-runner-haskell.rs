@@ -776,6 +776,9 @@ fn haskell_method(
     let alias = |root| format!("({} m)", env_alias(target_namespace, &boundary(root)));
     let role = |role| haskell_role_ref_type(role, host_types, target_namespace);
     match binding.body {
+        HostFnBodyKind::DirectSumForallEcho { .. } => {
+            method(vec![alias(BoundaryRoot::Arg(0))], alias(BoundaryRoot::Ret))
+        }
         HostFnBodyKind::CallStep { i32, string, bool_ } => method(
             vec![
                 format!(
@@ -862,6 +865,10 @@ fn haskell_method(
         HostFnBodyKind::ReturnedForallUnit => {
             method(Vec::new(), "(forall (t :: Data.Kind.Type). m t)".to_owned())
         }
+        HostFnBodyKind::ForallStageEffects => method(
+            Vec::new(),
+            "(forall (t :: Data.Kind.Type). m ())".to_owned(),
+        ),
         HostFnBodyKind::ObservePacked { i32 } => {
             method(vec![alias(BoundaryRoot::Arg(0))], role(i32))
         }
@@ -917,7 +924,9 @@ fn haskell_canonical_method(
         HostFnBodyKind::Print { string } | HostFnBodyKind::Eprint { string } => {
             m(vec![role(string)], "()".to_owned())
         }
-        HostFnBodyKind::PrintI32 { value } => m(vec![role(value)], "()".to_owned()),
+        HostFnBodyKind::PrintI32 { value } | HostFnBodyKind::InstanceMark { value } => {
+            m(vec![role(value)], "()".to_owned())
+        }
         HostFnBodyKind::Exit { status_i32 } => {
             m(vec![role(status_i32)], "Data.Void.Void".to_owned())
         }
@@ -1004,6 +1013,7 @@ fn haskell_canonical_method(
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -1018,6 +1028,7 @@ fn haskell_canonical_method(
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -1314,7 +1325,7 @@ fn build_driver(
     out.push_str("import qualified \"text\" Data.Text as T\n");
     out.push_str("import qualified \"text\" Data.Text.IO as TIO\n");
     out.push_str("import qualified \"base\" Data.String\n");
-    if needs_impredicative_identity {
+    if needs_impredicative_identity || protocol == RunnerProtocol::HostForallStageEffects {
         out.push_str("import qualified \"base\" Data.Kind\n");
     }
     out.push_str("import qualified \"base\" Data.Int\n");
@@ -1364,7 +1375,11 @@ fn build_driver(
     // The record type / constructor / field labels are all spelled through
     // the `Pkg` import alias; the `host__…` field names are the emitted
     // record's, so a drifted FFI surfaces as a GHC error here.
-    if protocol == RunnerProtocol::HostExistentialRoundtrip {
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str(&format!(
+            "stubHost :: String -> Pkg.{handle}Host KioRunnerHostTypes IO\n"
+        ));
+    } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         out.push_str(&format!("stubHost :: Pkg.{handle} KioRunnerHostTypes IO -> Data.IORef.IORef (Int, Int) -> Pkg.{handle}Host KioRunnerHostTypes IO\n"));
     } else if needs_polymorphic_unit {
         out.push_str(&format!(
@@ -1375,7 +1390,9 @@ fn build_driver(
             "stubHost :: Pkg.{handle}Host KioRunnerHostTypes IO\n"
         ));
     }
-    let stub_host_lhs = if protocol == RunnerProtocol::HostExistentialRoundtrip {
+    let stub_host_lhs = if protocol == RunnerProtocol::SameArtifactExchange {
+        "stubHost exchangeLabel"
+    } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         "stubHost pkg existentialCounts"
     } else if needs_polymorphic_unit {
         "stubHost returnedForallProduced"
@@ -1399,7 +1416,9 @@ fn build_driver(
     out.push_str("main :: IO ()\n");
     out.push_str("main = do\n");
     out.push_str("  hSetBuffering stdout NoBuffering\n");
-    if protocol == RunnerProtocol::HostExistentialRoundtrip {
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str(&format!("  let pkg = Pkg.create{handle} (stubHost \"first\")\n  let pkgSecond = Pkg.create{handle} (stubHost \"second\")\n"));
+    } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         out.push_str("  existentialCounts <- Data.IORef.newIORef (0, 0)\n");
         out.push_str(&format!(
             "  let pkg = Pkg.create{handle} (stubHost pkg existentialCounts)\n"
@@ -1503,6 +1522,12 @@ fn render_export_driver(
     // (`import qualified <Ns> as Pkg`), so these bodies stay
     // namespace-independent.
     let body = match driver {
+        ExportDriver::IncomingCallableViews => {
+            "  fail \"this runner has no incoming-callable-views driver\"\n".to_owned()
+        }
+        ExportDriver::IncomingCallableStages => {
+            "  fail \"this runner has no incoming-callable-stages driver\"\n".to_owned()
+        }
         ExportDriver::RustCallbackAliases => {
             "  fail \"rust-callback-aliases tests the Rust public naming contract only\"\n"
                 .to_owned()
@@ -1621,6 +1646,69 @@ fn render_export_driver(
                 fmap = pkg_newtype_export("testapi/types", "Functor", "fmap"),
             )
         }
+        ExportDriver::DirectSumForallBoundary => {
+            let boundary = |leaf, root| export_boundary("testapi/api", leaf, root);
+            let sum = |leaf, root, arm| {
+                pkg_sum_pattern(
+                    target_namespace,
+                    &boundary(leaf, root),
+                    StructuralKey::positional(arm),
+                    arm,
+                )
+            };
+            let arg = env_alias(target_namespace, &boundary("relay", BoundaryRoot::Arg(0)));
+            let ret = env_alias(target_namespace, &boundary("relay", BoundaryRoot::Ret));
+            let callback_arg = env_alias(
+                target_namespace,
+                &boundary("through_callback", BoundaryRoot::Arg(1))
+                    .nested(BoundaryStep::CallbackArg(0)),
+            );
+            let callback_ret = env_alias(
+                target_namespace,
+                &boundary("through_callback", BoundaryRoot::Arg(1))
+                    .nested(BoundaryStep::CallbackRet),
+            );
+            format!(
+                r#"
+  let identity :: forall a. IO (a -> IO a)
+      identity = pure (\value -> putStrLn "poly call" >> pure value)
+      unit :: {arg} KioRunnerHostTypes IO
+      unit = {input_left} (putStrLn "unit call" >> pure 17)
+      poly :: {arg} KioRunnerHostTypes IO
+      poly = {input_right} identity
+      callback :: {callback_arg} KioRunnerHostTypes IO -> IO ({callback_ret} KioRunnerHostTypes IO)
+      callback value = putStrLn "callback" >> pure value
+      exercise :: ({arg} KioRunnerHostTypes IO -> IO ({ret} KioRunnerHostTypes IO)) -> IO ()
+      exercise transport = do
+        left <- transport unit
+        putStrLn "unit ready"
+        case left of
+          {output_left} step -> do
+            number <- step
+            if number /= 17 then error "Unit callback result changed" else print number
+          _ -> error "Unit arm changed"
+        right <- transport poly
+        putStrLn "poly ready"
+        case right of
+          {output_right} step -> do
+            integerIdentity <- step @Data.Int.Int32
+            integer <- integerIdentity 23
+            if integer /= 23 then error "polymorphic Number result changed" else print integer
+            textIdentity <- step @T.Text
+            text <- textIdentity (T.pack "identity")
+            if text /= T.pack "identity" then error "polymorphic Text result changed" else TIO.putStrLn text
+          _ -> error "polymorphic arm changed"
+  exercise ({relay} pkg)
+  exercise (\value -> {through_callback} pkg value callback)
+"#,
+                input_left = sum("relay", BoundaryRoot::Arg(0), 0),
+                input_right = sum("relay", BoundaryRoot::Arg(0), 1),
+                output_left = sum("relay", BoundaryRoot::Ret, 0),
+                output_right = sum("relay", BoundaryRoot::Ret, 1),
+                relay = pkg_export("testapi/api", "relay"),
+                through_callback = pkg_export("testapi/api", "through_callback"),
+            )
+        }
         ExportDriver::CallableSlotsRoundtrip => {
             let product_ret = |leaf| {
                 pkg_product_pattern(
@@ -1705,6 +1793,82 @@ fn render_export_driver(
             }
             script.push_str("  putStrLn \"scalar payloads ok\"\n");
             script
+        }
+        ExportDriver::SameArtifactExchange => format!(
+            "  input0 <- {make_hidden} pkg 17\n  result0 <- {read_hidden} pkgSecond input0\n  if result0 /= 17 then error \"exchange payload changed\" else putStrLn (\"direct: \" ++ show result0)\n  input1 <- {make_hidden} pkgSecond 29\n  result1 <- {read_hidden} pkg input1\n  if result1 /= 29 then error \"exchange payload changed\" else putStrLn (\"direct: \" ++ show result1)\n  hidden2 <- {make_hidden} pkg 17\n  input2 <- {boxed} pkg hidden2\n  result2 <- {read_box} pkgSecond input2\n  if result2 /= 17 then error \"exchange payload changed\" else putStrLn (\"box: \" ++ show result2)\n  hidden3 <- {make_hidden} pkgSecond 29\n  input3 <- {boxed} pkgSecond hidden3\n  result3 <- {read_box} pkg input3\n  if result3 /= 29 then error \"exchange payload changed\" else putStrLn (\"box: \" ++ show result3)\n  input4 <- {make_packed} pkg 23\n  result4 <- {read_packed} pkgSecond input4\n  if result4 /= 23 then error \"exchange payload changed\" else putStrLn (\"packed: \" ++ show result4)\n  input5 <- {make_packed} pkgSecond 31\n  result5 <- {read_packed} pkg input5\n  if result5 /= 31 then error \"exchange payload changed\" else putStrLn (\"packed: \" ++ show result5)\n  hidden6 <- {make_hidden} pkg 17\n  input6 <- {boxed_later} pkg hidden6\n  result6 <- {run_box} pkgSecond input6\n  if result6 /= 17 then error \"exchange payload changed\" else putStrLn (\"callback: \" ++ show result6)\n  hidden7 <- {make_hidden} pkgSecond 29\n  input7 <- {boxed_later} pkgSecond hidden7\n  result7 <- {run_box} pkg input7\n  if result7 /= 29 then error \"exchange payload changed\" else putStrLn (\"callback: \" ++ show result7)\n",
+            make_hidden = pkg_export("testapi/api", "make_hidden"),
+            read_hidden = pkg_export("testapi/api", "read_hidden"),
+            boxed = pkg_export("testapi/api", "boxed"),
+            read_box = pkg_export("testapi/api", "read_box"),
+            make_packed = pkg_export("testapi/api", "make_packed"),
+            read_packed = pkg_export("testapi/api", "read_packed"),
+            boxed_later = pkg_export("testapi/api", "boxed_later"),
+            run_box = pkg_export("testapi/api", "run_box"),
+        ),
+        ExportDriver::OpaqueProductRoundtrip => format!(
+            r#"
+  let host = KioRunnerBox (11, 17)
+      printPair (a, b) = putStrLn (show a ++ " " ++ show b)
+  {direct} pkg host >>= printPair
+  {relayed} pkg host >>= printPair
+  kio <- {make} pkg
+  {direct} pkg kio >>= printPair
+  {relayed} pkg kio >>= printPair
+"#,
+            direct = pkg_export("testapi/main", "direct"),
+            relayed = pkg_export("testapi/main", "relayed"),
+            make = pkg_export("testapi/main", "make"),
+        ),
+        ExportDriver::GenericNominalOpaqueRoundtrip => {
+            let selected = haskell_selected_role_type(target_namespace, "testapi", "I32");
+            format!(
+                r#"
+  let printNumber ({selected} value) = print value
+  nominal <- {mk_wrapped} pkg ({selected} 37)
+  {read} pkg (KioRunnerBox nominal) >>= printNumber
+  kio <- {make} pkg ({selected} 61)
+  {read} pkg kio >>= printNumber
+  let KioRunnerBox native = kio
+  {unwrap} pkg native >>= printNumber
+"#,
+                mk_wrapped = pkg_newtype_export("testapi/main", "Wrapped", "mk_wrapped"),
+                read = pkg_export("testapi/main", "read"),
+                make = pkg_export("testapi/main", "make"),
+                unwrap = pkg_export("testapi/main", "unwrap"),
+            )
+        }
+        ExportDriver::OpaqueCompoundRoundtrip => {
+            let selected = haskell_selected_role_type(target_namespace, "testapi", "I32");
+            format!(
+                r#"
+  let printNumber ({selected} value) = print value
+      printPair ({selected} a, {selected} b) = putStrLn (show a ++ " " ++ show b)
+  {read_sum} pkg (KioRunnerBox (Left ({selected} 19))) >>= printNumber
+  {read_sum} pkg (KioRunnerBox (Right ())) >>= printNumber
+  {make_sum} pkg >>= {read_sum} pkg >>= printNumber
+  {make_empty} pkg >>= {read_sum} pkg >>= printNumber
+  calls <- Data.IORef.newIORef (0 :: Int)
+  let step ({selected} value) = Data.IORef.modifyIORef' calls (+ 1) >> putStrLn "call" >> pure ({selected} (value + 1))
+      host = KioRunnerBox step
+  Data.IORef.readIORef calls >>= \count -> if count == 0 then pure () else error "opaque callback called during construction"
+  {call} pkg host ({selected} 31) >>= printNumber
+  {call} pkg host ({selected} 43) >>= printNumber
+  Data.IORef.readIORef calls >>= \count -> if count == 2 then pure () else error "opaque callback count changed"
+  kio <- {make_callable} pkg
+  {call} pkg kio ({selected} 47) >>= printNumber
+  nominal <- {mk_wrapped} pkg ({selected} 41, {selected} 43)
+  {read_nominal} pkg (KioRunnerBox nominal) >>= printPair
+  {make_nominal} pkg >>= {read_nominal} pkg >>= printPair
+"#,
+                read_sum = pkg_export("testapi/main", "read_sum"),
+                make_sum = pkg_export("testapi/main", "make_sum"),
+                make_empty = pkg_export("testapi/main", "make_empty"),
+                call = pkg_export("testapi/main", "call"),
+                make_callable = pkg_export("testapi/main", "make_callable"),
+                mk_wrapped = pkg_newtype_export("testapi/main", "Wrapped", "mk_wrapped"),
+                read_nominal = pkg_export("testapi/main", "read_nominal"),
+                make_nominal = pkg_export("testapi/main", "make_nominal"),
+            )
         }
         ExportDriver::HostOwnedRoundtrip => format!(
             "  mapM_ (\\value -> do\n\
@@ -2344,6 +2508,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         },
         HostFnBodyKind::BoolToString { .. } => CanonicalKind::BoolToString,
         HostFnBodyKind::PrintI32 { .. } => CanonicalKind::PrintI32,
+        HostFnBodyKind::InstanceMark { .. } => CanonicalKind::Custom,
         HostFnBodyKind::StringToInt { .. } => CanonicalKind::StringToInt,
         HostFnBodyKind::Arithmetic { operation, number } => CanonicalKind::Arith {
             op: operation.to_owned(),
@@ -2385,6 +2550,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -2399,6 +2565,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -2424,6 +2591,7 @@ fn render_haskell_body_for_binding(
 ) -> String {
     let boundary = |root| BoundaryId::env_item(source, root);
     match binding.body {
+        HostFnBodyKind::InstanceMark { .. } => "\\arg0 -> putStrLn (exchangeLabel ++ \": \" ++ show arg0)".to_owned(),
         // `make_token(I32) -> Token` using the runner's exact Token newtype.
         HostFnBodyKind::MakeToken { value_i32, .. } => {
             let value =
@@ -2463,6 +2631,9 @@ fn render_haskell_body_for_binding(
         }
         HostFnBodyKind::TraceUnit { text } => {
             format!("TIO.putStrLn (T.pack {text:?})")
+        }
+        HostFnBodyKind::ForallStageEffects => {
+            "do { TIO.putStrLn (T.pack \"create\"); pure @IO @(forall (a :: Data.Kind.Type). IO ()) (TIO.putStrLn (T.pack \"apply\")) }".to_owned()
         }
         HostFnBodyKind::StagedUnitCall => {
             "\\_arg0 -> TIO.putStrLn (T.pack \"staged Unit host call\")".to_owned()
@@ -2505,6 +2676,7 @@ fn render_haskell_body_for_binding(
                 "\\arg0 -> pure (case arg0 of {{ {arm0} n -> T.pack (show n); {arm1} s -> s }})"
             )
         }
+        HostFnBodyKind::DirectSumForallEcho { .. } => "\\arg0 -> putStrLn \"echo\" >> pure arg0".to_owned(),
         // `call_step(step, seed) -> I32`: the callback takes one nested tuple.
         HostFnBodyKind::CallStep { .. } => {
             "\\arg0 arg1 -> arg0 (arg1, (T.pack \"compound-callback\", True))".to_owned()

@@ -62,9 +62,10 @@ function handle(message) {
       uri: document.uri,
       version: document.version,
       diagnostics: [{ range: { start: { line: 0, character: 0 }, end: { line: 0, character: 6 } },
-        severity: 1, source: "availability-fixture", message: "analysis from the recovered server" }],
+        severity: 1, source: "availability-fixture", code: process.pid, message: "analysis from the recovered server" }],
     } });
   } else if (message.method === "textDocument/hover") {
+    fs.appendFileSync(`${controlPath}.hovers`, `${process.pid}\n`);
     send({ id: message.id, error: { code: ["request-error", "request-error-crash"].includes(control.mode) ? -32603 : -32803, message: "injected request failure" } });
     if (first && control.mode === "request-error-crash") setTimeout(() => process.exit(9), 100);
   } else if (message.method === "shutdown") {

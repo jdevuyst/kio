@@ -8,6 +8,26 @@ Strategy and decision tree for tests in the Kio repo. For *how* to run the harne
 
 **Multiple layers, each catching what the layer above can't.** The layers below exist for redundancy. Passing one isn't a substitute for passing the others — a Rust unit test that exercises the typer's internal invariant is not a replacement for a golden that pins observable behavior, and vice versa.
 
+## Deterministic tests
+
+Tests must not be flaky. Ordinary correctness assertions must not depend on
+CPU speed, wall-clock or CPU-time thresholds, scheduler luck, or fixed sleeps
+used as evidence that another task has progressed. Synchronize concurrent
+tests with explicit events, barriers, or observable state. Test time-dependent
+logic with controlled clocks where practical. Seed randomized tests and retain
+the seed needed to reproduce a failure.
+
+Generous bounded waits remain appropriate as hang safeguards, not speed
+assertions; a deadline failure needs diagnosis rather than retries until green.
+Keep performance measurements separate from ordinary pass/fail checks. Guard
+optimizations with deterministic operation counts, sharing/shape invariants,
+or semantic assertions at the appropriate test layer.
+
+Dedicated combinatorial-blowup regressions may bound resource use when that is
+their explicit subject. Prefer deterministic work or size bounds; any timing
+backstop needs generous headroom and a documented justification, not a narrow
+machine-specific speed target. See [stress and semantic coverage](#stress-and-semantic-coverage).
+
 ## Test layers
 
 Listed most-specific to most-general. Each says what it catches, what it doesn't, and where to run it.
@@ -16,6 +36,19 @@ Listed most-specific to most-general. Each says what it catches, what it doesn't
 - **Hand-written goldens under `test-data/goldens/<NN_category>/`** — `ci/run-tests.sh`, driven by `ci/checks/orchestrators/golden-tests.sh`. Pin specific observable behavior across implementations. Bucketed by exit-code category: `00_success`, `02_cli_error`, `11_parse_error`, `12_use_error`, `13_name_resolution_error`, `14_type_error`, `15_elaborator_error`, `16_totality_error`, `20_bridge_error`, `30_dependency_error`, `40_build_error`, `50_test_failure`, `60_fmt_check`, `80_*` / `81_*` / `82_*` (the `kio sig status` CI-gate tier: 80 unrecorded-incompatibility, 81 stale-but-compatible, 82 recorded-unsealed-break), and `90_runtime_exit` (built-and-run cases whose `expected.exit` is the program's own runtime code, not a compiler category — see [`specs/exit-codes.md`](specs/exit-codes.md) § Runtime exit codes). The bucket asserts the case's expected exit category — message text is not part of the assertion — so a negative public-CLI case contains no unrelated independent error that could validly determine another exit code.
 - **Backend emission cases under `test-data/emissions/<backend>/<case>/`** — `ci/checks/orchestrators/emissions-tests.sh`. One-backend, success-only evidence for either a public generated-host fact that the ordinary fixed runner cannot naturally and independently demonstrate (`HOST_INTERFACE`: a host independently determined from the backend spec compiles and runs against the artifact) or a durable specified/measured artifact fact (`ARTIFACT_SHAPE`). Every case carries exactly one marker. A case that merely duplicates a runner-proven API contract is misplaced. This corpus is not a home for private compiler invariants or incidental generated text, and it supplements rather than satisfies the runtime cells in [`audit-backend-completeness`](ai/skills/audit-backend-completeness/SKILL.md). Contract: [`test-data/emissions/README.md`](test-data/emissions/README.md).
 - **Generative tests via `ci/infra/kio-gen-rs/`** — `ci/checks/orchestrators/generative-tests.sh`. Seeded Kio test cases driven through the full pipeline. Catches integration regressions hand-written goldens miss. Failures get hand-promoted into goldens via the seed printed on every run.
+
+  Valid generated functions returning `I32` are called with the generator's
+  typed inhabitants and print their small nonnegative result through the fixed
+  runner. Their `run.sh` preserves the control trace, validates the integer,
+  and appends an ordinary `equiv` comparing that same closed call with the
+  observed literal in a disposable source copy. The full CLI's `kio test`
+  checks the claim by host-independent reduction; host arithmetic remains
+  opaque. Core cases retain `IS_KIO_PRIME` and its source grammar check,
+  with `SKIP_KIO_PRIME_RUN` routing this surface test command through the full
+  CLI. Configured direct-Prime artifact checks remain applicable, including
+  those on promoted goldens. Other generated cases keep their execution
+  contracts. The emitted
+  script and source can be promoted together without running the generator.
 - **Castles under `test-data/castles/`** — `ci/checks/orchestrators/castle-tests.sh`. Larger composed Kio programs (algorithms, toy games, parsers, simulations, puzzle solvers) run end to end through the standard `run.args` runner path. Success-only: every castle exits `0`. Castles are the integration layer — realistic composition that catches regressions both minimized goldens and generated Kio' programs miss, because no minimized golden or random Kio' program assembles the same combination of features a hand-written small program does. The orchestrator samples by default (printing the effective seed and the selected castle names so any failure reproduces; `--all-cases` runs the whole corpus — see § Case coverage). A castle that exposes a Kio bug keeps its natural source shape; the bug is fixed in the same change and pinned by a focused regression golden under `test-data/goldens/`. See [`test-data/castles/README.md`](test-data/castles/README.md) for the corpus contract.
 - **Contributed cases under `test-data/contrib/`** — `ci/checks/orchestrators/contrib-tests.sh`. The external-contribution lane ([`CONTRIBUTING.md`](CONTRIBUTING.md) § Contribute an example program or library): small, self-contained cases, each in a flat directory `<github-username>-<issue#>` named after its contributor (only that contributor may open follow-up PRs against it). A case is one of three shapes — an example **program** (`run.args`), a **library** (`run.test-only`: `kio test` + `kio build`, no runner, with at least one required `equiv` law), or a **bug reproducer** marked `KNOWN_FAILING` (expected to fail: the run prints a `warn` line and the gate stays green, and a stale marker — a case that starts passing — fails so it gets cleaned up). A `run.sh` case is also allowed but runs on a PR only after a maintainer applies the `test-contrib` label. The orchestrator samples which cases build and run (`--all-cases` runs the whole corpus — see § Case coverage), because the lane grows from outside the repo without bound and is the regression net for nothing: a contrib case that exposes a bug is pinned by a focused golden. A `KNOWN_FAILING` reproducer is never sampled out, so the stale-marker gate below always runs. A maintainer-owned `example-0` keeps the harness exercised when no contribution is open. The corpus contract is deliberately relaxed relative to goldens / POCs / castles (natural Kio a user would write; see [`test-data/contrib/README.md`](test-data/contrib/README.md)); the orchestrator validates the *structural* contract mechanically (naming, layout, required files, file allowlist), while the quality bar is a matter for review. When a maintainer fixes the bug a `KNOWN_FAILING` case reproduces, they remove the marker and pin the fix with a focused regression golden under `test-data/goldens/`.
 - **The Kio' verifier (`ci/infra/kio-prime-check-rs/`).** Independent recursive-descent parser for [`specs/prime.md`](specs/prime.md) § Grammar. Used as an oracle against `kio-rs`'s emitted Kio' (kio-prime round-trip check) and against the `IS_KIO_PRIME` biconditional on every case. The redundancy is the point — bugs in the main parser don't propagate to the verifier.
@@ -145,7 +178,7 @@ The same parity discipline applies to the **verification passes** wired through 
 
 ## Local iteration
 
-The golden, emission, and generative harnesses run every selected case against every applicable impl when asked for `--impls=FULL_IMPL_MATRIX` (an emission case itself names exactly one backend target). Case coverage is independent; add `--all-cases` to run all filtered cases, including the golden harness's sampled dynamic-Prime pass. This section documents selector syntax, not the per-change gate policy.
+The golden, emission, and generative harnesses run every selected case against every applicable impl when asked for `--impls=FULL_IMPL_MATRIX` (an emission case itself names exactly one backend target). Golden and emission case coverage is independent; add `--all-cases` to run all filtered cases, including the golden harness's sampled dynamic-Prime pass. Generated batches run every filtered case and accept no `--all-cases` option. This section documents selector syntax, not the per-change gate policy.
 
 - **`--impls=SAMPLE_IMPL`** — for each case, pick **one** of its applicable impls at random per run. Each case selected by the independent case policy still runs (assuming it has at least one applicable impl), so the pass count stays the same; what changes is that backend divergence isn't exercised within a single run.
 - **`--impls=FULL_IMPL_MATRIX`** — run every applicable impl for each case. This is the exhaustive matrix and is intentionally expensive.

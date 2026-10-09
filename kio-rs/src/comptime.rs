@@ -1,3 +1,5 @@
+//! Compile-time builtin names, classifications, and runtime-erasure vocabulary.
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ComptimeBuiltin {
     ComptimeProof,

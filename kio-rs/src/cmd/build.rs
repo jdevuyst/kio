@@ -424,7 +424,11 @@ fn build_one_package(
     // stderr. This never changes the build's exit code — a package with
     // no sig builds identically (open-world).
     #[cfg(feature = "surface")]
-    crate::cmd::sig::warn_if_unrecorded_breaking_buffered(root_pkg, pkg_dir, &mut cap.stderr);
+    crate::cmd::sig::warn_if_unrecorded_breaking_buffered(
+        root_pkg.package(),
+        pkg_dir,
+        &mut cap.stderr,
+    );
 
     // Reuse the manifest and target indices whose outputs passed preflight.
     let build_block = inputs
@@ -466,7 +470,7 @@ fn build_one_package(
     } else {
         crate::cache::artifact::ArtifactCache::disabled()
     };
-    let root_label = build_timing::package_label(root_pkg);
+    let root_label = build_timing::package_label(root_pkg.package());
 
     // The backend-agnostic recover → optimize → route → annotate prefix is
     // shared across the JS and Rust backends and computed once (lazily, on
@@ -627,7 +631,7 @@ impl From<String> for BackendError {
 ///
 /// Both backends consume an identical `Package<Routed>` derived from the
 /// root `Package<Prime>`: `recover_and_optimize_package_cached` (enriched-
-/// cache-backed) → `recover_to_low::lower` → `annotate_escapes` →
+/// cache-backed) → `route::route_package` → `annotate_escapes` →
 /// `annotate_lifetime`. Only the recover+optimize step is on-disk-cached;
 /// the route + capability passes are not, so before this hoist each
 /// target re-ran them — and because the per-target dispatch loop is
@@ -650,7 +654,7 @@ impl From<String> for BackendError {
 /// for the full argument. Either way the value is shared and the result
 /// is byte-identical to each backend recomputing — only wall-clock moves.
 struct SharedRoutedPackage<'a> {
-    package: &'a Package<crate::ast::Prime>,
+    package: &'a crate::prime::typer::ValidatedPrimePackage,
     enriched_cache: &'a crate::cache::enriched::EnrichedCache,
     package_label: &'a str,
     routed: std::sync::OnceLock<Package<crate::ast::Routed>>,
@@ -658,7 +662,7 @@ struct SharedRoutedPackage<'a> {
 
 impl<'a> SharedRoutedPackage<'a> {
     fn new(
-        package: &'a Package<crate::ast::Prime>,
+        package: &'a crate::prime::typer::ValidatedPrimePackage,
         enriched_cache: &'a crate::cache::enriched::EnrichedCache,
         package_label: &'a str,
     ) -> Self {
@@ -674,7 +678,11 @@ impl<'a> SharedRoutedPackage<'a> {
     fn get(&self) -> &Package<crate::ast::Routed> {
         self.routed.get_or_init(|| {
             let prime_shape_start = Instant::now();
-            build_timing::log_shared_package_shape(self.package_label, "prime", self.package);
+            build_timing::log_shared_package_shape(
+                self.package_label,
+                "prime",
+                self.package.package(),
+            );
             let prime_shape_ms = build_timing::elapsed_ms(prime_shape_start);
 
             let enriched_start = Instant::now();
@@ -692,7 +700,7 @@ impl<'a> SharedRoutedPackage<'a> {
             // node. JS (session 10) and Rust (session 11) both consume the
             // Routed phase directly; no unlower round-trip.
             let route_start = Instant::now();
-            let routed = crate::pass::recover_to_low::lower(&recovered);
+            let routed = crate::pass::route::route_package(&recovered);
             // Capability annotation: each pass stamps one position-specific
             // annotation on the Routed AST. `annotate_escapes` writes
             // `captured_from`, which `annotate_lifetime` reads to derive
@@ -783,7 +791,7 @@ fn js_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     for entry in &target.entries {
@@ -831,6 +839,7 @@ fn js_backend(
         &package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_workspace_if_enabled(
@@ -861,6 +870,7 @@ fn js_backend(
     let pkg_name = package
         .package_file()
         .expect("kio build validates the root package file before backend dispatch")
+        .entry()
         .package_name
         .clone();
     let ns: String = namespace
@@ -938,7 +948,7 @@ fn ts_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     for entry in &target.entries {
@@ -984,6 +994,7 @@ fn ts_backend(
         &package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_workspace_if_enabled(
@@ -1014,6 +1025,7 @@ fn ts_backend(
     let pkg_name = package
         .package_file()
         .expect("kio build validates the root package file before backend dispatch")
+        .entry()
         .package_name
         .clone();
     let ns: String = namespace
@@ -1106,7 +1118,7 @@ fn go_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     for entry in &target.entries {
@@ -1148,6 +1160,7 @@ fn go_backend(
         &package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_workspace_if_enabled(
@@ -1178,6 +1191,7 @@ fn go_backend(
     let pkg_name = package
         .package_file()
         .expect("kio build validates the root package file before backend dispatch")
+        .entry()
         .package_name
         .clone();
     let ns: String = namespace
@@ -1246,7 +1260,7 @@ fn python_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     for entry in &target.entries {
@@ -1286,6 +1300,7 @@ fn python_backend(
     let pkg_name = package
         .package_file()
         .expect("kio build validates the root package file before backend dispatch")
+        .entry()
         .package_name
         .clone();
     let sig_content = read_sig_content(cwd, &pkg_name)?;
@@ -1394,7 +1409,7 @@ fn java_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     for entry in &target.entries {
@@ -1436,6 +1451,7 @@ fn java_backend(
         &package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_workspace_if_enabled(
@@ -1466,6 +1482,7 @@ fn java_backend(
     let pkg_name = package
         .package_file()
         .expect("kio build validates the root package file before backend dispatch")
+        .entry()
         .package_name
         .clone();
     let namespace_str: String = namespace
@@ -1546,7 +1563,7 @@ fn swift_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     for entry in &target.entries {
@@ -1588,6 +1605,7 @@ fn swift_backend(
         &package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_workspace_if_enabled(
@@ -1618,6 +1636,7 @@ fn swift_backend(
     let pkg_name = package
         .package_file()
         .expect("kio build validates the root package file before backend dispatch")
+        .entry()
         .package_name
         .clone();
 
@@ -1695,7 +1714,7 @@ fn haskell_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     for entry in &target.entries {
@@ -1737,6 +1756,7 @@ fn haskell_backend(
         &package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_workspace_if_enabled(
@@ -1767,6 +1787,7 @@ fn haskell_backend(
     let pkg_name = package
         .package_file()
         .expect("kio build validates the root package file before backend dispatch")
+        .entry()
         .package_name
         .clone();
 
@@ -1934,7 +1955,7 @@ fn artifact_key_for_workspace(
 fn artifact_key_for_package(
     target_id: &str,
     target: &TargetBlock,
-    package: &Package<crate::ast::Prime>,
+    package: &crate::prime::typer::ValidatedPrimePackage,
     sig_content: Option<&str>,
 ) -> crate::cache::artifact::ArtifactCacheKey {
     #[cfg(test)]
@@ -1965,7 +1986,7 @@ fn artifact_key_for_package_if_enabled(
     cache: &crate::cache::artifact::ArtifactCache,
     target_id: &str,
     target: &TargetBlock,
-    package: &Package<crate::ast::Prime>,
+    package: &crate::prime::typer::ValidatedPrimePackage,
     sig_content: Option<&str>,
 ) -> Option<crate::cache::artifact::ArtifactCacheKey> {
     cache
@@ -2010,7 +2031,7 @@ fn store_cached_artifact(
 /// their cache identity.
 fn append_package_fingerprint(
     out: &mut String,
-    package: &Package<crate::ast::Prime>,
+    package: &crate::prime::typer::ValidatedPrimePackage,
     sig_content: Option<&str>,
 ) {
     for (module_key, entry) in package.modules() {
@@ -2019,16 +2040,16 @@ fn append_package_fingerprint(
         out.push('\n');
         #[cfg(test)]
         cache_work_counters::record_artifact_render();
-        out.push_str(&kio_prime::emit_module(&entry.module));
+        out.push_str(&kio_prime::emit_module(entry));
         out.push('\n');
     }
     if let Some(entry) = package.package_file() {
         out.push_str("package ");
-        out.push_str(&entry.package_name);
+        out.push_str(&entry.entry().package_name);
         out.push('\n');
         #[cfg(test)]
         cache_work_counters::record_artifact_render();
-        out.push_str(&kio_prime::emit_package_file(&entry.package_file));
+        out.push_str(&kio_prime::emit_package_file(entry));
         out.push('\n');
     }
     if let Some(sig) = sig_content {
@@ -2096,12 +2117,12 @@ fn replay_sig_for_build(
 fn kio_prime_backend(
     cwd: &Path,
     target: &TargetBlock,
-    package: &Package<crate::ast::Prime>,
+    package: &crate::prime::typer::ValidatedPrimePackage,
     emit_cache: &crate::cache::emit::EmitCache,
     artifact_cache: &crate::cache::artifact::ArtifactCache,
 ) -> Result<(), BackendError> {
     let build_start = Instant::now();
-    let package_label = build_timing::package_label(package);
+    let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
     for entry in &target.entries {
         match BuildTarget::KioPrime.key(&entry.key) {
@@ -2138,6 +2159,7 @@ fn kio_prime_backend(
         &package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_package_if_enabled(
@@ -2184,14 +2206,14 @@ fn kio_prime_backend(
         "kio-prime",
         "prime",
         "root",
-        package,
+        package.package(),
     );
     let shape_ms = build_timing::elapsed_ms(shape_start);
     let emit_write_start = Instant::now();
     crate::maybe_into_par_iter!(package.modules().collect::<Vec<_>>())
         .map(|(_, entry)| {
-            let source = emit_kio_prime_module_cached(&entry.module, emit_cache)?;
-            let out_file = target_dir.join(module_file_relpath(&entry.module.path));
+            let source = emit_kio_prime_module_cached(entry, emit_cache)?;
+            let out_file = target_dir.join(module_file_relpath(&entry.module().path));
             if let Some(parent) = out_file.parent() {
                 fs::create_dir_all(parent).map_err(|e| {
                     BackendError::Build(format!("cannot create `{}`: {e}", DisplayPath(parent)))
@@ -2212,8 +2234,8 @@ fn kio_prime_backend(
     // build-file copy.
     let package_write_start = Instant::now();
     if let Some(entry) = package.package_file() {
-        let source = kio_prime::emit_package_file(&entry.package_file);
-        let out_file = target_dir.join(format!("{}.pkg.kio", entry.package_name));
+        let source = kio_prime::emit_package_file(entry);
+        let out_file = target_dir.join(format!("{}.pkg.kio", entry.entry().package_name));
         fs::write(&out_file, source).map_err(|e| {
             BackendError::Build(format!("cannot write `{}`: {e}", DisplayPath(&out_file)))
         })?;
@@ -2242,7 +2264,7 @@ fn kio_prime_backend(
 }
 
 fn emit_kio_prime_module_cached(
-    module: &crate::ast::Module<crate::ast::Prime>,
+    module: crate::prime::typer::ValidatedPrimeModule<'_>,
     emit_cache: &crate::cache::emit::EmitCache,
 ) -> Result<String, BackendError> {
     if !emit_cache.is_enabled() {
@@ -2250,9 +2272,10 @@ fn emit_kio_prime_module_cached(
     }
     #[cfg(test)]
     cache_work_counters::record_prime_emit_serialization();
-    let module_bytes = postcard::to_allocvec(module)
+    let module_bytes = postcard::to_allocvec(module.module())
         .map_err(|e| BackendError::Build(format!("cannot encode kio-prime emit cache key: {e}")))?;
     let module_path = module
+        .module()
         .path
         .segments
         .iter()
@@ -2293,7 +2316,7 @@ fn rust_backend(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    let package_label = build_timing::package_label(root_package);
+    let package_label = build_timing::package_label(root_package.package());
     let mut out_dir: Option<&str> = None;
     let mut namespace: Option<&str> = None;
     // The `thread_safety` build-block key. Absent ⇒ the historical
@@ -2368,6 +2391,7 @@ fn rust_backend(
         &root_package
             .package_file()
             .expect("kio build validates the root package file before backend dispatch")
+            .entry()
             .package_name,
     )?;
     let artifact_key = artifact_key_for_workspace_if_enabled(
@@ -2400,7 +2424,7 @@ fn rust_backend(
     let prepare_ms = build_timing::elapsed_ms(prepare_start);
 
     let setup_start = Instant::now();
-    let pkg_name: String = pick_rust_package_name(root_package)?;
+    let pkg_name: String = pick_rust_package_name(root_package.package())?;
     let crate_name: String = namespace
         .map(|s| s.to_owned())
         .unwrap_or_else(|| backends::namespace::default_rust_namespace(&pkg_name));
@@ -2711,7 +2735,7 @@ v(2) {
             .root_package
             .as_ref()
             .and_then(|package| package.package_file())
-            .and_then(|entry| entry.package_file.build.as_ref())
+            .and_then(|entry| entry.package_file().build.as_ref())
             .and_then(|build| build.targets.iter().find(|target| target.id == "go"))
             .cloned()
             .expect("Go target");
@@ -2751,7 +2775,7 @@ v(2) {
             .root_package
             .as_ref()
             .and_then(|package| package.package_file())
-            .and_then(|entry| entry.package_file.build.as_ref())
+            .and_then(|entry| entry.package_file().build.as_ref())
             .and_then(|build| build.targets.iter().find(|target| target.id == "python"))
             .cloned()
             .expect("Python target");
@@ -2796,7 +2820,7 @@ v(2) {
             .root_package
             .as_ref()
             .and_then(|package| package.package_file())
-            .and_then(|entry| entry.package_file.build.as_ref())
+            .and_then(|entry| entry.package_file().build.as_ref())
             .and_then(|build| build.targets.iter().find(|target| target.id == backend))
             .cloned()
             .unwrap_or_else(|| panic!("{backend} target"));
@@ -2939,7 +2963,7 @@ v(2) {
         let dir = fresh_dir("go-sig-replay");
         let (workspace, target) = typed_go_workspace(&dir);
         let root = workspace.root_package.as_ref().expect("typed root");
-        let label = build_timing::package_label(root);
+        let label = build_timing::package_label(root.package());
         let enriched_cache = crate::cache::enriched::EnrichedCache::disabled();
         let routed = SharedRoutedPackage::new(root, &enriched_cache, &label);
         let artifact_cache = crate::cache::artifact::ArtifactCache::disabled();
@@ -2991,7 +3015,7 @@ v(2) {
         let dir = fresh_dir("python-sig-replay");
         let (workspace, target) = typed_python_workspace(&dir);
         let root = workspace.root_package.as_ref().expect("typed root");
-        let label = build_timing::package_label(root);
+        let label = build_timing::package_label(root.package());
         let enriched_cache = crate::cache::enriched::EnrichedCache::disabled();
         let routed = SharedRoutedPackage::new(root, &enriched_cache, &label);
         let artifact_cache = crate::cache::artifact::ArtifactCache::disabled();
@@ -3103,7 +3127,7 @@ v(2) {
         let dir = fresh_dir("ts-retained-carriers");
         let (workspace, target) = typed_carrier_workspace(&dir, "ts");
         let root = workspace.root_package.as_ref().expect("typed root");
-        let label = build_timing::package_label(root);
+        let label = build_timing::package_label(root.package());
         let enriched_cache = crate::cache::enriched::EnrichedCache::disabled();
         let routed = SharedRoutedPackage::new(root, &enriched_cache, &label);
         let emit_cache = crate::cache::emit::EmitCache::disabled();
@@ -3177,7 +3201,7 @@ v(2) {
         let dir = fresh_dir("swift-retained-carriers");
         let (workspace, target) = typed_carrier_workspace(&dir, "swift");
         let root = workspace.root_package.as_ref().expect("typed root");
-        let label = build_timing::package_label(root);
+        let label = build_timing::package_label(root.package());
         let enriched_cache = crate::cache::enriched::EnrichedCache::disabled();
         let routed = SharedRoutedPackage::new(root, &enriched_cache, &label);
         let artifact_cache = crate::cache::artifact::ArtifactCache::disabled();
@@ -3296,7 +3320,7 @@ v(1) {
         fs::write(dir.join("app.sig.kio"), "signature app v(1)\n")
             .expect("write malformed signature");
         let root = workspace.root_package.as_ref().expect("typed root");
-        let label = build_timing::package_label(root);
+        let label = build_timing::package_label(root.package());
         let enriched_cache = crate::cache::enriched::EnrichedCache::disabled();
         let routed = SharedRoutedPackage::new(root, &enriched_cache, &label);
 
@@ -3335,7 +3359,7 @@ v(1) {
         fs::remove_dir_all(&target_dir).expect("remove source artifact");
 
         let root = workspace.root_package.as_ref().expect("typed root");
-        let label = build_timing::package_label(root);
+        let label = build_timing::package_label(root.package());
         let enriched_cache = crate::cache::enriched::EnrichedCache::disabled();
         let routed = SharedRoutedPackage::new(root, &enriched_cache, &label);
         expect_go_build(go_backend(
@@ -3402,11 +3426,11 @@ v(1) {
         let (workspace, _) = typed_go_workspace(&dir);
         let package = workspace.root_package.as_ref().expect("typed root package");
         let (_, entry) = package.modules().next().expect("one module");
-        let expected = kio_prime::emit_module(&entry.module);
+        let expected = kio_prime::emit_module(entry);
         let disabled = crate::cache::emit::EmitCache::disabled();
 
         cache_work_counters::reset();
-        let disabled_output = match emit_kio_prime_module_cached(&entry.module, &disabled) {
+        let disabled_output = match emit_kio_prime_module_cached(entry, &disabled) {
             Ok(output) => output,
             Err(BackendError::Build(message)) => {
                 panic!("disabled-cache emit failed: {message}")
@@ -3424,7 +3448,7 @@ v(1) {
         let active =
             crate::cache::emit::EmitCache::open(dir.join("cache-emit")).expect("open emit cache");
         cache_work_counters::reset();
-        let active_output = match emit_kio_prime_module_cached(&entry.module, &active) {
+        let active_output = match emit_kio_prime_module_cached(entry, &active) {
             Ok(output) => output,
             Err(BackendError::Build(message)) => {
                 panic!("active-cache emit failed: {message}")
@@ -3445,6 +3469,7 @@ v(1) {
         let dir = fresh_dir("sig-artifact-key");
         let package: Package<crate::ast::Prime> =
             Package::build(&dir, Vec::new(), None).expect("build empty package");
+        let package = crate::prime::typer::check_package(&package).expect("validate empty package");
         let target = target("go");
         let first =
             artifact_key_for_package("go", &target, &package, Some("signature app v(1);\n"));

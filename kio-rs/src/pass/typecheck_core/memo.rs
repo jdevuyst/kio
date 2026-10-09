@@ -454,10 +454,7 @@ impl UserElaboratorArtifactKey {
 }
 
 #[cfg(feature = "surface")]
-pub(crate) struct UserElaboratorEvalArtifactPair {
-    pub(crate) artifact: std::sync::Arc<crate::normalization::EvalArtifact>,
-    pub(crate) implementation: crate::ast::Expr<UncheckedPrime>,
-}
+pub(crate) use crate::normalization::UserElaboratorEvalArtifactPair;
 
 #[cfg(feature = "surface")]
 #[derive(Default)]
@@ -847,13 +844,9 @@ fn memo_log_enabled() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "surface")]
-    use crate::ast::{Expr, UncheckedPrime};
     use crate::ast::{Lowered, Meta, Type};
     #[cfg(feature = "surface")]
     use crate::ast::{TypeGoalDomain, TypeGoalOwner, TypeGoalRef, TypeGoalSlot};
-    #[cfg(feature = "surface")]
-    use crate::pass::resolve::Package;
     use crate::pass::typecheck_core::TypeInterner;
     use crate::span::Span;
     #[cfg(feature = "surface")]
@@ -952,18 +945,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     fn empty_user_elaborator_artifact() -> UserElaboratorEvalArtifactPair {
-        UserElaboratorEvalArtifactPair {
-            artifact: std::sync::Arc::new(
-                crate::normalization::EvalArtifact::from_validated_parts(
-                    Package::from_parts(std::collections::BTreeMap::new(), None),
-                    crate::normalization::EvalPrimitiveEnv::default(),
-                ),
-            ),
-            implementation: Expr::<UncheckedPrime>::Unit {
-                occurrence: Default::default(),
-                meta: Meta::new(Span::new(0, 0)),
-            },
-        }
+        UserElaboratorEvalArtifactPair::unit_for_test("implementation")
     }
 
     #[test]

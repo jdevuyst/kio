@@ -20,6 +20,8 @@ pub newtype Seal : Number { constructor make; projector read }
 
 pub fn make_seal(value: Number) -> Seal { Seal.make(value) }
 
+pub fn read_seal(value: Seal) -> Number { value.>Seal.read }
+
 fn observe_seal(value: Seal) -> Seal { mark(7); value }
 
 pub fn boxed_observer() -> Box(Seal -> Seal) { pack(observe_seal) }

@@ -474,7 +474,9 @@ mod tests {
             let name = shape_carrier_name(identity);
             let bytes = name.strip_prefix("KioForall_").unwrap().as_bytes();
             let decoded = bytes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
                 .collect::<Vec<_>>();
             assert_eq!(decoded, identity.as_bytes());

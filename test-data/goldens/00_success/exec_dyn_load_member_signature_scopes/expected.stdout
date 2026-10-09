@@ -1,0 +1,7 @@
+renamed member binders: ok
+CPS spelling collision and alias scope: ok
+payload shadow restores nominal argument: ok
+ordinary implicit Unit: ok
+type-only implicit Unit: ok
+explicit incomplete arrow: dyn_load_prime: export signature `guest.value`: dyn_load_prime: malformed exact host-function signature: expected a type
+domain kind before unresolved result: dyn_load_prime: export signature `guest.value`: a value parameter type must have base kind

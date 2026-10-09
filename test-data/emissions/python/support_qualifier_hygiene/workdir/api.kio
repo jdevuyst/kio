@@ -1,0 +1,7 @@
+module api;
+
+import capabilities as caps;
+
+pub fn typing() { caps.typing() }
+
+pub fn z_stop() -> ! { caps.z_stop() }

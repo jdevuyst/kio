@@ -485,6 +485,9 @@ Rust-specific instantiations.
 
 ## FFI surface
 
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
+
 ### Atomic types (governed by `role`)
 
 A `host type Foo role(r)` declaration remains an exact host-selected Rust
@@ -627,6 +630,10 @@ representation may decode, without guaranteeing that outcome for any marker
 pair.
 
 ### Structural and nominal types
+
+Owned or cloned facade values follow the shared
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged); a token clone
+does not grant permission to mutate shared Kio data.
 
 Anonymous structural values built from `&` / `|` cross the FFI as the
 Rust-native `Product` record and `Sum` enum. A `labels` declaration instead
@@ -1004,8 +1011,12 @@ function-typed slot — `fn if_c[A](b: [T](T & T) -> T, x: A, y: A) -> A {
 b(A, x, y) }` — is a *rank-N value parameter*. Rust has no closure type with
 a type-generic `Fn::call`; the generated exact facade therefore owns two
 site-specific items. `KioForall_<exact-site>` is the host implementation trait
-whose generic `apply<T: KioType, ...>` method retains the type binders and uses
-`T::Facade` at value occurrences. `KioForall_<exact-site>Value` is the public
+whose generic `specialize<T: KioType>(&self)` method selects exactly one type
+binder and returns its exact residual value, using `T::Facade` at value
+occurrences. A successive binder has its own implementation trait and value
+carrier, parameterized by the preceding selections. Selecting the final type
+of `[A][B] P -> R` returns `KioFnN`; it does not invoke that function.
+`KioForall_<exact-site>Value` is the public
 `Clone` carrier around one private stored body token and implements that trait
 by marker-directed conversion. An exact generated sealed `KioType` marker for
 the site has `Facade = KioForall_<exact-site>Value`, so the complete
@@ -1017,21 +1028,35 @@ Construction ingress accepts the canonical named carrier at every occurrence.
 Host code turns `impl KioForall_<exact-site> + 'static` into that carrier with
 `KioForall_<exact-site>Value::new(implementation)` before passing a direct
 boundary slot or placing the value inside a product, sum, function, newtype,
-type argument, recursive payload, or existential payload. Egress returns the
-same `Value` carrier. The stable `ffi::<env|exp>::<member>` namespace names each
+type argument, recursive payload, or existential payload. Construction and
+cloning do not run `specialize`; each selection runs that stage afresh and
+propagates its effects or panic at that selection. Egress returns the same
+`Value` carrier. The stable `ffi::<env|exp>::<member>` namespace names each
 non-Unit, nameable ordinary parameter as `argN` and return as `ret`; public
 newtype members instead use `<member>_argN` for constructor inputs and
-`<member>_ret` for projector outputs. Every callable slot alias additionally
+`<member>_ret` for projector outputs. A function-stage alias additionally
 exposes `<slot>_cbarg` for one source parameter or `<slot>_cbarg0`,
 `<slot>_cbarg1`, ... for several, plus `<slot>_cbret`; Unit slots remain
-omitted. This applies to argument and result aliases, to ordinary functions
-and forall carriers, and again when a callback parameter or result is itself
-callable. A forall carrier pairs its slot alias with `<slot>_impl`. Its
-callback aliases introduce the callable's type binders after the enclosing
-binders and retain only the parameters referenced by the aliased type.
+omitted. This applies to argument and result aliases, and again when a
+callback parameter or result is itself callable. A forall carrier pairs its
+slot alias with `<slot>_impl` and names the result of one specialization
+`<slot>_type_ret`, unless that result is Unit. These suffixes compose: a
+two-binder value has `<slot>_type_ret_impl` for its second implementation
+trait, and `<slot>_type_ret_type_ret` for its final residual. If that residual
+is a function, its parameter and result aliases extend this path with
+`_cbarg` and `_cbret`. Each type-result alias introduces the selected binder
+after the enclosing binders and retains the parameters referenced by its type.
+Callable descendants of structural slots extend the path with `_fieldN` for
+product fields, `_armN` for sum alternatives, and `_typeargN` for exposed type
+arguments. Indices are zero-based along the canonical right-nested product or
+sum spine and canonical type-argument order; a nested left child starts another
+path segment. Only callable descendants receive these additional aliases;
+opaque nominal payloads are not traversed. The descendant's `_impl` and callback
+aliases extend that same path.
 An existential projector instead exposes `<member>_continuation` and
-`<member>_continuation_impl`; the same callback suffixes name its payload
-parameter and result, including a polymorphic payload's carrier and `_impl`.
+`<member>_continuation_impl`; one `_type_ret` per hidden binder reaches its
+payload function, whose callback suffixes name its parameter and result,
+including a polymorphic payload's carrier and `_impl`.
 Each alias retains the referenced host parameter first, then source-marker
 parameters in declaration order. Host code therefore does not reconstruct an
 exact-site spelling. The

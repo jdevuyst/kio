@@ -4,7 +4,7 @@
 //! `Module<Routed>` (post-resolution-lowering) and writes a branded
 //! `create<Handle>(host)` ES-module factory (the handle is the
 //! PascalCase of the artifact stem). Each `Expr::Low*` variant
-//! produced by [`crate::pass::recover_to_low::lower`] has a per-variant
+//! produced by [`crate::pass::route::route_package`] has a per-variant
 //! emit helper in `emit`; the renderer drops to syntactic
 //! templating with no per-call-site classification. This wrapper
 //! exposes the per-backend convention every backend follows: a

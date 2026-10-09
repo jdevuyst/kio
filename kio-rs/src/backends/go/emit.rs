@@ -4,23 +4,17 @@
 //! [`specs/backends/go.md`](../../../../specs/backends/go.md): consumes a
 //! `Package<Routed>` (post-recovery + post-resolution-lowering — see
 //! [`crate::pass::structural_recovery`] and
-//! [`crate::pass::recover_to_low`]) and produces a self-contained Go
+//! [`crate::pass::route`]) and produces a self-contained Go
 //! package as a [`GoPackage`] (file-name → content map).
 //!
 //! ## The body and the FFI skin
 //!
-//! Go's **body** computes over the universal erased value
-//! (`any` / `interface{}`), the JS dynamic body's shape on a
-//! statically-typed host: scalar polymorphism (rank-N / existential)
-//! and higher-kinded carriers alike flow as `[]any`. Because
-//! `interface{}` is a genuine dynamic carrier, a higher-kinded carrier
-//! (`F(A)` inside a Functor / Monad dictionary) is carried with no
-//! marker or wrapper — the concrete use-site carrier and the
-//! dictionary-internal binder-erased carrier share one uniform `[]any`
-//! rep. Abstract `F(A)` therefore needs no per-`F` body interface;
-//! dictionary values that occur in a public signature still cross through
-//! the typed facade (see `ai/topics/emit.md` § Runtime model). Rust takes
-//! the same erased-body strategy over `Rc<dyn Any>`.
+//! Go's **body** computes over erased `any` values: products use `[]any`,
+//! opaque host constructors retain their native storage, and private nominal
+//! payloads stay inside declaration-owned envelopes. Public erased slots use
+//! `Value`, so generic transport preserves that representation even when a
+//! concrete native view needs conversion. Runtime type arguments remain erased;
+//! exact boundary plans supply the native views and their role adapters.
 //!
 //! The **skin** is the host's typed contract — the `Host` interface, the
 //! semantic facade types, the exported surface, the stable per-signature
@@ -35,19 +29,19 @@ use std::collections::BTreeMap;
 use crate::ast::{Expr, Role, Routed, Type};
 use crate::backends::boundary_facade::{
     BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, CallableSourceParamAdapter,
-    PreparedBoundaryCallableSites,
+    PreparedBoundaryCallableSites, QualifiedTypeName,
 };
-use crate::backends::skin::{FfiDir, HostRoleTable, exact_host_role, host_role_table};
-use crate::backends::structural::{
+use crate::backends::product_rebuild::{
     NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
 };
+use crate::backends::skin::{FfiDir, HostRoleTable, exact_host_role, host_role_table};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
 
 use super::facade::{
     GoFacadeCatalog, GoFacadeScope, GoFacadeUseRef, GoFacadeUseView, GoLiveCallableEntry,
-    GoLiveExistentialProjectorEntry, GoLiveFacadeUseRef, GoLiveHeadStage, GoLiveNewtypeMemberEntry,
-    GoLiveValueHeadStage, GoLiveValueSourceGroupView, GoPublicParameter,
+    GoLiveExistentialProjectorEntry, GoLiveFacadeUseRef, GoLiveFacadeUseView, GoLiveHeadStage,
+    GoLiveNewtypeMemberEntry, GoLiveValueHeadStage, GoLiveValueSourceGroupView, GoPublicParameter,
 };
 use super::facade_skin::{self, GoFreshNames, GoStatementSink};
 use super::naming::GoIdentifier;
@@ -139,7 +133,7 @@ mod facade_consumer_tests {
             .check_in_body_resolution()
             .expect("resolve Go facade test bodies");
         let prime = check_package(&package).expect("typecheck Go facade test package");
-        crate::pass::recover_to_low::lower(&crate::pass::structural_recovery::recover_package(
+        crate::pass::route::route_package(&crate::pass::structural_recovery::recover_package(
             &prime,
         ))
     }
@@ -151,14 +145,22 @@ mod facade_consumer_tests {
     }
 
     fn emitted_method<'a>(source: &'a str, name: &str) -> &'a str {
-        let marker = format!(") {name}(");
+        let marker = if name.starts_with("CallExp_") {
+            format!("func {name}[")
+        } else {
+            format!(") {name}(")
+        };
         let marker_at = source.find(&marker).expect("emitted Go method name");
-        let start = source[..marker_at]
-            .rfind("func (")
-            .expect("emitted Go method start");
+        let start = if name.starts_with("CallExp_") {
+            marker_at
+        } else {
+            source[..marker_at]
+                .rfind("func (")
+                .expect("emitted Go method start")
+        };
         let tail = &source[start..];
         let end = tail[1..]
-            .find("\nfunc (")
+            .find("\nfunc ")
             .map_or(tail.len(), |offset| offset + 1);
         &tail[..end]
     }
@@ -344,8 +346,8 @@ mod facade_consumer_tests {
         // the alias's type parameters. The package-root binding itself is the
         // exact public type for these atomic slots; no erased slot alias may
         // replace it.
-        assert!(!emitted.ffi_go.contains("Env_Api__round_arg0"));
-        assert!(!emitted.ffi_go.contains("Exp_Api__exported_ret"));
+        assert!(!emitted.ffi_go.contains("type Env_Api__round_arg0"));
+        assert!(!emitted.ffi_go.contains("type Exp_Api__exported_ret"));
         for public in [&emitted.host_go, &emitted.pkg_go, &emitted.ffi_go] {
             assert!(!public.contains("Api__round(arg0 any) any"), "{public}");
         }
@@ -393,7 +395,7 @@ mod facade_consumer_tests {
              host fn round(value: Box(I32)) -> Box(I32);",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go host carrier");
-        let atom = "KioHost_V1_M1_C3_apiN3_I32";
+        let atom = "KioIndexNominal_V1_M1_C3_apiN3_I32[KioHost_V1_M1_C3_apiN3_I32]";
         let carrier = "KioHostType_api__Box";
 
         assert!(
@@ -404,8 +406,8 @@ mod facade_consumer_tests {
             emitted.host_go
         );
         for required in [
-            format!("type {carrier}[T0 any] struct {{"),
-            format!("func Unsafe{carrier}FromNative[T0 any](value any) {carrier}[T0]"),
+            format!("type {carrier}[T0 KioIndexKind_S] struct {{"),
+            format!("func Unsafe{carrier}FromNative[T0 KioIndexKind_S](value any) {carrier}[T0]"),
             format!("func (value {carrier}[T0]) UnsafeNative() any"),
         ] {
             assert!(
@@ -415,6 +417,181 @@ mod facade_consumer_tests {
             );
         }
         assert!(!emitted.host_go.contains("Api__round(arg0 any) any"));
+        assert!(emitted.shapes_go.contains("[0]func(T0)"));
+        assert!(emitted.ffi_go.contains("func PrepareHost_api_Box["));
+    }
+
+    #[test]
+    fn stage_selection_uses_lexical_names_and_only_semantic_captures() {
+        let package = package(
+            "module api; \
+             pub newtype Box[A] : A { pub constructor make; projector open; }; \
+             pub newtype Poly : [B] B -> Box(B) { pub constructor make; pub projector open; }; \
+             pub newtype Keep[A] : [C] C -> (A & C) { pub constructor make; pub projector open; }; \
+             pub fn outer[A](a: A) -> Poly { Poly.make(.[B](b: B) { Box.make(b) }) } \
+             pub fn sparse[A][B](a: A, b: B) -> Keep(B) { Keep.make(.[C](c: C) { (b, c) }) }",
+        );
+        let emitted = lower_package(&package, "pkg").expect("emit selected transparent stages");
+        assert!(
+            emitted
+                .ffi_go
+                .contains("func SelectExp_Api__outer_ret[KioI1 KioIndexKind_S](stage ")
+        );
+        assert!(emitted.ffi_go.contains(
+            "func SelectExp_Api__sparse_ret[KioI2 KioIndexKind_S, KioI1 KioIndexKind_S](stage "
+        ));
+        for prefix in ["Value", "Native", "Prepare", "Unprepare"] {
+            assert!(
+                emitted
+                    .ffi_go
+                    .contains(&format!("func {prefix}Exp_Api__outer_ret(pkg *Package,"))
+            );
+        }
+        for line in emitted
+            .ffi_go
+            .lines()
+            .filter(|line| line.starts_with("func Select"))
+        {
+            let declaration = line.split("](stage").next().unwrap();
+            for index in 0..3 {
+                assert!(
+                    declaration
+                        .matches(&format!("KioI{index} KioIndexKind_"))
+                        .count()
+                        <= 1,
+                    "{line}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn contextual_sum_rows_capture_only_referenced_indices_and_prepare_host_arguments() {
+        let package = package(
+            "module api; host type Number role(i32); host type Vault[A]; \
+             host fn choose() -> (. | Number); \
+             pub fn sparse() -> [A] A -> [B] B -> (. | Number) { .[A](a: A)[B](b: B) { choose() } } \
+             pub fn round[A](value: Vault(. | A)) -> Vault(. | A) { value }",
+        );
+        let emitted =
+            lower_package(&package, "pkg").expect("emit exact contextual sum dependencies");
+        for declaration in emitted
+            .shapes_go
+            .lines()
+            .filter(|line| line.starts_with("type kioSumUse_"))
+        {
+            if declaration.contains("sparse") {
+                assert!(!declaration.contains("KioI0"), "{declaration}");
+            }
+        }
+        assert!(
+            emitted
+                .ffi_go
+                .contains("type Exp_Api__round_arg0_typearg0[")
+        );
+        assert!(emitted.shapes_go.contains("type KioErasedIndex_S struct"));
+    }
+
+    #[test]
+    fn returned_foralls_emit_one_selection_pair_per_source_stage() {
+        for depth in 1..=3 {
+            let names = ["A", "B", "C"];
+            let mut result = ".".to_owned();
+            let mut body = "()".to_owned();
+            for name in names[..depth].iter().rev() {
+                result = format!("[{name}] {name} -> {result}");
+                body = format!(".[{name}](value: {name}) {{ {body} }}");
+            }
+            let package = package(&format!(
+                "module api; pub fn stage() -> {result} {{ {body} }}"
+            ));
+            let emitted = lower_package(&package, "pkg").expect("emit nested source stages");
+            assert_eq!(
+                emitted
+                    .ffi_go
+                    .matches("func SelectExp_Api__stage_ret")
+                    .count(),
+                depth
+            );
+            assert_eq!(
+                emitted
+                    .ffi_go
+                    .lines()
+                    .filter(|line| line.starts_with("func NewExp_Api__stage_ret")
+                        && line.contains("Stage("))
+                    .count(),
+                depth
+            );
+        }
+    }
+
+    #[test]
+    fn boundary_view_helpers_do_not_expand_the_generic_handle_method_set() {
+        let package = package(
+            "module api; host type Number role(i32); host type Vault[A]; \
+             host fn store[A](value: Vault(A)) -> Vault(A); \
+             pub newtype Box[A] : A { pub constructor make; projector open; }; \
+             pub fn round(value: Box(Number)) -> Box(Number) { value } \
+             pub fn identity[A](value: A) -> A { value }",
+        );
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
+        let facades = GoFacadeCatalog::prepare(&prepared).unwrap();
+        let aliases = render_ffi_go(&facades, &GoNames::derive("pkg")).unwrap();
+        for line in aliases
+            .source
+            .lines()
+            .filter(|line| line.starts_with("func (pkg "))
+        {
+            let member = line.split_once(") ").unwrap().1;
+            for prefix in ["Value", "Native", "Prepare", "Unprepare"] {
+                assert!(!member.starts_with(prefix), "{line}");
+            }
+        }
+        for name in [
+            "PrepareHost_api_Number",
+            "PrepareHost_api_Vault",
+            "PrepareExp_Api__round_arg0",
+            "UnprepareExp_Api__round_ret",
+            "PrepareExp_Api__identity_arg0",
+            "ValueHost_api_Number",
+            "NativeHost_api_Vault",
+            "ValueExp_Api__round_arg0",
+            "NativeExp_Api__identity_arg0",
+        ] {
+            assert!(aliases.source.contains(&format!("func {name}[")), "{name}");
+            assert!(aliases.package_names.iter().any(|claim| claim == name));
+        }
+        for claim in aliases.package_names.iter().filter(|name| {
+            ["Value", "Native", "Prepare", "Unprepare"]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
+        }) {
+            assert!(
+                aliases.source.contains(&format!("func {claim}[")),
+                "{claim}"
+            );
+        }
+        assert!(aliases.source.contains("KioI0 KioIndexKind_S"));
+    }
+
+    #[test]
+    fn generic_public_member_preparation_is_owned_by_host_declarations() {
+        let package = package(
+            "module api; host type Number role(i32); host type Vault[A]; \
+             pub newtype Applied[*F][A] : F(A) { pub constructor make; projector open; };",
+        );
+        let emitted =
+            lower_package(&package, "pkg").expect("emit constructor-only host preparation");
+        assert!(emitted.ffi_go.contains("func PrepareHost_api_Number["));
+        assert!(emitted.ffi_go.contains("func PrepareHost_api_Vault["));
+        assert!(emitted.ffi_go.contains("value KioHostType_api__Vault[KioI0]) Prepared[KioIndexApply_ASS[KioIndexNominal_V1_M1_C3_apiN5_Vault, KioI0]]"));
+        assert!(
+            emitted
+                .shapes_go
+                .contains("type Index_api__Number[Native any] = ")
+        );
+        assert!(emitted.shapes_go.contains("type Index_api__Vault = "));
+        assert!(!emitted.pkg_go.contains("Api__open"));
     }
 
     #[test]
@@ -468,23 +645,23 @@ mod facade_consumer_tests {
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
             emitted.host_go.contains(&format!(
-                "Api__ordered(arg0 {TEXT_HOST}, arg1 any) {TEXT_HOST}"
+                "Api__ordered(arg0 {TEXT_HOST}, arg1 Value) {TEXT_HOST}"
             )),
             "{}",
             emitted.host_go
         );
-        let erased_alias = format!("type Env_Api__ordered_arg1[{TEXT_HOST} any] = any");
+        let erased_alias = format!("type Env_Api__ordered_arg1[{TEXT_HOST} any] = Value");
         assert!(
             emitted.ffi_go.contains(&erased_alias),
             "{erased_alias}\n{}",
             emitted.ffi_go
         );
-        assert!(!emitted.ffi_go.contains("Env_Api__ordered_arg0"));
-        assert!(!emitted.ffi_go.contains("Env_Api__ordered_ret"));
+        assert!(!emitted.ffi_go.contains("type Env_Api__ordered_arg0"));
+        assert!(!emitted.ffi_go.contains("type Env_Api__ordered_ret"));
     }
 
     #[test]
-    fn forall_aliases_are_transparent_and_function_legs_are_recursive() {
+    fn forall_aliases_retain_stages_and_function_legs_are_recursive() {
         let package = package(
             "module api; \
              host type Text role(str); \
@@ -493,26 +670,66 @@ mod facade_consumer_tests {
         let emitted = lower_package(&package, "pkg").expect("emit Go facade package");
         assert!(
             emitted.ffi_go.contains(&format!(
-                "type Env_Api__useCallback_arg0[{TEXT_HOST} any] = func(any) any"
+                "type Env_Api__useCallback_arg0[{TEXT_HOST} any] = TypeStage["
             )),
             "{}",
             emitted.ffi_go
         );
         assert!(
             emitted.ffi_go.contains(&format!(
-                "type Env_Api__useCallback_arg0_cbarg0[{TEXT_HOST} any] = any"
+                "type Env_Api__useCallback_arg0_result_cbarg0[{TEXT_HOST} any] = Value"
             )),
             "{}",
             emitted.ffi_go
         );
         assert!(
             emitted.ffi_go.contains(&format!(
-                "type Env_Api__useCallback_arg0_cbret[{TEXT_HOST} any] = any"
+                "type Env_Api__useCallback_arg0_result_cbret[{TEXT_HOST} any] = Value"
             )),
             "{}",
             emitted.ffi_go
         );
-        assert!(!emitted.ffi_go.contains("_result"), "{}", emitted.ffi_go);
+        assert!(
+            emitted.ffi_go.contains(&format!(
+                "type Env_Api__useCallback_arg0_result[{TEXT_HOST} any] = func(Value) Value"
+            )),
+            "{}",
+            emitted.ffi_go
+        );
+        assert!(
+            emitted
+                .ffi_go
+                .contains("func SelectEnv_Api__useCallback_arg0[KioI0 KioIndexKind_S,")
+        );
+        assert!(
+            emitted
+                .ffi_go
+                .contains("func(Prepared[KioI0]) Prepared[KioI0]")
+        );
+    }
+
+    #[test]
+    fn value_view_helpers_share_nested_conversion_code_without_sharing_execution() {
+        for depth in [4, 8] {
+            let ty = format!("{}.", ". -> ".repeat(depth));
+            let package = package(&format!(
+                "module api; pub fn round(value: {ty}) -> {ty} {{ value }}"
+            ));
+            let emitted = lower_package(&package, "pkg").expect("emit nested Value views");
+            // Two public roots, each with one In and Out closure per stage.
+            // Re-inlining every suffix would multiply this by the depth.
+            assert_eq!(emitted.ffi_go.matches("return func()").count(), 4 * depth);
+            assert!(
+                emitted
+                    .ffi_go
+                    .contains("kioValueExp_Api__round_arg0_cbretIntoBody(host,")
+            );
+            assert!(
+                emitted
+                    .ffi_go
+                    .contains("kioValueExp_Api__round_arg0_cbretFromBody(host,")
+            );
+        }
     }
 
     #[test]
@@ -563,9 +780,13 @@ mod facade_consumer_tests {
                 emitted.ffi_go
             );
         }
-        assert!(!emitted.ffi_go.contains("Env_Api__consume_arg0_0_value"));
-        assert!(!emitted.ffi_go.contains("Env_Api__consume_arg1_cbarg0"));
-        assert!(!emitted.ffi_go.contains("Env_Api__consume_arg1_cbret"));
+        assert!(
+            !emitted
+                .ffi_go
+                .contains("type Env_Api__consume_arg0_0_value")
+        );
+        assert!(!emitted.ffi_go.contains("type Env_Api__consume_arg1_cbarg0"));
+        assert!(!emitted.ffi_go.contains("type Env_Api__consume_arg1_cbret"));
     }
 
     #[test]
@@ -657,9 +878,12 @@ v(2) {
             "type KioSum_K0_Case[R, P any] interface {",
             "Value() P",
             "func NewKioSum_K0[",
+            "type KioIndex_Product[",
+            "type KioIndex_Sum[",
         ] {
             assert_deprecated_declaration(&emitted.shapes_go, declaration);
         }
+        assert_deprecated_declaration(&emitted.ffi_go, "type IndexEnv_Api__old_arg0 = ");
     }
 
     #[test]
@@ -733,6 +957,18 @@ v(2) {
             "{}",
             emitted.shapes_go
         );
+        let index = "type KioIndex_Product[";
+        let index_at = emitted
+            .shapes_go
+            .find(index)
+            .expect("shared live structural index");
+        assert!(
+            !emitted.shapes_go[..index_at]
+                .lines()
+                .next_back()
+                .is_some_and(|line| line.starts_with("// Deprecated:"))
+        );
+        assert_deprecated_declaration(&emitted.shapes_go, "type Index_api__Legacy[Native any] = ");
         let retained_alias =
             format!("type Env_Api__old_ret[{live} any] = Product[{retained}, Unit]");
         assert_deprecated_declaration(&emitted.ffi_go, &retained_alias);
@@ -878,13 +1114,16 @@ v(2) {
         );
         let emitted = lower_package(&package, "pkg").expect("emit interleaved export");
         assert!(
-            emitted.pkg_go.contains(&format!(
-                "Staged(arg0 {I32_HOST}, arg1 Product[{I32_HOST}, {I32_HOST}]) {I32_HOST}"
-            )),
+            emitted
+                .pkg_go
+                .contains("func CallExp_Api__staged[KioI0 KioIndexKind_S, KioI1 KioIndexKind_S,")
+                && emitted.pkg_go.contains(&format!(
+                    "arg0 {I32_HOST}, arg1 Product[{I32_HOST}, {I32_HOST}]) {I32_HOST}"
+                )),
             "{}",
             emitted.pkg_go
         );
-        let method = emitted_method(&emitted.pkg_go, "Staged");
+        let method = emitted_method(&emitted.pkg_go, "CallExp_Api__staged");
         assert!(method.matches(".(func() any)()").count() >= 2, "{method}");
         assert!(method.contains("[]any{"), "{method}");
     }
@@ -902,18 +1141,18 @@ v(2) {
         );
         let emitted = lower_package(&package, "pkg").expect("emit generic newtype members");
 
-        let make_generic = emitted_method(&emitted.pkg_go, "MakeGeneric");
+        let make_generic = emitted_method(&emitted.pkg_go, "CallExp_Api__Generic_makeGeneric");
         assert!(make_generic.contains(".(func() any)()"), "{make_generic}");
 
         let read_church = emitted_method(&emitted.pkg_go, "ReadChurch");
         let header = read_church.lines().next().expect("Church projector header");
         assert!(header.contains("ReadChurch(arg0 "), "{header}");
         assert!(!header.contains(", arg1 "), "{header}");
-        assert!(header.contains(") func("), "{header}");
+        assert!(header.contains(") TypeStage["), "{header}");
         for alias in [
-            "type Exp_Api__Church_readChurch_ret = func(",
-            "type Exp_Api__Church_readChurch_ret_cbarg0 = func(",
-            "type Exp_Api__Church_readChurch_ret_cbret = any",
+            "type Exp_Api__Church_readChurch_ret = TypeStage[",
+            "type Exp_Api__Church_readChurch_ret_result_cbarg0 = func(",
+            "type Exp_Api__Church_readChurch_ret_result_cbret = Value",
         ] {
             assert!(
                 emitted.ffi_go.contains(alias),
@@ -945,7 +1184,7 @@ v(2) {
         let single_header = single.lines().next().expect("Single projector header");
         assert!(
             single_header.contains("ReadSingle(arg0 ")
-                && single_header.contains(", arg1 func(any) any) any"),
+                && single_header.contains(", arg1 func() func(Value) Value) Value"),
             "{single_header}"
         );
         assert_eq!(single.matches("= arg1\n").count(), 1, "{single}");
@@ -963,12 +1202,12 @@ v(2) {
         );
         assert_selected_result_is_returned(single);
 
-        let packed = emitted_method(&emitted.pkg_go, "ReadPacked");
+        let packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_readPacked");
         let packed_header = packed.lines().next().expect("Packed projector header");
         assert!(
-            packed_header.contains("ReadPacked(arg0 ")
+            packed_header.contains("CallExp_Api__Packed_readPacked[")
                 && packed_header.contains(
-                    ", arg1 func(KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]) any) any"
+                    ", arg1 func() func() func(KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value) Value"
                 ),
             "{packed_header}"
         );
@@ -988,7 +1227,8 @@ v(2) {
         );
         let host_arguments = call_arguments(host_call);
         assert!(
-            host_arguments.starts_with("KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]{"),
+            host_arguments
+                .starts_with("KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]{"),
             "{host_call}"
         );
         assert!(host_arguments.ends_with('}'), "{host_call}");
@@ -997,7 +1237,7 @@ v(2) {
             "{packed}"
         );
         assert_selected_result_is_returned(packed);
-        let make_packed = emitted_method(&emitted.pkg_go, "MakePacked");
+        let make_packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_makePacked");
         assert!(
             make_packed.matches(".(func() any)()").count() >= 3,
             "{make_packed}"
@@ -1005,18 +1245,18 @@ v(2) {
 
         for alias in [
             "type Exp_Api__Single_readSingle_arg0 = ",
-            "type Exp_Api__Single_readSingle_arg1 = func(any) any",
-            "type Exp_Api__Single_readSingle_arg1_cbarg0 = any",
-            "type Exp_Api__Single_readSingle_arg1_cbret = any",
-            "type Exp_Api__Single_readSingle_ret = any",
-            "type Exp_Api__Packed_readPacked_arg0 = ",
-            "type Exp_Api__Packed_readPacked_arg1 = func(KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]) any",
-            "type Exp_Api__Packed_readPacked_arg1_cbarg0 = KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]",
-            "type Exp_Api__Packed_readPacked_arg1_cbarg0_field0 = any",
-            "type Exp_Api__Packed_readPacked_arg1_cbarg0_field1 = any",
-            "type Exp_Api__Packed_readPacked_arg1_cbarg0_field2 = any",
-            "type Exp_Api__Packed_readPacked_arg1_cbret = any",
-            "type Exp_Api__Packed_readPacked_ret = any",
+            "type Exp_Api__Single_readSingle_arg1 = func() func(Value) Value",
+            "type Exp_Api__Single_readSingle_arg1_result_cbarg0 = Value",
+            "type Exp_Api__Single_readSingle_arg1_result_cbret = Value",
+            "type Exp_Api__Single_readSingle_ret = Value",
+            "type Exp_Api__Packed_readPacked_arg0[KioI0 KioIndexKind_S] = ",
+            "type Exp_Api__Packed_readPacked_arg1[KioI0 KioIndexKind_S] = func() func() func(KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value",
+            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0[KioI0 KioIndexKind_S] = KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]",
+            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field0[KioI0 KioIndexKind_S] = Prepared[KioI0]",
+            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field1[KioI0 KioIndexKind_S] = Value",
+            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field2[KioI0 KioIndexKind_S] = Value",
+            "type Exp_Api__Packed_readPacked_arg1_result_result_cbret[KioI0 KioIndexKind_S] = Value",
+            "type Exp_Api__Packed_readPacked_ret[KioI0 KioIndexKind_S] = Value",
         ] {
             assert!(
                 emitted.ffi_go.contains(alias),
@@ -1318,8 +1558,8 @@ fn capitalize_first(s: &str) -> String {
 }
 
 /// Complete stable alias surface. Every value slot and return receives its
-/// `Env_`/`Exp_` root alias, including primitive and erased types. Forall and
-/// transparent Both newtypes peel without changing that prefix; Function
+/// `Env_`/`Exp_` root alias, including primitive and erased types. Forall results
+/// recurse through `_result`; transparent Both newtypes retain the prefix. Function
 /// legs recurse through `_cbargN`/`_cbret`, and sums delegate their positional
 /// cases and constructors to the facade-owned exact contextual alias. Product
 /// fields recurse through `_fieldN`; a sum arm payload recurses through
@@ -1329,9 +1569,66 @@ struct FfiAliases {
     package_names: Vec<String>,
 }
 
+#[derive(Clone)]
 struct GoFfiAliasRootParameters {
     declaration: String,
     arguments: String,
+    selected: bool,
+}
+
+impl GoFfiAliasRootParameters {
+    fn with_index(&self, name: &str, constraint: &str) -> Self {
+        Self {
+            declaration: super::facade::append_type_parameters(
+                &self.declaration,
+                &[format!("{name} {constraint}")],
+            ),
+            arguments: super::facade::append_type_parameters(&self.arguments, &[name.to_owned()]),
+            selected: true,
+        }
+    }
+
+    fn selecting_declaration(&self, name: &str, constraint: &str) -> String {
+        if self.declaration.is_empty() {
+            format!("[{name} {constraint}]")
+        } else {
+            format!(
+                "[{name} {constraint}, {}]",
+                &self.declaration[1..self.declaration.len() - 1]
+            )
+        }
+    }
+}
+
+fn ffi_site_parameters(
+    facades: &GoFacadeCatalog<'_>,
+    site: &super::facade::GoFacadeSite<'_>,
+) -> GoFfiAliasRootParameters {
+    let selected = !matches!(
+        site.id().owner(),
+        BoundaryFacadeSiteOwner::HostFunction { .. }
+    );
+    let entry = site.callable_entry().unwrap_or_else(go_facade_invariant);
+    let mut declarations = Vec::new();
+    let mut arguments = Vec::new();
+    if selected {
+        for stage in entry.stages().iter().filter_map(|stage| stage.type_stage()) {
+            let name = format!("KioI{}", arguments.len());
+            declarations.push(format!("{name} {}", stage.index_constraint()));
+            arguments.push(name);
+        }
+    }
+    GoFfiAliasRootParameters {
+        declaration: super::facade::append_type_parameters(
+            &facades.host_binding_declaration(),
+            &declarations,
+        ),
+        arguments: super::facade::append_type_parameters(
+            &facades.host_binding_arguments(),
+            &arguments,
+        ),
+        selected: !arguments.is_empty(),
+    }
 }
 
 fn render_ffi_go(facades: &GoFacadeCatalog<'_>, names: &GoNames) -> Result<FfiAliases, EmitError> {
@@ -1343,14 +1640,18 @@ fn render_ffi_go(facades: &GoFacadeCatalog<'_>, names: &GoNames) -> Result<FfiAl
     let root_parameters = GoFfiAliasRootParameters {
         declaration: facades.host_binding_declaration(),
         arguments: facades.host_binding_arguments(),
+        selected: false,
     };
     for site in facades.sites() {
+        let root_parameters = ffi_site_parameters(facades, site);
         let prefix = ffi_site_prefix(site.id());
         let removed_at_version = site.removed_at_version();
         match site.id().owner() {
             BoundaryFacadeSiteOwner::HostFunction { .. }
             | BoundaryFacadeSiteOwner::ExportedFunction { .. } => {
-                let entry = site.callable_entry().unwrap_or_else(go_facade_invariant);
+                let entry = site
+                    .callable_entry_with_indices(root_parameters.selected)
+                    .unwrap_or_else(go_facade_invariant);
                 let mut argument = 0usize;
                 for stage in entry.stages() {
                     let Some(value) = stage.value_stage() else {
@@ -1390,9 +1691,12 @@ fn render_ffi_go(facades: &GoFacadeCatalog<'_>, names: &GoNames) -> Result<FfiAl
                          execution capability"
                     )
                 });
-                let member = live
-                    .newtype_member_entry()
-                    .unwrap_or_else(go_facade_invariant);
+                let member = (if root_parameters.selected {
+                    live.selected_newtype_member_entry()
+                } else {
+                    live.newtype_member_entry()
+                })
+                .unwrap_or_else(go_facade_invariant);
                 for (argument, parameter) in member
                     .public_parameters()
                     .unwrap_or_else(go_facade_invariant)
@@ -1421,10 +1725,299 @@ fn render_ffi_go(facades: &GoFacadeCatalog<'_>, names: &GoNames) -> Result<FfiAl
             }
         }
     }
+    let mut views = GoValueViewRenderer {
+        source: String::new(),
+        package_names: Vec::new(),
+        visited: BTreeMap::new(),
+        handle_type: names.handle_ptr(&root_parameters.arguments),
+        host_type: format!("{}{}", names.host_ty, root_parameters.arguments),
+        host_parameters: root_parameters.clone(),
+        root_parameters,
+    };
+    for preparation in facades
+        .host_preparations()
+        .unwrap_or_else(go_facade_invariant)
+    {
+        let outer = views.root_parameters.clone();
+        for (name, constraint) in &preparation.indices {
+            views.root_parameters = views.root_parameters.with_index(name, constraint);
+        }
+        views.render(
+            &preparation.spelling,
+            preparation.boundary_type.to_string(),
+            facade_skin::GoValueView::Host(&preparation),
+            &[],
+        );
+        views.root_parameters = outer;
+    }
+    for live in facades.live_sites() {
+        views.root_parameters = ffi_site_parameters(facades, live.site());
+        let prefix = ffi_site_prefix(live.site().id());
+        match live.site().id().owner() {
+            BoundaryFacadeSiteOwner::HostFunction { .. }
+            | BoundaryFacadeSiteOwner::ExportedFunction { .. } => {
+                let entry = (if views.root_parameters.selected {
+                    live.selected_callable_entry()
+                } else {
+                    live.callable_entry()
+                })
+                .unwrap_or_else(go_facade_invariant);
+                views.visit_entry_arguments(&prefix, &entry)?;
+                views.visit_value(&format!("{prefix}_ret"), entry.returned())?;
+            }
+            BoundaryFacadeSiteOwner::NewtypeConstructor { .. }
+            | BoundaryFacadeSiteOwner::NewtypeProjector { .. } => {
+                let member = (if views.root_parameters.selected {
+                    live.selected_newtype_member_entry()
+                } else {
+                    live.newtype_member_entry()
+                })
+                .unwrap_or_else(go_facade_invariant);
+                let count = views.visit_entry_arguments(&prefix, member.entry())?;
+                if let GoLiveNewtypeMemberEntry::ExistentialProjector(projector) = &member {
+                    views.visit_value(&format!("{prefix}_arg{count}"), projector.continuation())?;
+                }
+                views.visit_value(&format!("{prefix}_ret"), member.result())?;
+            }
+        }
+    }
+    out.push_str(&views.source);
+    package_names.extend(views.package_names);
     Ok(FfiAliases {
         source: out,
         package_names,
     })
+}
+
+/// Native Value preparation/recovery follows the same live, contextual
+/// facade topology as ordinary calls. Opaque applications expose views for
+/// their static arguments, never an operation that traverses their storage.
+struct GoValueViewRenderer {
+    source: String,
+    package_names: Vec<String>,
+    visited: BTreeMap<String, String>,
+    handle_type: String,
+    host_type: String,
+    host_parameters: GoFfiAliasRootParameters,
+    root_parameters: GoFfiAliasRootParameters,
+}
+
+impl GoValueViewRenderer {
+    fn render(
+        &mut self,
+        spelling: &str,
+        ty: String,
+        view: facade_skin::GoValueView<'_, '_, '_>,
+        children: &[facade_skin::GoValueViewChild<'_, '_>],
+    ) -> String {
+        let mut parameters = self.host_parameters.clone();
+        for (name, kind) in view.index_parameters().unwrap_or_else(go_skin_invariant) {
+            parameters = parameters.with_index(&name, &kind);
+        }
+        if let Some(previous) = self.visited.insert(spelling.to_owned(), ty.clone()) {
+            assert_eq!(previous, ty, "one stable Go Value view has one exact type");
+            return parameters.arguments;
+        }
+        let (source, has_preparation) = facade_skin::render_value_view(
+            view,
+            children,
+            spelling,
+            &self.handle_type,
+            &parameters.declaration,
+            &parameters.arguments,
+        )
+        .unwrap_or_else(go_skin_invariant);
+        self.source.push_str(&source);
+        self.package_names
+            .push(format!("kioValue{spelling}IntoBody"));
+        self.package_names
+            .push(format!("kioValue{spelling}FromBody"));
+        self.package_names
+            .extend([format!("Value{spelling}"), format!("Native{spelling}")]);
+        if has_preparation {
+            self.package_names
+                .extend([format!("Prepare{spelling}"), format!("Unprepare{spelling}")]);
+        }
+        parameters.arguments
+    }
+
+    fn visit_entry_arguments(
+        &mut self,
+        prefix: &str,
+        entry: &GoLiveCallableEntry<'_, '_>,
+    ) -> Result<usize, EmitError> {
+        let mut count = 0;
+        for stage in entry.stages() {
+            let Some(stage) = stage.value_stage() else {
+                continue;
+            };
+            let parameters = stage
+                .public_parameters()
+                .unwrap_or_else(go_facade_invariant);
+            let mut parameters = parameters.iter();
+            for group in stage.source_groups().unwrap_or_else(go_facade_invariant) {
+                let fields = match group.view() {
+                    GoLiveValueSourceGroupView::UnitValue => continue,
+                    GoLiveValueSourceGroupView::Identity(value) => std::slice::from_ref(value),
+                    GoLiveValueSourceGroupView::RightNest(fields) => fields,
+                };
+                let parameter = parameters
+                    .next()
+                    .expect("each non-unit source group owns one public parameter");
+                self.visit_parameter(&format!("{prefix}_arg{count}"), parameter, fields)?;
+                count += 1;
+            }
+            assert!(parameters.next().is_none());
+        }
+        Ok(count)
+    }
+
+    fn visit_parameter<'site, 'source>(
+        &mut self,
+        spelling: &str,
+        parameter: &GoPublicParameter<'site, 'source>,
+        fields: &[GoLiveFacadeUseRef<'site, 'source>],
+    ) -> Result<Vec<facade_skin::GoValueViewChild<'site, 'source>>, EmitError> {
+        match parameter {
+            GoPublicParameter::Value(_) => {
+                assert_eq!(fields.len(), 1);
+                Ok(self
+                    .visit_value(spelling, &fields[0])?
+                    .into_iter()
+                    .collect())
+            }
+            GoPublicParameter::Product(product) => {
+                let mut children = Vec::new();
+                for (index, field) in fields.iter().enumerate() {
+                    children.extend(self.visit_value(&format!("{spelling}_field{index}"), field)?);
+                }
+                self.render(
+                    spelling,
+                    product.boundary_type().to_string(),
+                    facade_skin::GoValueView::Product(product, fields),
+                    &children,
+                );
+                Ok(children)
+            }
+        }
+    }
+
+    fn visit_value<'site, 'source>(
+        &mut self,
+        spelling: &str,
+        value: &GoLiveFacadeUseRef<'site, 'source>,
+    ) -> Result<Option<facade_skin::GoValueViewChild<'site, 'source>>, EmitError> {
+        let mut contextual = value.clone();
+        let view = loop {
+            match contextual.view().unwrap_or_else(go_facade_invariant) {
+                GoLiveFacadeUseView::Transparent { payload } => contextual = payload,
+                view => break view,
+            }
+        };
+        match &view {
+            GoLiveFacadeUseView::Bottom | GoLiveFacadeUseView::Erased { .. } => return Ok(None),
+            _ => {}
+        }
+        let mut children = Vec::new();
+        match view {
+            GoLiveFacadeUseView::Product { fields, .. } => {
+                for (index, field) in fields.iter().enumerate() {
+                    children.extend(self.visit_value(&format!("{spelling}_field{index}"), field)?);
+                }
+            }
+            GoLiveFacadeUseView::Sum { arms, .. } => {
+                for (index, arm) in arms.iter().enumerate() {
+                    children.extend(self.visit_value(&format!("{spelling}_{index}_value"), arm)?);
+                }
+            }
+            GoLiveFacadeUseView::HostCarrier { arguments, .. } => {
+                for (index, argument) in arguments.iter().enumerate() {
+                    children
+                        .extend(self.visit_value(&format!("{spelling}_typearg{index}"), argument)?);
+                }
+            }
+            GoLiveFacadeUseView::Forall { result, .. } => {
+                if let Some((parameter, constraint, selected)) = contextual
+                    .select_forall()
+                    .unwrap_or_else(go_facade_invariant)
+                {
+                    let outer = self.root_parameters.clone();
+                    let mut captures = self.host_parameters.clone();
+                    for (name, kind) in contextual
+                        .semantic()
+                        .index_parameters()
+                        .unwrap_or_else(go_facade_invariant)
+                    {
+                        captures = captures.with_index(&name, &kind);
+                    }
+                    self.root_parameters = captures.with_index(parameter.as_str(), &constraint);
+                    let selected_child =
+                        self.visit_value(&format!("{spelling}_selected"), &selected)?;
+                    let selected_arguments = selected_child
+                        .as_ref()
+                        .map(|child| child.type_arguments.as_str());
+                    self.root_parameters = outer;
+                    self.source.push_str(
+                        &facade_skin::render_type_stage_helpers(
+                            &contextual,
+                            &selected,
+                            spelling,
+                            &self.host_type,
+                            &captures.declaration,
+                            &captures.selecting_declaration(parameter.as_str(), &constraint),
+                            selected_arguments,
+                        )
+                        .unwrap_or_else(go_skin_invariant),
+                    );
+                    self.package_names
+                        .extend([format!("New{spelling}Stage"), format!("Select{spelling}")]);
+                } else {
+                    children.extend(self.visit_value(&format!("{spelling}_result"), &result)?);
+                }
+            }
+            GoLiveFacadeUseView::Function {
+                semantic,
+                layout,
+                slots,
+                result,
+            } => {
+                let parameters = semantic
+                    .public_parameters()
+                    .unwrap_or_else(go_facade_invariant);
+                let mut parameters = parameters.iter().enumerate();
+                for group in layout.source_params() {
+                    if group.adapter() == CallableSourceParamAdapter::UnitValue {
+                        continue;
+                    }
+                    let (index, parameter) = parameters
+                        .next()
+                        .expect("each non-unit function group owns one public parameter");
+                    children.extend(self.visit_parameter(
+                        &format!("{spelling}_cbarg{index}"),
+                        parameter,
+                        &slots[group.facade_slots()],
+                    )?);
+                }
+                assert!(parameters.next().is_none());
+                children.extend(self.visit_value(&format!("{spelling}_cbret"), &result)?);
+            }
+            _ => {}
+        }
+        let type_arguments = self.render(
+            spelling,
+            value
+                .boundary_type()
+                .unwrap_or_else(go_facade_invariant)
+                .to_string(),
+            facade_skin::GoValueView::Value(value),
+            &children,
+        );
+        Ok(Some(facade_skin::GoValueViewChild {
+            cursor: value.clone(),
+            spelling: spelling.to_owned(),
+            type_arguments,
+        }))
+    }
 }
 
 fn ffi_site_prefix(site: &BoundaryFacadeSiteId) -> String {
@@ -1464,6 +2057,16 @@ fn emit_ffi_parameter_alias(
             removed_at_version,
         ),
         GoPublicParameter::Product(product) => {
+            if let Some(index) = product.index_type().unwrap_or_else(go_facade_invariant) {
+                if let Some(version) = removed_at_version {
+                    out.push_str(&format!("\n// Deprecated: retained only for source compatibility with host declarations removed at signature v{version}.\n"));
+                }
+                out.push_str(&format!(
+                    "type Index{spelling}{} = {index}\n",
+                    root_parameters.declaration
+                ));
+                package_names.push(format!("Index{spelling}"));
+            }
             out.push('\n');
             if let Some(version) = removed_at_version {
                 out.push_str(&format!(
@@ -1507,29 +2110,37 @@ fn emit_ffi_alias_tree(
              {error}"
         )
     });
-    match cursor.view().unwrap_or_else(go_facade_invariant) {
-        GoFacadeUseView::Forall(forall) => {
-            return emit_ffi_alias_tree(
-                spelling,
-                forall.result(),
-                root_parameters,
-                out,
-                package_names,
-                visited,
-                removed_at_version,
+    if let Some(index) = cursor
+        .index_alias_type()
+        .unwrap_or_else(go_facade_invariant)
+    {
+        let spelling = format!("Index{alias}");
+        if let Some(previous) = visited.insert(spelling.clone(), index.to_string()) {
+            assert_eq!(
+                previous,
+                index.to_string(),
+                "one boundary index alias has one semantic index"
             );
+        } else {
+            if let Some(version) = removed_at_version {
+                out.push_str(&format!("\n// Deprecated: retained only for source compatibility with host declarations removed at signature v{version}.\n"));
+            }
+            out.push_str(&format!(
+                "type {spelling}{} = {index}\n",
+                root_parameters.declaration
+            ));
+            package_names.push(spelling);
         }
-        GoFacadeUseView::Transparent { payload, .. } => {
-            return emit_ffi_alias_tree(
-                spelling,
-                &payload,
-                root_parameters,
-                out,
-                package_names,
-                visited,
-                removed_at_version,
-            );
+    }
+    let mut contextual = cursor.clone();
+    let view = loop {
+        match contextual.view().unwrap_or_else(go_facade_invariant) {
+            GoFacadeUseView::Transparent { payload } => contextual = payload,
+            view => break view,
         }
+    };
+    let cursor = &contextual;
+    match view {
         GoFacadeUseView::Sum(sum) => {
             let context = format!("{:?}|{}", cursor.source(), sum.boundary_type());
             if let Some(previous) = visited.insert(spelling.to_owned(), context.clone()) {
@@ -1598,6 +2209,41 @@ fn emit_ffi_alias_tree(
             out.push_str(&format!("type {alias}{declaration} = {boundary_type}\n"));
             package_names.push(alias.as_str().to_owned());
             match view {
+                GoFacadeUseView::HostCarrier { arguments, .. } => {
+                    for (index, argument) in arguments.iter().enumerate() {
+                        emit_ffi_alias_tree(
+                            &format!("{alias}_typearg{index}"),
+                            argument,
+                            root_parameters,
+                            out,
+                            package_names,
+                            visited,
+                            removed_at_version,
+                        )?;
+                    }
+                }
+                GoFacadeUseView::Forall(forall) => {
+                    emit_ffi_alias_tree(
+                        &format!("{alias}_result"),
+                        forall.result(),
+                        root_parameters,
+                        out,
+                        package_names,
+                        visited,
+                        removed_at_version,
+                    )?;
+                    if let Some((parameter, constraint, selected)) = forall.selection() {
+                        emit_ffi_alias_tree(
+                            &format!("{alias}_selected"),
+                            selected,
+                            &root_parameters.with_index(parameter.as_str(), &constraint),
+                            out,
+                            package_names,
+                            visited,
+                            removed_at_version,
+                        )?;
+                    }
+                }
                 GoFacadeUseView::Function(function) => {
                     for (index, parameter) in function
                         .public_parameters()
@@ -1870,6 +2516,17 @@ fn validate_package_names(
         (names.handle.as_str(), "package handle"),
         (names.host_ty.as_str(), "host interface"),
         (names.factory.as_str(), "package factory"),
+        ("Value", "canonical erased boundary value"),
+        ("Prepared", "statically indexed canonical boundary value"),
+        ("TypeStage", "statically indexed delayed type selection"),
+        ("AtomIndex", "abstract native atom index"),
+        ("PrepareAtom", "statically indexed native atom construction"),
+        ("Atom", "abstract native atom construction"),
+        ("NativeAtom", "abstract native atom recovery"),
+        ("kioAtom", "abstract native atom storage"),
+        ("kioNative", "native atom recovery"),
+        ("kioSealedValue", "unexposed nominal envelope"),
+        ("kioNominalPayload", "resolved nominal projection"),
         ("kioProductSlots", "runtime product expansion"),
         ("kioProductSlot", "runtime product projection"),
         ("kioSumPayload", "runtime sum projection"),
@@ -1927,6 +2584,11 @@ fn validate_package_names(
             )?;
         }
         for entry in &node.exports {
+            claim(
+                "package".to_owned(),
+                format!("Call{}", ffi_site_prefix(&entry.site)),
+                format!("selected export site {:?}", entry.site),
+            )?;
             claim(
                 format!("selector:{receiver}"),
                 export_method_name(&entry.leaf),
@@ -2214,14 +2876,32 @@ fn render_facade_export_method(
     let live = site.live().unwrap_or_else(|| {
         unreachable!("the Go export tree contains only live prepared facade sites")
     });
+    let semantic_entry = site.callable_entry().unwrap_or_else(go_facade_invariant);
+    let indices = semantic_entry
+        .stages()
+        .iter()
+        .filter_map(|stage| stage.type_stage())
+        .enumerate()
+        .map(|(index, stage)| format!("KioI{index} {}", stage.index_constraint()))
+        .collect::<Vec<_>>();
+    let selected = !indices.is_empty();
     let entry = match export.site.owner() {
-        BoundaryFacadeSiteOwner::ExportedFunction { .. } => {
-            GoLiveExportEntry::Function(live.callable_entry().unwrap_or_else(go_facade_invariant))
-        }
+        BoundaryFacadeSiteOwner::ExportedFunction { .. } => GoLiveExportEntry::Function(
+            if selected {
+                live.selected_callable_entry()
+            } else {
+                live.callable_entry()
+            }
+            .unwrap_or_else(go_facade_invariant),
+        ),
         BoundaryFacadeSiteOwner::NewtypeConstructor { .. }
         | BoundaryFacadeSiteOwner::NewtypeProjector { .. } => GoLiveExportEntry::Newtype(
-            live.newtype_member_entry()
-                .unwrap_or_else(go_facade_invariant),
+            (if selected {
+                live.selected_newtype_member_entry()
+            } else {
+                live.newtype_member_entry()
+            })
+            .unwrap_or_else(go_facade_invariant),
         ),
         BoundaryFacadeSiteOwner::HostFunction { .. } => {
             unreachable!("Go export-tree collection excludes prepared host-function sites");
@@ -2287,7 +2967,18 @@ fn render_facade_export_method(
             callee
         }
         GoLiveExportEntry::Newtype(member) => {
-            invoke_newtype_member(member, &arguments, &mut body, &mut fresh)?
+            let nominal = match export.site.owner() {
+                BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, .. }
+                | BoundaryFacadeSiteOwner::NewtypeProjector { newtype, .. } => {
+                    crate::backends::boundary_facade::QualifiedTypeName::new(
+                        export.site.module_segments().to_vec(),
+                        newtype.clone(),
+                    )
+                    .expect("a prepared newtype member has an exact nominal identity")
+                }
+                _ => unreachable!("a newtype entry has a newtype owner"),
+            };
+            invoke_newtype_member(member, &nominal, facades, &arguments, &mut body, &mut fresh)?
         }
     };
     let returned = facade_skin::convert(
@@ -2304,14 +2995,29 @@ fn render_facade_export_method(
         crate::backends::boundary_docs::callable(source_package, site.prepared()),
         "",
     );
+    let declaration = if selected {
+        let mut type_parameters = indices;
+        let root = facades.host_binding_declaration();
+        if !root.is_empty() {
+            type_parameters.push(root[1..root.len() - 1].to_owned());
+        }
+        parameters.insert(0, format!("{receiver} {receiver_type}"));
+        format!(
+            "func Call{}[{}]",
+            ffi_site_prefix(&export.site),
+            type_parameters.join(", ")
+        )
+    } else {
+        format!("func ({receiver} {receiver_type}) {method}")
+    };
     Ok(format!(
-        "{documentation}func ({receiver} {receiver_type}) {method}({}) {returned_type} {{\n{}}}\n\n",
+        "{documentation}{declaration}({}) {returned_type} {{\n{}}}\n\n",
         parameters.join(", "),
         indent_go_source(&body.source),
     ))
 }
 
-/// Invoke the erased identity/CPS body selected by one nominal-derived live
+/// Invoke the erased constructor/projector body selected by one nominal-derived live
 /// newtype-member capability. Declaration-owned universal and existential
 /// constructor heads remain real nullary body stages and are replayed before
 /// the value head. Only the capability's existential-projector variant adds
@@ -2319,6 +3025,8 @@ fn render_facade_export_method(
 /// one-argument projector returning its function value.
 fn invoke_newtype_member(
     member: &GoLiveNewtypeMemberEntry<'_, '_>,
+    nominal: &crate::backends::boundary_facade::QualifiedTypeName,
+    facades: &GoFacadeCatalog<'_>,
     arguments: &[String],
     body: &mut GoBlock,
     fresh: &mut FacadeFreshNames,
@@ -2353,18 +3061,24 @@ fn invoke_newtype_member(
         .cloned()
         .unwrap_or_default();
     let result = match member {
-        GoLiveNewtypeMemberEntry::Constructor(_) => params
-            .first()
-            .cloned()
-            .unwrap_or_else(|| "Unit{}".to_owned()),
-        GoLiveNewtypeMemberEntry::Projector(_) => params.first().cloned().unwrap_or_else(|| {
-            unreachable!("a prepared newtype projector has one receiver source parameter")
-        }),
+        GoLiveNewtypeMemberEntry::Constructor(_) => facades.construct_nominal(
+            nominal,
+            params.first().map(String::as_str).unwrap_or("Unit{}"),
+        ),
+        GoLiveNewtypeMemberEntry::Projector(_) => {
+            let receiver = params.first().unwrap_or_else(|| {
+                unreachable!("a prepared newtype projector has one receiver source parameter")
+            });
+            facades.project_nominal(nominal, receiver)
+        }
         GoLiveNewtypeMemberEntry::ExistentialProjector(projector) => {
             let payload = params.first().unwrap_or_else(|| {
                 unreachable!("a prepared existential projector has one receiver source parameter")
             });
-            render_existential_projector_value(projector, payload)?
+            render_existential_projector_value(
+                projector,
+                &facades.project_nominal(nominal, payload),
+            )?
         }
     };
     let mut deepest = GoBlock::default();
@@ -2860,6 +3574,7 @@ fn render_module_fns(
             let method = module_fn_method_name(module_key, &f.name);
             let runtime_groups = runtime_param_name_groups(&f.sig);
             let mut emitter = BodyEmitter::new(
+                package,
                 roles,
                 module_key,
                 &selective_imports,
@@ -2867,6 +3582,7 @@ fn render_module_fns(
                 facades,
             );
             let emitted_groups = emitter.bind_param_groups(&runtime_groups);
+            emitter.bind_type_params(&f.sig);
             let mut body = GoBlock::default();
             let body_value = emitter.emit_value(&f.body, &mut body)?;
             // A fn returning a closure literal whose binder-grouping
@@ -2998,8 +3714,6 @@ fn underlying_fn_expr_sig(e: &Expr<Routed>) -> Option<&crate::ast::Signature<Rou
         {
             underlying_fn_expr_sig(&args[0])
         }
-        Expr::LowNewtypeCtor { payload, .. } => underlying_fn_expr_sig(payload),
-        Expr::LowNewtypeProj { target, .. } => underlying_fn_expr_sig(target),
         _ => None,
     }
 }
@@ -3071,6 +3785,9 @@ struct GoLocalBinding {
 /// the next child, preserving Kio's strict left-to-right effect order without
 /// building nested call-once closures.
 struct BodyEmitter<'a, 'p> {
+    package: &'a Package<Routed>,
+    /// Lexical type binders protect canonical resolution of annotated slots.
+    type_params: Vec<crate::ast::TypeParam>,
     /// Kio source binding → unique Go local, in lexical scope order.
     locals: Vec<GoLocalBinding>,
     /// Per-function deterministic counter for bindings and temporary values.
@@ -3103,6 +3820,7 @@ impl GoFreshNames for BodyEmitter<'_, '_> {
 
 impl<'a, 'p> BodyEmitter<'a, 'p> {
     fn new(
+        package: &'a Package<Routed>,
         roles: &'a HostRoleTable,
         module_key: &'a str,
         selective_imports: &'a SelectiveImports,
@@ -3110,6 +3828,8 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         facades: &'a GoFacadeCatalog<'p>,
     ) -> Self {
         BodyEmitter {
+            package,
+            type_params: Vec::new(),
             locals: Vec::new(),
             fresh: 0,
             roles,
@@ -3142,6 +3862,46 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             .iter()
             .map(|group| group.iter().map(|name| self.bind_local(name)).collect())
             .collect()
+    }
+
+    fn bind_type_params(&mut self, signature: &crate::ast::Signature<Routed>) {
+        self.type_params.extend(
+            signature
+                .params
+                .iter()
+                .filter_map(|parameter| match parameter {
+                    crate::ast::SignatureParam::Type(parameter) => Some(parameter.clone()),
+                    crate::ast::SignatureParam::Value(_) => None,
+                }),
+        );
+    }
+
+    fn canonical_type(&self, ty: &Type<Routed>) -> Type<Routed> {
+        let module = &self
+            .package
+            .module(self.module_key)
+            .expect("a routed Go body belongs to a package module")
+            .module;
+        crate::backends::boundary_facade::canonical_routed_type(
+            self.package,
+            module,
+            &self.type_params,
+            ty,
+        )
+    }
+
+    fn nominal_identity(&self, ty: &Type<Routed>) -> QualifiedTypeName {
+        let Type::Path { segments, .. } = self.canonical_type(ty) else {
+            unreachable!("a resolved nominal operation names a nominal type")
+        };
+        let (name, module) = segments
+            .split_last()
+            .expect("a resolved nominal path is nonempty");
+        QualifiedTypeName::new(
+            module.iter().map(|segment| segment.name.clone()).collect(),
+            name.name.clone(),
+        )
+        .expect("a resolved nominal operation has an exact module owner")
     }
 
     fn local_name(&self, source: &str) -> String {
@@ -3229,8 +3989,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 name,
                 module_path,
                 args,
-                sig: _,
-                ret_ty: _,
                 ..
             } => self.emit_low_host_call(name, module_path, args, destination, out)?,
             Expr::LowBoundRef { name, .. } => destination.write(out, self.local_name(name)),
@@ -3271,10 +4029,19 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 target,
                 index,
                 arity,
+                target_ty,
                 ..
             } => {
                 let value = self.emit_project(target, *index, *arity, out)?;
-                destination.write(out, value);
+                let target_type = self.canonical_type(target_ty);
+                let slot = crate::backends::reconstruct::nth_product_slot_ty_for_arity(
+                    &target_type,
+                    *index,
+                    *arity,
+                )
+                .expect("a routed field projection fits its resolved product arity");
+                let nominal = self.nominal_identity(slot);
+                destination.write(out, self.facades.project_nominal(&nominal, &value));
             }
             Expr::LowModuleCall {
                 mangled,
@@ -3297,13 +4064,28 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     self.emit_qualified_module_call(mangled, type_args.len(), args, sig, out)?;
                 destination.write(out, value);
             }
-            // A newtype constructor / projector is a runtime identity in
-            // the uniform-`any` body: the newtype value shares its
-            // payload's representation (the prepared facade re-imposes the
-            // nominal Go type at the host boundary). So `mk_X(p)` ⇒ `p`
-            // and `un_X(v)` ⇒ `v`.
-            Expr::LowNewtypeCtor { payload, .. } => self.emit_into(payload, destination, out)?,
-            Expr::LowNewtypeProj { target, .. } => self.emit_into(target, destination, out)?,
+            Expr::LowNewtypeCtor {
+                newtype,
+                member,
+                type_args,
+                payload,
+                ..
+            } => {
+                let value =
+                    self.emit_newtype_member(None, newtype, member, type_args, payload, out)?;
+                destination.write(out, value);
+            }
+            Expr::LowNewtypeProj {
+                newtype,
+                member,
+                type_args,
+                target,
+                ..
+            } => {
+                let value =
+                    self.emit_newtype_member(None, newtype, member, type_args, target, out)?;
+                destination.write(out, value);
+            }
             Expr::LowAbsurdCall { value_arg, .. } => {
                 // Evaluate the bottom-typed argument for its host effects
                 // (e.g. an `exit(n) -> !` call must run), then panic — the
@@ -3365,21 +4147,29 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 destination.write(out, value);
             }
             Expr::LowCpsProjectorApply {
+                newtype,
+                module_path,
                 receiver,
                 continuation,
                 continuation_ty,
                 ..
             } => {
-                let value =
-                    self.emit_cps_projector_apply(receiver, continuation, continuation_ty, out)?;
+                let nominal = QualifiedTypeName::new(
+                    module_path.split('/').map(str::to_owned).collect(),
+                    newtype,
+                )
+                .expect("a routed CPS projector has an exact nominal owner");
+                let value = self.emit_cps_projector_apply(
+                    &nominal,
+                    receiver,
+                    continuation,
+                    continuation_ty,
+                    out,
+                )?;
                 destination.write(out, value);
             }
             Expr::LowHostFnValueRef {
-                name,
-                module_path,
-                sig: _,
-                ret_ty: _,
-                ..
+                name, module_path, ..
             } => {
                 let value = self.emit_host_fn_value_ref(name, module_path)?;
                 destination.write(out, value);
@@ -3388,25 +4178,75 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 let value = self.emit_module_fn_value_ref(mangled, sig)?;
                 destination.write(out, value);
             }
-            // A qualified newtype ctor / projector applied to a payload,
-            // erased to a runtime identity (the newtype shares its
-            // payload's `[]any` rep); the prepared facade re-imposes the
-            // nominal type at the host boundary.
-            Expr::LowQualifiedNewtypeMember { payload, .. } => {
-                self.emit_into(payload, destination, out)?
+            Expr::LowQualifiedNewtypeMember {
+                module_path,
+                newtype,
+                member,
+                type_args,
+                payload,
+                ..
+            } => {
+                let value = self.emit_newtype_member(
+                    Some(module_path),
+                    newtype,
+                    member,
+                    type_args,
+                    payload,
+                    out,
+                )?;
+                destination.write(out, value);
             }
         }
         Ok(())
     }
 
-    /// `LowCpsProjectorApply { receiver, continuation }` →
-    /// `continuation(receiver)`. An existential newtype's projector is a
-    /// runtime identity in the erased body (the newtype carries its
-    /// payload transparently), so projecting `receiver` yields `receiver`
-    /// itself. The exact routed continuation type supplies its erased type
-    /// stages and zero-or-one-slot value ABI.
+    fn emit_newtype_member(
+        &mut self,
+        module: Option<&str>,
+        name: &str,
+        member: &str,
+        type_args: &[Type<Routed>],
+        payload: &Expr<Routed>,
+        out: &mut GoBlock,
+    ) -> Result<String, EmitError> {
+        let mut segments = module
+            .map(|module| module.split('/').map(str::to_owned).collect::<Vec<_>>())
+            .unwrap_or_default();
+        segments.push(name.to_owned());
+        let nominal =
+            self.nominal_identity(&Type::synth_path(segments, Vec::new(), payload.span()));
+        let Some(crate::backends::value_plan::ValueNominalDeclaration::Newtype(declaration)) =
+            crate::backends::value_plan::nominal_declaration(self.package, &nominal)
+        else {
+            unreachable!("a resolved Go newtype member retains its declaration")
+        };
+        let value = self.emit_value(payload, out)?;
+        if member == declaration.constructor.name {
+            let substitution = declaration
+                .type_params
+                .iter()
+                .chain(&declaration.existential_params)
+                .zip(type_args)
+                .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
+                .collect();
+            let payload_type =
+                crate::backends::reconstruct::apply_subst(&declaration.payload, &substitution);
+            let value = self.adapt_fn_value_for_type(value, payload, &payload_type);
+            Ok(self.facades.construct_nominal(&nominal, &value))
+        } else {
+            assert_eq!(
+                member, declaration.projector.name,
+                "a resolved Go newtype member is its constructor or projector"
+            );
+            Ok(self.facades.project_nominal(&nominal, &value))
+        }
+    }
+
+    /// Project exactly the resolved nominal envelope before applying the
+    /// existential continuation's erased type stages and value ABI.
     fn emit_cps_projector_apply(
         &mut self,
+        nominal: &QualifiedTypeName,
         receiver: &Expr<Routed>,
         continuation: &Expr<Routed>,
         continuation_ty: &Type<Routed>,
@@ -3415,7 +4255,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         let receiver_value = self.emit_value(receiver, out)?;
         let receiver_name = self.fresh_name("cps_receiver");
         out.line(format!("var {receiver_name} any"));
-        out.line(format!("{receiver_name} = {receiver_value}"));
+        out.line(format!(
+            "{receiver_name} = {}",
+            self.facades.project_nominal(nominal, &receiver_value)
+        ));
 
         let continuation_value = self.emit_value(continuation, out)?;
         let continuation_name = self.fresh_name("cps_continuation");
@@ -3673,10 +4516,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     ) -> Result<String, EmitError> {
         let groups = runtime_param_name_groups(sig);
         let saved_locals = self.locals.len();
+        let saved_types = self.type_params.len();
+        self.bind_type_params(sig);
         let emitted_groups = self.bind_param_groups(&groups);
         let mut closure_body = GoBlock::default();
         let body_value = self.emit_value(body, &mut closure_body);
         self.locals.truncate(saved_locals);
+        self.type_params.truncate(saved_types);
         let body_value = body_value?;
         closure_body.line(format!("return {body_value}"));
         // Each value group renders one closure layer taking its binders as
@@ -4056,7 +4902,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         let slots = Type::right_spine_product(synth_ty);
         let item_refs: Vec<&Expr<Routed>> = items.iter().collect();
         if let Some(plan) =
-            bound_product_rebuild_plan(&item_refs, NominalValueRepresentation::Erased)
+            bound_product_rebuild_plan(&item_refs, NominalValueRepresentation::Retained)
         {
             return self.emit_tuple_with_cached_slots(&item_refs, Some(&slots), &plan, out);
         }

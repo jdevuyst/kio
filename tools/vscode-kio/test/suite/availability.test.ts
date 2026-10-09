@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vm from "node:vm";
 import { createRequire } from "node:module";
+import * as childProcess from "node:child_process";
 import * as vscode from "vscode";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,6 +18,7 @@ async function host(serverPath: string | null, control: string, options: {
   environment?: Record<string, string | undefined>;
   choice?: string;
   state?: Map<string, unknown>;
+  holdStartupDeadlines?: boolean;
 } = {}) {
   const extension = vscode.extensions.getExtension("kio-lang.kio")!;
   const bundle = path.join(extension.extensionPath, extension.packageJSON.main);
@@ -32,6 +34,33 @@ async function host(serverPath: string | null, control: string, options: {
   const configuration = new vscode.EventEmitter<vscode.ConfigurationChangeEvent>();
   subscriptions.push(configuration);
   let configured = serverPath;
+  const heldDeadlines = new Set<ReturnType<typeof setTimeout>>();
+  const probeSignals: AbortSignal[] = [];
+  const startupChildren: childProcess.ChildProcess[] = [];
+  const childProcessApi = Object.create(childProcess, {
+    execFile: { value: (binary: string, args: string[], settings: childProcess.ExecFileOptions, callback: Parameters<typeof childProcess.execFile>[3]) => {
+      assert.deepStrictEqual(Array.from(args), ["--help"], "only the startup probe is controlled");
+      assert.strictEqual(settings.timeout, 5_000, "the probe deadline is held");
+      assert.ok(settings.signal, "the real probe cancellation signal is retained");
+      probeSignals.push(settings.signal);
+      const child = childProcess.execFile(binary, args, { ...settings, timeout: 0 }, callback);
+      startupChildren.push(child);
+      return child;
+    } },
+    spawn: { value: (binary: string, args: string[], settings: childProcess.SpawnOptions) => {
+      const child = childProcess.spawn(binary, args, settings);
+      startupChildren.push(child);
+      return child;
+    } },
+  });
+  const startupSetTimeout: typeof setTimeout = ((callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]) => {
+    if (ms !== 10_000) return setTimeout(callback, ms, ...args);
+    // Initialization stays pending until lifecycle cancellation kills its child.
+    const timer = setTimeout(() => {}, 0);
+    clearTimeout(timer);
+    heldDeadlines.add(timer);
+    return timer;
+  }) as typeof setTimeout;
   const api = Object.create(vscode, {
     commands: { value: Object.create(vscode.commands, {
       registerCommand: { value: (name: string, callback: (...args: unknown[]) => unknown) => {
@@ -78,10 +107,13 @@ async function host(serverPath: string | null, control: string, options: {
   const module = { exports: {} as { activate(context: unknown): Promise<void>; deactivate(): Promise<void> } };
   vm.runInNewContext(fs.readFileSync(bundle, "utf8"), {
     module, exports: module.exports,
-    require: (id: string) => id === "vscode" ? api : bundleRequire(id),
+    require: (id: string) => id === "vscode" ? api
+      : options.holdStartupDeadlines && id === "node:child_process" ? childProcessApi : bundleRequire(id),
     process: Object.create(process, { env: { value: { ...process.env, ...options.environment, KIO_TEST_LSP_CONTROL: control } } }),
     Buffer, console, URL, TextDecoder, TextEncoder, Uint8Array, AbortController,
-    setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, clearImmediate, performance,
+    setTimeout: options.holdStartupDeadlines ? startupSetTimeout : setTimeout,
+    clearTimeout: (timer: ReturnType<typeof setTimeout>) => { heldDeadlines.delete(timer); clearTimeout(timer); },
+    setInterval, clearInterval, setImmediate, clearImmediate, performance,
   }, { filename: bundle, importModuleDynamically: vm.constants.USE_MAIN_CONTEXT_DEFAULT_LOADER });
   process.on("unhandledRejection", onUnhandled);
   const state = options.state ?? new Map<string, unknown>();
@@ -98,7 +130,7 @@ async function host(serverPath: string | null, control: string, options: {
     }
     throw error;
   }
-  return { logs, notifications, statuses, commands, state, diagnostics,
+  return { logs, notifications, statuses, commands, state, diagnostics, heldDeadlines, probeSignals, startupChildren,
     async configure(value: string) {
       configured = value;
       configuration.fire({ affectsConfiguration: (name: string) => name === "kio.server.path" });
@@ -145,8 +177,7 @@ suite("Kio extension — availability and recovery", () => {
     const running = await host(fixture, control);
     const attempts = () => fs.existsSync(`${control}.starts`) ? fs.readFileSync(`${control}.starts`, "utf8").trim().split("\n").length : 0;
     try {
-      await until(() => attempts() >= 5, "five crashed processes");
-      await delay(400);
+      await until(() => running.notifications.length === 1, "crash restart budget exhausted");
       assert.strictEqual(attempts(), 5, "the default client budget must bound restarts");
       assert.strictEqual(running.notifications.length, 1, JSON.stringify(running.notifications));
       assert.ok(running.notifications[0].actions.includes("Retry"));
@@ -227,6 +258,8 @@ suite("Kio extension — availability and recovery", () => {
     try {
       await until(() => running.notifications.length === 1, "missing command failure");
       assert.match(running.notifications[0].message, /no `lsp` command/);
+      assert.strictEqual(running.statuses[0].text, "Kio: Language services unavailable");
+      assert.strictEqual(running.statuses[0].busy, false);
       assert.ok(!fs.existsSync(marker));
       assert.ok(running.notifications[0].actions.includes("Retry"));
     } finally { await running.close(); }
@@ -304,17 +337,39 @@ suite("Kio extension — availability and recovery", () => {
   for (const mode of ["probe-timeout", "initialize-timeout"]) {
     test(`deactivation reaps ${mode}`, async () => {
       fs.writeFileSync(control, JSON.stringify({ mode }));
-      const running = await host(fixture, control);
+      const running = await host(fixture, control, { holdStartupDeadlines: true });
       try {
         const marker = `${control}.${mode === "probe-timeout" ? "probes" : "initializes"}`;
         await until(() => fs.existsSync(marker), "child started");
-        const pid = Number(fs.readFileSync(marker, "utf8").trim());
-        const start = Date.now();
-        await running.close();
-        assert.throws(() => process.kill(pid, 0), "shutdown waits for the child to exit");
-        assert.ok(Date.now() - start < 2000, "shutdown interrupts initialization");
+        const childPid = Number(fs.readFileSync(marker, "utf8").trim());
+        assert.doesNotThrow(() => process.kill(childPid, 0), "startup remains pending before deactivation");
+        if (mode === "probe-timeout") {
+          assert.strictEqual(running.probeSignals.at(-1)?.aborted, false);
+        } else {
+          assert.strictEqual(running.heldDeadlines.size, 1, "initialization deadline is held");
+        }
+        let guard: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            running.close(),
+            new Promise<never>((_, reject) => {
+              guard = setTimeout(() => reject(new Error("deactivation did not cancel pending startup")), 15_000);
+            }),
+          ]);
+        } finally { clearTimeout(guard); }
+        assert.throws(() => process.kill(childPid, 0), "shutdown waits for the child to exit");
+        if (mode === "probe-timeout") {
+          assert.strictEqual(running.probeSignals.at(-1)?.aborted, true, "shutdown aborts the pending probe");
+        } else {
+          assert.strictEqual(running.heldDeadlines.size, 0, "shutdown cancels the held initialization deadline");
+        }
         assert.strictEqual(running.notifications.length, 0);
-      } finally { await running.close(); }
+      } finally {
+        for (const child of running.startupChildren) {
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        }
+        await running.close();
+      }
     });
   }
 
@@ -343,8 +398,15 @@ suite("Kio extension — availability and recovery", () => {
       assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Warning);
       await until(() => running.logs.filter((line) => line.includes("language client started")).length === 2, "automatic recovery after failed request");
       assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Information);
+      const starts = fs.readFileSync(`${control}.starts`, "utf8").trim().split("\n");
+      assert.strictEqual(starts.length, 2);
+      // Running precedes provider registration; the asynchronous diagnostic
+      // response follows the client's synchronous feature initialization.
+      await until(() => running.diagnostics.get(document.uri.toString())?.some((diagnostic) => diagnostic.source === "availability-fixture" && diagnostic.code === Number(starts[1])) ?? false, "recovered server republishes diagnostics after provider registration");
       await hover();
       assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Warning);
+      const hovers = fs.readFileSync(`${control}.hovers`, "utf8").trim().split("\n");
+      assert.deepStrictEqual(hovers, starts, "each server process handles its failed hover request");
       assert.strictEqual(running.notifications.length, 0);
     } finally { await running.close(); }
   });

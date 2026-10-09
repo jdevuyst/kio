@@ -42,6 +42,7 @@ use crate::pass::resolve::{LocatedError, ModuleEntry, Package, PackageFileEntry}
 /// typechecks the carrier. Its declared slash path must be absent from the
 /// package module set; otherwise two different module bodies would claim one
 /// nominal identity.
+#[cfg(any(feature = "surface", feature = "prime"))]
 pub(crate) fn assert_aux_module_outside_package<P: Phase>(
     module: &Module<P>,
     package: &Package<P>,
@@ -87,11 +88,25 @@ pub(crate) fn assert_aux_module_outside_package<P: Phase>(
 pub trait Pipeline {
     /// The phase the typer consumes. `Lowered` for the full
     /// pipeline, `Prime` for the prime pipeline.
-    type LoweredPhase: Phase + crate::pass::visit_mut::TypecheckVisitPhase;
+    type LoweredPhase: Phase<FnBody = crate::ast::Expr<Self::LoweredPhase>>
+        + crate::pass::visit_mut::TypecheckVisitPhase;
 
     /// Package-level lowering summary. Built once from lazy module
     /// headers/meta, then reused to lower individual ready modules.
     type LoweringContext: Sync;
+
+    /// Signature-only dependencies retain the frontend's declaration policy
+    /// without admitting executable function bodies.
+    type ContractPhase: crate::pass::typecheck_core::DeclarationPhase
+        + crate::pass::resolve::ExportContractPhase
+        + Phase<FnBody = crate::pass::contract::NoBody, FnPurity = crate::ast::Purity>
+        + Clone;
+
+    /// Lower the selected declarations after original source validation.
+    /// Function bodies are discarded before any expression lowering.
+    fn lower_contract_module(
+        module: Module<Surface>,
+    ) -> Result<Module<Self::ContractPhase>, crate::error::Error>;
 
     /// Pipeline tag folded into package-check cache entries so the
     /// two binaries never share a cache file. Their typers differ,
@@ -209,7 +224,9 @@ pub trait Pipeline {
     /// Lowered, substitutes its recorded completions, and revalidates the
     /// resulting artifact. The prime pipeline checks its Prime input and bakes
     /// the checker's narrower completion records before returning it.
-    fn typecheck(package: &Package<Self::LoweredPhase>) -> Result<Package<Prime>, LocatedError>;
+    fn typecheck(
+        package: &Package<Self::LoweredPhase>,
+    ) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError>;
 
     /// Type-check one already-resolved regular module inside
     /// `package`, returning only that module's typed `Prime` form.

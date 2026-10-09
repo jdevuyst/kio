@@ -1,0 +1,31 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+
+fn mark(label: String, value: String) -> String { io.print(label); value }
+
+fn first() -> String { let .(picked: String, _: String) = (mark("A", "1"), mark("B", "2")); picked }
+
+fn middle() -> String {
+  let .(_: String, picked: String, _: String) = (mark("C", "3"), mark("D", "4"), mark("E", "5"));
+  picked
+}
+
+fn last() -> String { let .(_: String, picked: String) = (mark("F", "5"), mark("G", "6")); picked }
+
+fn closure() -> String {
+  let .(picked: String, _: String) = .() -> String & String { (mark("H", "7"), mark("I", "8")) }();
+  picked
+}
+
+pub fn main() {
+  io.print(first());
+  io.print("\n");
+  io.print(middle());
+  io.print("\n");
+  io.print(last());
+  io.print("\n");
+  io.print(closure());
+  io.print("\n")
+}

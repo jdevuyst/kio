@@ -224,7 +224,8 @@ pub(crate) fn inline_at(text: &str, start: usize) -> Option<Inline<'_>> {
                 destination: link.destination,
             },
         )
-    } else if let Some(bounds) = super::generated::EmphasisCursor::new(text).bounds(start) {
+    } else {
+        let bounds = super::generated::EmphasisCursor::new(text).bounds(start)?;
         let inner = SourceSlice::new(text, start + bounds.width, bounds.end - bounds.width);
         (
             bounds.end,
@@ -234,8 +235,6 @@ pub(crate) fn inline_at(text: &str, start: usize) -> Option<Inline<'_>> {
                 InlineKind::Emphasis(inner)
             },
         )
-    } else {
-        return None;
     };
     Some(Inline {
         source: SourceSlice::new(text, start, end),

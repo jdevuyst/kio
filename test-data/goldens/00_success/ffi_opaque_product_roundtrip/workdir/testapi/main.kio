@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi as t;
+import testapi/arith as a;
+
+fn relay[T](value: T) -> T { value }
+
+fn extract[T](value: t.Box(T)) -> T { a.box_get(value) }
+
+fn swap((left: t.I32, right: t.I32)) -> t.I32 & t.I32 { (right, left) }
+
+pub fn direct(value: t.Box(t.I32 & t.I32)) -> t.I32 & t.I32 { swap(a.box_get(value)) }
+
+pub fn relayed(value: t.Box(t.I32 & t.I32)) -> t.I32 & t.I32 { swap(extract(relay(value))) }
+
+pub fn make() -> t.Box(t.I32 & t.I32) { a.box_make((31(t.I32), 37(t.I32))) }

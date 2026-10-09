@@ -6,9 +6,8 @@
 # drives the gating checks (any failure blocks merge), this script
 # drives the reporting harnesses (information for humans, never
 # gating). The reports/ directory is deliberately a sibling of ci/,
-# not a child, to reflect this split. Most harnesses are audit-skill-owned;
-# evaluator reachability is a deliberate direct local diagnostic. This
-# umbrella stays as the bulk-runner for ad-hoc local use.
+# not a child, to reflect this split. The audit-reports skill owns evidence
+# triage and budget selection; this umbrella is the no-flag bulk runner.
 #
 # Reports run sequentially because each (cargo-fuzz, cargo-mutants,
 # cargo-llvm-cov) is long enough that interleaving would muddle

@@ -98,12 +98,11 @@ to Unit remains an explicit `null` argument.
 
 Callbacks and returned functions instead take one complete domain value. A
 callback of type `A & B -> R` receives `{_0: a, _1: b}`, and a callback of type
-`. -> R` is called as `callback(null)`. Use `liftGreeterCallable(body)` to turn
-a host function into such a value. Polymorphic values expose one `.advance()`
+`. -> R` is called as `callback(null)`. Supply an ordinary JS function with
+that one-argument interface. Polymorphic values expose one `.advance()`
 step per type parameter; for example, an identity value of type `[A] A -> A`
-is used as `identity.advance()(value)`. `liftGreeterPoly({advance() { ... }})`
-constructs a host-supplied polymorphic value. These helpers are named after
-the package namespace, just like `createGreeter`.
+is used as `identity.advance()(value)`. Supply an object with an `advance`
+method returning the next function or polymorphic stage.
 
 ### 3. Instantiate and invoke
 
@@ -112,7 +111,7 @@ const pkg = createGreeter(host);
 pkg.greeter.KioModule_main.main();
 ```
 
-`createGreeter(host)` validates the record, freezes an internal copy, evaluates
+`createGreeter(host)` checks that required host items are present, freezes an internal copy, evaluates
 the package modules, and returns the package's exposed surface as a plain
 object. A root module uses word casing (`my_module` → `myModule`); nested modules use
 `KioModule_<exact-component>`, and public newtype handles use
@@ -134,17 +133,38 @@ other public functions. An opaque child cuts payload traversal, so a visible
 wrapper can contain that child even when its hidden payload refers back to the
 wrapper's type.
 
+Two instances created from the same imported factory can exchange these
+handles when their host type representations agree. For example, a handle
+returned by one instance can be passed to the other instance's public reader;
+its private payload remains inaccessible to host code. A separately loaded
+artifact does not acquire access by having the same source or names. Exchanged
+callbacks keep their original host bindings and captures; calls to the
+receiving instance's own functions use its host bindings. See
+[package isolation](../../specs/backends/README.md#4-package-isolation).
+
 Newtype wrapper keys use word casing: `Native_token` gives `NativeToken`.
 Products and sums always use binary `_0`/`_1` keys, retaining each child as a
 complete value. Thus `A & (B & C)` is `{_0: a, _1: {_0: b, _1: c}}`; a newtype
 child retains its own wrapper rather than becoming a product field name.
 
-Concrete structural inputs and outputs are copied at their known type
-boundaries. Mutating a returned pair's structural shells does not change the
-corresponding shells retained by the package. Atomic referenced children are
-not copied. Generic `T` and opaque host-constructor values pass through by
-reference instead: the package does not inspect an unknown value to guess
-its structure. Roleless host references likewise remain host-owned.
+Keep a tuple's fields and nested Kio values unchanged after passing it to Kio
+or receiving it from Kio, including through callbacks. A retained closure can
+still use them after the call returns; create a new tuple to change a field.
+A host-managed mutable `Box` can instead change through its declared `get` and
+`set` host functions, while the tuple keeps the same box in the same field.
+No fresh snapshot is promised. See
+[shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
+Supply values matching the declared types and layouts, including callback
+arguments and results and values kept in generic or opaque containers. The
+package does not check every incoming value: an invalid value can fail only
+when used, after other effects, or not at all. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types).
+
+Reading a tuple or choice field must return the same value without side
+effects. A getter that simply returns that fixed value is fine; one that
+changes the value or increments a counter is not. Getter or Proxy syntax
+alone does not decide this: the field's behavior does.
 
 ## Worked example
 
@@ -222,7 +242,7 @@ import { createGreeter } from './out/js/greeter.js';
 
 const pkg = createGreeter({
   greeter: {
-    print: (s) => process.stdout.write(s),
+    print: (s) => { process.stdout.write(s); return null; },
   },
 });
 

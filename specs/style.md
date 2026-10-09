@@ -198,7 +198,7 @@ type Triple[A][B][C] = A & B & C;
 
 Chains right-associate: `A & B & C` denotes `A & (B & C)`. Only **load-bearing** outer parens are written:
 
-- **Mixing** different operators in one chain: `(A & B) | C` — without the parens the chain would parse with the *other* operator at the top.
+- **Mixing** different operators in one chain: `(A & B) | C` — without explicit parentheses, mixed `&`/`|` chains are rejected.
 - **Function-type child of a chain**: `(A -> B) | C` — without surrounding parens, `A -> B | C` would reparse as `A -> (B | C)` (the function returning the sum).
 - **Function-type parameter list**: `(A & B) -> C` — the outer parens belong to the arrow's parameter list, not to the chain. They're always written.
 - **Left-leaning same-op chain**: `(A & B) & C` keeps inner parens to preserve the AST shape (distinct from the right-leaning chain `A & B & C`).
@@ -497,6 +497,8 @@ Comment text is preserved by the lexer's trivia model: each meaningful token car
 **Idempotence holds after the first pass.** Because an interstitial comment may be relocated on the first format, `kio fmt` is not guaranteed to be a strict no-op on every conceivable input; but the relocation reaches a fixpoint immediately, so `fmt(fmt(s)) == fmt(s)` for every `s`.
 
 The precise indentation and line placement of a relocated comment is part of the canonical style's long tail; `kio`'s implementation is normative for the placement choices the spec under-specifies.
+
+When ordinary comments from a named function's header move to the beginning of its body, one blank line separates them from an existing body-leading comment paragraph. A comment immediately above an otherwise uncommented expression remains adjacent to that expression. Documentation attachment is unchanged.
 
 ## Numeric and string literal canonicalization
 

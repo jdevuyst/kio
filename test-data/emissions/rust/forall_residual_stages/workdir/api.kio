@@ -1,0 +1,16 @@
+module api;
+
+host type I32 role(i32);
+
+host fn mark(value: I32) -> .;
+
+pub fn produce() -> [A][B] (A -> B) -> A -> B {
+  .[A] {
+    mark(1);
+    .[B] { mark(2); .(step: A -> B) { mark(3); .(value: A) { mark(4); step(value) } } }
+  }
+}
+
+pub fn relay(value: [A][B] (A -> B) -> A -> B) -> [A][B] (A -> B) -> A -> B { value }
+
+pub fn chain() -> [A][B][C][D] A -> B -> C -> D -> A { .[A][B][C][D](a: A)(b: B)(c: C)(d: D) { a } }

@@ -2,7 +2,7 @@
 //!
 //! Consumes a `Package<Routed>` (post-recovery and post-resolution-lowering —
 //! see [`crate::pass::structural_recovery`] and
-//! [`crate::pass::recover_to_low`]) and emits a self-contained Cargo crate per
+//! [`crate::pass::route`]) and emits a self-contained Cargo crate per
 //! the contract in
 //! [`specs/backends/rust.md`](../../../../specs/backends/rust.md):
 //! `Cargo.toml`, `src/lib.rs`, `src/shapes.rs`, `src/host.rs`.

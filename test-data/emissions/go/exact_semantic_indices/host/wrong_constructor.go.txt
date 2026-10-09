@@ -1,0 +1,9 @@
+package main
+
+import p "driver/out/go"
+
+func wrongConstructor(pkg *p.Package[int, int, string]) {
+	raw := &storage{p.ValueExp_Api__number_arg0(pkg, 11)}
+	crate := p.UnsafeKioHostType_api__CrateFromNative[numberIndex](raw)
+	pkg.Api.ReadVault(p.CallExp_Api__Applied_make(pkg.Api.KioType_Applied, p.PrepareHost_api_Crate(pkg, crate)))
+}

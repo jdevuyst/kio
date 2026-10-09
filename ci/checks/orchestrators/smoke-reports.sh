@@ -15,7 +15,7 @@
 #                      installed, nightly toolchain present, and
 #                      kio-rs/fuzz/Cargo.toml lists its targets. (Building
 #                      the targets is a full ASAN recompile — too heavy
-#                      for a smoke; audit-fuzz builds and runs them.)
+#                      for a smoke; audit-reports builds and runs them.)
 #   cargo-mutants    — a dependency-free scope self-test always proves that
 #                      every claimed production source is reached and the
 #                      optimizer firing inventory matches its real catalog.

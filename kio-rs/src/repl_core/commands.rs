@@ -1949,7 +1949,7 @@ fn ls_item_lines(item: &Item<Surface>, verbose: bool) -> Vec<String> {
                 .iter()
                 .map(|f| {
                     if verbose {
-                        crate::pretty::pretty_item_signature(&Item::FnDef(f.clone()))
+                        crate::pretty::pretty_item_signature(&Item::FnDef(f.clone().into_impure()))
                     } else {
                         let vis = if f.vis.is_pub() { "pub fn" } else { "fn" };
                         format!("{vis} {}", f.name)
@@ -2971,7 +2971,7 @@ impl Resolved {
         use crate::pass::typecheck_full::ResolvedBinder;
         let entry = self.doc_entry()?;
         let identity = match &entry {
-            DocEntry::Fn(_) => Some(ResolvedBinder::Fn {
+            DocEntry::Fn(_) | DocEntry::RecFn(_) => Some(ResolvedBinder::Fn {
                 module_path: self.module_path.clone(),
                 name: self.short_name.clone(),
             }),
@@ -3041,7 +3041,8 @@ impl Resolved {
                     .iter()
                     .find(|member| member.name == self.short_name)
                     .cloned()
-                    .expect("resolved recursion group contains selected member"),
+                    .expect("resolved recursion group contains selected member")
+                    .into_impure(),
             ),
             Item::TypeRecGroup(group) => match group
                 .members
@@ -3421,7 +3422,7 @@ fn resolve_module_arg(session: &Session, arg: &str) -> Option<String> {
 // ── shared helpers ───────────────────────────────────────────────────────────
 
 /// The System-F type of a `fn` declaration.
-fn fn_def_type(f: &FnDef<Surface>) -> crate::ast::Type<Surface> {
+fn fn_def_type<PurityField>(f: &FnDef<Surface, PurityField>) -> crate::ast::Type<Surface> {
     f.sig.signature_ty(f.ret.clone(), f.meta.span)
 }
 
@@ -3467,7 +3468,7 @@ fn surface_item_declares(item: &Item<Surface>, name: &str) -> bool {
 
 fn rec_group_module_members(
     g: &crate::ast::RecGroup<Surface>,
-) -> impl Iterator<Item = &FnDef<Surface>> {
+) -> impl Iterator<Item = &FnDef<Surface, ()>> {
     g.members.iter()
 }
 

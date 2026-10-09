@@ -128,15 +128,7 @@ fn declaration_signature_label(
             {
                 return Some(fn_signature_label(def));
             }
-            Item::RecGroup(group, _) if matches!(callable, CallableResolution::Fn { .. }) => {
-                if let Some(member) = group
-                    .members
-                    .iter()
-                    .find(|member| member.name == name.as_str())
-                {
-                    return Some(fn_signature_label(member));
-                }
-            }
+            Item::RecGroup(_, ext) => match *ext {},
             Item::HostFn(host)
                 if matches!(callable, CallableResolution::HostEnvFn { .. })
                     && host.name == name.as_str() =>

@@ -6,6 +6,11 @@
 #   line that should survive the format round-trip.
 # - A run of empty `//` lines surrounding a comment, which should
 #   collapse to a single empty `//` between the surviving comment.
+# - Hoisted header comments separated from body comments, but adjacent
+#   to an otherwise uncommented body; documentation remains attached.
+# - Empty calls, Unit and signature groups retain their own interior runs.
+# - Parameter/return boundaries and erased grouping preserve source order.
+# - A grouped callee retains the boundary needed by the second parse.
 # - A simple comment above `last`.
 #
 # This case lives in the corpus as a regression guard against the

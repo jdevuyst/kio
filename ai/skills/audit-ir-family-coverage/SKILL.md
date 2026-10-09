@@ -1,12 +1,12 @@
 ---
 name: audit-ir-family-coverage
-description: Report which language families exercise each universal-IR variant — surfaces single-family bias and aspirational (unexercised) variants before more backends calcify the shape
+description: Trace IR phase applicability and direct/shared/delegated consumers by backend and family, separating source coverage from runtime evidence and identifying justified coverage concerns
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # IR family coverage audit
 
-Kio's IR (the `Expr` / `Type` enums in `kio-rs/src/ast.rs`, plus the enriched / lowered variants) absorbs work that every backend would otherwise re-derive. If a given IR variant is exercised only by backends in one language family, the IR shape may have baked in assumptions specific to that family — assumptions that will surface when a backend from a different family lands.
+Kio's IR (the `Expr` / `Type` enums in `kio-rs/src/ast.rs`, plus the enriched / lowered variants) absorbs work that backends would otherwise re-derive. Trace which phases and semantic consumers handle each variant before aggregating by family; a missing backend-local match arm does not establish missing support.
 
 This audit walks the IR variants and reports per-family coverage. The output is **informational**, not pass/fail: a maintainer reads it to spot IR constructs that lean on one family's properties and decide whether to refactor before more backends calcify the bias.
 
@@ -17,22 +17,48 @@ Read [`specs/backends/README.md`](../../../specs/backends/README.md) § Language
 For each of the following AST enums in `kio-rs/src/ast.rs`, list all variants:
 
 - `Expr` — the surface-level expression variants.
-- `Expr::Low*` — the Low IR variants (`LowHostCall`, `LowClosureCall`, `LowAbsurdCall`, `LowCpsProjectorApply`, `LowQualifiedModuleCall`, `LowQualifiedNewtypeMember`, `LowNewtypeCtor`, `LowNewtypeProj`, `LowIndirectCall`, …).
+- `Expr::Low*` — the routed IR variants actually present in the enum; do not infer the inventory from this skill's examples.
 - `Expr::Enriched*` — the structurally-recovered variants (`EnrichedTuple`, `EnrichedProject`, `EnrichedFieldGet`, `EnrichedInject`, `EnrichedMatch`, `EnrichedConditional`).
 - `Type` — top-level type variants.
 - The capability annotations on closure / fn nodes: `Lifetime` (on `Type::Function` via `FnTypeCapabilities`). `Capabilities.captured_from` on `Expr::FnExpr` is an internal cross-pass annotation no emitter consumes, and the Rust build-block `thread_safety` key is a post-emit transform, not an AST annotation — neither joins the coverage matrix.
 
-The enumeration is mechanical — grep the `enum Expr` and `enum Type` declarations and collect variant names.
+The enumeration starts mechanically from the enum declarations, then reads the
+phase witnesses and [`pass/mod.rs`](../../../kio-rs/src/pass/mod.rs). Record
+where each variant is inhabited, introduced, consumed or eliminated. A surface
+form eliminated before host emission is N/A for a direct host-emitter arm, not
+exempt from semantic backend coverage: its lowering and resulting behavior
+still require evidence on applicable implementations.
 
 ## 2. Map variants to families
 
-For each variant, identify which shipping backend's emitter has a non-trivial match arm for it. "Non-trivial" means more than a `_ => unreachable!()` or pass-through. The handling code lives under `kio-rs/src/backends/<name>/`.
+For each applicable backend and occurrence, trace the complete consumer path:
+phase lowering/routing, shared preparation or value plans, direct emission,
+delegated emission, or serialization plus runtime dispatch. TypeScript uses JS
+runtime emission; Java/Python use the shared serialized runtime IR and their
+runtime interpreters. A static skin may consume a shared plan rather than match
+`Type` directly; an erased body need not emit general host type syntax.
 
-Group the per-backend hits by the family the backend declares near the top of `specs/backends/<name>.md`. The result is a `variant -> {family: [backend names]}` map.
+Record actual handling and its semantic obligation, not just match-arm counts.
+An impossible-phase `unreachable!()` is not a missing implementation, while an
+identity/pass-through needs its applicability justification. Count a shared or
+delegated owner for its consumers without pretending these are independent
+implementations. Exhaust these paths before labeling a variant as having no
+applicable consumer.
+
+Group independently established backend results by the family declared in
+`specs/backends/<name>.md`. Record capability-specific consumers separately;
+one member's need for an annotation does not establish a family-wide need.
+Keep source-consumer presence distinct from running corpus witnesses and
+assertions. Source coverage does not prove execution or correct behavior;
+[`audit-backend-completeness`](../audit-backend-completeness/SKILL.md) owns the
+runtime value-shape and application-stage gate.
 
 ## 3. Read the family table
 
-Read `specs/backends/README.md` § Language families to enumerate the families that exist. This is the denominator: each variant's coverage is "covered in N of K families."
+Read `specs/backends/README.md` § Language families. Report source-consumer
+coverage across current families, with the applicable backend/occurrence
+denominator and justified exclusions visible. A zero count for a deliberately
+eliminated form or capability-specific annotation is not inherently a gap.
 
 ## 4. Report
 
@@ -40,35 +66,41 @@ Produce a table with these columns:
 
 - **IR variant** — variant name (e.g., `LowAbsurdCall`).
 - **Source** — the AST enum it belongs to.
-- **Families covered** — which families have at least one backend with non-trivial handling.
-- **Coverage** — `N / K` where K is the total family count.
-- **Surfaced concern** — `OK` if coverage is broad, `single-family bias` if only one family covers it, `aspirational` if no family covers it (the variant exists in the IR but no shipping backend emits for it).
+- **Phase/applicability** — inhabited phases, consuming pass and applicable backends/occurrences.
+- **Consumers / families** — direct, shared, delegated and serialized-runtime owner paths, aggregated by family only after the trace.
+- **Source coverage** — covered applicable consumers versus the stated denominator; identify direct-arm N/A separately.
+- **Runtime evidence** — actual executing witness and assertion, prior receipt or unassessed; source presence alone earns no runtime credit.
+- **Surfaced concern** — broad source coverage, capability-specific use, unexplained single-family concentration, missing applicable consumer or missing runtime evidence, with reasons.
 
 After the table, summarize:
 
-- Variants with single-family bias — likely to surface gaps when a backend from a different family lands. Worth scrutinizing now: does the variant's interface make sense for other families, or is its design coupled to the one family that uses it?
-- Variants with `aspirational` status — these are IR constructs the language admits but no backend currently handles. Either the variant is dead (and should be removed) or it's awaiting a backend that needs it.
-- Families with sparse coverage overall — a family with no shipping backend naturally has zero variant coverage. Note which families are aspirational at the backend level.
+- Unexplained single-family concentration, distinguishing a justified capability-specific use from a potentially coupled interface.
+- Missing applicable consumers only after elimination, planning and delegation paths are exhausted; distinguish unreachable/dead implementation state from admitted behavior needing support.
+- Source-coverage and runtime-evidence gaps separately, with the affected backend and owner; sparse direct match arms alone are not a finding.
 
 ## 5. Interpretive guidance
 
 The audit produces data, not verdicts. Use these heuristics when reading the report:
 
-- **`OK` (broad coverage)** — the variant has been exercised by multiple families' emitters, so its interface is family-agnostic by construction. No action.
-- **`single-family bias`** — the variant exists because one family needed it. When a backend from another family lands, expect to either reshape the variant or add a parallel one. If the bias is fundamental (e.g., a variant only ever makes sense for static-typed backends), that's fine; surface it so the family taxonomy can reflect the constraint. If the bias is incidental (the variant could serve other families but happens not to be needed yet), refactor opportunities surface here.
-- **`aspirational`** — the variant is exercised by no shipping backend; it was added speculatively. Cross-check against `ROADMAP.md` to see whether a settled roadmap thread is actively building toward needing it. If not, candidate for removal.
+- **Broad source coverage** establishes implementation structure, not a proof of family independence, runtime execution or correctness. Multiple consumers may share the same mistaken assumption.
+- **Single-family concentration** warrants an applicability trace, not an automatic reshape. A capability-specific consumer may be legitimate even within a family whose other members do not need it.
+- **No applicable consumer** is meaningful only after the phase/shared/delegated/runtime trace. Do not infer speculative intent, a missing language implementation or removal authority merely from absent emitter arms.
 
 ## 6. Cross-cutting touchpoints
 
-Reshaping the IR is cheap while the variant set lives only in `kio-rs/src/ast.rs` — the cost is bounded to one Rust crate. Anything that mirrors the variant set (a serialized form, a second implementation, per-backend translators) multiplies that cost, so single-family-biased variants are cheapest to fix the moment this audit surfaces them.
+Before suggesting a reshape, inventory actual mirrors and dependencies:
+serialized `RuntimeExpr`, Java/Python tag dispatch, shared facade/value plans,
+phase validators and backend translators as applicable. These consumers make
+the impact larger than editing one enum. This informational audit identifies
+supported concerns; it does not authorize an IR refactor.
 
 ## How to report
 
 Group findings into:
 
-1. **Single-family-biased variants** — variants covered by only one family, with notes on whether the bias is fundamental or incidental.
-2. **Aspirational variants** — variants no shipping backend exercises.
-3. **Family coverage summary** — per-family count of variants covered, surfaces families with sparse coverage overall.
-4. **Reshape candidates** — variants that would benefit from reshaping while the variant set still lives in one Rust crate, before anything mirrors it.
+1. **Concentrated consumers** — source coverage limited to one family/capability, with applicability and ownership justification.
+2. **Missing applicable consumers** — supported only after the complete phase/consumer trace, distinct from eliminated forms.
+3. **Family/backend coverage summary** — source consumer counts and runtime evidence limits separately, including shared/delegated owners.
+4. **Supported reshape candidates** — concrete concerns and actual mirror/dependency impact, without implementation authority.
 
 **Default: report only.** This audit is informational by design; the maintainer decides what to act on. If invoked with a fix-it directive, surface the candidates but do not autonomously reshape the IR (large change with cascading impact).

@@ -4,7 +4,7 @@
 //! [`specs/backends/rust.md`](../../../../../specs/backends/rust.md):
 //! consumes a `Package<Routed>` (post-recovery + post-resolution-
 //! lowering — see [`crate::pass::structural_recovery`] and
-//! [`crate::pass::recover_to_low`]) and produces a self-contained Cargo
+//! [`crate::pass::route`]) and produces a self-contained Cargo
 //! crate as a [`RustCrate`] (file-name → content map).
 //!
 //! ## Scope
@@ -26,7 +26,7 @@
 //! The body emitter consumes the [`crate::ast::Routed`] phase:
 //! every `Expr::Call` / `Expr::Path` has been classified into one of the
 //! [`crate::ast::Expr::Low*`] variants
-//! by [`crate::pass::recover_to_low::lower`]. Per-call-site routing
+//! by [`crate::pass::route::route_package`]. Per-call-site routing
 //! decisions (host-fn / module-fn / closure / newtype-member) and
 //! the type-vs-value categorization of arguments are
 //! pinned on the variants themselves; the emitter drops to
@@ -51,13 +51,13 @@ use crate::backends::boundary_facade::{
     PreparedBoundaryCallableOriginRef, PreparedBoundaryCallableSite, PreparedBoundaryCallableSites,
     QualifiedTypeName,
 };
-use crate::backends::public_names::{encode_host_identity, encode_source_identity, host_name_core};
-use crate::backends::reconstruct::{ReconProfile, apply_subst, build_typearg_subst_from_sig};
-use crate::backends::skin::FunctionBoundaryAdapterPlan;
-use crate::backends::structural::{
+use crate::backends::product_rebuild::{
     NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
     render_cached_product_rebuild,
 };
+use crate::backends::public_names::{encode_host_identity, encode_source_identity, host_name_core};
+use crate::backends::reconstruct::{ReconProfile, apply_subst, build_typearg_subst_from_sig};
+use crate::backends::skin::FunctionBoundaryAdapterPlan;
 use crate::backends::{boundary_docs, doc};
 use crate::host_descriptor::{self, BoundRequirement, HostDescriptor, HostTypeDecl};
 use crate::pass::resolve::{
@@ -1117,7 +1117,7 @@ where
     F: Fn(&Type<Routed>, &std::collections::HashMap<String, crate::ast::Kind>) -> Type<Routed>,
 {
     let go_t = |t: &Type<Routed>| map_type(t, locals);
-    let go_t_opt = |t: &Option<Type<Routed>>| t.as_ref().map(&go_t);
+    let go_t_opt = |t: &Option<Type<Routed>>| t.as_ref().map(go_t);
     let go_e = |inner: &Expr<Routed>| map_types_in_expr(inner, map_type, locals);
     let go_box = |inner: &Expr<Routed>| Box::new(go_e(inner));
     let go_sig = |sig: &crate::ast::Signature<Routed>| {
@@ -1125,6 +1125,7 @@ where
         let mut scoped = locals.clone();
         scoped.extend(nested);
         let mapped = crate::ast::Signature {
+            source_trivia: (),
             params: sig
                 .params
                 .iter()
@@ -2196,27 +2197,25 @@ fn prepare_rust_forall_method(
 ) -> PreparedRustForallMethod {
     let mut public_scope = outer.clone();
     let mut erased_scope = outer.clone();
-    let mut type_parameters = Vec::new();
-    let mut body = root;
-    while let FacadeUse::Forall { binder, result, .. } = plan.use_at(body) {
-        let kind_arity = plan.binder(*binder).kind.arity();
-        let name = format!("__KioPolyType_{}", binder.index());
-        public_scope.binders.insert(*binder, name.clone());
-        erased_scope.binders.insert(
-            *binder,
-            erased_prepared_type_argument(kind_arity, crate_root),
-        );
-        type_parameters.push(PreparedRustBinderParameter {
-            binder: *binder,
-            parameter: PreparedRustTypeParameter { name, kind_arity },
-        });
-        body = *result;
-    }
+    let FacadeUse::Forall { binder, result, .. } = plan.use_at(root) else {
+        unreachable!("a Rust forall method prepares exactly one forall stage")
+    };
+    let kind_arity = plan.binder(*binder).kind.arity();
+    let name = format!("__KioPolyType_{}", binder.index());
+    public_scope.binders.insert(*binder, name.clone());
+    erased_scope.binders.insert(
+        *binder,
+        erased_prepared_type_argument(kind_arity, crate_root),
+    );
+    let type_parameters = vec![PreparedRustBinderParameter {
+        binder: *binder,
+        parameter: PreparedRustTypeParameter { name, kind_arity },
+    }];
     PreparedRustForallMethod {
         public_scope,
         erased_scope,
         type_parameters,
-        body,
+        body: *result,
     }
 }
 
@@ -2540,12 +2539,7 @@ fn render_prepared_use_with_owner(
             }
             nested
         }
-        FacadeUse::Function {
-            slots,
-            result,
-            caps: _,
-            ..
-        } => {
+        FacadeUse::Function { slots, result, .. } => {
             let presentation =
                 prepared_presentation_for_plan(context.site, context.plan, nominal_owner);
             let layout = match presentation.use_at(id) {
@@ -3081,6 +3075,7 @@ impl BodyShapeRegistry {
         crate::ast::Signature {
             params,
             groups: sig.groups.clone(),
+            source_trivia: (),
         }
     }
 
@@ -3624,7 +3619,7 @@ impl BodyShapeRegistry {
     /// The one module-context source of such a leaf — a bare newtype
     /// leaf re-surfaced by unfolding an alias the module imports from a
     /// third module — is qualified to its declaring module upstream in
-    /// the `recover_to_low` pass (`unfold_type_alias_type`), so it
+    /// the `route` pass (`unfold_type_alias_type`), so it
     /// reaches here as an already-module-qualified path resolved by
     /// `newtype_key_for_segments`, never as a bare leaf. Step 3 is thus
     /// the genuine package-surface fallback (no module context), where
@@ -5807,76 +5802,17 @@ impl<'a> PreparedRustConverter<'a> {
             self.nominal_owner.as_ref(),
         )?;
         let trait_arguments = rust_forall_generic_arguments(&self.scope, self.ctx).join(", ");
-        let body = match cursor.plan.use_at(method.body) {
-            FacadeUse::Function { slots, result, .. } => {
-                let layout = match body_cursor.execution_use() {
-                    Some(BoundaryFacadeExecutionUse::Function(layout)) => layout,
-                    _ => unreachable!(
-                        "Rust emitter: prepared forall function has no paired execution layout"
-                    ),
-                };
-                let source_parameters = (0..layout.body_abi_arity())
-                    .map(|index| format!("__source_{index}: ::std::rc::Rc<dyn ::std::any::Any>"))
-                    .collect::<Vec<_>>();
-                let source_markers = render_prepared_function_source_markers(
-                    PreparedRustUseRenderContext {
-                        site: self.site,
-                        plan: cursor.plan,
-                        scope: &method.erased_scope,
-                        shapes: self.shapes,
-                        type_ctx: self.ctx,
-                    },
-                    slots,
-                    layout,
-                    self.nominal_owner.as_ref(),
-                )?;
-                let facade_arguments = source_markers
-                            .iter()
-                            .enumerate()
-                            .map(|(index, marker)| {
-                                format!(
-                                    "<{marker} as {}::shapes::KioType>::from_stored({}::shapes::KioStoredValue::from_raw(__source_{index}))",
-                                    self.crate_root(),
-                                    self.crate_root(),
-                                )
-                            })
-                            .collect::<Vec<_>>();
-                let facade_arguments = if facade_arguments.is_empty() {
-                    String::new()
-                } else {
-                    format!(", {}", facade_arguments.join(", "))
-                };
-                let call = format!(
-                    "<_ as {}::shapes::{trait_name}<{trait_arguments}>>::apply{turbofish}(&*__poly{facade_arguments})",
-                    self.crate_root(),
-                );
-                let returned =
-                    erased_converter.convert(&body_cursor.child(*result), &call, FfiDir::In)?;
-                let fn_type = rc_fn_type(layout.body_abi_arity());
-                format!(
-                    "{{ let __f: {fn_type} = ::std::rc::Rc::new(move |{}| -> ::std::rc::Rc<dyn ::std::any::Any> {{ {returned} }}); {}::__kio_runtime::as_any(__f) }}",
-                    source_parameters.join(", "),
-                    self.crate_root()
-                )
-            }
-            _ => {
-                let applied = format!(
-                    "<_ as {}::shapes::{trait_name}<{trait_arguments}>>::apply{turbofish}(&*__poly)",
-                    self.crate_root()
-                );
-                erased_converter.convert(&body_cursor, &applied, FfiDir::In)?
-            }
-        };
-        let mut wrapped = body;
-        for _ in &method.type_parameters {
-            let stage_type = rc_fn_type(0);
-            wrapped = format!(
-                "{{ let __inner: ::std::rc::Rc<dyn ::std::any::Any> = {wrapped}; let __stage: {stage_type} = ::std::rc::Rc::new(move || __inner.clone()); {}::__kio_runtime::as_any(__stage) }}",
-                self.crate_root()
-            );
-        }
+        let applied = format!(
+            "<_ as {}::shapes::{trait_name}<{trait_arguments}>>::specialize{turbofish}(&*__poly)",
+            self.crate_root()
+        );
+        let body = erased_converter.convert(&body_cursor, &applied, FfiDir::In)?;
+        let stage_type = rc_fn_type(0);
+        // Constructing a carrier is inert; each selection computes a fresh
+        // residual without entering its next type or value stage.
         Ok(format!(
-            "{{ let __poly = ::std::rc::Rc::new({expression}); {wrapped} }}"
+            "{{ let __poly = ::std::rc::Rc::new({expression}); let __stage: {stage_type} = ::std::rc::Rc::new(move || {{ let __poly = __poly.clone(); {body} }}); {}::__kio_runtime::as_any(__stage) }}",
+            self.crate_root()
         ))
     }
 
@@ -7491,7 +7427,7 @@ impl<'a> BodyEmitter<'a> {
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
             Expr::Unit { .. } => Ok(self.box_any("()")),
             // `Expr::Path` / `Expr::Call` are statically uninhabited at
-            // the Routed phase — `recover_to_low::lower` classified every
+            // the Routed phase — `route::route_package` classified every
             // such node into a `Low*` variant. The surface-only variants
             // (`Tuple`, `BlockCall`, `Elaborator`, `UserElaborator`,
             // `Ufcs`, `OpChain`, …) never reach Routed.
@@ -9699,8 +9635,8 @@ fn mark_rust_forall_declaration(
         .unwrap_or_else(|| unreachable!("a retained Rust forall declaration has provenance"));
     declaration = declaration.replacen("pub trait ", &format!("{attribute}\npub trait "), 1);
     declaration = declaration.replacen(
-        "\n    fn apply",
-        &format!("\n    {attribute}\n    fn apply"),
+        "\n    fn specialize",
+        &format!("\n    {attribute}\n    fn specialize"),
         1,
     );
     declaration = declaration.replace(
@@ -9853,47 +9789,18 @@ fn render_prepared_forall_declaration(
         shapes,
         type_ctx: ctx,
     };
-    let (parameters, returned) = match plan.use_at(method.body) {
-        FacadeUse::Function { slots, result, .. } => {
-            let layout = match presentation.use_at(method.body) {
-                BoundaryFacadeExecutionUse::Function(layout) => layout,
-                _ => unreachable!("a public forall function has no source presentation"),
-            };
-            let parameters = layout
-                .source_params()
-                .iter()
-                .enumerate()
-                .map(|(index, source)| {
-                    render_prepared_source_facade(public_context, slots, source, nominal_owner)
-                        .map(|facade| format!("arg{index}: {facade}"))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let returned = render_prepared_use_with_owner(
-                public_context,
-                *result,
-                PreparedRustTypePosition::Value,
-                nominal_owner,
-            )?;
-            (parameters, returned)
-        }
-        _ => (
-            Vec::new(),
-            render_prepared_use_with_owner(
-                public_context,
-                method.body,
-                PreparedRustTypePosition::Value,
-                nominal_owner,
-            )?,
-        ),
-    };
+    let returned = render_prepared_use_with_owner(
+        public_context,
+        method.body,
+        PreparedRustTypePosition::Value,
+        nominal_owner,
+    )?;
     let phantom = rust_invariant_phantom(&generic_arguments);
 
     let mut out = String::new();
     out.push_str("#[allow(non_camel_case_types)]\n");
     out.push_str(&format!(
-        "pub trait {name}{declaration}: 'static {{\n    fn apply{method_declaration}(&self{}{}) -> {returned};\n}}\n\n",
-        if parameters.is_empty() { "" } else { ", " },
-        parameters.join(", ")
+        "pub trait {name}{declaration}: 'static {{\n    fn specialize{method_declaration}(&self) -> {returned};\n}}\n\n",
     ));
     out.push_str("#[allow(non_camel_case_types)]\n");
     out.push_str(&format!(
@@ -9971,44 +9878,9 @@ fn render_prepared_forall_declaration(
             id: method.body,
             substitutions: BTreeMap::new(),
         };
-        let body = match plan.use_at(method.body) {
-            FacadeUse::Function { slots, result, .. } => {
-                let layout = match body_cursor.execution_use() {
-                    Some(BoundaryFacadeExecutionUse::Function(layout)) => layout,
-                    _ => unreachable!(
-                        "Rust emitter: public forall function has no paired execution layout"
-                    ),
-                };
-                let source_markers = render_prepared_function_source_markers(
-                    public_context,
-                    slots,
-                    layout,
-                    nominal_owner,
-                )?;
-                let source = source_markers
-                    .iter()
-                    .enumerate()
-                    .map(|(index, marker)| {
-                        format!(
-                            "<{marker} as {}::shapes::KioType>::into_stored(arg{index}).into_raw()",
-                            shapes.crate_root()
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let call = format!(
-                    "({}::__kio_runtime::from_any::<{}>({internal}))({})",
-                    shapes.crate_root(),
-                    rc_fn_type(layout.body_abi_arity()),
-                    source.join(", ")
-                );
-                converter.convert(&body_cursor.child(*result), &call, FfiDir::Out)?
-            }
-            _ => converter.convert(&body_cursor, &internal, FfiDir::Out)?,
-        };
+        let body = converter.convert(&body_cursor, &internal, FfiDir::Out)?;
         out.push_str(&format!(
-            "impl{declaration} {name}{generic_use} for {name}Value{generic_use} {{\n    fn apply{method_declaration}(&self{}{}) -> {returned} {{\n        {body}\n    }}\n}}\n",
-            if parameters.is_empty() { "" } else { ", " },
-            parameters.join(", ")
+            "impl{declaration} {name}{generic_use} for {name}Value{generic_use} {{\n    fn specialize{method_declaration}(&self) -> {returned} {{\n        {body}\n    }}\n}}\n",
         ));
     }
     out.push('\n');
@@ -10307,21 +10179,14 @@ fn render_prepared_existential_projector_body(
     if !compactable.contains(continuation_root) {
         unreachable!("Rust emitter: an existential continuation lacks its compaction proof");
     }
-    let continuation_method = prepare_rust_forall_method(
-        plan,
-        *continuation_root,
-        &result_method.public_scope,
-        shapes.crate_root(),
-    );
-    if continuation_method.type_parameters.len() != existential_count {
-        unreachable!("Rust emitter: an existential continuation binder count drifted");
+    let mut continuation_body = *continuation_root;
+    for _ in 0..existential_count {
+        let FacadeUse::Forall { result, .. } = plan.use_at(continuation_body) else {
+            unreachable!("Rust emitter: an existential continuation binder count drifted");
+        };
+        continuation_body = *result;
     }
-    let FacadeUse::Function {
-        slots: _,
-        result: _,
-        ..
-    } = plan.use_at(continuation_method.body)
-    else {
+    let FacadeUse::Function { .. } = plan.use_at(continuation_body) else {
         unreachable!("Rust emitter: an existential continuation must accept the sealed payload");
     };
     let [receiver] = callable.value_slots.as_slice() else {
@@ -10361,7 +10226,7 @@ fn render_prepared_existential_projector_body(
     let payload_cursor = PreparedRustUseCursor {
         plan,
         execution: Some(execution.root_uses()),
-        id: continuation_method.body,
+        id: continuation_body,
         substitutions: BTreeMap::new(),
     };
     let layout = match payload_cursor.execution_use() {
@@ -10389,7 +10254,7 @@ fn render_prepared_existential_projector_body(
         "let __continuation = <{continuation_marker} as {}::shapes::KioType>::into_stored(continuation).into_raw();\n        ",
         shapes.crate_root()
     );
-    for _ in &continuation_method.type_parameters {
+    for _ in 0..existential_count {
         let stage = rc_fn_type(0);
         invoke.push_str(&format!(
             "let __stage: {stage} = {}::__kio_runtime::from_any(__continuation);\n        let __continuation = __stage();\n        ",
@@ -10537,6 +10402,52 @@ fn prepared_alias_dependencies(
     dependencies
 }
 
+fn push_prepared_structural_callable_aliases(
+    body: &mut String,
+    leaf: &str,
+    children: &[FacadeUseId],
+    step: &str,
+    parameters: &[PreparedRustBinderParameter],
+    context: PreparedRustUseRenderContext<'_>,
+) -> Result<(), EmitError> {
+    for (index, child) in children.iter().enumerate() {
+        let leaf = format!("{leaf}_{step}{index}");
+        if matches!(
+            context.plan.use_at(*child),
+            FacadeUse::Function { .. } | FacadeUse::Forall { .. }
+        ) {
+            let rhs = render_prepared_use(context, *child, PreparedRustTypePosition::Storage)?;
+            let dependencies = prepared_alias_dependencies(context.plan, *child, context.scope);
+            push_ffi_alias(body, &leaf, &rhs, &dependencies, parameters, context.shapes);
+        }
+        push_prepared_callback_aliases(body, &leaf, *child, parameters, context)?;
+    }
+    Ok(())
+}
+
+fn push_prepared_source_callable_aliases(
+    body: &mut String,
+    leaf: &str,
+    slots: &[FacadeUseId],
+    source: &crate::backends::boundary_facade::CallableSourceParamLayout,
+    parameters: &[PreparedRustBinderParameter],
+    context: PreparedRustUseRenderContext<'_>,
+) -> Result<(), EmitError> {
+    let slots = &slots[source.facade_slots()];
+    match source.adapter() {
+        CallableSourceParamAdapter::UnitValue => Ok(()),
+        CallableSourceParamAdapter::Identity => {
+            let [slot] = slots else {
+                unreachable!("an identity source alias owns exactly one facade slot");
+            };
+            push_prepared_callback_aliases(body, leaf, *slot, parameters, context)
+        }
+        CallableSourceParamAdapter::RightNest => push_prepared_structural_callable_aliases(
+            body, leaf, slots, "field", parameters, context,
+        ),
+    }
+}
+
 fn push_prepared_callback_aliases(
     body: &mut String,
     leaf: &str,
@@ -10545,11 +10456,24 @@ fn push_prepared_callback_aliases(
     context: PreparedRustUseRenderContext<'_>,
 ) -> Result<(), EmitError> {
     let plan = context.plan;
-    if !matches!(
-        plan.use_at(root),
-        FacadeUse::Function { .. } | FacadeUse::Forall { .. }
-    ) {
-        return Ok(());
+    match plan.use_at(root) {
+        FacadeUse::Product { args, .. } => {
+            return push_prepared_structural_callable_aliases(
+                body, leaf, args, "field", parameters, context,
+            );
+        }
+        FacadeUse::Sum { args, .. } => {
+            return push_prepared_structural_callable_aliases(
+                body, leaf, args, "arm", parameters, context,
+            );
+        }
+        FacadeUse::Apply { args, .. } => {
+            return push_prepared_structural_callable_aliases(
+                body, leaf, args, "typearg", parameters, context,
+            );
+        }
+        FacadeUse::Function { .. } | FacadeUse::Forall { .. } => {}
+        _ => return Ok(()),
     }
     if matches!(plan.use_at(root), FacadeUse::Forall { .. }) {
         let forall = rust_forall_name(context.site, plan, root)?;
@@ -10557,18 +10481,30 @@ fn push_prepared_callback_aliases(
             "pub use {}::shapes::{forall} as {leaf}_impl;\n",
             context.shapes.crate_root(),
         ));
+        let method =
+            prepare_rust_forall_method(plan, root, context.scope, context.shapes.crate_root());
+        let mut parameters = parameters.to_vec();
+        parameters.extend(method.type_parameters);
+        let context = PreparedRustUseRenderContext {
+            scope: &method.public_scope,
+            ..context
+        };
+        let leaf = format!("{leaf}_type_ret");
+        let rhs = render_prepared_use(context, method.body, PreparedRustTypePosition::Storage)?;
+        let dependencies = prepared_alias_dependencies(plan, method.body, context.scope);
+        push_ffi_alias(
+            body,
+            &leaf,
+            &rhs,
+            &dependencies,
+            &parameters,
+            context.shapes,
+        );
+        return push_prepared_callback_aliases(body, &leaf, method.body, &parameters, context);
     }
-    let method = prepare_rust_forall_method(plan, root, context.scope, context.shapes.crate_root());
-    let mut parameters = parameters.to_vec();
-    parameters.extend(method.type_parameters);
-    let context = PreparedRustUseRenderContext {
-        scope: &method.public_scope,
-        ..context
-    };
-    let returned = match plan.use_at(method.body) {
+    let returned = match plan.use_at(root) {
         FacadeUse::Function { slots, result, .. } => {
-            let layout = match prepared_presentation_for_plan(context.site, plan, None)
-                .use_at(method.body)
+            let layout = match prepared_presentation_for_plan(context.site, plan, None).use_at(root)
             {
                 BoundaryFacadeExecutionUse::Function(layout) => layout,
                 _ => unreachable!("an FFI callable alias has no source presentation"),
@@ -10582,41 +10518,20 @@ fn push_prepared_callback_aliases(
                 let rhs = render_prepared_source_facade(context, slots, source, None)?;
                 let dependencies =
                     collect_prepared_source_alias_dependencies(plan, slots, source, context.scope);
-                push_ffi_alias(
-                    body,
-                    &leaf,
-                    &rhs,
-                    &dependencies,
-                    &parameters,
-                    context.shapes,
-                );
-                let range = source.facade_slots();
-                if source.adapter() == CallableSourceParamAdapter::Identity && range.len() == 1 {
-                    push_prepared_callback_aliases(
-                        body,
-                        &leaf,
-                        slots[range.start],
-                        &parameters,
-                        context,
-                    )?;
-                }
+                push_ffi_alias(body, &leaf, &rhs, &dependencies, parameters, context.shapes);
+                push_prepared_source_callable_aliases(
+                    body, &leaf, slots, source, parameters, context,
+                )?;
             }
             *result
         }
-        _ => method.body,
+        _ => unreachable!("a prepared callback alias must describe a function stage"),
     };
     let leaf = format!("{leaf}_cbret");
     let rhs = render_prepared_use(context, returned, PreparedRustTypePosition::Storage)?;
     let dependencies = prepared_alias_dependencies(plan, returned, context.scope);
-    push_ffi_alias(
-        body,
-        &leaf,
-        &rhs,
-        &dependencies,
-        &parameters,
-        context.shapes,
-    );
-    push_prepared_callback_aliases(body, &leaf, returned, &parameters, context)
+    push_ffi_alias(body, &leaf, &rhs, &dependencies, parameters, context.shapes);
+    push_prepared_callback_aliases(body, &leaf, returned, parameters, context)
 }
 
 fn push_prepared_ffi_member(
@@ -10735,15 +10650,11 @@ fn push_prepared_ffi_member(
                         shapes,
                     );
 
-                    let range = source.facade_slots();
-                    if source.adapter() != CallableSourceParamAdapter::Identity || range.len() != 1
-                    {
-                        continue;
-                    }
-                    push_prepared_callback_aliases(
+                    push_prepared_source_callable_aliases(
                         &mut body,
                         &leaf,
-                        slots[range.start],
+                        slots,
+                        source,
                         &alias_parameters,
                         stage_context,
                     )?;
@@ -11692,7 +11603,7 @@ mod tests {
         pkg.check_in_body_resolution().expect("body resolution");
         let prime = check_package(&pkg).expect("typecheck");
         let enriched = structural_recovery::recover_package(&prime);
-        crate::pass::recover_to_low::lower(&enriched)
+        crate::pass::route::route_package(&enriched)
     }
 
     #[test]
@@ -12161,7 +12072,8 @@ mod tests {
             "the existential projector must expose an exact rank-N continuation without erased public slots:\n{signature}"
         );
         assert!(
-            krate.shapes_rs.contains("arg0: crate::shapes::KioFn1<")
+            krate.shapes_rs.contains("fn specialize<__KioPolyType_1: crate::shapes::KioType>(&self) -> crate::shapes::KioFn1<crate::shapes::KioFunction1<__KioPolyType_1, crate::shapes::KioHostTypeMarker_api__Text<__KioHost>>, __KioPolyType_0>")
+                && krate.shapes_rs.contains("::specialize::<crate::shapes::__KioErasedType>")
                 && krate
                     .shapes_rs
                     .contains("let __continuation = <crate::shapes::KioForall_")
@@ -12895,10 +12807,10 @@ mod tests {
         assert!(
             krate
                 .shapes_rs
-                .contains("fn apply<__KioPolyType_0: crate::shapes::KioType>(")
+                .contains("fn specialize<__KioPolyType_0: crate::shapes::KioType>(")
                 && krate
                     .shapes_rs
-                    .contains("arg0: <__KioPolyType_0 as crate::shapes::KioType>::Facade) -> <__KioPolyType_0 as crate::shapes::KioType>::Facade")
+                    .contains("(&self) -> crate::shapes::KioFn1<__KioPolyType_0, __KioPolyType_0>")
                 && krate
                     .lib_rs
                     .contains("<crate::shapes::KioForall_Site_M_main__H_applyPoly_U3_K1_B0_A0Marker<__KioHost> as crate::shapes::KioType>::from_stored(crate::shapes::KioStoredValue::from_raw(")
@@ -12908,6 +12820,74 @@ mod tests {
             "rank-N adapter does not pair the exact trait and marker codec with private erased execution:\nshapes:\n{}\nlib:\n{}",
             krate.shapes_rs,
             krate.lib_rs,
+        );
+    }
+
+    #[test]
+    fn forall_facades_select_one_binder_and_name_each_exact_residual() {
+        let pkg = build_package(
+            "module main; \
+             host fn accept(value: [A][B] (A -> B) -> A -> B) -> .; \
+             fn dummy() { () }",
+            Some("bridge { main; }"),
+        );
+        let krate = lower_package(&pkg, "test_pkg").expect("emit staged forall facade");
+        let trait_for = |alias: &str| {
+            let name = krate
+                .ffi_rs
+                .lines()
+                .find(|line| line.ends_with(&format!(" as {alias};")))
+                .and_then(|line| line.split("::shapes::").nth(1))
+                .and_then(|line| line.split_whitespace().next())
+                .unwrap_or_else(|| panic!("missing {alias}:\n{}", krate.ffi_rs));
+            krate
+                .shapes_rs
+                .split_once(&format!("pub trait {name}<"))
+                .expect("public forall trait")
+                .1
+                .split_once("\n}\n")
+                .expect("trait terminator")
+                .0
+        };
+        let first = trait_for("arg0_impl");
+        let second = trait_for("arg0_type_ret_impl");
+        assert!(
+            first.contains("fn specialize<__KioPolyType_0: crate::shapes::KioType>(&self)"),
+            "{first}"
+        );
+        assert!(
+            first.contains("Value<__KioHost, __KioPolyType_0>"),
+            "{first}"
+        );
+        assert!(
+            !first.contains("__KioPolyType_1"),
+            "a later binder escaped its stage:\n{first}"
+        );
+        assert!(
+            second.contains("__KioPolyType_0: crate::shapes::KioType>"),
+            "{second}"
+        );
+        assert!(second.contains("fn specialize<__KioPolyType_1: crate::shapes::KioType>(&self) -> crate::shapes::KioFn1<crate::shapes::KioFunction1<__KioPolyType_0, __KioPolyType_1>, crate::shapes::KioFunction1<__KioPolyType_0, __KioPolyType_1>>"), "{second}");
+        for alias in [
+            "arg0_type_ret",
+            "arg0_type_ret_type_ret",
+            "arg0_type_ret_type_ret_cbarg",
+            "arg0_type_ret_type_ret_cbret",
+            "arg0_type_ret_type_ret_cbarg_cbarg",
+            "arg0_type_ret_type_ret_cbarg_cbret",
+        ] {
+            assert!(
+                krate.ffi_rs.contains(&format!("pub type {alias}<")),
+                "missing {alias}:\n{}",
+                krate.ffi_rs
+            );
+        }
+        assert_eq!(krate.shapes_rs.matches("pub trait KioForall_").count(), 2);
+        assert!(!krate.shapes_rs.contains("fn apply<"));
+        assert!(
+            krate
+                .shapes_rs
+                .contains("move || { let __poly = __poly.clone();")
         );
     }
 
@@ -12960,10 +12940,12 @@ mod tests {
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit rank-N Unit function");
         assert!(
-            krate.shapes_rs.contains("let __f: ::std::rc::Rc<dyn Fn()")
+            krate
+                .shapes_rs
+                .contains("let __stage: ::std::rc::Rc<dyn Fn()")
                 && krate.shapes_rs.contains("(&*__poly)")
                 && !krate.shapes_rs.contains("(&*__poly, ())"),
-            "rank-N implementation ingress must invoke the semantically nullary public and private function:\n{}",
+            "rank-N implementation ingress must defer its nullary specialization without synthesizing a Unit argument:\n{}",
             krate.shapes_rs,
         );
         assert!(
@@ -12973,9 +12955,10 @@ mod tests {
                 && krate
                     .shapes_rs
                     .lines()
-                    .any(|line| line.contains("fn apply") && line.contains("(&self)"))
+                    .any(|line| line.contains("fn specialize")
+                        && line.contains("(&self) -> crate::shapes::KioFn0<"))
                 && !krate.shapes_rs.contains("let _ = arg0;"),
-            "rank-N Value::apply must expose and invoke Function0 without a synthetic Unit argument:\n{}",
+            "rank-N specialization must return Function0 without invoking it or adding a synthetic Unit argument:\n{}",
             krate.shapes_rs,
         );
     }
@@ -13427,13 +13410,13 @@ mod tests {
         let forall = trait_body(&ffi_impl_name("arg0_impl"));
         let existential = trait_body(&ffi_impl_name("readExistentialCallback_continuation_impl"));
         assert!(
-            forall.contains("crate::shapes::Product<crate::shapes::KioFn0<")
-                && !forall.contains("KioFn1<"),
+            forall.contains("crate::shapes::KioProduct<crate::shapes::KioFunction0<")
+                && !forall.contains("KioFunction1<"),
             "a direct Unit-domain function nested below forall retains its Fn0 facade:\n{forall}",
         );
         assert!(
-            existential.contains("crate::shapes::Product<crate::shapes::KioFn0<")
-                && !existential.contains("KioFn1<"),
+            existential.contains("crate::shapes::KioProduct<crate::shapes::KioFunction0<")
+                && !existential.contains("KioFunction1<"),
             "a direct Unit-domain function nested below an existential retains its Fn0 facade:\n{existential}",
         );
         assert!(
@@ -13527,6 +13510,160 @@ mod tests {
     }
 
     #[test]
+    fn ffi_callable_aliases_follow_structural_signature_paths() {
+        let pkg = build_package(
+            "module main; \
+             host type N; host type Box[A]; \
+             host fn exchange[Outer, More]( \
+                 choice: (. -> N) | ([A] A -> A), \
+                 product: (Outer -> More) & ([B] B -> Outer), \
+                 wrapped: Box([C] C -> Outer), \
+                 callback: ((. -> N) | ([D] D -> D)) -> (. -> N) | ([E] E -> E) \
+             ) -> Box([R] R -> More); \
+             host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
+             host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
+             pub newtype Secret : [A] A -> A { constructor wrap; projector get; }; \
+             host fn opaque(value: Secret) -> Secret;",
+            Some("bridge { main; }"),
+        );
+        let krate = lower_package(&pkg, "test_pkg").expect("emit structural callable aliases");
+        let ffi = &krate.ffi_rs;
+        for alias in [
+            "arg0_arm0",
+            "arg0_arm1",
+            "arg1_field0",
+            "arg1_field1",
+            "arg2_typearg0",
+            "arg3_cbarg_arm1",
+            "arg3_cbret_arm1",
+            "ret_typearg0",
+            "arg0_field0_field0",
+            "arg0_field1",
+            "arg0_cbarg_field0",
+            "arg0_cbarg_field1",
+        ] {
+            assert!(
+                ffi.contains(&format!("pub type {alias}<")),
+                "{alias}:\n{ffi}"
+            );
+        }
+        for alias in [
+            "arg0_arm1",
+            "arg1_field1",
+            "arg2_typearg0",
+            "arg3_cbarg_arm1",
+            "arg3_cbret_arm1",
+            "ret_typearg0",
+        ] {
+            let carrier = ffi
+                .lines()
+                .find(|line| line.contains(&format!("pub type {alias}<")))
+                .unwrap();
+            let implementation = ffi
+                .lines()
+                .find(|line| line.ends_with(&format!(" as {alias}_impl;")))
+                .unwrap();
+            let name = implementation
+                .split("::shapes::")
+                .nth(1)
+                .unwrap()
+                .split(" as ")
+                .next()
+                .unwrap();
+            assert!(carrier.contains(&format!("::{name}Value<")), "{carrier}");
+        }
+        assert!(
+            ffi.contains("pub type arg1_field0<Outer: crate::shapes::KioType, More: crate::shapes::KioType> = crate::shapes::KioFn1<Outer, More>;"),
+            "{ffi}",
+        );
+        let opaque = ffi
+            .split("pub mod main__opaque {")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert!(
+            !opaque.contains("_impl") && !opaque.contains("_field"),
+            "{opaque}"
+        );
+    }
+
+    #[test]
+    fn retained_structural_callable_aliases_keep_origin_and_binder_hygiene() {
+        let pkg = build_package("module api; fn unit() -> . { () }", Some("bridge { api; }"));
+        let krate = lower_with_sig(
+            &pkg,
+            "signature pkg v(3); \
+             v(1) { nonbreaking { add { module api { \
+                 host fn old_field0[H](value: ([A] A -> H) | (. -> H)) -> .; \
+             } } } } \
+             v(2) { nonbreaking { remove { module api { old_field0; } } } }",
+        );
+        let ffi = &krate.ffi_rs;
+        assert!(ffi.contains("pub mod api__oldField0 {"), "{ffi}");
+        assert!(
+            ffi.contains(
+                "pub type arg0_arm0<__KioHost: crate::host::TestPkgHost, H: crate::shapes::KioType>"
+            ),
+            "{ffi}"
+        );
+        assert!(ffi.contains(" as arg0_arm0_impl;"), "{ffi}");
+        let lines = ffi.lines().collect::<Vec<_>>();
+        for (index, line) in lines.iter().enumerate().filter(|(_, line)| {
+            line.contains("pub type arg0_arm") || line.ends_with(" as arg0_arm0_impl;")
+        }) {
+            assert!(
+                index > 0 && lines[index - 1].contains("#[deprecated(note = "),
+                "{line}\n{ffi}"
+            );
+        }
+        assert!(!krate.lib_rs.contains("fn oldField0"), "{}", krate.lib_rs);
+    }
+
+    #[test]
+    fn ffi_callable_alias_paths_do_not_render_higher_kinded_containers_as_values() {
+        let pkg = build_package(
+            "module main; \
+             host type Box[A]; host type Pair[A][B]; \
+             pub newtype Holder[*F][A] : . { constructor wrap; projector get; }; \
+             host fn higher[*F](bound: Holder(F, [A] A -> A), \
+                 nominal: Holder(Box, [B] B -> B), \
+                 partial: Holder(Pair([C] C -> C), .)) -> .;",
+            Some("bridge { main; }"),
+        );
+        let krate = lower_package(&pkg, "test_pkg").expect("emit higher-kinded alias paths");
+        let ffi = &krate.ffi_rs;
+        for alias in ["arg0_typearg1", "arg1_typearg1", "arg2_typearg0_typearg0"] {
+            assert!(ffi.contains(&format!("pub type {alias}<")), "{ffi}");
+            assert!(ffi.contains(&format!(" as {alias}_impl;")), "{ffi}");
+        }
+        for alias in ["arg0_typearg0", "arg1_typearg0", "arg2_typearg0"] {
+            assert!(!ffi.contains(&format!("pub type {alias}<")), "{ffi}");
+        }
+    }
+
+    #[test]
+    fn ffi_structural_callable_alias_count_grows_with_occurrences() {
+        for width in [4, 16] {
+            let arms = vec!["[A] A -> A"; width].join(") | (");
+            let source = format!("module main; host fn many(value: ({arms})) -> .;");
+            let pkg = build_package(&source, Some("bridge { main; }"));
+            let krate = lower_package(&pkg, "test_pkg").expect("emit wide aliases");
+            assert_eq!(krate.ffi_rs.matches("_impl;").count(), width);
+            assert_eq!(
+                krate
+                    .ffi_rs
+                    .lines()
+                    .filter(|line| line.contains("pub type arg0_arm")
+                        && line.contains(" = crate::shapes::KioForall_"))
+                    .count(),
+                width,
+            );
+        }
+    }
+
+    #[test]
     fn ffi_callback_arg_names_its_return() {
         // A function-typed env arg has a nameable canonical `KioFnN` alias;
         // grouped source-argument and result convenience aliases accompany it.
@@ -13606,17 +13743,17 @@ mod tests {
         let ffi = &krate.ffi_rs;
         let payload = ffi
             .lines()
-            .find(|line| line.contains("pub type open_continuation_cbarg<"))
+            .find(|line| line.contains("pub type open_continuation_type_ret_cbarg<"))
             .unwrap_or_else(|| panic!("missing public continuation payload alias:\n{ffi}"));
         assert!(
             payload.contains("<__KioHost: crate::host::TestPkgHost, __KioPolyType_0: crate::shapes::KioType, __KioPolyType_1: crate::shapes::KioType>")
                 && payload.ends_with("Value<__KioHost, __KioPolyType_0, __KioPolyType_1>;"),
             "continuation payload must preserve result and hidden witness markers:\n{payload}",
         );
-        assert!(ffi.contains(" as open_continuation_cbarg_impl;"));
-        assert!(ffi.contains("pub type open_continuation_cbret<__KioPolyType_0: crate::shapes::KioType> = <__KioPolyType_0 as crate::shapes::KioType>::Facade;"));
-        assert!(ffi.contains("pub type open_continuation_cbarg_cbarg<__KioPolyType_1: crate::shapes::KioType, __KioPolyType_2: crate::shapes::KioType> = crate::shapes::Product<<__KioPolyType_1 as crate::shapes::KioType>::Facade, <__KioPolyType_2 as crate::shapes::KioType>::Facade>;"));
-        assert!(ffi.contains("pub type open_continuation_cbarg_cbret<__KioPolyType_1: crate::shapes::KioType> = <__KioPolyType_1 as crate::shapes::KioType>::Facade;"));
+        assert!(ffi.contains(" as open_continuation_type_ret_cbarg_impl;"));
+        assert!(ffi.contains("pub type open_continuation_type_ret_cbret<__KioPolyType_0: crate::shapes::KioType> = <__KioPolyType_0 as crate::shapes::KioType>::Facade;"));
+        assert!(ffi.contains("pub type open_continuation_type_ret_cbarg_type_ret_cbarg<__KioPolyType_1: crate::shapes::KioType, __KioPolyType_2: crate::shapes::KioType> = crate::shapes::Product<<__KioPolyType_1 as crate::shapes::KioType>::Facade, <__KioPolyType_2 as crate::shapes::KioType>::Facade>;"));
+        assert!(ffi.contains("pub type open_continuation_type_ret_cbarg_type_ret_cbret<__KioPolyType_1: crate::shapes::KioType> = <__KioPolyType_1 as crate::shapes::KioType>::Facade;"));
     }
 
     #[test]
@@ -13631,16 +13768,21 @@ mod tests {
         );
         let krate = lower_package(&pkg, "test_pkg").expect("lower_package");
         let ffi = &krate.ffi_rs;
-        for leaf in ["arg0_cbarg", "arg0_cbret", "ret_cbarg", "ret_cbret"] {
+        for leaf in [
+            "arg0_type_ret_cbarg",
+            "arg0_type_ret_cbret",
+            "ret_type_ret_cbarg",
+            "ret_type_ret_cbret",
+        ] {
             assert!(
                 ffi.contains(&format!("pub type {leaf}<")),
                 "missing callable slot {leaf}:\n{ffi}"
             );
         }
         assert!(ffi.contains(" as ret_cbret_impl;"));
-        assert!(ffi.contains("pub type ret_cbret_cbarg<"));
-        assert!(ffi.contains("pub type ret_cbret_cbret<"));
-        assert!(ffi.contains("pub type arg0_cbret<__KioPolyType_0: crate::shapes::KioTypeConstructor1, __KioPolyType_2: crate::shapes::KioType> = crate::shapes::KioApply1<__KioPolyType_0, __KioPolyType_2>;"));
+        assert!(ffi.contains("pub type ret_cbret_type_ret_cbarg<"));
+        assert!(ffi.contains("pub type ret_cbret_type_ret_cbret<"));
+        assert!(ffi.contains("pub type arg0_type_ret_type_ret_type_ret_cbret<__KioPolyType_0: crate::shapes::KioTypeConstructor1, __KioPolyType_2: crate::shapes::KioType> = crate::shapes::KioApply1<__KioPolyType_0, __KioPolyType_2>;"));
     }
 
     #[test]
@@ -14261,8 +14403,8 @@ mod tests {
             .expect("retained forall Value implementation end")
             .0;
         assert!(
-            trait_body.contains(&format!("    {retained}\n    fn apply"))
-                && value_impl.contains("\n    fn apply")
+            trait_body.contains(&format!("    {retained}\n    fn specialize"))
+                && value_impl.contains("\n    fn specialize")
                 && !value_impl.contains(retained),
             "only the retained trait declaration method may carry deprecation; its Value implementation method must remain unannotated:\ntrait:\n{trait_body}\nimpl:\n{value_impl}",
         );

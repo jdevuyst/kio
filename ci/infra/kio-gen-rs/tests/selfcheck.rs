@@ -181,6 +181,7 @@ fn type_only_support_tracks_body_calls_and_shrinking() {
                 call
             };
             let mut prog = Program {
+                control_probe: None,
                 fn_def_name: "gen".to_string(),
                 params: vec![],
                 ret: Type::Unit,

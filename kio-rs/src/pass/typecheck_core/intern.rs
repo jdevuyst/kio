@@ -304,6 +304,7 @@ where
         )
     }
 
+    #[cfg(any(feature = "surface", feature = "prime"))]
     pub(crate) fn fresh_for_normalized_module(
         module: &crate::pass::alpha_normalize::AlphaNormalizedModule<P>,
         package: &crate::pass::alpha_normalize::AlphaNormalizedPackage<P>,
@@ -409,7 +410,8 @@ where
         transform: F,
     ) -> Result<crate::pass::alpha_normalize::AlphaNormalizedPackage<P>, E>
     where
-        P: crate::pass::visit_mut::TypecheckVisitPhase,
+        P: crate::pass::visit_mut::TypecheckVisitPhase
+            + crate::ast::Phase<FnBody = crate::ast::Expr<P>>,
         F: FnOnce(&crate::pass::resolve::Package<P>) -> Result<crate::pass::resolve::Package<P>, E>,
     {
         self.assert_package(package);

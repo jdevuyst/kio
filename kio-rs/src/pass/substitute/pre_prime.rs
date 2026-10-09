@@ -5,7 +5,7 @@ use crate::ast::{
     UncheckedPrime, convert_expr, convert_fn_def, convert_item, convert_meta, convert_type,
 };
 use crate::pass::typecheck_core::fresh_type_var;
-use crate::pass::visit_mut::{TypecheckVisitMut, walk_type};
+use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr, walk_type};
 
 use super::PrePrime;
 
@@ -69,8 +69,8 @@ pub(super) fn finish_package_file(package_file: PackageFile<PrePrime>) -> Packag
     }
 }
 
-pub(super) fn finish_expr_unchecked(expr: Expr<PrePrime>) -> Expr<UncheckedPrime> {
-    let mut names = GeneratedValueNames::for_expr(&expr);
+pub(super) fn finish_expr_unchecked(mut expr: Expr<PrePrime>) -> Expr<UncheckedPrime> {
+    let mut names = GeneratedValueNames::for_expr(&mut expr);
     let expr = materialize_expr(expr, &mut names);
     convert_expr::<PrePrime, UncheckedPrime>(&expr)
 }
@@ -97,6 +97,7 @@ fn materialize_fn_def(def: &mut FnDef<PrePrime>) {
     let body = std::mem::replace(
         &mut def.body,
         Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: crate::ast::Meta::new(span),
         },
@@ -207,13 +208,13 @@ struct GeneratedValueNames {
 }
 
 impl GeneratedValueNames {
-    fn for_expr(body: &Expr<PrePrime>) -> Self {
+    fn for_expr(body: &mut Expr<PrePrime>) -> Self {
         let mut used = HashSet::new();
-        collect_names(body, &mut used);
+        ValueNameCollector(&mut used).visit_expr(body);
         Self { used, next: 0 }
     }
 
-    fn for_function(sig: &Signature<PrePrime>, body: &Expr<PrePrime>) -> Self {
+    fn for_function(sig: &Signature<PrePrime>, body: &mut Expr<PrePrime>) -> Self {
         let mut names = Self::for_expr(body);
         collect_signature_names(sig, &mut names.used);
         names
@@ -240,78 +241,36 @@ fn collect_signature_names(sig: &Signature<PrePrime>, out: &mut HashSet<String>)
     }
 }
 
-fn collect_names(expr: &Expr<PrePrime>, out: &mut HashSet<String>) {
-    match expr {
-        crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        Expr::Path { segments, .. } => {
-            if let Some(head) = segments.first() {
-                out.insert(head.name.clone());
-            }
+struct ValueNameCollector<'a>(&'a mut HashSet<String>);
+
+impl TypecheckVisitMut<PrePrime> for ValueNameCollector<'_> {
+    fn enter_type_binder(&mut self, param: &mut crate::ast::TypeParam, _scope: crate::span::Span) {
+        self.0.insert(param.name.clone());
+    }
+
+    fn enter_value_binder(
+        &mut self,
+        name: &mut String,
+        _span: crate::span::Span,
+        _scope: crate::span::Span,
+    ) {
+        self.0.insert(name.clone());
+    }
+
+    fn visit_type(&mut self, _ty: &mut Type<PrePrime>) {}
+
+    fn visit_expr(&mut self, expr: &mut Expr<PrePrime>) {
+        if let Expr::Path { segments, .. } = expr
+            && let Some(head) = segments.first()
+        {
+            self.0.insert(head.name.clone());
         }
-        Expr::Call { callee, args, .. } => {
-            collect_names(callee, out);
-            for arg in args {
-                if let CallArg::Value(value) = arg {
-                    collect_names(value, out);
-                }
-            }
-        }
-        Expr::FnExpr { sig, body, .. } => {
-            collect_signature_names(sig, out);
-            collect_names(body, out);
-        }
-        Expr::Let {
-            name, value, body, ..
-        } => {
-            out.insert(name.clone());
-            collect_names(value, out);
-            collect_names(body, out);
-        }
-        Expr::Seq { value, body, .. } => {
-            collect_names(value, out);
-            collect_names(body, out);
-        }
-        Expr::Unit { .. }
-        | Expr::StrLit { .. }
-        | Expr::IntLit { .. }
-        | Expr::FloatLit { .. }
-        | Expr::BoolLit { .. } => {}
-        Expr::Tuple { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. }
-        | Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
-        | Expr::Ufcs { ext, .. }
-        | Expr::OpChain { ext, .. }
-        | Expr::RecCall { ext, .. }
-        | Expr::EnrichedTuple { ext, .. }
-        | Expr::EnrichedProject { ext, .. }
-        | Expr::EnrichedInject { ext, .. }
-        | Expr::EnrichedMatch { ext, .. }
-        | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedFieldGet { ext, .. }
-        | Expr::LowHostCall { ext, .. }
-        | Expr::LowModuleCall { ext, .. }
-        | Expr::LowQualifiedModuleCall { ext, .. }
-        | Expr::LowQualifiedNewtypeMember { ext, .. }
-        | Expr::LowNewtypeCtor { ext, .. }
-        | Expr::LowNewtypeProj { ext, .. }
-        | Expr::LowClosureCall { ext, .. }
-        | Expr::LowIndirectCall { ext, .. }
-        | Expr::LowTypeApplication { ext, .. }
-        | Expr::LowAbsurdCall { ext, .. }
-        | Expr::LowCpsProjectorApply { ext, .. }
-        | Expr::LowBoundRef { ext, .. }
-        | Expr::LowHostFnValueRef { ext, .. }
-        | Expr::LowModuleFnValueRef { ext, .. } => match *ext {},
+        walk_expr(self, expr);
     }
 }
 
 fn materialize_function(sig: &mut Signature<PrePrime>, mut body: Expr<PrePrime>) -> Expr<PrePrime> {
-    let mut names = GeneratedValueNames::for_function(sig, &body);
+    let mut names = GeneratedValueNames::for_function(sig, &mut body);
     for param in &mut sig.params {
         let SignatureParam::Value(param) = param else {
             continue;
@@ -384,6 +343,7 @@ fn materialize_expr(expr: Expr<PrePrime>, names: &mut GeneratedValueNames) -> Ex
             meta,
         },
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -391,6 +351,7 @@ fn materialize_expr(expr: Expr<PrePrime>, names: &mut GeneratedValueNames) -> Ex
             meta,
             ext: _,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(materialize_expr(*callee, names)),
@@ -430,6 +391,7 @@ fn rename_bound_uses(expr: Expr<PrePrime>, old: &str, new: &str) -> Expr<PrePrim
             }
         }
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -437,6 +399,7 @@ fn rename_bound_uses(expr: Expr<PrePrime>, old: &str, new: &str) -> Expr<PrePrim
             meta,
             ext: _,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(rename_bound_uses(*callee, old, new)),
@@ -595,6 +558,97 @@ mod tests {
     }
 
     #[test]
+    fn value_name_collection_preserves_tree_and_exact_reservations() {
+        let forall = |name: &str| Type::Forall {
+            param: TypeParam {
+                name: name.to_owned(),
+                span: span(1),
+                kind: None,
+            },
+            body: Box::new(ty(name)),
+            meta: Meta::new(span(1)),
+        };
+        let sig = Signature::new(vec![
+            SignatureParam::Type(TypeParam {
+                name: "Outer".to_owned(),
+                span: span(1),
+                kind: None,
+            }),
+            SignatureParam::Value(Param {
+                name: "outer".to_owned(),
+                ty: Some(forall("OuterAnnotation")),
+                pattern: (),
+                meta: Meta::new(span(1)),
+            }),
+        ]);
+        let call = Expr::Call {
+            source_trivia: Default::default(),
+            occurrence: Default::default(),
+            diagnostic: Default::default(),
+            callee: Box::new(path("callee")),
+            args: vec![
+                CallArg::Type(forall("TypeArgument")),
+                CallArg::Value(lambda("nested", path("free"))),
+            ],
+            meta: Meta::new(span(1)),
+            ext: (),
+        };
+        let mut binding = let_(
+            "shadow",
+            qualified("qualified", "member"),
+            let_("shadow", path("seed"), call, 2),
+            1,
+        );
+        if let Expr::Let { ty, .. } = &mut binding {
+            *ty = Some(forall("LetAnnotation"));
+        }
+        let mut body = Expr::FnExpr {
+            occurrence: Default::default(),
+            sig: Signature::new(vec![
+                SignatureParam::Type(TypeParam {
+                    name: "Inner".to_owned(),
+                    span: span(1),
+                    kind: None,
+                }),
+                SignatureParam::Value(Param {
+                    name: "inner".to_owned(),
+                    ty: Some(forall("ParameterAnnotation")),
+                    pattern: (),
+                    meta: Meta::new(span(1)),
+                }),
+            ]),
+            ret_ty: Some(forall("ReturnAnnotation")),
+            body: Box::new(seq(path("prefix"), binding)),
+            meta: Meta::new(span(1)),
+            caps: (),
+        };
+        let original = body.clone();
+
+        let names = GeneratedValueNames::for_function(&sig, &mut body);
+
+        assert_eq!(body, original);
+        assert_eq!(
+            names.used,
+            [
+                "Outer",
+                "outer",
+                "Inner",
+                "inner",
+                "prefix",
+                "shadow",
+                "qualified",
+                "seed",
+                "callee",
+                "nested",
+                "free",
+            ]
+            .map(str::to_owned)
+            .into_iter()
+            .collect()
+        );
+    }
+
+    #[test]
     fn allocator_seeds_the_complete_lexical_owner() {
         let mut sig = Signature::new(vec![SignatureParam::Value(Param {
             name: "_kg0".to_owned(),
@@ -740,6 +794,7 @@ mod tests {
             ),
             ret_ty: Some(ty(marker)),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span(2)),
             }),
@@ -747,12 +802,14 @@ mod tests {
             caps: (),
         };
         let after_inner = Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(path("consume")),
             args: vec![
                 CallArg::Type(ty(marker)),
                 CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span(3)),
                 }),
@@ -849,6 +906,7 @@ mod tests {
     fn replay_exit_materializes_generated_forall_type_name() {
         let marker = "_ct_forall_n7";
         let expr = Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(path("consume")),

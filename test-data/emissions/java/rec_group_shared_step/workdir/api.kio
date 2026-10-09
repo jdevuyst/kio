@@ -1,0 +1,21 @@
+module api;
+
+host type String role(str);
+
+host fn print(value: String) -> .;
+
+host fn loop[S][R](step: S -> S | R, state: S) -> R;
+
+rec(loop) {
+  fn first(value: .) -> . { print("shared-first-effect"); rec second(value) };
+  fn second(value: .) -> . {
+    print("shared-second-before");
+    let result = rec(cont) third(value);
+    print("shared-second-after");
+    result
+  };
+  fn third(value: .) -> . { print("shared-third-effect"); rec fourth(value) };
+  fn fourth(value: .) -> . { print("shared-fourth-effect"); value }
+}
+
+pub fn main() { first(()); second(()); third(()); fourth(()) }

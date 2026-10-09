@@ -26,11 +26,12 @@ Each generated case is a directory mirroring the case-directory shape `ci/run-te
 ```text
 <batch>/<NN_category>/prog_<n>/
   workdir/                     # directory where the case commands run
-    prog.pkg.kio               # package file; build block declares both js + rust
+    prog.pkg.kio               # five targets; invoked control probes declare all eight
     prog.kio                   # module prog; generated host mirror + helpers + fn gen(...)
     *.kio         # elaborator support files in surface-mode cases
-  run.args                     # exact generated-core-main or generated-surface-main protocol
-  expected.stdout              # empty
+  run.args                     # exact generated core, surface, or control protocol
+  run.sh                       # valid I32 results: capture execution, then kio test
+  expected.stdout              # independently modelled control trace, otherwise empty
   expected.exit                # single integer exit code
   expected.stderr.ignore       # marker — error-message wording is impl-specific
 ```
@@ -41,7 +42,31 @@ The batch directory also gets a `README.md` describing the seed, the generator v
 
 ## Encoding the oracle
 
-For invalid programs, the oracle is the expected exit code (in `expected.exit`); the case ships `expected.stderr.ignore` because stderr wording is implementation-specific. For valid programs, the oracle is **`kio test` exits 0 for surface-mode cases, `kio build $KIO_TARGET` exits 0, and `$KIO_RUNNER` exits 0**. Each generated `run.args` selects the generator-owned exact protocol: `generated-core-main` supplies the fourteen role types declared in `prog`, while `generated-surface-main` additionally supplies the four role types in the bundled `testapi` support module. Both invoke the public `main` declared directly in `prog`. The harness-owned standard path discharges `equiv` blocks for generated non-Kio' cases, runs the build, and invokes the per-backend runner against the build output, with `expected.exit=0` and empty `expected.stdout`. Run-and-check (asserting a specific stdout from program evaluation) is a richer oracle but adds the burden of generating programs that produce a known printable value; deferred until it earns its keep.
+For invalid programs, the oracle is the expected exit code (in `expected.exit`); stderr wording is ignored. For valid programs, the harness discharges surface-mode `equiv` claims, builds the selected target, invokes `prog.main`, and compares stdout and exit against the independent expectations.
+
+`generated-core-main` supplies the fourteen role types in `prog` and the
+standard `prog.print_i32` capability; `generated-surface-main` adds the four
+role types in the bundled `testapi` module. Valid functions returning `I32`
+are closed with the existing typed inhabitant construction and invoked through
+one shared `kio_gen_observed` function. Their `run.sh` captures the small
+nonnegative integer, validates it, and appends an ordinary `equiv` comparing
+that same call with the observed literal in an isolated source copy. The full
+CLI's `kio test` reduces the generated computation, including lambda, product,
+choice and polymorphic flows. Host arithmetic remains opaque. Core comparison
+cases retain `IS_KIO_PRIME`; `SKIP_KIO_PRIME_RUN` keeps their surface test command
+on the full CLI while retaining the source grammar and applicable phase checks.
+The emitted source and script can be promoted together without the generator.
+Other return types keep the existing runtime oracle.
+
+Surface-mode valid cases also carry an invoked finite `ControlProbe`, selecting
+`generated-control-main`: the same eighteen role types and integer printer plus
+the standard `testapi/io.print` capability. Its independent schedule/value model
+computes receiver, action, bind, eager product and explicitly delayed
+thunk/sequence traces, including selected string values. The comparison script
+preserves this trace for the harness's existing assertions. The renderer does
+not compute expectations or interpret the general generated AST.
+
+The control domain includes three sequence receivers, zero through three bind/action steps, lexical lets/references/shadows, bounded nesting, and all nine ordered product/thunk/sequence descriptor pairs. Probe cases declare JS, TS, Python, Java, Rust, Go, Swift and Haskell targets. Invalid cases, including unshrunken mutations, drop the probe; `--prime-only` never creates it. Seeded semantic distribution assertions print first witness seeds, while literal trace tests, deterministic source/stdout/protocol checks and actual cross-backend execution provide independent coverage. Existing handwritten control goldens remain unchanged.
 
 ## Cross-implementation agreement
 
@@ -146,10 +171,10 @@ and value paths, intrinsic calls) plus every surface form in
   use-site references appearing in surface mode as the annotated
   alias call and in Kio' fallback as the bound literal (the
   desugaring substitution).
-- `equiv` claims — fixed Unit reflexivity and seeded-fold claims are
-  appended to `prog.kio` for every surface-mode case. The
-  standard `run.args` path runs `kio test` before build/run for those
-  cases, so each generated surface batch discharges the claim.
+- `equiv` claims — fixed Unit reflexivity, seeded-fold and label-forwarding
+  claims are appended to `prog.kio` for every surface-mode case. The
+  standard `run.args` path runs `kio test` before build/run; eligible integer
+  cases discharge them together with the observed-result claim after execution.
 - User-defined `elab` declarations — surface-mode cases generate a
   `kio_gen_elaborators.kio` module with 1-3 ordinary-schedule
   identity-style `pub elab` declarations plus one capture-free

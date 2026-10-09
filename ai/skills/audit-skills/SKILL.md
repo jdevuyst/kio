@@ -71,7 +71,7 @@ A rule may be load-bearing yet not warrant an audit skill — e.g. the rule is s
 - `audit-prime-grammar` — parser acceptance, Kio' lowering rejection, `specs/grammar.md` ↔ `specs/prime.md` agreement.
 - `audit-surface-forms-survival` — lowering-boundary purity.
 - `audit-open-world` — the open-world argument for resolution/import/dispatch/inference syntax.
-- `audit-kio-gen-coverage` — `kio-gen-rs`'s marginal coverage contribution (not its grammar-support currency).
+- `audit-reports` (generator coverage procedure) — `kio-gen-rs`'s marginal coverage contribution (not its grammar-support currency).
 - `audit-spec-drift` / `audit-docs-drift` — `specs/grammar.md`, `specs/language.md`, `specs/prime.md`, `specs/style.md`, `specs/cli.md`, and their docs, drifting from the implementation over time.
 - `audit-test-strategy` — spec→test coverage generally.
 - `audit-cli-output` § B3 — only `kio lsp`'s printed-text output, not LSP protocol behavior.

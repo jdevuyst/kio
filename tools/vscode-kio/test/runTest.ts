@@ -20,8 +20,9 @@
 //           the mock structurally cannot: that the extension spawns the
 //           real server the way the real server expects.
 //   stale — `fixtures/stale-kio.js`, a `kio` too old to have `kio lsp`.
-//           Pins that the extension learns that from `--help` and
-//           declines to spawn it.
+//           Pins activation and highlighting with that compiler selected.
+//           The availability suite observes initial probe rejection and
+//           absence of a server spawn at the terminal notification.
 //
 // `ci/checks/orchestrators/vscode-e2e.sh` runs all three.
 
@@ -118,13 +119,6 @@ async function main(): Promise<void> {
     );
   }
 
-  // The stale launch asserts a negative — that a server which cannot
-  // serve was never spawned. The fixture writes this file if it ever is,
-  // which is the only thing that separates "the extension declined to
-  // spawn it" from "the extension spawned it and the resulting crash
-  // published no diagnostics".
-  const staleMarker = path.join(workspaceDir, "stale-server-was-spawned");
-
   try {
     await runTests({
       extensionDevelopmentPath,
@@ -135,7 +129,6 @@ async function main(): Promise<void> {
       extensionTestsEnv: {
         VSCODE_KIO_TEST_WORKSPACE: workspaceDir,
         VSCODE_KIO_E2E_MODE: m,
-        VSCODE_KIO_STALE_MARKER: staleMarker,
       },
     });
   } catch (err) {

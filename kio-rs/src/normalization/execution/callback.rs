@@ -157,6 +157,8 @@ impl<'code> Source<'code> {
             }
             ComptimeBuiltin::TermTypeFn | ComptimeBuiltin::TypeForall => {
                 let arity = as_refl_type_arity(&args[0])?;
+                ctx.reflected_binder_epoch
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let name =
                     fresh_checked_term_name(if self.builtin == ComptimeBuiltin::TypeForall {
                         "forall"

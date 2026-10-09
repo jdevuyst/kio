@@ -22,9 +22,8 @@
 //! ## Catalog (in order)
 //!
 //! - [`project_after_tuple`] — `Project(Tuple([…, e_i, …]), i)` →
-//!   `e_i`. When the non-`i`th items are not statically pure, they
-//!   are kept in evaluation order via a [`Expr::Seq`] chain so
-//!   host-call ordering is preserved.
+//!   `e_i` when moving it past the later items preserves effect order.
+//!   Non-selected impure items remain in a leading [`Expr::Seq`] chain.
 //! - [`compose_recovered_tail_access`] — a projection or field-get
 //!   over the tail tuple materialized for `__snd__` composes back
 //!   into a direct projection of the original product. This keeps
@@ -58,6 +57,10 @@
 //!   `let x = arg; body` for non-polymorphic unary function literals.
 //!   This removes closure-call ladders that surface Kio' elaboration
 //!   can otherwise leave in backend output.
+//! - [`beta_reduce_nullary_iife`] — `.() { body }(unit)` →
+//!   `unit; body` for a literal with one empty value stage. An omitted
+//!   Unit argument reduces directly to the body; an explicit argument
+//!   retains its effects before the body.
 //! - [`dead_code_elimination`] — drops pure values whose result is
 //!   discarded. `Seq { value: pure, body }` → `body`. The zero-use
 //!   pure-let case is already covered by [`let_fuse`]; this rule
@@ -254,11 +257,11 @@ pub fn optimize_module_with_package_inputs(
     let mut ctx = OptimizerCtx::default();
     let module_path = m.path.segments.join("/");
     ctx.pure_functions = inputs
-        .pure_functions
+        .pure_functions()
         .get(&module_path)
         .cloned()
         .unwrap_or_default();
-    for (scoped_name, input) in &inputs.newtype_members {
+    for (scoped_name, input) in inputs.newtype_members() {
         if scoped_name.module_path() != module_path {
             continue;
         }
@@ -361,6 +364,7 @@ fn optimize_expr_in_mode(
         }
         e = let_fuse(ctx, e, &mut changed);
         e = beta_reduce_unary_iife(e, &mut changed);
+        e = beta_reduce_nullary_iife(e, &mut changed);
         e = dead_code_elimination(ctx, e, &mut changed);
         e = newtype_identity_elision(ctx, e, &mut changed);
         e = constant_fold(e, &mut changed);
@@ -385,6 +389,7 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
         // Pass-through Kio' shape nodes — only their child
         // expressions get optimized.
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -392,6 +397,7 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
             meta,
             ext: _,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(optimize_expr_in_mode(ctx, *callee, mode)),
@@ -650,11 +656,10 @@ fn sequence_effects(effects: Vec<Expr<Enriched>>, kept: Expr<Enriched>) -> Expr<
 /// decidable at compile time — no allocation, no field access, just
 /// the value flowing through.
 ///
-/// Non-`i`th items that are not syntactically pure are kept in
-/// evaluation order via a leading [`Expr::Seq`] chain. The rule
-/// preserves host-call ordering by construction: any side-effecting
-/// component still runs at its original position in the tuple's
-/// left-to-right evaluation order.
+/// Non-selected impure items remain in order in a leading [`Expr::Seq`]
+/// chain. That moves the selected expression after the tuple's suffix,
+/// so either the selected expression or the entire suffix must be pure.
+/// Recovery and single-use substitution can both leave effects in tuple members.
 ///
 /// Do not apply this rewrite to [`Expr::EnrichedFieldGet`]. A
 /// field-get is not only positional selection: it represents a label
@@ -677,9 +682,13 @@ fn project_after_tuple(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> 
             meta,
             ext,
         } => match *target {
-            Expr::EnrichedTuple { items, .. } if items.len() == arity && index < arity => {
+            Expr::EnrichedTuple { items, .. }
+                if items.len() == arity
+                    && index < arity
+                    && can_pick_with_leading_effects(&items, index) =>
+            {
                 *changed = true;
-                pick_with_effects(items, index)
+                pick_with_leading_effects(items, index)
             }
             other => Expr::EnrichedProject {
                 occurrence: Default::default(),
@@ -696,11 +705,14 @@ fn project_after_tuple(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> 
     }
 }
 
-/// Pick component `index` out of `items`, preserving the
-/// side-effecting components in evaluation order via a leading
-/// [`Expr::Seq`] chain. Used by Project-after-Tuple to drop the
-/// non-picked slots while keeping their effects live.
-fn pick_with_effects(mut items: Vec<Expr<Enriched>>, index: usize) -> Expr<Enriched> {
+fn can_pick_with_leading_effects(items: &[Expr<Enriched>], index: usize) -> bool {
+    is_pure(&items[index]) || items[index + 1..].iter().all(is_pure)
+}
+
+/// The selected expression runs last, so the caller must prove it can
+/// cross the suffix without changing observable evaluation order.
+fn pick_with_leading_effects(mut items: Vec<Expr<Enriched>>, index: usize) -> Expr<Enriched> {
+    debug_assert!(can_pick_with_leading_effects(&items, index));
     let picked = items.remove(index);
     sequence_effects(items, picked)
 }
@@ -881,6 +893,7 @@ fn let_bound_tuple_projection(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enr
                 unreachable!("let-bound call projection guarded above")
             };
             let Expr::Call {
+                source_trivia: _,
                 occurrence: _,
                 diagnostic: _,
                 callee,
@@ -906,6 +919,7 @@ fn let_bound_tuple_projection(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enr
             debug_assert!(bound_items.next().is_none());
             *changed = true;
             return Expr::Call {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 diagnostic: Default::default(),
                 callee,
@@ -1133,13 +1147,7 @@ fn inject_then_match(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
 /// might have introduced.
 fn absurd_propagate(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     match e {
-        Expr::Let {
-            name: _,
-            value,
-            body: _,
-            meta: _,
-            ..
-        }
+        Expr::Let { name: _, value, .. }
         | Expr::Seq {
             occurrence: _,
             value,
@@ -1515,6 +1523,7 @@ fn subst_free(e: Expr<Enriched>, name: &str, replacement: &Expr<Enriched>) -> Ex
         | Expr::FloatLit { .. }
         | Expr::BoolLit { .. }) => e,
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -1522,6 +1531,7 @@ fn subst_free(e: Expr<Enriched>, name: &str, replacement: &Expr<Enriched>) -> Ex
             meta,
             ext: _,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(subst_free(*callee, name, replacement)),
@@ -1855,6 +1865,7 @@ fn let_fuse(ctx: &OptimizerCtx, e: Expr<Enriched>, changed: &mut bool) -> Expr<E
 /// simultaneous argument-binding machinery.
 fn beta_reduce_unary_iife(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
     let Expr::Call {
+        source_trivia: _,
         occurrence: _,
         diagnostic: _,
         callee,
@@ -1871,12 +1882,17 @@ fn beta_reduce_unary_iife(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriche
             let mut params = sig.params.iter();
             matches!(params.next(), Some(crate::ast::SignatureParam::Value(_)))
                 && params.next().is_none()
+                && matches!(
+                    sig.groups.as_slice(),
+                    [crate::ast::SignatureGroupKind::Value { len: 1 }]
+                )
         }
         _ => false,
     };
     let safe_unary_arg = matches!(args.as_slice(), [CallArg::Value(_)]);
     if !safe_unary_fn || !safe_unary_arg {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -1914,6 +1930,42 @@ fn beta_reduce_unary_iife(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriche
         value: Box::new(value),
         body,
         meta,
+    }
+}
+
+/// A literal with exactly one empty value stage binds no variables. Entering
+/// it preserves an explicit Unit argument's evaluation before the body; no
+/// substitution or callable-stage construction is needed.
+fn beta_reduce_nullary_iife(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> {
+    let eligible = matches!(&e,
+        Expr::Call { callee, args, .. }
+            if matches!(callee.as_ref(), Expr::FnExpr { sig, .. }
+                if sig.params.is_empty()
+                    && matches!(sig.groups.as_slice(), [crate::ast::SignatureGroupKind::Value { len: 0 }]))
+                && matches!(args.as_slice(), [] | [CallArg::Value(_)])
+    );
+    if !eligible {
+        return e;
+    }
+    let Expr::Call {
+        callee, args, meta, ..
+    } = e
+    else {
+        unreachable!("eligible nullary beta reduction requires a call")
+    };
+    let Expr::FnExpr { body, .. } = *callee else {
+        unreachable!("eligible nullary beta reduction requires a literal")
+    };
+    *changed = true;
+    match args.into_iter().next() {
+        None => *body,
+        Some(CallArg::Value(value)) => Expr::Seq {
+            occurrence: Default::default(),
+            value: Box::new(value),
+            body,
+            meta,
+        },
+        Some(CallArg::Type(_)) => unreachable!("a nullary value stage has no type argument"),
     }
 }
 
@@ -2236,6 +2288,7 @@ fn newtype_identity_elision(
     changed: &mut bool,
 ) -> Expr<Enriched> {
     let Expr::Call {
+        source_trivia: _,
         occurrence: _,
         diagnostic: _,
         callee,
@@ -2248,6 +2301,7 @@ fn newtype_identity_elision(
     };
     let Some(outer) = match_newtype_member_call(&callee, &args) else {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2274,6 +2328,7 @@ fn newtype_identity_elision(
         })
     else {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2284,6 +2339,7 @@ fn newtype_identity_elision(
     };
     if matches!(outer_kind, NewtypeMemberKind::Neither) {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2303,6 +2359,7 @@ fn newtype_identity_elision(
     };
     let Some(inner) = inner else {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2313,6 +2370,7 @@ fn newtype_identity_elision(
     };
     let Some(inner_info) = ctx.newtype_members.get(inner.visible_head) else {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2323,6 +2381,7 @@ fn newtype_identity_elision(
     };
     if &inner_info.identity != outer_identity {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2347,6 +2406,7 @@ fn newtype_identity_elision(
     );
     if !is_inverse_pair {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2359,6 +2419,7 @@ fn newtype_identity_elision(
     // args, AST-equal at each slot.
     if outer_type_args.len() != inner.type_args.len() {
         return Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee,
@@ -2370,6 +2431,7 @@ fn newtype_identity_elision(
     for (a, b) in outer_type_args.iter().zip(inner.type_args.iter()) {
         if !types_equal(a, b) {
             return Expr::Call {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 diagnostic: Default::default(),
                 callee,
@@ -2967,6 +3029,7 @@ mod tests {
                 ext: (),
             }),
             body: Box::new(Expr::Call {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 diagnostic: Default::default(),
                 callee: Box::new(test_path(callee)),
@@ -3047,6 +3110,154 @@ mod tests {
             !contains(body, &|e| matches!(e, Expr::EnrichedTuple { .. })),
             "expected no tuple, got body: {body:?}"
         );
+    }
+
+    #[test]
+    fn project_after_tuple_preserves_each_effectful_position() {
+        fn call_names(e: &Expr<Enriched>, names: &mut Vec<String>) {
+            match e {
+                Expr::Call { callee, args, .. } => {
+                    assert!(matches!(
+                        args.as_slice(),
+                        [CallArg::Value(Expr::Unit { .. })]
+                    ));
+                    let Expr::Path { segments, .. } = callee.as_ref() else {
+                        panic!("expected a named test call: {e:?}")
+                    };
+                    assert_eq!(segments.len(), 1);
+                    names.push(segments[0].name.clone());
+                }
+                Expr::Seq { value, body, .. } => {
+                    call_names(value, names);
+                    call_names(body, names);
+                }
+                Expr::EnrichedProject { target, .. } => call_names(target, names),
+                Expr::EnrichedTuple { items, .. } => {
+                    for item in items {
+                        call_names(item, names);
+                    }
+                }
+                Expr::Path { .. } => {}
+                _ => panic!("unexpected straight-line test expression: {e:?}"),
+            }
+        }
+
+        let names = ["first", "middle", "last"];
+        for effect_mask in 0..8 {
+            for index in 0..3 {
+                let items = names
+                    .iter()
+                    .enumerate()
+                    .map(|(position, name)| {
+                        if effect_mask & (1 << position) == 0 {
+                            test_path(name)
+                        } else {
+                            Expr::synth_call(
+                                test_path(name),
+                                vec![CallArg::Value(Expr::Unit {
+                                    source_trivia: Default::default(),
+                                    occurrence: Default::default(),
+                                    meta: test_meta(),
+                                })],
+                                Span::new(0, 0),
+                            )
+                        }
+                    })
+                    .collect();
+                let target_ty = Type::Product {
+                    left: Box::new(test_unit_ty()),
+                    right: Box::new(test_pair_ty()),
+                    meta: test_meta(),
+                };
+                let target = Expr::EnrichedTuple {
+                    occurrence: Default::default(),
+                    items,
+                    synth_ty: target_ty.clone(),
+                    meta: test_meta(),
+                    ext: (),
+                };
+                let projection = Expr::EnrichedProject {
+                    occurrence: Default::default(),
+                    target: Box::new(target),
+                    index,
+                    arity: names.len(),
+                    target_ty,
+                    meta: test_meta(),
+                    ext: (),
+                };
+                let mut changed = false;
+                let result = project_after_tuple(projection, &mut changed);
+                let last_effect = (0..3)
+                    .rev()
+                    .find(|position| effect_mask & (1 << position) != 0);
+                let selected_is_effectful = effect_mask & (1 << index) != 0;
+                assert_eq!(
+                    changed,
+                    !selected_is_effectful || last_effect == Some(index)
+                );
+                let expected_calls: Vec<_> = names
+                    .iter()
+                    .enumerate()
+                    .filter(|(position, _)| effect_mask & (1 << position) != 0)
+                    .map(|(_, name)| *name)
+                    .collect();
+                let mut actual_calls = Vec::new();
+                call_names(&result, &mut actual_calls);
+                assert_eq!(
+                    actual_calls, expected_calls,
+                    "mask={effect_mask}, index={index}"
+                );
+                if changed {
+                    let mut selected = &result;
+                    while let Expr::Seq { body, .. } = selected {
+                        selected = body;
+                    }
+                    let selected = match selected {
+                        Expr::Call { callee, .. } => callee.as_ref(),
+                        other => other,
+                    };
+                    assert!(
+                        is_path_ref(selected, names[index]),
+                        "wrong selected member: {result:?}"
+                    );
+                } else {
+                    assert!(matches!(result, Expr::EnrichedProject {
+                        index: retained_index, arity: 3, ..
+                    } if retained_index == index));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn project_after_tuple_retains_effects_exposed_by_substitution_and_beta() {
+        let module = optimize_one(
+            "x/main",
+            "module x/main; import __intrinsics__; \
+             host type N; host fn first() -> N; host fn second() -> N; \
+             fn direct() -> N { __fst__(N, N, __pair__(N, N, first(), second())) } \
+             fn bound() -> N { let pair = (first(), second()); __fst__(N, N, pair) } \
+             fn closure() -> N { __fst__(N, N, .() -> N & N { (first(), second()) }()) }",
+        );
+        for name in ["direct", "bound", "closure"] {
+            let body = fn_body(&module, name);
+            let Expr::EnrichedProject {
+                target, index: 0, ..
+            } = body
+            else {
+                panic!("{name}: effectful selected member must remain before the suffix: {body:?}")
+            };
+            let Expr::EnrichedTuple { items, .. } = target.as_ref() else {
+                panic!("{name}: expected recovered or substituted tuple: {target:?}")
+            };
+            assert_eq!(items.len(), 2);
+            for (item, expected) in items.iter().zip(["first", "second"]) {
+                assert!(
+                    matches!(item, Expr::Call { callee, .. } if is_path_ref(callee, expected)),
+                    "{name}: reordered tuple member: {item:?}"
+                );
+            }
+        }
     }
 
     /// `Hed.get(__fst__(__pair__({hed = x}, ())))` may recover as a
@@ -3404,6 +3615,109 @@ mod tests {
     }
 
     #[test]
+    fn beta_reduces_nullary_literal_with_omitted_or_explicit_unit() {
+        for call in [".() { () }()", ".() { () }(())"] {
+            let m = optimize_one("x/main", &format!("module x/main; fn t() {{ {call} }}"));
+            assert!(matches!(fn_body(&m, "t"), Expr::Unit { .. }), "{call}");
+        }
+    }
+
+    #[test]
+    fn nullary_beta_keeps_effectful_unit_argument_before_body() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; host fn before() -> .; host fn after() -> .; \
+             fn t() { .() { after() }(before()) }",
+        );
+        let Expr::Seq { value, body, .. } = fn_body(&m, "t") else {
+            panic!("Unit argument and body effects must both remain")
+        };
+        assert!(
+            matches!(value.as_ref(), Expr::Call { callee, .. } if is_path_ref(callee, "before"))
+        );
+        assert!(matches!(body.as_ref(), Expr::Call { callee, .. } if is_path_ref(callee, "after")));
+        assert!(!contains(fn_body(&m, "t"), &|e| matches!(
+            e,
+            Expr::FnExpr { .. }
+        )));
+    }
+
+    #[test]
+    fn nullary_beta_preserves_returned_closure_and_capture() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; fn t[A](captured: A) -> A -> A { \
+             .() { .(later: A) { captured } }() }",
+        );
+        let Expr::FnExpr { sig, body, .. } = fn_body(&m, "t") else {
+            panic!("the returned closure must remain")
+        };
+        assert_eq!(sig.value_param_names().collect::<Vec<_>>(), ["later"]);
+        assert!(is_path_ref(body, "captured"));
+    }
+
+    #[test]
+    fn literal_beta_keeps_unconsumed_value_and_type_stages() {
+        for source in [
+            "fn t[A]() -> A -> A { .()(value: A) { value }(()) }",
+            "fn t[A](value: A) -> . -> A { .(item: A)() { item }(value) }",
+            "fn t() -> . -> . { .()() { () }(()) }",
+            "fn t() -> [A] A -> A { .()[A](value: A) { value }(()) }",
+        ] {
+            let m = optimize_one("x/main", &format!("module x/main; {source}"));
+            assert!(
+                matches!(fn_body(&m, "t"), Expr::Call { callee, .. }
+                if matches!(callee.as_ref(), Expr::FnExpr { .. })),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn natural_match_and_user_named_equivalent_recover_one_dispatch() {
+        let m = optimize_one(
+            "x/main",
+            "module x/main; import match(match, match_checked); \
+             elab choose : [Source] Source -> [Clauses] Clauses -> [Target] Target \
+             { trailing product; impl(fills) match_checked } \
+             host type Left; host type Middle; host type Right; \
+             host fn chosen[A](payload: A) -> .; \
+             fn ordinary(value: Left | Middle | Right) { \
+               match! value { \
+                 (.(left: Left) { chosen(left) }, \
+                  .(middle: Middle) { chosen(middle) }, \
+                  .(right: Right) { chosen(right) }) \
+               } \
+             } \
+             fn renamed(value: Left | Middle | Right) { \
+               choose! value { \
+                 (.(left: Left) { chosen(left) }, \
+                  .(middle: Middle) { chosen(middle) }, \
+                  .(right: Right) { chosen(right) }) \
+               } \
+             }",
+        );
+        for name in ["ordinary", "renamed"] {
+            let body = fn_body(&m, name);
+            let Expr::EnrichedMatch {
+                arms, scrutinee, ..
+            } = body
+            else {
+                panic!("{name} must reach shared dispatch: {body:?}")
+            };
+            assert_eq!(arms.len(), 3);
+            assert!(is_path_ref(scrutinee, "value"));
+            for arm in arms {
+                assert_eq!(count_free_uses(&arm.body, &arm.param), 1);
+            }
+            assert!(!arms.iter().any(|arm| contains(&arm.body, &|expr| matches!(
+                expr,
+                Expr::EnrichedMatch { .. }
+            ))));
+        }
+    }
+
+    #[test]
     fn nested_unit_match_clauses_do_not_survive_as_calls() {
         const MODULE_PATH: &str = "x/main";
         const SOURCE: &str = "module x/main; import match(match); \
@@ -3588,6 +3902,7 @@ mod tests {
     #[test]
     fn bound_tuple_call_projection_guard_rejects_unsafe_shapes() {
         let impure_item = Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(test_path("effect")),
@@ -3826,24 +4141,9 @@ mod tests {
         }));
     }
 
-    fn assert_selected_nullary_branch(body: &Expr<Enriched>, expected: &str) {
-        let Expr::Call { callee, args, .. } = body else {
-            panic!("expected selected thunk call, got {body:?}");
-        };
-        let Expr::FnExpr { sig, body, .. } = callee.as_ref() else {
-            panic!("expected selected nullary thunk, got {callee:?}");
-        };
-        assert!(sig.params.is_empty());
-        assert!(matches!(
-            sig.groups.as_slice(),
-            [crate::ast::SignatureGroupKind::Value { len: 0 }]
-        ));
-        assert!(matches!(
-            args.as_slice(),
-            [crate::ast::CallArg::Value(Expr::Unit { .. })]
-        ));
+    fn assert_selected_branch_value(body: &Expr<Enriched>, expected: &str) {
         assert!(
-            matches!(body.as_ref(), Expr::Path { segments, .. }
+            matches!(body, Expr::Path { segments, .. }
                 if segments.len() == 1 && segments[0].name == expected),
             "selected the wrong branch: {body:?}"
         );
@@ -3870,7 +4170,7 @@ mod tests {
             !contains(body, &|e| matches!(e, Expr::EnrichedConditional { .. })),
             "expected no conditional after fold, got body: {body:?}"
         );
-        assert_selected_nullary_branch(body, "a");
+        assert_selected_branch_value(body, "a");
     }
 
     /// Symmetric: `if! .f { a } else { b }` folds to the `else`
@@ -3890,7 +4190,7 @@ mod tests {
             !contains(body, &|e| matches!(e, Expr::EnrichedConditional { .. })),
             "expected no conditional after fold, got body: {body:?}"
         );
-        assert_selected_nullary_branch(body, "b");
+        assert_selected_branch_value(body, "b");
     }
 
     /// True when `e` contains any call whose callee is a local/selective

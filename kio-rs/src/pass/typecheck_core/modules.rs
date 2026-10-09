@@ -24,9 +24,10 @@ use crate::pass::resolve::{
 use rayon::prelude::*;
 
 use super::{
-    ModuleEnv, NewtypeSccs, PackageTypecheckScope, PayloadCtx, TypeCtx, Typer, TyperPhase,
-    Variance, VarianceEnv, check_newtype_payload, check_no_infer, check_well_formed_type,
-    compute_newtype_sccs, compute_variance_env,
+    AuxiliaryItemChecks, DeclarationPhase, HeaderRecording, ModuleEnv, NewtypeSccs,
+    PackageTypecheckScope, PayloadCtx, TypeCtx, Typer, TyperPhase, Variance, VarianceEnv,
+    check_newtype_payload, check_no_infer, check_well_formed_type, compute_newtype_sccs,
+    compute_variance_env,
 };
 
 // =========================================================================
@@ -42,7 +43,7 @@ use super::{
 /// `Typer<P>::check_value_against`); newtype payloads route
 /// through `check_newtype_payload`. Both are
 /// phase-polymorphic.
-#[cfg(feature = "parallel")]
+#[cfg(all(feature = "parallel", any(feature = "surface", feature = "prime")))]
 pub(crate) fn check_module_in_package_with_typecheck_scope_collect_errors<'m, P>(
     module: &'m crate::ast::Module<P>,
     package_file: Option<&'m crate::ast::PackageFile<P>>,
@@ -94,94 +95,137 @@ where
     ModuleEnv<'m, P>: Sync,
     P::Elaborations: Send,
 {
-    let env = ModuleEnv::build_with_typecheck_scope_and_execution(
+    check_module_declarations(
         module,
         package_file,
         package_name,
         package,
+        elaborations,
         typecheck_scope,
         execution,
+        |env| {
+            let fn_defs: Vec<(usize, &crate::ast::FnDef<P>)> =
+                module_functions(env.module).collect();
+            let check_fn = |(idx, d): &(usize, &crate::ast::FnDef<P>)| {
+                #[cfg(feature = "surface")]
+                let mut local_elaborations = P::new_elaborations(&env.typecheck_scope);
+                #[cfg(not(feature = "surface"))]
+                let mut local_elaborations = P::Elaborations::default();
+                (
+                    *idx,
+                    check_fn_def(d, *idx, env, &mut local_elaborations)
+                        .map(|()| local_elaborations),
+                )
+            };
+            let fn_results: Vec<(usize, Result<P::Elaborations, Error>)> =
+                if execution.parallelizes(fn_defs.len()) {
+                    crate::maybe_par_iter!(fn_defs).map(check_fn).collect()
+                } else {
+                    fn_defs.iter().map(check_fn).collect()
+                };
+            fn_results
+        },
     )
-    .map_err(|error| vec![error])?;
-    let payload_ctx = env.payload_ctx();
-    let mut var_env = compute_variance_env(&payload_ctx);
-    let sccs = compute_newtype_sccs(&payload_ctx);
-    let fn_defs: Vec<(usize, &crate::ast::FnDef<P>)> = module
-        .items
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, item)| match item {
-            crate::ast::Item::FnDef(d) => Some((idx, d)),
-            _ => None,
-        })
-        .collect();
-    let check_fn = |(idx, d): &(usize, &crate::ast::FnDef<P>)| {
-        #[cfg(feature = "surface")]
-        let mut local_elaborations = P::new_elaborations(&env.typecheck_scope);
-        #[cfg(not(feature = "surface"))]
-        let mut local_elaborations = P::Elaborations::default();
-        (
-            *idx,
-            check_fn_def(d, *idx, &env, &mut local_elaborations).map(|()| local_elaborations),
-        )
-    };
-    let fn_results: Vec<(usize, Result<P::Elaborations, Error>)> =
-        if execution.parallelizes(fn_defs.len()) {
-            crate::maybe_par_iter!(fn_defs).map(check_fn).collect()
-        } else {
-            fn_defs.iter().map(check_fn).collect()
+}
+
+#[cfg(all(not(feature = "parallel"), any(feature = "surface", feature = "prime")))]
+pub(crate) fn check_module_in_package_with_typecheck_scope_collect_errors<'m, P>(
+    module: &'m crate::ast::Module<P>,
+    package_file: Option<&'m crate::ast::PackageFile<P>>,
+    package_name: Option<&str>,
+    package: Option<&'m crate::pass::resolve::Package<P>>,
+    elaborations: &mut P::Elaborations,
+    typecheck_scope: std::sync::Arc<PackageTypecheckScope<P>>,
+) -> Result<(), Vec<Error>>
+where
+    P: TyperPhase
+        + crate::ast::Phase<
+            TypeLabelSugar = crate::ast::Never,
+            ItemLabels = crate::ast::Never,
+            ItemOp = crate::ast::Never,
+        > + Clone,
+{
+    check_module_in_package_with_typecheck_scope_collect_errors_with_execution(
+        module,
+        package_file,
+        package_name,
+        package,
+        elaborations,
+        typecheck_scope,
+        TypecheckExecution::AllowParallel,
+    )
+}
+
+#[cfg(not(feature = "parallel"))]
+fn check_module_in_package_with_typecheck_scope_collect_errors_with_execution<'m, P>(
+    module: &'m crate::ast::Module<P>,
+    package_file: Option<&'m crate::ast::PackageFile<P>>,
+    package_name: Option<&str>,
+    package: Option<&'m crate::pass::resolve::Package<P>>,
+    elaborations: &mut P::Elaborations,
+    typecheck_scope: std::sync::Arc<PackageTypecheckScope<P>>,
+    execution: TypecheckExecution,
+) -> Result<(), Vec<Error>>
+where
+    P: TyperPhase
+        + crate::ast::Phase<
+            TypeLabelSugar = crate::ast::Never,
+            ItemLabels = crate::ast::Never,
+            ItemOp = crate::ast::Never,
+        > + Clone,
+{
+    check_module_declarations(
+        module,
+        package_file,
+        package_name,
+        package,
+        elaborations,
+        typecheck_scope,
+        execution,
+        |env| {
+            let fn_results: Vec<(usize, Result<P::Elaborations, Error>)> =
+                module_functions(env.module)
+                    .map(|(idx, d)| {
+                        #[cfg(feature = "surface")]
+                        let mut local_elaborations = P::new_elaborations(&env.typecheck_scope);
+                        #[cfg(not(feature = "surface"))]
+                        let mut local_elaborations = P::Elaborations::default();
+                        (
+                            idx,
+                            check_fn_def(d, idx, env, &mut local_elaborations)
+                                .map(|()| local_elaborations),
+                        )
+                    })
+                    .collect();
+            fn_results
+        },
+    )
+}
+
+fn module_functions<P: crate::ast::Phase>(
+    module: &crate::ast::Module<P>,
+) -> impl Iterator<Item = (usize, &crate::ast::FnDef<P>)> {
+    module.items.iter().enumerate().filter_map(|(idx, item)| {
+        let crate::ast::Item::FnDef(def) = item else {
+            return None;
         };
-    finish_checking_module_collect_errors(
-        module,
-        &env,
-        &payload_ctx,
-        &mut var_env,
-        &sccs,
-        elaborations,
-        fn_results,
-    )
+        Some((idx, def))
+    })
 }
 
-#[cfg(not(feature = "parallel"))]
-pub(crate) fn check_module_in_package_with_typecheck_scope_collect_errors<'m, P>(
+#[allow(clippy::too_many_arguments)] // Keep environment policy separate from the operation's result collector.
+fn check_module_declarations<'m, P>(
     module: &'m crate::ast::Module<P>,
     package_file: Option<&'m crate::ast::PackageFile<P>>,
     package_name: Option<&str>,
-    package: Option<&'m crate::pass::resolve::Package<P>>,
-    elaborations: &mut P::Elaborations,
-    typecheck_scope: std::sync::Arc<PackageTypecheckScope<P>>,
-) -> Result<(), Vec<Error>>
-where
-    P: TyperPhase
-        + crate::ast::Phase<
-            TypeLabelSugar = crate::ast::Never,
-            ItemLabels = crate::ast::Never,
-            ItemOp = crate::ast::Never,
-        > + Clone,
-{
-    check_module_in_package_with_typecheck_scope_collect_errors_with_execution(
-        module,
-        package_file,
-        package_name,
-        package,
-        elaborations,
-        typecheck_scope,
-        TypecheckExecution::AllowParallel,
-    )
-}
-
-#[cfg(not(feature = "parallel"))]
-fn check_module_in_package_with_typecheck_scope_collect_errors_with_execution<'m, P>(
-    module: &'m crate::ast::Module<P>,
-    package_file: Option<&'m crate::ast::PackageFile<P>>,
-    package_name: Option<&str>,
-    package: Option<&'m crate::pass::resolve::Package<P>>,
+    package: Option<&'m Package<P>>,
     elaborations: &mut P::Elaborations,
     typecheck_scope: std::sync::Arc<PackageTypecheckScope<P>>,
     execution: TypecheckExecution,
+    check_functions: impl FnOnce(&ModuleEnv<'m, P>) -> Vec<(usize, Result<P::Elaborations, Error>)>,
 ) -> Result<(), Vec<Error>>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -200,25 +244,7 @@ where
     let payload_ctx = env.payload_ctx();
     let mut var_env = compute_variance_env(&payload_ctx);
     let sccs = compute_newtype_sccs(&payload_ctx);
-    let fn_results: Vec<(usize, Result<P::Elaborations, Error>)> = module
-        .items
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, item)| match item {
-            crate::ast::Item::FnDef(d) => Some((idx, d)),
-            _ => None,
-        })
-        .map(|(idx, d)| {
-            #[cfg(feature = "surface")]
-            let mut local_elaborations = P::new_elaborations(&env.typecheck_scope);
-            #[cfg(not(feature = "surface"))]
-            let mut local_elaborations = P::Elaborations::default();
-            (
-                idx,
-                check_fn_def(d, idx, &env, &mut local_elaborations).map(|()| local_elaborations),
-            )
-        })
-        .collect();
+    let fn_results = check_functions(&env);
     finish_checking_module_collect_errors(
         module,
         &env,
@@ -241,7 +267,7 @@ fn first_collected_error(errors: Vec<Error>) -> Error {
 /// without inspecting function bodies.
 pub fn check_package_signatures<P>(package: &Package<P>) -> Result<(), LocatedError>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -271,7 +297,7 @@ pub(crate) fn check_module_signatures<P>(
     entry: &crate::pass::resolve::ModuleEntry<P>,
 ) -> Result<(), LocatedError>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -292,7 +318,7 @@ fn check_module_signatures_with_scope<P>(
     typecheck_scope: std::sync::Arc<PackageTypecheckScope<P>>,
 ) -> Result<(), LocatedError>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -304,42 +330,26 @@ where
         .package_file()
         .map(|entry| entry.package_name.as_str());
     let mut elaborations = P::Elaborations::default();
-    let env = ModuleEnv::build_with_typecheck_scope_and_execution(
+    check_module_declarations(
         &entry.module,
         package_file,
         package_name,
         Some(package),
+        &mut elaborations,
         typecheck_scope,
         TypecheckExecution::AllowParallel,
-    )
-    .map_err(|error| LocatedError::new(entry.file_path.clone(), error))?;
-    let payload_ctx = env.payload_ctx();
-    let mut var_env = compute_variance_env(&payload_ctx);
-    let sccs = compute_newtype_sccs(&payload_ctx);
-    let fn_results = entry
-        .module
-        .items
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, item)| {
-            let crate::ast::Item::FnDef(def) = item else {
-                return None;
-            };
-            let mut local_elaborations = P::Elaborations::default();
-            Some((
-                idx,
-                check_fn_signature(def, &env, &mut local_elaborations).map(|()| local_elaborations),
-            ))
-        })
-        .collect();
-    finish_checking_module_collect_errors(
-        &entry.module,
-        &env,
-        &payload_ctx,
-        &mut var_env,
-        &sccs,
-        &mut elaborations,
-        fn_results,
+        |env| {
+            module_functions(env.module)
+                .map(|(idx, def)| {
+                    let mut local_elaborations = P::Elaborations::default();
+                    (
+                        idx,
+                        check_fn_signature(def, env, &mut local_elaborations)
+                            .map(|()| local_elaborations),
+                    )
+                })
+                .collect()
+        },
     )
     .map_err(|errors| LocatedError::new(entry.file_path.clone(), first_collected_error(errors)))
 }
@@ -351,7 +361,7 @@ where
 /// declaration order.
 pub(crate) fn check_no_alias_only_cycles<P>(package: &Package<P>) -> Result<(), LocatedError>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -460,7 +470,7 @@ fn collect_alias_edges<'m, P>(
     indices: &BTreeMap<(String, String), usize>,
     out: &mut Vec<(usize, crate::span::Span)>,
 ) where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -532,7 +542,7 @@ fn finish_checking_module_collect_errors<'m, P>(
     fn_results: Vec<(usize, Result<P::Elaborations, Error>)>,
 ) -> Result<(), Vec<Error>>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -615,7 +625,7 @@ where
                                     tp.effective_kind(),
                                     tp.span,
                                 );
-                                <P::Typer as Typer<P>>::record_binder_decl_at(
+                                <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                                     tp.span,
                                     super::ResolvedBinderKind::TypeParam,
                                     tp.name.as_str(),
@@ -658,8 +668,10 @@ where
                 crate::ast::Item::LabelForward(_, ext) => match *ext {},
                 // `equiv` validation: each arm is typechecked, then
                 // all arms are required to share a type.
-                crate::ast::Item::Equiv(e, _ext) => check_equiv(e, idx, env, elaborations),
-                crate::ast::Item::Elaborator(s, _ext) => {
+                crate::ast::Item::Equiv(e, witness) => {
+                    P::AuxiliaryItems::check_equiv(e, witness, idx, env, elaborations)
+                }
+                crate::ast::Item::Elaborator(s, witness) => {
                     let provider = NominalProvider::new(Some(env.module), env.package);
                     check_signature_type_visibility_with_provider(
                         &s.call_ty,
@@ -670,7 +682,7 @@ where
                         env,
                         &provider,
                     )?;
-                    <P::Typer as Typer<P>>::check_user_elaborator_item(s, idx, env, elaborations)
+                    P::AuxiliaryItems::check_elaborator(s, witness, idx, env, elaborations)
                 }
                 // Statically uninhabited at every typer phase.
                 crate::ast::Item::LiteralAlias(_, ext) => match *ext {},
@@ -709,13 +721,9 @@ where
     for local_elaborations in fn_elaborations {
         P::merge_elaborations(elaborations, local_elaborations);
     }
-    // Every fn body in the module is typed; the module's alias context
-    // (`env`) is still live. Drain the deferred elaboration
-    // queue now — off the per-fn-body critical path — producing each
-    // structural elaborator's Kio' glue and gating it through the coherence
-    // check. No-op at Prime (empty queue).
-    <P::Typer as Typer<P>>::discharge_module_deferrals(env, elaborations)
-        .map_err(|error| vec![error])?;
+    if let Some(discharge) = P::AuxiliaryItems::DISCHARGE {
+        discharge(env, elaborations).map_err(|error| vec![error])?;
+    }
     Ok(())
 }
 
@@ -756,7 +764,7 @@ fn check_type_alias_declaration<'m, P>(
     elaborations: &mut P::Elaborations,
 ) -> Result<(), Error>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -782,7 +790,7 @@ where
     let mut tcx = TypeCtx::new(env, elaborations);
     for tp in &alias.type_params {
         tcx.push_type_param_kinded(tp.name.as_str(), tp.effective_kind(), tp.span);
-        <P::Typer as Typer<P>>::record_binder_decl_at(
+        <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
             tp.span,
             super::ResolvedBinderKind::TypeParam,
             tp.name.as_str(),
@@ -802,7 +810,7 @@ fn check_newtype_declaration<'m, P>(
     elaborations: &mut P::Elaborations,
 ) -> Result<(), Error>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -853,7 +861,7 @@ where
     let mut tcx = TypeCtx::new(env, elaborations);
     for tp in &newtype.type_params {
         tcx.push_type_param_kinded(tp.name.as_str(), tp.effective_kind(), tp.span);
-        <P::Typer as Typer<P>>::record_binder_decl_at(
+        <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
             tp.span,
             super::ResolvedBinderKind::TypeParam,
             tp.name.as_str(),
@@ -862,7 +870,7 @@ where
     }
     for tp in &newtype.existential_params {
         tcx.push_type_param_kinded(tp.name.as_str(), tp.effective_kind(), tp.span);
-        <P::Typer as Typer<P>>::record_binder_decl_at(
+        <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
             tp.span,
             super::ResolvedBinderKind::TypeParam,
             tp.name.as_str(),
@@ -893,7 +901,7 @@ fn resolved_signature_type_with_provider<P>(
     provider: &NominalProvider<'_, P>,
 ) -> Option<ResolvedSignatureType>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -973,7 +981,7 @@ fn check_signature_type_visibility<P>(
     env: &ModuleEnv<'_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -1002,7 +1010,7 @@ fn check_signature_type_visibility_with_provider<P>(
     provider: &NominalProvider<'_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -1112,7 +1120,7 @@ fn check_newtype_member_visibility_with_provider<P>(
     provider: &NominalProvider<'_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase
+    P: DeclarationPhase
         + crate::ast::Phase<
             TypeLabelSugar = crate::ast::Never,
             ItemLabels = crate::ast::Never,
@@ -1484,7 +1492,7 @@ fn check_fn_signature<'m, P>(
     elaborations: &mut P::Elaborations,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let mut tcx = TypeCtx::new(env, elaborations);
     check_fn_signature_with_ctx(d, &mut tcx)
@@ -1495,7 +1503,7 @@ fn check_fn_signature_with_ctx<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<(), Error>
 where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+    P: DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     // Bind parameters in source order. Each value-param's annotation
     // is a type expression that may reference type-parameters
@@ -1508,7 +1516,7 @@ where
             crate::ast::SignatureParam::Type(tp) => {
                 bound.insert(tp.name.as_str());
                 tcx.push_type_param_kinded(&tp.name, tp.effective_kind(), tp.span);
-                <P::Typer as Typer<P>>::record_binder_decl_at(
+                <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                     tp.span,
                     super::ResolvedBinderKind::TypeParam,
                     &tp.name,
@@ -1532,7 +1540,7 @@ where
                 check_well_formed_type(ty)?;
                 super::types::check_kinds_in_type_with_provider(ty, tcx, &provider)?;
                 tcx.push_value(vp.name.clone(), ty.clone());
-                <P::Typer as Typer<P>>::record_binder_decl_at(
+                <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                     vp.meta.span,
                     super::ResolvedBinderKind::Local,
                     &vp.name,
@@ -1556,7 +1564,10 @@ where
         let scheme = d.sig.signature_ty(d.ret.clone(), d.meta.span);
         super::types::compute_checked_kind(&scheme, d.meta.span, tcx)?;
     }
-    P::check_fn_capability_signature(d, tcx)
+    if let Some(check) = P::CAPABILITY_SIGNATURE {
+        check(d, tcx)?;
+    }
+    Ok(())
 }
 
 /// Type-check one `equiv`: bind its parameters in source order
@@ -1581,7 +1592,7 @@ where
         match p {
             crate::ast::SignatureParam::Type(tp) => {
                 tcx.push_type_param_kinded(&tp.name, tp.effective_kind(), tp.span);
-                <P::Typer as Typer<P>>::record_binder_decl_at(
+                <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                     tp.span,
                     super::ResolvedBinderKind::TypeParam,
                     &tp.name,
@@ -1596,7 +1607,7 @@ where
                 check_well_formed_type(ty)?;
                 super::types::check_kinds_in_type(ty, &mut tcx)?;
                 tcx.push_value(vp.name.clone(), ty.clone());
-                <P::Typer as Typer<P>>::record_binder_decl_at(
+                <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                     vp.meta.span,
                     super::ResolvedBinderKind::Local,
                     &vp.name,

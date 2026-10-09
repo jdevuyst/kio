@@ -1,0 +1,13 @@
+module api;
+
+pub newtype Types : . { pub constructor make_types; pub projector read_types }
+
+pub newtype Foo_bar : . { pub constructor make_foo_bar; pub projector read_foo_bar }
+
+pub newtype Foobar : . { pub constructor make_foobar; pub projector read_foobar }
+
+pub newtype Kiomodule_types : . { pub constructor make_module; pub projector read_module }
+
+pub newtype Kiotype_shapes : . { pub constructor make_type; pub projector read_type }
+
+pub newtype Kionominal_host : . { pub constructor make_nominal; pub projector read_nominal }

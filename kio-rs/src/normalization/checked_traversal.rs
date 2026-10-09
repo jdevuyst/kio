@@ -143,6 +143,7 @@ fn expr_head<'a>(
     match expr {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -150,6 +151,7 @@ fn expr_head<'a>(
             meta,
             ext,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(child(callee)),
@@ -281,6 +283,7 @@ pub(super) fn clone_expr(root: &EvalAstExpr) -> EvalAstExpr {
                 let head = expr_head(expr, |child| {
                     children.push(child);
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     }
@@ -321,6 +324,7 @@ fn expr_equal(left: &EvalAstExpr, right: &EvalAstExpr) -> bool {
         let left = EvalRef::new(expr_head(left, |child| {
             left_children.push(child);
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }
@@ -328,6 +332,7 @@ fn expr_equal(left: &EvalAstExpr, right: &EvalAstExpr) -> bool {
         let right = EvalRef::new(expr_head(right, |child| {
             right_children.push(child);
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }
@@ -674,6 +679,7 @@ mod tests {
     fn unit() -> EvalRef<CheckedTerm> {
         EvalRef::new(CheckedTerm::new(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },

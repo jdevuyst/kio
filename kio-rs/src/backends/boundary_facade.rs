@@ -649,7 +649,7 @@ fn decode_lower_hex(hex: &str) -> Result<Vec<u8>, PublicIdentityCodecError> {
         ));
     }
     let mut decoded = Vec::with_capacity(hex.len() / 2);
-    for pair in hex.as_bytes().chunks_exact(2) {
+    for pair in hex.as_bytes().as_chunks::<2>().0 {
         let high = lower_hex_digit(pair[0])?;
         let low = lower_hex_digit(pair[1])?;
         decoded.push((high << 4) | low);
@@ -1020,9 +1020,7 @@ impl BoundaryFacadePlan {
     /// use; it never becomes another value stage in the parent call.
     pub fn apply_leading_type_arg(&self, argument: &BoundaryFacadePlan) -> Option<Self> {
         let FacadeUse::Forall {
-            binder: consumed,
-            result: _,
-            ..
+            binder: consumed, ..
         } = self.use_at(self.root)
         else {
             return None;
@@ -7613,6 +7611,7 @@ mod tests {
             ret,
             ret_elided: (),
             body: Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: meta(),
             },

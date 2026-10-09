@@ -140,10 +140,12 @@ fail the change if violated:
 - **Performance is part of backend acceptance.** Before calling a backend
   complete, inspect planning and emission complexity, duplicated preparation
   across artifacts/targets, generated-source size and nesting, and real host
-  compiler wall time and peak RSS on a natural wide package. Pin a portable
-  structural firing/no-op proxy for any load-bearing bounded realization. This
-  is a focused proportionality gate, not an automatic broad benchmark or an
-  invitation to add unmeasured optimization machinery.
+  compiler wall time and peak RSS on a natural wide package. Discharge
+  [Generated-output proportionality](#generated-output-proportionality) and the
+  [comparative runtime check](#comparative-runtime-check), not merely a speedup
+  against the latest candidate. This is a focused acceptance
+  gate, not an automatic broad benchmark or an invitation to add unmeasured
+  optimization machinery.
 - **Finite Kio recursion must not consume host stack per iteration.** Exercise
   a deep `rec(loop)` program whose recursive state carries a structured result
   and a continuation/function value through an elaborated branch. A tail
@@ -167,6 +169,93 @@ The trigger table also points at
 (editing under `docs/`), and
 [`ai/topics/kio-authoring.md`](../../topics/kio-authoring.md) (editing a
 `.kio` file — the goldens). Read each before you touch that area.
+
+## Early reconnaissance — inspect comparable implementations
+
+Before choosing an implementation approach, read the code of existing backends
+with relevant host capabilities, not just similar syntax or the same family
+label. Different peers may be useful for different concerns. Trace representative
+paths through shared preparation, emission, the public facade, and the independent
+runner; inspect the corresponding regression and emission tests.
+
+Record a short reuse map: shared helpers to call and their preconditions,
+applicable optimizations with their measurements and firing tests, and pitfalls
+with the tests that guard them. Use Step 3 and the hard-won lessons below as
+navigation aids, not substitutes for inspecting callers. Existing code is
+implementation evidence, not contract authority: verify applicability against
+the target host's capabilities and the governing specs before reusing it.
+This reconnaissance informs Step 1; it does not inherit a peer's classification
+or justify copying its local implementation instead of using shared code.
+
+### Generated-output proportionality
+
+Generated output must remain practical in absolute size and in how it grows.
+Compare a small package, a natural larger package, and a bounded scaling fixture.
+Account separately for executable bodies, runtime support, public declarations,
+and serialized metadata, including companion files. Compare like inputs and
+output roles: a loaded program's size is not the size of its loader's source.
+Challenge repeated bodies, complete inventories copied per call or boundary,
+and unused analysis metadata. Sharing compiler planning code alone does not
+prove that its emitted results are shared.
+
+For an existing backend, compare with a known-good earlier representation as
+well as the immediate baseline; for a new target, use comparable backends and
+the target's native mechanisms. Explain legitimate host-specific overhead
+rather than impose a universal byte ratio. Measure relevant compile/load cost
+and execution separately. A local speedup or correct output does not excuse
+unexplained inflation or pathological growth. Check applicable peers and use
+shared fixes where the semantic requirements agree.
+
+Pin each repaired duplication or scaling mechanism with a deterministic causal
+guard at its owning layer: private counts/invariants in unit tests, durable
+generated-artifact bounds in `ARTIFACT_SHAPE` emissions. Observe failure without
+the repair. Keep timing measurements separate from ordinary test assertions.
+If practical output requires a different representation, investigate that before
+acceptance. An exotic target is not an automatic exemption: stop and present
+the costs and alternatives, including not adding the backend, for a user decision.
+
+### Comparative runtime check
+
+Before acceptance, compare generated-program execution on a small, bounded set
+of representative workloads with a few existing backends. Prefer a small
+selection of existing castles for realistic feature combinations and established
+runners/oracles, supplemented by focused cases where those castles miss a
+representation risk. Cover internal computation and host/callback traffic;
+do not rely solely on trivial arithmetic or host-library work, or automatically
+run the entire castle corpus. Choose peers deliberately: a similarly compiled target
+and a contrasting runtime can provide different useful reference points.
+
+Use the same Kio source, inputs, completed work and result oracle. Record actual
+compiler/runtime versions and optimization settings, and account for warm-up,
+caches and contention using [local-performance.md](../../topics/local-performance.md).
+Separate emission, native compilation, startup and execution; the runner's
+cheap CI profile is not necessarily comparable to another target's optimized
+profile. Include the ordinary supported execution path and distinguish any
+optimized comparison. Repeat bounded measurements when needed to exclude noise.
+
+Treat results as a plausibility check, not a universal language ranking or a
+fixed ratio. A native target unexpectedly losing badly to an interpreted one,
+or a large gap between comparable optimized native targets, warrants tracing
+representation, allocation, copying, dispatch and host-boundary costs. An
+explained language/runtime difference is not itself a defect; an unexplained
+large gap blocks normal acceptance. If reasonable target-native mechanisms
+cannot make the result practical, surface the costs and alternatives rather
+than accepting it silently. Keep this focused evidence out of ordinary
+wall-time test assertions; discovered mechanisms get deterministic regression
+guards at their owning layer, not a new broad benchmark suite by default.
+
+Apply [conversion placement and cost](../../topics/emit.md#conversion-placement-and-cost)
+to direct calls, callbacks and concrete values recovered through generics or
+opaque storage. Check both value directions and measure per-value work
+separately from cached planning; internal wrappers need a semantic justification.
+Use the common [shared-data contract](../../../specs/backends/README.md#10-shared-data-stays-unchanged),
+not a backend-specific snapshot guarantee. Cover unchanged data retained through
+callbacks/generics and legitimate state changes through opaque host capabilities;
+do not turn the latter into permission to mutate a shared Kio tuple. Follow
+[host-value responsibility](../../../specs/backends/README.md#11-host-values-satisfy-their-declared-types):
+do not add general runtime type validation of host values. Preserve required
+conversions, authorized opaque-payload access and effectful host operations;
+do not confuse these with eager validation of unused values.
 
 ## Step 1 — Classify host capabilities and the authorized family
 
@@ -271,7 +360,7 @@ unidiomatic interface.
 **The body** is built per the Step-1 strategy. The shared, backend-agnostic
 prep already happened upstream — an emitter consumes `Module<Routed>`,
 classified into `Expr::Low*` / `Expr::Enriched*` nodes by
-`structural_recovery` → `recover_to_low` → `capabilities`
+`structural_recovery` → `route` → `capabilities`
 ([`ai/topics/emit.md`](../../topics/emit.md) § Where emission sits). Dispatch
 over the pre-classified families; don't re-walk for shape.
 
@@ -422,12 +511,14 @@ The plug-in points, in the order a new backend fills them:
      § Retained host declarations. Generic product
      and sum declarations are keyed by prepared semantic identity rather than
      concrete payloads.
-   - Swift is the live-only prepared-facade example: collect
-     `PreparedBoundaryCallableSites` without replay, realize its exact
+   - Swift prepares live-plus-retained facade declarations: build dispatch
+     replays signature history and passes it to `lower_package_with_signature`,
+     which collects `PreparedBoundaryCallableSites`. Realize its exact
      semantic shells and nominal relationships once in `PreparedSwiftShapes`,
      and thread each live site's paired execution layout through the bounded
-     converters. This preserves Swift's native public carriers while keeping
-     the erased interpreter representation private; it does not license a
+     converters. Retained-only sites supply deprecated optional declarations,
+     never execution authority. This preserves Swift's native public carriers
+     while keeping its erased native body representation private; it does not license a
      backend-local shape registry or a second walk over raw public types.
    - The pure helpers in
      [`kio-rs/src/backends/skin.rs`](../../../kio-rs/src/backends/skin.rs),
@@ -464,10 +555,11 @@ The plug-in points, in the order a new backend fills them:
    the backend's `validate_*_namespace`, default via `default_*_namespace`;
    the go arm is the template — creates the output directory, writes the
    output files, including an embedded runtime-support file when the profile
-   declares one). **Honor the per-module
-   `par_iter` fan-out from day one** (every `lower_package_*` driver fans
-   across modules, concatenated in deterministic `BTreeMap` order for
-   byte-stable output).
+   declares one). **Honor the applicable per-module `par_iter` fan-out from
+   day one:** drivers emitting per-module host source fan across modules and
+   concatenate in deterministic `BTreeMap` order for byte-stable output.
+   Whole-IR interpreter serializers such as Java/Python have no per-module
+   host-source emission and are exempt under the framework convention.
 
 **The generated-binding naming plan is a deliverable.** Inventory generated
 values, backend type parameters, aliases and nominal owners, and identities
@@ -601,8 +693,9 @@ new subproject, so no new version mirror is needed. The deliverables:
      direct, and coexist routes. Build the complete nested command before
      `CompilerAdmission::acquire_for`. Only actual compiles are observed:
      compiler identity/version probes, runtime launches, warm cache hits, and
-     same-key waiters stay bare. A non-rustc backend ignores
-     `KIO_TEST_RUNNER_COMPILER_WRAPPER` but still uses the debug observer.
+     same-key waiters stay bare. Classify `KIO_TEST_RUNNER_COMPILER_WRAPPER`
+     applicability by the actual compiler/wrapper protocol; unsupported
+     invocations ignore that wrapper but still use the debug observer.
      Add a route-level argv test and keep `ci/infra/sccache.sh`'s readiness
      handling structural—exact configured-layer equality, never inference from
      the observer basename.
@@ -613,12 +706,13 @@ new subproject, so no new version mirror is needed. The deliverables:
      the lowest opt level with no debug info the compiler embeds no build
      path and produces byte-identical binaries across worktrees, so reuse
      holds (mirror `src/haskell/bin_cache/mod.rs`'s comment).
-   - **sccache rejects non-rustc compilers.** The
-     `KIO_TEST_RUNNER_COMPILER_WRAPPER` (sccache) is threaded into the
-     **rustc** invocation only; sccache passes `-E` and rejects `go` / `ghc`
-     / `swiftc`. So a non-rustc runner ignores the wrapper, and **the
-     content-addressed artifact cache is the runner's only acceleration
-     layer** (a warm hit skips the compiler entirely). Reuse the shared
+   - **Check compiler-wrapper compatibility, not a rustc/non-rustc label.**
+     The current Go/Java/GHC/Swift invocations do not use
+     `KIO_TEST_RUNNER_COMPILER_WRAPPER`; supported C/C++/rustc-shaped compiler
+     protocols may use sccache. Follow the actual compatibility and readiness
+     rules in the runner README § Runner build cache and compiler wrappers.
+     For an unsupported invocation, the content-addressed artifact cache
+     remains the compile-skipping layer. Reuse the shared
      [`runner_cache_env.rs`](../../../ci/infra/kio-test-runner-rs/src/shared/runner_cache_env.rs)
      for the cache env vars.
    - **Pin the toolchain's default caches — no machine-shared leaks.**
@@ -858,12 +952,18 @@ The non-emitter deliverables, each with a sweep:
   taxonomy to a link and apply [`ai/topics/docs.md`](../../topics/docs.md)'s
   "why should a user care?" test to every sentence. Add the link to
   `docs/README.md` § Host integrations.
-  The page's host-language fences are compile-checked by
+  The page's host-language fences are validated by
   [`ci/checks/orchestrators/host-docs-snippets.sh`](../../../ci/checks/orchestrators/host-docs-snippets.sh):
   its `kio` fences must assemble into one buildable example package (a
   `{file}` support set plus a file-backed-harness `main`, not `{ignore}`),
-  and every host fence must compile against the built facade — run the
-  script before calling the page done.
+  and every host fence must receive its applicable validation: JS syntax plus
+  the worked host example's actual facade execution; Python syntax plus
+  Pyright for facade-importing fences; static host compilation against the
+  facade or a documented self-contained illustration. Enroll the page in the
+  script's explicit page/selector/dispatch routes and verify it was selected;
+  an unrelated green run supplies no evidence for the new guide. Run the
+  script before calling the page done and report these evidence levels
+  separately rather than calling every fence a facade compilation.
 - **Host API stability validation** — run
   [`ci/checks/repo-lint/backend-api-stability.sh`](../../../ci/checks/repo-lint/backend-api-stability.sh).
   It derives the backend set from the spec pages, requires a matching guide and
@@ -907,15 +1007,20 @@ The non-emitter deliverables, each with a sweep:
   runner — the `.devcontainer/Dockerfile`, `INSTALL.md` for local checkouts,
   and agents' `BASH_ENV` snippet (see
   [`ai/topics/local-tools.md`](../../topics/local-tools.md) § Toolchains on
-  PATH). A runner that fails *wholesale* — every case empty-output / exit 1
-  — is this missing-toolchain PATH gap, **not** a broken runner: fix the
-  PATH; never disable the backend or call the runner "broken" (`AGENTS.md` §
+  PATH). If a runner fails *wholesale* — every case empty-output / exit 1 —
+  check tool resolution as an early hypothesis, then inspect the first concrete
+  stderr/setup/runtime cause before choosing a repair. That status alone does
+  not distinguish a PATH gap from a runner defect. Never disable failing
+  backend cases to hide the cause (`AGENTS.md` §
   Universal rules — "Bugs surface; never hide them").
 - **`.devcontainer/Dockerfile`** — add only the system packages or
   escape-hatch install steps the mise route cannot cover. The Dockerfile pins
   mise and consumes root `mise.toml` / `mise.lock`; it is not where ordinary
   language tool versions belong.
 - **CI** — add the backend to the enumerations that fan out the matrix: the
+  selector, availability and provisioning maps applicable to the new target in
+  [`ci/impl-toolchain.sh`](../../../ci/impl-toolchain.sh), proving the selector
+  reaches the required tool pool and install route; then the
   `ALL_IMPLS` list and the per-backend loop
   in [`ci/checks/orchestrators/generative-tests.sh`](../../../ci/checks/orchestrators/generative-tests.sh)
   (and the sibling orchestrators that name the backend set). Add its bucket to
@@ -951,8 +1056,9 @@ Concretely, the definition-of-done is:
   curried closure, rank-N, existential, host-owned generic type, HKT
   carrier, functor/monad dictionary) has a **runtime-exercising** golden
   whose `build { ... }` lists the new backend and whose protocol crosses the
-  shape in each applicable direction (the audit's § 2: host→package env and
-  package→host export).
+  shape in each applicable call kind and argument/result conversion leg
+  (the audit's § 2), with distinct semantic owners discharged rather than
+  merely an unchanged echo transported across the interface.
 - **No build-only, no absent, no stubbed cell** in the new column.
   "The backend builds the corpus" is necessary but **not** sufficient — the
   audit additionally proves every shape *crosses at runtime*, which a
@@ -979,10 +1085,9 @@ Concretely, the definition-of-done is:
   a blocking caveat. Even a correctly documented and discharged impossibility
   is not a green cell and cannot pass normal acceptance.
 
-Run it scoped to the new column and block on the column being fully green (modulo
-the audit's § 5.7 spec-admitted-not-mandated coverage gaps — the
-HKT-boundary dictionary cell is the standing example; it is a corpus-wide
-coverage decision, not a backend-specific conformance bar).
+Run it scoped to the new column and block unless every applicable admitted
+shape and conversion leg is covered. A missing HKT-boundary witness is a
+coverage finding like any other admitted shape, not an acceptance exemption.
 
 ## The audit-set gate
 
@@ -1127,6 +1232,12 @@ adversary role explicitly) and hunt for:
   `NewType`, or marker whose only purpose is to keep their host
   representations distinct is a finding; separate declaration lookup must
   remain intact.
+- **Generated-output inflation hidden by correctness or a local speedup** —
+  challenge the size accounting, scaling evidence, historical or comparable
+  baseline, and causal guards required by Generated-output proportionality.
+- **Unexpectedly expensive generated execution** — challenge the workload and
+  peer selection, comparability and explanations in the comparative runtime
+  check; correct output and a faster latest candidate do not settle the gap.
 
 Treat anything the adversary finds as a blocking finding: fix the emitter /
 runner / corpus (never hide the shape), then re-run the completeness gate and
@@ -1240,7 +1351,8 @@ The backend is accepted only when **all** of the following hold:
 9. The coexistence golden is green on the new column
    (`ffi_two_packages_coexist` runs the backend's coexist arm), and
    `ci/checks/orchestrators/host-docs-snippets.sh` passes with the new
-   host guide included.
+   host guide selected and its applicable syntax, facade type-use/compilation
+   and worked-example runtime checks evidenced separately.
 10. Sealed signature-history behavior has paired source evidence: an old host
     still compiles wherever the backend claims source stability; a new host
     supplies and selects live items only; every emitted retained-only
@@ -1260,8 +1372,9 @@ The backend is accepted only when **all** of the following hold:
     corpus, and neither is represented as an ambient moving "latest" target.
 12. The backend performance review is clean: preparation and emission do not
     repeat per artifact or selected target without necessity; representative
-    narrow and natural-wide packages show bounded generated size/nesting; and
-    the real host compiler has recorded focused wall/RSS evidence. Any
+    narrow and natural-wide packages discharge Generated-output proportionality;
+    the comparative runtime check has no unexplained large gap; and the real
+    host compiler has recorded focused wall/RSS evidence. Any
     performance-only realization has a causal firing/no-op guard and measured
     benefit, while a rejected optimization leaves no production complexity.
     Deep finite `rec(loop)` execution also passes the causally established

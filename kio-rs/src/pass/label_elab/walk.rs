@@ -121,6 +121,7 @@ pub trait DesugaredToLowered {
 
     fn visit_expr_call(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic,
             callee,
@@ -207,6 +208,7 @@ pub trait DesugaredToLowered {
 
     fn visit_expr_unit(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::Unit {
+            source_trivia: _,
             occurrence: _,
             meta: Meta { span, .. },
         } = e
@@ -214,6 +216,7 @@ pub trait DesugaredToLowered {
             unreachable!()
         };
         Ok(Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         })
@@ -375,6 +378,7 @@ pub trait DesugaredToLowered {
 
     fn visit_expr_user_elaborator(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::UserElaborator {
+            source_trivia: _,
             occurrence: _,
             name,
             form,
@@ -386,6 +390,7 @@ pub trait DesugaredToLowered {
             unreachable!()
         };
         Ok(Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
@@ -407,6 +412,7 @@ pub trait DesugaredToLowered {
 
     fn visit_expr_ufcs(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::Ufcs {
+            source_trivia: _,
             occurrence: _,
             receiver,
             callee_segments,
@@ -429,6 +435,7 @@ pub trait DesugaredToLowered {
             })
             .collect::<Result<_, _>>()?;
         Ok(Expr::Ufcs {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             receiver,
             callee_segments,

@@ -1,4 +1,4 @@
-use crate::ast::{Item, Module, Prime, Surface};
+use crate::ast::{Item, Module, Surface};
 use crate::pass::full::FullPipeline;
 use crate::pass::parser::parse;
 use crate::pass::resolve::{LocatedError, Package};
@@ -44,11 +44,13 @@ fn modules(consumer: &str) -> Vec<(PathBuf, Module<Surface>)> {
         .collect()
 }
 
-fn check(consumer: &str) -> Result<Package<Prime>, LocatedError> {
+fn check(consumer: &str) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
     check_modules(modules(consumer))
 }
 
-fn check_modules(input: Vec<(PathBuf, Module<Surface>)>) -> Result<Package<Prime>, LocatedError> {
+fn check_modules(
+    input: Vec<(PathBuf, Module<Surface>)>,
+) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
     let (lowered, _) = FullPipeline::lower_package(input, None)?;
     let package = Package::build(Path::new(""), lowered, None)?;
     package.resolve_imports()?;
@@ -289,8 +291,8 @@ fn eager_and_lazy_descriptor_contexts_emit_identical_prime() {
     let eager = check(source).unwrap();
     for module in ["provider", "consumer"] {
         assert_eq!(
-            crate::backends::kio_prime::emit_module(&contextual.module(module).unwrap().module),
-            crate::backends::kio_prime::emit_module(&eager.module(module).unwrap().module)
+            crate::backends::kio_prime::emit_module(contextual.module(module).unwrap()),
+            crate::backends::kio_prime::emit_module(eager.module(module).unwrap())
         );
     }
 }
@@ -325,12 +327,11 @@ fn sequence_generated_bindings_remain_lexical_after_prime_roundtrip() {
     prime_roundtrip(&checked);
 }
 
-fn prime_roundtrip(checked: &Package<Prime>) {
+fn prime_roundtrip(checked: &crate::prime::typer::ValidatedPrimePackage) {
     let reparsed = ["provider", "consumer"]
         .into_iter()
         .map(|name| {
-            let emitted =
-                crate::backends::kio_prime::emit_module(&checked.module(name).unwrap().module);
+            let emitted = crate::backends::kio_prime::emit_module(checked.module(name).unwrap());
             (
                 PathBuf::from(format!("{name}.kio")),
                 parse(&emitted).unwrap(),

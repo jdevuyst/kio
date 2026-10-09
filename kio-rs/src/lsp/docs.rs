@@ -66,7 +66,10 @@ fn declaration_doc_at(
                 for member in &group.members {
                     let span = find_named_span(source, member.meta.span, &member.name)?;
                     if span_contains(span, byte_offset) {
-                        return Some((span, entry_markdown(module, source, DocEntry::Fn(member))));
+                        return Some((
+                            span,
+                            entry_markdown(module, source, DocEntry::RecFn(member)),
+                        ));
                     }
                 }
             }

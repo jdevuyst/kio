@@ -54,6 +54,7 @@ impl BinderPresentation {
         self.locations.insert(location, source.to_owned());
     }
 
+    #[cfg(any(feature = "surface", feature = "prime"))]
     pub(crate) fn extend(&mut self, other: &Self) {
         for (location, source) in &other.locations {
             self.record_name(

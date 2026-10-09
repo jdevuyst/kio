@@ -53,13 +53,13 @@
 //! - [`pass::structural_recovery`] — post-validation `Module<Prime>` →
 //!   `Module<Enriched>` pass: collapses right-leaning intrinsic
 //!   chains into the enriched IR's n-ary structural nodes for optimization.
-//! - [`pass::recover_to_low`] — post-`structural_recovery`
+//! - [`pass::route`] — post-`structural_recovery`
 //!   `Module<Enriched>` → `Module<Routed>` pass: folds the
 //!   package's resolution context (host-fn / module-fn /
 //!   use-import / qualified-import / newtype tables) into
 //!   pre-classified `Expr::Low*` call nodes. Host backends consume
 //!   `Module<Routed>` directly.
-//! - [`pass::capabilities`] — post-`recover_to_low` per-module suite of
+//! - [`pass::capabilities`] — post-`route` per-module suite of
 //!   passes that write capability annotations onto the Routed AST:
 //!   outer-scope captures on each `Expr::FnExpr` and
 //!   [`crate::ast::Lifetime`] on each `Type::Function`. The

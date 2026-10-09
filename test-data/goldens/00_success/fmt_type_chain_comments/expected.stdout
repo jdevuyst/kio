@@ -1,0 +1,27 @@
+module type_chain_comments;
+
+fn product[A][B](f: (A & B) -> A) -> (& A
+// product domain
+& B) -> A { f }
+
+fn sum[A][B](f: (A | B) -> B) -> (| A
+// sum domain
+| B) -> B { f }
+
+type Nested[A][B][C] =
+  & A
+  // outer operand
+  & (& B
+  // inner operand
+  & C)
+  ;
+
+type Applied[*F][A][B] =
+  | A
+  // before application
+  | F(
+    // type argument
+    , B
+    // closing argument
+    )
+  ;

@@ -89,11 +89,12 @@ pub fn pick<R: Rng>(rng: &mut R) -> Mutation {
 /// Apply a mutation to a valid program. Returns the mutated package
 /// files alongside the labeled exit code and category.
 pub fn apply(prog: &Program, mutation: Mutation) -> (Vec<(String, String)>, u32, &'static str) {
-    let prog_for_render = match mutation {
+    let mut prog_for_render = match mutation {
         Mutation::NameRes => wrap_with_unbound_let(prog),
         Mutation::Type => wrap_with_type_mismatch_let(prog),
         Mutation::Parse | Mutation::Import | Mutation::Elaborator => prog.clone(),
     };
+    prog_for_render.control_probe = None;
     let mut files = emit::render_package_files(&prog_for_render);
 
     match mutation {
@@ -282,6 +283,7 @@ mod tests {
 
     fn program(surface_mode: bool) -> Program {
         Program {
+            control_probe: None,
             fn_def_name: "gen".to_owned(),
             params: vec![("value".to_owned(), Type::Unit)],
             ret: Type::Unit,

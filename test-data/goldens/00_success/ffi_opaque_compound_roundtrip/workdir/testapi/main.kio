@@ -1,0 +1,30 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi as t;
+import testapi/arith as a;
+
+pub newtype Wrapped : t.I32 & t.I32 { pub constructor mk_wrapped; pub projector read_wrapped }
+
+fn relay[T](value: T) -> T { value }
+
+fn extract[T](value: t.Box(T)) -> T { a.box_get(relay(value)) }
+
+pub fn read_sum(value: t.Box(t.I32 | .)) -> t.I32 {
+  match! extract(value) {
+    (.(number: t.I32) { number }, .() { 0(t.I32) })
+  }
+}
+
+pub fn call(value: t.Box(t.I32 -> t.I32), seed: t.I32) -> t.I32 { extract(value)(seed) }
+
+pub fn read_nominal(value: t.Box(Wrapped)) -> t.I32 & t.I32 { extract(value).>Wrapped.read_wrapped }
+
+pub fn make_sum() -> t.Box(t.I32 | .) { a.box_make(widen_sum!(23(t.I32), t.I32 | .)) }
+
+pub fn make_empty() -> t.Box(t.I32 | .) { a.box_make(widen_sum!((), t.I32 | .)) }
+
+pub fn make_callable() -> t.Box(t.I32 -> t.I32) { a.box_make(.(number: t.I32) { number }) }
+
+pub fn make_nominal() -> t.Box(Wrapped) { a.box_make(Wrapped.mk_wrapped((53(t.I32), 59(t.I32)))) }

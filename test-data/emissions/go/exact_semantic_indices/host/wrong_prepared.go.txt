@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func wrongPrepared(pkg *p.Package[int, int, string]) {
+	pkg.Api.ReadNumber(p.CallExp_Api__Box_make(pkg.Api.KioType_Box, p.PrepareHost_api_Count(pkg, 11)))
+}

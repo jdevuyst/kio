@@ -1,0 +1,12 @@
+module testapi/main;
+
+import testapi as t;
+import testapi/arith as a;
+
+pub newtype Wrapped[A] : A { pub constructor mk_wrapped; projector read_wrapped }
+
+pub fn unwrap(value: Wrapped(t.I32)) -> t.I32 { value.>Wrapped.read_wrapped }
+
+pub fn read(value: t.Box(Wrapped(t.I32))) -> t.I32 { unwrap(a.box_get(value)) }
+
+pub fn make(value: t.I32) -> t.Box(Wrapped(t.I32)) { a.box_make(Wrapped.mk_wrapped(value)) }

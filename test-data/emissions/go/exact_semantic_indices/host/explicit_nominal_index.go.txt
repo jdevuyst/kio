@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func explicitNominalIndex(pkg *p.Package[int, int, string]) {
+	_ = p.Exp_Api__count_ret[int, int, string](pkg.Api.Number(11))
+}

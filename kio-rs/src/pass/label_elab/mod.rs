@@ -315,6 +315,36 @@ pub fn elaborate_package_file(
     .walk_package_file(export)
 }
 
+/// Contract projections have already removed labels and their imports.
+pub(crate) fn lower_contract_signature(
+    sig: Signature<Desugared>,
+    ret: Type<Desugared>,
+) -> Result<(Signature<Lowered>, Type<Lowered>), Error> {
+    let empty = LabelTable::new();
+    LabelElabVisitor {
+        table: &empty,
+        module_path: &[],
+        terminal_aliases: TerminalAliases::default(),
+        bound: Vec::new(),
+        minted_newtypes: HashSet::new(),
+    }
+    .walk_function_header(sig, ret)
+}
+
+pub(crate) fn lower_contract_declaration(
+    declaration: Item<Desugared>,
+) -> Result<Vec<Item<Lowered>>, Error> {
+    let empty = LabelTable::new();
+    LabelElabVisitor {
+        table: &empty,
+        module_path: &[],
+        terminal_aliases: TerminalAliases::default(),
+        bound: Vec::new(),
+        minted_newtypes: HashSet::new(),
+    }
+    .walk_item(declaration)
+}
+
 struct LabelModuleResult<T> {
     index: usize,
     module_path: String,
@@ -1847,10 +1877,8 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
         // Type-param binders scope over the param types, the return
         // type, and the body — push them before walking any of those.
         let mark = self.save_bound();
-        self.push_type_params(&sig.params);
-        let params = self.walk_signature_params(sig.params)?;
-        let ret = self.walk_type(ret)?;
-        for p in &params {
+        let (sig, ret) = self.walk_function_header(sig, ret)?;
+        for p in &sig.params {
             if let SignatureParam::Value(vp) = p {
                 self.bound.push(vp.name.clone());
             }
@@ -1861,7 +1889,7 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
             vis,
             purity,
             name,
-            sig: Signature::from_parts(params, sig.groups),
+            sig,
             ret,
             ret_elided,
             body,
@@ -2107,6 +2135,17 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
 }
 
 impl LabelElabVisitor<'_> {
+    fn walk_function_header(
+        &mut self,
+        sig: Signature<Desugared>,
+        ret: Type<Desugared>,
+    ) -> Result<(Signature<Lowered>, Type<Lowered>), Error> {
+        self.push_type_params(&sig.params);
+        let params = self.walk_signature_params(sig.params)?;
+        let ret = self.walk_type(ret)?;
+        Ok((Signature::from_parts(params, sig.groups), ret))
+    }
+
     fn lower_type_rec_members(
         &mut self,
         source: Vec<TypeRecMember<Desugared>>,
@@ -2372,6 +2411,7 @@ impl LabelElabVisitor<'_> {
     ) -> Result<Expr<Lowered>, Error> {
         if labels.is_empty() {
             return Ok(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             });
@@ -2420,6 +2460,7 @@ impl LabelElabVisitor<'_> {
                 // the braces then answered with this unit rather than with the
                 // record.
                 receiver: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(Span::new(span.start, span.start)),
                 }),
@@ -3471,7 +3512,7 @@ mod tests {
         let reparsed = prime
             .modules()
             .map(|(module_path, entry)| {
-                let source = emit_module(&entry.module);
+                let source = emit_module(entry);
                 if module_path == "consumer" {
                     emitted_consumer = Some(source.clone());
                 }

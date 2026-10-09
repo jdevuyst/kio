@@ -1,0 +1,19 @@
+package names;
+
+build {
+  cache ();
+
+  target java {
+    out "out/java/"
+  }
+}
+
+bridge {
+  api;
+  api/types;
+  api/api;
+  api/foo_bar;
+  api/foobar;
+  java/class;
+  a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a/a
+}

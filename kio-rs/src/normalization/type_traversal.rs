@@ -104,6 +104,76 @@ macro_rules! clone_phase_type {
 clone_phase_type!(EvalPhase, children, clone_type);
 clone_phase_type!(PrePrime, pre_prime_children, clone_pre_prime_type);
 
+/// Reflection exposes binder handles and function arity, not just alpha-equivalence.
+/// Flat tokens keep key construction, comparison and release off the native stack.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct ReflectionTypeKey(Vec<ReflectionTypePart>);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ReflectionTypePart {
+    Path(Vec<String>, usize),
+    Unit,
+    Bottom,
+    Function(usize),
+    Product,
+    Sum,
+    Forall(String),
+    Star,
+    Arrow,
+}
+
+impl ReflectionTypeKey {
+    pub(super) fn new(root: &EvalAstType) -> Self {
+        enum Part<'a> {
+            Type(&'a EvalAstType),
+            Kind(&'a Kind),
+        }
+        let mut pending = vec![Part::Type(root)];
+        let mut parts = Vec::new();
+        while let Some(part) = pending.pop() {
+            match part {
+                Part::Kind(Kind::Star) => parts.push(ReflectionTypePart::Star),
+                Part::Kind(Kind::Arrow(left, right)) => {
+                    parts.push(ReflectionTypePart::Arrow);
+                    pending.push(Part::Kind(right));
+                    pending.push(Part::Kind(left));
+                }
+                Part::Type(ty) => {
+                    parts.push(match ty {
+                        Type::Path { segments, args, .. } => ReflectionTypePart::Path(
+                            segments
+                                .iter()
+                                .map(|segment| segment.name.clone())
+                                .collect(),
+                            args.len(),
+                        ),
+                        Type::Unit { .. } => ReflectionTypePart::Unit,
+                        Type::Bottom { .. } => ReflectionTypePart::Bottom,
+                        Type::Function { abi_arity, .. } => {
+                            ReflectionTypePart::Function(*abi_arity)
+                        }
+                        Type::Product { .. } => ReflectionTypePart::Product,
+                        Type::Sum { .. } => ReflectionTypePart::Sum,
+                        Type::Forall { param, .. } => {
+                            ReflectionTypePart::Forall(param.name.clone())
+                        }
+                        Type::LabelSugar { ext, .. }
+                        | Type::Infer { ext, .. }
+                        | Type::Goal { ext, .. } => match *ext {},
+                    });
+                    let start = pending.len();
+                    children(ty, |child| pending.push(Part::Type(child)));
+                    pending[start..].reverse();
+                    if let Type::Forall { param, .. } = ty {
+                        pending.push(Part::Kind(param.kind.as_ref().unwrap_or(&Kind::Star)));
+                    }
+                }
+            }
+        }
+        Self(parts)
+    }
+}
+
 pub(super) fn canonicalize_function_abi(root: &mut EvalAstType) {
     let mut pending = vec![root];
     while let Some(ty) = pending.pop() {
@@ -231,7 +301,7 @@ pub(super) fn to_pre_prime(
     values.pop().expect("replay type root exists").take()
 }
 
-/// Charge the complete type/key structure before entering recursive key code.
+/// Bound the complete type/key structure before allocating a call-memo key.
 /// Oversized reflected types remain evaluable but do not enter the call memo.
 pub(super) fn charge_memo_type(ty: &EvalAstType, budget: &mut usize) -> Option<()> {
     enum Part<'a> {

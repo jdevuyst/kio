@@ -140,7 +140,8 @@ mv "$COV/debug/kio$exe" "$ORCHESTRATOR_TMP/bin/coverage-kio$exe"
 mv "$COV/debug/kio-prime$exe" "$ORCHESTRATOR_TMP/bin/coverage-kio-prime$exe"
 run_kio profile-clean.log sh "$REPO_ROOT/ci/cargo.sh" llvm-cov clean --profraw-only
 node "$ANALYZER" profiles "$COV" empty
-run_kio unit.log env "LLVM_PROFILE_FILE=$COV_NATIVE/unit-%p-%m.profraw" \
+# Online merging bounds each cohort's storage by binary signature.
+run_kio unit.log env "LLVM_PROFILE_FILE=$COV_NATIVE/unit-%m.profraw" \
   sh "$REPO_ROOT/ci/cargo.sh" test --lib --profile=dev --all-features
 mv "$ORCHESTRATOR_TMP/bin/coverage-kio$exe" "$COV/debug/kio$exe"
 mv "$ORCHESTRATOR_TMP/bin/coverage-kio-prime$exe" "$COV/debug/kio-prime$exe"
@@ -171,8 +172,8 @@ run_cohort() {
   label=$1 cases=$2 selectors=$3 expected=$4 prefix=$5
   bindir=$ORCHESTRATOR_TMP/$prefix-bin
   mkdir "$bindir"
-  make_wrapper "$bindir/kio" "$REAL_KIO" "$COV_NATIVE/$prefix-%p-%m.profraw"
-  make_wrapper "$bindir/kio-prime" "$REAL_PRIME" "$COV_NATIVE/$prefix-%p-%m.profraw"
+  make_wrapper "$bindir/kio" "$REAL_KIO" "$COV_NATIVE/$prefix-%m.profraw"
+  make_wrapper "$bindir/kio-prime" "$REAL_PRIME" "$COV_NATIVE/$prefix-%m.profraw"
   set -- "--cases-dir=$cases" "--cache-base=$ORCHESTRATOR_TMP/$prefix-cache" \
     "--impl-def=name=kio@js,kio=$bindir/kio,runner=$RUNNER,target=js,prime-kio=$bindir/kio-prime"
   while IFS= read -r selector || [ -n "$selector" ]; do [ -n "$selector" ] && set -- "$@" "$selector"; done <"$selectors"
@@ -184,6 +185,10 @@ run_cohort() {
 run_cohort focused-equiv-goldens test-data/goldens "$RUN_DIR/golden-selectors.txt" "$GOLDENS" golden
 run_cohort all-pocs test-data/poc "$RUN_DIR/poc-selectors.txt" "$POCS" poc
 node "$ANALYZER" profiles "$COV" complete >"$RUN_DIR/profile-counts.txt"
+mkdir "$RUN_DIR/profiles"
+for raw in "$COV"/*.profraw; do
+  cp "$raw" "$RUN_DIR/profiles/"
+done
 
 report() {
   format=$1 output=$2
@@ -198,9 +203,13 @@ report lcov "$RUN_DIR/coverage-union.lcov"
 report json "$RUN_DIR/coverage-union.json"
 SOURCE=$REPO_ROOT/kio-rs/src/normalization.rs
 SOURCE_NATIVE=$(native "$SOURCE")
+analysis_status=0
 node "$ANALYZER" analyze "$RUN_DIR/coverage-union.lcov" "$RUN_DIR/coverage-union.json" \
-  "$SOURCE" "$SOURCE_NATIVE" "$RUN_DIR/equiv-eval-reachability.json" >"$RUN_DIR/locator.txt"
-cat "$RUN_DIR/locator.txt"
-printf 'machine-readable evidence: %s\n' "$RUN_DIR/equiv-eval-reachability.json"
-printf 'complete evidence directory: %s\n' "$RUN_DIR"
+  "$SOURCE" "$SOURCE_NATIVE" "$RUN_DIR/equiv-eval-reachability.json" >"$RUN_DIR/locator.txt" || analysis_status=$?
+if [ -s "$RUN_DIR/locator.txt" ]; then cat "$RUN_DIR/locator.txt"; fi
+if [ -s "$RUN_DIR/equiv-eval-reachability.json" ]; then
+  printf 'machine-readable evidence: %s\n' "$RUN_DIR/equiv-eval-reachability.json"
+fi
+printf 'evidence directory: %s\n' "$RUN_DIR"
+[ "$analysis_status" -eq 0 ] || exit "$analysis_status"
 COMPLETE=1

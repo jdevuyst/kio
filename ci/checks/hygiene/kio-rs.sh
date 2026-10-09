@@ -11,10 +11,11 @@
 # a reduced feature configuration.
 #
 # Reduced feature checks: confirm the pure compiler slices compile
-# independently — the kio-only modules (`desugar`, `label_elab`,
+# independently, including the feature-free library used by parser/lexer
+# fuzzing. The kio-only modules (`desugar`, `label_elab`,
 # `dnf`, `lift`, `substitute`, `typecheck_full`, `full`) are
-# `#[cfg(feature = "surface")]`-gated and the kio-prime-only `prime`
-# module is `#[cfg(feature = "prime")]`-gated. The `prime,cli` check
+# `#[cfg(feature = "surface")]`-gated and the kio-prime-only
+# `prime::pipeline` module is `#[cfg(feature = "prime")]`-gated. The `prime,cli` check
 # also builds the reduced kio-prime binary slice; Cargo skips that
 # binary from a prime-only check because its `required-features` include
 # `cli`. The `repl-core` check keeps the terminal-free inspector and its
@@ -34,6 +35,12 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../../.." && pwd)
 cd "$REPO_ROOT/kio-rs"
 
 sh "$REPO_ROOT/ci/cargo.sh" fmt --check
+
+command -v node >/dev/null 2>&1 || {
+  printf '%s\n' "hygiene/kio-rs: node not found — the JavaScript value-runtime tests require the pinned Node toolchain (run mise install)." >&2
+  exit 1
+}
+node src/backends/js/value_runtime.test.mjs
 
 # rg must exist, or the `|| true` below swallows exit 127 and the gate
 # passes vacuously. Pinned in mise.toml.
@@ -79,6 +86,8 @@ sh "$REPO_ROOT/ci/cargo.sh" test --all-features
 # Per-feature checks — confirm each binary's slice compiles and has
 # no rustc warnings in its reduced feature configuration.
 # Per kio-prime-refactor.md Stage 3.1.
+RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings" \
+  sh "$REPO_ROOT/ci/cargo.sh" check --no-default-features --all-targets
 RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings" \
   sh "$REPO_ROOT/ci/cargo.sh" check --no-default-features --features surface --all-targets
 RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-D warnings" \

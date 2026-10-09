@@ -35,6 +35,10 @@ use crate::backends::skin::{budgeted_mint_name, fnv1a_64_hex};
 use crate::backends::value_plan::{ValueCapture, ValuePlan, ValueStageShape, ValueUse, ValueUseId};
 use crate::pass::resolve::Package;
 
+use super::naming::{
+    NominalKind, facade_class_name, nominal_name, nominal_path, shadows_support_package,
+    storage_name,
+};
 use super::skin::{
     JAVA_INSTANCE_REFERENCE_SLOT_LIMIT, JavaHostBinding, JavaShapes, java_semantic_member,
     role_to_java_type, sanitize_java_member,
@@ -89,7 +93,7 @@ fn push_java_deprecation(out: &mut String, origin: BoundaryFacadeSupportOrigin, 
     if let Some(removed_at) = origin.removed_at_version() {
         let note = java_deprecation_note(removed_at);
         out.push_str(&format!(
-            "{indent}/** @deprecated {note} */\n{indent}@Deprecated\n"
+            "{indent}/** @deprecated {note} */\n{indent}@java.lang.Deprecated\n"
         ));
     }
 }
@@ -100,7 +104,7 @@ fn java_deprecation_note(removed_at: u32) -> String {
 
 fn java_deprecation_annotation(origin: BoundaryFacadeSupportOrigin) -> &'static str {
     if origin.removed_at_version().is_some() {
-        "@Deprecated "
+        "@java.lang.Deprecated "
     } else {
         ""
     }
@@ -132,7 +136,7 @@ fn java_host_binding_public_type(binding: &JavaHostBinding, parameters: &[String
     if binding.type_arity != 0 {
         let marker = format!(
             "Shapes.{}",
-            java_nominal_constructor_marker(&binding.name, JavaNominalConstructorKind::HostType)
+            java_nominal_constructor_marker(&binding.name, NominalKind::Host)
         );
         render_java_application(&marker, parameters)
     } else if binding.retained_at.is_some() {
@@ -196,8 +200,11 @@ pub fn lower_package(
     let prepared =
         PreparedBoundaryCallableSites::collect(package, sig.map(|(_, replayed)| replayed))
             .map_err(|error| EmitError::internal(error.to_string()))?;
-    let ir =
-        crate::backends::serialized_runtime_ir::package_ir(package).map_err(EmitError::internal)?;
+    let ir = crate::backends::serialized_runtime_ir::package_ir(
+        package,
+        crate::backends::serialized_runtime_ir::RuntimeStageRepresentation::Typed,
+    )
+    .map_err(EmitError::internal)?;
     let ir_json = serde_json::to_string(&ir)
         .map_err(|e| EmitError::internal(format!("cannot encode Java IR: {e}")))?;
     let mut shapes = JavaShapes::new(package, &prepared);
@@ -649,7 +656,7 @@ fn render_java_value_use(
                 let children = rendered.split_off(rendered.len() - count);
                 rendered.push(match values.use_at(id) {
                     ValueUse::Unit => "Shapes.Unit".to_owned(),
-                    ValueUse::Bottom => "Void".to_owned(),
+                    ValueUse::Bottom => "java.lang.Void".to_owned(),
                     ValueUse::Bound(binder) => binders.get(binder).cloned().ok_or_else(|| {
                         EmitError::internal("Java value plan refers to an unbound type parameter")
                     })?,
@@ -718,11 +725,8 @@ fn render_prepared_nominal(
                 EmitError::internal("prepared Java host nominal has no exact root binding")
             })?;
             if !type_params.is_empty() {
-                let constructor = render_nominal_constructor_marker_use(
-                    name,
-                    JavaNominalConstructorKind::HostType,
-                    shapes,
-                );
+                let constructor =
+                    render_nominal_constructor_marker_use(name, NominalKind::Host, shapes);
                 return Ok(if args.is_empty() {
                     constructor
                 } else {
@@ -749,11 +753,8 @@ fn render_prepared_nominal(
                 return Err(EmitError::internal("prepared Java newtype arity drift"));
             }
             if !type_params.is_empty() {
-                let constructor = render_nominal_constructor_marker_use(
-                    name,
-                    JavaNominalConstructorKind::Newtype,
-                    shapes,
-                );
+                let constructor =
+                    render_nominal_constructor_marker_use(name, NominalKind::Newtype, shapes);
                 return Ok(if args.is_empty() {
                     constructor
                 } else {
@@ -772,42 +773,21 @@ fn render_prepared_nominal(
 }
 
 fn java_newtype_carrier(name: &QualifiedTypeName) -> String {
-    format!(
-        "KioNewtype_{}__{}",
-        encode_host_identity(&name.module_segments().join("/")),
-        encode_host_identity(name.name())
-    )
+    nominal_name(name, NominalKind::Newtype)
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-enum JavaNominalConstructorKind {
-    HostType,
-    Newtype,
-}
-
-fn java_nominal_constructor_marker(
-    name: &QualifiedTypeName,
-    kind: JavaNominalConstructorKind,
-) -> String {
-    let category = match kind {
-        JavaNominalConstructorKind::HostType => "HostType",
-        JavaNominalConstructorKind::Newtype => "Newtype",
-    };
-    format!(
-        "Kio{category}Mk_{}__{}",
-        encode_host_identity(&name.module_segments().join("/")),
-        encode_host_identity(name.name())
-    )
+fn java_nominal_constructor_marker(name: &QualifiedTypeName, kind: NominalKind) -> String {
+    nominal_name(name, kind)
 }
 
 fn render_nominal_constructor_marker_use(
     name: &QualifiedTypeName,
-    kind: JavaNominalConstructorKind,
+    kind: NominalKind,
     shapes: &JavaShapes<'_>,
 ) -> String {
     let parameters = match kind {
-        JavaNominalConstructorKind::HostType => Vec::new(),
-        JavaNominalConstructorKind::Newtype => shapes.live_root_type_parameters().to_vec(),
+        NominalKind::Host => Vec::new(),
+        NominalKind::Newtype => shapes.live_root_type_parameters().to_vec(),
     };
     format!(
         "Shapes.{}{}",
@@ -1165,6 +1145,7 @@ fn render_handle(
     shapes: &mut JavaShapes<'_>,
     ir_json: &str,
 ) -> Result<String, EmitError> {
+    validate_facade_class_names(handle, tree)?;
     let root_parameters = shapes.live_root_type_parameters().to_vec();
     let root_declaration = java_generic_declaration(&root_parameters);
     let root_inference = if root_parameters.is_empty() { "" } else { "<>" };
@@ -1259,20 +1240,54 @@ fn render_handle(
 
 /// Deterministic Java class name for one role-bearing facade path.
 fn namespace_class_name(path: &[FacadeSelector]) -> String {
-    let components: Vec<String> = path
-        .iter()
-        .map(|selector| {
-            let role = match selector {
-                FacadeSelector::Module(_) => "M",
-                FacadeSelector::Type(_) => "T",
-            };
-            format!("{role}_{}", encode_host_identity(selector.source()))
-        })
-        .collect();
-    format!("Ns_{}", components.join("__"))
+    facade_class_name(path, "Ns")
+}
+
+fn validate_facade_class_names(handle: &str, tree: &ExportNode) -> Result<(), EmitError> {
+    let mut names = BTreeMap::new();
+    let mut pending = vec![(tree, Vec::new())];
+    while let Some((node, path)) = pending.pop() {
+        for (source, child) in &node.children {
+            let mut child_path = path.clone();
+            child_path.push(FacadeSelector::Module(source.clone()));
+            claim_facade_class_name(&mut names, handle, &child_path, "Ns")?;
+            pending.push((child, child_path));
+        }
+        for newtype in &node.newtypes {
+            let mut type_path = path.clone();
+            type_path.push(FacadeSelector::Type(newtype.type_name.clone()));
+            claim_facade_class_name(&mut names, handle, &type_path, "NtH")?;
+        }
+    }
+    Ok(())
+}
+
+fn claim_facade_class_name(
+    names: &mut BTreeMap<String, (String, Vec<FacadeSelector>)>,
+    handle: &str,
+    path: &[FacadeSelector],
+    role: &str,
+) -> Result<(), EmitError> {
+    let class = facade_class_name(path, role);
+    let key = format!("{handle}${class}.class").to_ascii_lowercase();
+    let identity = (role.to_owned(), path.to_vec());
+    if let Some(existing) = names.insert(key.clone(), identity.clone())
+        && existing != identity
+    {
+        return Err(EmitError::internal(format!(
+            "distinct Java facade identities collide at classfile `{key}`: {existing:?} and {identity:?}"
+        )));
+    }
+    Ok(())
 }
 
 fn java_facade_selector_name(selector: &FacadeSelector, root: bool) -> String {
+    if root
+        && matches!(selector, FacadeSelector::Module(_))
+        && shadows_support_package(&host_name_core(selector.source()))
+    {
+        return selector.facade_name(false);
+    }
     let source = selector.facade_name(root);
     if root {
         java_public_item_name(&source)
@@ -1462,7 +1477,7 @@ fn render_ns_class(
 fn newtype_handle_class(path: &[FacadeSelector], type_name: &str) -> String {
     let mut full_path = path.to_vec();
     full_path.push(FacadeSelector::Type(type_name.to_owned()));
-    namespace_class_name(&full_path).replacen("Ns_", "NtH_", 1)
+    facade_class_name(&full_path, "NtH")
 }
 
 fn render_newtype_handle(
@@ -1610,7 +1625,7 @@ fn render_host_interface(
         );
         if let Some(removed_at) = binding.retained_at {
             out.push_str(&format!(
-                "  /** Host type `{qualified}` was removed at contract v{removed_at}. */\n  @Deprecated\n  default {method_prefix}{public_type} {from_body}({body_type} value) {{\n    throw new IllegalStateException(\n        \"host type {qualified} was removed at contract v{removed_at}\");\n  }}\n\n  @Deprecated\n  default {method_prefix}{body_type} {to_body}({public_type} value) {{\n    throw new IllegalStateException(\n        \"host type {qualified} was removed at contract v{removed_at}\");\n  }}\n"
+                "  /** Host type `{qualified}` was removed at contract v{removed_at}. */\n  @java.lang.Deprecated\n  default {method_prefix}{public_type} {from_body}({body_type} value) {{\n    throw new IllegalStateException(\n        \"host type {qualified} was removed at contract v{removed_at}\");\n  }}\n\n  @java.lang.Deprecated\n  default {method_prefix}{body_type} {to_body}({public_type} value) {{\n    throw new IllegalStateException(\n        \"host type {qualified} was removed at contract v{removed_at}\");\n  }}\n"
             ));
         } else {
             out.push_str(&format!(
@@ -1650,7 +1665,7 @@ fn render_host_interface(
             PreparedBoundaryCallableOriginRef::Retained(metadata) => {
                 let removed_at = metadata.removed_at_version();
                 out.push_str(&format!(
-                    "\n  /** Removed at contract v{removed_at}; the package no longer calls it. */\n  @Deprecated\n  default {method_prefix}{ret} {member}({}) {{\n    throw new IllegalStateException(\n        \"host fn {module_path}.{name} was removed at contract v{removed_at}\");\n  }}\n",
+                    "\n  /** Removed at contract v{removed_at}; the package no longer calls it. */\n  @java.lang.Deprecated\n  default {method_prefix}{ret} {member}({}) {{\n    throw new IllegalStateException(\n        \"host fn {module_path}.{name} was removed at contract v{removed_at}\");\n  }}\n",
                     decls.join(", "),
                 ));
             }
@@ -1820,9 +1835,11 @@ fn render_shapes_java(
     render_canonical_value_support(&mut out);
     render_prepared_forall_interfaces(&mut out, prepared, shapes, body_plans)?;
     render_body_stage_factories(&mut out, body_plans, shapes)?;
-    render_nominal_constructor_markers(&mut out, prepared, shapes)?;
-    render_parameterized_host_carriers(&mut out, prepared, shapes);
-    render_prepared_newtype_carriers(&mut out, prepared, shapes)?;
+    let mut nominals = JavaNominalTree::default();
+    render_nominal_constructor_markers(&mut nominals, prepared, shapes)?;
+    render_parameterized_host_carriers(&mut nominals, prepared, shapes)?;
+    render_prepared_newtype_carriers(&mut out, &mut nominals, prepared, shapes)?;
+    nominals.render(&mut out, 1);
     out.push_str("}\n");
     Ok(out)
 }
@@ -2221,7 +2238,7 @@ fn render_facade_shell_java(
             ));
             if origin.removed_at_version().is_some() {
                 out.push_str(&format!(
-                    "    @Deprecated public {name}({}) {{\n      {}\n    }}\n",
+                    "    @java.lang.Deprecated public {name}({}) {{\n      {}\n    }}\n",
                     members
                         .iter()
                         .enumerate()
@@ -2312,17 +2329,100 @@ fn java_nominal_runtime_key(name: &QualifiedTypeName) -> String {
     format!("{}\0{}", name.module_segments().join("/"), name.name())
 }
 
+#[derive(Default)]
+struct JavaNominalTree {
+    name: String,
+    children: BTreeMap<String, JavaNominalTree>,
+    declaration: Option<JavaNominalDeclaration>,
+    origin: Option<BoundaryFacadeSupportOrigin>,
+}
+
+struct JavaNominalDeclaration {
+    identity: (QualifiedTypeName, NominalKind),
+    docs: String,
+    header: String,
+    body: String,
+}
+
+impl JavaNominalTree {
+    fn insert(
+        &mut self,
+        path: &[String],
+        declaration: JavaNominalDeclaration,
+        origin: BoundaryFacadeSupportOrigin,
+    ) -> Result<(), EmitError> {
+        let mut node = self;
+        for component in path {
+            node = node
+                .children
+                .entry(component.to_ascii_lowercase())
+                .or_insert_with(|| Self {
+                    name: component.clone(),
+                    ..Self::default()
+                });
+            if node.name != *component {
+                return Err(EmitError::internal(format!(
+                    "distinct Java nominal paths collide under case folding at Shapes.{}",
+                    path.join("."),
+                )));
+            }
+            node.origin = Some(
+                node.origin
+                    .map_or(origin, |current| join_java_support_origin(current, origin)),
+            );
+        }
+        if let Some(existing) = &node.declaration {
+            return Err(EmitError::internal(format!(
+                "distinct Java nominal declarations collide at Shapes.{}: {:?} and {:?}",
+                path.join("."),
+                existing.identity,
+                declaration.identity,
+            )));
+        }
+        node.declaration = Some(declaration);
+        Ok(())
+    }
+
+    fn render(&self, out: &mut String, depth: usize) {
+        let indent = "  ".repeat(depth);
+        for node in self.children.values() {
+            let leaf = &node.name;
+            if let Some(declaration) = &node.declaration {
+                for line in declaration.docs.lines() {
+                    out.push_str(&format!("{indent}{line}\n"));
+                }
+                out.push_str(&format!("{indent}{} {{\n", declaration.header));
+                for line in declaration.body.lines() {
+                    out.push_str(&format!("{indent}  {line}\n"));
+                }
+            } else {
+                push_java_deprecation(
+                    out,
+                    node.origin
+                        .expect("a nominal holder has descendant provenance"),
+                    &indent,
+                );
+                out.push_str(&format!(
+                    "{indent}public static final class {leaf} {{\n{indent}  private {leaf}() {{}}\n"
+                ));
+            }
+            node.render(out, depth + 1);
+            out.push_str(&format!("{indent}}}\n"));
+        }
+    }
+}
+
 fn render_nominal_constructor_marker(
-    out: &mut String,
+    tree: &mut JavaNominalTree,
     name: &QualifiedTypeName,
     parameters: &[BoundaryNominalTypeParam],
-    kind: JavaNominalConstructorKind,
+    kind: NominalKind,
     marker_parameters: &[String],
     origin: BoundaryFacadeSupportOrigin,
     doc: Option<&crate::ast::DocComment>,
-) {
+) -> Result<(), EmitError> {
     if parameters.is_empty() {
-        return;
+        return Ok(());
     }
     let kinds = parameters
         .iter()
@@ -2334,21 +2434,31 @@ fn render_nominal_constructor_marker(
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ");
-    out.push('\n');
     let note = format!(
         "Exact constructor marker for `{qualified}` (arity {}; kinds: {kind_list}).",
         kinds.len()
     );
-    push_nominal_doc(out, doc, &note, origin, "  ");
-    out.push_str(&format!(
-        "  public interface {}{} {{}}\n",
-        java_nominal_constructor_marker(name, kind),
-        java_generic_declaration(marker_parameters)
-    ));
+    let mut docs = String::new();
+    push_nominal_doc(&mut docs, doc, &note, origin, "");
+    let path = nominal_path(name, kind);
+    tree.insert(
+        &path,
+        JavaNominalDeclaration {
+            identity: (name.clone(), kind),
+            docs,
+            header: format!(
+                "public interface {}{}",
+                path.last().unwrap(),
+                java_generic_declaration(marker_parameters)
+            ),
+            body: String::new(),
+        },
+        origin,
+    )
 }
 
 fn render_nominal_constructor_markers(
-    out: &mut String,
+    tree: &mut JavaNominalTree,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &JavaShapes<'_>,
 ) -> Result<(), EmitError> {
@@ -2360,26 +2470,26 @@ fn render_nominal_constructor_markers(
             }
         };
         render_nominal_constructor_marker(
-            out,
+            tree,
             binding.name(),
             binding.type_params(),
-            JavaNominalConstructorKind::HostType,
+            NominalKind::Host,
             &[],
             origin,
             crate::backends::boundary_docs::host_type(shapes.package(), binding),
-        );
+        )?;
     }
     let root_parameters = shapes.live_root_type_parameters().to_vec();
     for entry in prepared.public_newtypes() {
         render_nominal_constructor_marker(
-            out,
+            tree,
             entry.name(),
             entry.type_params(),
-            JavaNominalConstructorKind::Newtype,
+            NominalKind::Newtype,
             &root_parameters,
             BoundaryFacadeSupportOrigin::Live,
             crate::backends::boundary_docs::newtype(shapes.package(), entry),
-        );
+        )?;
     }
     for entry in prepared.retained_public_newtypes() {
         let removed_at_version = prepared
@@ -2388,23 +2498,23 @@ fn render_nominal_constructor_markers(
                 unreachable!("a retained Java public newtype has removal provenance")
             });
         render_nominal_constructor_marker(
-            out,
+            tree,
             entry.name(),
             entry.type_params(),
-            JavaNominalConstructorKind::Newtype,
+            NominalKind::Newtype,
             &root_parameters,
             BoundaryFacadeSupportOrigin::Retained { removed_at_version },
             None,
-        );
+        )?;
     }
     Ok(())
 }
 
 fn render_parameterized_host_carriers(
-    out: &mut String,
+    tree: &mut JavaNominalTree,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &JavaShapes<'_>,
-) {
+) -> Result<(), EmitError> {
     for binding in shapes
         .host_bindings()
         .filter(|binding| binding.type_arity > 0 || binding.retained_at.is_some())
@@ -2418,37 +2528,53 @@ fn render_parameterized_host_carriers(
         let doc = prepared.host_binding(&binding.name).and_then(|binding| {
             crate::backends::boundary_docs::host_type(shapes.package(), binding)
         });
+        let mut docs = String::new();
         push_nominal_doc(
-            out,
+            &mut docs,
             doc,
             "Storage operations for this exact host declaration.",
             origin,
-            "  ",
+            "",
         );
+        let mut path = nominal_path(&binding.name, NominalKind::Host);
         if parameters.is_empty() {
-            out.push_str(&format!("  public interface {} {{}}\n", binding.carrier()));
+            tree.insert(
+                &path,
+                JavaNominalDeclaration {
+                    identity: (binding.name.clone(), NominalKind::Host),
+                    docs,
+                    header: format!("public interface {}", path.last().unwrap()),
+                    body: String::new(),
+                },
+                origin,
+            )?;
             continue;
         }
-        let marker = render_nominal_constructor_marker_use(
-            &binding.name,
-            JavaNominalConstructorKind::HostType,
-            shapes,
-        );
+        let marker =
+            render_nominal_constructor_marker_use(&binding.name, NominalKind::Host, shapes);
         let ty = render_java_application(&marker, &parameters);
         let generics = java_generic_declaration(&parameters);
         let key = escape_java(&java_nominal_runtime_key(&binding.name));
         let attribute = java_deprecation_annotation(origin);
-        out.push_str(&format!(
-            "  public static final class {carrier} {{\n    private {carrier}() {{}}\n\
-             \x20   {attribute}public static {generics} {ty} fromNative(Object value) {{ return new Apply1<>(\"{key}\", value); }}\n\
-             \x20   {attribute}public static {generics} Object toNative({ty} value) {{ return applicationPayload(value, \"{key}\"); }}\n  }}\n",
-            carrier=binding.carrier(),
-        ));
+        let carrier = storage_name(&binding.name);
+        path.push(carrier.to_owned());
+        tree.insert(&path, JavaNominalDeclaration {
+            identity: (binding.name.clone(), NominalKind::Host),
+            docs,
+            header: format!("public static final class {carrier}"),
+            body: format!(
+                "private {carrier}() {{}}\n\
+                 {attribute}public static {generics} {ty} fromNative(java.lang.Object value) {{ return new Shapes.Apply1<>(\"{key}\", value); }}\n\
+                 {attribute}public static {generics} java.lang.Object toNative({ty} value) {{ return Shapes.applicationPayload(value, \"{key}\"); }}\n"
+            ),
+        }, origin)?;
     }
+    Ok(())
 }
 
 fn render_prepared_newtype_carriers(
     out: &mut String,
+    tree: &mut JavaNominalTree,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &JavaShapes<'_>,
 ) -> Result<(), EmitError> {
@@ -2477,6 +2603,8 @@ fn render_prepared_newtype_carriers(
             continue;
         }
         let carrier = java_newtype_carrier(name);
+        let path = nominal_path(name, NominalKind::Newtype);
+        let leaf = path.last().unwrap();
         let parameters = shapes.live_root_type_parameters();
         let declaration = java_generic_declaration(parameters);
         let inference = if parameters.is_empty() { "" } else { "<>" };
@@ -2485,12 +2613,13 @@ fn render_prepared_newtype_carriers(
         let doc = matches!(origin, BoundaryFacadeSupportOrigin::Live)
             .then(|| crate::backends::boundary_docs::newtype(shapes.package(), entry))
             .flatten();
-        push_doc(out, doc, None, "  ");
-        push_java_deprecation(out, origin, "  ");
-        out.push_str(&format!(
-            "  public static final class {carrier}{declaration} {{\n    private final Object payload;\n\
-             \x20   private {carrier}(Object payload, boolean internal) {{ this.payload = payload; }}\n"
-        ));
+        let mut docs = String::new();
+        push_doc(&mut docs, doc, None, "");
+        push_java_deprecation(&mut docs, origin, "");
+        let mut body = format!(
+            "private final java.lang.Object payload;\n\
+             private {leaf}(java.lang.Object payload, boolean internal) {{ this.payload = payload; }}\n"
+        );
         if transparent {
             let (payload, site, _) = prepared_newtype_payload_owner(prepared, shapes, name)?
                 .ok_or_else(|| {
@@ -2505,12 +2634,21 @@ fn render_prepared_newtype_carriers(
                 shapes,
             )?;
             let attribute = java_deprecation_annotation(origin);
-            out.push_str(&format!(
-                "    {attribute}public {carrier}({payload_ty} value) {{ this.payload = value; }}\n\
-                 \x20   @SuppressWarnings(\"unchecked\")\n    {attribute}public {payload_ty} value() {{ return ({payload_ty}) payload; }}\n"
+            body.push_str(&format!(
+                "{attribute}public {leaf}({payload_ty} value) {{ this.payload = value; }}\n\
+                 @java.lang.SuppressWarnings(\"unchecked\")\n{attribute}public {payload_ty} value() {{ return ({payload_ty}) payload; }}\n"
             ));
         }
-        out.push_str("  }\n");
+        tree.insert(
+            &path,
+            JavaNominalDeclaration {
+                identity: (name.clone(), NominalKind::Newtype),
+                docs,
+                header: format!("public static final class {leaf}{declaration}"),
+                body,
+            },
+            origin,
+        )?;
         let erased = java_applied_type(&carrier, &vec!["?".to_owned(); parameters.len()]);
         registrations.push(format!(
             "    factories.put(\"{key}\", new KioRuntime.NominalFactory() {{\n\
@@ -2544,7 +2682,7 @@ fn push_nominal_doc(
         let deprecation = java_deprecation_note(removed_at);
         // Javadoc attaches only the nearest comment to the declaration.
         out.push_str(&format!(
-            "{indent}/** {note}\n{indent} * @deprecated {deprecation}\n{indent} */\n{indent}@Deprecated\n"
+            "{indent}/** {note}\n{indent} * @deprecated {deprecation}\n{indent} */\n{indent}@java.lang.Deprecated\n"
         ));
     } else {
         push_doc(out, doc, Some(note), indent);
@@ -2761,7 +2899,7 @@ mod tests {
         assert_eq!(native.matches("Shapes.Sum<").count(), 2, "{native}");
         assert_eq!(native.matches("Shapes.Product<").count(), 1, "{native}");
         assert!(
-            native.contains("KioNewtype_api__Red") && native.contains("KioNewtype_api__Black"),
+            native.contains("api.Red") && native.contains("api.Black"),
             "{native}"
         );
     }
@@ -2801,7 +2939,7 @@ mod tests {
         package.check_in_body_resolution().expect("body resolution");
         let prime = check_package(&package).expect("typecheck");
         let enriched = structural_recovery::recover_package(&prime);
-        crate::pass::recover_to_low::lower(&enriched)
+        crate::pass::route::route_package(&enriched)
     }
 
     fn exact_newtype_carrier(module: &str, name: &str) -> String {
@@ -2812,6 +2950,140 @@ mod tests {
             )
             .expect("test newtype has a qualified identity"),
         )
+    }
+
+    #[test]
+    fn support_package_reservation_applies_to_module_fields_not_methods() {
+        let module = FacadeSelector::Module("java".to_owned());
+        assert_eq!(java_facade_selector_name(&module, true), "KioModule_java");
+        assert_eq!(module.facade_name(true), "java");
+        assert_eq!(java_facade_selector_name(&module, false), "KioModule_java");
+        assert_eq!(java_public_item_name("java"), "java");
+        let package = build_package(
+            &["module java; pub fn java() -> . { () }"],
+            "bridge { java; }",
+        );
+        let emitted = lower_package(&package, "pkg", None).expect("module and method java");
+        assert!(emitted.handle_java.contains("Ns_M_java KioModule_java;"));
+        assert!(emitted.handle_java.contains("__exports.get(\"java\")"));
+        assert!(emitted.handle_java.contains("public void java()"));
+        assert!(emitted.handle_java.contains("__fn_java.call("));
+    }
+
+    #[test]
+    fn facade_class_registry_rejects_folded_full_identity_collisions() {
+        let path = vec![FacadeSelector::Module("a_".repeat(80))];
+        let class = facade_class_name(&path, "Ns");
+        let key = format!("Pkg${class}.class").to_ascii_lowercase();
+        let mut names = BTreeMap::from([(
+            key,
+            (
+                "Ns".to_owned(),
+                vec![FacadeSelector::Module("different".to_owned())],
+            ),
+        )]);
+        assert!(claim_facade_class_name(&mut names, "Pkg", &path, "Ns").is_err());
+    }
+
+    #[test]
+    fn nominal_tree_rejects_identity_collisions_and_omits_fallback_ancestors() {
+        let owner = QualifiedTypeName::new(vec!["a".to_owned(); 256], "Token".to_owned())
+            .expect("nominal identity");
+        let path = nominal_path(&owner, NominalKind::Newtype);
+        assert_eq!(path.len(), 1);
+        let declaration = |name: QualifiedTypeName| JavaNominalDeclaration {
+            identity: (name, NominalKind::Newtype),
+            docs: String::new(),
+            header: format!("public interface {}", path[0]),
+            body: String::new(),
+        };
+        let mut tree = JavaNominalTree::default();
+        tree.insert(&path, declaration(owner), BoundaryFacadeSupportOrigin::Live)
+            .expect("first identity");
+        let other = QualifiedTypeName::new(vec!["different".to_owned()], "Token".to_owned())
+            .expect("other nominal identity");
+        assert!(
+            tree.insert(&path, declaration(other), BoundaryFacadeSupportOrigin::Live)
+                .is_err()
+        );
+        let folded = path
+            .iter()
+            .map(|part| part.to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        let other = QualifiedTypeName::new(vec!["another".to_owned()], "Token".to_owned()).unwrap();
+        assert!(
+            tree.insert(
+                &folded,
+                declaration(other),
+                BoundaryFacadeSupportOrigin::Live
+            )
+            .is_err()
+        );
+        let mut rendered = String::new();
+        tree.render(&mut rendered, 1);
+        assert_eq!(rendered.matches("public interface ").count(), 1);
+        assert!(!rendered.contains("class a") && !rendered.contains("KioModule_"));
+    }
+
+    #[test]
+    fn nominal_holder_provenance_joins_descendants_with_live_dominance() {
+        let add = |tree: &mut JavaNominalTree, module: &[&str], leaf: &str, origin| {
+            let name = QualifiedTypeName::new(
+                module.iter().map(|part| (*part).to_owned()).collect(),
+                leaf.to_owned(),
+            )
+            .unwrap();
+            let path = nominal_path(&name, NominalKind::Host);
+            tree.insert(
+                &path,
+                JavaNominalDeclaration {
+                    identity: (name, NominalKind::Host),
+                    docs: String::new(),
+                    header: format!("public interface {leaf}"),
+                    body: String::new(),
+                },
+                origin,
+            )
+            .unwrap();
+        };
+        for live_first in [false, true] {
+            let mut tree = JavaNominalTree::default();
+            if live_first {
+                add(
+                    &mut tree,
+                    &["shared"],
+                    "Current",
+                    BoundaryFacadeSupportOrigin::Live,
+                );
+            }
+            add(
+                &mut tree,
+                &["shared", "removed"],
+                "Gone",
+                BoundaryFacadeSupportOrigin::Retained {
+                    removed_at_version: 2,
+                },
+            );
+            if !live_first {
+                let mut retained = String::new();
+                tree.render(&mut retained, 1);
+                assert!(retained.contains(
+                    "@java.lang.Deprecated\n  public static final class KioModule_shared"
+                ));
+                add(
+                    &mut tree,
+                    &["shared"],
+                    "Current",
+                    BoundaryFacadeSupportOrigin::Live,
+                );
+            }
+            let mut joined = String::new();
+            tree.render(&mut joined, 1);
+            assert!(joined.starts_with("  public static final class KioModule_shared"));
+            assert!(joined.contains(
+                "@java.lang.Deprecated\n    public static final class KioModule_removed"
+            ));
+        }
     }
 
     #[test]
@@ -3224,19 +3496,19 @@ mod tests {
         assert!(
             emitted
                 .shapes_java
-                .contains("public Shapes.Sum<Shapes.Unit, Shapes.KioNewtype_api__Chain> value()"),
+                .contains("public Shapes.Sum<Shapes.Unit, Shapes.KioModule_api.Chain> value()"),
             "{}",
             emitted.shapes_java
         );
         assert!(
             emitted
                 .shapes_java
-                .contains("return new KioNewtype_api__Chain(payload, true);")
+                .contains("return new KioModule_api.Chain(payload, true);")
         );
         assert!(
             emitted
                 .shapes_java
-                .contains("return ((KioNewtype_api__Chain) value).payload;")
+                .contains("return ((KioModule_api.Chain) value).payload;")
         );
         assert!(!RUNTIME.contains("newtypeIsRecursive") && !RUNTIME.contains("substType"));
         assert!(!RUNTIME.contains("new LinkedHashSet<>(visited)"));
@@ -3260,12 +3532,12 @@ mod tests {
         assert!(emitted.shapes_java.contains(
             "if (!value.identity.equals(identity)) throw new IllegalArgumentException(\"wrong nominal application identity\");"
         ));
+        assert!(!emitted.shapes_java.contains("public interface Hidden"));
         assert!(
             !emitted
                 .shapes_java
-                .contains("KioNewtypeMk_internal__Hidden")
+                .contains("public static final class Hidden")
         );
-        assert!(!emitted.shapes_java.contains("KioNewtype_internal__Hidden"));
         assert_eq!(
             RUNTIME
                 .matches("!asList(declaration.get(\"type_params\")).isEmpty()")
@@ -3287,18 +3559,18 @@ mod tests {
         let emitted = lower_package(&package, "pkg", None).expect("existential nominal");
         let carrier = emitted
             .shapes_java
-            .split_once("public static final class KioNewtype_api__Pack {")
+            .split_once("public static final class Pack {")
             .unwrap()
             .1
-            .split_once("\n  }")
+            .split_once("\n    }")
             .unwrap()
             .0;
         assert!(
-            carrier.contains("private final Object payload;"),
+            carrier.contains("private final java.lang.Object payload;"),
             "{carrier}"
         );
         assert!(
-            carrier.contains("private KioNewtype_api__Pack(Object payload, boolean internal)"),
+            carrier.contains("private Pack(java.lang.Object payload, boolean internal)"),
             "{carrier}"
         );
         assert!(
@@ -3318,24 +3590,20 @@ mod tests {
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
         for name in ["Pack", "Loaded"] {
             assert!(
-                emitted.shapes_java.contains(&format!(
-                    "return new KioNewtype_api__{name}(payload, true);"
-                )),
+                emitted
+                    .shapes_java
+                    .contains(&format!("return new KioModule_api.{name}(payload, true);")),
                 "{}",
                 emitted.shapes_java
             );
             assert!(
                 emitted
                     .shapes_java
-                    .contains(&format!("return ((KioNewtype_api__{name}) value).payload;")),
+                    .contains(&format!("return ((KioModule_api.{name}) value).payload;")),
                 "{}",
                 emitted.shapes_java
             );
-            assert!(
-                !emitted
-                    .shapes_java
-                    .contains(&format!("public KioNewtype_api__{name}("))
-            );
+            assert!(!emitted.shapes_java.contains(&format!("public {name}(")));
         }
         assert!(!emitted.handle_java.contains("__newtype_body_"));
         assert!(
@@ -3361,7 +3629,7 @@ mod tests {
         assert!(
             declaration.contains("public <KioCallType_0> Shapes.KioForall_")
                 && declaration.contains(
-                    " read(Shapes.Apply1<Shapes.KioNewtypeMk_api__Packed, KioCallType_0> p0)"
+                    " read(Shapes.Apply1<Shapes.KioModule_api.Packed, KioCallType_0> p0)"
                 ),
             "{declaration}"
         );
@@ -3381,8 +3649,8 @@ mod tests {
         assert!(
             emitted
                 .handle_java
-                .contains("return ((Void) __fn_keep.call(p0));")
-                && emitted.handle_java.matches("((Void)").count() >= 3,
+                .contains("return ((java.lang.Void) __fn_keep.call(p0));")
+                && emitted.handle_java.matches("((java.lang.Void)").count() >= 3,
             "{}",
             emitted.handle_java
         );
@@ -3507,22 +3775,20 @@ mod tests {
             emitted.host_java
         );
         assert!(
-            emitted
-                .host_java
-                .contains("default Shapes.KioHostType_api__Gone KioHostBinding_api__Gone_fromBody(Integer value)")
-                && emitted
-                    .host_java
-                    .contains("default Integer KioHostBinding_api__Gone_toBody(Shapes.KioHostType_api__Gone value)")
-                && emitted
-                    .host_java
-                    .contains("default Shapes.KioHostType_api__Gone api__archived(Shapes.KioHostType_api__Gone p0)"),
+            emitted.host_java.contains(
+                "default Shapes.KioModule_api.Gone KioHostBinding_api__Gone_fromBody(Integer value)"
+            ) && emitted.host_java.contains(
+                "default Integer KioHostBinding_api__Gone_toBody(Shapes.KioModule_api.Gone value)"
+            ) && emitted.host_java.contains(
+                "default Shapes.KioModule_api.Gone api__archived(Shapes.KioModule_api.Gone p0)"
+            ),
             "{}",
             emitted.host_java
         );
         assert!(
             emitted
                 .shapes_java
-                .contains("/** Storage operations for this exact host declaration.\n   * @deprecated Retained only for source compatibility after removal at contract v2.\n   */\n  @Deprecated\n  public interface KioHostType_api__Gone {}"),
+                .contains("/** Storage operations for this exact host declaration.\n     * @deprecated Retained only for source compatibility after removal at contract v2.\n     */\n    @java.lang.Deprecated\n    public interface Gone {"),
             "{}",
             emitted.shapes_java
         );
@@ -3565,20 +3831,20 @@ mod tests {
         );
 
         assert!(
-            !emitted.shapes_java.contains("class KioNewtype_api__Token<"),
+            !emitted.shapes_java.contains("class Token<"),
             "{}",
             emitted.shapes_java
         );
         assert!(
             emitted.shapes_java.contains(
-                "/** Exact constructor marker for `api.Token` (arity 1; kinds: *).\n   * @deprecated Retained only for source compatibility after removal at contract v2.\n   */\n  @Deprecated\n  public interface KioNewtypeMk_api__Token {}"
+                "/** Exact constructor marker for `api.Token` (arity 1; kinds: *).\n     * @deprecated Retained only for source compatibility after removal at contract v2.\n     */\n    @java.lang.Deprecated\n    public interface Token {"
             ),
             "{}",
             emitted.shapes_java
         );
         assert!(
             emitted.host_java.contains(
-                "api__archived(Shapes.Apply1<Shapes.KioNewtypeMk_api__Token, Shapes.Unit> p0)"
+                "api__archived(Shapes.Apply1<Shapes.KioModule_api.Token, Shapes.Unit> p0)"
             ),
             "{}",
             emitted.host_java
@@ -3612,7 +3878,7 @@ mod tests {
         assert_eq!(
             emitted
                 .shapes_java
-                .matches("public interface KioNewtypeMk_api__Box {}")
+                .matches("public interface Box {")
                 .count(),
             1
         );
@@ -3630,15 +3896,11 @@ mod tests {
         );
         let lines: Vec<_> = emitted.shapes_java.lines().collect();
         let (index, _) = stages[0];
-        assert_eq!(lines[index - 2].trim(), "@Deprecated");
+        assert_eq!(lines[index - 2].trim(), "@java.lang.Deprecated");
         assert!(lines[index + 1].contains(
-            "@Deprecated public <KioType> Shapes.Fn1<KioType, KioCaptured_0> advance();"
+            "@java.lang.Deprecated public <KioType> Shapes.Fn1<KioType, KioCaptured_0> advance();"
         ));
-        assert!(
-            !emitted
-                .shapes_java
-                .contains("public record KioNewtype_api__Box")
-        );
+        assert!(!emitted.shapes_java.contains("public record Box"));
     }
 
     #[test]
@@ -3661,7 +3923,7 @@ mod tests {
         assert!(
             emitted
                 .host_java
-                .contains("default Shapes.KioHostType_api__Gone")
+                .contains("default Shapes.KioModule_api.Gone")
                 && emitted.handle_java.contains("Pkg create() {")
                 && emitted.handle_java.contains(
                     "KioRuntime.createPackage(KIO_IR_JSON, new KioRuntime.KioObject()), null"
@@ -3732,18 +3994,22 @@ mod tests {
                     .expect("retained wide method names its exact shell");
                 assert!(
                     emitted.shapes_java.contains(&format!(
-                        "@Deprecated\n  public static final class {shell}<"
-                    )) && emitted.shapes_java.contains("@Deprecated public static <")
+                        "@java.lang.Deprecated\n  public static final class {shell}<"
+                    )) && emitted
+                        .shapes_java
+                        .contains("@java.lang.Deprecated public static <")
+                        && emitted.shapes_java.contains(
+                            "@java.lang.Deprecated\n    public static final class Builder"
+                        )
                         && emitted
                             .shapes_java
-                            .contains("@Deprecated\n    public static final class Builder")
+                            .contains("@java.lang.Deprecated public T254 _254()")
                         && emitted
                             .shapes_java
-                            .contains("@Deprecated public T254 _254()")
-                        && emitted.shapes_java.contains("@Deprecated public Builder<")
+                            .contains("@java.lang.Deprecated public Builder<")
                         && emitted
                             .shapes_java
-                            .contains(&format!("@Deprecated public {shell}<")),
+                            .contains(&format!("@java.lang.Deprecated public {shell}<")),
                     "retained wide shell and helpers are not visibly deprecated:\n{}",
                     emitted.shapes_java
                 );
@@ -3771,9 +4037,9 @@ mod tests {
         );
         assert!(
             emitted.shapes_java.contains("public interface Fn1<")
-                && !emitted
-                    .shapes_java
-                    .contains("@Deprecated\n  @FunctionalInterface\n  public interface Fn1<"),
+                && !emitted.shapes_java.contains(
+                    "@java.lang.Deprecated\n  @FunctionalInterface\n  public interface Fn1<"
+                ),
             "live Java callable support inherited retained deprecation:\n{}",
             emitted.shapes_java
         );
@@ -3796,17 +4062,18 @@ mod tests {
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        I32;\n        Token;\n        old;\n      }\n    }\n  }\n}\n",
         );
         let carrier = exact_newtype_carrier("api", "Token");
+        let leaf = carrier.rsplit('.').next().unwrap();
         assert!(
             emitted
                 .shapes_java
-                .contains(&format!("public static final class {carrier}<T_api__Str>"))
+                .contains(&format!("public static final class {leaf}<T_api__Str>"))
                 && emitted
                     .shapes_java
-                    .contains(&format!("public {carrier}(T_api__Str value)"))
+                    .contains(&format!("public {leaf}(T_api__Str value)"))
                 && emitted.shapes_java.contains("public T_api__Str value()")
-                && !emitted.shapes_java.contains(&format!(
-                    "public {carrier}(Shapes.KioHostType_api__I32 value)"
-                )),
+                && !emitted
+                    .shapes_java
+                    .contains(&format!("public {leaf}(Shapes.KioModule_api.I32 value)")),
             "retained payload replaced the live Java newtype carrier:\n{}",
             emitted.shapes_java
         );
@@ -3957,7 +4224,7 @@ mod tests {
         assert!(!emitted.host_java.contains("Fn1<Object, Object>"));
         assert!(
             emitted.handle_java.contains(
-                "public <KioCallType_0> KioCallType_0 ordered(Shapes.KioNewtype_main__T<T_main__Str> p0, KioCallType_0 p1)"
+                "public <KioCallType_0> KioCallType_0 ordered(Shapes.KioModule_main.T<T_main__Str> p0, KioCallType_0 p1)"
             ),
             "{}",
             emitted.handle_java
@@ -4115,8 +4382,7 @@ mod tests {
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-        let functor =
-            "Shapes.Apply1<Shapes.KioNewtypeMk_api__Functor, Shapes.KioNewtypeMk_api__Box>";
+        let functor = "Shapes.Apply1<Shapes.KioModule_api.Functor, Shapes.KioModule_api.Box>";
         assert!(
             emitted
                 .host_java
@@ -4128,13 +4394,9 @@ mod tests {
             assert!(
                 emitted
                     .shapes_java
-                    .contains(&format!("public interface KioNewtypeMk_api__{name} {{}}"))
+                    .contains(&format!("public interface {name} {{"))
             );
-            assert!(
-                !emitted
-                    .shapes_java
-                    .contains(&format!("class KioNewtype_api__{name}<"))
-            );
+            assert!(!emitted.shapes_java.contains(&format!("class {name}<")));
         }
         assert!(
             emitted
@@ -4148,7 +4410,7 @@ mod tests {
         assert!(
             emitted
                 .handle_java
-                .contains("Shapes.Apply1<Shapes.KioNewtypeMk_api__Box, KioCallType_0> makeBox("),
+                .contains("Shapes.Apply1<Shapes.KioModule_api.Box, KioCallType_0> makeBox("),
             "{}",
             emitted.handle_java
         );
@@ -4208,21 +4470,17 @@ mod tests {
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-        let index = "Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, KioHostArg_0>";
-        assert!(
-            emitted
-                .shapes_java
-                .contains("public interface KioHostTypeMk_api__Box {}")
-        );
+        let index = "Shapes.Apply1<Shapes.KioModule_api.Box, KioHostArg_0>";
+        assert!(emitted.shapes_java.contains("public interface Box {"));
         assert!(
             emitted.shapes_java.contains(&format!(
-                "public static <KioHostArg_0> {index} fromNative(Object value)"
+                "public static <KioHostArg_0> {index} fromNative(java.lang.Object value)"
             )),
             "{}",
             emitted.shapes_java
         );
         assert!(emitted.shapes_java.contains(&format!(
-            "public static <KioHostArg_0> Object toNative({index} value)"
+            "public static <KioHostArg_0> java.lang.Object toNative({index} value)"
         )));
         assert!(
             emitted
@@ -4295,16 +4553,13 @@ mod tests {
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
 
         let class_body = |name: &str| {
-            let header = format!(
-                "public static final class {} {{",
-                exact_newtype_carrier("api", name)
-            );
+            let header = format!("public static final class {name} {{");
             emitted
                 .shapes_java
                 .split_once(&header)
                 .expect("public nominal carrier")
                 .1
-                .split_once("\n  }")
+                .split_once("\n    }")
                 .expect("carrier end")
                 .0
         };
@@ -4321,7 +4576,7 @@ mod tests {
         ] {
             let body = class_body(name);
             assert!(
-                body.contains("private final Object payload;"),
+                body.contains("private final java.lang.Object payload;"),
                 "{name}: {body}"
             );
             assert!(
@@ -4339,23 +4594,25 @@ mod tests {
         ] {
             let body = class_body(name);
             assert!(
-                body.contains("private final Object payload;")
+                body.contains("private final java.lang.Object payload;")
                     && body.contains("public ")
                     && body.contains(" value()"),
                 "{name}: {body}"
             );
+            assert!(
+                body.lines()
+                    .filter(|line| line.trim_start().starts_with("public "))
+                    .all(|line| !line.contains("Object")),
+                "{name}: {body}"
+            );
         }
-        for name in ["ConstructorOnly", "ProjectorOnly"] {
+        for name in ["Constructor_only", "Projector_only"] {
             assert!(
                 emitted
                     .shapes_java
-                    .contains(&format!("public interface KioNewtypeMk_api__{name} {{}}"))
+                    .contains(&format!("public interface {name} {{"))
             );
-            assert!(
-                !emitted
-                    .shapes_java
-                    .contains(&format!("class KioNewtype_api__{name}<"))
-            );
+            assert!(!emitted.shapes_java.contains(&format!("class {name}<")));
         }
         assert!(emitted.shapes_java.contains("public record Unit() {}"));
         assert!(
@@ -4366,11 +4623,17 @@ mod tests {
                 && emitted.handle_java.contains("readExistential(")
         );
         assert!(emitted.handle_java.contains("makeConstructorUnitAlias()"));
-        assert!(emitted.handle_java.contains("class NtH_M_api__T_OpaqueA"));
-        assert!(emitted.host_java.contains(
-            "Shapes.KioNewtype_api__Outer api__echoOuter(Shapes.KioNewtype_api__Outer p0)"
-        ));
-        assert!(emitted.host_java.contains("Shapes.KioNewtype_api__DirectRecursive api__echoDirect(Shapes.KioNewtype_api__DirectRecursive p0)"));
+        assert!(emitted.handle_java.contains("class NtH_M_api__T_Opaque_ua"));
+        assert!(
+            emitted.host_java.contains(
+                "Shapes.KioModule_api.Outer api__echoOuter(Shapes.KioModule_api.Outer p0)"
+            )
+        );
+        assert!(
+            emitted.host_java.contains(
+                "Shapes.KioModule_api.Direct_recursive api__echoDirect(Shapes.KioModule_api.Direct_recursive p0)"
+            )
+        );
         let constructor = emitted
             .handle_java
             .lines()
@@ -4383,26 +4646,31 @@ mod tests {
             .unwrap();
         assert!(
             constructor
-                .contains("Shapes.Sum<Shapes.Unit, Shapes.KioNewtype_api__RecursiveConstructor>"),
+                .contains("Shapes.Sum<Shapes.Unit, Shapes.KioModule_api.Recursive_constructor>"),
             "{constructor}"
         );
         assert!(
-            projector
-                .contains("Shapes.Sum<Shapes.Unit, Shapes.KioNewtype_api__RecursiveProjector>"),
+            projector.contains("Shapes.Sum<Shapes.Unit, Shapes.KioModule_api.Recursive_projector>"),
             "{projector}"
         );
-        assert!(class_body("Comptime_both").contains("public Void value()"));
-        assert!(class_body("Packed_function").contains("Shapes.Fn1<Shapes.Product<Shapes.KioNewtype_api__OpaqueA, Shapes.Apply1<Shapes.KioNewtypeMk_api__ProjectorOnly, Shapes.Unit>>, Shapes.KioNewtype_api__OpaqueA>"));
+        assert!(class_body("Comptime_both").contains("public java.lang.Void value()"));
+        assert!(class_body("Packed_function").contains("Shapes.Fn1<Shapes.Product<Shapes.KioModule_api.Opaque_a, Shapes.Apply1<Shapes.KioModule_api.Projector_only, Shapes.Unit>>, Shapes.KioModule_api.Opaque_a>"));
+        assert!(!emitted.shapes_java.contains("KioModule_api.Hidden_payload"));
         assert!(
             !emitted
                 .shapes_java
-                .contains("KioNewtype_api__HiddenPayload")
+                .contains("public static final class Hidden_payload")
         );
-        for line in emitted
-            .shapes_java
-            .lines()
-            .filter(|line| line.starts_with("  public "))
-        {
+        assert!(
+            !emitted
+                .shapes_java
+                .contains("public interface Hidden_payload")
+        );
+        for line in emitted.shapes_java.lines().filter(|line| {
+            line.starts_with("  public ")
+                || line.trim_start().starts_with("public static final class ")
+                || line.trim_start().starts_with("public interface ")
+        }) {
             assert!(
                 !line.contains("Object"),
                 "erased payload leaks into public carrier API: {line}"
@@ -4447,17 +4715,12 @@ mod tests {
         let hidden = exact_newtype_carrier("hidden", "Comptime_bool");
         let wrapped = exact_newtype_carrier("hostish", "Wrapped");
 
-        assert!(
+        assert_eq!(
             emitted
                 .shapes_java
-                .contains(&format!("public static final class {visible}<")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            emitted
-                .shapes_java
-                .contains(&format!("public static final class {hidden}")),
+                .matches("public static final class Comptime_bool<")
+                .count(),
+            2,
             "{}",
             emitted.shapes_java
         );
@@ -4481,7 +4744,7 @@ mod tests {
                     .contains(&format!("Shapes.{wrapped}<"))
                 && emitted
                     .shapes_java
-                    .contains(&format!("public static final class {wrapped}<")),
+                    .contains("public static final class Wrapped<"),
             "{}",
             emitted.handle_java
         );
@@ -4562,10 +4825,9 @@ mod tests {
         assert!(
             emitted
                 .shapes_java
-                .contains(&format!("public static final class {left_carrier}"))
-                && emitted
-                    .shapes_java
-                    .contains(&format!("public static final class {right_carrier}")),
+                .matches("public static final class Token")
+                .count()
+                == 2,
             "{}",
             emitted.shapes_java
         );

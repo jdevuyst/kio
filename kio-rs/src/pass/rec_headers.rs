@@ -1,58 +1,22 @@
 //! Phase-independent validation of `rec(loop)` declaration headers.
 
-use crate::ast::{Kind, RecGroup, SignatureParam, Surface, Type, TypeParam};
+use crate::ast::{Kind, Phase, RecGroup, SignatureParam, Type, TypeParam};
 use crate::error::Error;
 use crate::span::Span;
 
-#[cfg(feature = "surface")]
-pub(crate) fn validate(group: &RecGroup<Surface>) -> Result<(), Error> {
-    let diagnostics = collect_diagnostics(group);
-    diagnostics
-        .name
-        .into_iter()
-        .chain(diagnostics.ty)
-        .chain(diagnostics.parse)
-        .next()
-        .map_or(Ok(()), Err)
-}
-
-/// Return every header diagnostic in compiler phase order. Contract
-/// projection uses the complete set because other package checks can occupy
-/// the intervening Use and Name tiers.
-#[cfg(feature = "cli")]
-pub(crate) fn validate_all(group: &RecGroup<Surface>) -> Vec<Error> {
-    let diagnostics = collect_diagnostics(group);
-    diagnostics
-        .parse
-        .into_iter()
-        .chain(diagnostics.name)
-        .chain(diagnostics.ty)
-        .collect()
-}
-
-#[derive(Default)]
-struct HeaderDiagnostics {
-    parse: Vec<Error>,
-    name: Vec<Error>,
-    ty: Vec<Error>,
-}
-
-fn collect_diagnostics(group: &RecGroup<Surface>) -> HeaderDiagnostics {
-    let mut diagnostics = HeaderDiagnostics::default();
+#[cfg(any(feature = "surface", feature = "cli"))]
+pub(crate) fn validate<P: Phase>(group: &RecGroup<P>) -> Result<(), Error> {
     let mut seen: std::collections::HashMap<&str, Span> = std::collections::HashMap::new();
     for member in &group.members {
         if let Some(first_span) = seen.get(member.name.as_str()) {
-            diagnostics.name.push(
-                Error::name_res(
-                    member.meta.span,
-                    format!("duplicate recursive member `{}`", member.name),
-                )
-                .with_secondary(
-                    *first_span,
-                    format!("`{}` first declared here", member.name),
-                ),
-            );
-            continue;
+            return Err(Error::name_res(
+                member.meta.span,
+                format!("duplicate recursive member `{}`", member.name),
+            )
+            .with_secondary(
+                *first_span,
+                format!("`{}` first declared here", member.name),
+            ));
         }
         seen.insert(member.name.as_str(), member.meta.span);
     }
@@ -73,33 +37,29 @@ fn collect_diagnostics(group: &RecGroup<Surface>) -> HeaderDiagnostics {
                 .with_help(
                     "recursive loop state uses existential packets, whose binders are kind-*",
                 );
-                diagnostics.ty.push(error);
+                return Err(error);
             }
         }
     }
     for member in group.members.iter().skip(1) {
         let member_type_params = signature_type_params(&member.sig.params);
         if !type_params_shape_eq(&first_type_params, &member_type_params) {
-            diagnostics.parse.push(
-                Error::parse(
-                    member.meta.span,
-                    "`rec(loop)` mutual-recursion members must declare the same type \
+            return Err(Error::parse(
+                member.meta.span,
+                "`rec(loop)` mutual-recursion members must declare the same type \
                  parameters in the same order",
-                )
-                .with_help(
-                    "mutual members share one public polymorphic interface; tail calls can \
+            )
+            .with_help(
+                "mutual members share one public polymorphic interface; tail calls can \
                  still choose a fresh instantiation with `rec name(T, ...)`",
-                ),
-            );
+            ));
         }
         if !type_shape_eq(first_ret, &member.ret) {
-            diagnostics.parse.push(
-                Error::parse(
-                    member.ret.span(),
-                    "`rec(loop)` mutual-recursion members must have the same return type",
-                )
-                .with_secondary(first_ret.span(), "the first member's return type is here"),
-            );
+            return Err(Error::parse(
+                member.ret.span(),
+                "`rec(loop)` mutual-recursion members must have the same return type",
+            )
+            .with_secondary(first_ret.span(), "the first member's return type is here"));
         }
     }
     for member in &group.members {
@@ -108,23 +68,21 @@ fn collect_diagnostics(group: &RecGroup<Surface>) -> HeaderDiagnostics {
             SignatureParam::Value(value) => Some(value),
         }) {
             if value.ty.is_none() {
-                diagnostics.parse.push(
-                    Error::parse(
-                        value.meta.span,
-                        "`rec(loop)` value parameters must have type annotations",
-                    )
-                    .with_help(
-                        "the recursion lowering builds an explicit loop-state type; annotate \
+                return Err(Error::parse(
+                    value.meta.span,
+                    "`rec(loop)` value parameters must have type annotations",
+                )
+                .with_help(
+                    "the recursion lowering builds an explicit loop-state type; annotate \
                      the parameter, e.g. `x: T`",
-                    ),
-                );
+                ));
             }
         }
     }
-    diagnostics
+    Ok(())
 }
 
-fn signature_type_params(params: &[SignatureParam<Surface>]) -> Vec<TypeParam> {
+fn signature_type_params<P: Phase>(params: &[SignatureParam<P>]) -> Vec<TypeParam> {
     params
         .iter()
         .filter_map(|param| match param {
@@ -141,7 +99,7 @@ fn type_params_shape_eq(a: &[TypeParam], b: &[TypeParam]) -> bool {
             .all(|(a, b)| a.name == b.name && a.kind == b.kind)
 }
 
-fn type_shape_eq(a: &Type<Surface>, b: &Type<Surface>) -> bool {
+fn type_shape_eq<P: Phase>(a: &Type<P>, b: &Type<P>) -> bool {
     match (a, b) {
         (
             Type::Path {

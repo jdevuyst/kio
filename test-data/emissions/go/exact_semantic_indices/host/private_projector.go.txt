@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func privateProjector(pkg *p.Package[int, int, string]) {
+	_ = p.CallExp_Api__Box_open(pkg.Api.KioType_Box, pkg.Api.Number(11))
+}

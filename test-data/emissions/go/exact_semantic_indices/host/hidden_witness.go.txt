@@ -1,0 +1,5 @@
+package main
+
+import p "driver/out/go"
+
+var hiddenWitness p.Exp_Api__hide_ret[int, int, string, p.AtomIndex[bool]]

@@ -16,6 +16,7 @@
 use super::{FieldAccessStyle, Profile, RuntimeSupport};
 
 pub mod emit;
+mod naming;
 pub mod skin;
 
 pub use emit::{EmitError, JavaPackage, lower_package};

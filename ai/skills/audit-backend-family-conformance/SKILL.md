@@ -144,8 +144,24 @@ contents. For statically checked host interfaces, verify the full generic
 relationship as well as runtime behavior: selecting a callable's type argument fixes subsequent
 uses, and both sum indices remain intact under an invariant container. An erased
 success or two separately compilable concrete examples cannot establish that
-relationship. Use the backend's documented ownership rules, not another
-backend's copying policy.
+relationship. Apply the universal [shared-data contract](../../../specs/backends/README.md#10-shared-data-stays-unchanged)
+through each backend's documented representation. Flag fresh-snapshot promises
+or tests relying on mutation of shared Kio data. Distinguish those from valid
+host-managed state changes: retaining a mutable box is allowed, while changing
+a Kio tuple stored in that box is not. Check retained callbacks and generic
+containers. Apply [host-value responsibility](../../../specs/backends/README.md#11-host-values-satisfy-their-declared-types):
+flag general runtime host-value validators and early-rejection promises. Retain
+required conversions and authorized opaque-payload access, and do not treat
+callable invocation as effect-free.
+
+Audit [conversion placement](../../topics/emit.md#conversion-placement-and-cost)
+through concrete recovery and subsequent use or re-escape. Include an equivalent
+direct-use/helper-use pair where a representation or access contract applies:
+an ordinary Kio helper must not accidentally supply the only required boundary
+protection. Check arguments and results for calls initiated on either side,
+including later callback invocations. Do not infer safety from an unchanged
+Kio-origin round trip or require defensive copying that the shared-data contract
+does not promise.
 
 For generated names, check the host's actual identifier and artifact-path
 limits, including wide products, sums and polymorphic interfaces where

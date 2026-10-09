@@ -1386,9 +1386,7 @@ impl<'a> NativeCtx<'a> {
             {
                 let mut rendered = hs_tyvar(segments[0].as_str());
                 for arg in args {
-                    let arg = self
-                        .shapes
-                        .boundary_haskell_type_scoped_in(arg, scope, module)?;
+                    let arg = self.render_native_type_scoped(arg, &scope_names, module);
                     rendered.push(' ');
                     rendered.push_str(&paren_ty(&arg));
                 }
@@ -1408,9 +1406,7 @@ impl<'a> NativeCtx<'a> {
                 }
                 let mut rendered = format!("{} h", binding.assoc_name);
                 for arg in args {
-                    let arg = self
-                        .shapes
-                        .boundary_haskell_type_scoped_in(arg, scope, module)?;
+                    let arg = self.render_native_type_scoped(arg, &scope_names, module);
                     rendered.push(' ');
                     rendered.push_str(&paren_ty(&arg));
                 }
@@ -2646,8 +2642,12 @@ impl NativeExprEmitter<'_> {
             }
             Expr::Seq { value, body, .. } => {
                 let v = self.emit_pure(value)?;
+                let rank_n_type = self.rank_n_let_type(value)?;
                 let b = self.emit_pure(body)?;
-                Ok(format!("({v} `seq` ({b}))"))
+                Ok(format!(
+                    "({})",
+                    render_native_strict_force(&paren_expr(&v), rank_n_type.as_deref(), &b)
+                ))
             }
             Expr::EnrichedTuple { items, .. } => {
                 let mut parts = Vec::new();
@@ -2893,8 +2893,12 @@ impl NativeExprEmitter<'_> {
             }
             Expr::Seq { value, body, .. } => {
                 let v = self.emit_effectful(value)?;
+                let rank_n_type = self.rank_n_let_type(value)?;
+                let id = self.fresh_var();
                 let b = self.emit_effectful(body)?;
-                Ok(format!("({v} >> ({b}))"))
+                let bind = render_native_effectful_bind_prefix(&v, &id, rank_n_type.as_deref());
+                let forced = render_native_strict_force(&id, rank_n_type.as_deref(), &b);
+                Ok(format!("({bind}{forced})"))
             }
             Expr::LowHostCall {
                 name,
@@ -3853,6 +3857,12 @@ impl NativeExprEmitter<'_> {
         let slots = Type::right_spine_sum(ty);
         let n = slots.len();
         let bound = format!("__hc{}", context.depth);
+        let rank_n = self
+            .ctx
+            .native_type_contains_forall(ty, context.scheme_scope, context.module);
+        let mut source_types = Vec::new();
+        let mut target_types = Vec::new();
+        let mut converted = Vec::new();
         let mut cases = String::new();
         for (k, slot) in slots.iter().enumerate() {
             let nested = boundary.map(|boundary| {
@@ -3866,11 +3876,77 @@ impl NativeExprEmitter<'_> {
                 &bound,
                 context.nested(),
             )?;
+            if rank_n {
+                let native = self.ctx.render_direct_generic_type(
+                    slot,
+                    context.scheme_scope,
+                    context.module,
+                )?;
+                let public = if let Some(boundary) = nested.as_ref() {
+                    let public_ty = self.ctx.facade.boundary_type(boundary).unwrap_or_else(|| {
+                        unreachable!(
+                            "an exact Haskell sum slot has no prepared public type: {boundary:?}"
+                        )
+                    });
+                    self.render_concrete_boundary_type_at(
+                        public_ty,
+                        boundary,
+                        context.scheme_scope,
+                        context.module,
+                    )?
+                } else {
+                    self.ctx.shapes.boundary_haskell_type_scoped_in(
+                        slot,
+                        context.scheme_scope,
+                        context.module,
+                    )?
+                };
+                let (source, target) = match context.direction {
+                    FfiDir::In => (public, native),
+                    FfiDir::Out => (native, public),
+                };
+                source_types.push(source);
+                target_types.push(target);
+                converted.push(conv);
+                continue;
+            }
             cases.push_str(&format!(
                 "{} -> {}; ",
                 either_pattern(k, n, &bound),
                 either_inject(k, n, &conv)
             ));
+        }
+        if rank_n {
+            // Raw case patterns instantiate an impredicative arm too early.
+            // Pin both source arms and the result, as the public sum views do.
+            let mut mapped = converted[n - 1].clone();
+            for index in (0..n - 1).rev() {
+                let target_pair = [
+                    target_types[index].clone(),
+                    nest_either_type(&target_types[index + 1..]),
+                ];
+                let inject = |arm, value: &str| {
+                    super::emit::raw_sum_expr(
+                        &target_pair,
+                        arm,
+                        &format!("({value})"),
+                        self.ctx.shapes.standard_names(),
+                    )
+                };
+                mapped = super::emit::typed_either(
+                    (
+                        &source_types[index],
+                        &nest_either_type(&source_types[index + 1..]),
+                    ),
+                    &nest_either_type(&target_pair),
+                    (
+                        &format!("\\{bound} -> {}", inject(0, &converted[index])),
+                        &format!("\\{bound} -> {}", inject(1, &mapped)),
+                    ),
+                    if index == 0 { expr } else { &bound },
+                );
+            }
+            return Ok(format!("({mapped})"));
         }
         Ok(format!("(case ({expr}) of {{ {cases} }})"))
     }
@@ -5473,7 +5549,7 @@ fn resolve_called_fn(mangled: &str, module_key: &str, package: &Package<Routed>)
 /// as <alias>;`) to the called fn's top-level mangled name. The lower pass
 /// resolves the callee to a concrete module: for the recognized case
 /// `mangled` is `<target-module-slash-path>.<member>` and `alias` is the
-/// same slash path (see `recover_to_low::lower_exact_module_fn_call`); for
+/// same slash path (see `route::lower_exact_module_fn_call`); for
 /// the unrecognized-placeholder case `mangled` is `<user-alias>.<member>`
 /// and the user alias resolves through the calling module's
 /// `import … as <alias>;` map. Either way the result uses the resolved module
@@ -6140,7 +6216,7 @@ fn apply_hs_head(head: &str, args: &[String]) -> String {
     }
 }
 
-fn paren_ty(ty: &str) -> String {
+pub(super) fn paren_ty(ty: &str) -> String {
     let t = ty.trim();
     if !t.contains(' ') {
         return t.to_owned();

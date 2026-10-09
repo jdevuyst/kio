@@ -211,6 +211,7 @@ pub(super) trait LoweredToPrePrime {
 
     fn visit_expr_unit(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
         let Expr::Unit {
+            source_trivia: _,
             occurrence: _,
             meta,
         } = e
@@ -218,6 +219,7 @@ pub(super) trait LoweredToPrePrime {
             unreachable!()
         };
         Ok(Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: convert_meta(meta),
         })

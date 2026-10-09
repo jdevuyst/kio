@@ -117,7 +117,7 @@ const pkg = create<Handle>(host);
 pkg.app.KioModule_main.main();
 ```
 
-`create<Handle>(host)` validates the supplied record, copies the items it
+`create<Handle>(host)` checks that required host items are present, copies the items it
 cares about into a frozen internal record, evaluates the package's modules
 in dependency order, and returns the package's exposed surface as a plain
 record. The first module segment uses word casing. Every nested
@@ -161,7 +161,7 @@ tokens that resolve to that role are encoded at the FFI boundary (see
 below); it does not require the host to install any functions and does
 not create a canonical JS-side type object.
 
-**Construction-time validation.** The `create<Handle>` factory checks that
+**Construction-time completeness.** The `create<Handle>` factory checks that
 every declared `host fn` is present on the supplied `host` argument under its
 module sub-record and throws `Error("missing host item: <NS>.<name>")` otherwise.
 Whether a leaf value is actually a function isn't checked —
@@ -245,7 +245,7 @@ lowers to the `run(cfg)` method under its role-framed module namespace; a
 parameter type (`f: [T] T -> T`) receives only the value
 argument. A first-class polymorphic value exposes one nullary `.advance()`
 per quantified binder. Advancing performs that stage's computation and returns
-the next value; transporting or adapting the value does not enter any stage.
+the next value; transporting the value does not enter any stage.
 No runtime type argument is passed.
 
 **Exception propagation.** A `host fn` that throws propagates its
@@ -264,8 +264,9 @@ reference identity: two calls that happen to produce
 structurally-equal values may return distinct JS objects. Hosts may compare them
 with deep-equal helpers (`lodash.isEqual` / JSON-shape comparison)
 since the JS shape is a public contract; identity equality (`===`,
-`Object.is`) is **not** preserved across calls. A concrete structural boundary
-copies the known structural shells, including when the value escapes the call.
+`Object.is`) has no preservation guarantee across calls. Structural values follow
+[shared data stays unchanged](README.md#10-shared-data-stays-unchanged),
+including when a value escapes through a retained closure.
 Atomic referenced children remain references: an erased type variable or opaque
 host-constructor application instead retains its reference, as do roleless
 host values. The frozen host record is captured at construction; closures and
@@ -274,6 +275,9 @@ storage does not keep the handle alive and its payload becomes
 collectible with the handle.
 
 ## FFI surface
+
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
 
 How values cross the JS boundary, in three categories. Atomic
 role-typed values flow as JS-native primitives. Structural values flow as
@@ -382,11 +386,14 @@ child that later becomes a product, sum, nominal, or callable:
   have the same shape.
 - A public `newtype` with fewer than two public members, an existential, or an
   uncut payload-visible cycle — a frozen,
-  null-prototype nominal handle with no payload property. The package factory
+  null-prototype nominal handle with no payload property. The loaded artifact
   keeps the payload in private weak storage keyed by the exact declaring
-  `(module, type name)` identity. A handle is accepted only by the package
-  instance and declaration that minted it; a forged or wrong-declaration
-  handle throws `TypeError`. The host may retain and shuttle a handle but
+  `(module, type name)` identity. Instances of that artifact can exchange
+  handles when their host type representations are compatible, following
+  [package isolation](README.md#4-package-isolation). Opening the payload
+  requires the artifact and declaration that minted the handle; their authorized access
+  operation throws `TypeError` for an invalid handle. Merely passing or
+  storing a handle does not promise this check. The host may retain and shuttle a handle but
   cannot inspect its payload. This is an atomic leaf when nested in a product,
   sum, function, or another payload: enclosing conversion never descends into
   the hidden payload.
@@ -398,7 +405,7 @@ The shared [semantic right-spine walk](README.md#the-right-spine-walk) does
 not flatten this value representation. `((A & B) & C)` flows as
 `{_0: shape(A & B), _1: shape(C)}` (left-nested, two slots);
 `(A & (B & C))` flows as `{_0: shape(A), _1: {_0: shape(B), _1: shape(C)}}`.
-The same representation is used when the value is admitted to or extracted
+The same representation is used when the value is stored in or extracted
 from an opaque host container through a generic parameter; no traversal of
 the container is implied.
 
@@ -454,24 +461,27 @@ structural equality is well-defined. Identity equality (`===`) is
 *not* preserved across calls: two calls returning structurally-equal
 values may return distinct JS objects.
 
-**Mutation and aliasing.** A known concrete product, sum, or visible nominal
-payload is copied on entry and return. Mutating a concrete input afterward
-cannot change retained package structure; each concretely advertised result
-is a fresh snapshot, including results of an escaping specialized generic
-closure. Copying preserves roleless references, abstract `T`, opaque host
-applications, and sealed nominal handles as atomic leaves. A host-origin
-generic `hold[T]` therefore preserves an argument reference even when the host
-selects a structural `T`; a concrete `hold_pair` copies its advertised pair.
-Concrete extraction from opaque storage restores the concrete protection
-without traversing or modifying the container itself.
+**Mutation and aliasing.** The shared
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged) applies to these
+objects and their nested Kio values, including callback arguments and results.
+Fresh objects or independent snapshots are not promised. Abstract `T`, opaque
+host applications, roleless references and sealed nominal handles remain
+atomic; their contents are not inspected to derive a structural conversion.
+Callable conversion still applies; nominal payload access retains its matching
+owner requirement without an eager boundary validation pass.
 
 ### Carve-outs
 
 The following value interfaces are distinct from binary structural objects:
 
 - **Unit `()`** is JS `null`. Construct and match as JS `null` directly; there's no construction wrapper because there's nothing to construct.
-- **Function values** (`A -> R`) are synchronously callable with exactly one complete domain value. Direct Unit therefore uses `callable(null)`, unlike a named direct-Unit declaration's nullary native view. They expose `adapt(before, after)`, returning a new callable with type-preserving input and output operations. Existing protections remain in force. The carrier keeps its underlying callable and adapter layers private, composes layers iteratively, and allocates invocation-local state, preserving reentrancy and thrown exception identity. This bounds adapter-generated stack use, not arbitrary host recursion.
-- **Polymorphic values** expose `advance()` and `adapt(after)`. Each advance enters exactly one type stage; adaptation never advances, caches, or repeats a stage. `lift<Handle>Callable(body)` and `lift<Handle>Poly({advance() { ... }})` construct host values satisfying these protocols. Plain host functions supplied as named host-record entries retain their ordinary native calling interface.
+- **Function values** (`A -> R`) are plain JS functions, synchronously callable
+  with exactly one complete domain value. Direct Unit therefore uses
+  `callable(null)`, unlike a named direct-Unit declaration's nullary native view.
+- **Polymorphic values** are objects exposing `advance()`. Each advance enters
+  exactly one type stage and returns the next value. A host supplies an object
+  with that method directly. Plain host functions supplied as named host-record
+  entries retain their ordinary native calling interface.
 - **Bottom `!`** has no JS value. A `fn` declared `-> !` is contractually obliged not to return normally — typically by throwing, calling `process.exit`, or looping indefinitely. A normal return from a `-> !` host fn is undefined behavior at the boundary: Kio code may have eliminated the value via the inline `__absurd__` lowering (which throws a runtime guard) or omitted handling for it entirely. A `!`-typed *return from package code* is unreachable in well-typed programs.
 
 These carve-outs are stable across implementations.
@@ -696,8 +706,9 @@ console.log(q._0, q._1);                         // "hello" 42
 ```
 
 The host constructs and inspects values via the same binary shape on
-both sides of the boundary. The concrete pair input and result are independent
-snapshots, while their primitive leaves retain their native values.
+both sides of the boundary. Keep the pair fields unchanged while either side
+can still use them; construct a new pair for a changed value. Conversion does
+not promise independent snapshots.
 
 A package with named labels surfaces them in the FFI shape too. Given the
 following in a bridged module `hello/main`:

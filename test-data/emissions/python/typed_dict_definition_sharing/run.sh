@@ -15,11 +15,19 @@ from pathlib import Path
 
 definitions = 0
 for path in Path("out/python/sharing").glob("*.pyi"):
-    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+    nodes = ast.parse(path.read_text(encoding="utf-8")).body
+    typing_bindings = {
+        alias.asname or alias.name
+        for node in nodes
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "typing"
+    }
+    for node in nodes:
         if isinstance(node, ast.ClassDef) and any(
             isinstance(base, ast.Attribute)
             and isinstance(base.value, ast.Name)
-            and base.value.id == "typing"
+            and base.value.id in typing_bindings
             and base.attr == "TypedDict"
             for base in node.bases
         ):

@@ -65,6 +65,7 @@ fn topology(expr: &Expr) -> serde_json::Value {
                         && !matches!(
                             key.as_str(),
                             "meta"
+                                | "source_trivia"
                                 | "span"
                                 | "open"
                                 | "close"

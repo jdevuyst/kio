@@ -312,6 +312,7 @@ fn replay_children(
                                 CallArg::Value(value) => {
                                     operands.push(value);
                                     shell.push(CallArg::Value(Expr::Unit {
+                                        source_trivia: Default::default(),
                                         occurrence: (),
                                         meta: Meta::new(span),
                                     }));

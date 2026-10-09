@@ -1,0 +1,19 @@
+module api;
+
+host type Number role(i32);
+
+host type Unused;
+
+host fn selection() -> .;
+
+host fn invocation() -> .;
+
+pub newtype Box[A] : A { pub constructor make; projector open }
+
+pub fn read(value: Box(Number)) -> Number { value.>Box.open }
+
+pub newtype Poly : [B] B -> Box(B) { pub constructor make; pub projector open }
+
+pub fn outer[A](unused: A) -> Poly {
+  Poly.make(.[B] { selection(); .(value: B) { invocation(); Box.make(value) } })
+}

@@ -1,0 +1,108 @@
+module api;
+
+host type Number role(i32);
+
+host type Count role(i32);
+
+host type Text;
+
+host type Vault[A];
+
+host type Crate[A];
+
+host type Bi[A][B];
+
+pub newtype Box[A] : A { pub constructor make; projector open }
+
+pub fn number(value: Number) -> Box(Number) { Box.make(value) }
+
+pub fn count(value: Count) -> Box(Count) { Box.make(value) }
+
+pub fn read_number(value: Box(Number)) -> Number { value.>Box.open }
+
+pub fn read_count(value: Box(Count)) -> Count { value.>Box.open }
+
+pub fn read_text(value: Box(Text)) -> Text { value.>Box.open }
+
+pub fn relay[A](value: A) -> A { value }
+
+pub newtype Applied[*F][A] : F(A) { pub constructor make; projector open }
+
+pub fn vault(value: Vault(Number)) -> Applied(Vault, Number) { Applied.make(Vault, value) }
+
+pub fn crate(value: Crate(Number)) -> Applied(Crate, Number) { Applied.make(Crate, value) }
+
+pub fn partial(value: Bi(Text, Number)) -> Applied(Bi(Text), Number) {
+  Applied.make(Bi(Text), value)
+}
+
+pub fn read_vault(value: Applied(Vault, Number)) -> Vault(Number) { value.>Applied.open }
+
+pub fn read_crate(value: Applied(Crate, Number)) -> Crate(Number) { value.>Applied.open }
+
+pub fn read_partial(value: Applied(Bi(Text), Number)) -> Bi(Text, Number) { value.>Applied.open }
+
+pub fn read_other_partial(value: Applied(Bi(Count), Number)) -> Bi(Count, Number) {
+  value.>Applied.open
+}
+
+pub rec newtype List[A] : . | (A & List(A)) { pub constructor make; pub projector open }
+
+pub rec newtype Tree[A] : . | (A & Tree(A)) { pub constructor make; pub projector open }
+
+pub fn list(value: . | (Number & List(Number))) -> List(Number) { List.make(value) }
+
+pub fn read_list(value: List(Number)) -> . | (Number & List(Number)) { value.>List.open }
+
+pub fn tree(value: . | (Number & Tree(Number))) -> Tree(Number) { Tree.make(value) }
+
+pub fn read_tree(value: Tree(Number)) -> . | (Number & Tree(Number)) { value.>Tree.open }
+
+rec {
+  pub newtype Branch[A] : A | Grove(A) { pub constructor make; pub projector open };
+  pub newtype Grove[A] : . | Branch(A) { pub constructor make; pub projector open }
+}
+
+pub fn branch(value: Number | Grove(Number)) -> Branch(Number) { Branch.make(value) }
+
+pub fn grove(value: . | Branch(Number)) -> Grove(Number) { Grove.make(value) }
+
+pub fn read_branch(value: Branch(Number)) -> Number | Grove(Number) { value.>Branch.open }
+
+pub fn read_grove(value: Grove(Number)) -> . | Branch(Number) { value.>Grove.open }
+
+pub rec newtype Nest[A] : . | (A & Nest(A & A)) { pub constructor make; pub projector open }
+
+pub fn nest(value: . | (Number & Nest(Number & Number))) -> Nest(Number) { Nest.make(value) }
+
+pub fn nest_pair(value: . | ((Number & Number) & Nest((Number & Number) & Number & Number))) -> Nest(& Number
+& Number) { Nest.make(value) }
+
+pub fn nest_quad(value: | .
+| (& ((Number & Number) & Number & Number)
+& Nest(((Number & Number) & Number & Number) & (Number & Number) & Number & Number))) -> Nest(& (& Number
+& Number)
+& Number
+& Number) { Nest.make(value) }
+
+pub fn read_nest(value: Nest(Number)) -> . | (Number & Nest(Number & Number)) { value.>Nest.open }
+
+pub fn read_nest_pair(value: Nest(Number & Number)) ->
+  . | ((Number & Number) & Nest((Number & Number) & Number & Number))
+   { value.>Nest.open }
+
+pub newtype Const[A] : Number { pub constructor make; pub projector open }
+
+pub rec newtype Wrap : Const(Wrap) { pub constructor make; pub projector open }
+
+pub fn wrap(value: Number) -> Wrap { Wrap.make(Const.make(Wrap, value)) }
+
+pub fn read_wrap(value: Wrap) -> Number { value.>Wrap.open.>Const.open }
+
+pub newtype Hidden[A] <U> : A & U { constructor make; pub projector open }
+
+pub fn hide(value: Number) -> Hidden(Number) { Hidden.make((value, ())) }
+
+pub fn reveal(value: Hidden(Number)) -> Number {
+  value.>Hidden.open(.[U](known: Number, hidden: U) { known })
+}

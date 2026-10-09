@@ -76,7 +76,7 @@ pub(crate) fn java_host_type_parameter(name: &QualifiedTypeName) -> String {
 }
 
 pub(crate) fn java_host_type_carrier(name: &QualifiedTypeName) -> String {
-    format!("KioHostType_{}", java_host_type_identity(name))
+    super::naming::nominal_name(name, super::naming::NominalKind::Host)
 }
 
 pub(crate) fn java_host_type_identity(name: &QualifiedTypeName) -> String {

@@ -1,0 +1,18 @@
+module testapi/main;
+
+host fn produce(_unit: .) -> [A] .;
+
+host fn observe(_unit: .) -> .;
+
+fn ignore(_value: [A] .) { () }
+
+pub fn main() {
+  ignore(produce(()));
+  observe(());
+  let value = produce(());
+  observe(());
+  value(.);
+  observe(());
+  value(.);
+  observe(())
+}

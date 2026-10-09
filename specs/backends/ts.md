@@ -305,6 +305,9 @@ the host's own extra function; no package execution path can reach it.
 
 ## FFI surface
 
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
+
 How values cross the boundary, typed. The `.d.ts` types the **JS shape** every
 value crosses in ([`js.md` § FFI surface](js.md#ffi-surface)) — the runtime is
 the JS backend's, so the types describe exactly the JS plain-object / primitive
@@ -387,7 +390,11 @@ including unknown right tails:
   a host cannot construct a structurally matching value or inspect a payload.
   Distinct Kio declarations have distinct TypeScript types even when their
   leaf names and payload shapes coincide. This types the JS backend's exact,
-  declaration-specific hidden handle.
+  declaration-specific hidden handle. The nominal type is shared by instances
+  of the same loaded artifact with the same host selection and visible type
+  arguments; it has no additional per-instance brand. The runtime storage
+  identity follows [JavaScript](js.md#structural-and-nominal-types) and the
+  shared [package isolation](README.md#4-package-isolation) contract.
 - A product type `(A & B)` — `{ _0: shape(A); _1: shape(B) }`.
 - A sum type `(A | B)` — a **discriminated union** `{ _0: shape(A) } | { _1:
   shape(B) }`, exactly one property set. Nested products, sums, and nominal
@@ -431,8 +438,10 @@ types `T1`, `T2`; `I32`, `Str` are role-typed host types):
 
 A host narrows a sum by checking which property is present, exactly as on JS
 (`"_0" in v ? … : …`), and the discriminated union lets TypeScript narrow the
-type in each branch. Concrete snapshots, abstract-reference passthrough, and
-opaque host containers follow [JS conversion semantics](js.md#conversion-semantics).
+type in each branch. Values follow the shared
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged) and
+[JS conversion semantics](js.md#conversion-semantics); static annotations do
+not promise fresh snapshots or make opaque host containers inspectable.
 
 ### Carve-outs
 
@@ -442,21 +451,17 @@ The following value interfaces mirror the JS carve-outs
 - **Unit `()`** is `null`.
 - **Function values** use `<Handle>Callable<A, R>`, synchronously callable as
   `(value: A) => R`, with one complete domain value. Direct Unit uses `null`;
-  only named direct-Unit declaration views remain nullary. The callable's
-  `adapt(before: (value: A) => A, after: (value: R) => R)` returns another
-  `<Handle>Callable<A, R>` retaining its existing protections.
+  only named direct-Unit declaration views remain nullary. A host supplies an
+  ordinary function with this signature.
 - **Polymorphic values** use `<Handle>Poly<Advance>`, where `Advance` is the
   exact generic nullary function type for one binder. `[A] A -> A` therefore
   uses `<Handle>Poly<<A>() => <Handle>Callable<A, A>>`. A second binder adds a
   second `Poly` layer; captured outer types remain captured. `advance` is a
   function-valued property, retaining its generic relationship and strict
-  parameter variance. The type-preserving `adapt` operation accepts a
-  universally endomorphic `<T>(value: T) => T` and retains the exact `Advance`
-  type. Runtime adaptation preserves the [JS stage and stack contract](js.md#carve-outs).
-- **Host construction** uses `lift<Handle>Callable(body)` or
-  `lift<Handle>Poly({advance: body})`. These helpers retain the supplied
-  argument/result or generic advance signature and provide the composable
-  carrier. Named host-record functions remain ordinary native functions.
+  parameter variance. Each call enters one stage, as in the
+  [JS callable contract](js.md#carve-outs). A host supplies an object with this
+  `advance` property directly. Named host-record functions remain ordinary
+  native functions.
 - **Bottom `!`** is `never`. A `fn` declared `-> !` is contractually obliged not
   to return normally; a `!`-typed return from package code is unreachable in
   well-typed programs.

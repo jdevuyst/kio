@@ -828,7 +828,11 @@ fn collect_module_scope(module: &Module<Surface>, byte_offset: u32, out: &mut Ve
 }
 
 /// Collect names introduced by a top-level `FnDef` at `byte_offset`.
-fn collect_fn_scope(fn_def: &FnDef<Surface>, byte_offset: u32, out: &mut Vec<String>) {
+fn collect_fn_scope<PurityField>(
+    fn_def: &FnDef<Surface, PurityField>,
+    byte_offset: u32,
+    out: &mut Vec<String>,
+) {
     collect_expr_scope(&fn_def.body, byte_offset, out);
     add_sig_params(&fn_def.sig, out);
 }

@@ -80,7 +80,11 @@ pub(crate) fn log_shared_prefix(package: &str, fields: &[(&str, f64)]) {
 /// emitted once per build. The target-keyed [`log_package_shape`] still
 /// covers the per-target subjects (`prime` for kio-prime); the shared
 /// prefix's `prime` / `enriched` / `routed` shapes are logged here.
-pub(crate) fn log_shared_package_shape<P: Phase>(package: &str, phase: &str, tree: &Package<P>) {
+pub(crate) fn log_shared_package_shape<P: Phase<FnBody = Expr<P>>>(
+    package: &str,
+    phase: &str,
+    tree: &Package<P>,
+) {
     if !enabled() {
         return;
     }
@@ -120,7 +124,7 @@ pub(crate) fn log_shared_package_shape<P: Phase>(package: &str, phase: &str, tre
     );
 }
 
-pub(crate) fn log_package_shape<P: Phase>(
+pub(crate) fn log_package_shape<P: Phase<FnBody = Expr<P>>>(
     package: &str,
     target: &TargetBlock,
     backend: &str,
@@ -203,7 +207,7 @@ struct BuildShapeStats {
 }
 
 impl BuildShapeStats {
-    fn from_package<P: Phase>(package: &Package<P>) -> Self {
+    fn from_package<P: Phase<FnBody = Expr<P>>>(package: &Package<P>) -> Self {
         let mut stats = Self::default();
         for (_, entry) in package.modules() {
             stats.visit_module(&entry.module);
@@ -214,7 +218,7 @@ impl BuildShapeStats {
         stats
     }
 
-    fn visit_module<P: Phase>(&mut self, module: &Module<P>) {
+    fn visit_module<P: Phase<FnBody = Expr<P>>>(&mut self, module: &Module<P>) {
         self.modules += 1;
         self.imports += module.imports.len();
         self.items += module.items.len();
@@ -223,7 +227,7 @@ impl BuildShapeStats {
         }
     }
 
-    fn visit_item<P: Phase>(&mut self, item: &Item<P>) {
+    fn visit_item<P: Phase<FnBody = Expr<P>>>(&mut self, item: &Item<P>) {
         match item {
             Item::FnDef(def) => self.visit_fn_def(def),
             Item::RecGroup(group, _) => {
@@ -291,7 +295,10 @@ impl BuildShapeStats {
         }
     }
 
-    fn visit_fn_def<P: Phase>(&mut self, def: &crate::ast::FnDef<P>) {
+    fn visit_fn_def<P: Phase<FnBody = Expr<P>>, PurityField>(
+        &mut self,
+        def: &crate::ast::FnDef<P, PurityField>,
+    ) {
         self.functions += 1;
         self.visit_signature(&def.sig);
         self.visit_type(&def.ret, 1);

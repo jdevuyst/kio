@@ -12,7 +12,7 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 CORE_IMPLS="kio@js kio@ts kio@python kio@rust"
 EXTRA_IMPLS="kio@go kio@java kio@swift kio@haskell"
 
-CORE_MISE_TOOLS="node rust tree-sitter actionlint zizmor sccache shellcheck python pipx yamllint ripgrep aqua:wasm-bindgen/wasm-pack npm:typescript npm:pyright npm:markdownlint-cli2 github:mszostok/codeowners-validator[exe=codeowners-validator]"
+CORE_MISE_TOOLS="node rust tree-sitter actionlint zizmor sccache shellcheck python pipx yamllint ripgrep aqua:wasm-bindgen/wasm-pack npm:typescript npm:pyright pipx:mypy npm:markdownlint-cli2 github:mszostok/codeowners-validator[exe=codeowners-validator]"
 REPORT_MISE_TOOLS="cargo:cargo-fuzz cargo:cargo-mutants cargo:cargo-llvm-cov cargo:cargo-audit"
 
 usage() {

@@ -2643,6 +2643,7 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(sp()),
         };
@@ -2717,6 +2718,7 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(40, 41)),
         };
@@ -2758,6 +2760,7 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(42, 43)),
         };
@@ -2799,6 +2802,7 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(44, 45)),
         };
@@ -2853,6 +2857,7 @@ mod tests {
             let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
                 .expect("module environment");
             let source = crate::ast::Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(Span::new(50, 51)),
             };
@@ -2981,10 +2986,12 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(60, 61)),
         };
         let irrelevant = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(62, 63)),
         };
@@ -3050,6 +3057,7 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(70, 71)),
         };
@@ -3129,6 +3137,7 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(76, 77)),
         };
@@ -3213,6 +3222,7 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(sp()),
         };
@@ -3279,10 +3289,12 @@ mod tests {
         let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let conflict_source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(90, 91)),
         };
         let callback_source = crate::ast::Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(92, 93)),
         };

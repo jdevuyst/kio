@@ -220,6 +220,17 @@ also word-case their source components; their fixed role delimiters stay fixed.
 
 ## Structural values at the boundary
 
+Keep shared tuple fields and nested Kio data unchanged while a retained
+value or closure can still use them, even after a call returns. Construct a
+changed tuple instead. A host-managed mutable `Box` may change through its
+declared `get` and `set` host functions while the tuple keeps the same box.
+See [shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
+Supply values matching their declared types, including values transported
+through generic or opaque storage. Swift's static types and required casts are
+not a recursive runtime validation guarantee. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types).
+
 When a host fn or an exported fn takes or returns a structural value, that
 value crosses as a **typed Swift value**, not an opaque handle.
 
@@ -354,6 +365,12 @@ bridges that gap transparently.
   capture state from the selection without exposing `Any` to the host.
   Its residual type is available as the stable `<slot>_typeRet` alias; each
   later specialization extends that alias path once more.
+  A callable inside a product, sum or exposed type argument adds `_fieldN`,
+  `_armN` or `_typeargN` to the slot name. Indices start at zero; right-nested
+  products and sums number their fields or alternatives from left to right.
+  For example, a polymorphic second sum arm uses `<slot>_arm1` and
+  `<slot>_arm1Implementation`. Nested structures add another segment; these
+  aliases do not expose opaque payloads.
 
 - A named method retains every declared type binder. If a binder is absent
   from its native arguments and result, select it with the trailing

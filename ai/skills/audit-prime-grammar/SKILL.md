@@ -67,6 +67,30 @@ Four rules interact:
 
 Walk recent surface-language commits — `git log --since="6 months ago" -- specs/prime.md specs/grammar.md kio-rs/src/pass/parser/ kio-rs/src/prime/ ci/infra/kio-prime-check-rs/src/` — and look for commits that touched one of these without paired updates to the others.
 
+### Explicit-core completion boundary
+
+Keep grammar acceptance separate from successful typechecking: the independent
+verifier checks syntax, so an admitted source can still correctly fail either
+compiler's typecheck. Compare `prime.md`'s bounded raw-source completions with
+the standalone checker and emitted-and-reparsed artifacts:
+
+- Missing lambda parameter annotations come from an expected function type or
+  independently synthesized arguments of that literal's direct call. Neither
+  route reads the body to discover a parameter or crosses a `let` boundary.
+- Anonymous-lambda returns may be synthesized; omitted declaration returns
+  default to Unit. Zero binder stars spell kind `*`, rather than an unknown kind.
+- Ordinary universal call arguments remain explicit; a resolved newtype
+  constructor may recover its existential-witness suffix from the payload.
+- Empty calls supply Unit, while nonempty type-only packets stay residual.
+  Scoped Boolean-role selection supplies the branching intrinsic's scheme.
+
+Trace the selected call arguments, lambda parameters, and intrinsic-value
+schemes into ordinary artifact syntax. Check that fresh validation needs no
+producer state and distinguish derivable omitted returns from missing typing
+authority. Preserve the runtime loader's trusted-body boundary; it is not a
+second body checker. A stricter annotation rule is a contract proposal, not an
+automatic repair for the phrase "Church-style".
+
 ## How to report
 
 Group findings into:

@@ -22,7 +22,7 @@ mod support;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use support::test_binary;
@@ -1991,173 +1991,56 @@ fn repl_expression_query_without_current_module_explains() {
 #[test]
 fn repl_auto_reload_picks_up_a_file_edit() {
     let pkg = minimal_package("autoreload");
-
-    let mut child = Command::new(test_binary!("kio"))
-        .arg("repl")
-        .current_dir(pkg.path())
-        .env("TERM", "dumb")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn kio repl");
-
-    let mut stdin = child.stdin.take().expect("stdin");
-
-    // Load the module, then give the watcher a moment to settle.
-    writeln!(stdin, ":load demo/main").expect("write :load");
-    std::thread::sleep(Duration::from_millis(400));
+    let mut repl = AutoReloadRepl::start(pkg.path());
 
     // Edit the file on disk — add a second function.
-    pkg.write(
-        "demo/main.kio",
+    rewrite_with_distinct_mtime(
+        &pkg.path().join("demo/main.kio"),
         "module demo/main;\n\n\
          /// The package entry point.\n\
          pub fn run() -> . { () }\n\
          pub fn added() -> . { () }\n",
     );
 
-    // Wait past the debounce window, then issue a command. The REPL
-    // drains the watcher before this read and re-typechecks.
-    std::thread::sleep(Duration::from_millis(700));
-    writeln!(stdin, ":ls demo/main").expect("write :ls");
-    writeln!(stdin, ":quit").expect("write :quit");
-    drop(stdin);
-
-    let mut stdout = String::new();
-    child
-        .stdout
-        .take()
-        .expect("stdout")
-        .read_to_string(&mut stdout)
-        .expect("read stdout");
-    let mut stderr = String::new();
-    child
-        .stderr
-        .take()
-        .expect("stderr")
-        .read_to_string(&mut stderr)
-        .expect("read stderr");
-
-    // Bound the wait for the child.
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        match child.try_wait().expect("try_wait") {
-            Some(_) => break,
-            None => {
-                if Instant::now() > deadline {
-                    let _ = child.kill();
-                    panic!("kio repl did not exit\nstdout:\n{stdout}\nstderr:\n{stderr}");
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        }
-    }
-
-    let combined = format!("{stdout}\n{stderr}");
-    // The auto-reload either fires (the watcher saw the edit and the
-    // `reloaded` line printed and `:ls` shows `added`) or — on a
-    // sandbox with no working file watcher — does not. The watcher
-    // is best effort, so accept either: the test asserts the REPL
-    // did not crash and `:ls` ran.
+    repl.wait_for("reloaded demo/main", true);
+    repl.send(":ls demo/main");
+    repl.wait_for("added", false);
+    let combined = repl.finish();
     assert!(
         combined.contains("demo/main:"),
         "`:ls` should have produced output, got:\n{combined}"
     );
-    // When the watcher works (the normal dev / CI case), the edit is
-    // visible.
-    if combined.contains("reloaded") {
-        assert!(
-            combined.contains("added"),
-            "after a reload, `:ls` should show the added fn, got:\n{combined}"
-        );
-    }
+    assert!(combined.contains("added"), "got:\n{combined}");
 }
 
 #[test]
 fn repl_auto_reload_skips_content_unchanged_overwrite() {
-    // Writing the file's exact current contents back to disk fires a
-    // filesystem event but doesn't change a single byte. The
-    // fingerprint cache's content-hash second-guess catches this and
-    // skips the redundant refresh; no `reloaded` line prints between
-    // two subsequent prompts.
     let pkg = minimal_package("noopreload");
+    pkg.write("demo/barrier.kio", "module demo/barrier;\n");
     let main_path = pkg.path().join("demo/main.kio");
     let main_contents = fs::read_to_string(&main_path).expect("read main.kio");
-
-    let mut child = Command::new(test_binary!("kio"))
-        .arg("repl")
-        .current_dir(pkg.path())
-        .env("TERM", "dumb")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn kio repl");
-
-    let mut stdin = child.stdin.take().expect("stdin");
-
-    // Load the module — this populates the fingerprint cache.
-    writeln!(stdin, ":load demo/main").expect("write :load");
-    std::thread::sleep(Duration::from_millis(400));
-
-    // Overwrite main.kio with its *exact* current contents — the
-    // filesystem event fires (mtime bumps), but the content hash is
-    // unchanged so the fingerprint cache should filter the event.
-    fs::write(&main_path, &main_contents).expect("re-write identical contents");
-
-    // Sleep past the debounce window so any event has a chance to
-    // surface, then send a marker command. The watcher is drained
-    // between the read and the command; if the fingerprint cache is
-    // working, no `reloaded …` line prints ahead of `:mods`.
-    std::thread::sleep(Duration::from_millis(700));
-    writeln!(stdin, ":mods").expect("write :mods");
-    writeln!(stdin, ":quit").expect("write :quit");
-    drop(stdin);
-
-    let mut stdout = String::new();
-    child
-        .stdout
-        .take()
-        .expect("stdout")
-        .read_to_string(&mut stdout)
-        .expect("read stdout");
-    let mut stderr = String::new();
-    child
-        .stderr
-        .take()
-        .expect("stderr")
-        .read_to_string(&mut stderr)
-        .expect("read stderr");
-
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        match child.try_wait().expect("try_wait") {
-            Some(_) => break,
-            None => {
-                if Instant::now() > deadline {
-                    let _ = child.kill();
-                    panic!("kio repl did not exit\nstdout:\n{stdout}\nstderr:\n{stderr}");
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        }
-    }
-
-    let combined = format!("{stdout}\n{stderr}");
-    // `:mods` must have run (the prompt was alive between the
-    // identical-rewrite and `:quit`).
+    let mut repl = AutoReloadRepl::start(pkg.path());
+    rewrite_with_distinct_mtime(&main_path, &main_contents);
+    // Any watcher event causes a scan of all known sources. A genuine
+    // second-file change proves that scan ran after the identical overwrite;
+    // an absence-only observation window cannot establish this.
+    rewrite_with_distinct_mtime(
+        &pkg.path().join("demo/barrier.kio"),
+        "module demo/barrier;\npub fn added() -> . { () }\n",
+    );
+    repl.wait_for("reloaded demo/barrier", true);
+    let combined = repl.finish();
     assert!(
         combined.contains("* demo/main"),
         "`:mods` should have produced output, got:\n{combined}"
     );
-    // The key assertion: an identical-content overwrite does not
-    // produce a `reloaded` line.
+    let reloaded: Vec<_> = combined
+        .lines()
+        .filter(|line| line.starts_with("reloaded "))
+        .collect();
     assert!(
-        !combined.contains("reloaded"),
-        "an identical-content overwrite must not trigger a reload, got:\n{combined}"
+        !reloaded.is_empty() && reloaded.iter().all(|line| *line == "reloaded demo/barrier"),
+        "only the changed module should reload, got:\n{combined}"
     );
 }
 
@@ -2168,74 +2051,141 @@ fn repl_auto_reload_fires_on_content_change() {
     // names the changed module (`demo/main`), not the
     // explicitly-loaded set.
     let pkg = minimal_package("contentchange");
-
-    let mut child = Command::new(test_binary!("kio"))
-        .arg("repl")
-        .current_dir(pkg.path())
-        .env("TERM", "dumb")
-        .env("NO_COLOR", "1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn kio repl");
-
-    let mut stdin = child.stdin.take().expect("stdin");
-
-    writeln!(stdin, ":load demo/main").expect("write :load");
-    std::thread::sleep(Duration::from_millis(400));
+    let mut repl = AutoReloadRepl::start(pkg.path());
 
     // A genuine content change — body added.
-    pkg.write(
-        "demo/main.kio",
+    rewrite_with_distinct_mtime(
+        &pkg.path().join("demo/main.kio"),
         "module demo/main;\n\n\
          /// The package entry point.\n\
          pub fn run() -> . { () }\n\
          pub fn added() -> . { () }\n",
     );
 
-    std::thread::sleep(Duration::from_millis(700));
-    writeln!(stdin, ":mods").expect("write :mods");
-    writeln!(stdin, ":quit").expect("write :quit");
-    drop(stdin);
+    repl.wait_for("reloaded demo/main", true);
+    let combined = repl.finish();
+    assert!(combined.contains("reloaded demo/main"), "got:\n{combined}");
+}
 
-    let mut stdout = String::new();
-    child
-        .stdout
-        .take()
-        .expect("stdout")
-        .read_to_string(&mut stdout)
-        .expect("read stdout");
-    let mut stderr = String::new();
-    child
-        .stderr
-        .take()
-        .expect("stderr")
-        .read_to_string(&mut stderr)
-        .expect("read stderr");
+fn rewrite_with_distinct_mtime(path: &Path, content: &str) {
+    let previous = fs::metadata(path).unwrap().modified().unwrap();
+    fs::write(path, content).expect("rewrite source");
+    // Exercise the content-hash branch even on coarse-mtime filesystems.
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(previous + Duration::from_secs(2))
+        .expect("set distinct source mtime");
+    assert_ne!(fs::metadata(path).unwrap().modified().unwrap(), previous);
+}
 
-    let deadline = Instant::now() + Duration::from_secs(15);
-    loop {
-        match child.try_wait().expect("try_wait") {
-            Some(_) => break,
-            None => {
-                if Instant::now() > deadline {
-                    let _ = child.kill();
-                    panic!("kio repl did not exit\nstdout:\n{stdout}\nstderr:\n{stderr}");
-                }
-                std::thread::sleep(Duration::from_millis(20));
+struct AutoReloadRepl {
+    child: Child,
+    stdin: Option<ChildStdin>,
+    capture: TempPackage,
+    module_queries: usize,
+}
+
+impl AutoReloadRepl {
+    fn start(package: &Path) -> Self {
+        let capture = TempPackage::new("auto-reload-output");
+        // Regular files avoid pipe backpressure and make every output read
+        // finite, including failure capture when the child never exits.
+        let mut child = Command::new(test_binary!("kio"))
+            .arg("repl")
+            .current_dir(package)
+            .env("TERM", "dumb")
+            .env("NO_COLOR", "1")
+            .stdin(Stdio::piped())
+            .stdout(fs::File::create(capture.path().join("stdout")).unwrap())
+            .stderr(fs::File::create(capture.path().join("stderr")).unwrap())
+            .spawn()
+            .expect("spawn kio repl");
+        let stdin = child.stdin.take();
+        let mut repl = Self {
+            child,
+            stdin,
+            capture,
+            module_queries: 0,
+        };
+        repl.send(":load demo/main");
+        repl.wait_for("loaded demo/main", false);
+        repl
+    }
+
+    fn send(&mut self, command: &str) {
+        writeln!(self.stdin.as_mut().expect("open stdin"), "{command}")
+            .expect("write REPL command");
+    }
+
+    fn output(&self) -> String {
+        let read = |name| {
+            let mut bytes = Vec::new();
+            fs::File::open(self.capture.path().join(name))
+                .unwrap()
+                .take(1024 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .unwrap();
+            assert!(bytes.len() <= 1024 * 1024, "REPL output exceeds 1 MiB");
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        format!("{}\n{}", read("stdout"), read("stderr"))
+    }
+
+    fn wait_for(&mut self, expected: &str, poll_modules: bool) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let output = self.output();
+            if output.contains(expected) {
+                return;
             }
+            assert!(
+                self.child.try_wait().unwrap().is_none(),
+                "REPL exited before {expected:?}:\n{output}"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "REPL did not produce {expected:?}:\n{output}"
+            );
+            // Keep at most one polling command outstanding: a stuck child
+            // must not fill stdin and block the test before its deadline.
+            if poll_modules
+                && output.lines().filter(|line| *line == "* demo/main").count()
+                    == self.module_queries
+            {
+                self.send(":mods");
+                self.module_queries += 1;
+            }
+            // Backoff between observable-state checks, never proof of readiness.
+            std::thread::sleep(Duration::from_millis(20));
         }
     }
 
-    let combined = format!("{stdout}\n{stderr}");
-    // The watcher is best effort — on a sandbox with no working file
-    // watcher the `reloaded` line never appears. When it does appear,
-    // the assertions about its content apply.
-    if combined.contains("reloaded") {
-        assert!(
-            combined.contains("reloaded demo/main"),
-            "the `reloaded …` line should name the changed module, got:\n{combined}"
-        );
+    fn finish(mut self) -> String {
+        self.send(":quit");
+        self.stdin.take();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(status) = self.child.try_wait().expect("poll REPL exit") {
+                let output = self.output();
+                assert!(status.success(), "REPL failed: {status}\n{output}");
+                return output;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "REPL did not exit:\n{}",
+                self.output()
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+impl Drop for AutoReloadRepl {
+    fn drop(&mut self) {
+        self.stdin.take();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }

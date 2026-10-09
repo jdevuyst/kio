@@ -32,6 +32,7 @@ pub(crate) fn canonicalize_module(module: &mut Module<Prime>) {
         let body = std::mem::replace(
             &mut def.body,
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             },
@@ -246,6 +247,7 @@ fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
             })
         }
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -267,6 +269,7 @@ fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
                     .any(|arg| matches!(arg, CallArg::Value(value) if is_chain(value)));
             if !hoisting {
                 return Expr::Call {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     diagnostic: Default::default(),
                     callee: Box::new(callee),
@@ -288,6 +291,7 @@ fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
                 })
                 .collect();
             let mut result = Expr::Call {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 diagnostic: Default::default(),
                 callee: Box::new(callee),
@@ -418,6 +422,7 @@ fn rename_bound_uses(e: Expr<Prime>, old: &str, new: &str) -> Expr<Prime> {
             }
         }
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -425,6 +430,7 @@ fn rename_bound_uses(e: Expr<Prime>, old: &str, new: &str) -> Expr<Prime> {
             meta,
             ext: _,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(rename_bound_uses(*callee, old, new)),
@@ -633,6 +639,7 @@ mod tests {
 
     fn call_with_args(name: &str, args: Vec<Expr<Prime>>) -> Expr<Prime> {
         Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(path(name)),

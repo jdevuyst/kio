@@ -165,6 +165,24 @@ impl TsNames {
             types: format!("{}Types", brand.handle),
         }
     }
+
+    fn is_support_type(&self, name: &str) -> bool {
+        [
+            &self.handle,
+            &self.callable,
+            &self.poly,
+            &self.host_types,
+            &self.type_lambda,
+            &self.partial_type_lambda,
+            &self.apply,
+            &self.bind,
+            &self.type_error,
+            &self.types,
+        ]
+        .into_iter()
+        .any(|support| support == name)
+            || name.strip_suffix("Host") == Some(self.handle.as_str())
+    }
 }
 
 /// A `.d.ts` render failure. Mirrors the JS emitter's `EmitError`
@@ -237,7 +255,7 @@ pub fn lower_package_to_dts_with_signature(
     let nominal_presentations = index_nominal_presentations(&prepared);
 
     render_type_lambda_protocol(&brand, &names, &mut out);
-    render_callable_protocol(&brand, &names, &mut out);
+    render_callable_protocol(&names, &mut out);
     render_host_types(package, &source_stable_host_types, &brand, &names, &mut out);
     render_host_interface(
         package,
@@ -278,12 +296,11 @@ pub fn lower_package_to_dts_with_signature(
     Ok(out)
 }
 
-fn render_callable_protocol(brand: &js::Brand, names: &TsNames, out: &mut String) {
+fn render_callable_protocol(names: &TsNames, out: &mut String) {
     out.push_str(&format!(
-        "\nexport type {callable}<A, R> = ((value: A) => R) & {{\n  adapt(before: (value: A) => A, after: (value: R) => R): {callable}<A, R>;\n}};\n\nexport interface {poly}<Advance extends () => unknown> {{\n  advance: Advance;\n  adapt(after: <T>(value: T) => T): {poly}<Advance>;\n}}\n\nexport function lift{handle}Callable<A, R>(body: (value: A) => R): {callable}<A, R>;\nexport function lift{handle}Poly<Advance extends () => unknown>(body: {{ advance: Advance }}): {poly}<Advance>;\n",
+        "\nexport type {callable}<A, R> = (value: A) => R;\n\nexport interface {poly}<Advance extends () => unknown> {{\n  advance: Advance;\n}}\n",
         callable = names.callable,
         poly = names.poly,
-        handle = brand.handle,
     ));
 }
 
@@ -767,7 +784,7 @@ fn render_host_types(
             "Internal compatibility helper for removed host declarations.",
         );
         out.push_str(&format!(
-            "type {private}RetainedHostBinding<B, Module extends PropertyKey, Name extends PropertyKey> =\n  Module extends keyof B\n    ? NonNullable<B[Module]> extends infer Bindings\n      ? Name extends keyof Bindings\n        ? NonNullable<Bindings[Name]>\n        : unknown\n      : unknown\n    : unknown;\n"
+            "type {private}RetainedHostBinding<B, Module extends globalThis.PropertyKey, Name extends globalThis.PropertyKey> =\n  Module extends keyof B\n    ? globalThis.NonNullable<B[Module]> extends infer Bindings\n      ? Name extends keyof Bindings\n        ? globalThis.NonNullable<Bindings[Name]>\n        : unknown\n      : unknown\n    : unknown;\n"
         ));
     }
 }
@@ -1342,7 +1359,7 @@ mod tests {
         pkg.check_in_body_resolution().expect("body resolution");
         let prime = check_package(&pkg).expect("typecheck");
         let enriched = structural_recovery::recover_package(&prime);
-        crate::pass::recover_to_low::lower(&enriched)
+        crate::pass::route::route_package(&enriched)
     }
 
     #[test]
@@ -1835,7 +1852,8 @@ v(2) {
         );
         assert!(
             dts.contains("keep: <A>(p0: A) => A;")
-                && dts.contains("export function createFacade<B extends FacadeHostTypes"),
+                && dts
+                    .contains("export function createFacade<__KioBindings extends FacadeHostTypes"),
             "{dts}"
         );
     }
@@ -1865,7 +1883,8 @@ v(2) {
         );
         // Host functions require the validated generic host argument.
         assert!(
-            dts.contains("? [host: GreeterHost<B>]") && dts.contains("): Greeter<B>;"),
+            dts.contains("? [host: GreeterHost<__KioBindings>]")
+                && dts.contains("): Greeter<__KioBindings>;"),
             "{dts}"
         );
     }
@@ -1997,8 +2016,8 @@ v(2) {
         let unrelated = opaque_ts_type_name("aaa", "Nested");
 
         assert!(
-            js.contains("__kioBodyContext.nominals.get(\"V1_M1_C3_zedN5_Outer\").wrap")
-                && js.contains("__kioBodyContext.nominals.get(\"V1_M1_C3_zedN6_Nested\").wrap"),
+            js.contains("__kioNominals.get(\"V1_M1_C3_zedN5_Outer\").wrap")
+                && js.contains("__kioNominals.get(\"V1_M1_C3_zedN6_Nested\").wrap"),
             "{js}"
         );
         assert!(
@@ -2007,6 +2026,143 @@ v(2) {
             ) && !dts.contains(&unrelated),
             "{dts}"
         );
+    }
+
+    #[test]
+    fn facade_binders_reserve_support_names_after_word_casing() {
+        use crate::naming::{NameRole, NameViolation, validate_user_name};
+
+        let names = TsNames::from_brand(&js::Brand::derive("demo"));
+        let mut scope = TsFacadeScope::default();
+        for (index, source) in [
+            "Demo",
+            "Demo_callable",
+            "Demo_poly",
+            "Demo_host",
+            "Demo_host_types",
+            "Demo_type_lambda",
+            "Demo_partial_type_lambda",
+            "Demo_apply",
+            "Demo_bind",
+            "Demo_type_error",
+            "Demo_types",
+            "B",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(validate_user_name(source, NameRole::Type), Ok(()));
+            let id = FacadeBinderId::from_index(index);
+            let rendered = scope.bind(id, source, &Kind::Star, &names);
+            assert_eq!(rendered, format!("__KioType{index}"));
+            assert_eq!(scope.lookup(id).unwrap(), rendered);
+            assert_eq!(
+                validate_user_name(&rendered, NameRole::Type),
+                Err(NameViolation::ReservedPrefix)
+            );
+        }
+        for (index, source) in [
+            "A",
+            "Kio_type0",
+            "_Kio_type0",
+            "String",
+            "Number",
+            "Readonly",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(validate_user_name(source, NameRole::Type), Ok(()));
+            let rendered = scope.bind(
+                FacadeBinderId::from_index(100 + index),
+                source,
+                &Kind::Star,
+                &names,
+            );
+            assert_eq!(rendered, host_name_core(source));
+            assert!(!rendered.starts_with("__"));
+        }
+    }
+
+    #[test]
+    fn facade_binder_scope_keeps_outer_references_and_nested_private_ids() {
+        let names = TsNames::from_brand(&js::Brand::derive("demo"));
+        let outer_id = FacadeBinderId::from_index(0);
+        let mut outer = TsFacadeScope::default();
+        assert_eq!(outer.bind(outer_id, "B", &Kind::Star, &names), "__KioType0");
+        let mut payload = outer.clone();
+        // A payload plan has its own binder IDs; enclosing rendered arguments
+        // remain free in that plan's types.
+        assert_eq!(
+            payload.bind(outer_id, "B", &Kind::Star, &names),
+            "__KioType1"
+        );
+        assert_eq!(outer.lookup(outer_id).unwrap(), "__KioType0");
+        assert_eq!(payload.lookup(outer_id).unwrap(), "__KioType1");
+        let inner_id = FacadeBinderId::from_index(1);
+        assert_eq!(payload.bind(inner_id, "A", &Kind::Star, &names), "A");
+        let shadow_id = FacadeBinderId::from_index(2);
+        assert_eq!(
+            payload.bind(shadow_id, "A", &Kind::Star, &names),
+            "__KioType2"
+        );
+        assert_eq!(payload.lookup(inner_id).unwrap(), "A");
+        assert_eq!(payload.lookup(shadow_id).unwrap(), "__KioType2");
+    }
+
+    #[test]
+    fn facade_binder_hygiene_preserves_callable_constraints_and_primitive_types() {
+        let source = "module api; \
+            host type Text role(str); \
+            host fn use[Demo_callable](value: Demo_callable, callback: . -> .) -> Demo_callable; \
+            host fn higher[*Demo_type_lambda][Demo_apply](value: Demo_type_lambda(Demo_apply)) -> Demo_type_lambda(Demo_apply); \
+            host fn nested[Demo_poly](value: Demo_poly, callback: [Demo_callable] Demo_callable -> Demo_poly) -> Demo_poly; \
+            host fn primitive[String](value: String, text: Text) -> String;";
+        let pkg = build_package(&[source], "bridge { api; }");
+        let dts = lower_package_to_dts(&pkg, "demo").expect("render");
+        for signature in [
+            "readonly use: <__KioType0>(p0: __KioType0, p1: DemoCallable<null, null>) => __KioType0;",
+            "readonly higher: <__KioType0 extends DemoTypeLambda<readonly [unknown]>, __KioType1>(p0: DemoApply<__KioType0, readonly [__KioType1]>) => DemoApply<__KioType0, readonly [__KioType1]>;",
+            "readonly nested: <__KioType0>(p0: __KioType0, p1: DemoPoly<<__KioType1>() => DemoCallable<__KioType1, __KioType0>>) => __KioType0;",
+            "readonly primitive: <String>(p0: String, p1: string) => String;",
+        ] {
+            assert!(dts.contains(signature), "{dts}");
+        }
+        let extended = format!("{source} pub fn unrelated[A](value: A) -> A {{ value }}");
+        let extended_pkg = build_package(&[&extended], "bridge { api; }");
+        let extended_dts = lower_package_to_dts(&extended_pkg, "demo").expect("render extension");
+        for signature in dts.lines().filter(|line| {
+            line.contains("readonly use:")
+                || line.contains("readonly higher:")
+                || line.contains("readonly nested:")
+        }) {
+            assert!(
+                extended_dts.lines().any(|line| line == signature),
+                "{extended_dts}"
+            );
+        }
+    }
+
+    #[test]
+    fn package_handles_cannot_capture_factory_binders_or_intrinsic_types() {
+        let pkg = build_package(&["module api; pub fn unit() { () }"], "bridge { api; }");
+        let dts = lower_package_to_dts(&pkg, "b").expect("render B handle");
+        assert!(
+            dts.contains("export function createB<__KioBindings extends BHostTypes")
+                && dts.contains("): B<__KioBindings>;"),
+            "{dts}"
+        );
+        let signature = retained_carrier_signature();
+        for namespace in ["property_key", "non_nullable"] {
+            let dts = lower_package_to_dts_with_signature(&pkg, namespace, Some(&signature))
+                .expect("render intrinsic-named handle");
+            assert!(dts.contains("extends globalThis.PropertyKey"), "{dts}");
+            assert!(dts.contains("globalThis.NonNullable<B[Module]>"), "{dts}");
+            assert!(
+                dts.contains("globalThis.NonNullable<Bindings[Name]>"),
+                "{dts}"
+            );
+        }
     }
 
     #[test]
@@ -2074,17 +2230,15 @@ v(2) {
         );
         assert!(dts.contains("FacadeCallable<null, null>"), "{dts}");
         assert!(
-            dts.contains("export function liftFacadeCallable<A, R>"),
+            dts.contains("export type FacadeCallable<A, R> = (value: A) => R;"),
             "{dts}"
         );
         assert!(
-            dts.contains("export function liftFacadePoly<Advance extends () => unknown>"),
+            dts.contains("export interface FacadePoly<Advance extends () => unknown> {\n  advance: Advance;\n}"),
             "{dts}"
         );
-        assert!(
-            dts.contains("adapt(after: <T>(value: T) => T): FacadePoly<Advance>"),
-            "{dts}"
-        );
+        assert!(!dts.contains("adapt("), "{dts}");
+        assert!(!dts.contains("export function liftFacade"), "{dts}");
     }
 
     #[test]
@@ -2106,9 +2260,9 @@ v(2) {
         );
         assert!(
             dts.contains(
-                "export function createGreeter<B extends GreeterHostTypes = GreeterHostTypes>("
+                "export function createGreeter<__KioBindings extends GreeterHostTypes = GreeterHostTypes>("
             ) && dts.contains("? []")
-                && dts.contains("): Greeter<B>;"),
+                && dts.contains("): Greeter<__KioBindings>;"),
             "{dts}"
         );
     }
@@ -2258,7 +2412,7 @@ v(2) {
         );
         assert!(
             dts.contains(&format!(
-                "readPacked: (p0: {packed}) => FacadePoly<<__r__>() => FacadeCallable<FacadePoly<<A>() => FacadeCallable<A, __r__>>, __r__>>;"
+                "readPacked: (p0: {packed}) => FacadePoly<<__KioType0>() => FacadeCallable<FacadePoly<<A>() => FacadeCallable<A, __KioType0>>, __KioType0>>;"
             )),
             "{dts}"
         );
@@ -2740,20 +2894,25 @@ fn render_opaque_type_declarations(
 struct TsFacadeScope {
     rendered: BTreeMap<FacadeBinderId, String>,
     occupied: BTreeSet<String>,
+    next_private_binder: usize,
 }
 
 impl TsFacadeScope {
     fn bind(&mut self, id: FacadeBinderId, source: &str, kind: &Kind, names: &TsNames) -> String {
-        let base = if source == "B" || source.is_empty() {
-            "KioB".to_owned()
-        } else {
-            host_name_core(source)
-        };
-        let rendered = if self.occupied.contains(&base) {
-            (self.occupied.len()..)
-                .map(|index| format!("Kio{base}{index}"))
-                .find(|candidate| !self.occupied.contains(candidate))
-                .expect("an unbounded suffix space has a free TypeScript binder")
+        let base = host_name_core(source);
+        let rendered = if base.is_empty()
+            || base == "B"
+            || base.starts_with("__")
+            || names.is_support_type(&base)
+            || self.occupied.contains(&base)
+        {
+            // Legal Kio names retain at most one leading underscore through
+            // host_name_core. This private class is also disjoint from the
+            // nominal/support classes; the scope-local supply survives payload
+            // substitution even when the nested plan reuses binder IDs.
+            let name = format!("__KioType{}", self.next_private_binder);
+            self.next_private_binder += 1;
+            name
         } else {
             base
         };
@@ -3366,13 +3525,15 @@ fn render_create_package(
         names.host_types.as_str()
     };
     let valid_args = if host_required {
-        format!("[host: {}<B>]", brand.host_ty)
+        format!("[host: {}<__KioBindings>]", brand.host_ty)
     } else {
         "[]".to_owned()
     };
+    // The package handle itself may be named B; its factory binder must
+    // remain outside the public brand mapping.
     out.push('\n');
     out.push_str(&format!(
-        "export function {}<B extends {} = {default}>(\n  ...args: [B] extends [never]\n    ? [error: {}<\"host-type bindings must be selected\">]\n    : {private}Errors<B> extends never\n      ? {valid_args}\n      : [error: {private}Errors<B>]\n): {}<B>;\n",
+        "export function {}<__KioBindings extends {} = {default}>(\n  ...args: [__KioBindings] extends [never]\n    ? [error: {}<\"host-type bindings must be selected\">]\n    : {private}Errors<__KioBindings> extends never\n      ? {valid_args}\n      : [error: {private}Errors<__KioBindings>]\n): {}<__KioBindings>;\n",
         brand.factory, names.host_types, names.type_error, brand.handle
     ));
 }

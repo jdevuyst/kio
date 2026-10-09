@@ -306,22 +306,18 @@ impl<K: PersistentExactKey, V: Clone> PersistentExactIndex<K, V> {
                 let bit = 1_u16 << nibble;
                 let index = (bitmap & (bit - 1)).count_ones() as usize;
                 let mut updated = children.to_vec();
-                let inserted;
-                let updated_bitmap;
-                if bitmap & bit == 0 {
+                let (inserted, updated_bitmap) = if bitmap & bit == 0 {
                     updated.insert(
                         index,
                         Arc::new(PersistentExactIndexNode::Bucket(Arc::from([entry]))),
                     );
-                    inserted = true;
-                    updated_bitmap = bitmap | bit;
+                    (true, bitmap | bit)
                 } else {
                     let (child, did_insert) =
                         Self::insert_node(Some(&children[index]), entry, shift + 4, values_equal)?;
                     updated[index] = child;
-                    inserted = did_insert;
-                    updated_bitmap = *bitmap;
-                }
+                    (did_insert, *bitmap)
+                };
                 Ok((
                     Arc::new(PersistentExactIndexNode::Branch {
                         bitmap: updated_bitmap,

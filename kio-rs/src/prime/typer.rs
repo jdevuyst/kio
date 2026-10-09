@@ -29,7 +29,7 @@
 //! list into fully-explicit canonical form (every type-arg slot
 //! present as `CallArg::Type`, every value-arg as `CallArg::Value`)
 //! so downstream passes — structural recovery,
-//! `recover_to_low::lower`, and the per-backend emitters — see one
+//! `route::route_package`, and the per-backend emitters — see one
 //! shape.
 //!
 //! The walker drives the shared scoped checker over each module of the package.
@@ -61,7 +61,7 @@
 use crate::ast::Prime;
 use crate::error::Error;
 use crate::pass::alpha_normalize::{AlphaNormalizedPackage, normalize_package};
-use crate::pass::resolve::{LocatedError, Package};
+use crate::pass::resolve::{LocatedError, ModuleEntry, Package, PackageFileEntry};
 use crate::pass::typecheck_core::{
     InternedType, Synth, TypeCtx, Typer, TyperPhase, check_literal_annotation,
     check_package_modules_with_typecheck_scope_collect_errors_with_execution, synth_path,
@@ -79,9 +79,78 @@ use crate::pass::typecheck_core::{
 /// helper described above.
 pub struct PrimeTyper;
 
-impl Typer<Prime> for PrimeTyper {
-    const RECORD_NOMINAL_TYPE_BINDERS: bool = false;
+/// Final runtime input after standalone checking, completion and canonicalization.
+/// Read-only AST access does not carry this validation into an edited copy.
+/// The checker's existing fully-resolved-input precondition still applies:
+/// source drivers establish imports and value-cycle validity before this exit.
+#[derive(Debug, Clone)]
+pub struct ValidatedPrimePackage {
+    package: Package<Prime>,
+}
 
+impl ValidatedPrimePackage {
+    pub fn package(&self) -> &Package<Prime> {
+        &self.package
+    }
+
+    pub fn modules(&self) -> impl Iterator<Item = (&str, ValidatedPrimeModule<'_>)> {
+        self.package
+            .modules()
+            .map(|(path, entry)| (path, ValidatedPrimeModule { entry }))
+    }
+
+    pub fn module(&self, path: &str) -> Option<ValidatedPrimeModule<'_>> {
+        self.package
+            .module(path)
+            .map(|entry| ValidatedPrimeModule { entry })
+    }
+
+    pub fn package_file(&self) -> Option<ValidatedPrimePackageFile<'_>> {
+        self.package
+            .package_file()
+            .map(|entry| ValidatedPrimePackageFile { entry })
+    }
+
+    /// Restrict to the existing bridge/import closure without changing retained
+    /// declarations or their dependencies. Borrowed views prevent concurrent pruning.
+    pub fn prune_to_bridge_reachable(&mut self) {
+        self.package.prune_to_bridge_reachable();
+    }
+}
+
+/// A module borrowed from one final validated runtime package.
+#[derive(Debug, Clone, Copy)]
+pub struct ValidatedPrimeModule<'a> {
+    entry: &'a ModuleEntry<Prime>,
+}
+
+impl<'a> ValidatedPrimeModule<'a> {
+    pub fn module(self) -> &'a crate::ast::Module<Prime> {
+        &self.entry.module
+    }
+
+    pub fn entry(self) -> &'a ModuleEntry<Prime> {
+        self.entry
+    }
+}
+
+/// The boundary file borrowed from one final validated runtime package.
+#[derive(Debug, Clone, Copy)]
+pub struct ValidatedPrimePackageFile<'a> {
+    entry: &'a PackageFileEntry<Prime>,
+}
+
+impl<'a> ValidatedPrimePackageFile<'a> {
+    pub fn package_file(self) -> &'a crate::ast::PackageFile<Prime> {
+        &self.entry.package_file
+    }
+
+    pub fn entry(self) -> &'a PackageFileEntry<Prime> {
+        self.entry
+    }
+}
+
+impl Typer<Prime> for PrimeTyper {
     // Kio' is Church-style: every universal call type argument is
     // written explicitly. Newtype constructor existentials remain
     // inference-driven under their separate introduction rule.
@@ -123,6 +192,7 @@ impl Typer<Prime> for PrimeTyper {
         match e {
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
             crate::ast::Expr::Unit {
+                source_trivia: _,
                 occurrence: _,
                 meta,
             } => Ok(Synth::value(crate::ast::Type::Unit {
@@ -171,12 +241,9 @@ impl Typer<Prime> for PrimeTyper {
                     e, plan, body, &inferred, tcx,
                 )
             }
-            crate::ast::Expr::Call {
-                callee,
-                args,
-                meta: _,
-                ..
-            } => <Self as Typer<Prime>>::synth_call(callee, args, e.site(), tcx),
+            crate::ast::Expr::Call { callee, args, .. } => {
+                <Self as Typer<Prime>>::synth_call(callee, args, e.site(), tcx)
+            }
             crate::ast::Expr::StrLit { annotation, .. } => {
                 synth_prime_literal(crate::ast::RoleShape::Str, annotation, tcx).map(Synth::value)
             }
@@ -238,11 +305,7 @@ impl Typer<Prime> for PrimeTyper {
         tcx: &mut TypeCtx<'m, '_, Prime>,
     ) -> Result<(), Error> {
         if let crate::ast::Expr::FnExpr {
-            sig,
-            ret_ty,
-            body,
-            meta: _,
-            ..
+            sig, ret_ty, body, ..
         } = e
         {
             return crate::pass::typecheck_core::check_prime_fn_against(
@@ -269,7 +332,7 @@ impl Typer<Prime> for PrimeTyper {
         _elaborator: &'m crate::ast::UserElaboratorDef<Prime>,
         _item_index: usize,
         _env: &crate::pass::typecheck_core::ModuleEnv<'m, Prime>,
-        _elaborations: &mut <Prime as TyperPhase>::Elaborations,
+        _elaborations: &mut <Prime as crate::pass::typecheck_core::DeclarationPhase>::Elaborations,
     ) -> Result<(), Error> {
         Ok(())
     }
@@ -371,33 +434,6 @@ impl Typer<Prime> for PrimeTyper {
             .record_fn_param_type(&mp, fn_site.id, value_param_index, resolved);
     }
 
-    fn record_binder_at<'m>(
-        _segment_span: crate::span::Span,
-        _kind: crate::pass::typecheck_core::ResolvedBinderKind,
-        _name: &str,
-        _parent: Option<&str>,
-        _qualifier: Option<&str>,
-        _tcx: &mut TypeCtx<'m, '_, Prime>,
-    ) {
-        // Position-keyed index is Full-only: the `kio-prime` binary
-        // processes Kio' input that has no surface forms for an
-        // editor to query against, so there's no consumer for a
-        // position index here. Implementing the trait method (rather
-        // than punting to `unreachable!`) keeps the trait dispatch
-        // infallible and makes the shared `synth_path` call site a
-        // no-op at Prime without conditional code.
-    }
-
-    fn record_nominal_type_binder_at<'m>(
-        _segment_span: crate::span::Span,
-        _kind: crate::pass::typecheck_core::NominalTypeBinderKind,
-        _declaring_module_path: &str,
-        _name: &str,
-        _tcx: &mut TypeCtx<'m, '_, Prime>,
-    ) {
-        // Kio' has no editor-facing position index; see `record_binder_at`.
-    }
-
     fn record_newtype_member_binder_at<'m>(
         _segment_span: crate::span::Span,
         _declaring_module_path: &str,
@@ -405,18 +441,7 @@ impl Typer<Prime> for PrimeTyper {
         _member: &str,
         _tcx: &mut TypeCtx<'m, '_, Prime>,
     ) {
-        // Kio' has no editor-facing position index; see `record_binder_at`.
-    }
-
-    fn record_binder_decl_at<'m>(
-        _decl_span: crate::span::Span,
-        _kind: crate::pass::typecheck_core::ResolvedBinderKind,
-        _name: &str,
-        _tcx: &mut TypeCtx<'m, '_, Prime>,
-    ) {
-        // Same rationale as `record_binder_at`: Prime has no
-        // position-index consumer, so the binder-introduction sites'
-        // declaration recording no-ops here.
+        // Kio' has no editor-facing position index.
     }
 
     fn record_position_type<'m>(
@@ -424,10 +449,8 @@ impl Typer<Prime> for PrimeTyper {
         _resolved: InternedType<Prime>,
         _tcx: &mut TypeCtx<'m, '_, Prime>,
     ) {
-        // Same rationale as `record_binder_at`: Prime has no
-        // position-index consumer; the trait method exists so the
-        // shared `default_check_value_against` Let/Seq arms compile
-        // for both phases. No-op here.
+        // Prime has no position-index consumer; expression checking can
+        // share the publication hook without retaining editor metadata.
     }
 
     fn record_inlay_let_type<'m>(
@@ -453,7 +476,7 @@ impl Typer<Prime> for PrimeTyper {
 
     fn discharge_module_deferrals(
         _env: &crate::pass::typecheck_core::ModuleEnv<'_, Prime>,
-        _elaborations: &mut <Prime as TyperPhase>::Elaborations,
+        _elaborations: &mut <Prime as crate::pass::typecheck_core::DeclarationPhase>::Elaborations,
     ) -> Result<(), crate::error::Error> {
         // Kio' carries no surface elaborator forms (every elaboration-
         // bearing variant is uninhabited at Prime), so there is no
@@ -499,7 +522,7 @@ fn synth_prime_literal<'m>(
 /// intrinsic-value schemes materialized as ordinary typed functions.
 /// [`bake_prime_elaborations`] drains the table into the AST after
 /// type-checking so downstream passes (structural recovery,
-/// `recover_to_low::lower`, the per-backend emitters) read the
+/// `route::route_package`, the per-backend emitters) read the
 /// canonical shape directly off the AST.
 #[derive(Debug, Default)]
 pub struct PrimeElaborations {
@@ -685,6 +708,10 @@ pub(crate) fn record_intrinsic_value(
 }
 
 impl TyperPhase for Prime {
+    type Typer = PrimeTyper;
+}
+
+impl crate::pass::typecheck_core::DeclarationPhase for Prime {
     // `Prime` admits no surface-form-bearing extension variants and no
     // `Type::Infer` — all are uninhabited at this phase, and Kio' literals
     // carry their `(Type)` annotation
@@ -695,7 +722,8 @@ impl TyperPhase for Prime {
     // See the struct doc for the
     // full picture.
     type Elaborations = PrimeElaborations;
-    type Typer = PrimeTyper;
+    type HeaderRecording = crate::pass::typecheck_core::NoHeaderRecording;
+    type AuxiliaryItems = crate::pass::typecheck_core::BodyItemChecks;
 
     fn merge_elaborations(target: &mut Self::Elaborations, source: Self::Elaborations) {
         target.merge(source);
@@ -703,7 +731,7 @@ impl TyperPhase for Prime {
 }
 
 /// Walk every module of a fully-resolved `Package<Prime>` and
-/// validate it under Kio's type system. Returns a `Package<Prime>`
+/// validate it under Kio's type system. Returns a validated runtime owner
 /// whose `Expr::Call` args lists are in fully-explicit canonical
 /// form (every type-arg slot present as `CallArg::Type`) and whose
 /// checked lambda parameters carry their resolved type annotations. Intrinsic
@@ -721,7 +749,7 @@ impl TyperPhase for Prime {
 /// `match *ext {}` and route the rest to the same helpers the
 /// Lowered typer uses), then walk the package file's export block
 /// the same way `typecheck_full` does.
-pub fn check_package(package: &Package<Prime>) -> Result<Package<Prime>, LocatedError> {
+pub fn check_package(package: &Package<Prime>) -> Result<ValidatedPrimePackage, LocatedError> {
     check_normalized_package(normalize_package(package))
 }
 
@@ -739,7 +767,7 @@ pub(crate) struct PrimeValidationTiming {
 /// Prime substitution so it does not normalize the same tree a second time.
 pub(crate) fn check_normalized_package(
     normalized: AlphaNormalizedPackage<Prime>,
-) -> Result<Package<Prime>, LocatedError> {
+) -> Result<ValidatedPrimePackage, LocatedError> {
     check_normalized_package_with_timing(
         normalized,
         #[cfg(feature = "cli")]
@@ -751,7 +779,7 @@ pub(crate) fn check_normalized_package(
 pub(crate) fn check_normalized_package_with_timing(
     normalized: AlphaNormalizedPackage<Prime>,
     #[cfg(feature = "cli")] mut timing: Option<&mut PrimeValidationTiming>,
-) -> Result<Package<Prime>, LocatedError> {
+) -> Result<ValidatedPrimePackage, LocatedError> {
     #[cfg(feature = "cli")]
     let check_start = timing.as_ref().map(|_| std::time::Instant::now());
     let mut elaborations = PrimeElaborations::default();
@@ -794,7 +822,7 @@ pub(crate) fn check_normalized_package_with_timing(
     if let (Some(timing), Some(start)) = (timing, finalize_start) {
         timing.finalize = start.elapsed();
     }
-    Ok(typed)
+    Ok(ValidatedPrimePackage { package: typed })
 }
 
 /// Stamp every recorded Prime completion into the AST: rebuild each affected
@@ -974,14 +1002,13 @@ fn bake_expr(
             // the canonical-slot marker inside `canonicalize_call_args`.
             if args.is_empty() {
                 args.push(CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: crate::ast::Meta::new(call_span),
                 }));
             }
         }
-        Expr::FnExpr {
-            sig, body, meta: _, ..
-        } => {
+        Expr::FnExpr { sig, body, .. } => {
             let mark = type_binders.len();
             type_binders.extend(sig.params.iter().filter_map(|param| {
                 let crate::ast::SignatureParam::Type(param) = param else {
@@ -1100,6 +1127,7 @@ fn intrinsic_value_wrapper(
         caps: (),
         meta: Meta::new(span),
         body: Box::new(Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(intrinsic),
@@ -1178,6 +1206,7 @@ fn canonicalize_call_args(
         match cursor.advance(written, implicit, resolution.is_some(), value_at_type_slot) {
             Some(CanonicalCallSlot::ImplicitUnit) => {
                 new_args.push(CallArg::Value(crate::ast::Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: crate::ast::Meta::new(call_span),
                 }))
@@ -1425,6 +1454,7 @@ mod tests {
         elabs.mark_value_at_type_slot("x", site.id, 2);
         let expected = vec![
             CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(site.span),
             }),
@@ -1464,12 +1494,10 @@ mod tests {
         );
         let checked = check_package(&package).expect("nested value calls check");
         let emitted =
-            crate::backends::kio_prime::emit_module(&checked.module("x").expect("module x").module);
+            crate::backends::kio_prime::emit_module(checked.module("x").expect("module x"));
         let rechecked = check_package(&build_package(&emitted)).expect("fresh Prime rechecks");
         assert_eq!(
-            crate::backends::kio_prime::emit_module(
-                &rechecked.module("x").expect("module x").module,
-            ),
+            crate::backends::kio_prime::emit_module(rechecked.module("x").expect("module x"),),
             emitted
         );
     }
@@ -1488,18 +1516,17 @@ mod tests {
             assert_eq!(intrinsic_value_record_count(&original), 1, "{source}");
             let checked = check_package(&original).expect("first check");
             assert_eq!(
-                intrinsic_value_record_count(&checked),
+                intrinsic_value_record_count(checked.package()),
                 0,
                 "generated calls are saturated"
             );
-            let text =
-                crate::backends::kio_prime::emit_module(&checked.module("x").unwrap().module);
+            let text = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
             let reparsed = build_package(&text);
             assert_eq!(intrinsic_value_record_count(&reparsed), 0, "{text}");
             let rechecked = check_package(&reparsed).expect("reparsed wrapper is ordinary Prime");
             assert_eq!(
                 text,
-                crate::backends::kio_prime::emit_module(&rechecked.module("x").unwrap().module)
+                crate::backends::kio_prime::emit_module(rechecked.module("x").unwrap())
             );
         }
     }
@@ -1541,16 +1568,15 @@ mod tests {
         ]);
         assert_eq!(intrinsic_value_record_count(&package), 1);
         let checked = check_package(&package).expect("qualified role is selected once");
-        let source = crate::backends::kio_prime::emit_module(&checked.module("x").unwrap().module);
+        let source = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
         assert!(source.contains(".[_Intrinsic_t1]"), "{source}");
-        let provider =
-            crate::backends::kio_prime::emit_module(&checked.module("provider").unwrap().module);
+        let provider = crate::backends::kio_prime::emit_module(checked.module("provider").unwrap());
         let reparsed = build_package_modules(&[("provider.kio", &provider), ("x.kio", &source)]);
         assert_eq!(intrinsic_value_record_count(&reparsed), 0);
         let rechecked = check_package(&reparsed).expect("reparsed role identity and binders");
         assert_eq!(
             source,
-            crate::backends::kio_prime::emit_module(&rechecked.module("x").unwrap().module)
+            crate::backends::kio_prime::emit_module(rechecked.module("x").unwrap())
         );
     }
 
@@ -2030,7 +2056,7 @@ mod tests {
              fn monomorphic_empty() -> . { use() }",
         ))
         .expect("fresh Kio' keeps type-only packets residual and bakes empty Unit calls");
-        let module = &typed.module("x").expect("module x present").module;
+        let module = &typed.module("x").expect("module x present").module();
 
         for name in ["residual_nil", "residual_identity"] {
             let definition = module
@@ -2114,7 +2140,7 @@ mod tests {
              fn explicit() -> . { use(()) }",
         );
         let typed = check_package(&pkg).expect("both Unit applications typecheck");
-        let module = &typed.module("x").expect("module x present").module;
+        let module = &typed.module("x").expect("module x present").module();
 
         for name in ["implicit", "explicit"] {
             let definition = module
@@ -2150,7 +2176,7 @@ mod tests {
              fn selected_alias() -> Unit_alias -> Unit_alias { identity(Unit_alias) }",
         );
         let typed = check_package(&package).expect("selected Unit-domain calls typecheck");
-        let module = &typed.module("x").expect("module x present").module;
+        let module = &typed.module("x").expect("module x present").module();
         for name in ["selected", "selected_identity", "selected_alias"] {
             let definition = module
                 .items
@@ -2206,7 +2232,7 @@ mod tests {
         let definition = typed
             .module("x")
             .expect("module x present")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -2310,7 +2336,7 @@ mod tests {
         let typed = check_package(&pkg).expect("check_package");
         let entry = typed.module("x").expect("module x present");
         let apply_fn = entry
-            .module
+            .module()
             .items
             .iter()
             .find_map(|it| match it {
@@ -2443,7 +2469,7 @@ mod tests {
         let typed = check_package(&pkg).expect("check returned polymorphic value call");
         let entry = typed.module("x").expect("module x present");
         let returned = entry
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -2474,7 +2500,7 @@ mod tests {
         let entry = typed.module("x").expect("module x present");
         for name in ["apply1", "apply2"] {
             let apply_fn = entry
-                .module
+                .module()
                 .items
                 .iter()
                 .find_map(|it| match it {

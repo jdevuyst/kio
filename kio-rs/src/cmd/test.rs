@@ -38,7 +38,7 @@
 // trailing `.map(â¦)` to resolve `ParallelIterator` at the call site,
 // so the prelude is imported here under `parallel`; with the feature
 // off the sequential arm needs no import and rayon is absent.
-use crate::ast::{Expr, Item, Lowered, Module, UncheckedPrime};
+use crate::ast::{Expr, Item, Lowered, UncheckedPrime};
 use crate::cache::keys::{DeclaredModulePath, EquivRenderMode};
 use crate::cmd::check::{
     analyze_parsed_workspace_with, prepare_resolved_package_from_walked, report_analysis_failure,
@@ -91,19 +91,15 @@ See {base}/specs/cli.md#kio-test-module for full command behavior.";
 /// spell it identically.
 const NO_EQUIV_BLOCKS_REPORT: &str = "no equiv blocks found";
 
-use crate::normalization::{FnMap, QualifiedFnMap};
-
 struct EquivJob<'s, 'e> {
     path_str: &'s str,
     file_path: std::path::PathBuf,
-    module: &'e Module<UncheckedPrime>,
+    module: crate::normalization::PreparedEvalModule<'e>,
     name: String,
     equiv_span: crate::span::Span,
     sig: crate::ast::Signature<UncheckedPrime>,
     terms: Vec<Expr<UncheckedPrime>>,
     term_spans: Vec<crate::span::Span>,
-    fn_defs: FnMap<'e>,
-    qualified_fn_defs: QualifiedFnMap<'e>,
 }
 
 enum EquivDischargeResult {
@@ -266,13 +262,13 @@ fn run_inner(
             return Err(report_located(&sources, diag));
         }
     };
-    // Equiv discharge still needs the Lowered package and its elaborations,
-    // so validate a separately substituted Prime copy before evaluating them.
-    if let Err(diag) =
-        crate::pass::typecheck_full::validate_substituted_package(checked.substituted())
-    {
-        return Err(report_located(&sources, diag));
-    }
+    // Completion validates runtime output, then drops that tree before preparing
+    // evaluation from the retained source/elaboration pair.
+    let completed = match checked.complete() {
+        Ok(completed) => completed.into_source(),
+        Err(diag) => return Err(report_located(&sources, diag)),
+    };
+    let checked = completed.checked();
     let equiv_cache = match checked
         .package()
         .package_file()
@@ -298,7 +294,7 @@ fn run_inner(
             Err(crate::cmd::module_selector::UnknownSelector) => return Err(ExitCode::Usage),
         }
     };
-    let eval_package = match checked.eval_artifact() {
+    let eval_package = match completed.eval_artifact() {
         Ok(package) => package,
         Err(diag) => return Err(report_located(&sources, diag)),
     };
@@ -441,16 +437,12 @@ fn discharge_equivs(
     for (path_str, entry) in package.modules().filter(|(path_str, _)| {
         passes_selector(path_str) && !is_dependency_module(path_str, dep_prefixes)
     }) {
-        let eval_module = &eval_package
-            .module(path_str)
-            .expect("evaluator artifact preserves every source module")
-            .module;
         // Build the artifact-backed lookup tables once per module. Every
         // job gets a shallow map clone, while definitions remain borrowed
         // from the one validated artifact package.
-        let (fn_defs, qualified_fn_defs) =
-            crate::normalization::eval_fn_tables(eval_package, eval_module)
-                .expect("ModuleEnv::build succeeds for the resolved evaluator artifact");
+        let eval_module = eval_package
+            .prepare_module(path_str)
+            .expect("ModuleEnv::build succeeds for the resolved evaluator artifact");
         for item in &entry.module.items {
             if let Item::Equiv(equiv, _) = item {
                 let term_spans = equiv.terms.iter().map(|term| term.meta.span).collect();
@@ -470,7 +462,7 @@ fn discharge_equivs(
                 jobs.push(EquivJob {
                     path_str,
                     file_path: entry.file_path.clone(),
-                    module: eval_module,
+                    module: eval_module.clone(),
                     name: equiv.name.clone(),
                     equiv_span: equiv.meta.span,
                     sig: crate::pass::substitute::substitute_signature_for_eval(
@@ -482,8 +474,6 @@ fn discharge_equivs(
                     ),
                     terms,
                     term_spans,
-                    fn_defs: fn_defs.clone(),
-                    qualified_fn_defs: qualified_fn_defs.clone(),
                 });
             }
         }
@@ -540,7 +530,7 @@ fn discharge_equivs(
                             sig: &job.sig,
                             terms: &job.terms,
                             package: eval_package.package(),
-                            module: job.module,
+                            module: job.module.module(),
                         })
                 {
                     if let Some(entry) = equiv_cache.lookup(&key, module_path.as_str(), &job.name) {
@@ -554,7 +544,7 @@ fn discharge_equivs(
                             },
                         );
                     }
-                    let result = discharge_one_equiv(job, eval_package, color);
+                    let result = discharge_one_equiv(job, color);
                     if let EquivDischargeResult::Completed { passed, output, .. } = &result {
                         equiv_cache.store(
                             &key,
@@ -571,7 +561,7 @@ fn discharge_equivs(
                 (
                     source_index,
                     job.file_path.clone(),
-                    discharge_one_equiv(job, eval_package, color),
+                    discharge_one_equiv(job, color),
                 )
             })
             .collect();
@@ -633,18 +623,11 @@ fn discharge_equivs(
 
 fn discharge_one_equiv(
     job: &EquivJob<'_, '_>,
-    artifact: &crate::normalization::EvalArtifact,
     color: crate::diagnostic::ColorMode,
 ) -> EquivDischargeResult {
     let mut out = String::new();
     let metrics = EvalMetrics::enabled();
-    let mut ctx = AuthenticatedEvalCtx::for_module_with_fn_tables(
-        artifact,
-        job.module,
-        job.path_str,
-        job.fn_defs.clone(),
-        job.qualified_fn_defs.clone(),
-    );
+    let mut ctx = AuthenticatedEvalCtx::for_module(job.module.clone());
     if let Some(metrics) = &metrics {
         ctx = ctx.with_metrics(metrics.clone());
     }

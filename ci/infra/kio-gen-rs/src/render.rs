@@ -1185,6 +1185,7 @@ mod tests {
             ret_ty: Type::i32(),
         };
         let program = Program {
+            control_probe: None,
             fn_def_name: "_gen_match_source0".to_string(),
             params: vec![("_gen_match_source1".to_string(), Type::i32())],
             ret: Type::i32(),

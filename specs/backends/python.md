@@ -256,7 +256,7 @@ the type argument while the stub preserves it for the type checker. General
 `KioApply1` has no construction or storage access methods; it cannot bypass a
 newtype's public-member visibility.
 
-`create_<value-brand>` validates that every declared `host fn` and every live role
+`create_<value-brand>` checks that every declared `host fn` and every live role
 conversion exists. A missing function raises
 `RuntimeError("missing host item: <NS>.<name>")`; a missing conversion reports
 its complete `KioHostIn_<identity>` or `KioHostOut_<identity>` name. A present but
@@ -325,6 +325,9 @@ behavioral additivity. Backend-specific notes:
 
 ## FFI surface
 
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
+
 The host selects the public Python type for every nullary host declaration.
 For a declaration carrying `role(r)`, its exact adapter pair converts that
 selected type to and from the following private runtime representation:
@@ -347,6 +350,9 @@ A parameterized host declaration `api.F[A, B]` uses the exact nested index
 argument remain visible in the stub. Its private native value is accessible
 only through that declaration's `KioHostType_api__F` storage helper.
 
+Shared values follow the
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged).
+
 Structural products use binary dictionaries `{"left": a, "right": b}`.
 `A & B & C` nests the right field: `{"left": a, "right": {"left": b,
 "right": c}}`. Structural sums use `{"tag": "left", "value": a}` or
@@ -357,18 +363,21 @@ These representations obey
 [generic substitution and opaque constructors](README.md#generic-substitution-and-opaque-constructors).
 
 Every explicit newtype crosses as a declaration-specific sealed value. No
-payload dictionary or field is public, and only its exact nominal identity
-is accepted on re-entry. The namespace exposes whichever constructor and
-projector members are public. Their arguments and results use the same
-boundary validation as ordinary public functions, including validation deferred
-to returned callable stages. Concrete structural shells may be materialized
-while installing that validation; abstract type variables and opaque host
-applications are passed through without inspecting their contents.
+payload dictionary or field is public; accessing its payload requires the
+matching declaration's authorized operation. Passing a value back into the
+package does not itself promise a nominal check. The namespace exposes
+whichever constructor and projector members are public. Their arguments and
+results use the same representation conversions as ordinary public functions,
+including conversions at returned callable stages. Abstract type variables and
+opaque host applications pass through without inspecting their contents.
 
 The carve-outs are:
 
 - Unit (`.`) crosses as `None`.
 - A function value uses `KioFn[Domain, Result]`, called with one domain value.
+  Its typed view is the alias `typing.Callable[[Domain], Result]`, with one
+  positional-only argument; hosts implement ordinary callable functions or
+  objects rather than subclassing this type alias.
   Its Unit domain takes `None`; a product domain takes one binary product.
   Named declaration calls retain their source parameter grouping, with a
   directly written Unit parameter omitted.
@@ -376,21 +385,16 @@ The carve-outs are:
   Python exception.
 
 Hosts turn a newly authored Python function into a first-class Kio callable
-with `kio_lift(function)`. The result supports `adapt(before, after)`, which
-returns a new callable without changing the original or invoking it. An
-adapted call executes input transformations outside-in, invokes the original
-once, then executes result transformations inside-out. Existing Kio callable
-values are forwarded directly, not lifted again. Independently implemented
-callables must implement the same composition protocol without nesting a
-Python call frame for each accumulated layer.
+with `kio_lift(function)`. The result uses the one-domain `KioFn` calling
+interface. Existing Kio callable values are forwarded directly, not lifted
+again. Independently implemented callables use that same calling interface.
 
 Each first-class type binder is one argument-free `advance()` on its generated
 `KioForall_<shape>` protocol. The result retains the type selected at that
 stage; advancing does not also invoke the next value stage. A dynamic host
 passes an ordinary object with an `advance` method to `kio_lift_stage`. A
 statically checked host subclasses the corresponding readable `Source` view
-(below). The resulting stage's `adapt(after)` composes
-result validation without advancing early. Ordinary named generic functions
+(below). Lifting a stage does not advance it. Ordinary named generic functions
 still receive no runtime type arguments.
 
 ## Typed stub
@@ -447,9 +451,10 @@ factory.
 Each boundary value is typed at its § FFI surface Python shape: an exact
 nullary host declaration at its `KioHost_<frame>` type parameter; a parameterized
 declaration at nested `KioApply1` indices; a site type binder at its exact
-`typing.TypeVar`; unit as `None`; a function or polymorphic stage as its exact
-protocol; a binary product as a two-field `typing.TypedDict`; and a binary
-sum as the union of its two tagged `TypedDict` arms. Newtypes have exact nominal
+`typing.TypeVar`; unit as `None`; a function as its exact `KioFn` callable alias;
+a polymorphic stage as its exact protocol; a binary product as a two-field
+`typing.TypedDict`; and a binary sum as the union of its two tagged `TypedDict`
+arms. Newtypes have exact nominal
 indices and no public payload member. A
 newtype namespace's constructor and projector use those same exact payload and
 newtype types (§ Package API); an existential projector retains its generic
@@ -482,11 +487,11 @@ A slot consisting of a bare type parameter has no alias; use that parameter
 directly. Other aliases preserve their existing exact type; their free parameters
 occur in first-use order in the alias's displayed right-hand side.
 
-When the slot itself is a generic stage, its `Source` and `Check` suffixes name
-the corresponding implementation and adaptation views. For example,
+When the slot itself is a generic stage, its `Source` suffix names
+the corresponding implementation view. For example,
 `KioViewHost_api__applyPoly_Arg0Source` implements the callback argument of
-`api.apply_poly`. Nested generic templates also have `_StageN`,
-`_StageNSource`, and `_StageNCheck` views. Numbering is local to the slot:
+`api.apply_poly`. Nested generic templates also have `_StageN`
+and `_StageNSource` views. Numbering is local to the slot:
 follow generated annotation references left to right, then their structural
 fields and stage results, retaining each distinct stage template on first use.
 Nominal payloads are not expanded. A template's capture parameters follow
@@ -496,7 +501,7 @@ constructor prefix). Equal capture
 occurrences remain separate parameters. The unsuffixed slot alias keeps the
 slot's actual selections.
 
-Slot aliases are checker-only. Stage template and `Source`/`Check` aliases are
+Slot aliases are checker-only. Stage template and `Source` aliases are
 also runtime-importable aliases of the existing package-local classes; they
 preserve generic subscription and introduce no wrapper or stage execution.
 Hosts need not import or derive encoded structural identity names.

@@ -1,0 +1,103 @@
+module testapi/main;
+
+import elab/match(match);
+import loader as l;
+import loader/scan as scan;
+import testapi as t;
+import testapi/io as io;
+import testapi/text as text;
+
+fn report_contract(label: t.String, source: t.String, contract: l.Contract) {
+  let outcome =
+    match! l.un_load_outcome(scan.load_package(source)) {
+      (
+        , .(loaded: l.Lr_image) {
+            match! l.contract_check(loaded.>l.Lr_image.get, contract) {
+              (.(diag: l.Diag) { l.diag_message(diag) }, .(_matched: .) { "ok"(t.String) })
+            }
+          }
+        , .(rejected: l.Lr_diag) { l.diag_message(rejected.>l.Lr_diag.get) }
+        )
+    };
+  io.print(text.string_concat(label, text.string_concat(outcome, "\n"(t.String))))
+}
+
+fn report(label: t.String, source: t.String, construct_sig: t.String, project_sig: t.String) {
+  report_contract(
+    , label
+    , source
+    , l.contract_cons(
+        , l.mk_expect("guest.Box.pack"(t.String), construct_sig)
+        , l.contract_cons(l.mk_expect("guest.Box.unpack"(t.String), project_sig), l.contract_nil())
+        )
+    )
+}
+
+fn report_function(label: t.String, source: t.String, signature: t.String) {
+  report_contract(
+    , label
+    , source
+    , l.contract_cons(l.mk_expect("guest.value"(t.String), signature), l.contract_nil())
+    )
+}
+
+fn report_load(label: t.String, source: t.String) {
+  let outcome =
+    match! l.un_load_outcome(scan.load_package(source)) {
+      (
+        , .(_loaded: l.Lr_image) { "loaded"(t.String) }
+        , .(rejected: l.Lr_diag) { l.diag_message(rejected.>l.Lr_diag.get) }
+        )
+    };
+  io.print(text.string_concat(label, text.string_concat(outcome, "\n"(t.String))))
+}
+
+pub fn main() {
+  let construct_sig = "[#0] [#1] (([#2] (#2 -> #0)) & #1) -> n{guest.Box}(#0)"(t.String);
+  let project_sig =
+    "[#0] (n{guest.Box}(#0)) -> [#1] ([#2] ((([#3] (#3 -> #0)) & #2) -> #1)) "
+    "-> #1"(t.String);
+  report(
+    , "renamed member binders: "(t.String)
+    , "module guest;\npub type Poly_to[A] = [B] B -> A;\npub newtype Box[T]<E> : "
+      "Poly_to(T) & E { pub constructor pack; pub projector unpack; };\npackage "
+      "guest;\nbridge { guest; }\n"(t.String)
+    , construct_sig
+    , project_sig
+    );
+  report(
+    , "CPS spelling collision and alias scope: "(t.String)
+    , "module guest;\npub type Poly_to[A] = [Zzcps_r] Zzcps_r -> A;\npub newtype "
+      "Box[Zzcps_r]<Zzcps_n> : Poly_to(Zzcps_r) & Zzcps_n { pub constructor "
+      "pack; pub projector unpack; };\npackage guest;\nbridge { guest; }\n"(t.String)
+    , construct_sig
+    , project_sig
+    );
+  report(
+    , "payload shadow restores nominal argument: "(t.String)
+    , "module guest;\npub newtype Box[A]<U> : ([A] A -> A) & U { pub constructor "
+      "pack; pub projector unpack; };\npackage guest;\nbridge { guest; }\n"(t.String)
+    , "[#0] [#1] (([#2] (#2 -> #2)) & #1) -> n{guest.Box}(#0)"(t.String)
+    , "[#0] (n{guest.Box}(#0)) -> [#1] ([#2] ((([#3] (#3 -> #3)) & #2) -> #1)) "
+      "-> #1"(t.String)
+    );
+  report_function(
+    , "ordinary implicit Unit: "(t.String)
+    , "module guest;\npub fn value() { () }\npackage guest;\nbridge { guest; }\n"(t.String)
+    , "() -> ."(t.String)
+    );
+  report_function(
+    , "type-only implicit Unit: "(t.String)
+    , "module guest;\npub fn value[A] { () }\npackage guest;\nbridge { guest; }\n"(t.String)
+    , "([#0] .)"(t.String)
+    );
+  report_load(
+    , "explicit incomplete arrow: "(t.String)
+    , "module guest;\npub fn value() -> { () }\npackage guest;\nbridge { guest; }\n"(t.String)
+    );
+  report_load(
+    , "domain kind before unresolved result: "(t.String)
+    , "module guest;\npub fn value[*F](arg: F) -> Missing { () }\npackage guest;\n"
+      "bridge { guest; }\n"(t.String)
+    )
+}

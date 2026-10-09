@@ -98,7 +98,14 @@ pub enum ExportDriver {
     StructuralRoundtrip,
     ScalarRoundtrip,
     HostOwnedRoundtrip,
+    OpaqueProductRoundtrip,
+    OpaqueCompoundRoundtrip,
+    GenericNominalOpaqueRoundtrip,
+    SameArtifactExchange,
+    DirectSumForallBoundary,
     CallableSlotsRoundtrip,
+    IncomingCallableViews,
+    IncomingCallableStages,
     RustCallbackAliases,
     FunctorDictRoundtrip,
     HostExistentialRoundtrip,
@@ -344,6 +351,10 @@ pub enum HostFnBodyKind {
     PrintI32 {
         value: HostRoleRef,
     },
+    /// Print the owning host instance's label and the received event number.
+    InstanceMark {
+        value: HostRoleRef,
+    },
     StringToInt {
         string: HostRoleRef,
         int: HostRoleRef,
@@ -401,6 +412,9 @@ pub enum HostFnBodyKind {
         string: HostRoleRef,
         bool_: HostRoleRef,
     },
+    DirectSumForallEcho {
+        number: HostRoleRef,
+    },
     MakePairCallback {
         i32: HostRoleRef,
         string: HostRoleRef,
@@ -450,6 +464,9 @@ pub enum HostFnBodyKind {
     /// call is performed once before the returned type application stages are
     /// used twice; the second failure must propagate back through the package.
     ReturnedForallUnit,
+    /// Create a total `[A] .` value without entering its type stage.
+    /// Creation emits `create`; each selection independently emits `apply`.
+    ForallStageEffects,
     /// Emit one fixed trace line from a zero-slot Unit -> Unit host function.
     TraceUnit {
         text: &'static str,
@@ -618,7 +635,7 @@ impl HostFnBodyKind {
             | Self::StringCodeAt { string, index } => [Some(string), Some(index), None],
             Self::NumericToString { value, string } => [Some(value), Some(string), None],
             Self::BoolToString { bool_, string } => [Some(bool_), Some(string), None],
-            Self::PrintI32 { value } => [Some(value), None, None],
+            Self::PrintI32 { value } | Self::InstanceMark { value } => [Some(value), None, None],
             Self::StringToInt { string, int } => [Some(string), Some(int), None],
             Self::Arithmetic { number, .. } | Self::FloatArithmetic { number, .. } => {
                 [Some(number), None, None]
@@ -634,6 +651,7 @@ impl HostFnBodyKind {
                 [Some(value_i32), None, None]
             }
             Self::CallStep { i32, string, bool_ } => [Some(i32), Some(string), Some(bool_)],
+            Self::DirectSumForallEcho { number } => [Some(number), None, None],
             Self::MakePairCallback { i32, string }
             | Self::MakePairStructural { i32, string }
             | Self::ProducePair { i32, string }
@@ -649,6 +667,7 @@ impl HostFnBodyKind {
             | Self::RoundPolyThunk
             | Self::RoundPolyUnitSlot
             | Self::ReturnedForallUnit
+            | Self::ForallStageEffects
             | Self::TraceUnit { .. }
             | Self::StagedUnitCall => [None, None, None],
         }
@@ -726,7 +745,9 @@ impl HostFnBodyKind {
             Self::BoolToString { bool_, string } => {
                 format!("({}) -> {}", role(bool_), role(string))
             }
-            Self::PrintI32 { value } | Self::UnreachableI32Print { i32: value } => {
+            Self::PrintI32 { value }
+            | Self::InstanceMark { value }
+            | Self::UnreachableI32Print { i32: value } => {
                 format!("({}) -> .", role(value))
             }
             Self::StringToInt { string, int } => {
@@ -811,6 +832,10 @@ impl HostFnBodyKind {
             Self::ApplyPoly { string } => {
                 format!("([#0] (#0 -> #0)) -> {}", role(string))
             }
+            Self::DirectSumForallEcho { number } => {
+                let value = format!("((. -> {}) | ([#0] (#0 -> #0)))", role(number));
+                format!("({value}) -> {value}")
+            }
             Self::MakePairStructural { i32, string } => {
                 let i32 = role(i32);
                 let string = role(string);
@@ -850,6 +875,7 @@ impl HostFnBodyKind {
                 format!("((. -> {})) -> {}", role(text), role(text))
             }
             Self::ReturnedForallUnit => "(.) -> [#0] #0".to_owned(),
+            Self::ForallStageEffects => "() -> ([#0] .)".to_owned(),
             Self::TraceUnit { .. } => "() -> .".to_owned(),
             Self::StagedUnitCall => "[#0] (#0) -> [#1] (.) -> .".to_owned(),
         }
@@ -900,6 +926,7 @@ impl HostFnBodyKind {
             | Self::NumericToString { .. }
             | Self::BoolToString { .. }
             | Self::PrintI32 { .. }
+            | Self::InstanceMark { .. }
             | Self::StringToInt { .. }
             | Self::ScalarOf { .. }
             | Self::ScalarAs { .. }
@@ -910,6 +937,7 @@ impl HostFnBodyKind {
             | Self::BoxMake { .. }
             | Self::MakeStep { .. }
             | Self::ApplyPoly { .. }
+            | Self::DirectSumForallEcho { .. }
             | Self::SumToString { .. }
             | Self::RoundFunctor
             | Self::ObservePacked { .. }
@@ -920,7 +948,7 @@ impl HostFnBodyKind {
             | Self::InvokeSubstitutedUnitCallback { .. }
             | Self::UnreachableI32Print { .. } => &[1],
             Self::StagedSecond { .. } => &[1, 1],
-            Self::ReturnedForallUnit | Self::TraceUnit { .. } => &[0],
+            Self::ReturnedForallUnit | Self::ForallStageEffects | Self::TraceUnit { .. } => &[0],
             Self::StagedUnitCall => &[1, 0],
         }
     }
@@ -1002,6 +1030,7 @@ pub const MAIN_BOX_FIXTURE_PROTOCOL_NAME: &str = "main-box-fixture";
 pub const EMPTY_API_MAIN_PROTOCOL_NAME: &str = "empty-api-main";
 pub const GENERATED_CORE_MAIN_PROTOCOL_NAME: &str = "generated-core-main";
 pub const GENERATED_SURFACE_MAIN_PROTOCOL_NAME: &str = "generated-surface-main";
+pub const GENERATED_CONTROL_MAIN_PROTOCOL_NAME: &str = "generated-control-main";
 pub const EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME: &str = "export-namespace-roundtrip";
 pub const EXPORT_CALLBACK_ROUNDTRIP_PROTOCOL_NAME: &str = "export-callback-roundtrip";
 pub const EXPORT_MODULE_ROUNDTRIP_PROTOCOL_NAME: &str = "export-module-roundtrip";
@@ -1011,7 +1040,12 @@ pub const EXPORT_POLY_CALLBACK_ROUNDTRIP_PROTOCOL_NAME: &str = "export-poly-call
 pub const EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME: &str = "export-structural-roundtrip";
 pub const EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME: &str = "export-scalar-roundtrip";
 pub const EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME: &str = "export-host-owned-roundtrip";
+pub const OPAQUE_PRODUCT_ROUNDTRIP_PROTOCOL_NAME: &str = "opaque-product-roundtrip";
+pub const OPAQUE_COMPOUND_ROUNDTRIP_PROTOCOL_NAME: &str = "opaque-compound-roundtrip";
+pub const GENERIC_NOMINAL_OPAQUE_ROUNDTRIP_PROTOCOL_NAME: &str = "generic-nominal-opaque-roundtrip";
 pub const EXPORT_CALLABLE_SLOTS_ROUNDTRIP_PROTOCOL_NAME: &str = "export-callable-slots-roundtrip";
+pub const INCOMING_CALLABLE_VIEWS_PROTOCOL_NAME: &str = "incoming-callable-views";
+pub const INCOMING_CALLABLE_STAGES_PROTOCOL_NAME: &str = "incoming-callable-stages";
 pub const RUST_CALLBACK_ALIASES_PROTOCOL_NAME: &str = "rust-callback-aliases";
 pub const EXPORT_FUNCTOR_DICT_ROUNDTRIP_PROTOCOL_NAME: &str = "export-functor-dict-roundtrip";
 pub const HOST_EXISTENTIAL_ROUNDTRIP_PROTOCOL_NAME: &str = "host-existential-roundtrip";
@@ -1046,6 +1080,7 @@ pub const HOST_INTERLEAVED_STAGE_ROUNDTRIP_PROTOCOL_NAME: &str = "host-interleav
 pub const NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME: &str = "nested-curried-roundtrip";
 pub const HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME: &str = "host-substituted-unit-callback";
 pub const RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME: &str = "returned-forall-call-by-value";
+pub const HOST_FORALL_STAGE_EFFECTS_PROTOCOL_NAME: &str = "host-forall-stage-effects";
 pub const TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME: &str = "type-only-stage-trace";
 pub const EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME: &str = "export-type-only-roundtrip";
 pub const HOST_STAGED_UNIT_CALL_PROTOCOL_NAME: &str = "host-staged-unit-call";
@@ -1071,6 +1106,7 @@ pub const TESTAPI_IO_PROTOCOL_NAME: &str = "testapi-io";
 pub const TESTAPI_FLOAT_PROTOCOL_NAME: &str = "testapi-float";
 pub const TESTAPI_DYN_LOAD_PROTOCOL_NAME: &str = "testapi-dyn-load";
 pub const COEXIST_PROTOCOL_NAME: &str = "coexist";
+pub const SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME: &str = "same-artifact-exchange";
 
 pub const TESTAPI_ARITH_ADD_I32_PROTOCOL_NAME: &str = "testapi-arith-add-i32";
 pub const TESTAPI_ARITH_ADD_INT_PROTOCOL_NAME: &str = "testapi-arith-add-int";
@@ -1150,12 +1186,16 @@ pub const TESTAPI_TEXT_CONCAT_PROTOCOL_NAME: &str = "testapi-text-concat";
 /// happens to call.
 #[allow(dead_code)] // Consumed only by the dyn-load-prime runner and shell lint.
 pub const DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES: &[&str] = &[
+    SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME,
+    DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME,
     EXPORT_POLY_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_CALLABLE_SLOTS_ROUNDTRIP_PROTOCOL_NAME,
+    INCOMING_CALLABLE_VIEWS_PROTOCOL_NAME,
+    INCOMING_CALLABLE_STAGES_PROTOCOL_NAME,
     RUST_CALLBACK_ALIASES_PROTOCOL_NAME,
     EXPORT_FUNCTOR_DICT_ROUNDTRIP_PROTOCOL_NAME,
     HOST_EXISTENTIAL_ROUNDTRIP_PROTOCOL_NAME,
@@ -1214,6 +1254,7 @@ pub enum RunnerProtocol {
     EmptyApiMain,
     GeneratedCoreMain,
     GeneratedSurfaceMain,
+    GeneratedControlMain,
     ExportNamespaceRoundtrip,
     ExportCallbackRoundtrip,
     ExportModuleRoundtrip,
@@ -1237,7 +1278,16 @@ pub enum RunnerProtocol {
     ExportStructuralRoundtrip,
     ExportScalarRoundtrip,
     ExportHostOwnedRoundtrip,
+    OpaqueProductRoundtrip,
+    OpaqueCompoundRoundtrip,
+    GenericNominalOpaqueRoundtrip,
+    SameArtifactExchange,
+    DirectSumForallBoundary,
     ExportCallableSlotsRoundtrip,
+    /// Recovered callable stages and immutable structural values.
+    IncomingCallableViews,
+    /// Concrete host results from type-only and existential continuation stages.
+    IncomingCallableStages,
     /// Rust's public callback aliases, including binders of nested forall
     /// carriers. Other backend naming contracts do not define these aliases.
     RustCallbackAliases,
@@ -1362,6 +1412,9 @@ pub enum RunnerProtocol {
     /// Unit twice. The fixed trace proves the original host call occurs once
     /// and each returned type application is call-by-value.
     ReturnedForallCallByValue,
+    /// Host-created `[A] .` values stay inert until selected, including when
+    /// discarded; repeated selections execute their body independently.
+    HostForallStageEffects,
     /// `00_success/ffi_host_staged_unit_call` — the first value group of
     /// `[A](A)[B](Unit) -> Unit` retains its one public slot when `A = Unit`;
     /// the declaration's literal Unit group remains a zero-slot group.
@@ -1623,7 +1676,55 @@ pub enum RunnerProtocol {
 }
 
 const NO_HOST_TYPES: &[HostTypeBinding] = &[];
+pub const DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME: &str = "direct-sum-forall-boundary";
+const TYPES_DIRECT_SUM_FORALL_BOUNDARY: &[HostTypeBinding] = &[
+    HostTypeBinding::role("testapi", "Number", RoleFixture::I32),
+    HostTypeBinding::role("testapi", "Text", RoleFixture::String),
+];
+const FNS_DIRECT_SUM_FORALL_BOUNDARY: &[HostFnBinding] = &[host_fn(
+    "testapi/api",
+    "echo",
+    HostFnBodyKind::DirectSumForallEcho {
+        number: HostRoleRef::new("testapi", "Number", RoleFixture::I32),
+    },
+)];
 const NO_HOST_FNS: &[HostFnBinding] = &[];
+const FNS_GENERATED_OBSERVATION: &[HostFnBinding] = &[host_fn(
+    "prog",
+    "print_i32",
+    HostFnBodyKind::print_i32(HostRoleRef::new("prog", "I32", RoleFixture::I32)),
+)];
+const FNS_GENERATED_CONTROL: &[HostFnBinding] =
+    &[FNS_PRINT_STRING[0], FNS_GENERATED_OBSERVATION[0]];
+const EXCHANGE_NUMBER: HostRoleRef = HostRoleRef::new("testapi", "Number", RoleFixture::I32);
+const EXCHANGE_BOX: HostTypeIdentity = HostTypeIdentity::new("testapi", "Box");
+const TYPES_SAME_ARTIFACT_EXCHANGE: &[HostTypeBinding] = &[
+    HostTypeBinding::role("testapi", "Number", RoleFixture::I32),
+    HostTypeBinding::opaque("testapi", "Box", 1, HostTypeFixture::Box),
+];
+const FNS_SAME_ARTIFACT_EXCHANGE: &[HostFnBinding] = &[
+    host_fn(
+        "testapi/api",
+        "pack",
+        HostFnBodyKind::BoxMake {
+            box_type: EXCHANGE_BOX,
+        },
+    ),
+    host_fn(
+        "testapi/api",
+        "unpack",
+        HostFnBodyKind::BoxGet {
+            box_type: EXCHANGE_BOX,
+        },
+    ),
+    host_fn(
+        "testapi/api",
+        "mark",
+        HostFnBodyKind::InstanceMark {
+            value: EXCHANGE_NUMBER,
+        },
+    ),
+];
 const TESTAPI_ARRAY_TYPE: HostTypeIdentity = HostTypeIdentity::new("testapi", "Array");
 const TESTAPI_BOX_TYPE: HostTypeIdentity = HostTypeIdentity::new("testapi", "Box");
 const TESTAPI_TOKEN_TYPE: HostTypeIdentity = HostTypeIdentity::new("testapi", "Token");
@@ -2003,6 +2104,7 @@ const TYPES_HOST_BOX: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
+const TYPES_INCOMING_CALLABLE_VIEWS: &[HostTypeBinding] = &[TYPES_HOST_BOX[0], TYPES_HOST_BOX[1]];
 const TYPES_HOST_BOX_ELAB: &[HostTypeBinding] = &[
     TYPES_HOST_BOX[0],
     TYPES_HOST_BOX[1],
@@ -3302,6 +3404,24 @@ const FNS_HOST_BOX: &[HostFnBinding] = &[
     ),
     FNS_PRINT_STRING[0],
 ];
+const FNS_INCOMING_CALLABLE_VIEWS: &[HostFnBinding] = &[FNS_HOST_BOX[0]];
+const TYPES_OPAQUE_PRODUCT: &[HostTypeBinding] = &[
+    HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::opaque("testapi", "Box", 1, HostTypeFixture::Box),
+];
+const TYPES_OPAQUE_COMPOUND: &[HostTypeBinding] = &[
+    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::selected_role("testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::opaque("testapi", "Box", 1, HostTypeFixture::Box),
+];
+const FNS_OPAQUE_COMPOUND: &[HostFnBinding] = &[FNS_HOST_BOX[0], FNS_HOST_BOX[1]];
+const TYPES_GENERIC_NOMINAL_OPAQUE: &[HostTypeBinding] = &[
+    HostTypeBinding::selected_role("testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::opaque("testapi", "Box", 1, HostTypeFixture::Box),
+];
 const FNS_HOST_CALLBACK: &[HostFnBinding] = &[
     host_fn(
         "testapi/arith",
@@ -3448,6 +3568,18 @@ const FNS_HOST_STAGED_UNIT_CALL: &[HostFnBinding] = &[host_fn(
     "staged",
     HostFnBodyKind::StagedUnitCall,
 )];
+const FNS_HOST_FORALL_STAGE_EFFECTS: &[HostFnBinding] = &[
+    host_fn(
+        "testapi/main",
+        "produce",
+        HostFnBodyKind::ForallStageEffects,
+    ),
+    host_fn(
+        "testapi/main",
+        "observe",
+        HostFnBodyKind::TraceUnit { text: "observe" },
+    ),
+];
 const FNS_TYPE_ONLY_STAGE_TRACE: &[HostFnBinding] = &[
     host_fn(
         "testapi/main",
@@ -3530,6 +3662,7 @@ impl RunnerProtocol {
         Self::EmptyApiMain,
         Self::GeneratedCoreMain,
         Self::GeneratedSurfaceMain,
+        Self::GeneratedControlMain,
         Self::ExportNamespaceRoundtrip,
         Self::ExportCallbackRoundtrip,
         Self::ExportModuleRoundtrip,
@@ -3539,7 +3672,14 @@ impl RunnerProtocol {
         Self::ExportStructuralRoundtrip,
         Self::ExportScalarRoundtrip,
         Self::ExportHostOwnedRoundtrip,
+        Self::OpaqueProductRoundtrip,
+        Self::OpaqueCompoundRoundtrip,
+        Self::GenericNominalOpaqueRoundtrip,
+        Self::SameArtifactExchange,
+        Self::DirectSumForallBoundary,
         Self::ExportCallableSlotsRoundtrip,
+        Self::IncomingCallableViews,
+        Self::IncomingCallableStages,
         Self::RustCallbackAliases,
         Self::ExportFunctorDictRoundtrip,
         Self::HostExistentialRoundtrip,
@@ -3559,6 +3699,7 @@ impl RunnerProtocol {
         Self::NestedCurriedRoundtrip,
         Self::HostSubstitutedUnitCallback,
         Self::ReturnedForallCallByValue,
+        Self::HostForallStageEffects,
         Self::HostStagedUnitCall,
         Self::TypeOnlyStageTrace,
         Self::ExportTypeOnlyRoundtrip,
@@ -3659,6 +3800,7 @@ impl RunnerProtocol {
             Self::EmptyApiMain => EMPTY_API_MAIN_PROTOCOL_NAME,
             Self::GeneratedCoreMain => GENERATED_CORE_MAIN_PROTOCOL_NAME,
             Self::GeneratedSurfaceMain => GENERATED_SURFACE_MAIN_PROTOCOL_NAME,
+            Self::GeneratedControlMain => GENERATED_CONTROL_MAIN_PROTOCOL_NAME,
             Self::ExportNamespaceRoundtrip => EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportCallbackRoundtrip => EXPORT_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportModuleRoundtrip => EXPORT_MODULE_ROUNDTRIP_PROTOCOL_NAME,
@@ -3668,8 +3810,13 @@ impl RunnerProtocol {
             Self::ExportStructuralRoundtrip => EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportScalarRoundtrip => EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportHostOwnedRoundtrip => EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME,
+            Self::OpaqueProductRoundtrip => OPAQUE_PRODUCT_ROUNDTRIP_PROTOCOL_NAME,
+            Self::OpaqueCompoundRoundtrip => OPAQUE_COMPOUND_ROUNDTRIP_PROTOCOL_NAME,
+            Self::GenericNominalOpaqueRoundtrip => GENERIC_NOMINAL_OPAQUE_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportCallableSlotsRoundtrip => EXPORT_CALLABLE_SLOTS_ROUNDTRIP_PROTOCOL_NAME,
             Self::RustCallbackAliases => RUST_CALLBACK_ALIASES_PROTOCOL_NAME,
+            Self::IncomingCallableViews => INCOMING_CALLABLE_VIEWS_PROTOCOL_NAME,
+            Self::IncomingCallableStages => INCOMING_CALLABLE_STAGES_PROTOCOL_NAME,
             Self::ExportFunctorDictRoundtrip => EXPORT_FUNCTOR_DICT_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostExistentialRoundtrip => HOST_EXISTENTIAL_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportPositionalProductRoundtrip => {
@@ -3692,6 +3839,7 @@ impl RunnerProtocol {
             Self::NestedCurriedRoundtrip => NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostSubstitutedUnitCallback => HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME,
             Self::ReturnedForallCallByValue => RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME,
+            Self::HostForallStageEffects => HOST_FORALL_STAGE_EFFECTS_PROTOCOL_NAME,
             Self::HostStagedUnitCall => HOST_STAGED_UNIT_CALL_PROTOCOL_NAME,
             Self::TypeOnlyStageTrace => TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME,
             Self::ExportTypeOnlyRoundtrip => EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME,
@@ -3800,6 +3948,8 @@ impl RunnerProtocol {
             Self::TestApiTextBoolInt => TESTAPI_TEXT_BOOL_INT_PROTOCOL_NAME,
             Self::TestApiTextConcat => TESTAPI_TEXT_CONCAT_PROTOCOL_NAME,
             Self::Coexist => COEXIST_PROTOCOL_NAME,
+            Self::SameArtifactExchange => SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME,
+            Self::DirectSumForallBoundary => DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME,
         }
     }
 
@@ -3820,6 +3970,7 @@ impl RunnerProtocol {
             EMPTY_API_MAIN_PROTOCOL_NAME => Ok(Self::EmptyApiMain),
             GENERATED_CORE_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedCoreMain),
             GENERATED_SURFACE_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedSurfaceMain),
+            GENERATED_CONTROL_MAIN_PROTOCOL_NAME => Ok(Self::GeneratedControlMain),
             EXPORT_NAMESPACE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportNamespaceRoundtrip),
             EXPORT_CALLBACK_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportCallbackRoundtrip),
             EXPORT_MODULE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportModuleRoundtrip),
@@ -3829,8 +3980,15 @@ impl RunnerProtocol {
             EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportStructuralRoundtrip),
             EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportScalarRoundtrip),
             EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportHostOwnedRoundtrip),
+            OPAQUE_PRODUCT_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::OpaqueProductRoundtrip),
+            OPAQUE_COMPOUND_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::OpaqueCompoundRoundtrip),
+            GENERIC_NOMINAL_OPAQUE_ROUNDTRIP_PROTOCOL_NAME => {
+                Ok(Self::GenericNominalOpaqueRoundtrip)
+            }
             EXPORT_CALLABLE_SLOTS_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportCallableSlotsRoundtrip),
             RUST_CALLBACK_ALIASES_PROTOCOL_NAME => Ok(Self::RustCallbackAliases),
+            INCOMING_CALLABLE_VIEWS_PROTOCOL_NAME => Ok(Self::IncomingCallableViews),
+            INCOMING_CALLABLE_STAGES_PROTOCOL_NAME => Ok(Self::IncomingCallableStages),
             EXPORT_FUNCTOR_DICT_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportFunctorDictRoundtrip),
             HOST_EXISTENTIAL_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostExistentialRoundtrip),
             EXPORT_POSITIONAL_PRODUCT_ROUNDTRIP_PROTOCOL_NAME => {
@@ -3853,6 +4011,7 @@ impl RunnerProtocol {
             NESTED_CURRIED_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::NestedCurriedRoundtrip),
             HOST_SUBSTITUTED_UNIT_CALLBACK_PROTOCOL_NAME => Ok(Self::HostSubstitutedUnitCallback),
             RETURNED_FORALL_CALL_BY_VALUE_PROTOCOL_NAME => Ok(Self::ReturnedForallCallByValue),
+            HOST_FORALL_STAGE_EFFECTS_PROTOCOL_NAME => Ok(Self::HostForallStageEffects),
             HOST_STAGED_UNIT_CALL_PROTOCOL_NAME => Ok(Self::HostStagedUnitCall),
             TYPE_ONLY_STAGE_TRACE_PROTOCOL_NAME => Ok(Self::TypeOnlyStageTrace),
             EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportTypeOnlyRoundtrip),
@@ -3863,6 +4022,8 @@ impl RunnerProtocol {
                 Ok(Self::HostGenericReturnOnlyRoundtrip)
             }
             HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostGenericTypeRoundtrip),
+            SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME => Ok(Self::SameArtifactExchange),
+            DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME => Ok(Self::DirectSumForallBoundary),
             HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME => {
                 Ok(Self::HostGenericTypeElabRoundtrip)
             }
@@ -3989,6 +4150,18 @@ impl RunnerProtocol {
                 testapi_conformed: false,
             },
             Self::ConstructOnly => construct_contract(NO_HOST_TYPES, NO_HOST_FNS),
+            Self::SameArtifactExchange => invoke_contract(
+                ExportDriver::SameArtifactExchange,
+                TYPES_SAME_ARTIFACT_EXCHANGE,
+                FNS_SAME_ARTIFACT_EXCHANGE,
+                true,
+            ),
+            Self::DirectSumForallBoundary => invoke_contract(
+                ExportDriver::DirectSumForallBoundary,
+                TYPES_DIRECT_SUM_FORALL_BOUNDARY,
+                FNS_DIRECT_SUM_FORALL_BOUNDARY,
+                true,
+            ),
             Self::SameLeafHostLiteralRoles => invoke_contract(
                 ExportDriver::Main { module: "main" },
                 TYPES_SAME_LEAF_ROLES,
@@ -4010,13 +4183,19 @@ impl RunnerProtocol {
             Self::GeneratedCoreMain => invoke_contract(
                 ExportDriver::Main { module: "prog" },
                 TYPES_GENERATED_CORE,
-                NO_HOST_FNS,
+                FNS_GENERATED_OBSERVATION,
                 false,
             ),
             Self::GeneratedSurfaceMain => invoke_contract(
                 ExportDriver::Main { module: "prog" },
                 TYPES_GENERATED_SURFACE,
-                NO_HOST_FNS,
+                FNS_GENERATED_OBSERVATION,
+                false,
+            ),
+            Self::GeneratedControlMain => invoke_contract(
+                ExportDriver::Main { module: "prog" },
+                TYPES_GENERATED_SURFACE,
+                FNS_GENERATED_CONTROL,
                 false,
             ),
 
@@ -4077,6 +4256,18 @@ impl RunnerProtocol {
             Self::ExportCallableSlotsRoundtrip => invoke_contract(
                 ExportDriver::CallableSlotsRoundtrip,
                 TYPES_EXPORT_CALLABLE_SLOTS,
+                NO_HOST_FNS,
+                true,
+            ),
+            Self::IncomingCallableViews => invoke_contract(
+                ExportDriver::IncomingCallableViews,
+                TYPES_INCOMING_CALLABLE_VIEWS,
+                FNS_INCOMING_CALLABLE_VIEWS,
+                true,
+            ),
+            Self::IncomingCallableStages => invoke_contract(
+                ExportDriver::IncomingCallableStages,
+                TYPES_TESTAPI_I32,
                 NO_HOST_FNS,
                 true,
             ),
@@ -4187,6 +4378,9 @@ impl RunnerProtocol {
                 true,
             ),
             Self::HostStagedUnitCall => main_contract(NO_HOST_TYPES, FNS_HOST_STAGED_UNIT_CALL),
+            Self::HostForallStageEffects => {
+                main_contract(NO_HOST_TYPES, FNS_HOST_FORALL_STAGE_EFFECTS)
+            }
             Self::TypeOnlyStageTrace => main_contract(NO_HOST_TYPES, FNS_TYPE_ONLY_STAGE_TRACE),
             Self::ExportTypeOnlyRoundtrip => invoke_contract(
                 ExportDriver::TypeOnlyRoundtrip,
@@ -4216,6 +4410,24 @@ impl RunnerProtocol {
                 main_contract(TYPES_HOST_ARRAY_RETURN_ONLY, FNS_HOST_ARRAY_RETURN_ONLY)
             }
             Self::HostGenericTypeRoundtrip => main_contract(TYPES_HOST_BOX, FNS_HOST_BOX),
+            Self::OpaqueProductRoundtrip => invoke_contract(
+                ExportDriver::OpaqueProductRoundtrip,
+                TYPES_OPAQUE_PRODUCT,
+                FNS_OPAQUE_COMPOUND,
+                true,
+            ),
+            Self::OpaqueCompoundRoundtrip => invoke_contract(
+                ExportDriver::OpaqueCompoundRoundtrip,
+                TYPES_OPAQUE_COMPOUND,
+                FNS_OPAQUE_COMPOUND,
+                true,
+            ),
+            Self::GenericNominalOpaqueRoundtrip => invoke_contract(
+                ExportDriver::GenericNominalOpaqueRoundtrip,
+                TYPES_GENERIC_NOMINAL_OPAQUE,
+                FNS_OPAQUE_COMPOUND,
+                true,
+            ),
             Self::HostGenericTypeElabRoundtrip => main_contract(TYPES_HOST_BOX_ELAB, FNS_HOST_BOX),
             Self::HostRanknRoundtrip => main_contract(TYPES_TESTAPI_STRING, FNS_HOST_RANKN),
             Self::HostStructuralRoundtrip => {
@@ -4560,7 +4772,9 @@ pub fn canonical_host_method(
             &[native_role(status_i32, false)],
             "::std::convert::Infallible",
         ),
-        HostFnBodyKind::PrintI32 { value } => m(&[native_role(value, false)], "()"),
+        HostFnBodyKind::PrintI32 { value } | HostFnBodyKind::InstanceMark { value } => {
+            m(&[native_role(value, false)], "()")
+        }
         HostFnBodyKind::NumericToString { value, string } => {
             m(&[native_role(value, false)], native_role(string, false))
         }
@@ -4717,6 +4931,7 @@ pub fn canonical_host_method(
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -4732,6 +4947,7 @@ pub fn canonical_host_method(
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
         | HostFnBodyKind::UnreachableI32Print { .. } => unreachable!(
@@ -4852,6 +5068,47 @@ mod tests {
     }
 
     #[test]
+    fn opaque_compound_protocols_reuse_only_the_box_operations() {
+        for (protocol, driver) in [
+            (
+                RunnerProtocol::OpaqueProductRoundtrip,
+                ExportDriver::OpaqueProductRoundtrip,
+            ),
+            (
+                RunnerProtocol::OpaqueCompoundRoundtrip,
+                ExportDriver::OpaqueCompoundRoundtrip,
+            ),
+            (
+                RunnerProtocol::GenericNominalOpaqueRoundtrip,
+                ExportDriver::GenericNominalOpaqueRoundtrip,
+            ),
+        ] {
+            let contract = protocol.contract();
+            assert_eq!(contract.execution, ProtocolExecution::Invoke(driver));
+            assert_eq!(contract.host_fns, &[FNS_HOST_BOX[0], FNS_HOST_BOX[1]]);
+            assert!(protocol.supports_dyn_load_prime());
+            assert_eq!(RunnerProtocol::parse(protocol.name()), Ok(protocol));
+        }
+        assert_eq!(
+            RunnerProtocol::OpaqueProductRoundtrip
+                .contract()
+                .host_types
+                .len(),
+            2
+        );
+        assert_eq!(
+            TESTAPI_I32_ROLE
+                .resolve(
+                    RunnerProtocol::OpaqueCompoundRoundtrip
+                        .contract()
+                        .host_types
+                )
+                .fixture,
+            HostTypeFixture::SelectedRole(RoleFixture::I32)
+        );
+    }
+
+    #[test]
     fn string_code_at_keeps_both_runtime_value_slots() {
         assert_eq!(
             HostFnBodyKind::string_code_at(TESTAPI_STRING_ROLE, TESTAPI_I32_ROLE)
@@ -4932,6 +5189,89 @@ mod tests {
             contract.host_fns[2].body,
             HostFnBodyKind::TraceUnit { text: "consume" }
         );
+    }
+
+    #[test]
+    fn host_forall_stage_effects_pins_total_delayed_host_value() {
+        let protocol = RunnerProtocol::HostForallStageEffects;
+        let contract = protocol.contract();
+        assert_eq!(RunnerProtocol::parse(protocol.name()), Ok(protocol));
+        assert!(protocol.is_testapi());
+        assert!(protocol.supports_dyn_load_prime());
+        assert_eq!(
+            contract,
+            main_contract(NO_HOST_TYPES, FNS_HOST_FORALL_STAGE_EFFECTS)
+        );
+        assert_eq!(
+            contract.host_fns[0].body.canonical_prime_signature(),
+            "() -> ([#0] .)"
+        );
+        assert_eq!(
+            contract.host_fns[0].body.canonical_prime_group_slots(),
+            &[0]
+        );
+        assert_eq!(
+            contract.host_fns[1].body,
+            HostFnBodyKind::TraceUnit { text: "observe" }
+        );
+    }
+
+    #[test]
+    fn same_artifact_exchange_pins_exact_public_host_inventory() {
+        let protocol = RunnerProtocol::SameArtifactExchange;
+        let contract = protocol.contract();
+        assert_eq!(
+            contract.execution,
+            ProtocolExecution::Invoke(ExportDriver::SameArtifactExchange)
+        );
+        assert_eq!(contract.host_types, TYPES_SAME_ARTIFACT_EXCHANGE);
+        assert_eq!(contract.host_fns, FNS_SAME_ARTIFACT_EXCHANGE);
+        assert_eq!(
+            contract
+                .host_fns
+                .iter()
+                .map(|binding| (binding.module, binding.leaf))
+                .collect::<Vec<_>>(),
+            vec![
+                ("testapi/api", "pack"),
+                ("testapi/api", "unpack"),
+                ("testapi/api", "mark")
+            ]
+        );
+        assert_eq!(
+            contract.host_fns[2].body.canonical_prime_signature(),
+            "(h{testapi.Number}) -> ."
+        );
+        assert!(RunnerProtocol::parse("same-artifact-exchange-extra").is_err());
+        assert!(RunnerProtocol::parse("ffi_same_artifact_instance_exchange").is_err());
+        assert!(DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES.contains(&protocol.name()));
+    }
+
+    #[test]
+    fn direct_sum_forall_boundary_pins_exact_public_host_inventory() {
+        let protocol = RunnerProtocol::DirectSumForallBoundary;
+        let contract = protocol.contract();
+        assert_eq!(
+            contract.execution,
+            ProtocolExecution::Invoke(ExportDriver::DirectSumForallBoundary)
+        );
+        assert_eq!(contract.host_types, TYPES_DIRECT_SUM_FORALL_BOUNDARY);
+        assert_eq!(contract.host_fns, FNS_DIRECT_SUM_FORALL_BOUNDARY);
+        assert_eq!(
+            contract
+                .host_fns
+                .iter()
+                .map(|binding| (binding.module, binding.leaf))
+                .collect::<Vec<_>>(),
+            vec![("testapi/api", "echo")]
+        );
+        assert_eq!(
+            contract.host_fns[0].body.canonical_prime_signature(),
+            "(((. -> h{testapi.Number}) | ([#0] (#0 -> #0)))) -> ((. -> h{testapi.Number}) | ([#0] (#0 -> #0)))"
+        );
+        assert!(RunnerProtocol::parse("direct-sum-forall-boundary-extra").is_err());
+        assert!(RunnerProtocol::parse("ffi_direct_sum_forall_boundary").is_err());
+        assert!(DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES.contains(&protocol.name()));
     }
 
     #[test]
@@ -5041,6 +5381,36 @@ mod tests {
         assert_eq!(contract.host_types, TYPES_EXPORT_CALLABLE_SLOTS);
         assert!(contract.host_fns.is_empty());
         assert!(contract.testapi_conformed);
+    }
+
+    #[test]
+    fn incoming_callable_views_has_exact_box_get_contract() {
+        let protocol = RunnerProtocol::parse(INCOMING_CALLABLE_VIEWS_PROTOCOL_NAME).unwrap();
+        assert_eq!(protocol, RunnerProtocol::IncomingCallableViews);
+        let contract = protocol.contract();
+        assert_eq!(
+            contract.execution,
+            ProtocolExecution::Invoke(ExportDriver::IncomingCallableViews)
+        );
+        assert_eq!(contract.host_types, &[TYPES_HOST_BOX[0], TYPES_HOST_BOX[1]]);
+        assert_eq!(contract.host_fns, &[FNS_HOST_BOX[0]]);
+        assert!(contract.testapi_conformed);
+        assert!(!protocol.supports_dyn_load_prime());
+    }
+
+    #[test]
+    fn incoming_callable_stages_has_only_literal_dependencies() {
+        let protocol = RunnerProtocol::parse(INCOMING_CALLABLE_STAGES_PROTOCOL_NAME).unwrap();
+        assert_eq!(protocol, RunnerProtocol::IncomingCallableStages);
+        let contract = protocol.contract();
+        assert_eq!(
+            contract.execution,
+            ProtocolExecution::Invoke(ExportDriver::IncomingCallableStages)
+        );
+        assert_eq!(contract.host_types, TYPES_TESTAPI_I32);
+        assert!(contract.host_fns.is_empty());
+        assert!(contract.testapi_conformed);
+        assert!(!protocol.supports_dyn_load_prime());
     }
 
     #[test]
@@ -5461,6 +5831,7 @@ mod tests {
     #[test]
     fn generated_protocols_own_their_exact_role_type_inventories() {
         let core = RunnerProtocol::GeneratedCoreMain.contract();
+        assert_eq!(core.host_fns, FNS_GENERATED_OBSERVATION);
         assert_eq!(core.host_types, TYPES_GENERATED_CORE);
         assert_eq!(core.host_types.len(), 14);
         assert!(
@@ -5470,6 +5841,7 @@ mod tests {
         );
 
         let surface = RunnerProtocol::GeneratedSurfaceMain.contract();
+        assert_eq!(surface.host_fns, FNS_GENERATED_OBSERVATION);
         assert_eq!(surface.host_types, TYPES_GENERATED_SURFACE);
         assert_eq!(surface.host_types.len(), 18);
         assert_eq!(
@@ -5479,6 +5851,13 @@ mod tests {
                 .filter(|binding| binding.module == "testapi")
                 .count(),
             4
+        );
+        let control = RunnerProtocol::GeneratedControlMain.contract();
+        assert_eq!(control.host_types, surface.host_types);
+        assert_eq!(control.host_fns, FNS_GENERATED_CONTROL);
+        assert_eq!(
+            RunnerProtocol::GeneratedControlMain.main_module(),
+            Some("prog")
         );
     }
 

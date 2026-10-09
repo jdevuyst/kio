@@ -151,7 +151,7 @@ impl<'a> EmphasisCursor<'a> {
     pub(crate) fn bounds(&mut self, start: usize) -> Option<EmphasisBounds> {
         let rest = self.source.get(start..)?;
         let first = *rest.as_bytes().first()?;
-        let marker = [${rules.emphasis.map(c => `b${rustChar(c)}`).join(',')}].iter().position(|&c| c == first)?;
+        let marker = b${quote(rules.emphasis.join(''))}.iter().position(|&c| c == first)?;
         for width in [2, 1] {
             if width == 2 && rest.as_bytes().get(1) != Some(&first) { continue; }
             let from = start + width;
@@ -171,10 +171,10 @@ impl<'a> EmphasisCursor<'a> {
 
 pub(crate) fn list_marker(line: &str) -> Option<usize> {
     let bytes = line.as_bytes();
-    if bytes.first().is_some_and(|b| [${rules.paragraph.list.map(c => `b${rustChar(c)}`).join(',')}].contains(b))
+    if bytes.first().is_some_and(|b| b${quote(rules.paragraph.list.join(''))}.contains(b))
         && bytes.get(1) == Some(&b' ') { return Some(2); }
     let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
-    (digits > 0 && bytes.get(digits).is_some_and(|b| [${rules.paragraph.ordered.map(c => `b${rustChar(c)}`).join(',')}].contains(b))
+    (digits > 0 && bytes.get(digits).is_some_and(|b| b${quote(rules.paragraph.ordered.join(''))}.contains(b))
         && bytes.get(digits + 1) == Some(&b' ')).then_some(digits + 2)
 }
 
@@ -192,7 +192,7 @@ pub(crate) fn fence_info_parts(info: &str) -> (&str, &str) {
 pub(crate) fn is_kio_info(info: &str) -> bool { fence_info_parts(info).0 == ${quote(rules.kioLanguage)} }
 
 pub(crate) fn attr_whitespace(byte: u8) -> bool {
-    [${rules.attrs.whitespace.map(c => `b${rustChar(c)}`).join(',')}].contains(&byte)
+    b${quote(rules.attrs.whitespace.join(''))}.contains(&byte)
 }
 pub(crate) fn bare_self_ref_end(next: Option<u8>) -> bool {
     next.is_none_or(|byte| byte == b${rustChar(rules.attrs.close)} || attr_whitespace(byte))
@@ -225,16 +225,16 @@ pub(crate) fn inline_break(line: &str) -> bool {
     let bytes = line.as_bytes();
     if line.is_empty() || inline_heading(line) || line.starts_with(${rustChar(rules.paragraph.quote)}) { return true; }
     if bytes[0] == b'<' && bytes.get(1).is_some_and(|b| b.is_ascii_alphabetic() || *b == b'/') { return true; }
-    if [${rules.paragraph.code.map(c => `b${rustChar(c)}`).join(',')}].contains(&bytes[0])
+    if b${quote(rules.paragraph.code.join(''))}.contains(&bytes[0])
         && bytes.iter().take_while(|&&b| b == bytes[0]).count() >= ${rules.paragraph.minFence} { return true; }
     for marker in [${rules.paragraph.thematic.map(rustChar).join(',')}] {
         let mut chars = line.chars().filter(|c| !c.is_whitespace()).peekable();
         if chars.peek() == Some(&marker) && chars.all(|c| c == marker)
             && line.chars().filter(|c| !c.is_whitespace()).count() >= 3 { return true; }
     }
-    if [${rules.paragraph.list.map(c => `b${rustChar(c)}`).join(',')}].contains(&bytes[0]) && bytes.get(1) == Some(&b' ') { return true; }
+    if b${quote(rules.paragraph.list.join(''))}.contains(&bytes[0]) && bytes.get(1) == Some(&b' ') { return true; }
     let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
-    digits > 0 && bytes.get(digits).is_some_and(|b| [${rules.paragraph.ordered.map(c => `b${rustChar(c)}`).join(',')}].contains(b))
+    digits > 0 && bytes.get(digits).is_some_and(|b| b${quote(rules.paragraph.ordered.join(''))}.contains(b))
         && bytes.get(digits + 1) == Some(&b' ')
 }
 

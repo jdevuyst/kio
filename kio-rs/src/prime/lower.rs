@@ -60,6 +60,60 @@ pub fn lower_module(module: Module<Surface>) -> Result<Module<Prime>, Error> {
     PrimeLower.walk_module(module)
 }
 
+pub(crate) fn check_imports(imports: &[crate::ast::Import]) -> Result<(), Error> {
+    PrimeLower.check_imports(imports)
+}
+
+#[cfg(feature = "prime")]
+pub(crate) fn lower_contract_signature(
+    sig: crate::ast::Signature<Surface>,
+    ret: Type<Surface>,
+) -> Result<(crate::ast::Signature<Prime>, Type<Prime>), Error> {
+    let params = PrimeLower.walk_signature_params(sig.params)?;
+    Ok((
+        crate::ast::Signature::from_parts(params, sig.groups),
+        PrimeLower.walk_type(ret)?,
+    ))
+}
+
+#[cfg(feature = "prime")]
+pub(crate) fn lower_contract_declaration(item: Item<Surface>) -> Result<Vec<Item<Prime>>, Error> {
+    Ok(vec![PrimeLower.walk_item(item)?])
+}
+
+pub(crate) fn lower_host_type(
+    declaration: crate::ast::HostType<Surface>,
+) -> Result<crate::ast::HostType<Prime>, Error> {
+    PrimeLower.walk_host_type(declaration)
+}
+
+pub(crate) fn lower_host_fn(
+    declaration: crate::ast::HostFn<Surface>,
+) -> Result<crate::ast::HostFn<Prime>, Error> {
+    PrimeLower.walk_host_fn(declaration)
+}
+
+pub(crate) fn lower_type_alias(
+    declaration: crate::ast::TypeAlias<Surface>,
+) -> Result<crate::ast::TypeAlias<Prime>, Error> {
+    PrimeLower.walk_type_alias(declaration)
+}
+
+pub(crate) fn lower_newtype(
+    declaration: crate::ast::Newtype<Surface>,
+) -> Result<crate::ast::Newtype<Prime>, Error> {
+    PrimeLower.walk_newtype(declaration)
+}
+
+pub(crate) fn lower_type_rec_group(
+    declaration: crate::ast::TypeRecGroup<Surface>,
+) -> Result<crate::ast::TypeRecGroup<Prime>, Error> {
+    let Item::TypeRecGroup(group) = PrimeLower.walk_item(Item::TypeRecGroup(declaration))? else {
+        unreachable!("type-rec lowering preserves the declaration container")
+    };
+    Ok(group)
+}
+
 /// Walk a parsed Surface package file. Mirrors [`lower_module`] for
 /// the package-file shape: bridge adapter bodies hold expressions
 /// that may use surface forms, and those are rejected here too.

@@ -521,7 +521,7 @@ struct Machine<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserve
     frames: Stack<Pending<'code>, 4>,
     values: Values,
     records: Stack<CallRecord<'code>, 1>,
-    memos: Vec<ExactCallMemoKey>,
+    memos: Vec<ExactCallMemoTicket>,
     tasks: Vec<Task<'code>>,
     branches: Vec<Branch<'code>>,
     folds: Vec<reflection::Fold<'code>>,

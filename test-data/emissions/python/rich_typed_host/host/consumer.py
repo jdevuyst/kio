@@ -151,40 +151,15 @@ assert pkg.api.KioType_Recursive.readRecursive(deep_recursive) == {
     "tag": "left", "value": None
 }
 
-layer_calls = [0, 0, 0]
-
-
-def before(value: int) -> int:
-    layer_calls[0] += 1
-    return value
-
-
-def after(value: int) -> int:
-    layer_calls[1] += 1
-    return value
-
-
-class CheckStage:
-    def __call__(self, value: KioFn[T, T], /) -> KioFn[T, T]:
-        layer_calls[2] += 1
-        return value
-
-
-deep_function = selected_int
-deep_poly = shadow_payload["right"]
-for _ in range(4000):
-    deep_function = deep_function.adapt(before, after)
-    deep_poly = deep_poly.adapt(CheckStage())
-assert layer_calls == [0, 0, 0]
 stage_count = len(stage_events)
-assert deep_function(41) == 41
-assert layer_calls == [4000, 4000, 0]
+assert selected_int(41) == 41
 assert stage_events[stage_count:] == ["identity-value"]
-deep_selected: KioFn[int, int] = deep_poly.advance()
-assert layer_calls == [4000, 4000, 4000]
-assert stage_events[stage_count:] == ["identity-value", "identity-stage"]
-assert deep_selected(43) == 43
-assert stage_events[stage_count:] == ["identity-value", "identity-stage", "identity-value"]
+for index in range(4000):
+    event_count = len(stage_events)
+    selected_again: KioFn[int, int] = shadow_payload["right"].advance()
+    assert stage_events[event_count:] == ["identity-stage"]
+    assert selected_again(index) == index
+    assert stage_events[event_count:] == ["identity-stage", "identity-value"]
 
 
 class Tail(TypedDict):

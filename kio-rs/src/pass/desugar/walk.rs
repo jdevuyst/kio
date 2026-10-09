@@ -135,6 +135,7 @@ pub trait SurfaceToDesugared {
 
     fn visit_expr_call(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -232,6 +233,7 @@ pub trait SurfaceToDesugared {
 
     fn visit_expr_unit(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Unit {
+            source_trivia: _,
             occurrence: _,
             meta: Meta { span, .. },
         } = e
@@ -239,6 +241,7 @@ pub trait SurfaceToDesugared {
             unreachable!()
         };
         Ok(Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         })
@@ -404,6 +407,7 @@ pub trait SurfaceToDesugared {
 
     fn visit_expr_user_elaborator(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::UserElaborator {
+            source_trivia: _,
             occurrence: _,
             name,
             form,
@@ -415,6 +419,7 @@ pub trait SurfaceToDesugared {
             unreachable!()
         };
         Ok(Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
@@ -436,6 +441,7 @@ pub trait SurfaceToDesugared {
 
     fn visit_expr_ufcs(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Ufcs {
+            source_trivia: _,
             occurrence: _,
             receiver,
             callee_segments,
@@ -458,6 +464,7 @@ pub trait SurfaceToDesugared {
             })
             .collect::<Result<_, _>>()?;
         Ok(Expr::Ufcs {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             receiver,
             callee_segments,

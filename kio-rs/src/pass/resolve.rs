@@ -1823,22 +1823,13 @@ impl TopLevelScope {
     /// `Module<Lowered>` (full pipeline) and `Module<Prime>`
     /// (kio-prime pipeline).
     pub fn build<P: ResolvePhase>(module: &crate::ast::Module<P>) -> Result<Self, Error> {
-        let (scope, error) = Self::build_recording_name_error(module);
-        match error {
-            Some(error) => Err(error),
-            None => Ok(scope),
-        }
-    }
-
-    /// Build the usable first-declaration scope while retaining the first
-    /// name error for a caller that schedules diagnostics by phase.
-    fn build_recording_name_error<P: ResolvePhase>(
-        module: &crate::ast::Module<P>,
-    ) -> (Self, Option<Error>) {
         let mut decls: HashMap<String, TopLevelId> = HashMap::new();
         let mut first_error = None;
         for (idx, item) in module.items.iter().enumerate() {
             visit_item_declarations(idx, item, |id, declaration| {
+                if first_error.is_some() {
+                    return;
+                }
                 let (name, span) = declaration.name_and_span();
                 if let Some(first_id) = decls.get(name).copied() {
                     // Point the user at the original declaration, and name
@@ -1862,15 +1853,15 @@ impl TopLevelScope {
                 }
                 decls.insert(name.to_owned(), id);
             });
+            if let Some(error) = first_error {
+                return Err(error);
+            }
         }
         let type_imports = Self::build_type_import_index(&module.imports);
-        (
-            Self {
-                decls,
-                type_imports,
-            },
-            first_error,
-        )
+        Ok(Self {
+            decls,
+            type_imports,
+        })
     }
 
     fn build_type_import_index(imports: &[Import]) -> Option<Arc<TypeImportIndex>> {
@@ -3170,6 +3161,7 @@ impl<T> ExportContractPhase for T where
 {
 }
 
+#[cfg(feature = "surface")]
 pub(crate) fn exported_contract_type<P: ExportContractPhase + Clone>(
     ty: &Type<P>,
     defining_module: &ModuleEntry<P>,
@@ -3188,9 +3180,8 @@ pub(crate) fn exported_routed_contract_type(
     qualify_routed_contract_type_in_module(ty, &defining_module.module, locals)
 }
 
-/// As [`exported_contract_type`], but resolving against a bare
-/// [`crate::ast::Module`] rather than a [`ModuleEntry`] — a deep walk
-/// qualifying every nominal `Type::Path` head to its identity-exact
+/// Resolve against a bare [`crate::ast::Module`] — a deep walk qualifying
+/// every nominal `Type::Path` head to its identity-exact
 /// `(module, name)` form through `defining_module`. The identity-exact
 /// nominal canonicalizer in [`crate::pass::typecheck_core`] uses this to
 /// qualify an unfolded alias body in the alias's *owner* module, for
@@ -3486,6 +3477,7 @@ fn qualify_contract_signature_in_module_with<P: ExportContractPhase + Clone>(
     crate::ast::Signature {
         params,
         groups: sig.groups.clone(),
+        source_trivia: sig.source_trivia.clone(),
     }
 }
 
@@ -4615,24 +4607,21 @@ impl<P: ResolvePhase> Package<P> {
     where
         P: Clone,
     {
-        let (package, deferred_name_errors) =
-            Self::build_with_validation_mode(package_root, parsed, package_file, true, false)?;
-        debug_assert!(deferred_name_errors.is_empty());
-        Ok(package)
+        Self::build_with_validation_mode(package_root, parsed, package_file, true)
     }
 
-    /// Assemble a package while retaining name errors and deferring bridge
-    /// validation, so the caller can finish the earlier import tier first.
-    #[cfg(any(feature = "surface", feature = "cli"))]
-    pub(crate) fn build_deferring_contract_checks(
+    /// Signature projection validates names and types before traversing the
+    /// bridge's referenced type closure.
+    #[cfg(feature = "cli")]
+    pub(crate) fn build_without_bridge_validation(
         package_root: &Path,
         parsed: Vec<(PathBuf, crate::ast::Module<P>)>,
         package_file: Option<PackageFileEntry<P>>,
-    ) -> Result<(Self, Vec<LocatedError>), LocatedError>
+    ) -> Result<Self, LocatedError>
     where
         P: Clone,
     {
-        Self::build_with_validation_mode(package_root, parsed, package_file, false, true)
+        Self::build_with_validation_mode(package_root, parsed, package_file, false)
     }
 
     /// Resolve every `import` statement in every module of the package.
@@ -5150,30 +5139,16 @@ impl<P: ResolvePhase> Package<P> {
         parsed: Vec<(PathBuf, crate::ast::Module<P>)>,
         package_file: Option<PackageFileEntry<P>>,
         validate_bridge: bool,
-        defer_name_errors: bool,
-    ) -> Result<(Self, Vec<LocatedError>), LocatedError>
+    ) -> Result<Self, LocatedError>
     where
         P: Clone,
     {
         let mut modules: BTreeMap<String, ModuleEntry<P>> = BTreeMap::new();
-        let mut deferred_name_errors = Vec::new();
-        let mut deferred_import_error = None;
         for (file_path, module) in parsed {
-            let scope = if defer_name_errors {
-                let (scope, error) = TopLevelScope::build_recording_name_error(&module);
-                if let Some(error) = error {
-                    deferred_name_errors.push(LocatedError {
-                        file_path: file_path.clone(),
-                        error,
-                    });
-                }
-                scope
-            } else {
-                TopLevelScope::build(&module).map_err(|error| LocatedError {
-                    file_path: file_path.clone(),
-                    error,
-                })?
-            };
+            let scope = TopLevelScope::build(&module).map_err(|error| LocatedError {
+                file_path: file_path.clone(),
+                error,
+            })?;
             let declared_str = module_path_str(&module.path);
             // Rule 1: declared segments must equal the file's path
             // relative to the package root (`/`-separated, with `.kio`
@@ -5220,7 +5195,7 @@ impl<P: ResolvePhase> Package<P> {
 
             if let Some(existing) = modules.get(&storage_key) {
                 let existing_path = DisplayPath(&existing.file_path).to_string();
-                let error = LocatedError {
+                return Err(LocatedError {
                     file_path,
                     error: Error::import(
                         module.path.span,
@@ -5228,12 +5203,7 @@ impl<P: ResolvePhase> Package<P> {
                             "duplicate module path `{storage_key}` (also declared at {existing_path})"
                         ),
                     ),
-                };
-                if defer_name_errors {
-                    deferred_import_error.get_or_insert(error);
-                    continue;
-                }
-                return Err(error);
+                });
             }
             modules.insert(
                 storage_key,
@@ -5244,9 +5214,6 @@ impl<P: ResolvePhase> Package<P> {
                 },
             );
         }
-        if let Some(error) = deferred_import_error {
-            return Err(error);
-        }
         let package = Package {
             modules,
             package_file,
@@ -5254,7 +5221,7 @@ impl<P: ResolvePhase> Package<P> {
         if validate_bridge {
             package.validate_bridge_contract()?;
         }
-        Ok((package, deferred_name_errors))
+        Ok(package)
     }
 
     /// Well-formedness of the package's host contract surface. The
@@ -5286,10 +5253,8 @@ impl<P: ResolvePhase> Package<P> {
         let Some(bridge) = &package_file.package_file.bridge else {
             return Ok(());
         };
-        // Bridge validation is a later diagnostic category than import and name
-        // resolution. Validate every consumer-written edge and binding origin
-        // before a dead glob or closure failure can mask them. Package-less
-        // module trees take the same checks in their normal driver path.
+        // Bridge closure follows imported identities, so validate its edges and
+        // binding origins before traversing the contract.
         self.resolve_imports()?;
         self.check_no_value_cycles()?;
         self.check_binding_origins()?;
@@ -5805,13 +5770,32 @@ impl<P: ResolvePhase> Package<P> {
     /// full pipeline (post-label-elab `Lowered`), evaluator-facing
     /// `UncheckedPrime`, and the kio-prime pipeline (post-`prime::lower`
     /// `Prime`).
-    pub fn check_in_body_resolution(&self) -> Result<(), LocatedError> {
+    pub fn check_in_body_resolution(&self) -> Result<(), LocatedError>
+    where
+        P: Phase<FnBody = crate::ast::Expr<P>>,
+    {
+        self.check_resolution_with(|resolver, definition| resolver.check_fn_def(definition))
+    }
+
+    pub(crate) fn check_signature_resolution(&self) -> Result<(), LocatedError> {
+        self.check_resolution_with(|resolver, definition| {
+            resolver.check_fn_header(definition).map(|_| ())
+        })
+    }
+
+    fn check_resolution_with(
+        &self,
+        check_function: for<'m> fn(&Resolver<'m>, &'m crate::ast::FnDef<P>) -> Result<(), Error>,
+    ) -> Result<(), LocatedError> {
         let identity_aliases = IdentityAliasNewtypeIndex::build_for_package(self);
         self.check_binding_origins()?;
         for entry in self.modules.values() {
-            if let Err(e) =
-                Resolver::check_module_in_package(&entry.module, self, &identity_aliases)
-            {
+            if let Err(e) = Resolver::check_module_with_identity_aliases(
+                &entry.module,
+                Some(self),
+                Some(&identity_aliases),
+                check_function,
+            ) {
                 return Err(LocatedError {
                     file_path: entry.file_path.clone(),
                     error: e,
@@ -5937,22 +5921,18 @@ struct LaterTypeDeclaration<'m> {
 impl<'m> Resolver<'m> {
     /// Walk a module: process its `import` statements once, then walk each
     /// item in source order, growing `visible_top_level` after each.
-    pub fn check_module<P: ResolvePhase>(module: &'m crate::ast::Module<P>) -> Result<(), Error> {
-        Self::check_module_with_identity_aliases(module, None, None)
-    }
-
-    fn check_module_in_package<P: ResolvePhase>(
-        module: &'m crate::ast::Module<P>,
-        package: &'m Package<P>,
-        identity_aliases: &IdentityAliasNewtypeIndex,
-    ) -> Result<(), Error> {
-        Self::check_module_with_identity_aliases(module, Some(package), Some(identity_aliases))
+    pub fn check_module<P>(module: &'m crate::ast::Module<P>) -> Result<(), Error>
+    where
+        P: ResolvePhase + Phase<FnBody = crate::ast::Expr<P>>,
+    {
+        Self::check_module_with_identity_aliases(module, None, None, Self::check_fn_def)
     }
 
     fn check_module_with_identity_aliases<P: ResolvePhase>(
         module: &'m crate::ast::Module<P>,
         package: Option<&'m Package<P>>,
         identity_aliases: Option<&IdentityAliasNewtypeIndex>,
+        check_function: fn(&Self, &'m crate::ast::FnDef<P>) -> Result<(), Error>,
     ) -> Result<(), Error> {
         let implicit_type_cycles = implicit_type_cycle_problems(module);
         let mut later_type_declarations = HashMap::new();
@@ -6214,7 +6194,7 @@ impl<'m> Resolver<'m> {
                         Self::validate_type_rec_group(group)?;
                     }
                 }
-                _ => r.check_item(item)?,
+                _ => r.check_item(item, check_function)?,
             }
             if let crate::ast::Item::Elaborator(elaborator, _) = item {
                 r.user_elaborators_in_scope.insert(elaborator.name.as_str());
@@ -6471,9 +6451,13 @@ impl<'m> Resolver<'m> {
         self.check_type(&f.ret, &locals)
     }
 
-    fn check_item<P: ResolvePhase>(&self, item: &'m crate::ast::Item<P>) -> Result<(), Error> {
+    fn check_item<P: ResolvePhase>(
+        &self,
+        item: &'m crate::ast::Item<P>,
+        check_function: fn(&Self, &'m crate::ast::FnDef<P>) -> Result<(), Error>,
+    ) -> Result<(), Error> {
         match item {
-            crate::ast::Item::FnDef(d) => self.check_fn_def(d),
+            crate::ast::Item::FnDef(d) => check_function(self, d),
             crate::ast::Item::TypeAlias(a) => self.check_type_alias(a),
             crate::ast::Item::LiteralAlias(_, ext) => match *ext {},
             crate::ast::Item::Newtype(d) => self.check_newtype(d),
@@ -6511,7 +6495,10 @@ impl<'m> Resolver<'m> {
         self.lookup_name(head.as_str(), s.implementation.span(), head.span, &locals)
     }
 
-    fn check_fn_def<P: ResolvePhase>(&self, d: &'m crate::ast::FnDef<P>) -> Result<(), Error> {
+    fn check_fn_header<P: ResolvePhase>(
+        &self,
+        d: &'m crate::ast::FnDef<P>,
+    ) -> Result<HashMap<&'m str, Binding>, Error> {
         let mut locals: HashMap<&'m str, Binding> = HashMap::new();
         // Walk parameters left-to-right: each value-param's type is
         // checked under the locals collected so far (so a later param
@@ -6531,6 +6518,14 @@ impl<'m> Resolver<'m> {
             }
         }
         self.check_type(&d.ret, &locals)?;
+        Ok(locals)
+    }
+
+    fn check_fn_def<P>(&self, d: &'m crate::ast::FnDef<P>) -> Result<(), Error>
+    where
+        P: ResolvePhase + Phase<FnBody = crate::ast::Expr<P>>,
+    {
+        let locals = self.check_fn_header(d)?;
         self.check_expr(&d.body, &locals).map_err(|error| {
             if error.diagnostic().unresolved_name() == Some(d.name.as_str()) {
                 error.with_note("an ordinary function's own name is not in scope inside its body")
@@ -6604,12 +6599,7 @@ impl<'m> Resolver<'m> {
         locals: &HashMap<&'a str, Binding>,
     ) -> Result<(), Error> {
         match ty {
-            crate::ast::Type::Path {
-                segments,
-                args,
-                meta: _,
-                ..
-            } => {
+            crate::ast::Type::Path { segments, args, .. } => {
                 let head = segments[0].as_str();
                 self.lookup_type_name(head, segments[0].span, locals)?;
                 // A bound type-parameter `[*F]` of kind `*→*`-or-higher
@@ -8345,12 +8335,12 @@ mod tests {
     }
 
     #[test]
-    fn invalid_import_precedes_local_import_binding_conflict() {
+    fn invalid_import_does_not_create_local_binding() {
         let p = pkg(vec![
             "module main; import missing(Wrap); \
              newtype Wrap : . { constructor mk; projector un; };",
         ])
-        .expect("name conflicts are deferred until import validation has completed");
+        .expect("an unresolved import has no authenticated binding origin");
         let err = p
             .resolve_imports()
             .expect_err("the missing module is an import error");
@@ -8362,16 +8352,16 @@ mod tests {
     }
 
     #[test]
-    fn binding_origin_error_precedes_bridge_error() {
+    fn bridge_validates_binding_origins() {
         let err = pkg_with_package_file(
             vec![
                 "module origin; pub type Tag = .;",
                 "module main; import origin(Tag); type Tag = .;",
             ],
             "testpkg",
-            "bridge { missing; }",
+            "bridge { main; }",
         )
-        .expect_err("name resolution must run before bridge validation");
+        .expect_err("bridge traversal requires unambiguous binding origins");
         assert!(
             matches!(err.error, Error::NameRes(_)),
             "got: {:?}",
@@ -8380,13 +8370,13 @@ mod tests {
     }
 
     #[test]
-    fn invalid_import_precedes_binding_origin_and_bridge_errors() {
+    fn bridge_validates_import_edges() {
         let err = pkg_with_package_file(
-            vec!["module main; import absent(Tag); type Tag = .;"],
+            vec!["module main; import absent(Tag);"],
             "testpkg",
-            "bridge { missing; }",
+            "bridge { main; }",
         )
-        .expect_err("import validation must run before name and bridge validation");
+        .expect_err("bridge traversal requires valid import edges");
         assert!(
             matches!(err.error, Error::Import(_)),
             "got: {:?}",
@@ -8446,7 +8436,7 @@ mod tests {
         let reparsed = prime
             .modules()
             .map(|(module_path, entry)| {
-                let source = emit_module(&entry.module);
+                let source = emit_module(entry);
                 if module_path == "main" {
                     saw_main = true;
                     assert!(

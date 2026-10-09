@@ -19,6 +19,8 @@
 extern crate self as kio_gen;
 
 pub mod ast;
+pub mod control;
+pub mod control_render;
 pub mod emit;
 pub mod generate;
 pub mod mutate;

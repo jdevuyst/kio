@@ -19,3 +19,7 @@ backend = "cargo:cargo-llvm-cov"
 [[tools."cargo:cargo-mutants"]]
 version = "25.3.1"
 backend = "cargo:cargo-mutants"
+
+[[tools."npm:@devcontainers/cli"]]
+version = "0.89.0"
+backend = "npm:@devcontainers/cli"

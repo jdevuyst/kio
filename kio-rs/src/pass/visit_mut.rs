@@ -7,8 +7,8 @@
 
 use crate::ast::{
     CallArg, ElaboratorCall, Expr, FnDef, HostFn, HostFnParam, HostType, Item, LitAnnotationExt,
-    Lowered, Module, Never, Newtype, Prime, Signature, SignatureParam, Type, TypeAlias, TypeParam,
-    UserElaboratorDef,
+    Lowered, Module, Never, Newtype, Phase, Prime, Signature, SignatureParam, Type, TypeAlias,
+    TypeParam, UserElaboratorDef,
 };
 use crate::pass::resolve::Package;
 use crate::span::Span;
@@ -41,15 +41,24 @@ impl TypecheckVisitPhase for Prime {}
 
 /// A mutable, same-phase traversal of every type-bearing checker-input node.
 pub(crate) trait TypecheckVisitMut<P: TypecheckVisitPhase> {
-    fn visit_package(&mut self, package: &mut Package<P>) {
+    fn visit_package(&mut self, package: &mut Package<P>)
+    where
+        P: Phase<FnBody = Expr<P>>,
+    {
         walk_package(self, package);
     }
 
-    fn visit_module(&mut self, module: &mut Module<P>) {
+    fn visit_module(&mut self, module: &mut Module<P>)
+    where
+        P: Phase<FnBody = Expr<P>>,
+    {
         walk_module(self, module);
     }
 
-    fn visit_item(&mut self, item: &mut Item<P>) {
+    fn visit_item(&mut self, item: &mut Item<P>)
+    where
+        P: Phase<FnBody = Expr<P>>,
+    {
         walk_item(self, item);
     }
 
@@ -76,7 +85,7 @@ pub(crate) trait TypecheckVisitMut<P: TypecheckVisitPhase> {
 
 pub(crate) fn walk_package<P, V>(visitor: &mut V, package: &mut Package<P>)
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
     V: TypecheckVisitMut<P> + ?Sized,
 {
     for entry in package.modules_mut() {
@@ -86,7 +95,7 @@ where
 
 pub(crate) fn walk_module<P, V>(visitor: &mut V, module: &mut Module<P>)
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
     V: TypecheckVisitMut<P> + ?Sized,
 {
     for item in &mut module.items {
@@ -96,7 +105,7 @@ where
 
 pub(crate) fn walk_item<P, V>(visitor: &mut V, item: &mut Item<P>)
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
     V: TypecheckVisitMut<P> + ?Sized,
 {
     match item {
@@ -134,7 +143,7 @@ where
 
 fn walk_fn_def<P, V>(visitor: &mut V, def: &mut FnDef<P>)
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
     V: TypecheckVisitMut<P> + ?Sized,
 {
     let scope = def.meta.span;

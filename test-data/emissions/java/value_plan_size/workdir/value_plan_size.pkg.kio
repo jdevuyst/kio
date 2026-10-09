@@ -1,0 +1,13 @@
+package value_plan_size;
+
+build {
+  cache ();
+
+  target java {
+    out "out/java/"
+  }
+}
+
+bridge {
+  api
+}

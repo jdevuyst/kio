@@ -23,6 +23,7 @@ use kio_gen::render::term_uses_surface_forms;
 pub fn minimize_body(prog: &Program) -> Program {
     let body = minimum_for(&prog.ret);
     Program {
+        control_probe: None,
         fn_def_name: prog.fn_def_name.clone(),
         params: vec![],
         ret: prog.ret.clone(),

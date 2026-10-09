@@ -261,7 +261,7 @@ fn ordinary_candidate(
     slot: CursorSlot,
 ) -> Option<QualifiedCandidate> {
     let (mut label, kind) = match entry {
-        DocEntry::Fn(_) | DocEntry::HostFn(_) | DocEntry::Elaborator(_) => {
+        DocEntry::Fn(_) | DocEntry::RecFn(_) | DocEntry::HostFn(_) | DocEntry::Elaborator(_) => {
             (entry.name().to_owned(), CandidateKind::Function)
         }
         DocEntry::LiteralAlias(_) => (entry.name().to_owned(), CandidateKind::Constant),

@@ -175,7 +175,7 @@ impl<'a> EmphasisCursor<'a> {
     pub(crate) fn bounds(&mut self, start: usize) -> Option<EmphasisBounds> {
         let rest = self.source.get(start..)?;
         let first = *rest.as_bytes().first()?;
-        let marker = [b'*', b'_'].iter().position(|&c| c == first)?;
+        let marker = b"*_".iter().position(|&c| c == first)?;
         for width in [2, 1] {
             if width == 2 && rest.as_bytes().get(1) != Some(&first) {
                 continue;
@@ -205,16 +205,12 @@ impl<'a> EmphasisCursor<'a> {
 
 pub(crate) fn list_marker(line: &str) -> Option<usize> {
     let bytes = line.as_bytes();
-    if bytes
-        .first()
-        .is_some_and(|b| [b'-', b'*', b'+'].contains(b))
-        && bytes.get(1) == Some(&b' ')
-    {
+    if bytes.first().is_some_and(|b| b"-*+".contains(b)) && bytes.get(1) == Some(&b' ') {
         return Some(2);
     }
     let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
     (digits > 0
-        && bytes.get(digits).is_some_and(|b| [b'.', b')'].contains(b))
+        && bytes.get(digits).is_some_and(|b| b".)".contains(b))
         && bytes.get(digits + 1) == Some(&b' '))
     .then_some(digits + 2)
 }
@@ -236,7 +232,7 @@ pub(crate) fn is_kio_info(info: &str) -> bool {
 }
 
 pub(crate) fn attr_whitespace(byte: u8) -> bool {
-    [b' ', b'\t', b'\r', b'\n'].contains(&byte)
+    b" \t\r\n".contains(&byte)
 }
 pub(crate) fn bare_self_ref_end(next: Option<u8>) -> bool {
     next.is_none_or(|byte| byte == b'}' || attr_whitespace(byte))
@@ -286,8 +282,7 @@ pub(crate) fn inline_break(line: &str) -> bool {
     {
         return true;
     }
-    if [b'`', b'~'].contains(&bytes[0]) && bytes.iter().take_while(|&&b| b == bytes[0]).count() >= 3
-    {
+    if b"`~".contains(&bytes[0]) && bytes.iter().take_while(|&&b| b == bytes[0]).count() >= 3 {
         return true;
     }
     for marker in ['-', '*', '_'] {
@@ -299,12 +294,12 @@ pub(crate) fn inline_break(line: &str) -> bool {
             return true;
         }
     }
-    if [b'-', b'*', b'+'].contains(&bytes[0]) && bytes.get(1) == Some(&b' ') {
+    if b"-*+".contains(&bytes[0]) && bytes.get(1) == Some(&b' ') {
         return true;
     }
     let digits = bytes.iter().take_while(|b| b.is_ascii_digit()).count();
     digits > 0
-        && bytes.get(digits).is_some_and(|b| [b'.', b')'].contains(b))
+        && bytes.get(digits).is_some_and(|b| b".)".contains(b))
         && bytes.get(digits + 1) == Some(&b' ')
 }
 

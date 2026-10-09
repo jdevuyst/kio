@@ -1,0 +1,15 @@
+package portable_names;
+
+build {
+  cache ();
+
+  target java {
+    out "out/java/"
+  }
+}
+
+bridge {
+  api;
+  api/**;
+  a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a_a
+}

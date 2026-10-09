@@ -24,15 +24,12 @@ The `"go"` build target ([`specs/package.md` § Build target
 files](../package.md#build-target-files)) emits a self-contained Go
 package. This page describes the surface a Go host calls against.
 
-Go is the **`erased-static`** family's first member: a statically-typed
-host with a typed FFI skin over an **erased body**. Go's `interface{}`
-is a genuine dynamic universal carrier, so the package's internal
-computation flows entirely as `interface{}` / `[]any` (the JS dynamic
-body's shape, in Go). Higher-kinded carriers ride that uniform rep with
-**no carrier-walk** — a kind-`*→*` carrier `F(A)` is an ordinary erased
-value, so the higher-kinded re-key is implicit (see [`README.md`
-§ Higher-kinded types](README.md#higher-kinded-types) and the note under
-§ Language families). Only the host-facing **skin** is typed.
+Go is an **`erased-static`** backend: a statically typed host facade over
+an erased body. Generic public positions use `Prepared[I]`, where `I`
+records the exact Kio type; concrete positions retain their native types.
+Type application neither supplies a runtime type descriptor nor traverses
+an opaque host container
+(see [`README.md` § Higher-kinded types](README.md#higher-kinded-types)).
 
 ## Language version
 
@@ -40,8 +37,7 @@ Emitted code and consuming host modules target **Go 1.26+**. The selected
 stable line provides:
 
 - The predeclared **`any`** alias for `interface{}` (Go 1.18). The
-  emitted body and skin use `any` throughout for the universal erased
-  value.
+  emitted body uses `any` for its private universal representation.
 - **Generic type aliases**, finalized and enabled by default since Go 1.24.
   The Go 1.26 floor includes this host-facing type facility without an
   experiment flag.
@@ -87,14 +83,14 @@ an import alias. Names such as `unit`, `product`, `sum`, `kio_sum`, and
 type names in the package block.
 
 - `pkg.go` — the package's invocable surface: the generic `Package[...]`
-  handle, the `New[...](host)` factory, the export-namespace tree, and every
-  module fn as a method. **The entry point.**
+  handle, the `New[...](host)` factory, the export-namespace tree, ordinary
+  exported methods, and generic `CallExp_<member>` functions. **The entry point.**
 - `host.go` — the generic `Host[...]` interface (one method per
   `host fn`, plus declaration-keyed role conversion methods). The host selects
   every exact host-type binding and implements the resulting interface.
   **Part of the surface.**
 - `shapes.go` — the reachable generic product shells, sum-row declarations,
-  row-anchored `KioSum` support, and concrete nominal carriers. Payload
+  row-anchored `KioSum` support, exact type indices, and nominal carriers. Payload
   types are generic arguments rather than separate payload-specific
   declarations. **Part of the surface** (host code constructs products and
   matches sums through the stable aliases in `ffi.go`).
@@ -142,7 +138,7 @@ statically-typed interface is the contract.
 
 Exported items (`pub fn` in a bridged module) are reached through the
 package handle's **export-namespace tree**. A multi-value-group export
-takes every group's parameters flat in one call — the method applies
+takes every group's parameters flat in one call — the wrapper applies
 the internal curried layers group by group
 ([`README.md` § Function-type FFI canonicalization](README.md#function-type-ffi-canonicalization)).
 Items are reached: for a package `greeter`, a
@@ -156,24 +152,34 @@ module `foo_bar` is `FooBar`, while `_foo_bar` is
 disjoint exact class `KioModule_<encoded-component>`; for example, nested
 segment `foo_bar` is `KioModule_fooBar`. Function method names use the same
 natural/exact component rule as root modules. A `pub fn` in a single-segment
-module `m` is a method on the
-`pkg.M` namespace field (`pkg.M.<Fn>()`): entries keep their module
+module `m` uses the
+`pkg.M` namespace field (`pkg.M.<Fn>()` for a non-generic export): entries
+keep their module
 namespace down to a single segment ([`specs/package.md` § The bridge
 block](../package.md#the-bridge-block)).
 
-An exported method's signature is the host's typed contract: each exposed
+An exported callable's signature is the host's typed contract: each exposed
 written parameter is its boundary shape (§ FFI surface), and the return is its
 boundary shape (`Unit` for a `()` return). A canonical Unit-domain layer adds
-no parameter; Unit that occupies an already-planned slot maps to `Unit`. The
-method converts each typed argument into the internal representation, runs the
+no parameter; a concrete Unit in an already-planned slot maps to `Unit`. The
+wrapper converts each typed argument into the internal representation, runs the
 package function, and converts the result back to the typed shape — the host
 never sees the internal `[]any` rep.
+
+Go methods cannot introduce their own type parameters. An export with
+declaration-local type binders therefore uses the free generic function
+`CallExp_<member>[I, ...](namespace, args...)`, passing its module namespace
+or newtype handle as the first value argument. The selected exact Kio indices
+come first in the generic argument list; the package's native host selections
+follow and can ordinarily be inferred from the namespace. Ordinary exports
+remain methods. Public generic constructors and projectors use the same
+`CallExp_` convention with their per-type handle.
 
 Written parameter grouping is retained: `fn first(x: A, y: B)` has two Go
 parameters, while `fn second(pair: A & B)` has one product parameter.
 Destructuring a single product parameter does not split it. The same rule
 applies to host methods and public newtype members. Only declaration-head
-groups join the method's parameter list; a returned function remains a
+groups join the callable's parameter list; a returned function remains a
 returned function, with its own parameter list.
 
 Every exported **`pub newtype`** contributes a **per-type handle** under
@@ -191,12 +197,13 @@ four surfaces are:
 | Public members | Go boundary value |
 | --- | --- |
 | neither | a declaration-specific opaque carrier |
-| constructor only | the carrier, constructible only through that method |
-| projector only | the carrier, inspectable only through that method |
+| constructor only | the carrier, constructible only through that operation |
+| projector only | the carrier, inspectable only through that operation |
 | both | the established transparent payload representation when finite |
 
-An opaque or one-member carrier is one exported, concrete, non-generic Go
-`struct` with hidden storage. Its name is branded from the complete qualified
+An opaque or one-member carrier is one exported Go `struct` with hidden
+storage, parameterized by its exact Kio type arguments when the declaration
+has binders. Its name is branded from the complete qualified
 Kio declaration identity (`KioNewtype_V1_…`; § Item naming), so a same-leaf
 newtype in another module is a different Go type without relying on package
 occupancy. Its selected member has the exact declared Kio member scheme after
@@ -209,7 +216,7 @@ unchanged. An existential projector keeps its CPS signature: canonical Unit
 contributes zero continuation value arguments; every other payload, including
 a product, contributes one argument of its boundary type. A both-member
 recursion that is not already cut by an opaque or one-member carrier keeps the
-erased fallback described under § FFI surface.
+declaration-owned recursive carrier described under § FFI surface.
 
 Carrier identity is the exact declaring module plus newtype name. Two
 same-leaf declarations in different modules remain different Go types.
@@ -365,17 +372,18 @@ Each cross-cutting property is inherited from [`README.md`](README.md);
 the Go instantiations:
 
 - **Synchronous calling convention** ([`README.md`](README.md)) — a host
-  call and an exported invocation are each a direct Go method call. No
+  call and an exported invocation are each a direct Go call. No
   async, no scheduler.
 - **Type erasure at the FFI** ([`README.md`](README.md)) — the body is
-  erased to `any`; the *skin* is fully typed. A type-variable position
-  (a rank-N / existential binder, a higher-kinded carrier's payload)
-  surfaces to the host as `any`, never a concrete type. Internal polymorphic
-  callables retain the ordered stages specified by
+  erased to `any`; the *skin* is fully typed. A selected type-variable
+  position surfaces as `Prepared[I]`; declaration-owned carriers retain
+  their exact arguments and kind constraints. Polymorphic
+  callable values retain the ordered stages specified by
   [`README.md` § 2](README.md#2-type-erasure-at-the-ffi): every binder of an
-  escaped value is one hidden callable stage, while a direct known call may
-  compact adjacent leading type applications. No such stage is a public Go
-  parameter.
+  escaped value is one callable stage (`TypeStage` in an exact selected
+  view), while declaration-owned leading binders are selected by the generic
+  `CallExp_` function. No stage receives
+  a runtime type argument.
 - **Facade topology and execution provenance** ([`README.md`
   § Facade topology and execution
   provenance](README.md#facade-topology-and-execution-provenance)) — one
@@ -402,6 +410,9 @@ the Go instantiations:
 
 ## FFI surface
 
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
+
 ### Atomic types
 
 The host selects the public Go type for every nullary host declaration. For a
@@ -426,8 +437,9 @@ import when a file references `big.`. `()` (unit) is the canonical `Unit`
 (`struct{}` — Go has no built-in unit value).
 
 A parameterized host declaration `F[A, ...]` surfaces as the
-declaration-owned `KioHostType_<module-path>__<name>[A, ...]` carrier. Its type arguments
-are the exact boundary types at that occurrence; it is never collapsed to
+declaration-owned `KioHostType_<module-path>__<name>[I, ...]` carrier. Its type arguments
+are exact Kio type indices constrained to the declaration's argument kinds;
+the carrier is never collapsed to
 `any` or merged with another declaration. Go cannot abstract over a
 host-selected type constructor, so the carrier stores the erased runtime value
 privately and exposes the explicitly unsafe host integration pair
@@ -435,7 +447,81 @@ privately and exposes the explicitly unsafe host integration pair
 wrap and unwrap only the private runtime carrier; the public application and
 its declaration identity remain statically exact.
 
+The host is responsible for keeping that erased storage consistent with the
+selected type arguments and for returning the declared type from generic host
+functions. When such storage holds a Kio value, prepare it through the typed
+operations below before erasing it to `Value` for native storage.
+The unsafe integration operations do not check that relationship; their
+availability does not guarantee runtime rejection of a mismatched payload.
+
+### Abstract values and typed views
+
+`Prepared[I]` has private storage and carries a value with its exact Kio
+type index. Distinct declaration indices remain distinct even when the host
+chooses the same Go representation for both. `Index_<module>__<name>` names a
+declaration index; a nullary host declaration includes its native selection,
+for example `Index_api__Number[int]`. `IndexEnv_<member>_<slot>` and
+`IndexExp_<member>_<slot>` name the exact indices at public sites except a
+bare selected index parameter, which Go cannot alias. Indices
+describe products, sums, functions, nominal applications, and binder kinds;
+they are static Go types, not runtime type descriptors.
+
+For each live slot `S` with an available exact index, `PrepareS(pkg, native S)`
+produces its exact `Prepared[IndexS]`, and `UnprepareS(pkg, prepared)` recovers
+the native view. A selected generic variable already has type `Prepared[I]`.
+Nullary host bindings have
+declaration-owned `PrepareHost_<identity>` / `UnprepareHost_<identity>`
+functions, so a generic call needs no unrelated concrete export to establish
+its argument's index. Every slot- or declaration-owned preparation and
+recovery helper is a free function with the package handle first, including
+host helpers. Helpers retain only the actual captured generic parameters
+needed by their views; Go ordinarily infers them from the package and typed
+value. Bottom and unselected erased positions have no exact preparation
+operation.
+
+`Prepared[I].Erase()` produces opaque `Value` storage for an erased host
+operation or a host-owned container. The host's declared extraction operation
+retrieves that same storage; generated code never inspects the container to
+find its contents. Erasure does not turn a value into a different exact index.
+
+For each live concrete slot name `S` from the alias grammar below, the package
+provides free functions `ValueS(pkg, native S) Value` and
+`NativeS(pkg, Value) S`. For a direct nullary host binding, the helpers use
+its selected type even though Go cannot declare an alias to that type
+parameter. All slot- and declaration-owned `Value`, `Native`, `Prepare`,
+and `Unprepare` helpers take the package handle first; their type parameters
+list the native host selections followed by the view's actual captured
+indices. Preparing a value is effect-free:
+role adapters run when the value enters the consuming package, or when a
+native view is requested. Callable arguments and results convert on each
+invocation; preparing or transporting a callable does not invoke it. A
+previously converted callable retains its original captures and host instance.
+Receiving instances must have compatible exact host/type instantiations, as
+required by [package isolation](README.md#4-package-isolation).
+
+A generic `NativeS` recovery may require explicit selected indices: erased
+`Value` storage cannot supply those indices for Go type inference.
+
+These helpers consume ordinary typed products, sums, functions, and nominal
+carriers. They do not infer a Kio declaration from a Go type: two declarations
+whose selected native types are both `int` still use their own adapters.
+Nominal storage remains sealed; a structural view cannot reveal its payload.
+Supplying a `Value` at the wrong declared type remains a host error, not a
+promise of general runtime validation. Ordinary concrete calls do not require
+`Value` or a cast.
+
+For a purely abstract host-selected value, `PrepareAtom[T](T)` produces
+`Prepared[AtomIndex[T]]`. `Atom[T](T) Value` and
+`NativeAtom[T](Value) T` store and retrieve an opaque native atom. They do not
+encode or inspect a Kio structural or nominal value; those use their exact
+typed slot helpers. A nil interface atom and Unit remain distinct.
+
 ### Structural and nominal types
+
+These values follow the shared
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged). Value-type
+shells do not remove that obligation for nested referenced Kio data; opaque
+host state retains its declared operations.
 
 Go follows the structural FFI conventions
 ([`README.md` § Structural FFI shape conventions](README.md), including the
@@ -464,42 +550,83 @@ is realized as follows:
   transparent representation: in the erased body it shares its payload's
   `[]any` rep, and the skin re-imposes no wrapper, so its boundary type is
   its instantiated payload's. With neither member or exactly one member
-  public, the boundary type is instead that declaration's concrete,
-  non-generic `KioNewtype_V1_…` carrier; the hidden payload does not
-  contribute to an enclosing shape.
+  public, the boundary type is instead that declaration's
+  `KioNewtype_V1_…[I, ...]` carrier, with one exact index per declaration
+  binder; the hidden payload does not contribute to an enclosing shape.
 - **Function value** → a Go `func(...) ...` whose compound legs are
   converted across the boundary. The host sees that value-only callable;
   a product domain is one product parameter, so `(A & B) -> R` is
-  `func(Product[A, B]) R`. A boundary wrapper handles any internal
-  polymorphic stages. A directly
+  `func(Product[A, B]) R`. A first-class `[A] R` is a
+  `TypeStage[I, R, H]`. Its site-local `SelectS[ChosenIndex](stage)`
+  selects one binder and returns the exact instantiated native view;
+  `stage.Invoke()` executes the same stage with its abstract result view.
+  Each selection or invocation executes that stage once; calling a returned
+  value function does not repeat it. Construction, preparation, return, and
+  transport do not execute a stage. `Invoke()` returns the abstract view;
+  further binders in that view are nullary Go functions rather than typed
+  selection stages. A directly
   written `. -> R` is `func() R`. Instantiating `A -> R` with `A = .`
-  preserves that existing argument slot and produces `func(Unit) R`.
-- A free function-local **type-variable / abstract** position erases to
-  `any`; exact host declarations and their applications do not.
+  preserves that existing argument slot; a selected generic view receives
+  the exact prepared Unit value in that slot.
+- A selected **type-variable / abstract** position uses `Prepared[I]`.
+  A generic host-interface method uses `Value` for an unselected bare
+  variable and `KioErasedIndex_S` in its unselected carrier applications.
+  Exact selected host applications retain their declaration indices.
+
+An existential projector preserves exact known declaration indices, but its
+hidden existential positions and elimination result use the erased `Value`
+continuation view. A binder without a complete exact index is an ordinary
+nullary function stage in that view, rather than a `TypeStage` with a
+selection helper.
 
 A both-member **recursive newtype** whose boundary cycle is not cut by an
 opaque or one-member carrier — one whose payload reaches itself, directly
 (`List : . | (I32 & List)`) or through a chain of mutually recursive
 newtypes (`Tree : I32 | Forest`, `Forest : . | (Tree & Forest)`) — has no
 finite host shape, so it does not surface its payload type at the
-boundary: it crosses as the erased `any` value the host round-trips through
-the package's own constructors / projectors. Only a
-non-recursive both-member newtype surfaces its instantiated payload type.
+boundary: it crosses as a declaration-owned carrier with exact indices,
+which the host round-trips through its typed construction and inspection
+operations. Only a non-recursive both-member newtype surfaces its instantiated
+payload type.
 An opaque or one-member carrier is already a finite atomic leaf, so reaching
-one stops this recursion test. This is exactly
-as Rust crosses a recursive newtype as `Rc<dyn Any>`
-([`rust.md` § Conversion semantics](rust.md)).
+one stops this recursion test.
+
+### Higher-kinded types
+
+Go realizes the shared
+[generic substitution law](README.md#generic-substitution-and-opaque-constructors)
+with kind-constrained constructor indices and exact application indices.
+Selecting an index substitutes it throughout products, sums, callbacks,
+nominal carriers, and subsequent `TypeStage` results. A parameterized host
+declaration keeps its declaration-owned carrier at every application;
+selection never traverses or maps its native storage.
+
+`SelectS` receives the stage alone, with no replacement host argument. It
+uses the conversion context captured when the stage's native view was made.
+The `H` parameter ties that view to the package's exact native host
+selections. A package-created callback retains its defining captures;
+requesting a native view through another compatible instance uses that
+instance's adapters without replacing those captures. A host-authored stage
+is constructed with `NewSStage(host, func() R)`; construction is inert and
+the function executes only when that stage is selected or invoked. Passing
+that native callback into a package uses the receiving instance's adapters,
+following [package isolation](README.md#4-package-isolation).
+
+### Stable boundary aliases
 
 The `ffi.go` aliases name every compound, function, erased, Unit, or concrete
 primitive value slot and return stably:
 `Env_<member>_arg<i>` / `Env_<member>_ret` for host functions and
 `Exp_<member>_arg<i>` / `Exp_<member>_ret` for exports and public-newtype
-members. This includes primitive, `any`, `Unit`, product, sum, newtype, and
+members. This includes primitive, `Value`, `Unit`, product, sum, newtype, and
 function types. A direct exact nullary host binding instead uses the package
 root's type parameter: Go forbids a generic alias whose right-hand side is
-only that parameter. `Forall` is transparent in this naming grammar and never adds
-a `_result` component; a finite transparent both-member newtype likewise keeps
-the incoming prefix while its payload is visited. Every product field
+only that parameter. A `Forall` stage's returned value adds `_result`;
+a selected stage's view adds `_selected`, and its recursive alias tree uses
+the selected indices. A finite transparent both-member newtype keeps the
+incoming prefix while its payload is visited. A parameterized host carrier's
+static argument adds
+`_typearg<i>`; this names a value view, not a container projection. Every product field
 recursively contributes `<alias>_field<i>`, every sum-arm payload contributes
 `<alias>_<i>_value`, and every visited cursor gets an alias. A function-valued
 slot contributes `<alias>_cbarg<j>` and `<alias>_cbret`. When any of those
@@ -569,7 +696,7 @@ with title casing for exported leaves (`do_work` → `DoWork`).
   first. ASCII letters and digits remain
   literal, `_` becomes `_u`, and every other UTF-8 byte becomes `_x<hh>`;
   lengths count the escaped spelling. The complete qualified identity alone
-  selects the concrete, non-generic carrier, so same-leaf declarations in
+  selects the carrier declaration, so same-leaf declarations in
   different modules never share one.
 - **Generic product and row declarations** — named from structural kind plus
   the ordered 3-step semantic keys, never from payload types. The common
@@ -587,6 +714,12 @@ with title casing for exported leaves (`do_work` → `DoWork`).
   `KioItem_<encoded-owner>__<leaf>` form described under § FFI surface. A
   sum alias derives only its indexed case aliases `<alias>_<i>` and
   constructors `New<alias>_<i>`; hosts need not name row helpers.
+- **Exact-index aliases and helpers** — `Index_<module>__<declaration>`
+  uses the readable declaration-owned encoding used by host carriers;
+  `IndexEnv_<member>_<slot>` / `IndexExp_<member>_<slot>` uses the stable
+  slot encoding. `Prepare<slot>` / `Unprepare<slot>`,
+  `PrepareHost_<identity>` / `UnprepareHost_<identity>`, `CallExp_<member>`,
+  `Select<slot>`, and `New<slot>Stage` retain those same exact owners.
 
 Product-field and sum-arm semantic keys follow the 3-step key fallback
 ([`README.md`](README.md)). A positional product field renders as `F<i>`
@@ -634,6 +767,8 @@ import "greet"
 
 type Stdout struct{}
 
+func (Stdout) KioHostIn_app_Str(value string) string { return value }
+func (Stdout) KioHostOut_app_Str(value string) string { return value }
 func (Stdout) App__print(arg0 string) { print(arg0) }
 
 func main() {

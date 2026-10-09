@@ -556,9 +556,10 @@ fn import_list_candidates(
             continue;
         }
         let (kind, selection) = match &entry {
-            DocEntry::Fn(_) | DocEntry::HostFn(_) | DocEntry::Elaborator(_) => {
-                (CompletionItemKind::FUNCTION, ImportSelectionKind::Name)
-            }
+            DocEntry::Fn(_)
+            | DocEntry::RecFn(_)
+            | DocEntry::HostFn(_)
+            | DocEntry::Elaborator(_) => (CompletionItemKind::FUNCTION, ImportSelectionKind::Name),
             DocEntry::TypeAlias(..)
             | DocEntry::Newtype(..)
             | DocEntry::HostType(_)
@@ -837,7 +838,7 @@ impl<'a> CompletionMetadata<'a> {
                     continue;
                 }
                 let (label, kind) = match &entry {
-                    DocEntry::Fn(_) | DocEntry::HostFn(_) => {
+                    DocEntry::Fn(_) | DocEntry::RecFn(_) | DocEntry::HostFn(_) => {
                         (entry.name().to_owned(), CompletionItemKind::FUNCTION)
                     }
                     DocEntry::Elaborator(_) => {

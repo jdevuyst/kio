@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::ast::{Module, Type, TypeParam};
+use crate::ast::{Expr, Module, Phase, Type, TypeParam};
 use crate::pass::binder_presentation::BinderPresentation;
 use crate::pass::resolve::Package;
 use crate::pass::visit_mut::{TypecheckVisitMut, TypecheckVisitPhase, walk_type};
@@ -17,11 +17,13 @@ pub(crate) struct AlphaNormalizedPackage<P: TypecheckVisitPhase> {
 }
 
 /// Proof that lexical type binders in one auxiliary module were normalized.
+#[cfg(any(feature = "surface", feature = "prime"))]
 pub(crate) struct AlphaNormalizedModule<P: TypecheckVisitPhase> {
     module: Module<P>,
     presentation: BinderPresentation,
 }
 
+#[cfg(any(feature = "surface", feature = "prime"))]
 impl<P: TypecheckVisitPhase> AlphaNormalizedModule<P> {
     pub(crate) fn module(&self) -> &Module<P> {
         &self.module
@@ -37,6 +39,7 @@ impl<P: TypecheckVisitPhase> AlphaNormalizedPackage<P> {
         &self.package
     }
 
+    #[cfg(any(feature = "surface", feature = "prime"))]
     pub(crate) fn presentation(&self) -> &BinderPresentation {
         &self.presentation
     }
@@ -45,10 +48,10 @@ impl<P: TypecheckVisitPhase> AlphaNormalizedPackage<P> {
         self.presentation.clone()
     }
 
-    #[cfg(any(feature = "surface", feature = "cli", test))]
+    #[cfg(any(feature = "surface", feature = "cli", all(test, feature = "prime")))]
     pub(crate) fn renormalize_after<Q, F>(self, transform: F) -> AlphaNormalizedPackage<Q>
     where
-        Q: TypecheckVisitPhase,
+        Q: TypecheckVisitPhase + Phase<FnBody = Expr<Q>>,
         F: FnOnce(Package<P>) -> Package<Q>,
     {
         renormalize_package(transform(*self.package), self.presentation)
@@ -70,7 +73,7 @@ impl<P: TypecheckVisitPhase> std::ops::Deref for AlphaNormalizedPackage<P> {
 
 pub(crate) fn normalize_package<P>(package: &Package<P>) -> AlphaNormalizedPackage<P>
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
 {
     let (package, presentation) =
         normalize_owned_package(package.clone(), true, OccurrencePolicy::Refresh);
@@ -83,7 +86,7 @@ where
 #[cfg(feature = "surface")]
 pub(crate) fn normalize_transformed_package<P>(package: &Package<P>) -> AlphaNormalizedPackage<P>
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
 {
     let (package, presentation) =
         normalize_owned_package(package.clone(), false, OccurrencePolicy::Refresh);
@@ -93,13 +96,13 @@ where
     }
 }
 
-#[cfg(any(feature = "surface", feature = "cli", test))]
+#[cfg(any(feature = "surface", feature = "cli", all(test, feature = "prime")))]
 pub(crate) fn renormalize_package<P>(
     package: Package<P>,
     presentation: Arc<BinderPresentation>,
 ) -> AlphaNormalizedPackage<P>
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
 {
     let (package, _) = normalize_owned_package(package, false, OccurrencePolicy::Refresh);
     AlphaNormalizedPackage {
@@ -116,7 +119,7 @@ pub(crate) fn renormalize_checked_package<P>(
     presentation: Arc<BinderPresentation>,
 ) -> AlphaNormalizedPackage<P>
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
 {
     let (package, _) = normalize_owned_package(package, false, OccurrencePolicy::Preserve);
     AlphaNormalizedPackage {
@@ -131,7 +134,7 @@ fn normalize_owned_package<P>(
     occurrences: OccurrencePolicy,
 ) -> (Box<Package<P>>, BinderPresentation)
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
 {
     let mut normalizer = PackageNormalizer {
         presentation: BinderPresentation::default(),
@@ -142,9 +145,10 @@ where
     (Box::new(package), normalizer.presentation)
 }
 
+#[cfg(any(feature = "surface", feature = "prime"))]
 pub(crate) fn normalize_module<P>(module: &Module<P>) -> AlphaNormalizedModule<P>
 where
-    P: TypecheckVisitPhase,
+    P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>,
 {
     let mut module = module.clone();
     let mut presentation = BinderPresentation::default();
@@ -173,12 +177,16 @@ enum OccurrencePolicy {
     Preserve,
 }
 
-pub(crate) fn erase_package_occurrences<P: TypecheckVisitPhase>(package: &mut Package<P>) {
+pub(crate) fn erase_package_occurrences<P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>>(
+    package: &mut Package<P>,
+) {
     OccurrenceEraser.visit_package(package);
 }
 
 #[cfg(feature = "prime")]
-pub(crate) fn erase_module_occurrences<P: TypecheckVisitPhase>(module: &mut Module<P>) {
+pub(crate) fn erase_module_occurrences<P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>>(
+    module: &mut Module<P>,
+) {
     OccurrenceEraser.visit_module(module);
 }
 
@@ -192,7 +200,10 @@ impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for OccurrenceEraser {
 }
 
 impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for PackageNormalizer {
-    fn visit_module(&mut self, module: &mut Module<P>) {
+    fn visit_module(&mut self, module: &mut Module<P>)
+    where
+        P: Phase<FnBody = Expr<P>>,
+    {
         normalize_module_in_place(
             module,
             &mut self.presentation,
@@ -202,7 +213,7 @@ impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for PackageNormalizer {
     }
 }
 
-fn normalize_module_in_place<P: TypecheckVisitPhase>(
+fn normalize_module_in_place<P: TypecheckVisitPhase + Phase<FnBody = Expr<P>>>(
     module: &mut Module<P>,
     presentation: &mut BinderPresentation,
     protect_synthesized_call_heads: bool,

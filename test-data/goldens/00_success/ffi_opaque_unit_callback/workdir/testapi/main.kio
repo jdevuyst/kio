@@ -1,0 +1,31 @@
+module testapi/main;
+
+import testapi as t;
+import testapi/arith as a;
+import testapi/fmt as f;
+import testapi/io as io;
+
+pub fn boxed() -> t.Box(. -> t.I32) { a.box_make(.() { io.print("thunk\n"); 42(t.I32) }) }
+
+pub fn invoke(value: t.Box(. -> t.I32)) -> t.I32 { a.box_get(value)() }
+
+pub fn relay[*F](value: F(. -> t.I32)) -> F(. -> t.I32) { value }
+
+pub fn compound(value: t.Box((. -> t.I32) & ([A] A -> A))) -> t.Box((. -> t.I32) & ([A] A -> A)) {
+  value
+}
+
+pub fn main() {
+  let value = relay(boxed());
+  io.print("ready\n");
+  io.print(f.i32_to_string(invoke(value)));
+  io.print("\n");
+  let .(thunk, identity) =
+    a.box_get(compound(a.box_make((
+      , .() { io.print("compound thunk\n"); 43(t.I32) }
+      , .[A](value: A) { io.print("identity\n"); value }
+      ))));
+  io.print("compound ready\n");
+  io.print(f.i32_to_string(identity(thunk())));
+  io.print("\n")
+}

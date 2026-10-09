@@ -174,7 +174,7 @@ the contract.
 
   | Public members | Java boundary value |
   | --- | --- |
-  | neither | a declaration-specific opaque `Shapes.KioNewtype_<exact-declaration>` class |
+  | neither | a declaration-owned opaque class, such as `Shapes.KioModule_api.Token` |
   | constructor only | that class, constructible only through the method |
   | projector only | that class, inspectable only through the method |
   | both, no existential | a declaration-specific class with a typed payload constructor and `value()` accessor |
@@ -194,8 +194,8 @@ the contract.
   is a finite nominal leaf, so its hidden payload is not traversed while
   deriving an enclosing boundary shape.
 
-Carrier identity is the exact declaring module plus newtype name, encoded as
-`KioNewtype_<exact-module>__<exact-name>`. The handle, host interface,
+Carrier identity is the exact declaring module plus newtype name, realized
+under the module holders in `Shapes` (see [§ Item naming](#item-naming)). The handle, host interface,
 namespace nodes, and declaration-owned newtype carriers and markers carry
 the package-root host-type parameters in declaration-keyed order. Canonical
 products, sums, and functions carry only their constituent type indices;
@@ -242,9 +242,9 @@ for both. This is Java's exact-frame realization of the shared
 [declaration-keyed conversion-adapter capability](README.md#declaration-keyed-conversion-adapters);
 Go and Python use that capability's readable-primary naming strategy instead.
 A parameterized host declaration uses the canonical nested `Shapes.Apply1`
-index rooted at its exact `Shapes.KioHostTypeMk_<declaration>` marker and
+index rooted at its exact declaration marker, such as `Shapes.KioModule_api.Box`, and
 contributes a generic adapter pair. Its declaration-owned
-`Shapes.KioHostType_<declaration>` helper supplies typed `fromNative(Object)`
+`Shapes.KioModule_api.Box.Storage` helper supplies typed `fromNative(Object)`
 and `toNative(...)` storage operations. These helpers apply only to that host
 declaration, not to a newtype or an arbitrary application.
 
@@ -271,7 +271,9 @@ The package never calls it. A removed `host type` no longer occupies a
 package-root generic parameter; a deprecated declaration-owned `Shapes`
 carrier and deprecated throwing adapter defaults keep frozen signatures
 nameable without requiring a current host to select or implement the removed
-binding. Java cannot default a removed generic parameter, so old source that
+binding. A retained nullary declaration's carrier is an inert interface;
+parameterized declarations keep their marker and storage helper. Java cannot
+default a removed generic parameter, so old source that
 explicitly supplied that history-only type argument must drop it. An old
 method or adapter override whose signature used that selected type must also be
 deleted or rewritten against the declaration-owned carrier.
@@ -337,6 +339,9 @@ Arguments are evaluated call-by-value in declaration order
 
 ## FFI surface
 
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
+
 ### Host-type bindings
 
 The public type of each nullary `host type` is its exact package-root type
@@ -366,6 +371,11 @@ existing role-shaped private body type and exact adapter pair.
 
 ### Structural and nominal types
 
+These values follow the shared
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged). Record
+shells do not remove that obligation for nested referenced Kio data; opaque
+host state retains its declared operations.
+
 Compound values use these canonical types in `Shapes.java`, in package bodies
 as well as at the public boundary:
 
@@ -389,8 +399,8 @@ as well as at the public boundary:
   class or another implementation of the generated interface. A type-stage
   effect runs when that advance occurs, not when a later function is called.
   Named declaration-head binders remain Java method type parameters.
-- A nullary **newtype** uses its exact
-  `KioNewtype_<module>__<name>` class. With both members public and no
+- A nullary **newtype** uses its exact declaration-owned class, such as
+  `Shapes.KioModule_api.Token`. With both members public and no
   existential it has a typed public payload constructor and `value()`
   accessor. Opaque, one-member and existential classes hide their payload
   and raw constructor; only the selected package methods expose their
@@ -437,14 +447,14 @@ retained source grouping still come from the same prepared plan.
 The public index of every application is unary:
 `F(A)` is `Shapes.Apply1<F, A>`, and `F(A, B)` is
 `Shapes.Apply1<Shapes.Apply1<F, A>, B>`. A partial and a saturated nominal
-application use this same rule. The exact constructor marker is
-`KioNewtypeMk_<declaration>` or `KioHostTypeMk_<declaration>`.
+application use this same rule. The exact constructor marker is the
+declaration-owned interface, such as `Shapes.KioModule_api.Box`.
 Newtype markers carry the package-root host selections used by their
 declaration; host-type markers need no such arguments.
 
 `Apply1` exposes no general raw constructor or payload accessor. Ordinary
 newtype members provide precisely the operations their visibility permits.
-A host declaration's own `KioHostType_<declaration>` helper can store and
+A host declaration's own nested `Storage` helper can store and
 retrieve host-owned storage at its exact application index; it cannot rebrand
 another declaration or project a newtype. Passing a value through abstract
 `T` or `F(A)` preserves that value without structural traversal.
@@ -469,15 +479,52 @@ before escaping remaining `_` as `_u`; exact paths also escape `/` as `_s`.
 Nested modules always use `KioModule_<exact-component>` and public newtype
 handles always use `KioType_<exact-component>`. Host-interface methods use
 the readable/exact mangling of [§ Host record contract](#host-record-contract).
+The root module `java` also uses `KioModule_java`: its field would otherwise
+capture the package qualifier used by generated support references. Runtime
+module lookup retains the source identity. Ordinary functions named `java`
+remain `java()`; a method name does not capture that qualifier.
 Structural shell and nominal carrier names follow [§ FFI surface](#ffi-surface).
-Source-readable carrier, host-binding, callable-site, and `forall` owner
-components use the same word casing and exact escaping. This changes their
-host spelling, not the raw declaration identity or opaque structural shell
-identity used to distinguish types.
-An unsaturated nominal constructor uses
-`KioNewtypeMk_<exact-module>__<exact-name>` or
-`KioHostTypeMk_<exact-module>__<exact-name>` according to its declaration
-category.
+Host-binding and member components use the same word casing and exact escaping.
+Class-bearing nominal and facade type names instead preserve source word
+boundaries as described below. Presentation does not change raw declaration
+or structural identity.
+Declaration-owned types use module-structured paths under `Shapes`:
+`api/types.Pick_first` becomes `Shapes.KioModule_api.KioModule_types.Pick_first`.
+Module holders use `KioModule_<raw-exact-component>`; type leaves retain their
+source spelling. Raw exact components escape `_` as `_u` without word casing.
+These class-bearing names preserve source word boundaries under case-insensitive
+filename comparison, as required by [the shared naming contract](README.md#source-derived-public-names).
+Each holder is a noninstantiable static class. A nullary newtype owns its
+existing carrier class; a parameterized host type or newtype owns its existing
+constructor-marker interface. A retained nullary host type owns an inert
+interface; live nullary host types remain package-root parameters.
+
+When a module holder repeats an enclosing name under ASCII case folding, it
+uses `KioModule_D<depth>_<raw-exact-component>`, with zero-based source depth.
+A type leaf equal to an enclosing type name (including `Shapes`), or beginning
+with `KioModule_`, `KioType_` or `KioNominal_`, under the same comparison uses
+`KioType_<raw-exact-component>`. These fixed reserved classes are disjoint
+from ordinary source-derived names. A parameterized
+host type owns a nested `Storage` helper; when that helper would repeat an
+enclosing type name under ASCII case folding, its name is `KioStorage`.
+
+A nominal path's complete classfile basename, including `Shapes$`, every `$` separator,
+the longest fixed `$KioStorage` helper suffix, and `.class`, is bounded to
+240 ASCII bytes. If a nominal path exceeds that budget, its declaration
+instead lives directly under `Shapes` as `KioNominal_<role>_H<digest>`, with
+role `Host` or `Newtype` and the 16-digit lowercase FNV-1a-64 digest of
+`<role>:<source-module-path>/<source-type-name>`. A full-identity collision
+is rejected, never assigned a sibling-dependent suffix. Only holders used
+by selected nested paths are emitted. Placement and names depend on the
+declaration's own identity and fixed reservations, never on its siblings.
+
+Export namespace classes use `Ns_` followed by raw exact source components
+with `M_` (module) and `T_` (type) roles, separated by `__`. Newtype-handle
+classes use the same framing with `NtH_`. Each class identifier is at most
+64 bytes: longer identities use `<prefix>_H<digest>`, with the 16-digit FNV-1a-64
+digest of the complete prefixed raw-exact identity. Distinct full identities
+with the same case-folded classfile name are rejected. This component bound
+does not bound the separately configured outer package-handle brand.
 
 A first-class `forall` interface uses a readable `KioForall_` shape name.
 For example, `[A] A -> A` uses `KioForall_Type_Fn_T0_T0`, whose generic

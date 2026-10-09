@@ -40,6 +40,7 @@ use crate::ast::{
 #[derive(Debug, Clone)]
 pub enum DocEntry<'a> {
     Fn(&'a FnDef<Surface>),
+    RecFn(&'a FnDef<Surface, ()>),
     TypeAlias(&'a TypeAlias<Surface>, Option<&'a TypeRecGroup>),
     LiteralAlias(&'a LiteralAlias<Surface>),
     Newtype(&'a Newtype<Surface>, Option<&'a TypeRecGroup>),
@@ -69,6 +70,7 @@ impl<'a> DocEntry<'a> {
     pub fn name(&self) -> &str {
         match self {
             DocEntry::Fn(d) => &d.name,
+            DocEntry::RecFn(d) => &d.name,
             DocEntry::TypeAlias(a, _) => &a.name,
             DocEntry::LiteralAlias(l) => &l.name,
             DocEntry::Newtype(n, _) => &n.name,
@@ -88,6 +90,7 @@ impl<'a> DocEntry<'a> {
     pub fn doc(&self) -> Option<&'a DocComment> {
         match self {
             DocEntry::Fn(d) => d.doc.as_ref(),
+            DocEntry::RecFn(d) => d.doc.as_ref(),
             DocEntry::TypeAlias(a, _) => a.doc.as_ref(),
             DocEntry::LiteralAlias(l) => l.doc.as_ref(),
             DocEntry::Newtype(n, _) => n.doc.as_ref(),
@@ -105,7 +108,7 @@ impl<'a> DocEntry<'a> {
     /// (`"fn"`, `"newtype"`, `"host type"`, …).
     pub fn kind(&self) -> &'static str {
         match self {
-            DocEntry::Fn(_) => "fn",
+            DocEntry::Fn(_) | DocEntry::RecFn(_) => "fn",
             DocEntry::TypeAlias(_, _) => "type",
             DocEntry::LiteralAlias(_) => "literal",
             DocEntry::Newtype(_, _) | DocEntry::LabelNominal { .. } => "newtype",
@@ -165,6 +168,7 @@ impl<'a> DocEntry<'a> {
     pub fn visibility(&self) -> &crate::ast::Visibility {
         match self {
             Self::Fn(function) => &function.vis,
+            Self::RecFn(function) => &function.vis,
             Self::TypeAlias(alias, _) => &alias.vis,
             Self::LiteralAlias(literal) => &literal.vis,
             Self::Newtype(newtype, _) => &newtype.vis,
@@ -196,6 +200,7 @@ impl<'a> DocEntry<'a> {
         }
         match self {
             DocEntry::Fn(d) => Item::FnDef((*d).clone()),
+            DocEntry::RecFn(d) => Item::FnDef((*d).clone().into_impure()),
             DocEntry::TypeAlias(a, _) => Item::TypeAlias((*a).clone()),
             DocEntry::LiteralAlias(l) => Item::LiteralAlias((*l).clone(), ()),
             DocEntry::Newtype(n, _) => Item::Newtype((*n).clone()),
@@ -255,7 +260,7 @@ pub fn documented_entries_for_item(item: &Item<Surface>) -> Vec<DocEntry<'_>> {
         Item::Elaborator(e, _) => vec![DocEntry::Elaborator(e)],
         Item::HostType(h) => vec![DocEntry::HostType(h)],
         Item::HostFn(h) => vec![DocEntry::HostFn(h)],
-        Item::RecGroup(g, _) => g.members.iter().map(DocEntry::Fn).collect(),
+        Item::RecGroup(g, _) => g.members.iter().map(DocEntry::RecFn).collect(),
         Item::TypeRecGroup(g) => g
             .members
             .iter()

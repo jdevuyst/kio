@@ -39,11 +39,14 @@ use super::naming::{
     GoIdentifier, GoSemanticKeyRole, ScopeClaims, encode_semantic_key, facade_shell_go_identifier,
 };
 
+mod index;
+use index::{GoIndexDeclarations, GoIndexType};
+
 const NEWTYPE_CODEC_VERSION: u64 = 1;
 const SUM_USE_CODEC_VERSION: u64 = 1;
 
 const UNIT_TYPE: &str = "Unit";
-const ERASED_TYPE: &str = "any";
+const ERASED_TYPE: &str = "Value";
 const SUM_CARRIER_TYPE: &str = "KioSum";
 const SUM_CASE_MARKER: &str = "kioCaseMarker";
 const SUM_ROW_CONSTRAINT: &str = "kioSumRow";
@@ -188,6 +191,7 @@ pub(crate) enum GoFacadeSupportName {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum GoCarrierNameRole {
     PublicType,
+    BodyType,
 }
 
 /// Role of one package-level declaration derived from a sum key.
@@ -230,6 +234,9 @@ pub(crate) enum GoFacadeNameOwner {
     ContextualSumRow {
         site: BoundaryFacadeSiteId,
         ordinal: u64,
+    },
+    Index {
+        identity: String,
     },
 }
 
@@ -277,11 +284,14 @@ enum GoFacadeTerm {
         substitutions: Arc<BTreeMap<FacadeBinderId, GoFacadeContext>>,
     },
     Erased(GoErasureReason),
+    Index(GoIndexType),
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct GoFacadeContext {
     term: Arc<GoFacadeTerm>,
+    typed_stages: bool,
+    next_index: usize,
 }
 
 impl GoFacadeContext {
@@ -289,18 +299,24 @@ impl GoFacadeContext {
         arena: GoFacadeArenaId,
         use_id: FacadeUseId,
         substitutions: Arc<BTreeMap<FacadeBinderId, GoFacadeContext>>,
+        typed_stages: bool,
+        next_index: usize,
     ) -> Self {
         Self {
             term: Arc::new(GoFacadeTerm::Use {
                 source: GoFacadeUseSource { arena, use_id },
                 substitutions,
             }),
+            typed_stages,
+            next_index,
         }
     }
 
     fn erased(reason: GoErasureReason) -> Self {
         Self {
             term: Arc::new(GoFacadeTerm::Erased(reason)),
+            typed_stages: false,
+            next_index: 0,
         }
     }
 }
@@ -322,29 +338,53 @@ impl GoFacadeTraversal {
             active_newtypes,
         }
     }
+
+    fn same_conversion_use(&self, other: &Self) -> bool {
+        self.context == other.context
+            && self.active_newtypes == other.active_newtypes
+            && self.bound_args.len() == other.bound_args.len()
+            && self.bound_args.iter().zip(other.bound_args.iter()).all(
+                |((left_id, left), (right_id, right))| {
+                    left_id == right_id && left.same_conversion_use(right)
+                },
+            )
+    }
 }
 
-/// Identity-derived, non-generic carrier for one exact nominal declaration.
-///
-/// Type-parameter arity belongs to a site-local application, not to this
-/// declaration. This lets live and retained epochs safely share the same
-/// carrier declaration whenever their exact qualified identity agrees.
+/// Declaration-owned public skin and private canonical body envelope.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct GoNewtypeCarrier {
     name: QualifiedTypeName,
     public_type: GoIdentifier,
+    body_type: GoIdentifier,
+    parameter_kinds: Vec<String>,
     identity_field: GoIdentifier,
     value_accessor: GoIdentifier,
+    transparent_body: bool,
 }
 
 impl GoNewtypeCarrier {
+    #[cfg(test)]
     fn new(name: &QualifiedTypeName) -> Result<Self, GoFacadeError> {
+        Self::with_parameters(name, &[])
+    }
+
+    fn with_parameters(
+        name: &QualifiedTypeName,
+        parameters: &[BoundaryNominalTypeParam],
+    ) -> Result<Self, GoFacadeError> {
         let frame = encode_qualified_type_frame(name);
         Ok(Self {
             name: name.clone(),
             public_type: go_identifier(format!("KioNewtype_{frame}"))?,
+            body_type: go_identifier(format!("kioNewtypeBody_{frame}"))?,
+            parameter_kinds: parameters
+                .iter()
+                .map(|parameter| index::kind_key(parameter.kind()))
+                .collect(),
             identity_field: go_identifier(format!("kioNewtypeMarker_{frame}"))?,
-            value_accessor: go_identifier(format!("kioNewtypeValue_{frame}"))?,
+            value_accessor: go_identifier("kioNominalPayload".to_owned())?,
+            transparent_body: false,
         })
     }
 
@@ -352,16 +392,14 @@ impl GoNewtypeCarrier {
         &self.name
     }
 
+    #[cfg(test)]
     pub(crate) fn public_type(&self) -> &GoIdentifier {
         &self.public_type
     }
 
-    /// The concrete type used to construct hidden storage inside the emitted
-    /// package. It is the public nominal type itself, not an interface-backed
-    /// implementation that an external embedding could forge.
-    #[cfg(test)]
+    /// Nongeneric storage used by erased Kio constructors and projectors.
     pub(crate) fn storage_type(&self) -> &GoIdentifier {
-        &self.public_type
+        &self.body_type
     }
 
     #[cfg(test)]
@@ -369,12 +407,44 @@ impl GoNewtypeCarrier {
         &self.value_accessor
     }
 
-    pub(crate) fn render_out(&self, value: &str) -> String {
-        format!("{}{{value: {value}}}", self.public_type)
+    fn applied_type(&self, indices: &[GoIndexType]) -> Result<GoType, GoFacadeError> {
+        if indices.len() != self.parameter_kinds.len() {
+            return Err(GoFacadeError::new(
+                "nominal skin index arity differs from its declaration",
+            ));
+        }
+        for (index, expected) in indices.iter().zip(&self.parameter_kinds) {
+            if index::kind_key(&index.kind) != *expected {
+                return Err(GoFacadeError::new(
+                    "nominal skin index kind differs from its declaration",
+                ));
+            }
+        }
+        let arguments = if indices.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "[{}]",
+                indices
+                    .iter()
+                    .map(|index| index.ty.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        Ok(GoType::new(format!("{}{arguments}", self.public_type)))
+    }
+
+    pub(crate) fn render_out(&self, boundary_type: &GoType, value: &str) -> String {
+        if self.transparent_body {
+            format!("{boundary_type}{{body: {value}}}")
+        } else {
+            format!("{boundary_type}{{body: ({value}).({})}}", self.body_type)
+        }
     }
 
     pub(crate) fn render_in(&self, value: &str) -> String {
-        format!("({value}).{}()", self.value_accessor)
+        format!("({value}).body")
     }
 
     #[cfg(test)]
@@ -388,17 +458,50 @@ impl GoNewtypeCarrier {
         provenance: GoDeclarationProvenance,
     ) {
         render_deprecation_comment(out, provenance.removed_at_version());
-        writeln!(out, "type {} struct {{", self.public_type)
+        let parameters = if self.parameter_kinds.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "[{}]",
+                self.parameter_kinds
+                    .iter()
+                    .enumerate()
+                    .map(|(index, kind)| format!("I{index} KioIndexKind_{kind}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        writeln!(out, "type {}{parameters} struct {{", self.public_type)
             .expect("writing to String cannot fail");
-        writeln!(out, "\t{} [0]struct{{}}", self.identity_field)
+        let identity = if self.parameter_kinds.is_empty() {
+            "struct{}".to_owned()
+        } else {
+            format!(
+                "func({})",
+                (0..self.parameter_kinds.len())
+                    .map(|index| format!("I{index}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        writeln!(out, "\t{} [0]{identity}", self.identity_field)
             .expect("writing to String cannot fail");
-        writeln!(out, "\tvalue any").expect("writing to String cannot fail");
+        let body_type = if self.transparent_body {
+            "any"
+        } else {
+            self.body_type.as_str()
+        };
+        writeln!(out, "\tbody {body_type}").expect("writing to String cannot fail");
         writeln!(out, "}}\n").expect("writing to String cannot fail");
-        render_deprecation_comment(out, provenance.removed_at_version());
+        if self.transparent_body {
+            return;
+        }
+        writeln!(out, "type {} struct {{ value any }}\n", self.body_type)
+            .expect("writing to String cannot fail");
         writeln!(
             out,
             "func (value {}) {}() any {{",
-            self.public_type, self.value_accessor
+            self.body_type, self.value_accessor
         )
         .expect("writing to String cannot fail");
         writeln!(out, "\treturn value.value").expect("writing to String cannot fail");
@@ -664,10 +767,20 @@ pub(crate) struct GoRoleAdapter {
     convert_out: GoIdentifier,
 }
 
+pub(crate) struct GoHostPreparation<'a> {
+    pub(crate) spelling: String,
+    pub(crate) boundary_type: GoType,
+    pub(crate) index_type: GoType,
+    pub(crate) role_adapter: Option<&'a GoRoleAdapter>,
+    pub(crate) carrier: Option<&'a GoHostTypeCarrier>,
+    pub(crate) indices: Vec<(String, String)>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct GoHostTypeCarrier {
     name: QualifiedTypeName,
     arity: usize,
+    kinds: Vec<crate::ast::Kind>,
     public_type: GoIdentifier,
     identity_field: GoIdentifier,
     from_native: GoIdentifier,
@@ -677,7 +790,7 @@ pub(crate) struct GoHostTypeCarrier {
 impl GoHostTypeCarrier {
     fn new(
         name: &QualifiedTypeName,
-        arity: usize,
+        kinds: Vec<crate::ast::Kind>,
         provenance: GoDeclarationProvenance,
     ) -> Result<Self, GoFacadeError> {
         let frame = encode_qualified_type_frame(name);
@@ -689,7 +802,8 @@ impl GoHostTypeCarrier {
         );
         Ok(Self {
             name: name.clone(),
-            arity,
+            arity: kinds.len(),
+            kinds,
             public_type: go_identifier(format!("KioHostType_{readable}"))?,
             identity_field: go_identifier(format!("kioHostTypeMarker_{frame}"))?,
             from_native: go_identifier(format!("UnsafeKioHostType_{readable}FromNative"))?,
@@ -734,12 +848,25 @@ impl GoHostTypeCarrier {
     }
 
     fn render_declaration(&self, out: &mut String) {
-        let declaration = go_type_parameter_declaration(self.arity);
+        let declaration = index::bracketed(
+            &self
+                .kinds
+                .iter()
+                .enumerate()
+                .map(|(position, kind)| {
+                    format!("T{position} KioIndexKind_{}", index::kind_key(kind))
+                })
+                .collect::<Vec<_>>(),
+        );
         let arguments = go_type_parameter_use(self.arity);
         render_deprecation_comment(out, self.provenance.removed_at_version());
         writeln!(out, "type {}{declaration} struct {{", self.public_type)
             .expect("writing to String cannot fail");
-        writeln!(out, "\t{} [0]struct{{}}", self.identity_field)
+        let phantom = (0..self.arity)
+            .map(|index| format!("T{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(out, "\t{} [0]func({phantom})", self.identity_field)
             .expect("writing to String cannot fail");
         writeln!(out, "\tvalue any\n}}\n").expect("writing to String cannot fail");
         render_deprecation_comment(out, self.provenance.removed_at_version());
@@ -825,6 +952,58 @@ impl GoRoleAdapter {
 }
 
 impl GoHostBindingPlan {
+    fn preparation<'a>(
+        &'a self,
+        binding: &BoundaryHostBinding,
+        declarations: &mut GoIndexDeclarations,
+    ) -> Result<GoHostPreparation<'a>, GoFacadeError> {
+        let carrier = self.parametric_carrier(binding.name());
+        let native = self.exact_type(binding.name());
+        let kind =
+            binding
+                .type_params()
+                .iter()
+                .rev()
+                .fold(crate::ast::Kind::Star, |result, parameter| {
+                    crate::ast::Kind::Arrow(Box::new(parameter.kind().clone()), Box::new(result))
+                });
+        let mut index = declarations.nominal(
+            binding.name(),
+            kind,
+            native,
+            GoDeclarationProvenance::from_host_binding(binding.origin()),
+        )?;
+        let mut indices = Vec::new();
+        let mut arguments = Vec::new();
+        for (position, parameter) in binding.type_params().iter().enumerate() {
+            let name = format!("KioI{position}");
+            let argument = GoIndexType {
+                ty: GoType::new(&name),
+                kind: parameter.kind().clone(),
+            };
+            indices.push((name, declarations.kind(parameter.kind())?));
+            arguments.push(argument.ty.clone());
+            index = declarations.apply(index, argument)?;
+        }
+        let boundary_type = match carrier {
+            Some(carrier) => carrier.applied_type(&arguments)?,
+            None => native
+                .expect("a nullary host binding owns its exact type")
+                .clone(),
+        };
+        let identity =
+            readable_role_adapter_identity(binding.name().module_segments(), binding.name().name())
+                .unwrap_or_else(|| encode_qualified_type_frame(binding.name()));
+        Ok(GoHostPreparation {
+            spelling: format!("Host_{identity}"),
+            boundary_type,
+            index_type: index.ty,
+            role_adapter: self.role_adapter(binding.name()),
+            carrier,
+            indices,
+        })
+    }
+
     fn prepare<'a>(
         bindings: impl IntoIterator<Item = &'a BoundaryHostBinding>,
     ) -> Result<Self, GoFacadeError> {
@@ -834,7 +1013,11 @@ impl GoHostBindingPlan {
             if !binding.type_params().is_empty() {
                 let carrier = GoHostTypeCarrier::new(
                     binding.name(),
-                    binding.type_params().len(),
+                    binding
+                        .type_params()
+                        .iter()
+                        .map(|parameter| parameter.kind().clone())
+                        .collect(),
                     provenance,
                 )?;
                 if plan
@@ -886,7 +1069,7 @@ impl GoHostBindingPlan {
             }
             plan.parameters.push(GoHostBindingParameter {
                 name,
-                constraint: ERASED_TYPE,
+                constraint: "any",
             });
             if let BoundaryHostTypeBinding::Role(role) = binding.binding() {
                 let adapter_identity = readable_role_adapter_identity(
@@ -1051,13 +1234,22 @@ impl GoNominalPlan<'_> {
 struct GoReachability {
     shells: BTreeSet<FacadeShellId>,
     carriers: BTreeSet<GoNewtypeCarrier>,
-    contextual_sums: BTreeMap<GoFacadeContext, GoType>,
+    contextual_sums: BTreeMap<GoFacadeContext, GoPreparedSumRow>,
+    indices: GoIndexDeclarations,
+    recursion_probe: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GoPreparedSumRow {
+    concrete_type: GoType,
+    indices: BTreeMap<GoType, GoIndexType>,
 }
 
 impl GoReachability {
     fn merge(&mut self, other: Self) -> Result<(), GoFacadeError> {
         self.shells.extend(other.shells);
         self.carriers.extend(other.carriers);
+        self.indices.merge(other.indices)?;
         for (context, concrete_type) in other.contextual_sums {
             if let Some(previous) = self.contextual_sums.insert(context, concrete_type.clone())
                 && previous != concrete_type
@@ -1077,6 +1269,7 @@ struct GoContextualSumRow {
     name: GoIdentifier,
     concrete_type: GoType,
     type_arguments: String,
+    type_declaration: String,
 }
 
 #[derive(Clone, Debug)]
@@ -1113,7 +1306,7 @@ enum GoResolvedHead {
         arguments: Vec<GoFacadeTraversal>,
         caller: GoFacadeTraversal,
     },
-    Erased(GoErasureReason),
+    Erased(GoErasureReason, Vec<GoFacadeTraversal>),
 }
 
 /// One prepared callable plus its exact site-local nominal snapshot.
@@ -1124,6 +1317,8 @@ pub(crate) struct GoFacadeSite<'a> {
     prepared: PreparedBoundaryCallableSite<'a>,
     nominals: BTreeMap<QualifiedTypeName, GoNominalPlan<'a>>,
     contextual_sum_rows: BTreeMap<GoFacadeContext, GoContextualSumRow>,
+    recursive_skins: BTreeMap<QualifiedTypeName, GoNewtypeCarrier>,
+    stage_host_type: GoType,
 }
 
 impl<'a> GoFacadeSite<'a> {
@@ -1161,7 +1356,7 @@ impl<'a> GoFacadeSite<'a> {
                     ..
                 } if surface.uses_nominal_carrier() => GoNominalPlan::Carrier {
                     arity: type_params.len(),
-                    carrier: GoNewtypeCarrier::new(name)?,
+                    carrier: GoNewtypeCarrier::with_parameters(name, type_params)?,
                 },
                 BoundaryNominalDeclaration::Newtype { .. } => {
                     return Err(GoFacadeError::new(format!(
@@ -1177,11 +1372,51 @@ impl<'a> GoFacadeSite<'a> {
                 ));
             }
         }
-        Ok(Self {
+        let mut site = Self {
             prepared,
             nominals,
             contextual_sum_rows: BTreeMap::new(),
-        })
+            recursive_skins: BTreeMap::new(),
+            stage_host_type: GoType::new(format!(
+                "func({})",
+                root_bindings
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        };
+        let mut recursive_skins = BTreeMap::new();
+        for (name, nominal) in &site.nominals {
+            let GoNominalPlan::Transparent { arity, .. } = nominal else {
+                continue;
+            };
+            let caller =
+                GoFacadeTraversal::erased(GoErasureReason::UnboundType, Arc::new(Vec::new()));
+            let arguments = vec![caller.clone(); *arity];
+            let mut probe = GoReachability {
+                recursion_probe: true,
+                ..GoReachability::default()
+            };
+            if let GoRenderResult::Complete(GoRenderedType {
+                erasure: Some(GoErasureReason::RecursiveBoth(target)),
+                ..
+            }) = site.render_nominal(name, &arguments, &caller, &mut probe)?
+                && &target == name
+            {
+                let Some(BoundaryNominalDeclaration::Newtype { type_params, .. }) =
+                    prepared.nominals().declaration(name)
+                else {
+                    unreachable!("transparent nominal owns a newtype declaration")
+                };
+                let mut carrier = GoNewtypeCarrier::with_parameters(name, type_params)?;
+                carrier.transparent_body = true;
+                recursive_skins.insert(name.clone(), carrier);
+            }
+        }
+        site.recursive_skins = recursive_skins;
+        Ok(site)
     }
 
     pub(crate) fn id(&self) -> &BoundaryFacadeSiteId {
@@ -1227,6 +1462,8 @@ impl<'a> GoFacadeSite<'a> {
             substitutions: Arc::new(BTreeMap::new()),
             bound_args: Arc::new(BTreeMap::new()),
             active_newtypes: Arc::new(Vec::new()),
+            typed_stages: true,
+            next_index: 0,
         }
     }
 
@@ -1244,9 +1481,17 @@ impl<'a> GoFacadeSite<'a> {
     /// source-parameter presentation. It carries no live cursor or execution
     /// authority; those remain exclusive to [`GoLiveFacadeSite::callable_entry`].
     pub(crate) fn callable_entry(&self) -> Result<GoCallableEntry<'_, 'a>, GoFacadeError> {
+        self.callable_entry_with_indices(false)
+    }
+
+    pub(crate) fn callable_entry_with_indices(
+        &self,
+        selected: bool,
+    ) -> Result<GoCallableEntry<'_, 'a>, GoFacadeError> {
         let semantic = self.callable().entry();
         let mut current = self.root_facade().root_use()?.traversal;
         let mut stages = Vec::with_capacity(semantic.head_stages.len());
+        let mut index_count = 0;
 
         for (semantic_stage, presentation) in semantic
             .head_stages
@@ -1283,21 +1528,37 @@ impl<'a> GoFacadeSite<'a> {
                     else {
                         unreachable!("a semantic Forall head has a semantic source")
                     };
-                    let mut nested = substitutions.as_ref().clone();
-                    nested.insert(id, GoFacadeContext::erased(GoErasureReason::UnboundType));
-                    let mut bound_args = current.bound_args.as_ref().clone();
-                    bound_args.insert(
-                        id,
+                    let argument = if selected {
+                        GoFacadeTraversal {
+                            context: GoFacadeContext {
+                                term: Arc::new(GoFacadeTerm::Index(GoIndexType {
+                                    ty: GoType::new(format!("KioI{index_count}")),
+                                    kind: binder.kind.clone(),
+                                })),
+                                typed_stages: true,
+                                next_index: 0,
+                            },
+                            bound_args: Arc::new(BTreeMap::new()),
+                            active_newtypes: Arc::clone(&current.active_newtypes),
+                        }
+                    } else {
                         GoFacadeTraversal::erased(
                             GoErasureReason::UnboundType,
                             Arc::clone(&current.active_newtypes),
-                        ),
-                    );
+                        )
+                    };
+                    index_count += 1;
+                    let mut nested = substitutions.as_ref().clone();
+                    nested.insert(id, argument.context.clone());
+                    let mut bound_args = current.bound_args.as_ref().clone();
+                    bound_args.insert(id, argument);
                     current = GoFacadeTraversal {
                         context: GoFacadeContext::use_in(
                             source.arena.clone(),
                             *result,
                             Arc::new(nested),
+                            current.context.typed_stages,
+                            index_count,
                         ),
                         bound_args: Arc::new(bound_args),
                         active_newtypes: Arc::clone(&current.active_newtypes),
@@ -1456,6 +1717,8 @@ impl<'a> GoFacadeSite<'a> {
             substitutions: Arc::new(substitutions),
             bound_args: Arc::new(BTreeMap::new()),
             active_newtypes: Arc::new(Vec::new()),
+            typed_stages: true,
+            next_index: 0,
         })
     }
 
@@ -1469,7 +1732,9 @@ impl<'a> GoFacadeSite<'a> {
             .iter()
             .map(|argument| argument.context.clone())
             .collect::<Vec<_>>();
-        let arena = self.instantiate_payload_arena(name, &argument_contexts)?;
+        let mut arena = self.instantiate_payload_arena(name, &argument_contexts)?;
+        arena.typed_stages = caller.context.typed_stages;
+        arena.next_index = caller.context.next_index;
         let payload = arena.root_use()?;
         let (nominal, payload_plan) = self.payload_plan(name)?;
         let GoNominalPlan::Transparent {
@@ -1546,6 +1811,8 @@ impl<'a> GoFacadeSite<'a> {
             source.arena.clone(),
             use_id,
             Arc::clone(substitutions),
+            parent.typed_stages,
+            parent.next_index,
         ))
     }
 
@@ -1589,14 +1856,21 @@ impl<'a> GoFacadeSite<'a> {
         reachability: &mut GoReachability,
     ) -> Result<GoRenderResult, GoFacadeError> {
         let context = &traversal.context;
-        let GoFacadeTerm::Use { .. } = context.term.as_ref() else {
-            let GoFacadeTerm::Erased(reason) = context.term.as_ref() else {
-                unreachable!()
-            };
-            return Ok(GoRenderResult::Complete(GoRenderedType::erased(
-                reason.clone(),
-            )));
-        };
+        match context.term.as_ref() {
+            GoFacadeTerm::Use { .. } => {}
+            GoFacadeTerm::Index(index) => {
+                reachability.indices.kind(&index.kind)?;
+                return Ok(GoRenderResult::Complete(GoRenderedType::concrete(format!(
+                    "Prepared[{}]",
+                    index.ty
+                ))));
+            }
+            GoFacadeTerm::Erased(reason) => {
+                return Ok(GoRenderResult::Complete(GoRenderedType::erased(
+                    reason.clone(),
+                )));
+            }
+        }
         match self.use_at(context)? {
             FacadeUse::Unit { .. } => Ok(GoRenderResult::Complete(GoRenderedType::concrete(
                 UNIT_TYPE,
@@ -1619,7 +1893,23 @@ impl<'a> GoFacadeSite<'a> {
                         arguments,
                         caller,
                     } => self.render_nominal(&name, &arguments, &caller, reachability),
-                    GoResolvedHead::Erased(reason) => {
+                    GoResolvedHead::Erased(reason, arguments) => {
+                        if reachability.recursion_probe {
+                            for argument in arguments {
+                                if let GoRenderResult::Cycle(target) =
+                                    self.render_context(&argument, reachability)?
+                                {
+                                    return Ok(GoRenderResult::Cycle(target));
+                                }
+                            }
+                        }
+                        if let Some(index) =
+                            self.index_type(traversal, &mut reachability.indices)?
+                        {
+                            return Ok(GoRenderResult::Complete(GoRenderedType::concrete(
+                                format!("Prepared[{}]", index.ty),
+                            )));
+                        }
                         Ok(GoRenderResult::Complete(GoRenderedType::erased(reason)))
                     }
                 }
@@ -1656,10 +1946,16 @@ impl<'a> GoFacadeSite<'a> {
                 }
                 let shell = GoFacadeShell::new(shell)?;
                 let concrete_row = shell.concrete_row_type(&rendered)?;
+                let mut indices = GoIndexDeclarations::default();
+                self.index_type(traversal, &mut indices)?;
+                let prepared_row = GoPreparedSumRow {
+                    concrete_type: concrete_row,
+                    indices: indices.parameters,
+                };
                 if let Some(previous) = reachability
                     .contextual_sums
-                    .insert(context.clone(), concrete_row.clone())
-                    && previous != concrete_row
+                    .insert(context.clone(), prepared_row.clone())
+                    && previous != prepared_row
                 {
                     return Err(GoFacadeError::new(
                         "one semantic sum context rendered two concrete Row types",
@@ -1698,7 +1994,23 @@ impl<'a> GoFacadeSite<'a> {
                                 .product_shell()
                                 .expect("a grouped product parameter has its exact shell");
                             reachability.shells.insert(shell.clone());
-                            grouped.push(GoFacadeShell::new(shell)?.application(values)?);
+                            let shell = GoFacadeShell::new(shell)?;
+                            let indices = slots[parameter.facade_slots()]
+                                .iter()
+                                .map(|slot| {
+                                    let child = self.child_traversal(traversal, *slot)?;
+                                    self.index_type(&child, &mut reachability.indices)
+                                        .map(|index| index.map(|index| index.ty))
+                                })
+                                .collect::<Result<Option<Vec<_>>, GoFacadeError>>()?;
+                            if let Some(indices) = indices {
+                                reachability.indices.product(
+                                    &shell,
+                                    &indices,
+                                    self.provenance(),
+                                )?;
+                            }
+                            grouped.push(shell.application(values)?);
                         }
                     }
                 }
@@ -1717,36 +2029,92 @@ impl<'a> GoFacadeSite<'a> {
                 ))))
             }
             FacadeUse::Forall { binder, result, .. } => {
-                let GoFacadeTerm::Use {
-                    source,
-                    substitutions,
-                } = context.term.as_ref()
-                else {
-                    unreachable!()
+                let nested = self.forall_result(traversal, *binder, *result, None)?;
+                let index = if context.typed_stages {
+                    self.index_type(traversal, &mut reachability.indices)?
+                } else {
+                    None
                 };
-                let mut nested = substitutions.as_ref().clone();
-                let erased = GoFacadeContext::erased(GoErasureReason::UnboundType);
-                nested.insert(*binder, erased.clone());
-                let mut bound_args = traversal.bound_args.as_ref().clone();
-                bound_args.insert(
-                    *binder,
-                    GoFacadeTraversal::erased(
-                        GoErasureReason::UnboundType,
-                        Arc::clone(&traversal.active_newtypes),
-                    ),
-                );
-                let nested = GoFacadeTraversal {
-                    context: GoFacadeContext::use_in(
-                        source.arena.clone(),
-                        *result,
-                        Arc::new(nested),
-                    ),
-                    bound_args: Arc::new(bound_args),
-                    active_newtypes: Arc::clone(&traversal.active_newtypes),
-                };
-                self.render_context(&nested, reachability)
+                if index.is_some() {
+                    let parameter = self.forall_parameter(traversal, *binder)?;
+                    let selected =
+                        self.forall_result(traversal, *binder, *result, Some(parameter))?;
+                    self.index_type(&selected, &mut reachability.indices)?;
+                    self.render_context(&selected, reachability)?;
+                }
+                Ok(match self.render_context(&nested, reachability)? {
+                    GoRenderResult::Complete(result) => {
+                        GoRenderResult::Complete(GoRenderedType::concrete(match index {
+                            Some(index) => format!(
+                                "TypeStage[{}, {}, {}]",
+                                index.ty, result.ty, self.stage_host_type
+                            ),
+                            None => format!("func() {}", result.ty),
+                        }))
+                    }
+                    GoRenderResult::Cycle(target) => GoRenderResult::Cycle(target),
+                })
             }
         }
+    }
+
+    fn forall_parameter(
+        &self,
+        traversal: &GoFacadeTraversal,
+        binder: FacadeBinderId,
+    ) -> Result<GoIndexType, GoFacadeError> {
+        let source = Self::source_of(&traversal.context).expect("a Forall has its semantic source");
+        Ok(GoIndexType {
+            ty: GoType::new(format!("KioI{}", traversal.context.next_index)),
+            kind: self.arena_plan(&source.arena)?.binder(binder).kind.clone(),
+        })
+    }
+
+    fn forall_result(
+        &self,
+        traversal: &GoFacadeTraversal,
+        binder: FacadeBinderId,
+        result: FacadeUseId,
+        index: Option<GoIndexType>,
+    ) -> Result<GoFacadeTraversal, GoFacadeError> {
+        let GoFacadeTerm::Use {
+            source,
+            substitutions,
+        } = traversal.context.term.as_ref()
+        else {
+            return Err(GoFacadeError::new("a Forall requires its semantic source"));
+        };
+        let typed_stages = index.is_some();
+        let argument = match index {
+            Some(index) => GoFacadeTraversal {
+                context: GoFacadeContext {
+                    term: Arc::new(GoFacadeTerm::Index(index)),
+                    typed_stages: true,
+                    next_index: 0,
+                },
+                bound_args: Arc::new(BTreeMap::new()),
+                active_newtypes: Arc::clone(&traversal.active_newtypes),
+            },
+            None => GoFacadeTraversal::erased(
+                GoErasureReason::UnboundType,
+                Arc::clone(&traversal.active_newtypes),
+            ),
+        };
+        let mut nested = substitutions.as_ref().clone();
+        nested.insert(binder, argument.context.clone());
+        let mut bound_args = traversal.bound_args.as_ref().clone();
+        bound_args.insert(binder, argument);
+        Ok(GoFacadeTraversal {
+            context: GoFacadeContext::use_in(
+                source.arena.clone(),
+                result,
+                Arc::new(nested),
+                typed_stages,
+                traversal.context.next_index + usize::from(typed_stages),
+            ),
+            bound_args: Arc::new(bound_args),
+            active_newtypes: Arc::clone(&traversal.active_newtypes),
+        })
     }
 
     fn render_nominal(
@@ -1772,6 +2140,11 @@ impl<'a> GoFacadeSite<'a> {
                 arguments.len()
             )));
         }
+        if !reachability.recursion_probe
+            && let Some(carrier) = self.recursive_skins.get(name)
+        {
+            return self.render_carrier(name, carrier, arguments, reachability);
+        }
         match nominal {
             GoNominalPlan::Host {
                 exact_boundary_type: Some(boundary_type),
@@ -1784,13 +2157,14 @@ impl<'a> GoFacadeSite<'a> {
                 ..
             } => {
                 let mut rendered_arguments = Vec::with_capacity(arguments.len());
-                for argument in arguments {
-                    match self.render_context(argument, reachability)? {
-                        GoRenderResult::Complete(rendered) => {
-                            rendered_arguments.push(rendered.ty);
-                        }
-                        GoRenderResult::Cycle(target) => return Ok(GoRenderResult::Cycle(target)),
-                    }
+                for (argument, kind) in arguments.iter().zip(&carrier.kinds) {
+                    self.render_context(argument, reachability)?;
+                    rendered_arguments.push(
+                        match self.index_type(argument, &mut reachability.indices)? {
+                            Some(index) => index.ty,
+                            None => reachability.indices.erased(kind)?,
+                        },
+                    );
                 }
                 Ok(GoRenderResult::Complete(GoRenderedType::concrete(
                     carrier.applied_type(&rendered_arguments)?.as_str(),
@@ -1805,17 +2179,18 @@ impl<'a> GoFacadeSite<'a> {
                 )),
             },
             GoNominalPlan::Carrier { carrier, .. } => {
-                reachability.carriers.insert(carrier.clone());
-                Ok(GoRenderResult::Complete(GoRenderedType::concrete(
-                    carrier.public_type().as_str(),
-                )))
+                self.render_carrier(name, carrier, arguments, reachability)
             }
             GoNominalPlan::Transparent { .. } => {
                 if caller.active_newtypes.contains(name) {
                     return Ok(GoRenderResult::Cycle(name.clone()));
                 }
                 let payload = self.instantiate_payload_traversal(name, arguments, caller)?;
-                let mut local = GoReachability::default();
+                let mut local = GoReachability {
+                    recursion_probe: reachability.recursion_probe,
+                    ..GoReachability::default()
+                };
+                self.index_type(&payload, &mut local.indices)?;
                 match self.render_context(&payload, &mut local)? {
                     GoRenderResult::Complete(complete) => {
                         reachability.merge(local)?;
@@ -1832,6 +2207,35 @@ impl<'a> GoFacadeSite<'a> {
         }
     }
 
+    fn render_carrier(
+        &self,
+        name: &QualifiedTypeName,
+        carrier: &GoNewtypeCarrier,
+        arguments: &[GoFacadeTraversal],
+        reachability: &mut GoReachability,
+    ) -> Result<GoRenderResult, GoFacadeError> {
+        reachability.carriers.insert(carrier.clone());
+        if let Some(BoundaryNominalDeclaration::Newtype { type_params, .. }) =
+            self.prepared.nominals().declaration(name)
+        {
+            for parameter in type_params {
+                reachability.indices.kind(parameter.kind())?;
+            }
+        }
+        let mut indices = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            let Some(index) = self.index_type(argument, &mut reachability.indices)? else {
+                return Ok(GoRenderResult::Complete(GoRenderedType::erased(
+                    GoErasureReason::UnboundType,
+                )));
+            };
+            indices.push(index);
+        }
+        Ok(GoRenderResult::Complete(GoRenderedType::concrete(
+            carrier.applied_type(&indices)?.as_str(),
+        )))
+    }
+
     fn resolve_application_head(
         &self,
         traversal: &GoFacadeTraversal,
@@ -1839,7 +2243,11 @@ impl<'a> GoFacadeSite<'a> {
     ) -> Result<GoResolvedHead, GoFacadeError> {
         let context = &traversal.context;
         match context.term.as_ref() {
-            GoFacadeTerm::Erased(reason) => Ok(GoResolvedHead::Erased(reason.clone())),
+            GoFacadeTerm::Erased(reason) => Ok(GoResolvedHead::Erased(reason.clone(), trailing)),
+            GoFacadeTerm::Index(_) => Ok(GoResolvedHead::Erased(
+                GoErasureReason::HigherKindedApplication,
+                trailing,
+            )),
             GoFacadeTerm::Use { .. } => match self.use_at(context)? {
                 FacadeUse::Apply {
                     constructor, args, ..
@@ -1857,6 +2265,7 @@ impl<'a> GoFacadeSite<'a> {
                     if matches!(substituted.context.term.as_ref(), GoFacadeTerm::Erased(_)) {
                         Ok(GoResolvedHead::Erased(
                             GoErasureReason::HigherKindedApplication,
+                            trailing,
                         ))
                     } else {
                         self.resolve_application_head(&substituted, trailing)
@@ -1878,6 +2287,7 @@ impl<'a> GoFacadeSite<'a> {
         let root = self.root_facade().root_use()?;
         let root = root.traversal;
         let mut reachability = GoReachability::default();
+        self.index_type(&root, &mut reachability.indices)?;
         for stage in self.prepared.presentation().head_stages() {
             if let CallableExecutionStage::Value(layout) = stage {
                 for parameter in layout.source_params() {
@@ -1888,34 +2298,67 @@ impl<'a> GoFacadeSite<'a> {
             }
         }
         match self.render_context(&root, &mut reachability)? {
-            GoRenderResult::Complete(_) => Ok(reachability),
+            GoRenderResult::Complete(_) => {}
             GoRenderResult::Cycle(name) => Err(GoFacadeError::new(format!(
                 "uncaught recursive facade expansion at {}.{}",
                 name.module_segments().join("."),
                 name.name()
-            ))),
+            )))?,
         }
+        for selected in [false, true] {
+            let selected = self.callable_entry_with_indices(selected)?;
+            for stage in selected.stages() {
+                if let Some(stage) = stage.type_stage() {
+                    reachability.indices.kind(&stage.binder().kind)?;
+                }
+                if let Some(stage) = stage.value_stage() {
+                    for parameter in stage.public_parameters()? {
+                        if let GoPublicParameter::Product(product) = parameter {
+                            product.index_type_with_declarations(&mut reachability.indices)?;
+                        }
+                    }
+                    for slot in stage.slots() {
+                        self.index_type(&slot.traversal, &mut reachability.indices)?;
+                        self.render_context(&slot.traversal, &mut reachability)?;
+                    }
+                }
+            }
+            self.index_type(&selected.returned.traversal, &mut reachability.indices)?;
+            self.render_context(&selected.returned.traversal, &mut reachability)?;
+        }
+        Ok(reachability)
     }
 
     fn install_contextual_sum_rows(
         &mut self,
-        contexts: BTreeMap<GoFacadeContext, GoType>,
+        contexts: BTreeMap<GoFacadeContext, GoPreparedSumRow>,
         type_arguments: &str,
+        type_declaration: &str,
     ) -> Result<(), GoFacadeError> {
         let site_frame = encode_site_frame(self.id());
         let mut rows = BTreeMap::new();
-        for (ordinal, (context, concrete_type)) in contexts.into_iter().enumerate() {
+        for (ordinal, (context, prepared_row)) in contexts.into_iter().enumerate() {
             let ordinal = u64::try_from(ordinal).map_err(|_| {
                 GoFacadeError::new("one site has more contextual sum uses than fit in u64")
             })?;
             let name = go_identifier(format!("kioSumUse_{site_frame}_U{ordinal}"))?;
+            let indices = prepared_row.indices;
+            let arguments = indices
+                .values()
+                .map(|index| index.ty.to_string())
+                .collect::<Vec<_>>();
+            let declarations = indices
+                .values()
+                .map(|index| format!("{} KioIndexKind_{}", index.ty, index::kind_key(&index.kind)))
+                .collect::<Vec<_>>();
             rows.insert(
                 context,
                 GoContextualSumRow {
                     ordinal,
                     name,
-                    concrete_type,
-                    type_arguments: type_arguments.to_owned(),
+                    concrete_type: prepared_row.concrete_type,
+                    type_arguments: append_type_parameters(type_arguments, &arguments),
+                    type_declaration: append_type_parameters(type_declaration, &declarations),
                 },
             );
         }
@@ -1971,7 +2414,7 @@ mod prepared_tests {
             .check_in_body_resolution()
             .expect("check facade test body resolution");
         let prime = check_package(&package).expect("typecheck facade test package");
-        crate::pass::recover_to_low::lower(&structural_recovery::recover_package(&prime))
+        crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
     }
 
     fn host_site(name: &str) -> BoundaryFacadeSiteId {
@@ -2097,18 +2540,54 @@ mod prepared_tests {
             "Unit"
         );
         for name in ["self_recursive", "mutual_recursive"] {
-            assert_eq!(
+            assert!(
                 first_value_slots(&live_entry(&catalog, name))[0]
                     .boundary_type()
                     .unwrap()
-                    .as_str(),
-                "any"
+                    .as_str()
+                    .starts_with("KioNewtype_V1_")
             );
         }
         let carrier_type = first_value_slots(&live_entry(&catalog, "carrier_cut"))[0]
             .boundary_type()
             .unwrap();
         assert!(carrier_type.as_str().starts_with("KioNewtype_V1_"));
+    }
+
+    #[test]
+    fn recursive_skin_identity_is_root_order_and_extension_invariant() {
+        let declarations = "module api; host type I32 role(i32); \
+            rec { \
+              pub newtype Left[A] : (. | (A & Right(A))) { pub constructor make; pub projector open; }; \
+              pub newtype Right[A] : (. | (A & Left(A))) { pub constructor make; pub projector open; }; \
+            }";
+        let left = "host fn left(value: Left(I32)) -> Left(I32);";
+        let right = "host fn right(value: Right(I32)) -> Right(I32);";
+        let extension = "pub rec newtype Other[A] : (. | Other(A)) { pub constructor make; pub projector open; };";
+        let mut observed = Vec::new();
+        for roots in [
+            left.to_owned(),
+            format!("{left} {right}"),
+            format!("{right} {left} {extension}"),
+        ] {
+            let package = package(&format!("{declarations} {roots}"));
+            let prepared = PreparedBoundaryCallableSites::collect_live(&package)
+                .expect("prepare recursive roots");
+            let catalog = GoFacadeCatalog::prepare(&prepared).expect("realize recursive roots");
+            let site = catalog.site(&host_site("left")).unwrap();
+            let identities = site
+                .recursive_skins
+                .iter()
+                .map(|(name, carrier)| (name.clone(), carrier.clone()))
+                .collect::<BTreeMap<_, _>>();
+            observed.push((
+                site.semantic_root().unwrap().boundary_type().unwrap(),
+                identities,
+            ));
+        }
+        assert_eq!(observed[0], observed[1]);
+        assert_eq!(observed[0], observed[2]);
+        assert_eq!(observed[0].1.len(), 2);
     }
 
     #[test]
@@ -2255,6 +2734,38 @@ mod prepared_tests {
                 "contextual row uses must instantiate their exact host-root parameters"
             );
         }
+    }
+
+    #[test]
+    fn nominal_projection_preserves_an_opaque_payload_of_a_transparent_outer() {
+        let package = package(
+            "module api; \
+             pub newtype Hidden : . { constructor hide; projector reveal; }; \
+             pub newtype Outer : Hidden { pub constructor wrap; pub projector unwrap; }; \
+             newtype Private_outer : Hidden { pub constructor wrap; pub projector unwrap; };",
+        );
+        let prepared = PreparedBoundaryCallableSites::collect_live(&package)
+            .expect("prepare nested nominal visibility");
+        let catalog =
+            GoFacadeCatalog::prepare(&prepared).expect("realize nested nominal visibility");
+        let name = |leaf| QualifiedTypeName::new(vec!["api".to_owned()], leaf).unwrap();
+        assert_eq!(
+            catalog.construct_nominal(&name("Outer"), "hidden"),
+            "hidden"
+        );
+        assert_eq!(catalog.project_nominal(&name("Outer"), "hidden"), "hidden");
+        assert_eq!(
+            catalog.project_nominal(&name("Hidden"), "hidden"),
+            "kioNominalPayload(hidden)"
+        );
+        assert_eq!(
+            catalog.construct_nominal(&name("Private_outer"), "hidden"),
+            "kioSealedValue{value: hidden}"
+        );
+        assert_eq!(
+            catalog.project_nominal(&name("Private_outer"), "outer"),
+            "kioNominalPayload(outer)"
+        );
     }
 
     #[test]
@@ -2425,7 +2936,7 @@ mod prepared_tests {
                 assert!(
                     slots
                         .iter()
-                        .all(|slot| slot.boundary_type().unwrap().as_str() == "any")
+                        .all(|slot| slot.boundary_type().unwrap().as_str() == "Value")
                 );
                 assert_eq!(layout.body_abi_arity(), 1);
                 assert_eq!(layout.source_params().len(), 1);
@@ -2621,7 +3132,7 @@ v(2) {
         assert_eq!(first_value.slots().len(), 1);
         assert_eq!(
             first_value.slots()[0].boundary_type().unwrap().as_str(),
-            "any"
+            "Value"
         );
         assert_erased_binder_context(first_value.slots().first().unwrap(), &[first_type.id()]);
 
@@ -2638,21 +3149,21 @@ v(2) {
             second_value
                 .slots()
                 .iter()
-                .all(|slot| slot.boundary_type().unwrap().as_str() == "any")
+                .all(|slot| slot.boundary_type().unwrap().as_str() == "Value")
         );
         for slot in second_value.slots() {
             assert_erased_binder_context(slot, &[first_type.id(), second_type.id()]);
         }
 
         let returned_type = entry.returned().boundary_type().unwrap();
-        assert!(returned_type.as_str().ends_with("[any, any]"));
+        assert!(returned_type.as_str().ends_with("[Value, Value]"));
         assert_erased_binder_context(entry.returned(), &[first_type.id(), second_type.id()]);
         match entry.returned().view().unwrap() {
             GoFacadeUseView::Product(product) => {
                 assert_eq!(product.fields().len(), 2);
                 assert!(
                     product.fields().iter().all(|field| {
-                        field.payload().boundary_type().unwrap().as_str() == "any"
+                        field.payload().boundary_type().unwrap().as_str() == "Value"
                     })
                 );
             }
@@ -2819,8 +3330,12 @@ mod tests {
     #[test]
     fn host_carrier_views_are_readable_without_changing_private_identity() {
         let named = |module: &[&str], name| {
-            GoHostTypeCarrier::new(&qualified(module, name), 1, GoDeclarationProvenance::Live)
-                .expect("host carrier")
+            GoHostTypeCarrier::new(
+                &qualified(module, name),
+                vec![crate::ast::Kind::Star],
+                GoDeclarationProvenance::Live,
+            )
+            .expect("host carrier")
         };
         let carrier = named(&["api"], "Box");
         assert_eq!(carrier.public_type().as_str(), "KioHostType_api__Box");
@@ -2866,7 +3381,7 @@ mod tests {
     }
 
     #[test]
-    fn carriers_are_concrete_arity_independent_and_conversion_distinct() {
+    fn nullary_skins_keep_declaration_owned_canonical_storage_private() {
         let left = GoNewtypeCarrier::new(&qualified(&["left"], "Token")).unwrap();
         let right = GoNewtypeCarrier::new(&qualified(&["right"], "Token")).unwrap();
         let mut declarations = String::new();
@@ -2877,19 +3392,26 @@ mod tests {
         assert!(!declarations.contains(&format!("type {} interface", left.public_type())));
         assert!(declarations.contains("[0]struct{}"));
         assert_ne!(left.identity_field, right.identity_field);
-        assert_ne!(left.value_accessor(), right.value_accessor());
-        assert_eq!(left.storage_type(), left.public_type());
+        assert_eq!(left.value_accessor(), right.value_accessor());
+        for carrier in [&left, &right] {
+            assert!(declarations.contains(&format!(
+                "func (value {}) {}() any",
+                carrier.storage_type(),
+                carrier.value_accessor()
+            )));
+        }
+        assert_ne!(left.storage_type(), left.public_type());
+        let boundary_type = GoType::new(left.public_type().as_str());
         assert_eq!(
-            left.render_out("raw"),
-            format!("{}{{value: raw}}", left.public_type())
+            left.render_out(&boundary_type, "raw"),
+            format!(
+                "{}{{body: (raw).({})}}",
+                left.public_type(),
+                left.storage_type()
+            )
         );
-        assert_eq!(
-            left.render_in("wrapped"),
-            format!("(wrapped).{}()", left.value_accessor())
-        );
+        assert_eq!(left.render_in("wrapped"), "(wrapped).body");
 
-        // The declaration has no type parameters: changing a source epoch's
-        // declaration arity cannot create a second carrier ABI.
         assert!(
             !declarations
                 .lines()
@@ -3188,6 +3710,10 @@ impl<'source> GoCallableTypeHeadStage<'source> {
     pub(crate) fn binder(&self) -> &'source FacadeBinder {
         self.binder
     }
+
+    pub(crate) fn index_constraint(&self) -> String {
+        format!("KioIndexKind_{}", index::kind_key(&self.binder.kind))
+    }
 }
 
 /// Contextual facade slots for one declaration-owned value head.
@@ -3327,7 +3853,20 @@ impl<'site, 'source> GoLiveFacadeSite<'site, 'source> {
     pub(crate) fn callable_entry(
         &self,
     ) -> Result<GoLiveCallableEntry<'site, 'source>, GoFacadeError> {
-        let semantic = self.site.callable_entry()?;
+        self.callable_entry_with_indices(false)
+    }
+
+    pub(crate) fn selected_callable_entry(
+        &self,
+    ) -> Result<GoLiveCallableEntry<'site, 'source>, GoFacadeError> {
+        self.callable_entry_with_indices(true)
+    }
+
+    fn callable_entry_with_indices(
+        &self,
+        selected: bool,
+    ) -> Result<GoLiveCallableEntry<'site, 'source>, GoFacadeError> {
+        let semantic = self.site.callable_entry_with_indices(selected)?;
         let execution = self.execution.head_stages();
         if semantic.stages.len() != execution.len() {
             return Err(GoFacadeError::new(
@@ -3381,6 +3920,19 @@ impl<'site, 'source> GoLiveFacadeSite<'site, 'source> {
     /// the already-classified projector, never used to infer the class.
     pub(crate) fn newtype_member_entry(
         &self,
+    ) -> Result<GoLiveNewtypeMemberEntry<'site, 'source>, GoFacadeError> {
+        self.newtype_member_entry_with_indices(false)
+    }
+
+    pub(crate) fn selected_newtype_member_entry(
+        &self,
+    ) -> Result<GoLiveNewtypeMemberEntry<'site, 'source>, GoFacadeError> {
+        self.newtype_member_entry_with_indices(true)
+    }
+
+    fn newtype_member_entry_with_indices(
+        &self,
+        selected: bool,
     ) -> Result<GoLiveNewtypeMemberEntry<'site, 'source>, GoFacadeError> {
         let (newtype, member, role) = match self.site.id().owner() {
             BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member } => {
@@ -3449,7 +4001,7 @@ impl<'site, 'source> GoLiveFacadeSite<'site, 'source> {
         if role == GoNewtypeMemberRole::Constructor {
             expected_type_heads.extend(existential_params);
         }
-        let entry = self.callable_entry()?;
+        let entry = self.callable_entry_with_indices(selected)?;
         validate_newtype_member_heads(&entry, &expected_type_heads)?;
 
         match role {
@@ -3920,6 +4472,7 @@ pub(crate) struct GoFacadeCatalog<'a> {
     shell_provenance: BTreeMap<FacadeShellId, GoDeclarationProvenance>,
     sum_key_provenance: BTreeMap<SemanticKey, GoDeclarationProvenance>,
     carrier_provenance: BTreeMap<QualifiedTypeName, GoDeclarationProvenance>,
+    indices: GoIndexDeclarations,
     claims: GoFacadeClaims,
 }
 
@@ -3943,6 +4496,9 @@ impl<'a> GoFacadeCatalog<'a> {
 
         let prepared_root_shells = prepared.shells().cloned().collect::<BTreeSet<_>>();
         let mut reachable = GoReachability::default();
+        for binding in prepared.host_bindings() {
+            host_bindings.preparation(binding, &mut reachable.indices)?;
+        }
         for site in sites.values_mut() {
             let mut site_reachable = site.collect_reachability()?;
             let provenance = site.provenance();
@@ -3958,7 +4514,11 @@ impl<'a> GoFacadeCatalog<'a> {
                 record_declaration_provenance(&mut carrier_provenance, carrier.name(), provenance);
             }
             let contextual_sums = std::mem::take(&mut site_reachable.contextual_sums);
-            site.install_contextual_sum_rows(contextual_sums, &host_bindings.arguments())?;
+            site.install_contextual_sum_rows(
+                contextual_sums,
+                &host_bindings.arguments(),
+                &host_bindings.declaration(),
+            )?;
             reachable.merge(site_reachable)?;
         }
 
@@ -3994,9 +4554,13 @@ impl<'a> GoFacadeCatalog<'a> {
                     entry.name(),
                     GoDeclarationProvenance::Live,
                 );
-                reachable
-                    .carriers
-                    .insert(GoNewtypeCarrier::new(entry.name())?);
+                reachable.carriers.insert(GoNewtypeCarrier::with_parameters(
+                    entry.name(),
+                    entry.type_params(),
+                )?);
+                for parameter in entry.type_params() {
+                    reachable.indices.kind(parameter.kind())?;
+                }
             }
         }
         for entry in prepared.retained_public_newtypes() {
@@ -4009,9 +4573,13 @@ impl<'a> GoFacadeCatalog<'a> {
                     entry.name(),
                     GoDeclarationProvenance::Retained { removed_at_version },
                 );
-                reachable
-                    .carriers
-                    .insert(GoNewtypeCarrier::new(entry.name())?);
+                reachable.carriers.insert(GoNewtypeCarrier::with_parameters(
+                    entry.name(),
+                    entry.type_params(),
+                )?);
+                for parameter in entry.type_params() {
+                    reachable.indices.kind(parameter.kind())?;
+                }
             }
         }
 
@@ -4033,7 +4601,25 @@ impl<'a> GoFacadeCatalog<'a> {
             .into_iter()
             .map(|carrier| (carrier.name().clone(), carrier))
             .collect::<BTreeMap<_, _>>();
-        let claims = build_facade_claims(&sites, &shells, &sum_keys, &carriers)?;
+        let mut claims = build_facade_claims(&sites, &shells, &sum_keys, &carriers)?;
+        let index_claims = reachable.indices.claims().map(|(name, identity)| {
+            (
+                GoFacadeScope::Package,
+                name.clone(),
+                GoFacadeNameOwner::Index {
+                    identity: identity.to_owned(),
+                },
+            )
+        });
+        claims = ScopeClaims::try_collect(
+            claims
+                .iter()
+                .map(|(scope, name, owner)| (scope.clone(), name.clone(), owner.clone()))
+                .chain(index_claims),
+        )
+        .map_err(|_| {
+            GoFacadeError::new("static index declarations collide with facade declarations")
+        })?;
 
         Ok(Self {
             prepared,
@@ -4045,6 +4631,7 @@ impl<'a> GoFacadeCatalog<'a> {
             shell_provenance,
             sum_key_provenance,
             carrier_provenance,
+            indices: reachable.indices,
             claims,
         })
     }
@@ -4063,6 +4650,15 @@ impl<'a> GoFacadeCatalog<'a> {
 
     pub(crate) fn role_adapters(&self) -> impl ExactSizeIterator<Item = &GoRoleAdapter> {
         self.host_bindings.role_adapters()
+    }
+
+    pub(crate) fn host_preparations(&self) -> Result<Vec<GoHostPreparation<'_>>, GoFacadeError> {
+        let mut indices = GoIndexDeclarations::default();
+        self.prepared
+            .host_bindings()
+            .filter(|binding| matches!(binding.origin(), BoundaryHostBindingOrigin::Live))
+            .map(|binding| self.host_bindings.preparation(binding, &mut indices))
+            .collect()
     }
 
     pub(crate) fn parametric_host_carriers(
@@ -4109,6 +4705,33 @@ impl<'a> GoFacadeCatalog<'a> {
         self.prepared.public_newtypes()
     }
 
+    /// Construct the body's nominal value using the same visibility decision
+    /// as the public facade. Unexposed nominals retain a private envelope;
+    /// their payload cannot become a structural public Value view.
+    pub(crate) fn construct_nominal(&self, name: &QualifiedTypeName, payload: &str) -> String {
+        if self.nominal_is_transparent(name) {
+            payload.to_owned()
+        } else if let Some(carrier) = self.carriers.get(name) {
+            format!("{}{{value: {payload}}}", carrier.storage_type())
+        } else {
+            format!("kioSealedValue{{value: {payload}}}")
+        }
+    }
+
+    pub(crate) fn project_nominal(&self, name: &QualifiedTypeName, receiver: &str) -> String {
+        if self.nominal_is_transparent(name) {
+            receiver.to_owned()
+        } else {
+            format!("kioNominalPayload({receiver})")
+        }
+    }
+
+    fn nominal_is_transparent(&self, name: &QualifiedTypeName) -> bool {
+        self.prepared
+            .public_newtype(name)
+            .is_some_and(|entry| !entry.surface().uses_nominal_carrier())
+    }
+
     pub(crate) fn claims(&self) -> &GoFacadeClaims {
         &self.claims
     }
@@ -4127,6 +4750,7 @@ impl<'a> GoFacadeCatalog<'a> {
     ) -> Result<String, GoFacadeError> {
         let mut out = String::new();
         render_sum_support(&mut out);
+        self.indices.render(&mut out);
         for retained in self.retained_host_types() {
             retained.render_declaration(&mut out);
         }
@@ -4182,9 +4806,7 @@ impl<'a> GoFacadeCatalog<'a> {
                 writeln!(
                     out,
                     "type {}{} = {}\n",
-                    row.name,
-                    self.host_binding_declaration(),
-                    row.concrete_type
+                    row.name, row.type_declaration, row.concrete_type
                 )
                 .expect("writing to String cannot fail");
             }
@@ -4277,14 +4899,19 @@ fn build_facade_claims(
     }
 
     for carrier in carriers.values() {
-        claims.push((
-            GoFacadeScope::Package,
-            carrier.public_type.clone(),
-            GoFacadeNameOwner::Carrier {
-                name: carrier.name.clone(),
-                role: GoCarrierNameRole::PublicType,
-            },
-        ));
+        for (name, role) in [
+            (&carrier.public_type, GoCarrierNameRole::PublicType),
+            (&carrier.body_type, GoCarrierNameRole::BodyType),
+        ] {
+            claims.push((
+                GoFacadeScope::Package,
+                name.clone(),
+                GoFacadeNameOwner::Carrier {
+                    name: carrier.name.clone(),
+                    role,
+                },
+            ));
+        }
     }
 
     for site in sites.values() {
@@ -4420,6 +5047,19 @@ fn go_type_parameter_declaration(count: usize) -> String {
     }
 }
 
+pub(crate) fn append_type_parameters(existing: &str, extra: &[String]) -> String {
+    let mut values = Vec::new();
+    if !existing.is_empty() {
+        values.push(existing[1..existing.len() - 1].to_owned());
+    }
+    values.extend(extra.iter().cloned());
+    if values.is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", values.join(", "))
+    }
+}
+
 fn go_type_parameter_use(count: usize) -> String {
     if count == 0 {
         String::new()
@@ -4457,6 +5097,8 @@ struct GoFacadeArenaRef<'site, 'source> {
     substitutions: Arc<BTreeMap<FacadeBinderId, GoFacadeContext>>,
     bound_args: Arc<BTreeMap<FacadeBinderId, GoFacadeTraversal>>,
     active_newtypes: Arc<Vec<QualifiedTypeName>>,
+    typed_stages: bool,
+    next_index: usize,
 }
 
 impl<'site, 'source> Clone for GoFacadeArenaRef<'site, 'source> {
@@ -4467,6 +5109,8 @@ impl<'site, 'source> Clone for GoFacadeArenaRef<'site, 'source> {
             substitutions: Arc::clone(&self.substitutions),
             bound_args: Arc::clone(&self.bound_args),
             active_newtypes: Arc::clone(&self.active_newtypes),
+            typed_stages: self.typed_stages,
+            next_index: self.next_index,
         }
     }
 }
@@ -4504,6 +5148,8 @@ impl<'site, 'source> GoFacadeArenaRef<'site, 'source> {
                     self.arena.clone(),
                     use_id,
                     Arc::clone(&self.substitutions),
+                    self.typed_stages,
+                    self.next_index,
                 ),
                 bound_args: Arc::clone(&self.bound_args),
                 active_newtypes: Arc::clone(&self.active_newtypes),
@@ -4532,10 +5178,45 @@ impl<'site, 'source> Clone for GoFacadeUseRef<'site, 'source> {
 }
 
 impl<'site, 'source> GoFacadeUseRef<'site, 'source> {
+    pub(crate) fn index_alias_type(&self) -> Result<Option<GoType>, GoFacadeError> {
+        let mut declarations = GoIndexDeclarations::default();
+        let index = self.site.index_type(&self.traversal, &mut declarations)?;
+        Ok(index
+            .filter(|index| !declarations.parameters.contains_key(&index.ty))
+            .map(|index| index.ty))
+    }
+
+    pub(crate) fn index_parameters(&self) -> Result<Vec<(String, String)>, GoFacadeError> {
+        let mut declarations = GoIndexDeclarations::default();
+        self.site.index_type(&self.traversal, &mut declarations)?;
+        Ok(declarations
+            .parameters
+            .values()
+            .map(|index| {
+                (
+                    index.ty.to_string(),
+                    format!("KioIndexKind_{}", index::kind_key(&index.kind)),
+                )
+            })
+            .collect())
+    }
+
+    pub(crate) fn index_type(&self) -> Result<Option<GoType>, GoFacadeError> {
+        Ok(self
+            .site
+            .index_type(&self.traversal, &mut GoIndexDeclarations::default())?
+            .map(|index| index.ty))
+    }
+    /// Private converter reuse also preserves the traversal's representation
+    /// cut. This is deliberately stricter than public semantic row identity.
+    pub(crate) fn same_conversion_use(&self, other: &Self) -> bool {
+        std::ptr::eq(self.site, other.site) && self.traversal.same_conversion_use(&other.traversal)
+    }
+
     pub(crate) fn source(&self) -> Option<&GoFacadeUseSource> {
         match self.traversal.context.term.as_ref() {
             GoFacadeTerm::Use { source, .. } => Some(source),
-            GoFacadeTerm::Erased(_) => None,
+            GoFacadeTerm::Erased(_) | GoFacadeTerm::Index(_) => None,
         }
     }
 
@@ -4595,6 +5276,21 @@ impl<'site, 'source> GoLiveFacadeUseRef<'site, 'source> {
         &self.semantic
     }
 
+    pub(crate) fn select_forall(&self) -> Result<Option<(GoType, String, Self)>, GoFacadeError> {
+        let GoLiveFacadeUseView::Forall { semantic, .. } = self.view()? else {
+            return Err(GoFacadeError::new(
+                "only a paired Forall stage can select an index",
+            ));
+        };
+        Ok(semantic.selection().map(|(parameter, constraint, result)| {
+            (
+                parameter.clone(),
+                constraint,
+                Self::new(self.live, result.clone()),
+            )
+        }))
+    }
+
     pub(crate) fn view(&self) -> Result<GoLiveFacadeUseView<'site, 'source>, GoFacadeError> {
         let live = self.live;
         Ok(match self.semantic.view()? {
@@ -4611,11 +5307,25 @@ impl<'site, 'source> GoLiveFacadeUseRef<'site, 'source> {
             GoFacadeUseView::HostCarrier {
                 boundary_type,
                 carrier,
+                arguments,
             } => GoLiveFacadeUseView::HostCarrier {
                 boundary_type,
                 carrier,
+                arguments: arguments
+                    .into_iter()
+                    .map(|argument| GoLiveFacadeUseRef::new(live, argument))
+                    .collect(),
             },
-            GoFacadeUseView::Carrier { carrier } => GoLiveFacadeUseView::Carrier { carrier },
+            GoFacadeUseView::Carrier {
+                boundary_type,
+                carrier,
+            } => GoLiveFacadeUseView::Carrier {
+                boundary_type,
+                carrier,
+            },
+            GoFacadeUseView::Prepared { boundary_type } => {
+                GoLiveFacadeUseView::Prepared { boundary_type }
+            }
             GoFacadeUseView::Transparent { payload } => GoLiveFacadeUseView::Transparent {
                 payload: GoLiveFacadeUseRef::new(live, payload),
             },
@@ -4701,6 +5411,9 @@ pub(crate) enum GoLiveFacadeUseView<'site, 'source> {
     Erased {
         reason: GoErasureReason,
     },
+    Prepared {
+        boundary_type: GoType,
+    },
     ExactHost {
         boundary_type: GoType,
         role_adapter: Option<GoRoleAdapter>,
@@ -4708,8 +5421,10 @@ pub(crate) enum GoLiveFacadeUseView<'site, 'source> {
     HostCarrier {
         boundary_type: GoType,
         carrier: GoHostTypeCarrier,
+        arguments: Vec<GoLiveFacadeUseRef<'site, 'source>>,
     },
     Carrier {
+        boundary_type: GoType,
         carrier: GoNewtypeCarrier,
     },
     Transparent {
@@ -4742,6 +5457,9 @@ pub(crate) enum GoFacadeUseView<'site, 'source> {
     Erased {
         reason: GoErasureReason,
     },
+    Prepared {
+        boundary_type: GoType,
+    },
     ExactHost {
         boundary_type: GoType,
         role_adapter: Option<GoRoleAdapter>,
@@ -4749,8 +5467,10 @@ pub(crate) enum GoFacadeUseView<'site, 'source> {
     HostCarrier {
         boundary_type: GoType,
         carrier: GoHostTypeCarrier,
+        arguments: Vec<GoFacadeUseRef<'site, 'source>>,
     },
     Carrier {
+        boundary_type: GoType,
         carrier: GoNewtypeCarrier,
     },
     Transparent {
@@ -4781,6 +5501,7 @@ impl<'site, 'source> GoProductFieldUse<'site, 'source> {
 /// Contextual product type and ordered public fields.
 pub(crate) struct GoProductUse<'site, 'source> {
     boundary_type: GoType,
+    shell: GoFacadeShell,
     fields: Vec<GoProductFieldUse<'site, 'source>>,
 }
 
@@ -4830,6 +5551,7 @@ fn public_parameters<'site, 'source>(
                         .zip(values.iter().cloned())
                         .map(|(name, payload)| GoProductFieldUse { name, payload })
                         .collect(),
+                    shell,
                 }));
             }
         }
@@ -5076,6 +5798,8 @@ pub(crate) struct GoForallUse<'site, 'source> {
     binder: FacadeBinderId,
     binder_metadata: &'site FacadeBinder,
     result: GoFacadeUseRef<'site, 'source>,
+    selection: Option<(GoIndexType, GoFacadeUseRef<'site, 'source>)>,
+    boundary_type: GoType,
 }
 
 impl<'site, 'source> GoForallUse<'site, 'source> {
@@ -5094,13 +5818,27 @@ impl<'site, 'source> GoForallUse<'site, 'source> {
     pub(crate) fn result(&self) -> &GoFacadeUseRef<'site, 'source> {
         &self.result
     }
+
+    pub(crate) fn boundary_type(&self) -> &GoType {
+        &self.boundary_type
+    }
+
+    pub(crate) fn selection(&self) -> Option<(&GoType, String, &GoFacadeUseRef<'site, 'source>)> {
+        self.selection.as_ref().map(|(parameter, result)| {
+            (
+                &parameter.ty,
+                format!("KioIndexKind_{}", index::kind_key(&parameter.kind)),
+                result,
+            )
+        })
+    }
 }
 
 impl<'a> GoFacadeSite<'a> {
     fn source_of(context: &GoFacadeContext) -> Option<GoFacadeUseSource> {
         match context.term.as_ref() {
             GoFacadeTerm::Use { source, .. } => Some(source.clone()),
-            GoFacadeTerm::Erased(_) => None,
+            GoFacadeTerm::Erased(_) | GoFacadeTerm::Index(_) => None,
         }
     }
 
@@ -5127,6 +5865,11 @@ impl<'a> GoFacadeSite<'a> {
                 reason: reason.clone(),
             });
         }
+        if let GoFacadeTerm::Index(index) = context.term.as_ref() {
+            return Ok(GoFacadeUseView::Prepared {
+                boundary_type: GoType::new(format!("Prepared[{}]", index.ty)),
+            });
+        }
         let source =
             Self::source_of(context).expect("a non-erased facade context retains one source use");
         match self.use_at(context)? {
@@ -5144,7 +5887,15 @@ impl<'a> GoFacadeSite<'a> {
                         arguments,
                         caller,
                     } => self.view_nominal(&name, &arguments, &caller),
-                    GoResolvedHead::Erased(reason) => Ok(GoFacadeUseView::Erased { reason }),
+                    GoResolvedHead::Erased(reason, _) => {
+                        let mut indices = GoIndexDeclarations::default();
+                        Ok(match self.index_type(traversal, &mut indices)? {
+                            Some(index) => GoFacadeUseView::Prepared {
+                                boundary_type: GoType::new(format!("Prepared[{}]", index.ty)),
+                            },
+                            None => GoFacadeUseView::Erased { reason },
+                        })
+                    }
                 }
             }
             FacadeUse::Product { shell, args, .. } => {
@@ -5173,6 +5924,7 @@ impl<'a> GoFacadeSite<'a> {
                 Ok(GoFacadeUseView::Product(GoProductUse {
                     boundary_type: rendered.ty,
                     fields,
+                    shell,
                 }))
             }
             FacadeUse::Sum { shell, args, .. } => {
@@ -5240,31 +5992,31 @@ impl<'a> GoFacadeSite<'a> {
                 }))
             }
             FacadeUse::Forall { binder, result, .. } => {
-                let GoFacadeTerm::Use { substitutions, .. } = context.term.as_ref() else {
-                    unreachable!()
+                let boundary_type = self.complete_type(traversal)?.ty;
+                let selection = if context.typed_stages
+                    && self
+                        .index_type(traversal, &mut GoIndexDeclarations::default())?
+                        .is_some()
+                {
+                    let parameter = self.forall_parameter(traversal, *binder)?;
+                    Some((
+                        parameter.clone(),
+                        GoFacadeUseRef {
+                            site: self,
+                            traversal: self.forall_result(
+                                traversal,
+                                *binder,
+                                *result,
+                                Some(parameter),
+                            )?,
+                        },
+                    ))
+                } else {
+                    None
                 };
-                let mut nested = substitutions.as_ref().clone();
-                let erased = GoFacadeContext::erased(GoErasureReason::UnboundType);
-                nested.insert(*binder, erased);
-                let mut bound_args = traversal.bound_args.as_ref().clone();
-                bound_args.insert(
-                    *binder,
-                    GoFacadeTraversal::erased(
-                        GoErasureReason::UnboundType,
-                        Arc::clone(&traversal.active_newtypes),
-                    ),
-                );
                 let result = GoFacadeUseRef {
                     site: self,
-                    traversal: GoFacadeTraversal {
-                        context: GoFacadeContext::use_in(
-                            source.arena.clone(),
-                            *result,
-                            Arc::new(nested),
-                        ),
-                        bound_args: Arc::new(bound_args),
-                        active_newtypes: Arc::clone(&traversal.active_newtypes),
-                    },
+                    traversal: self.forall_result(traversal, *binder, *result, None)?,
                 };
                 let binder_metadata = self.arena_plan(&source.arena)?.binder(*binder);
                 Ok(GoFacadeUseView::Forall(GoForallUse {
@@ -5272,6 +6024,8 @@ impl<'a> GoFacadeSite<'a> {
                     binder: *binder,
                     binder_metadata,
                     result,
+                    selection,
+                    boundary_type,
                 }))
             }
         }
@@ -5298,6 +6052,21 @@ impl<'a> GoFacadeSite<'a> {
                 nominal.arity(),
                 arguments.len()
             )));
+        }
+        if let Some(carrier) = self.recursive_skins.get(name) {
+            let mut ignored = GoReachability::default();
+            let GoRenderResult::Complete(rendered) =
+                self.render_carrier(name, carrier, arguments, &mut ignored)?
+            else {
+                unreachable!("a recursive public skin cuts payload expansion")
+            };
+            return Ok(match rendered.erasure {
+                Some(reason) => GoFacadeUseView::Erased { reason },
+                None => GoFacadeUseView::Carrier {
+                    boundary_type: rendered.ty,
+                    carrier: carrier.clone(),
+                },
+            });
         }
         match nominal {
             GoNominalPlan::Host {
@@ -5335,6 +6104,14 @@ impl<'a> GoFacadeSite<'a> {
                 Ok(GoFacadeUseView::HostCarrier {
                     boundary_type: rendered,
                     carrier: carrier.clone(),
+                    arguments: arguments
+                        .iter()
+                        .cloned()
+                        .map(|traversal| GoFacadeUseRef {
+                            site: self,
+                            traversal,
+                        })
+                        .collect(),
                 })
             }
             GoNominalPlan::Host {
@@ -5344,9 +6121,23 @@ impl<'a> GoFacadeSite<'a> {
             } => Ok(GoFacadeUseView::Erased {
                 reason: GoErasureReason::RolelessHost(name.clone()),
             }),
-            GoNominalPlan::Carrier { carrier, .. } => Ok(GoFacadeUseView::Carrier {
-                carrier: carrier.clone(),
-            }),
+            GoNominalPlan::Carrier { carrier, .. } => {
+                let mut reachability = GoReachability::default();
+                let rendered =
+                    match self.render_nominal(name, arguments, caller, &mut reachability)? {
+                        GoRenderResult::Complete(rendered) => rendered,
+                        GoRenderResult::Cycle(_) => {
+                            unreachable!("a nominal carrier does not expand its payload")
+                        }
+                    };
+                Ok(match rendered.erasure {
+                    Some(reason) => GoFacadeUseView::Erased { reason },
+                    None => GoFacadeUseView::Carrier {
+                        boundary_type: rendered.ty,
+                        carrier: carrier.clone(),
+                    },
+                })
+            }
             GoNominalPlan::Transparent { .. } => {
                 let mut ignored = GoReachability::default();
                 let rendered = match self.render_nominal(name, arguments, caller, &mut ignored)? {

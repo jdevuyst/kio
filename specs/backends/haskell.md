@@ -381,6 +381,14 @@ abstract application such as `F(A & B)` is therefore
 `f (a, b)` (or its `Host_…` view) on both sides of the call; the backend does not attempt
 to traverse an arbitrary host-supplied `f`.
 
+Arguments of an opaque host or abstract type constructor retain their native
+value representation, including callable domains. For example, `Box(. -> A)`
+uses `HostType__…__Box h (() -> m a)`, not `HostType__…__Box h (m a)`.
+The Unit argument is omitted only at a direct callable boundary where the
+backend can adapt that callable; it cannot change a function hidden inside
+an opaque constructor. Products, sums and polymorphic stages nested inside
+such an argument retain this same native representation.
+
 ## Deprecated host items
 
 This section instantiates the cross-backend removal-side idiom in
@@ -587,6 +595,9 @@ slot makes emission fail rather than weakening its type.
 
 ## FFI surface
 
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
+
 ### Host-selected and atomic types
 
 Every Kio `host type`, role-bearing or not, crosses as its exact associated
@@ -609,6 +620,10 @@ in either position must be `Bool`. These requirements are reflected in the
 exact per-function constraints described in § Host record contract.
 
 ### Structural and nominal types
+
+Native structural values follow the shared
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged). Opaque host
+state retains its declared host operations.
 
 The skin is driven through the shared FFI framework
 ([`README.md` § Structural FFI shape conventions](README.md), the

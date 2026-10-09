@@ -13,16 +13,18 @@
 #      same file set `kio doc check` assembles.
 #   2. `kio build <lang>`s that package into a scratch dir, producing the
 #      real emitted facade a host compiles against.
-#   3. Extracts the page's host-language code fences and compiles each
-#      against that freshly-built facade — a statement-level snippet is
+#   3. Extracts and validates the page's host-language code fences at the
+#      language's documented level below — a statement-level snippet is
 #      wrapped only in the imports / host scaffolding the page itself
 #      shows (a documented harness preamble). A fence that fails to
-#      compile, or a page whose toolchain is present but that contributes
+#      validate, or a page whose toolchain is present but that contributes
 #      zero validated host fences, fails the run.
 #
-# This makes docs/emitter drift a hard error: if the emitter renames a
-# facade symbol the page still spells the old way, the page's host code
-# stops compiling here.
+# Static host consumers compile/type-check against the fresh facade. JS
+# fences receive syntax checks, and the complete worked host executes against
+# the fresh artifact with asserted output. The harness calls main once more
+# and asserts its public Unit result is null, checking the host callback result
+# without modifying the displayed program; both calls must print the greeting.
 #
 # A few structural-shape fences (Go / Swift sum matching) illustrate a
 # value shape the tiny greeter example package does not contain. They are
@@ -49,9 +51,9 @@
 # host compiler is pointed at an orchestrator-owned cache/output dir.
 #
 # A page's host-language toolchain may be absent on a partial-toolchain
-# CI shard; that page's host-fence compile is then skipped and reported
-# (the kio build still runs). JS / TS / Python / Rust are always present,
-# so those pages are always fully validated. A full local toolchain
+# CI shard; that page's host-fence validation is then skipped and reported
+# (the kio build still runs). Missing JS / TS / Python / Rust tools or Pyright
+# fail before package builds. A full local toolchain
 # validates all eight.
 #
 # POSIX sh only.
@@ -69,8 +71,8 @@ usage() {
 Usage: sh $0 [<lang>...]
 
 Validate the host-language code fences in docs/hosts/<lang>.md by
-building each page's Kio example package and compiling the page's host
-snippets against the emitted facade.
+building each page's Kio example package, checking syntax or types as
+appropriate, and executing the JavaScript worked host against its facade.
 
 With no arguments, every page is checked. Positional <lang> arguments
 (java go rust swift haskell ts js python) restrict the run to those
@@ -89,6 +91,44 @@ while [ $# -gt 0 ]; do
   shift
 done
 [ -n "$want" ] && PAGES="$want"
+
+resolve_tsc() {
+  if command -v tsc >/dev/null 2>&1; then printf 'tsc'
+  elif command -v npx >/dev/null 2>&1 && npx --no-install tsc --version >/dev/null 2>&1; then printf 'npx --no-install tsc'
+  else printf ''; fi
+}
+resolve_pyright() {
+  # Resolve the mise pin before entering scratch directories outside its config.
+  if command -v mise >/dev/null 2>&1 && _pr=$(cd "$REPO_ROOT" && mise which pyright 2>/dev/null) && [ -n "$_pr" ]; then printf '%s' "$_pr"
+  elif command -v pyright >/dev/null 2>&1; then printf 'pyright'
+  elif command -v npx >/dev/null 2>&1 && npx --no-install pyright --version >/dev/null 2>&1; then printf 'npx --no-install pyright'
+  else printf ''; fi
+}
+lang_tool() {
+  case "$1" in
+    java) printf 'javac' ;; go) printf 'go' ;; rust) printf 'rustc' ;;
+    swift) printf 'swiftc' ;; haskell) printf 'ghc' ;; ts) resolve_tsc ;;
+    js) printf 'node' ;; python) printf 'python3' ;;
+  esac
+}
+required_page() {
+  case "$1" in js|ts|python|rust) return 0 ;; *) return 1 ;; esac
+}
+for page in $PAGES; do
+  required_page "$page" || continue
+  tool=$(lang_tool "$page")
+  if [ -z "$tool" ] || ! command -v "${tool%% *}" >/dev/null 2>&1; then
+    printf 'FAIL %s: required host toolchain %s not installed\n' "$page" "${tool:-tsc}" >&2
+    exit 1
+  fi
+  if [ "$page" = python ]; then
+    PYRIGHT=$(resolve_pyright)
+    if [ -z "$PYRIGHT" ] || ! command -v "${PYRIGHT%% *}" >/dev/null 2>&1; then
+      printf 'FAIL python: required typed-fence checker pyright not installed\n' >&2
+      exit 1
+    fi
+  fi
+done
 
 if [ "${KIO_CI_SCHEDULE:-}" != DISABLE ] &&
    [ -z "${KIO_CI_SCHEDULER_BIN:-}" ]; then
@@ -178,39 +218,13 @@ instate == 1 {
 { if ($0 ~ ("^[ \t]*```" tag "[ \t]*$")) { match($0, /^[ \t]*/); indent = RLENGTH; n++; f = raw "/host_" n; print f; instate = 1 } }
 AWK
 
-# ---------------------------------------------------------------------------
-# Toolchain resolution. A missing toolchain skips that page's host-fence
-# compile (partial CI shard); JS/TS/Python/Rust are always present.
-# ---------------------------------------------------------------------------
-resolve_tsc() {
-  if command -v tsc >/dev/null 2>&1; then printf 'tsc'
-  elif command -v npx >/dev/null 2>&1 && npx --no-install tsc --version >/dev/null 2>&1; then printf 'npx --no-install tsc'
-  else printf ''; fi
-}
-resolve_pyright() {
-  # `mise which` resolves the npm-pinned tool to its real binary (usable
-  # from the scratch dirs, which sit outside any mise config); PATH and
-  # npx are the fallbacks, mirroring ci/checks/per-case/pyright-strict.sh.
-  if command -v mise >/dev/null 2>&1 && _pr=$(cd "$REPO_ROOT" && mise which pyright 2>/dev/null) && [ -n "$_pr" ]; then printf '%s' "$_pr"
-  elif command -v pyright >/dev/null 2>&1; then printf 'pyright'
-  elif command -v npx >/dev/null 2>&1 && npx --no-install pyright --version >/dev/null 2>&1; then printf 'npx --no-install pyright'
-  else printf ''; fi
-}
-lang_tool() {
-  case "$1" in
-    java) printf 'javac' ;; go) printf 'go' ;; rust) printf 'rustc' ;;
-    swift) printf 'swiftc' ;; haskell) printf 'ghc' ;; ts) resolve_tsc ;;
-    js) printf 'node' ;; python) printf 'python3' ;;
-  esac
-}
-
 run_compiler() {
   sh "$REPO_ROOT/ci/schedule.sh" --resource compiler -- "$@"
 }
 
 # report_fail <lang> <fence-file> <log-file>
 report_fail() {
-  printf 'FAIL %s: host fence did not compile:\n' "$1" >&2
+  printf 'FAIL %s: host fence did not validate:\n' "$1" >&2
   printf '  ----- fence -----\n' >&2; sed 's/^/  | /' "$2" >&2
   printf '  ----- compiler output -----\n' >&2; sed 's/^/  /' "$3" >&2
 }
@@ -219,9 +233,9 @@ report_fail() {
 first_code_line() { grep -vE '^[[:space:]]*(//|#|$)' "$1" | head -1; }
 
 # ===========================================================================
-# Per-language host-fence compilers. Each: <hraw> <nfences> <artifact> <cw>.
+# Per-language host-fence validators. Each: <hraw> <nfences> <artifact> <cw>.
 # Writes the validated fence count to <cw>/validated. Returns non-zero if a
-# fence failed to compile.
+# fence failed its validation.
 # ===========================================================================
 
 compile_syntax() { # <hraw> <nfences> <cw> <lang> <ext> <cmd...>
@@ -237,12 +251,38 @@ compile_syntax() { # <hraw> <nfences> <cw> <lang> <ext> <cmd...>
   printf '%s\n' "$v" > "$cw/validated"; return 0
 }
 
+compile_js() {
+  hraw=$1; nf=$2; art=$3; cw=$4
+  compile_syntax "$hraw" "$nf" "$cw" js mjs node --check || return 1
+  mkdir -p "$cw/out/js"
+  cp -R "$art"/. "$cw/out/js/"
+  printf '{ "type": "module" }\n' > "$cw/package.json"
+  printf 'hello from kio\nhello from kio\n' > "$cw/expected"
+  executed=0; i=1
+  while [ "$i" -le "$nf" ]; do
+    f="$hraw/host_$i"; i=$((i + 1))
+    if grep -q '^import .*createGreeter' "$f" && grep -q '^pkg.greeter.KioModule_main.main();' "$f"; then
+      { cat "$f"
+        printf '\nif (pkg.greeter.KioModule_main.main() !== null) throw new Error("main must return Unit as null");\n'
+      } > "$cw/worked.mjs"
+      if ! ( cd "$cw" && node worked.mjs ) >"$cw/stdout" 2>"$cw/log"; then
+        report_fail js "$f" "$cw/log"; return 1
+      fi
+      if ! cmp -s "$cw/expected" "$cw/stdout"; then
+        printf 'FAIL js: worked host and Unit-check invocation must each print hello from kio\n' >&2
+        sed 's/^/  /' "$cw/stdout" >&2
+        return 1
+      fi
+      executed=$((executed + 1))
+    fi
+  done
+  [ "$executed" = 1 ] || { printf 'FAIL js: expected one executable worked host, found %s\n' "$executed" >&2; return 1; }
+}
+
 compile_python() {
   hraw=$1; nf=$2; art=$3; cw=$4
   PYRIGHT=$(resolve_pyright)
-  if [ -z "$PYRIGHT" ]; then
-    printf '  SKIP typed-fence pyright check: pyright not installed (syntax check still runs)\n'
-  fi
+  [ -n "$PYRIGHT" ] || { printf 'FAIL python: required pyright unavailable\n' >&2; return 1; }
   v=0; i=1
   while [ "$i" -le "$nf" ]; do
     f="$hraw/host_$i"; i=$((i + 1))
@@ -255,7 +295,7 @@ compile_python() {
     # typed view shadows greeter.py), so a stub-symbol drift the
     # page still spells the old way fails here. Strict mode + the
     # backend's target version mirror ci/checks/per-case/pyright-strict.sh.
-    if [ -n "$PYRIGHT" ] && grep -qE '^[[:space:]]*(from[[:space:]]+greeter([.[:space:]])|import[[:space:]]+greeter([[:space:]]|$))' "$f"; then
+    if grep -qE '^[[:space:]]*(from[[:space:]]+greeter([.[:space:]])|import[[:space:]]+greeter([[:space:]]|$))' "$f"; then
       d="$cw/typed"; rm -rf "$d"; mkdir -p "$d"
       cp -R "$art"/. "$d/"
       cp "$f" "$d/snippet.py"
@@ -555,7 +595,7 @@ compile_ts() {
   mkdir -p "$cw/out/ts"
   cp "$art"/*.js "$art"/*.d.ts "$cw/out/ts/" 2>/dev/null || true
   printf 'declare const process: { stdout: { write(s: string): unknown } };\n' > "$cw/__harness.d.ts"
-  tsc_it() { ( cd "$cw" && $TSC --strict --noEmit --skipLibCheck "$@" ) >"$cw/log" 2>&1; }
+  tsc_it() { ( cd "$cw" && $TSC --strict --noEmit "$@" ) >"$cw/log" 2>&1; }
   v=0; i=1; frags=""
   while [ "$i" -le "$nf" ]; do
     f="$hraw/host_$i"; i=$((i + 1))
@@ -588,7 +628,7 @@ compile_page() {
     swift) compile_swift "$hraw" "$nf" "$art" "$cw" ;;
     haskell) compile_haskell "$hraw" "$nf" "$art" "$cw" ;;
     ts) compile_ts "$hraw" "$nf" "$art" "$cw" ;;
-    js) compile_syntax "$hraw" "$nf" "$cw" js mjs node --check ;;
+    js) compile_js "$hraw" "$nf" "$art" "$cw" ;;
     python) compile_python "$hraw" "$nf" "$art" "$cw" ;;
   esac
 }
@@ -635,6 +675,9 @@ for page in $PAGES; do
 
   tool=$(lang_tool "$page")
   if [ -z "$tool" ] || ! command -v "${tool%% *}" >/dev/null 2>&1; then
+    if required_page "$page"; then
+      printf 'FAIL %s: required host toolchain became unavailable\n' "$page" >&2; fail=1; continue
+    fi
     printf '  SKIP host-fence compile: toolchain %s not installed (%s fences)\n' "${tool:-<none>}" "$nfences"
     skipped=$((skipped + 1))
     SUMMARY="$SUMMARY\n  $page: built ok, host-fence compile SKIPPED ($nfences fences, no ${tool:-toolchain})"
@@ -648,10 +691,15 @@ for page in $PAGES; do
     if [ "$validated" = 0 ]; then
       printf 'FAIL %s: zero validated host fences (no-silent-skip)\n' "$page" >&2; fail=1
     fi
-    SUMMARY="$SUMMARY\n  $page: $validated/$nfences host fences compiled"
+    case "$page" in
+      js) level='syntax checked; worked host executed with output and Unit-result assertions' ;;
+      python) level='syntax checked; facade-importing fences strict type checked' ;;
+      *) level='compiled/type checked (including documented self-contained illustrations)' ;;
+    esac
+    SUMMARY="$SUMMARY\n  $page: $validated/$nfences host fences $level"
   else
     fail=1
-    SUMMARY="$SUMMARY\n  $page: HOST FENCE COMPILE FAILED"
+    SUMMARY="$SUMMARY\n  $page: HOST FENCE VALIDATION FAILED"
   fi
 done
 

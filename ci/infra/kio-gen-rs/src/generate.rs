@@ -264,6 +264,10 @@ pub fn program_from_seed_opts(seed: u64, opts: &GenOpts) -> Program {
     let uses_surface = surface_mode && term_uses_surface_forms(&body);
 
     Program {
+        control_probe: surface_mode.then(|| {
+            let mut control_rng = ChaCha20Rng::seed_from_u64(seed ^ 0xC017_2015_5EED_0001);
+            crate::control::sample(&mut control_rng)
+        }),
         fn_def_name: "gen".to_string(),
         params,
         ret,

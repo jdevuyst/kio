@@ -475,6 +475,7 @@ pub fn module_scope_from_surface_for_boundary(
             DocEntry::LabelForward(_, _) => Some(TypeLevelKind::LabelForward),
             DocEntry::HostType(_) => Some(TypeLevelKind::HostType),
             DocEntry::Fn(_)
+            | DocEntry::RecFn(_)
             | DocEntry::LiteralAlias(_)
             | DocEntry::Op(_, _)
             | DocEntry::VariadicOperator(_, _)

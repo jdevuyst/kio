@@ -84,6 +84,17 @@ build_corpus_tool_binary() {
       ;;
   esac
 
+  # Repeated compiler execution amortizes package-only optimization. Keep the
+  # ordinary dev dependency artifacts and all assertion/overflow behavior.
+  case "$bctb_key" in
+    kio-lsp-cli|kio-prime)
+      set -- "$@" \
+        --config 'profile.dev.package.kio-lang.opt-level=1' \
+        --config 'profile.dev.package.kio-lang.debug-assertions=true' \
+        --config 'profile.dev.package.kio-lang.overflow-checks=true'
+      ;;
+  esac
+
   if [ "${KIO_CI_SCHEDULE:-}" = DISABLE ]; then
     bctb_target=$ORCHESTRATOR_TMP/$bctb_key-target
     (

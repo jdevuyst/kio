@@ -201,7 +201,7 @@ fn main() -> ExitCode {
                     category,
                     &case_name,
                     &files,
-                    exit_code,
+                    (exit_code, ""),
                     is_kio_prime,
                     emit::runner_protocol(to_mutate.surface_mode),
                 )

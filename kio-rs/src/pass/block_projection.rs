@@ -163,6 +163,7 @@ impl Projection<'_> {
                 )?));
             }
             *expr = Expr::UserElaborator {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 name: head.name,
                 args,
@@ -261,6 +262,7 @@ fn block_error(declaration: &BlockDeclaration, span: Span, message: impl Into<St
 
 fn unit(span: Span) -> Expr<Surface> {
     Expr::Unit {
+        source_trivia: Default::default(),
         occurrence: Default::default(),
         meta: Meta::new(span),
     }
@@ -296,6 +298,7 @@ fn lambda(params: Vec<SignatureParam<Surface>>, body: Expr<Surface>, span: Span)
 
 fn call(callee: Expr<Surface>, args: Vec<CallArg<Surface>>, span: Span) -> Expr<Surface> {
     Expr::Call {
+        source_trivia: Default::default(),
         occurrence: Default::default(),
         diagnostic: Default::default(),
         callee: Box::new(callee),

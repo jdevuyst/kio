@@ -7,7 +7,7 @@ use crate::pass::typecheck_core::{InternedType, ModuleEnv, call_arg_type_slot_ca
 use crate::pass::typecheck_full::{PositionIndex, ResolvedBinder};
 use crate::span::Span;
 
-fn run_body<P: crate::ast::Phase>(module: &Module<P>) -> &Expr<P> {
+fn run_body<P: crate::ast::Phase<FnBody = Expr<P>>>(module: &Module<P>) -> &Expr<P> {
     module
         .items
         .iter()

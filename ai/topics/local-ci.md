@@ -4,6 +4,15 @@ Pointer: read before running Kio's check scripts locally, invoking `cargo` throu
 
 This page explains how Kio's local check infrastructure works. It does not cover third-party tool wiring; see [`local-tools.md`](local-tools.md). It does not prescribe local performance strategy; see [`local-performance.md`](local-performance.md).
 
+## Test determinism
+
+When adding or changing tests or harness assertions, apply
+[`TESTING.md` § Deterministic tests](../../TESTING.md#deterministic-tests).
+Ordinary tests must not use elapsed CPU/wall time as their correctness oracle
+or sleeps as synchronization. Use observable state, explicit synchronization,
+controlled clocks, and deterministic work/shape checks as appropriate; retain
+generous hang safeguards and separately justified blowup-regression bounds.
+
 ## End-to-end sweeps
 
 `sh ci/all.sh SAMPLE_IMPL` runs the same check categories as the Linux GitHub gate, with each matrix case using one applicable implementation. Each check is also invocable individually as `sh ci/checks/<bucket>/<name>.sh` (see [`ai/topics/repo-layout.md`](repo-layout.md) for the `ci/` bucket structure).
@@ -29,7 +38,16 @@ not grant runtime implementation eligibility or change case coverage.
 
 Tool requirements match what the root [`mise.toml`](../../mise.toml) / [`mise.lock`](../../mise.lock) pins. [`.devcontainer/Dockerfile`](../../.devcontainer/Dockerfile) installs the core set; `ci/impl-toolchain.sh` maps implementation names to Linux CI backend-extra mise tools and `mise bootstrap packages` specs; macOS / Windows portability jobs install their direct runner tools with `jdx/mise-action` from the same root mise files, excluding platform/tool cells that lack a proven no-source-build route.
 
-Cargo invocations in `ci/` scripts build with the default `dev` profile (output under `target/debug/`). `cargo build` and `cargo test` share dependency artifacts at that profile, so the orchestrator builds and the unit-test runs don't pay for duplicate dep compilation. Reach for `--release` only when measuring or shipping a real artifact.
+Cargo invocations in `ci/` scripts use the `dev` profile (output under
+`target/debug/`). The shared corpus-tool helper gives only its full and reduced
+compiler keys (`kio-lsp-cli`, `kio-prime`) package-scoped `kio-lang` opt-level 1,
+with debug assertions and overflow checks enabled. This applies to CI-prepared
+compiler snapshots, including those used by LSP/editor and subprocess tests;
+dependencies, runners and verifiers retain their ordinary dev settings.
+Developer builds, Cargo tests, Clippy and release profiles are unchanged.
+The persistent per-tool targets retain these artifacts across invocations;
+no additional named profile or dependency tree is introduced. Reach for
+`--release` only when measuring or shipping a real artifact.
 
 The native scheduler state lives under the Git common directory, so sibling
 worktrees coordinate even when a focused corpus command or top-level
@@ -518,8 +536,9 @@ When `ci/all.sh` or any local CI invocation reports failing buckets, that's a bl
 
 - Enumerate the failing buckets at the top of the next response — not buried inside a status update or summary block.
 - Don't queue more changes in the same area while CI is red; a follow-up commit can mask the regression and make bisection harder.
-- Decide from the run's declared purpose. A diagnostic or first-discovery run that is not expected to pass may stay alive after a known failure because the remaining failures are its result. A correctness or delivery-checkpoint run expected to pass can no longer meet its purpose after a deterministic tree-changing fix becomes necessary. A performance run may remain useful only when the correctness failure does not invalidate the path being measured, and it never earns green-gate credit.
-- If a `ci/all.sh` task fails while other tasks are still running, inspect that task's retained log immediately. Do not sit idle waiting for the final summary when the failing bucket's log is already available. Do not kill the broad gate merely because one task failed: sibling corpus or backend results may be needed for diagnosis, and a nearly complete run may cost less to finish than to replace. There is one important fail-fast case: when an early failure is deterministic and understood, its fix will change the tested tree, an exact-tree broad rerun is therefore unavoidable, and substantial expensive work remains, preserving the diagnostic and freeing those resources is a concrete reason to terminate the red run. Do not complete a stale-tree corpus and then pay for its inevitable replacement merely to follow the default keep-running rule. This judgment applies to actual task failure, not expected `FAIL [...]` output inside a causal self-test whose enclosing task passes.
+- Decide from the run's declared purpose. A diagnostic or first-discovery run that is not expected to pass may stay alive after a known failure because the remaining failures are its result. For a correctness or delivery-checkpoint run, determine which needed results a fix would invalidate before deciding to stop. A performance run may remain useful only when the correctness failure does not invalidate the path being measured, and it never earns green-gate credit.
+- A changed tree alone does not make a broad rerun necessary. If a reviewed correction is confined to an obsolete test assertion and changes neither production behavior nor other checks' inputs, keep the unaffected checks running and validate the corrected test separately. Record the original failure, the exact test correction and focused result, and why the remaining results still apply; do not relabel the original failed run as passing. A test or harness change that affects other cases requires their relevant coverage again, and changing an expectation never excuses a production defect or an unauthorized contract change.
+- If a `ci/all.sh` task fails while other tasks are still running, inspect that task's retained log immediately. Do not sit idle waiting for the final summary when the failing bucket's log is already available. Do not kill the broad gate merely because one task failed: sibling corpus or backend results may be needed for diagnosis, and a nearly complete run may cost less to finish than to replace. There is one important fail-fast case: when an early failure is deterministic and understood, its fix invalidates required broad-run results, an exact-tree broad rerun is unavoidable, and substantial expensive work remains, preserving the diagnostic and freeing those resources is a concrete reason to terminate the red run. Do not complete a stale-tree corpus and then pay for its inevitable replacement merely to follow the default keep-running rule. This judgment applies to actual task failure, not expected `FAIL [...]` output inside a causal self-test whose enclosing task passes.
 - Keep the one-command workflow: do not manufacture a duplicate preflight suite that repeats broad-gate work before every `ci/all.sh`. Run the focused checks already required by the change before the broad gate; a Rust change, for example, should not reach the broad gate without its applicable strict Clippy or hygiene coverage. For changed shell scripts, run focused `shellcheck --shell=sh` on those files; `sh -n` checks syntax only and does not substitute. If the fail-fast case above occurs, fix and review the defect, rerun that focused coverage, then launch the replacement broad gate once.
 - Continuing to edit while `ci/all.sh` runs is often fine, but do it deliberately: avoid mutating files an in-flight task may still read if you plan to trust that task's result, prefer isolated fixes whose affected bucket already failed or finished, and rerun the necessary focused or broad coverage after the edit. If you do stop the broad gate, say why; a catchable signal (`SIGTERM`/`SIGINT`/`SIGHUP`) to the top-level process reaps the worker subtree for you, so only a `SIGKILL` leaves a tree to tear down by hand.
 - If failures predate the current session, still surface them ("X failed on the previous run; status now unknown — re-run or investigate?"). The user decides whether to act now, but with the information visible.

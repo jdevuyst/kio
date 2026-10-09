@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func explicitHostDeclaration(value p.KioHostType_api__Vault[numberIndex]) {
+	_ = p.KioHostType_api__Crate[numberIndex](value)
+}

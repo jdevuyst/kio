@@ -33,6 +33,7 @@ use crate::comptime::ComptimeBuiltin;
 use crate::error::Error;
 use crate::span::Span;
 
+use super::HeaderRecording;
 use super::types::{collect_free_type_vars, fresh_type_var};
 use super::{
     AliasCtx, ModuleEnv, Synth, TypeCtx, Typer, TyperPhase, clone_with_span, display_type,
@@ -1433,7 +1434,7 @@ pub(crate) fn check_prime_fn_against<'m>(
                             unreachable!("a type signature group contains only type parameters")
                         };
                         tcx.push_type_param_kinded(&param.name, param.effective_kind(), param.span);
-                        <crate::prime::typer::PrimeTyper as Typer<crate::ast::Prime>>::record_binder_decl_at(
+                        <crate::ast::Prime as super::DeclarationPhase>::HeaderRecording::record_binder_decl_at(
                             param.span,
                             super::ResolvedBinderKind::TypeParam,
                             &param.name,
@@ -1450,7 +1451,7 @@ pub(crate) fn check_prime_fn_against<'m>(
                             .next()
                             .expect("shape checking returns one type per value parameter");
                         tcx.push_value_interned(param.name.clone(), ty.clone());
-                        <crate::prime::typer::PrimeTyper as Typer<crate::ast::Prime>>::record_binder_decl_at(
+                        <crate::ast::Prime as super::DeclarationPhase>::HeaderRecording::record_binder_decl_at(
                             param.meta.span,
                             super::ResolvedBinderKind::Local,
                             &param.name,
@@ -1535,7 +1536,7 @@ where
                             unreachable!("a type signature group contains only type parameters")
                         };
                         tcx.push_type_param_kinded(&param.name, param.effective_kind(), param.span);
-                        <P::Typer as Typer<P>>::record_binder_decl_at(
+                        <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                             param.span,
                             super::ResolvedBinderKind::TypeParam,
                             &param.name,
@@ -1578,7 +1579,7 @@ where
                             }
                         };
                         tcx.push_value_interned(param.name.clone(), ty.clone());
-                        <P::Typer as Typer<P>>::record_binder_decl_at(
+                        <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                             param.meta.span,
                             super::ResolvedBinderKind::Local,
                             &param.name,
@@ -1799,7 +1800,7 @@ where
         span,
         tcx,
         |segment_span, kind, name, parent, qualifier, _local_index, tcx| {
-            <P::Typer as Typer<P>>::record_binder_at(
+            <P::HeaderRecording as HeaderRecording<P>>::record_binder_at(
                 segment_span,
                 kind,
                 name,
@@ -2220,10 +2221,9 @@ where
         ("type alias", alias.name_span)
     } else if let Some(newtype) = selected.declaration.newtype() {
         ("newtype", newtype.name_span)
-    } else if let Some(host) = selected.declaration.host_type() {
-        ("host type", host.meta.span)
     } else {
-        return None;
+        let host = selected.declaration.host_type()?;
+        ("host type", host.meta.span)
     };
     let label = format!("{kind} declared here");
     let error = make_error();
@@ -2352,7 +2352,7 @@ fn record_member_resolution<P>(
                 .as_str(),
         )
     };
-    <P::Typer as Typer<P>>::record_nominal_type_binder_at(
+    <P::HeaderRecording as HeaderRecording<P>>::record_nominal_type_binder_at(
         head_span,
         kind,
         &source_module,

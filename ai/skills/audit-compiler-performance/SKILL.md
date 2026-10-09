@@ -1,6 +1,6 @@
 ---
 name: audit-compiler-performance
-description: Audit the compiler and compiler-producing CI performance architecture — native resource scheduling, parallel fan-out, lazy parsing, semantic on-disk caches, LSP responsiveness, backend emission and recursive host-stack scaling, and timing probes — for regressions as features land
+description: Audit the compiler and compiler-producing CI performance architecture — native resource scheduling, parallel fan-out, lazy parsing, semantic on-disk caches, LSP responsiveness, backend emission, generated execution and recursive host-stack scaling, and timing probes — for regressions as features land
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -418,6 +418,98 @@ Per AGENTS.md § Universal rules ("Optimizations are justified, not assumed"), a
 
 Enumerate the performance-only optimizations (behavior-preserving complexity whose justification is speed). Current registry:
 
+- **Shared recursive-group step** (`pass/desugar/mod.rs`) — multi-member
+  function groups share one ordinary private step function rather than copying
+  every member body into every entry wrapper. Preserve per-entry state/loop
+  construction, outer versus member-existential binders, source-name hygiene,
+  retained expression identities, and ordinary textual Prime validation; the
+  singleton path remains inline. `mutual_rec_dispatcher_is_emitted_once_per_group`
+  guards 2/4/8-member scaling and genuinely fails when per-wrapper construction
+  is restored. The eight `rec_group_shared_step` emissions measure each of five
+  effect-body literals once; the old compiler emits four copies of the first
+  literal on every backend and fails each guard. These are structural savings,
+  not runtime acceptance: retain the all-backend quoted-source, polymorphic,
+  visibility and deep-continuation goldens and measured runtime controls.
+
+- **JS/TS prepared host roots** (`backends/js/emit.rs`) — reuse one native-function root per
+  referenced exact host site inside its emitted module, without hoisting host
+  lookup, type/value advancement or invocation. The shared JS runtime also
+  serves TS. `referenced_host_roots_are_shared_without_advancing_stages` and
+  `host_root_identity_keeps_exact_declaring_sites_distinct` pin real emission,
+  delayed nullary calls, staging, unused-site exclusion, exact owner identities,
+  deterministic output and warm/cold emit-cache equality; restoring inline
+  root construction makes the firing guard fail.
+  Recorded roots-only discharge: the scaled `exec_rec_continuation_resume`
+  input used 2,000 continuation and 20,000 tail iterations, exact unchanged
+  stdout, one fixed JS runner and balanced execution order. Two observations
+  per arm averaged 13.545 seconds for control and 12.150 with root reuse
+  (10.3% lower). This establishes no whole-loader or broad-gate win; remeasure
+  the incremental benefit when changing the callable representation rather
+  than attributing a combined improvement to root reuse.
+  After removal of runtime value-admission validators, a matched lexer control
+  takes 2.864 seconds with shared roots versus 3.124 with their construction
+  restored inline (8.3% lower). Both produce the same complete token output.
+  This single artifact-only comparison rechecks the remaining mechanism;
+  it is not confidence-bounded or a whole-gate measurement.
+
+- **JS/TS static value-group extraction** (`backends/js/emit.rs`) —
+  `wrap_js_signature_stages` uses the already-resolved source group to bind
+  multiple parameters directly from the canonical product. The existing
+  private domain parameter is a flat cursor, not mutated shared data. Read
+  each spine edge once and give the final parameter the whole tail; do not
+  recursively flatten a product-valued final parameter. Preserve zero/one
+  parameter groups, executable type stages, source/native grouping, delayed
+  calls and hygienic names. Avoid nested binding patterns that add a host
+  parser depth limit. `static_domain_binding_is_flat_and_linear_in_arity`
+  covers 0/1/2/3/8/32/128/2048 parameters;
+  `static_domain_binding_keeps_whole_tail_and_stage_local_names` covers the
+  final slot, type/Unit interleaving and reserved/wildcard names. Both fail
+  when the old generic unpacking route is restored. An actual 128-parameter
+  emitted module parses and executes with the final product retained whole.
+  A matched source-built lexer control falls from 2.842 to 1.102 seconds
+  with identical complete 7,454-token output; the historical control takes
+  0.985 seconds. Emitted source grows from 1,626,271 to 1,769,466 bytes
+  (8.8%); uncached compilation takes 65.81/66.22 seconds and emission
+  0.964/0.932 seconds. These single observations justify the runtime trade-off,
+  not a compiler-time improvement, confidence bound or broad-gate prediction.
+  Keep generated-size bounds and real staged-call controls alongside the
+  private firing tests; do not extrapolate this target realization to other
+  backends without inspecting and measuring their analogous paths.
+
+- **Typed runtime-plan storage**
+  (`backends/{value_plan,serialized_runtime_ir}.rs`, Java emitter) —
+  construct body plans only for consumers that execute typed stages, and intern
+  them by the shared storage identity, omitting only diagnostic
+  binder spans. Retain node/capability distinctions, exact source-use IDs,
+  binder names/kinds, ambient binders, roots and nominal identities. Use one
+  serializer for erased and typed execution, not divergent semantic walkers;
+  erased consumers must neither serialize nor construct admission-only plans.
+  Native type rendering remains an independent consumer of the common value
+  planner. Key/projection/scaling units and their restored duplication mutations
+  pin firing. The JS/Python/Java `value_plan_size` emissions assert separate
+  absolute-byte and 4-to-32 growth bounds over all generated support, regardless
+  of whether the target needs runtime plans. Recorded Java totals without/with
+  interning are 83,659/66,215 and 337,349/157,130 bytes; its larger fixture
+  stores 4 body plans rather than 35. Do not claim savings from plans absent
+  in the current target representation or infer a runtime win from byte counts.
+
+- **Shared literal Unit beta reduction** (`pass/optimize.rs`) — consume only
+  a literal's exactly-one-empty-value stage. Preserve an explicit Unit
+  argument through `Seq` before its body; retain returned closures and captures,
+  and leave type or additional value stages intact. The independent unary
+  group guard is a correctness repair, pinned by `exec_literal_beta_stage_order`,
+  not performance credit. `beta_reduces_nullary_literal_with_omitted_or_explicit_unit`
+  fails when the catalog route is disabled; adjacent effect/capture/stage tests
+  constrain the transformation. Production emission reduces Unit-lift sites
+  from 1,954 to 248 and the measured simple immediate-thunk pattern from 203
+  to zero, including the hot boolean helpers. A restricted artifact-only model
+  removes those 203 simple-body thunks and changes the matched lexer from
+  14.726 to 12.867 seconds. The fresh combined compiler output takes 10.932
+  seconds with identical complete token output; its metadata also differs,
+  so this is not an isolated whole-rule timing. Retain both
+  production firing and final emitted measurements rather than treating the
+  exploratory rewrite as implementation evidence.
+
 - **Settled fills normalization and checked-call replay** —
   `materialize_projected_type_slot` reuses one authenticated normalization of
   the same original slot within its immediate store/delta boundary; later
@@ -473,7 +565,7 @@ Enumerate the performance-only optimizations (behavior-preserving complexity who
 - **Indexed active structural-recursion sites** (`normalization.rs`) — preserves the evaluator's global per-thread LIFO order while selecting the nearest structurally equal active site through a latest-frame map and restoring it through a checked backward link. The index and links are perf-only; exact site identity, oldest-root/nearest-current diagnostics, strict descent, thread locality, and unwind cleanup are correctness-primary. Discharge (deterministic selection work, not wall time): `indexed_structural_recur_lookup_work_matches_exact_tables` records 7/15/31/63/127 actual map-selection operations at live depths 8/16/32/64/128 for both repeated and all-distinct sites, while the frozen former reverse-scan mutation records the same repeated-site row but 28/120/496/2,016/8,128 candidate visits for distinct sites and makes that exact test fail. Equal-but-distinct `Arc` keys, A/B/A restoration, every source-identity component, failed-entry immutability, thread/unwind cleanup, and private layout are separately pinned. During audit, inspect `enter_structural_recur_site`: the checked test counter must remain immediately adjacent to the actual `latest_by_site.get`, and any reverse frame scan or once-per-call synthetic counter is a finding. This evidence makes no wall-time, CPU, RSS, allocator-byte, or worst-case constant-time claim.
 - **Linear recursive-signature context partition** (`pass/resolve.rs`, `sig/validate.rs`) — exact context/SCC congruence is correctness-primary. Hash-indexed binder shadowing, the signature-only duplicate-tolerant edge view, comparison-free SCC canonicalization, contiguous module runs, context hashes, the matched-member bitmap, and the ordered retained/component merge are its expected-linear realization. `recursive_context_partition_scan_fires_linearly_at_the_production_seam` drives the actual epoch validator over 128 mutually recursive declarations with 32 bound parameters each plus one trailing acyclic context member. It records 4,096 binder lookups, 129 SCC canonicalization visits, and 128 difference-merge comparisons; the former nested membership scan performs 8,384 comparisons (65.5× as many). Restoring that scan at the production selection seam bypasses the checked counter and fails the exact test. `exact_recursive_context_bypasses_the_difference_scan` accepts the corresponding complete context with the same 4,096 binder lookups, 128 SCC canonicalization visits, and zero difference-merge comparisons. During audit, reject a binder-vector membership scan, sorted/deduplicated diagnostic-edge construction on the signature-only path, comparison sorting inside `strongly_connected_components`, per-context graph analysis, or a difference-scan counter detached from the production comparison. This deterministic evidence makes no wall-time, CPU, RSS, allocation-rate, or broad-gate claim.
 - **Direct recursive-component classification** (`pass/resolve.rs`, `pass/label_elab/mod.rs`) — classifies each existing SCC by its size or singleton self-edge, without retaining an index or phase state. The `cyclic_component_classification_*` tests require positive actual queries and count examined edges in label expansion, projected emission, split fixes, and diagnostics. With 128 independent cycles, those paths inspect 256/128/128/256 edges instead of the former 8,384/8,256/8,256/16,512 candidate comparisons. Complete partitions, fixes, diagnostics, mixed recursion, and projected owner self-edges remain independently checked. During audit, inspect all four callers and require each separately restored list scan to fail its work guard; reject counters detached from actual queries or singleton-edge traversal. Counter-free default-feature debug measurements used sizes 32/64/128/256, 60 repetitions per entrypoint, and four samples per arm in `ABBA BAAB` order. All 7,680 results matched complete outputs across arms. At 256 members, median-of-run-medians time fell by 70.00% for projected emission, 79.64% for split fixes, and 78.75% for diagnostics. Label lowering's aggregate 8.61% decrease was noisy under contention: paired old/fixed ratios ranged from 0.508 to 1.173, and the 32-field aggregate was 3.80% slower, so no stable label wall-time win is claimed. The measurement summary SHA-256 is `1826ab493c2c458057bffd0cacc8196e6606d8ff0ece8253dc4d2c4fa5238f95`; these are entrypoint measurements, not release-profile, end-to-end, or broad-gate evidence.
-- **Ordered recursive-group recovery correspondence** (`pass/recover_to_low.rs`) — pairs source and phase-rebranded recursive-type members through the converter's one-for-one order, checks cardinality, variant, name, and binder preservation as internal phase contracts, and unfolds each newtype payload under only its own declaration binders. Direct pairing is perf-only; exact source ownership and payload unfolding are correctness-primary. `wide_recursive_group_pairs_each_distinct_source_binder_once` builds 512 mutually recursive newtypes with distinct binders colliding with outer aliases, verifies every resulting name, binder, next-member payload, and exactly 512 correspondence visits, and fails under both a one-member source-pair rotation and a wrong-member binder environment. The reproducible ignored measurement uses one deterministic 5,000-member package and five lowering iterations. Four counterbalanced samples per arm, after one discarded warmup, compare the direct pairing with the former per-newtype name scan: median wall falls from 3.635 to 1.595 seconds (56.121%), median user-plus-system CPU from 3.685 to 1.645 seconds (55.360%), median peak RSS from 106,392 to 99,222 KiB (6.739%), and correspondence visits from 62,512,500 to 25,000 (2,500.5× fewer). All eight samples exit zero and produce the identical 5,491,996-byte Routed rendering with FNV-1a `f7c6fac31253aede`. The retained measurement summary has SHA-256 `5a5fd933bd96420d0af29a015b59494850a7deaf1d302f48329bac544a512d67`; no index, cache, serialized state, or broad-gate credit is claimed.
+- **Ordered recursive-group recovery correspondence** (`pass/route.rs`) — pairs source and phase-rebranded recursive-type members through the converter's one-for-one order, checks cardinality, variant, name, and binder preservation as internal phase contracts, and unfolds each newtype payload under only its own declaration binders. Direct pairing is perf-only; exact source ownership and payload unfolding are correctness-primary. `wide_recursive_group_pairs_each_distinct_source_binder_once` builds 512 mutually recursive newtypes with distinct binders colliding with outer aliases, verifies every resulting name, binder, next-member payload, and exactly 512 correspondence visits, and fails under both a one-member source-pair rotation and a wrong-member binder environment. The reproducible ignored measurement uses one deterministic 5,000-member package and five lowering iterations. Four counterbalanced samples per arm, after one discarded warmup, compare the direct pairing with the former per-newtype name scan: median wall falls from 3.635 to 1.595 seconds (56.121%), median user-plus-system CPU from 3.685 to 1.645 seconds (55.360%), median peak RSS from 106,392 to 99,222 KiB (6.739%), and correspondence visits from 62,512,500 to 25,000 (2,500.5× fewer). All eight samples exit zero and produce the identical 5,491,996-byte Routed rendering with FNV-1a `f7c6fac31253aede`. The retained measurement summary has SHA-256 `5a5fd933bd96420d0af29a015b59494850a7deaf1d302f48329bac544a512d67`; no index, cache, serialized state, or broad-gate credit is claimed.
 - **Exact nominal-scope/provider acceleration and persistent alias contexts** (`pass/resolve.rs`, `pass/typecheck_core/{aliases,persistent_exact}.rs`) — indexes each module's written type-shaped selective and qualified type-import edges once, shares present indexes across phase-preserving clones, caches exact provider/owner results for one call, extends alias lexical/alpha/frontier state through structurally shared exact nodes, memoizes the free-rigid-name summary of each exact selected virtual view, and threads one incremental alpha allocator across nested alias owners. Resolution and capture hygiene are correctness-primary; the optional index, lazy provider caches, and persistent representation are perf-only realizations of that authority. Discharge (deterministic semantic-operation counts and layout, not wall time): `top_level_scope_common_header_is_one_word_over_declarations` bounds the common scope header to the declaration-map header plus one word; `top_level_scope_uses_optional_shared_type_import_storage` records no index for empty or value-only imports and one shared index across clones; and `selective_type_index_shares_one_deep_provider_prefix_across_fanout` retains exactly 64 prefix segments for a 64-segment, 64-name import. `direct_nominal_lookup_uses_top_level_scope_without_declaration_scan` records zero re-export work across 128 modules. For a 64-leaf alias output, `canonical_alias_output_uses_package_scope_without_rescanning_owner_declarations` records zero declaration-item and use-edge scans despite 64 unrelated declarations and 64 unrelated imports, while `one_alias_output_reuses_its_exact_owner_entry_handle` permits at most two exact-entry lookups. The 32-deep qualified and selective fanout controls each permit at most one exact-target lookup, one indexed-prefix clone, and 32 cloned path segments. The 64-leaf canonical alias-free composite records zero materializer roots and zero argument-rope walks; the 512-binder frontier records zero ambient-binder copies. The depth-128 capture-avoidance control records one formal-summary build, at most 256 alpha-candidate probes, and at most 768 materialization calls; the rope and forwarded-owner controls bound their counters linearly in the declared depth, arity, and width while preserving the exact materialized type. No valid timed matched A/B result is available; this discharge makes no wall-time, CPU, RSS, allocation-rate, or performance-neutrality claim.
 - **Prepared boundary-facade indexes and Python annotation batching** (`backends/boundary_facade.rs`, `backends/python/stub.rs`) — builds the live nominal/callable indexes once per facade transaction instead of rescanning package items per boundary occurrence. Protocol localization parses and walks each emitted annotation once for all captured roots, then rewrites every exact root token simultaneously; TypedDict parameter selection indexes the current candidates once and scans the current field inventory once per instantiation, while later instantiations recompute their concrete application arguments rather than reusing an argument list cached with the definition. These realizations are perf-only. Discharge (deterministic operation counts, not wall time): `live_collection_indexes_declarations_once_instead_of_rescanning_per_site` measures width 8/32 export work at 324/4,752 legacy item visits versus 48/192 indexed visits, and both-public-newtype work at 344/5,216 versus 24/96. `protocol_localization_batches_mixed_exact_roots_and_preserves_ordinal_holes` preserves mixed variance, overlapping exact identifiers, and the original ordinal hole while recording 3 annotation parses, 8 AST-node visits, and 7 rendered-identifier visits; restoring the former per-root parse/walk and replacement loops records 9/24/14 and makes the exact test fail. `typed_dict_selection_visits_current_inventory_once_per_instantiation` preserves two distinct same-shape argument inventories across one cached definition and records 32 candidate visits plus 544 identifier visits for two width-16/depth-16 instantiations; restoring the former per-candidate early-exit scan records 4,624 identifier visits and makes the exact test fail. Its empty-candidate control records zero work; removing the no-op guard records two identifier visits and makes the test fail. A temporary natural width-8/32 Python pair produced 18,250/178,720-byte stubs with maximum lines of 568/1,912 bytes and square-bracket nesting 1. The former and batched implementations emitted byte-identical `.py` and `.pyi` artifacts at both widths. Four times the authored width produced 9.79 times the `.pyi` bytes because the package-root generic inventory repeats across generated declarations; that output-shape growth is unchanged by this batching and is not presented as linear. Strict Pyright 1.1.411 passed four counterbalanced samples per width: width 8 used 0.72/0.45/0.41/0.47 seconds and 122,724/122,788/122,048/122,260 KiB peak RSS; width 32 used 0.51/0.49/0.48/0.49 seconds and 127,748/127,100/127,032/127,220 KiB. Those timings are natural-scale validation only; the deterministic operation counts are the causal measurement and give no broad-gate runtime credit.
 - **Backend-local prepared owner, reachability, and pending-work indexes** (`backends/rust/emit.rs`, `backends/java/{skin,emit}.rs`, `backends/swift/{skin,emit}.rs`, `backends/ts/emit.rs`) — Rust threads the exact indexed newtype-payload owner into nested forall naming rather than rescanning nominal declarations by plan pointer, Java reverses exact prepared newtype-payload plan identity to its selected nominal owner, Swift collects the exact reached-nominal set once before selecting retained host bindings, and TypeScript consumes recursive structural declarations from a pending ordered set rather than rescanning the complete discovered set after every emission. These are perf-only. Discharge (deterministic semantic-operation counts, not wall time or a claim that the underlying ordered collections are O(1)): `nested_retained_payload_foralls_resolve_their_owner_in_bounded_steps` proves identical emitted owner identity with 0/32 unrelated declarations and measures 1/1 direct semantic lookups versus 1/33 former candidate visits; `payload_owner_reverse_index_bounds_structural_operations` proves selected owner and plan-pointer parity at widths 8/32 and measures 36/528 former candidate visits versus 16/64 index-construction-plus-lookup events; `reached_nominal_index_bounds_structural_operations` proves exact-QTN selected-binding parity and measures 100/1,552 former candidate visits versus 24/96 index-construction-plus-lookup events; `recursive_structural_worklist_eliminates_ordered_rescans` proves identical ordered selection for 128 declarations and measures 8,384 former candidate extractions versus 128 pending-set extractions. Restoring each former scan at its production selection seam makes its focused guard fail while leaving the parity oracle intact, so the four indexes have causal firing coverage rather than comparator-only measurements.
@@ -594,7 +686,7 @@ Enumerate the performance-only optimizations (behavior-preserving complexity who
 
 For each registered optimization, discharge both:
 
-- **Firing coverage?** Use the narrowest truthful evidence. Observable cross-implementation language/CLI/runtime behavior is golden-pinned through the fixed runner; a golden case never reads, copies, greps, patches, imports, or native-compiles generated host-backend files. A durable generated-file proxy retained with the recorded measurement is an `ARTIFACT_SHAPE` emission, and it pins only that portable measured/spec fact. Exact private/no-filesystem firing belongs in unit or mutation coverage (`audit-mutation`). Incidental private artifact assertions are deleted rather than promoted to corpus contracts.
+- **Firing coverage?** Use the narrowest truthful evidence. Observable cross-implementation language/CLI/runtime behavior is golden-pinned through the fixed runner; a golden case never reads, copies, greps, patches, imports, or native-compiles generated host-backend files. A durable generated-file proxy retained with the recorded measurement is an `ARTIFACT_SHAPE` emission, and it pins only that portable measured/spec fact. Exact private/no-filesystem firing belongs in unit or mutation coverage (`audit-reports`). Incidental private artifact assertions are deleted rather than promoted to corpus contracts.
 - **Measured win?** It landed (or is retained) with a recorded measurement — a number in the commit / PR or a benchmark fixture.
 
 Kio' is the specified backend-neutral phase-artifact exception: a golden may
@@ -644,6 +736,41 @@ duplicated work, missing wide evidence, and resource mitigation presented as a
 root-cause fix. Do not require a broad benchmark for an edit that cannot affect
 backend preparation, emitted shape, or native compilation.
 
+Audit generated execution as well as compilation using
+[`add-backend`'s comparative runtime check](../add-backend/SKILL.md#comparative-runtime-check).
+A full backend review covers every in-scope backend; a narrow change targets
+affected paths and useful peers. Reuse comparable retained evidence, obtaining
+bounded measurements where it is missing or no longer represents the path under
+review. The shared procedure prefers representative castles, separates startup
+and execution, and accounts for actual profiles and runtime conditions. Flag
+missing comparative evidence and unexplained large gaps, not violations of a
+presumed language ranking. Do not turn this review into automatic whole-corpus
+timing runs or ordinary wall-time test assertions.
+
+For conversion-heavy paths, apply
+[conversion placement and cost](../../topics/emit.md#conversion-placement-and-cost).
+Separate plan-cache misses from per-value copying, conversion and callable
+dispatch; frequent events are not additive wall-time fractions. Compare against
+a representative earlier implementation as well as the immediate candidate.
+Check the shared host-value responsibility: general runtime type validation is
+not part of the generated host interface. Distinguish that from conversions
+needed by valid programs and authorized opaque-payload access.
+Treat conversion-disabled counterfactuals as attribution only, and require
+semantic evidence for each production elimination. A correctness repair explains
+why an obligation exists, not why every internal call must pay for it.
+
+Include representative elaborator-heavy programs, preferring castles for
+realistic feature combinations and using POCs or focused cases for patterns
+those castles do not cover. Trace expansion into Kio' through
+shared optimization and host emission, looking for avoidable closures, adapters,
+intermediate values, repeated traversals and duplicated work. Measure retained
+costs and identify the phase that owns them. Existing elaborators supply useful
+workloads, not compiler privileges: recommendations must apply to general
+resolved/typed structures, including equivalent user-written elaborators, never
+special-case declaration names or package identities. Not every elaborator
+needs a new optimization; findings require concrete unnecessary work or missing
+evidence, not merely an unfamiliar emitted shape.
+
 The Python typed-stub package is one registered correctness-primary scaling
 mechanism. Check its bound and causal guards explicitly:
 
@@ -678,7 +805,8 @@ Group findings by severity:
 7. **Backend scaling regression** — repeated facade preparation, superlinear
    emission, pathological generated shape, disproportionate host-compiler
    wall/RSS on the natural wide witness, or recursive host-stack growth on the
-   fixed-depth structured-state witness.
+   fixed-depth structured-state witness; also unexplained generated-execution
+   gaps against comparable peer workloads.
 8. **Test gap** — no focused guard for a performance-architecture change, or
    missing per-backend runtime, wrapper-growing RED/restored GREEN, or semantic
    boundary controls for recursive stack safety.

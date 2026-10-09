@@ -2,7 +2,7 @@
 
 *Pronounced "Kio prime". The apostrophe form (**Kio'**) is the canonical spelling in prose; identifiers that need a separator-friendly form use **`kio-prime`** in code (internal compiler binary, build-target id, file names) and **`KIO_PRIME`** in environment variables and marker files (e.g. `IS_KIO_PRIME`).*
 
-**Kio'** is the small, desugared subset of Kio. It contains no elaborator and no syntactic sugar. Every full-language feature is either present here in its minimal form, or defined in [`language.md`](language.md) by how it expands into a Kio' construct.
+**Kio'** is the small, desugared subset of Kio. It contains no elaborator or surface-only construct; shared parse-time abbreviations such as type chains remain part of its grammar. Every full-language feature is either present here in its minimal form, or defined in [`language.md`](language.md) by how it expands into a Kio' construct.
 
 Kio' exists for three reasons:
 
@@ -13,8 +13,8 @@ Kio' exists for three reasons:
 ## Kio' as Church-style fragment of System F-ω
 
 Kio' is a **Church-style fragment of System F-ω**: every universal `[A]` and
-existential `<U>` type binder is written explicitly, every type argument at a
-call site is written out positionally, and — the F-ω part — type binders carry
+existential `<U>` type binder is written explicitly, ordinary universal call
+arguments are written out positionally, and — the F-ω part — type binders carry
 an explicit **kind** drawn from the closed kind language
 `κ ::= * | κ → κ` (see [`grammar.md` § Kind grammar](grammar.md#kind-grammar)).
 A kind-`*→*`-or-higher binder admits direct type application `F(A)`, so Kio'
@@ -35,6 +35,13 @@ value arguments may supply whole missing parameter annotations before its body
 is checked. Neither route infers a universal type argument, inspects a body to
 discover a parameter type, looks through a `let`, or searches declarations
 globally.
+
+Human-written Kio' also retains anonymous-lambda return synthesis and finite
+existential-constructor witness recovery, described below. These bounded
+completion rules make the explicit core directly writable. Full Kio supplies
+the richer authoring surface; its additional inference is resolved before the
+core artifact is validated. The artifact carries the information needed for
+fresh checking, even where an anonymous-lambda return annotation remains absent.
 
 The full Kio front-end may use a finite connected application-local domain of
 goals and one-shot retained source actions while it elaborates omitted
@@ -170,7 +177,7 @@ the surface language.
 
 **Existential binders.** A `newtype` declaration may carry an existential binder run, written as whitespace-separated `<X>` atoms trailing the universal-parameter list on the header (e.g., `newtype Pack[A] <U> : A & U`, or `newtype Pack[A] <L> <R> : A & L & R` for multi-binder runs). The names are bound inside the payload only and do not appear in the type's nominal arity — `Pack[A] <U> : A & U` is referenced as `Pack(A)`, not `Pack(A, U)`. **Each binder must occur at least once in the payload** — a phantom existential (a binder that never appears in the payload) is information-free and rejected at declaration.
 
-The constructor scheme extends with the existentials as additional inference-driven type-params: `Name.c : [A...][U...] payload -> Name(A...)`. At the construction call site the existentials are recovered from the value-arg's type, the same way reachable universals are.
+The constructor scheme extends with the existentials as additional inference-driven type-params: `Name.c : [A...][U...] payload -> Name(A...)`. At the construction call site the existential witnesses are recovered by structurally matching the payload against the independently synthesized value-argument type. The ordinary universal prefix remains explicit in Kio'. Standalone checking materializes the recovered witnesses as ordinary type arguments in the validated artifact.
 
 The projector scheme is **CPS-shaped** for existential-bearing newtypes:
 
@@ -359,8 +366,9 @@ A program that parses against the Kio' productions is *syntactically* Kio'. It i
 Type flow in Kio' is syntax-directed and bidirectional. Function calls supply
 all universal type arguments explicitly. Ordinary expressions synthesize,
 while a known function position may check a lambda against an expected
-function type; the bounded direct-lambda-callee rule described above is the
-only same-application completion rule. Kio' has no coercion or dispatch
+function type. Direct-lambda parameter completion and existential-constructor
+witness recovery use the bounded application-local rules described above.
+Kio' has no coercion or dispatch
 elaborator, no omitted universal call argument, and no retained surface
 inference state.
 

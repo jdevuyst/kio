@@ -39,8 +39,9 @@ use crate::ast::{
     HostFnParam, HostType, Import, ImportItem, ImportKind, Item, LabelForward, LabelSugarLabel,
     Labels, LiteralAlias, LiteralAliasValue, LockFile, Module, ModulePath, Newtype, Op, OpBody,
     OpPart, PackageFile, RowLetEntry, Signature, SignatureGroupRef, SignatureParam, SourceBlock,
-    SourceOrigin, TargetBlock, TargetEntry, Type, TypeAlias, TypeParam, VariadicOperator,
+    SourceOrigin, Surface, TargetBlock, TargetEntry, Type, TypeAlias, TypeParam, VariadicOperator,
 };
+use crate::ast::{DelimitedTrivia, SignatureTriviaPosition, append_source_trivia};
 use crate::doc::{
     Doc, align, comma_list, concat, concat_all, empty, flat_alt, group, hardline, join, line, nest,
     render, text,
@@ -303,7 +304,7 @@ fn doc_vis(vis: &crate::ast::Visibility) -> Doc {
 
 /// Render a `fn` definition's header only — everything `doc_fn_def`
 /// emits except the doc-comment prefix and the block body.
-fn doc_fn_def_header(d: &FnDef) -> Doc {
+fn doc_fn_def_header(d: &FnDef<Surface, impl FnPurityExt>) -> Doc {
     let pubword = doc_vis(&d.vis);
     let pureword = if d.purity.is_pure_fn() {
         text("pure ")
@@ -313,7 +314,7 @@ fn doc_fn_def_header(d: &FnDef) -> Doc {
     let ret_doc = if d.ret_elided {
         empty()
     } else {
-        doc_chain_body_layout(&d.ret, doc_type(&d.ret), " -> ", " ->", empty(), empty())
+        doc_function_return(&d.ret, true)
     };
     concat_all([
         pubword,
@@ -400,54 +401,7 @@ fn doc_module(m: &Module) -> Doc {
 /// Trailing newlines after the last comment are dropped — the
 /// surrounding emit attaches the trivia directly above the item.
 fn doc_item_leading_trivia(trivia: &[Trivia]) -> Doc {
-    let mut parts: Vec<Doc> = Vec::new();
-    let mut last_was_empty_comment = false;
-    let mut newline_run: usize = 0;
-    let mut emitted_first = false;
-    for entry in trivia {
-        match entry {
-            Trivia::Newline => newline_run += 1,
-            Trivia::LineComment { text: body, .. } => {
-                let is_empty = body.is_empty();
-                if is_empty && last_was_empty_comment {
-                    newline_run = 0;
-                    continue;
-                }
-                if emitted_first && newline_run >= 2 {
-                    // Blank line between two comment paragraphs.
-                    parts.push(hardline());
-                }
-                parts.push(text(format!("//{body}")));
-                parts.push(hardline());
-                last_was_empty_comment = is_empty;
-                emitted_first = true;
-                newline_run = 0;
-            }
-            // Doc-comment lines in the raw leading-trivia vector are
-            // emitted here for any item that carries them in raw trivia
-            // (rather than through the `DocComment` field). This handles
-            // the round-trip for items that the parser hasn't yet plumbed
-            // doc-attachment through, and for `import` statements.
-            Trivia::DocCommentLine { text: body, .. } => {
-                if emitted_first && newline_run >= 2 {
-                    parts.push(hardline());
-                }
-                // Re-emit with normalized prefix: `/// ` + body, or `///`
-                // for a blank doc line (empty body).
-                let line = if body.is_empty() {
-                    "///".to_owned()
-                } else {
-                    format!("/// {body}")
-                };
-                parts.push(text(line));
-                parts.push(hardline());
-                last_was_empty_comment = false;
-                emitted_first = true;
-                newline_run = 0;
-            }
-        }
-    }
-    concat_all(parts)
+    doc_comment_run(trivia, CommentRunContext::ItemLeading)
 }
 
 /// Render a `DocComment` as a sequence of `/// line\n` lines.
@@ -514,26 +468,12 @@ fn doc_module_path(p: &ModulePath) -> Doc {
 /// `// docstring` above `import path(foo);` stays above the
 /// `import` regardless of where the sort places it within its block.
 fn doc_import_blocks(imports: &[Import]) -> Doc {
-    // Each entry: (rendered import text, comment-only trivia run).
-    // The trivia is reduced to LineComments only — newlines drop
-    // since the canonical import-block layout dictates spacing.
-    let mut intrinsics: Vec<(String, Vec<String>)> = Vec::new();
-    let mut others: Vec<(String, Vec<String>)> = Vec::new();
+    let mut intrinsics: Vec<(String, Doc)> = Vec::new();
+    let mut others: Vec<(String, Doc)> = Vec::new();
     for u in imports {
         // Render this import's Doc to a string for sorting and re-emission.
         let buf = render(&doc_import(u), WIDTH);
-        let mut comments: Vec<String> = Vec::new();
-        let mut last_was_empty = false;
-        for t in &u.leading_trivia {
-            if let Trivia::LineComment { text: body, .. } = t {
-                let is_empty = body.is_empty();
-                if is_empty && last_was_empty {
-                    continue;
-                }
-                comments.push(body.clone());
-                last_was_empty = is_empty;
-            }
-        }
+        let comments = doc_comment_run(&u.leading_trivia, CommentRunContext::ImportLeading);
         let entry = (buf, comments);
         match &u.kind {
             ImportKind::Intrinsics => intrinsics.push(entry),
@@ -547,7 +487,7 @@ fn doc_import_blocks(imports: &[Import]) -> Doc {
 
     let mut parts: Vec<Doc> = Vec::new();
     let mut wrote_block = false;
-    for block in [&intrinsics, &others] {
+    for block in [intrinsics, others] {
         if block.is_empty() {
             continue;
         }
@@ -556,11 +496,8 @@ fn doc_import_blocks(imports: &[Import]) -> Doc {
             parts.push(hardline());
         }
         for (rendered, comments) in block {
-            for body in comments {
-                parts.push(text(format!("//{body}")));
-                parts.push(hardline());
-            }
-            parts.push(text(rendered.clone()));
+            parts.push(comments);
+            parts.push(text(rendered));
             parts.push(hardline());
         }
         wrote_block = true;
@@ -734,7 +671,7 @@ fn doc_type_rec_group(g: &crate::ast::TypeRecGroup) -> Doc {
     ])
 }
 
-fn doc_fn_def(d: &FnDef) -> Doc {
+fn doc_fn_def(d: &FnDef<Surface, impl FnPurityExt>) -> Doc {
     let doc_prefix = d.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
     let pubword = doc_vis(&d.vis);
     let pureword = if d.purity.is_pure_fn() {
@@ -749,7 +686,7 @@ fn doc_fn_def(d: &FnDef) -> Doc {
     let ret_doc = if d.ret_elided {
         empty()
     } else {
-        doc_chain_body_layout(&d.ret, doc_type(&d.ret), " -> ", " ->", empty(), empty())
+        doc_function_return(&d.ret, true)
     };
     concat_all([
         doc_prefix,
@@ -841,13 +778,15 @@ fn doc_capture_path(capture: &crate::ast::UserElaboratorCapture) -> Doc {
 /// distinction the two former entry points carried.
 fn doc_block_body_expr(body: &Expr, allow_flat: bool) -> Doc {
     let content = doc_expr_with_own_meta_trivia(body);
-    doc_block_body_with_trailing(content, body.meta().trailing_trivia.as_slice(), allow_flat)
+    doc_braced_block(
+        empty(),
+        Some(content),
+        allow_flat && !has_comments(&body.meta().trailing_trivia),
+    )
 }
 
-/// Block-body layout for a pre-rendered content `Doc` plus its
-/// closing-boundary trailing trivia. Shared by [`doc_block_body_expr`]
-/// and the placeholder-lambda path. A dangling comment forces the broken
-/// layout.
+/// Block-body layout for pre-rendered content and its separately owned closer.
+/// A dangling comment forces the broken layout.
 fn doc_block_body_with_trailing(content: Doc, trailing: &[Trivia], allow_flat: bool) -> Doc {
     if has_comments(trailing) {
         let with_dangling = concat_all([content, hardline(), doc_trailing_comments(trailing)]);
@@ -1406,39 +1345,90 @@ fn doc_signature(sig: &Signature) -> Doc {
     if groups.is_empty() {
         return text("()");
     }
+    let anchors = |index, position| -> &[Trivia] {
+        sig.source_trivia
+            .as_ref()
+            .and_then(|trivia| {
+                trivia
+                    .anchors
+                    .iter()
+                    .find(|anchor| anchor.group == index && anchor.position == position)
+            })
+            .map_or(&[], |anchor| anchor.trivia.as_slice())
+    };
     let mut parts = Vec::new();
-    for group in groups {
-        match group {
+    for (index, group) in groups.into_iter().enumerate() {
+        let before = anchors(index, SignatureTriviaPosition::BeforeGroup);
+        let opening = anchors(index, SignatureTriviaPosition::InsideOpen);
+        let closing = anchors(index, SignatureTriviaPosition::InsideClose);
+        let group_doc = match group {
             SignatureGroupRef::Type(params) => {
-                for param in params {
-                    let SignatureParam::Type(tp) = param else {
-                        unreachable!("signature type group contains only type params")
-                    };
-                    parts.push(text(type_binder_text(tp)));
+                let [SignatureParam::Type(tp)] = params else {
+                    unreachable!("canonical signature type group has one binder")
+                };
+                if has_comments(opening) || has_comments(closing) {
+                    let binder = type_binder_text(tp);
+                    let mut inner = vec![
+                        hardline(),
+                        doc_inline_leading_trivia(opening),
+                        text(binder[1..binder.len() - 1].to_owned()),
+                    ];
+                    if has_comments(closing) {
+                        inner.extend([hardline(), doc_trailing_comments(closing)]);
+                    }
+                    inner.extend([hardline(), text("]")]);
+                    concat(text("["), nest(2, concat_all(inner)))
+                } else {
+                    text(type_binder_text(tp))
                 }
             }
             SignatureGroupRef::Value(params) => {
-                let docs: Vec<Doc> = params.iter().map(doc_signature_param).collect();
-                // Per-param leading trivia and the last param's
-                // trailing run flow through the trivia-aware list so a
-                // comment above or trailing a value parameter survives.
-                let trivia: Vec<Vec<Trivia>> =
-                    params.iter().map(signature_param_leading_trivia).collect();
-                let last_trailing = params
-                    .last()
-                    .map(signature_param_trailing_trivia)
-                    .unwrap_or(&[]);
-                parts.push(doc_comma_list_with_trivia(
+                let docs = params.iter().map(doc_signature_param).collect();
+                let leading: Vec<_> = params.iter().map(signature_param_leading_trivia).collect();
+                let trailing: Vec<_> = params
+                    .iter()
+                    .map(|p| signature_param_trailing_trivia(p).to_vec())
+                    .collect();
+                doc_comma_list_with_boundaries(
                     text("("),
                     docs,
-                    &trivia,
-                    last_trailing,
+                    &leading,
+                    &trailing,
+                    closing,
                     text(")"),
-                ));
+                    false,
+                )
             }
+        };
+        if has_comments(before) {
+            parts.push(nest(
+                2,
+                concat_all([hardline(), doc_inline_leading_trivia(before), group_doc]),
+            ));
+        } else {
+            parts.push(group_doc);
         }
     }
     concat_all(parts)
+}
+
+fn doc_function_return(ty: &Type, chain_layout: bool) -> Doc {
+    let leading = &ty.meta().leading_trivia;
+    if has_comments(leading) {
+        nest(
+            2,
+            concat_all([
+                hardline(),
+                doc_inline_leading_trivia(leading),
+                text("-> "),
+                doc_type(ty),
+            ]),
+        )
+    } else if chain_layout {
+        doc_chain_body_layout(ty, doc_type(ty), " -> ", " ->", empty(), empty())
+    } else {
+        concat(text(" -> "), doc_type(ty))
+    }
 }
 
 /// The leading trivia captured before a signature value parameter.
@@ -1451,8 +1441,8 @@ fn signature_param_leading_trivia(p: &SignatureParam) -> Vec<Trivia> {
     }
 }
 
-/// The trailing run stashed on a signature value parameter (the last
-/// param's run before `)`); empty for a type-binder param.
+/// A parameter's own trailing run, separate from the signature group's closer;
+/// empty for a type-binder parameter.
 fn signature_param_trailing_trivia(p: &SignatureParam) -> &[Trivia] {
     match p {
         SignatureParam::Type(_) => &[],
@@ -1548,6 +1538,13 @@ fn flatten_chain(t: &Type, op: ChainOp) -> Vec<&Type> {
     let mut items = Vec::new();
     let mut cur = t;
     loop {
+        if !items.is_empty()
+            && (has_comments(&cur.meta().leading_trivia)
+                || has_comments(&cur.meta().trailing_trivia))
+        {
+            items.push(cur);
+            return items;
+        }
         match (cur, op) {
             (Type::Product { left, right, .. }, ChainOp::Amp) => {
                 items.push(left.as_ref());
@@ -1598,7 +1595,7 @@ fn doc_type_chain_child(t: &Type, parent_op: ChainOp) -> Doc {
 /// the surrounding nest's indent — the leading-operator A1
 /// analogue. Mirrors `comma_list`'s flat-vs-broken structure.
 ///
-fn doc_chain(items: Vec<Doc>, op: ChainOp) -> Doc {
+fn doc_chain(items: Vec<&Type>, op: ChainOp) -> Doc {
     doc_chain_inner(items, op, false)
 }
 
@@ -1612,20 +1609,40 @@ fn doc_chain(items: Vec<Doc>, op: ChainOp) -> Doc {
 /// form's type operand) has no such delimiter, so its broken form must
 /// supply the parens. The flat form carries no leading operator and is
 /// never parenthesized, so a chain that fits on one line is unchanged.
-fn doc_chain_paren_when_broken(items: Vec<Doc>, op: ChainOp) -> Doc {
+fn doc_chain_paren_when_broken(items: Vec<&Type>, op: ChainOp) -> Doc {
     doc_chain_inner(items, op, true)
 }
 
-fn doc_chain_inner(items: Vec<Doc>, op: ChainOp, paren_broken: bool) -> Doc {
+fn doc_chain_inner(items: Vec<&Type>, op: ChainOp, paren_broken: bool) -> Doc {
     debug_assert!(items.len() >= 2);
-    let flat = join(text(op.separator()), items.clone());
+    let docs: Vec<Doc> = items
+        .iter()
+        .map(|item| doc_type_chain_child(item, op))
+        .collect();
+    let flat = join(text(op.separator()), docs.clone());
+    let has_trivia = items.iter().any(|item| {
+        has_comments(&item.meta().leading_trivia) || has_comments(&item.meta().trailing_trivia)
+    });
     let mut broken = Doc::Empty;
     let mut first = true;
-    for item in items.into_iter() {
+    for (item, doc) in items.into_iter().zip(docs) {
         if !first {
             broken = concat(broken, hardline());
         }
-        broken = concat(broken, concat(text(op.prefix()), item));
+        broken = concat_all([
+            broken,
+            doc_inline_leading_trivia(&item.meta().leading_trivia),
+            text(op.prefix()),
+            doc,
+        ]);
+        if has_comments(&item.meta().trailing_trivia) {
+            broken = concat_all([
+                broken,
+                hardline(),
+                doc_trailing_comments(&item.meta().trailing_trivia),
+                hardline(),
+            ]);
+        }
         first = false;
     }
     let broken = if paren_broken {
@@ -1633,7 +1650,11 @@ fn doc_chain_inner(items: Vec<Doc>, op: ChainOp, paren_broken: bool) -> Doc {
     } else {
         broken
     };
-    group(flat_alt(flat, broken))
+    if has_trivia {
+        broken
+    } else {
+        group(flat_alt(flat, broken))
+    }
 }
 
 /// Render a `Sum` / `Product` type at a **bare** position (a call
@@ -1644,19 +1665,11 @@ fn doc_type_bare_position(t: &Type) -> Doc {
     match t {
         Type::Product { .. } => {
             let items = flatten_chain(t, ChainOp::Amp);
-            let docs: Vec<Doc> = items
-                .iter()
-                .map(|item| doc_type_chain_child(item, ChainOp::Amp))
-                .collect();
-            doc_chain_paren_when_broken(docs, ChainOp::Amp)
+            doc_chain_paren_when_broken(items, ChainOp::Amp)
         }
         Type::Sum { .. } => {
             let items = flatten_chain(t, ChainOp::Pipe);
-            let docs: Vec<Doc> = items
-                .iter()
-                .map(|item| doc_type_chain_child(item, ChainOp::Pipe))
-                .collect();
-            doc_chain_paren_when_broken(docs, ChainOp::Pipe)
+            doc_chain_paren_when_broken(items, ChainOp::Pipe)
         }
         _ => doc_type(t),
     }
@@ -1731,25 +1744,13 @@ fn doc_type(t: &Type) -> Doc {
             doc_function_domain(param),
             doc_chain_body_layout(ret, doc_type(ret), " -> ", " ->", empty(), empty()),
         ),
-        Type::Product {
-            left: _, right: _, ..
-        } => {
+        Type::Product { .. } => {
             let items = flatten_chain(t, ChainOp::Amp);
-            let docs: Vec<Doc> = items
-                .iter()
-                .map(|item| doc_type_chain_child(item, ChainOp::Amp))
-                .collect();
-            doc_chain(docs, ChainOp::Amp)
+            doc_chain(items, ChainOp::Amp)
         }
-        Type::Sum {
-            left: _, right: _, ..
-        } => {
+        Type::Sum { .. } => {
             let items = flatten_chain(t, ChainOp::Pipe);
-            let docs: Vec<Doc> = items
-                .iter()
-                .map(|item| doc_type_chain_child(item, ChainOp::Pipe))
-                .collect();
-            doc_chain(docs, ChainOp::Pipe)
+            doc_chain(items, ChainOp::Pipe)
         }
         Type::LabelSugar { labels, .. } => {
             let label_trivia: Vec<Vec<crate::pass::lexer::Trivia>> = labels
@@ -1786,20 +1787,22 @@ fn doc_expr(e: &Expr) -> Doc {
     }
     match e {
         Expr::Path { segments, .. } => text(segments.join(".")),
-        Expr::Call { callee, args, .. } => {
-            let arg_docs: Vec<Doc> = args.iter().map(doc_call_arg).collect();
-            let arg_trivia = call_arg_trivia(args);
+        Expr::Call {
+            callee,
+            args,
+            source_trivia,
+            ..
+        } => {
             let head = doc_expr_for_call_callee(callee);
-            doc_call(head, arg_docs, &arg_trivia, call_arg_last_trailing(args))
+            doc_call(head, args, delimited_closing(source_trivia))
         }
         Expr::RecCall {
             modes,
             callee,
             args,
+            source_trivia,
             ..
         } => {
-            let arg_docs: Vec<Doc> = args.iter().map(doc_call_arg).collect();
-            let arg_trivia = call_arg_trivia(args);
             let head = if modes.is_empty() {
                 format!("rec {}", callee.name)
             } else {
@@ -1812,12 +1815,7 @@ fn doc_expr(e: &Expr) -> Doc {
                     .join(", ");
                 format!("rec({names}) {}", callee.name)
             };
-            doc_call(
-                text(head),
-                arg_docs,
-                &arg_trivia,
-                call_arg_last_trailing(args),
-            )
+            doc_call(text(head), args, delimited_closing(source_trivia))
         }
         Expr::FnExpr {
             sig, ret_ty, body, ..
@@ -1826,8 +1824,7 @@ fn doc_expr(e: &Expr) -> Doc {
             parts.push(text("."));
             parts.push(doc_signature(sig));
             if let Some(ty) = ret_ty {
-                parts.push(text(" -> "));
-                parts.push(doc_type(ty));
+                parts.push(doc_function_return(ty, false));
             }
             // Body emits with its own leading-trivia honored — a
             // comment captured between the fn body's `{` and the
@@ -1857,6 +1854,7 @@ fn doc_expr(e: &Expr) -> Doc {
             value,
             body,
             &meta.leading_trivia,
+            &[],
         ),
         Expr::RowLet {
             entries,
@@ -1864,14 +1862,20 @@ fn doc_expr(e: &Expr) -> Doc {
             body,
             meta,
             ..
-        } => doc_row_let(entries, value, body, &meta.leading_trivia),
+        } => doc_row_let(entries, value, body, &meta.leading_trivia, &[]),
         Expr::Seq {
             occurrence: _,
             value,
             body,
             meta,
-        } => doc_seq(value, body, &meta.leading_trivia),
-        Expr::Unit { .. } => text("()"),
+        } => doc_seq(value, body, &meta.leading_trivia, &[]),
+        Expr::Unit { source_trivia, .. } => doc_comma_list_with_trivia(
+            text("("),
+            Vec::new(),
+            &[],
+            delimited_closing(source_trivia),
+            text(")"),
+        ),
         Expr::StrLit {
             value, annotation, ..
         } => concat(
@@ -1900,16 +1904,24 @@ fn doc_expr(e: &Expr) -> Doc {
             doc_literal_annotation(annotation),
         ),
         Expr::Tuple { items, .. } => {
-            let item_docs: Vec<Doc> = items.iter().map(doc_expr).collect();
+            let item_docs: Vec<Doc> = items.iter().map(doc_expr_no_own_trivia).collect();
             let item_trivia: Vec<Vec<crate::pass::lexer::Trivia>> = items
                 .iter()
                 .map(|item| item.meta().leading_trivia.clone())
                 .collect();
-            let last_trailing = items
-                .last()
-                .map(|item| item.meta().trailing_trivia.as_slice())
-                .unwrap_or(&[]);
-            doc_comma_list_with_trivia(text("("), item_docs, &item_trivia, last_trailing, text(")"))
+            let tails: Vec<_> = items
+                .iter()
+                .map(|item| item.meta().trailing_trivia.clone())
+                .collect();
+            doc_comma_list_with_boundaries(
+                text("("),
+                item_docs,
+                &item_trivia,
+                &tails,
+                &[],
+                text(")"),
+                false,
+            )
         }
         Expr::LabelValue { labels, .. } => {
             let label_docs: Vec<Doc> = labels
@@ -1939,7 +1951,16 @@ fn doc_expr(e: &Expr) -> Doc {
             }
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { name, args, .. } => doc_user_elaborator_form(name, args),
+        Expr::UserElaborator {
+            name,
+            args,
+            source_trivia,
+            ..
+        } => doc_call(
+            text(format!("{name}!")),
+            args,
+            delimited_closing(source_trivia),
+        ),
         Expr::BlockCall {
             head,
             prefix,
@@ -1954,9 +1975,17 @@ fn doc_expr(e: &Expr) -> Doc {
                 && !block_prefix_has_exposed_block(value)
             {
                 parts.extend([text(" "), doc_expr(value)]);
-            } else if let [Expr::Unit { meta, .. }] = prefix.as_slice() {
+            } else if let [
+                Expr::Unit {
+                    meta,
+                    source_trivia,
+                    ..
+                },
+            ] = prefix.as_slice()
+            {
                 let mut trivia = meta.leading_trivia.clone();
-                trivia.extend(meta.trailing_trivia.clone());
+                append_source_trivia(&mut trivia, delimited_closing(source_trivia).to_vec());
+                append_source_trivia(&mut trivia, meta.trailing_trivia.clone());
                 parts.push(doc_comma_list_with_trivia(
                     text("("),
                     Vec::new(),
@@ -1965,15 +1994,20 @@ fn doc_expr(e: &Expr) -> Doc {
                     text(")"),
                 ));
             } else if !prefix.is_empty() {
-                parts.push(doc_comma_list_with_trivia(
+                parts.push(doc_comma_list_with_boundaries(
                     text("("),
-                    prefix.iter().map(doc_expr).collect(),
+                    prefix.iter().map(doc_expr_no_own_trivia).collect(),
                     &prefix
                         .iter()
                         .map(|value| value.meta().leading_trivia.clone())
                         .collect::<Vec<_>>(),
-                    prefix.last().unwrap().meta().trailing_trivia.as_slice(),
+                    &prefix
+                        .iter()
+                        .map(|value| value.meta().trailing_trivia.clone())
+                        .collect::<Vec<_>>(),
+                    &[],
                     text(")"),
+                    false,
                 ));
             }
             for (block_index, block) in blocks.iter().enumerate() {
@@ -2244,18 +2278,57 @@ fn doc_source_existential_let(expr: &Expr) -> Option<Doc> {
         opening.value,
         opening.body,
         &[],
-        &doc_expr_no_own_trivia,
+        &doc_expr_statement_value,
         &doc_expr_with_own_meta_trivia,
     ))
 }
 
 fn doc_expr_for_call_callee(callee: &Expr) -> Doc {
-    let rendered = doc_expr(callee);
-    if call_callee_needs_parens(callee) {
+    doc_expr_grouped_boundary(callee, call_callee_needs_parens(callee), true, true)
+}
+
+/// Retain the grouping boundary when a following suffix or semicolon would
+/// otherwise consume the expression's comments on the next parse.
+fn doc_expr_grouped_boundary(expr: &Expr, required: bool, leading: bool, trailing: bool) -> Doc {
+    let before = if leading {
+        expr.meta().leading_trivia.as_slice()
+    } else {
+        &[]
+    };
+    let after = if trailing {
+        expr.meta().trailing_trivia.as_slice()
+    } else {
+        &[]
+    };
+    let rendered = doc_expr_no_own_trivia(expr);
+    if has_comments(before) || has_comments(after) {
+        concat(
+            text("("),
+            nest(
+                2,
+                concat_all([
+                    hardline(),
+                    doc_inline_leading_trivia(before),
+                    rendered,
+                    if has_comments(after) {
+                        concat(hardline(), doc_trailing_comments(after))
+                    } else {
+                        empty()
+                    },
+                    hardline(),
+                    text(")"),
+                ]),
+            ),
+        )
+    } else if required {
         concat_all([text("("), rendered, text(")")])
     } else {
         rendered
     }
+}
+
+fn doc_expr_statement_value(expr: &Expr) -> Doc {
+    doc_expr_grouped_boundary(expr, false, false, true)
 }
 
 fn call_callee_needs_parens(callee: &Expr) -> bool {
@@ -2289,14 +2362,14 @@ fn call_callee_needs_parens(callee: &Expr) -> bool {
 /// Render an expression that owns a following postfix receiver suffix.
 /// Operator chains need grouping here: without it, the suffix becomes part of
 /// the chain's final operand when reparsed. This boundary is shared by field
-/// access/update and receiver-first UFCS.
+/// access/update. UFCS consumes its receiver tail at the splice instead.
 fn doc_expr_for_postfix_receiver(receiver: &Expr) -> Doc {
-    let rendered = doc_expr(receiver);
-    if matches!(receiver, Expr::OpChain { .. }) {
-        concat_all([text("("), rendered, text(")")])
-    } else {
-        rendered
-    }
+    doc_expr_grouped_boundary(
+        receiver,
+        matches!(receiver, Expr::OpChain { .. }),
+        true,
+        true,
+    )
 }
 
 /// Render an operator-chain placeholder back to its source-level
@@ -2538,16 +2611,6 @@ fn call_arg_trivia(args: &[CallArg]) -> Vec<Vec<Trivia>> {
         .collect()
 }
 
-/// The last arg's closing-boundary trailing trivia (the comment run
-/// the parser stashed before the `)`), or an empty slice when the
-/// list is empty. The comma-list emitter reads it to keep a
-/// last-element trailing / dangling comment in place.
-fn call_arg_last_trailing(args: &[CallArg]) -> &[Trivia] {
-    args.last()
-        .map(|a| a.meta().trailing_trivia.as_slice())
-        .unwrap_or(&[])
-}
-
 fn doc_call_arg(arg: &CallArg) -> Doc {
     match arg {
         // A type passed as a call argument (an intrinsic form's type
@@ -2559,7 +2622,7 @@ fn doc_call_arg(arg: &CallArg) -> Doc {
         // `doc_type_bare_position` adds those parens to the broken layout
         // only — a flat chain stays bare.
         CallArg::Type(t) => doc_type_bare_position(t),
-        CallArg::Value(v) => doc_expr(v),
+        CallArg::Value(v) => doc_expr_no_own_trivia(v),
     }
 }
 
@@ -2584,7 +2647,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
     struct Segment<'a> {
         callee_segments: &'a [crate::ast::PathSegment],
         args: &'a [CallArg],
-        arg_trivia: Vec<Vec<Trivia>>,
+        closing: &'a [Trivia],
         flavor: crate::ast::UfcsFlavor,
         /// True when this segment is the elaborator-UFCS form
         /// (`r.>iso!(T)` etc.). The pretty-printer appends `!`
@@ -2608,6 +2671,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
         args,
         flavor,
         bang,
+        source_trivia,
         ..
     } = cur
     {
@@ -2617,7 +2681,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
         segments.push(Segment {
             callee_segments,
             args,
-            arg_trivia: call_arg_trivia(args),
+            closing: delimited_closing(source_trivia),
             flavor: *flavor,
             bang: bang.is_some(),
             leading_trivia: receiver.meta().trailing_trivia.as_slice(),
@@ -2632,19 +2696,18 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
         if seg.bang {
             head = concat(head, text("!"));
         }
-        if seg.args.is_empty() {
+        if seg.args.is_empty() && !has_comments(seg.closing) {
             head
         } else {
-            let arg_docs: Vec<Doc> = seg.args.iter().map(doc_call_arg).collect();
-            doc_call(
-                head,
-                arg_docs,
-                &seg.arg_trivia,
-                call_arg_last_trailing(seg.args),
-            )
+            doc_call(head, seg.args, seg.closing)
         }
     };
-    let receiver_doc = doc_expr_for_postfix_receiver(innermost);
+    let receiver_doc = doc_expr_grouped_boundary(
+        innermost,
+        matches!(innermost, Expr::OpChain { .. }),
+        true,
+        false,
+    );
     let seg_docs: Vec<Doc> = segments.iter().map(seg_doc).collect();
     // A receiver-trailing comment can't sit inline before the next
     // `.>`, so any captured comment forces the broken layout (the
@@ -2678,6 +2741,7 @@ fn doc_left_call_splice(top: &Expr) -> Doc {
         args,
         flavor,
         bang,
+        source_trivia,
         ..
     } = top
     else {
@@ -2687,12 +2751,10 @@ fn doc_left_call_splice(top: &Expr) -> Doc {
     if bang.is_some() {
         callee = concat(callee, text("!"));
     }
-    let lhs = if args.is_empty() {
+    let lhs = if args.is_empty() && !has_comments(delimited_closing(source_trivia)) {
         callee
     } else {
-        let arg_docs: Vec<Doc> = args.iter().map(doc_call_arg).collect();
-        let arg_trivia = call_arg_trivia(args);
-        doc_call(callee, arg_docs, &arg_trivia, call_arg_last_trailing(args))
+        doc_call(callee, args, delimited_closing(source_trivia))
     };
     concat_all([
         lhs,
@@ -2702,8 +2764,7 @@ fn doc_left_call_splice(top: &Expr) -> Doc {
 }
 
 fn doc_expr_for_call_splice_arg(e: &Expr) -> Doc {
-    let rendered = doc_expr(e);
-    if matches!(
+    let bare = matches!(
         e,
         Expr::Path { .. }
             | Expr::Call { .. }
@@ -2713,35 +2774,10 @@ fn doc_expr_for_call_splice_arg(e: &Expr) -> Doc {
             | Expr::FloatLit { .. }
             | Expr::Tuple { .. }
             | Expr::LabelValue { .. }
-    ) {
-        rendered
-    } else {
-        concat_all([text("("), rendered, text(")")])
-    }
+    );
+    doc_expr_grouped_boundary(e, !bare, true, true)
 }
 
-/// Pretty-print one of the elaborator forms with the optional
-/// trailing target type-arg: `iso!(e)` or `iso!(e, T)`. Uses the
-/// width-driven A1 layout so wide arguments break to leading-
-/// comma multi-line, mirroring how regular calls render. The
-/// `name` parameter already includes the trailing `!` (e.g.,
-/// `"iso!"`); the open paren comes from `comma_list`.
-fn doc_user_elaborator_form(name: &str, args: &[CallArg]) -> Doc {
-    let arg_docs: Vec<Doc> = args.iter().map(doc_call_arg).collect();
-    let args_trivia = call_arg_trivia(args);
-    concat(
-        text(format!("{name}!")),
-        doc_comma_list_with_trivia(
-            text("("),
-            arg_docs,
-            &args_trivia,
-            call_arg_last_trailing(args),
-            text(")"),
-        ),
-    )
-}
-
-/// Pretty-print the `match!` elaborator form: `match!(v, (<arms>), B)`.
 fn doc_field_access(receiver: &Expr, labels: &[FieldAccessLabel]) -> Doc {
     let label_docs: Vec<Doc> = labels
         .iter()
@@ -2868,6 +2904,7 @@ fn doc_let(
     value: &Expr,
     body: &Expr,
     leading_trivia: &[Trivia],
+    trailing_trivia: &[Trivia],
 ) -> Doc {
     if let Some(pat) = pattern {
         return doc_let_pattern(
@@ -2880,6 +2917,7 @@ fn doc_let(
             value,
             body,
             leading_trivia,
+            trailing_trivia,
         );
     }
     let binder = match ty {
@@ -2891,8 +2929,8 @@ fn doc_let(
         value,
         body,
         leading_trivia,
-        &doc_expr_no_own_trivia,
-        &doc_expr_with_own_meta_trivia,
+        &doc_expr_statement_value,
+        &|body| doc_expr_with_outer_trivia(body, trailing_trivia),
     )
 }
 
@@ -2901,6 +2939,7 @@ fn doc_row_let(
     value: &Expr,
     body: &Expr,
     leading_trivia: &[Trivia],
+    trailing_trivia: &[Trivia],
 ) -> Doc {
     let entry_docs: Vec<Doc> = entries.iter().map(doc_row_let_entry).collect();
     let entry_trivia: Vec<Vec<Trivia>> = entries
@@ -2919,7 +2958,7 @@ fn doc_row_let(
         text("})"),
     );
     let value_leading_trivia = value.meta().leading_trivia.as_slice();
-    let value_expr = doc_expr_no_own_trivia(value);
+    let value_expr = doc_expr_statement_value(value);
     let value_and_semi = if has_comments(value_leading_trivia) {
         nest(
             2,
@@ -2941,7 +2980,7 @@ fn doc_row_let(
         text(" ="),
         value_and_semi,
         line(),
-        doc_expr_with_own_meta_trivia(body),
+        doc_expr_with_outer_trivia(body, trailing_trivia),
     ])
 }
 
@@ -2959,6 +2998,7 @@ fn doc_let_pattern(
     value: &Expr,
     body: &Expr,
     leading_trivia: &[Trivia],
+    trailing_trivia: &[Trivia],
 ) -> Doc {
     let elem_docs: Vec<Doc> = elems.iter().map(doc_param_pattern_elem).collect();
     let pattern_doc = comma_list(text("("), elem_docs, text(")"));
@@ -2967,7 +3007,7 @@ fn doc_let_pattern(
         Some(name) => concat_all([text(format!(".({name}: ")), pattern_doc, text(")")]),
     };
     let value_leading_trivia = value.meta().leading_trivia.as_slice();
-    let value_expr = doc_expr_no_own_trivia(value);
+    let value_expr = doc_expr_statement_value(value);
     let value_and_semi = if has_comments(value_leading_trivia) {
         nest(
             2,
@@ -2990,7 +3030,7 @@ fn doc_let_pattern(
         text(" ="),
         value_and_semi,
         line(),
-        doc_expr_with_own_meta_trivia(body),
+        doc_expr_with_outer_trivia(body, trailing_trivia),
     ])
 }
 
@@ -3037,13 +3077,18 @@ fn doc_let_with(
 /// either all fits flat or all breaks. The flat form is
 /// `value; body`; the broken form puts each statement on its own
 /// line at the surrounding +2 indent.
-fn doc_seq(value: &Expr, body: &Expr, leading_trivia: &[Trivia]) -> Doc {
+fn doc_seq(
+    value: &Expr,
+    body: &Expr,
+    leading_trivia: &[Trivia],
+    trailing_trivia: &[Trivia],
+) -> Doc {
     doc_seq_with(
         value,
         body,
         leading_trivia,
-        &doc_expr_no_own_trivia,
-        &doc_expr_with_own_meta_trivia,
+        &doc_expr_statement_value,
+        &|body| doc_expr_with_outer_trivia(body, trailing_trivia),
     )
 }
 
@@ -3088,65 +3133,97 @@ fn doc_expr_no_own_trivia(e: &Expr) -> Doc {
             pattern,
             value,
             body,
-            meta: _,
             ..
-        } => doc_let(name, ty.as_ref(), pattern.as_ref(), value, body, &[]),
+        } => doc_let(name, ty.as_ref(), pattern.as_ref(), value, body, &[], &[]),
         Expr::RowLet {
             entries,
             value,
             body,
-            meta: _,
             ..
-        } => doc_row_let(entries, value, body, &[]),
+        } => doc_row_let(entries, value, body, &[], &[]),
         Expr::Seq {
             occurrence: _,
             value,
             body,
             meta: _,
-        } => doc_seq(value, body, &[]),
+        } => doc_seq(value, body, &[], &[]),
         _ => doc_expr(e),
     }
 }
 
-/// Pretty-print an `Expr` and emit its `meta.leading_trivia`. For
-/// `Let` / `RowLet` / `Seq`, `doc_expr` already reads
-/// `meta.leading_trivia` itself via the statement printers, so just
-/// delegate; for other variants the trivia isn't picked up by their
-/// `doc_expr` arms, so emit it explicitly.
+/// Consume this expression's boundary trivia. Statement continuations carry
+/// outer closing comments down to the final expression so nested tails precede
+/// the enclosing closer, without emitting either run twice.
 fn doc_expr_with_own_meta_trivia(e: &Expr) -> Doc {
-    if matches!(e, Expr::Let { .. } | Expr::RowLet { .. } | Expr::Seq { .. }) {
-        return doc_expr(e);
-    }
-    let trivia = e.meta().leading_trivia.as_slice();
-    if has_comments(trivia) {
-        concat_all([doc_inline_leading_trivia(trivia), doc_expr(e)])
-    } else {
-        doc_expr(e)
+    doc_expr_with_outer_trivia(e, &[])
+}
+
+fn doc_expr_with_outer_trivia(e: &Expr, outer: &[Trivia]) -> Doc {
+    let leading = e.meta().leading_trivia.as_slice();
+    let mut trailing = e.meta().trailing_trivia.clone();
+    append_source_trivia(&mut trailing, outer.to_vec());
+    match e {
+        Expr::Let {
+            name,
+            ty,
+            pattern,
+            value,
+            body,
+            ..
+        } => doc_let(
+            name,
+            ty.as_ref(),
+            pattern.as_ref(),
+            value,
+            body,
+            leading,
+            &trailing,
+        ),
+        Expr::RowLet {
+            entries,
+            value,
+            body,
+            ..
+        } => doc_row_let(entries, value, body, leading, &trailing),
+        Expr::Seq { value, body, .. } => doc_seq(value, body, leading, &trailing),
+        _ => concat_all([
+            doc_inline_leading_trivia(leading),
+            doc_expr_no_own_trivia(e),
+            if has_comments(&trailing) {
+                concat(hardline(), doc_trailing_comments(&trailing))
+            } else {
+                empty()
+            },
+        ]),
     }
 }
 
-/// Pretty-print a call site. When any arg carries a leading comment
-/// — or the last arg a trailing / dangling comment before `)` —
-/// force a multi-line broken layout. Otherwise fall back to the
-/// standard width-driven A1 `comma_list`. Thin wrapper over
-/// [`doc_comma_list_with_trivia`] that prepends the callee.
-///
-/// `arg_trivia` must be parallel to `args` (same length). The
-/// parser's `call_arg_list` preserves this; every synthesized
-/// `Expr::Call` site allocates a matching `vec![Vec::new();
-/// arg_count]` so the invariant holds across passes. `last_trailing`
-/// is the trailing run stashed on the last arg's `meta` (empty when
-/// no args or no trailing comment).
-fn doc_call(
-    callee: Doc,
-    args: Vec<Doc>,
-    arg_trivia: &[Vec<Trivia>],
-    last_trailing: &[Trivia],
-) -> Doc {
+/// Render argument boundaries separately from the call's own closer.
+fn doc_call(callee: Doc, args: &[CallArg], closing: &[Trivia]) -> Doc {
+    let docs = args.iter().map(doc_call_arg).collect();
+    let leading = call_arg_trivia(args);
+    let trailing: Vec<_> = args
+        .iter()
+        .map(|arg| arg.meta().trailing_trivia.clone())
+        .collect();
     concat(
         callee,
-        doc_comma_list_with_trivia(text("("), args, arg_trivia, last_trailing, text(")")),
+        doc_comma_list_with_boundaries(
+            text("("),
+            docs,
+            &leading,
+            &trailing,
+            closing,
+            text(")"),
+            false,
+        ),
     )
+}
+
+fn delimited_closing(trivia: &Option<Box<DelimitedTrivia>>) -> &[Trivia] {
+    trivia
+        .as_ref()
+        .map_or(&[], |trivia| trivia.closing.as_slice())
 }
 
 /// Pretty-print a comma-separated list with per-item leading
@@ -3183,36 +3260,47 @@ fn doc_comma_list_with_trivia_and_padding(
     close: Doc,
     padded: bool,
 ) -> Doc {
+    doc_comma_list_with_boundaries(open, items, item_trivia, &[], last_trailing, close, padded)
+}
+
+fn doc_comma_list_with_boundaries(
+    open: Doc,
+    items: Vec<Doc>,
+    item_trivia: &[Vec<Trivia>],
+    item_tails: &[Vec<Trivia>],
+    closing: &[Trivia],
+    close: Doc,
+    padded: bool,
+) -> Doc {
     debug_assert_eq!(
         items.len(),
         item_trivia.len(),
         "item_trivia must be parallel to items"
     );
     let any_leading = item_trivia.iter().any(|t| has_comments(t));
-    let trailing_comment = has_comments(last_trailing);
+    debug_assert!(item_tails.is_empty() || item_tails.len() == items.len());
+    let trailing_comment =
+        has_comments(closing) || item_tails.iter().any(|tail| has_comments(tail));
     if !any_leading && !trailing_comment {
         return crate::doc::comma_list_with_padding(open, items, close, padded);
     }
-    let last_index = items.len().saturating_sub(1);
     let mut inner = empty();
-    if items.is_empty() && trailing_comment {
-        inner = concat(hardline(), doc_trailing_comments(last_trailing));
-    }
+    let mut pending = Vec::new();
     for (i, (item, trivia)) in items.iter().zip(item_trivia).enumerate() {
+        append_source_trivia(&mut pending, trivia.clone());
         inner = concat(inner, hardline());
-        inner = concat(inner, doc_inline_leading_trivia(trivia));
+        inner = concat(inner, doc_inline_leading_trivia(&pending));
         inner = concat(inner, text(", "));
         // nest(2) mirrors the `", "` prefix so a multi-line item's
         // continuation lines anchor at the item's content column, not
         // at the comma column — same as `comma_list`'s broken layout.
         inner = concat(inner, nest(2, item.clone()));
-        // The last element's trailing / dangling comment emits on its
-        // own line below it, before the closer, so it is preserved in
-        // place rather than dropped.
-        if i == last_index && trailing_comment {
-            inner = concat(inner, hardline());
-            inner = concat(inner, doc_trailing_comments(last_trailing));
-        }
+        pending = item_tails.get(i).cloned().unwrap_or_default();
+    }
+    append_source_trivia(&mut pending, closing.to_vec());
+    if has_comments(&pending) {
+        inner = concat(inner, hardline());
+        inner = concat(inner, doc_trailing_comments(&pending));
     }
     inner = concat(inner, hardline());
     concat(open, nest(2, concat(inner, close)))
@@ -3247,37 +3335,7 @@ fn has_comments(trivia: &[Trivia]) -> bool {
 /// If `trivia` contains no `LineComment`s, returns
 /// [`empty()`](Doc::Empty) — no layout effect.
 fn doc_inline_leading_trivia(trivia: &[Trivia]) -> Doc {
-    let mut parts: Vec<Doc> = Vec::new();
-    let mut last_was_empty_comment = false;
-    let mut newline_run: usize = 0;
-    let mut emitted_first = false;
-    for entry in trivia {
-        match entry {
-            Trivia::Newline => newline_run += 1,
-            Trivia::LineComment { text: body, .. } => {
-                let is_empty = body.is_empty();
-                if is_empty && last_was_empty_comment {
-                    newline_run = 0;
-                    continue;
-                }
-                if emitted_first && newline_run >= 2 {
-                    // Blank line between two comment paragraphs.
-                    parts.push(hardline());
-                }
-                parts.push(text(format!("//{body}")));
-                parts.push(hardline());
-                last_was_empty_comment = is_empty;
-                emitted_first = true;
-                newline_run = 0;
-            }
-            // Doc-comment lines are only expected in top-level trivia;
-            // inside expression bodies they don't attach to anything,
-            // so skip them silently (they'll never appear in valid programs
-            // since the parser enforces attachment rules).
-            Trivia::DocCommentLine { .. } => {}
-        }
-    }
-    concat_all(parts)
+    doc_comment_run(trivia, CommentRunContext::InlineLeading)
 }
 
 /// Emit comments stranded at a *closing* boundary — the trailing /
@@ -3292,38 +3350,64 @@ fn doc_inline_leading_trivia(trivia: &[Trivia]) -> Doc {
 ///
 /// Returns [`empty()`](Doc::Empty) when the run carries no comments.
 fn doc_trailing_comments(trivia: &[Trivia]) -> Doc {
+    doc_comment_run(trivia, CommentRunContext::Trailing)
+}
+
+enum CommentRunContext {
+    ItemLeading,
+    InlineLeading,
+    Trailing,
+    ImportLeading,
+}
+
+fn doc_comment_run(trivia: &[Trivia], context: CommentRunContext) -> Doc {
+    let (include_docs, keep_paragraphs, final_hardline) = match context {
+        CommentRunContext::ItemLeading => (true, true, true),
+        CommentRunContext::InlineLeading => (false, true, true),
+        CommentRunContext::Trailing => (false, true, false),
+        CommentRunContext::ImportLeading => (false, false, true),
+    };
     let mut parts: Vec<Doc> = Vec::new();
     let mut last_was_empty_comment = false;
     let mut newline_run: usize = 0;
     let mut emitted_first = false;
     for entry in trivia {
-        match entry {
-            Trivia::Newline => newline_run += 1,
+        let (line, is_empty_comment) = match entry {
+            Trivia::Newline => {
+                newline_run += 1;
+                continue;
+            }
             Trivia::LineComment { text: body, .. } => {
                 let is_empty = body.is_empty();
                 if is_empty && last_was_empty_comment {
                     newline_run = 0;
                     continue;
                 }
-                if emitted_first {
-                    // Separator before this comment: a blank line
-                    // between paragraphs (run of ≥2 newlines) collapses
-                    // to one, a single newline to none.
-                    parts.push(hardline());
-                    if newline_run >= 2 {
-                        parts.push(hardline());
-                    }
-                }
-                parts.push(text(format!("//{body}")));
-                last_was_empty_comment = is_empty;
-                emitted_first = true;
-                newline_run = 0;
+                (format!("//{body}"), is_empty)
             }
-            // A `///` at a closing boundary has nothing to document; the
-            // parser never produces a valid program with one there, so
-            // there is no faithful position. Skip rather than mis-emit.
-            Trivia::DocCommentLine { .. } => {}
+            Trivia::DocCommentLine { text: body, .. } if include_docs => (
+                if body.is_empty() {
+                    "///".to_owned()
+                } else {
+                    format!("/// {body}")
+                },
+                false,
+            ),
+            Trivia::DocCommentLine { .. } => continue,
+        };
+        if emitted_first {
+            parts.push(hardline());
+            if keep_paragraphs && newline_run >= 2 {
+                parts.push(hardline());
+            }
         }
+        parts.push(text(line));
+        last_was_empty_comment = is_empty_comment;
+        emitted_first = true;
+        newline_run = 0;
+    }
+    if final_hardline && emitted_first {
+        parts.push(hardline());
     }
     concat_all(parts)
 }
@@ -5636,6 +5720,50 @@ elab demo : Box(
     }
 
     #[test]
+    fn type_chain_separator_comments_survive_in_source_order() {
+        fn without_comments(source: &str) -> String {
+            source
+                .lines()
+                .map(|line| line.split("//").next().unwrap())
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        for op in ["&", "|"] {
+            for leading in ["", op] {
+                for chain in [
+                    format!("{leading}A // first\n{op} B // second\n{op} C"),
+                    format!(
+                        "{leading}A // first\n{op} Box( // second\n, B // third\n) // fourth\n{op} C"
+                    ),
+                    format!("{leading}A // first\n{op} (B // second\n{op} C)"),
+                ] {
+                    for source in [
+                        format!("module x; type T = {chain};"),
+                        format!("module x; fn f() -> ({chain}) -> D {{ () }}"),
+                        format!("module x; fn f(x: Container(({chain}) -> D)) {{ () }}"),
+                    ] {
+                        let printed = roundtrip(&source);
+                        let comments = |text: &str| {
+                            text.lines()
+                                .filter_map(|line| {
+                                    line.split_once("//")
+                                        .map(|(_, body)| body.trim().to_owned())
+                                })
+                                .collect::<Vec<_>>()
+                        };
+                        assert_eq!(comments(&printed), comments(&source), "{source}\n{printed}");
+                        assert_eq!(
+                            roundtrip(&without_comments(&printed)),
+                            roundtrip(&without_comments(&source)),
+                            "formatting comments changed type structure: {source}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn type_function_param_chain_no_extra_parens() {
         // The function-arrow's parameter list already supplies
         // `(...)` for its single chain parameter; no extra parens
@@ -5980,6 +6108,223 @@ elab demo : Box(
         );
         let m2 = parse(&out).unwrap();
         assert_eq!(pretty_module(&m2), out);
+    }
+
+    #[test]
+    fn hoisted_header_comments_keep_body_paragraph_boundary() {
+        for (source, expected_body) in [
+            (
+                "fn f() -> // header\n. { // body\n() }",
+                "  // header\n\n  // body\n  ()\n",
+            ),
+            ("fn f() -> // header\n. { () }", "  // header\n  ()\n"),
+            (
+                "fn f() -> . { // body\n// continuation\n() }",
+                "  // body\n  // continuation\n  ()\n",
+            ),
+            (
+                "fn f() -> // header\n. // before body\n{ // body\n() }",
+                "  // header\n  // before body\n\n  // body\n  ()\n",
+            ),
+            (
+                "fn f() -> // header\n. { // body\n\n\n// paragraph\n() }",
+                "  // header\n\n  // body\n\n  // paragraph\n  ()\n",
+            ),
+            (
+                "fn f() -> // header\n. { // binding\nlet x = (); x }",
+                "  // header\n\n  // binding\n  let x = ();\n  x\n",
+            ),
+        ] {
+            let source = format!("module x;\n/// Attached documentation.\n{source}\n");
+            let out = roundtrip(&source);
+            assert_eq!(
+                out,
+                format!(
+                    "module x;\n\n/// Attached documentation.\nfn f() -> . {{\n{expected_body}}}\n"
+                ),
+            );
+        }
+    }
+
+    #[test]
+    fn source_container_comments_have_stable_owners() {
+        for (source, expected) in [
+            (
+                "fn f() { g( // close\n) }",
+                "fn f() {\n  g(\n    // close\n    )\n}",
+            ),
+            (
+                "fn f() { ( // unit\n) }",
+                "fn f() {\n  (\n    // unit\n    )\n}",
+            ),
+            (
+                "fn f() { { // unit\n} }",
+                "fn f() {\n  (\n    // unit\n    )\n}",
+            ),
+            (
+                "fn f() { ( // first\n, // second\n, // last\n) }",
+                "fn f() {\n  (\n    // first\n    // second\n    // last\n    )\n}",
+            ),
+            (
+                "fn f() { g( // first\n, // second\n, // last\n) }",
+                "fn f() {\n  g(\n    // first\n    // second\n    // last\n    )\n}",
+            ),
+            (
+                "fn f() { g( // first\n())( // second\n) }",
+                "fn f() {\n  g(\n    // first\n    , ()\n    )(\n    // second\n    )\n}",
+            ),
+            (
+                "fn f() { g(h( // inner\n) // outer\n) // block\n}",
+                "fn f() {\n  g(\n    , h(\n        // inner\n        )\n    // outer\n    )\n  // block\n}",
+            ),
+            (
+                "fn f( // first\n)( // second\nx: .) { x }",
+                "fn f(\n  // first\n  )(\n  // second\n  , x: .\n  ) { x }",
+            ),
+            (
+                "fn f(x // A\n: Pair( // B\n.)) { x }",
+                "fn f(\n  // A\n  , x: Pair(\n      // B\n      , .\n      )\n  ) { x }",
+            ),
+            (
+                "fn f( // leading\nx // colon\n: // type\n. // trailing\n) { x }",
+                "fn f(\n  // leading\n  // colon\n  // type\n  , x: .\n  // trailing\n  ) { x }",
+            ),
+            (
+                "fn f() // arrow\n-> // return type\nPair( // first type\n., // second type\n.) // body opener\n{ // body note\n() }",
+                "fn f()\n  // arrow\n  // return type\n  -> Pair(\n    // first type\n    , .\n    // second type\n    , .\n    ) {\n  // body opener\n\n  // body note\n  ()\n}",
+            ),
+            (
+                "fn f() { .() // arrow\n-> // return type\n. // body opener\n{ // body note\n() } }",
+                "fn f() {\n  .() -> . {\n    // arrow\n    // return type\n    // body opener\n    // body note\n    ()\n  }\n}",
+            ),
+        ] {
+            let printed = roundtrip(&format!("module x; {source}"));
+            assert_eq!(
+                printed,
+                format!("module x;\n\n{expected}\n"),
+                "source: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn collapsed_group_comments_keep_order_and_suffix_boundaries() {
+        for (source, expected) in [
+            (
+                "fn f(){ let a=(); ((a // inner\n) // outer\n) // block\n}",
+                "fn f() {\n  let a = ();\n  a\n  // inner\n  // outer\n  // block\n}",
+            ),
+            (
+                "fn f(){ ((a // inner\n) // outer\n) // block\n}",
+                "fn f() {\n  a\n  // inner\n  // outer\n  // block\n}",
+            ),
+            (
+                "fn f(){ (a // inner\n\n) // outer\n}",
+                "fn f() {\n  a\n  // inner\n\n  // outer\n}",
+            ),
+            (
+                "fn f(){ (a // inner\n)\n\n// outer\n}",
+                "fn f() {\n  a\n  // inner\n\n  // outer\n}",
+            ),
+            (
+                "fn f(){ g((x // inner\n), y) }",
+                "fn f() {\n  g(\n    , x\n    // inner\n    , y\n    )\n}",
+            ),
+            (
+                "fn f(){ (g() // callee\n)() }",
+                "fn f() {\n  (\n    g()\n    // callee\n    )()\n}",
+            ),
+            (
+                "fn f(){ (g() // receiver\n).?{value} }",
+                "fn f() {\n  (\n    g()\n    // receiver\n    ).?{value}\n}",
+            ),
+            (
+                "fn f(){ (g() // receiver\n).!{value = x} }",
+                "fn f() {\n  (\n    g()\n    // receiver\n    ).!{value = x}\n}",
+            ),
+            (
+                "fn f(){ (g() // inner\n) // step\n.>use }",
+                "fn f() {\n  g()\n    // inner\n    // step\n    .>use\n}",
+            ),
+            (
+                "fn f(){ let a=(g() // value\n); a }",
+                "fn f() {\n  let a =\n    (\n      g()\n      // value\n      );\n  a\n}",
+            ),
+        ] {
+            let printed = roundtrip(&format!("module x; {source}"));
+            assert_eq!(
+                printed,
+                format!("module x;\n\n{expected}\n"),
+                "source: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn delimited_comment_owners_cover_call_consumers_and_type_groups() {
+        for source in [
+            "fn f() { rec f( // 1\n) }",
+            "fn f() { e!( // 1\n) }",
+            "fn f() { x.>g(y // 1\n) }",
+            "fn f() { x.>e!(y // 1\n) }",
+            "fn f() { g(y // 1\n).<x }",
+            "fn f() { e!(y // 1\n).<x }",
+            "fn f() { e!( // 1\n) { () } }",
+            "fn f() { e!((x // 1\n), y // 2\n) { () } }",
+            "fn f[ // 1\nA, // 2\nB // 3\n]() { () }",
+            "fn f() // 1\n[A] // 2\n( // 3\nx: A) { x }",
+            "fn f() { .( // 1\nx // 2\n: // 3\n. // 4\n) { x } }",
+            "fn f(){ ( // 1\ng() // 2\n)() }",
+            "fn f(){ ( // 1\ng() // 2\n).?{value} }",
+            "fn f(){ ( // 1\n)( // 2\n) }",
+            "fn f(){ (g() // 1\n); () }",
+            "fn f(){ let .(a, b) = (g() // 1\n); (a // 2\n) // 3\n}",
+            "fn f(){ g((x // 1\n), // 2\ny // 3\n) // 4\n}",
+            "fn f(x // 1\n: (a: .)) { a }",
+            "rec(loop) fn f( // 1\n) // 2\n-> // 3\n. { () }",
+        ] {
+            let printed = roundtrip(&format!("module x; {source}"));
+            let comments = |text: &str| {
+                text.lines()
+                    .filter_map(|line| line.find("//").map(|start| line[start..].trim().to_owned()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                comments(&printed),
+                comments(source),
+                "source: {source}\n{printed}"
+            );
+        }
+    }
+
+    #[test]
+    fn comment_run_contexts_keep_canonical_output() {
+        let comments = "//\n///\n///\n/// raw documentation\n//\n//\n\n// paragraph\n";
+        let cases = [
+            (
+                format!("module m;\n{comments}fn f() {{ () }}\n"),
+                "module m;\n\n//\n///\n///\n/// raw documentation\n//\n\n// paragraph\nfn f() { () }\n",
+            ),
+            (
+                format!("module m;\nfn f() {{\n{comments}() }}\n"),
+                "module m;\n\nfn f() {\n  //\n\n  // paragraph\n  ()\n}\n",
+            ),
+            (
+                format!("module m;\nfn f() {{ ()\n{comments}}}\n"),
+                "module m;\n\nfn f() {\n  ()\n  //\n\n  // paragraph\n}\n",
+            ),
+            (
+                "module m;\n//\n//\n\n// paragraph\nimport z as z;\n// first import\nimport a as a;\n".to_owned(),
+                "module m;\n\n// first import\nimport a as a;\n//\n// paragraph\nimport z as z;\n",
+            ),
+            (
+                "module m;\nfn f() {\n///\n/// ignored\n() }\n".to_owned(),
+                "module m;\n\nfn f() { () }\n",
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(roundtrip(&source), expected, "source:\n{source}");
+        }
     }
 
     #[test]
@@ -6801,7 +7146,7 @@ fn f() -> . {
     }
 
     /// A trailing comment on the last call argument, before the `)`,
-    /// survives — it rides the last arg's `meta.trailing_trivia`.
+    /// survives in the call container's closing trivia.
     #[test]
     fn trailing_comment_on_last_call_arg_survives() {
         let src = "module x;\n\

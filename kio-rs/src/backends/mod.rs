@@ -1,7 +1,7 @@
 //! Per-backend codegen — profiles and lowerings.
 //!
 //! The shared, backend-agnostic work is [`crate::pass::structural_recovery`]
-//! followed by [`crate::pass::recover_to_low`]: the structural-recovery pass
+//! followed by [`crate::pass::route`]: the structural-recovery pass
 //! collapses right-leaning intrinsic chains into the `Expr::Enriched*`
 //! n-ary nodes, and the resolution-lowering pass classifies every
 //! call site into one of the `Expr::Low*` variants on the `Routed`
@@ -141,17 +141,16 @@ pub mod java;
 pub mod js;
 pub mod kio_prime;
 pub mod namespace;
+pub mod product_rebuild;
 pub(crate) mod public_names;
 pub mod python;
 pub mod reconstruct;
 pub mod rust;
 pub(crate) mod serialized_runtime_ir;
 pub mod skin;
-pub mod structural;
 pub mod swift;
 pub mod ts;
 pub(crate) mod value_plan;
-pub(crate) mod value_protection;
 
 /// Map each selectively imported module function to its declaring module.
 ///

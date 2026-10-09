@@ -1,0 +1,9 @@
+package main
+
+import artifact "driver/artifact"
+
+func wrongIndex(pkg *artifact.Package[int, int, any]) {
+	pair := artifact.Exp_Api__pair_arg0[int, int, any]{F0: 11, F1: 17}
+	box := artifact.UnsafeKioHostType_api__BoxFromNative[artifact.IndexExp_Api__pair_arg0[int, int, any]](&vault{artifact.ValueExp_Api__pair_arg0(pkg, pair)})
+	pkg.Api.UseCallback(box, 19)
+}

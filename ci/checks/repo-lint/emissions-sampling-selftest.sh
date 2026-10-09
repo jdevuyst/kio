@@ -95,7 +95,11 @@ set -eu
 [ "$1" = build ] && [ "$2" = --target-dir ]
 target_dir=$3
 shift 3
-[ "$*" = '--all-features --bins' ]
+expected='--all-features --bins'
+expected="$expected --config profile.dev.package.kio-lang.opt-level=1"
+expected="$expected --config profile.dev.package.kio-lang.debug-assertions=true"
+expected="$expected --config profile.dev.package.kio-lang.overflow-checks=true"
+[ "$*" = "$expected" ]
 [ "${KIO_CI_SCHEDULE_HELD:-}" = cargo ]
 mkdir -p "$target_dir/debug"
 printf '#!/bin/sh\nprintf "snapshot-cli\\n"\n' >"$target_dir/debug/kio"

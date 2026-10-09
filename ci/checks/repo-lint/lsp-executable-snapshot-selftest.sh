@@ -19,6 +19,10 @@ mkdir -p "$fake_repo/ci/checks/orchestrators/lib" \
 cp "$REPO_ROOT/ci/checks/orchestrators/lsp-tests.sh" \
   "$fake_repo/ci/checks/orchestrators/"
 cp "$REPO_ROOT/ci/checks/hygiene/kio-rs.sh" "$fake_repo/ci/checks/hygiene/"
+mkdir -p "$fake_repo/kio-rs/src/backends/js"
+cp "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.js" \
+  "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.test.mjs" \
+  "$fake_repo/kio-rs/src/backends/js/"
 cp "$REPO_ROOT/ci/checks/orchestrators/kiodoc-tests.sh" \
   "$fake_repo/ci/checks/orchestrators/kiodoc-tests.sh"
 cp "$REPO_ROOT/ci/checks/orchestrators/lib/common.sh" \
@@ -58,8 +62,12 @@ case "$1" in
     [ "$2" = --target-dir ]
     target=$3
     shift 3
-    [ "$*" = '--all-features --bins' ] || {
-      printf 'snapshot build did not request the full two-binary cohort\n' >&2
+    expected='--all-features --bins'
+    expected="$expected --config profile.dev.package.kio-lang.opt-level=1"
+    expected="$expected --config profile.dev.package.kio-lang.debug-assertions=true"
+    expected="$expected --config profile.dev.package.kio-lang.overflow-checks=true"
+    [ "$*" = "$expected" ] || {
+      printf 'snapshot build changed the full cohort or compiler profile\n' >&2
       exit 95
     }
     [ "${KIO_CI_SCHEDULE_HELD:-}" = cargo ]

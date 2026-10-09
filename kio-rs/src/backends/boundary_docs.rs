@@ -130,7 +130,7 @@ mod tests {
         package.resolve_imports().unwrap();
         package.check_in_body_resolution().unwrap();
         let prime = FullPipeline::typecheck(&package).unwrap();
-        crate::pass::recover_to_low::lower(&crate::pass::structural_recovery::recover_package(
+        crate::pass::route::route_package(&crate::pass::structural_recovery::recover_package(
             &prime,
         ))
     }
@@ -275,15 +275,9 @@ mod tests {
                     .unwrap()
             };
             let js = emit(markers);
-            // Two declaration comments also appear in the factory's documentation;
-            // the callable's plain-text documentation is retained in its static plan.
+            // Both declaration comments also appear in the factory's documentation.
             assert_eq!(js.matches(markers).count(), 4, "{js}");
-            let plain_doc = format!("\"doc\":\"{}\"", markers.replace("__", ""));
-            assert_eq!(js.matches(&plain_doc).count(), 1, "{js}");
-            let normalized = js
-                .replace(markers, benign)
-                .replace(&plain_doc, &format!("\"doc\":\"{benign}\""));
-            assert_eq!(normalized, emit(benign));
+            assert_eq!(js.replace(markers, benign), emit(benign));
         }
     }
 

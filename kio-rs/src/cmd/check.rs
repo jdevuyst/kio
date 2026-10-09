@@ -302,7 +302,7 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
             .expect("compile_workspace passes skip_ok = false when selectors are present");
         let available: Vec<(String, PathBuf)> = root
             .modules()
-            .map(|(path_str, entry)| (path_str.to_owned(), entry.file_path.clone()))
+            .map(|(path_str, entry)| (path_str.to_owned(), entry.entry().file_path.clone()))
             .collect();
         if crate::cmd::module_selector::resolve_against_modules(&available, &selectors).is_err() {
             return ExitCode::Usage;
@@ -320,11 +320,11 @@ pub fn run(args: &[String], prime_only: bool) -> ExitCode {
         if let Some(root) = typed.root_package.as_ref() {
             let pkg_dir = root
                 .package_file()
-                .and_then(|f| f.file_path.parent())
+                .and_then(|f| f.entry().file_path.parent())
                 .filter(|p| !p.as_os_str().is_empty())
                 .map(Path::to_path_buf)
                 .unwrap_or_else(|| cwd.clone());
-            crate::cmd::sig::warn_if_unrecorded_breaking(root, &pkg_dir);
+            crate::cmd::sig::warn_if_unrecorded_breaking(root.package(), &pkg_dir);
         }
     }
     ExitCode::Success
@@ -374,7 +374,9 @@ pub(crate) fn error_if_no_kio_files(cwd: &Path) -> Result<(), ExitCode> {
 /// `typecheck_full`. When `true`, the kio-prime binary's
 /// [`PrimePipeline`] runs the Kio'-only path through `prime::lower`
 /// + `prime::typer`.
-pub fn compile_package(prime_only: bool) -> Result<Package<Prime>, ExitCode> {
+pub fn compile_package(
+    prime_only: bool,
+) -> Result<crate::prime::typer::ValidatedPrimePackage, ExitCode> {
     // `skip_ok = false`: this entry point's contract is a fully
     // typed root package, so it never skips.
     compile_workspace(prime_only, false).map(|w| {
@@ -1895,32 +1897,7 @@ fn lsp_record_callable_declaration_positions(
                         )
                         .ty,
                     ),
-                    Item::RecGroup(group, _) => {
-                        let mut target = None;
-                        for def in &group.members {
-                            if cancel_token.is_cancelled() {
-                                return None;
-                            }
-                            if def.name == *name {
-                                target = Some(def);
-                                break;
-                            }
-                        }
-                        let def = target.expect("recursive callable remains in its owner group");
-                        (
-                            ResolvedBinder::Fn {
-                                module_path: owner.clone(),
-                                name: name.clone(),
-                            },
-                            synth_top_fn_def_in_module(
-                                def,
-                                &entry.module,
-                                Some(lowered_package),
-                                def.meta.span,
-                            )
-                            .ty,
-                        )
-                    }
+                    Item::RecGroup(_, ext) => match *ext {},
                     Item::HostFn(host) => (
                         ResolvedBinder::HostEnvFn {
                             module_path: owner.clone(),
@@ -2279,8 +2256,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
         if cancel_token.is_cancelled() {
             return None;
         }
-        if let Err(diag) = validate_source_package_with_parse_precedence::<FullPipeline>(parsed_pkg)
-        {
+        if let Err(diag) = validate_source_package::<FullPipeline>(parsed_pkg) {
             return Some(Err(AnalysisFailure::from_error(diag, sources)));
         }
         let parsed_for_lowering = match force_parsed_package_bodies(parsed_pkg) {
@@ -2912,17 +2888,7 @@ fn lsp_unused_binding_warnings(
                         &mut declarations,
                     );
                 }
-                crate::ast::Item::RecGroup(group, _) => {
-                    for member in &group.members {
-                        collect_unused_fn_def_decls(
-                            source,
-                            file_path,
-                            module_path,
-                            member,
-                            &mut declarations,
-                        );
-                    }
-                }
+                crate::ast::Item::RecGroup(_, ext) => match *ext {},
                 _ => {}
             }
         }
@@ -3230,15 +3196,29 @@ pub struct RootTypedAnalysis {
     /// The root package, type-checked with every elaboration
     /// substituted in and validated as Prime — the same
     /// `Package<Prime>` the `kio build` path produces.
-    pub root_package: Package<Prime>,
-    /// The checked, normalization-bearing Lowered root package. The REPL
-    /// consumes evaluator artifacts only through this proof-bearing pair.
+    #[cfg(not(feature = "repl-core"))]
+    root_package: crate::prime::typer::ValidatedPrimePackage,
+    /// The REPL retains the completed source and its exact runtime output.
     #[cfg(feature = "repl-core")]
-    pub(crate) checked_lowered: crate::pass::typecheck_full::CheckedLoweredPackage,
+    pub(crate) completed: crate::pass::typecheck_full::CompletedSourcePackage,
     /// The position-keyed index from the root package's typecheck:
     /// per-expression-node synthesized types keyed by
     /// `(module_path, Span)`.
     pub position_index: crate::pass::typecheck_full::PositionIndex,
+}
+
+#[cfg(all(feature = "surface", feature = "lsp"))]
+impl RootTypedAnalysis {
+    pub fn root_package(&self) -> &crate::prime::typer::ValidatedPrimePackage {
+        #[cfg(feature = "repl-core")]
+        {
+            self.completed.runtime()
+        }
+        #[cfg(not(feature = "repl-core"))]
+        {
+            &self.root_package
+        }
+    }
 }
 
 /// Analyze the package at `root` with an overlay, returning the root
@@ -3291,8 +3271,7 @@ pub fn analyze_root_typed_with_overlay(
     let mut lowered: BTreeMap<PackageKey, package_collection::PackageEntry<Lowered>> =
         BTreeMap::new();
     for (key, parsed_pkg) in &parsed_ws.packages {
-        if let Err(diag) = validate_source_package_with_parse_precedence::<FullPipeline>(parsed_pkg)
-        {
+        if let Err(diag) = validate_source_package::<FullPipeline>(parsed_pkg) {
             return Err(AnalysisFailure::from_error(diag, sources));
         }
         let parsed_for_lowering = match force_parsed_package_bodies(parsed_pkg) {
@@ -3326,21 +3305,24 @@ pub fn analyze_root_typed_with_overlay(
                 return Err(AnalysisFailure::from_errors(errors, sources));
             }
         };
-        let validated = match crate::pass::typecheck_full::validate_substituted_package(
-            checked.substituted(),
-        ) {
+        let completed = match checked.complete() {
             Ok(package) => package,
             Err(error) => {
                 return Err(AnalysisFailure::from_error(error, sources));
             }
         };
         if *key == root_key {
-            let root_package = validated;
-            let position_index = checked.elaborations().position_index().clone();
+            let position_index = completed
+                .source()
+                .checked()
+                .elaborations()
+                .position_index()
+                .clone();
             root_typed = Some(RootTypedAnalysis {
-                root_package,
+                #[cfg(not(feature = "repl-core"))]
+                root_package: completed.into_runtime(),
                 #[cfg(feature = "repl-core")]
-                checked_lowered: checked,
+                completed,
                 position_index,
             });
         }
@@ -3357,7 +3339,7 @@ pub fn analyze_root_typed_with_overlay(
 /// `skip_ok = false`, so it always sees `Some`.
 pub struct TypedPackageCollection {
     pub root_key: PackageKey,
-    pub root_package: Option<Package<Prime>>,
+    pub root_package: Option<crate::prime::typer::ValidatedPrimePackage>,
 }
 
 /// Structured analysis failure returned by [`analyze_workspace_at`]
@@ -3422,7 +3404,7 @@ struct PackageStageResult<T> {
 
 enum PackageTypecheckOutcome {
     Skipped,
-    Checked(Box<Package<Prime>>),
+    Checked(Box<crate::prime::typer::ValidatedPrimePackage>),
 }
 
 struct PackagePipelineOutcome<P: crate::ast::Phase> {
@@ -3948,7 +3930,7 @@ mod tests {
             .expect("skip_ok=false returns the typed root package");
         let main = typed.module("pkg/main").expect("main module");
         let generated_alias = main
-            .module
+            .module()
             .imports
             .iter()
             .find_map(|usage| match &usage.kind {
@@ -3972,7 +3954,7 @@ mod tests {
                 ),
                 crate::ast::PathSegment::new("Rep".to_owned(), crate::span::Span::new(0, 0)),
             ],
-            main,
+            main.entry(),
             &std::collections::HashMap::new(),
         );
         assert_eq!(
@@ -7170,7 +7152,8 @@ mod tests {
 /// assembly, resolve, cycle check, in-body resolution, typer call)
 /// is uniform; the [`Pipeline`] trait controls the lowering pass and
 /// the typer entry point.
-pub fn compile_package_with<P: Pipeline>() -> Result<Package<Prime>, ExitCode>
+pub fn compile_package_with<P: Pipeline>()
+-> Result<crate::prime::typer::ValidatedPrimePackage, ExitCode>
 where
     P::LoweredPhase: ResolvePhase,
     P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
@@ -7404,7 +7387,8 @@ where
         .map(|v| v == "1")
         .unwrap_or(false);
     let root_key = parsed_ws.root.clone();
-    let mut typed_by_package: BTreeMap<PackageKey, Package<Prime>> = BTreeMap::new();
+    let mut typed_by_package: BTreeMap<PackageKey, crate::prime::typer::ValidatedPrimePackage> =
+        BTreeMap::new();
     let mut package_check_skipped: BTreeSet<PackageKey> = BTreeSet::new();
     let package_keys: Vec<PackageKey> = parsed_ws.packages.keys().cloned().collect();
     let package_results: Vec<PackageStageResult<PackagePipelineOutcome<P::LoweredPhase>>> =
@@ -7888,11 +7872,8 @@ struct PackageCheckStoreResult {
     warning: Option<String>,
 }
 
-fn validate_source_package_with_parse_precedence<P: Pipeline>(
-    parsed_pkg: &ParsedPackage,
-) -> Result<(), LocatedError> {
+fn validate_source_package<P: Pipeline>(parsed_pkg: &ParsedPackage) -> Result<(), LocatedError> {
     P::validate_source_package(&parsed_pkg.root_dir, &parsed_pkg.modules)
-        .map_err(|error| parsed_pkg.prefer_deferred_body_error(error))
 }
 
 fn build_package_summary<P: Pipeline>(
@@ -7905,7 +7886,7 @@ where
     P::LoweredPhase: crate::ast::Phase<TypeLabelSugar = crate::ast::Never, ExprResolved = ()>,
     P::LoweredPhase: Clone,
 {
-    validate_source_package_with_parse_precedence::<P>(parsed_pkg)?;
+    validate_source_package::<P>(parsed_pkg)?;
     let prepared_pkg = if parsed_pkg.package_file.is_none() {
         Some(force_parsed_package_bodies(parsed_pkg)?)
     } else {
@@ -9307,7 +9288,9 @@ fn public_surface_entries(module: &Module<Surface>) -> Vec<String> {
                     entries.push(format!(
                         "fn:{}:{}",
                         d.name,
-                        crate::pretty::pretty_item_signature(&crate::ast::Item::FnDef(d.clone()))
+                        crate::pretty::pretty_item_signature(&crate::ast::Item::FnDef(
+                            d.clone().into_impure()
+                        ))
                     ));
                 }
             }
@@ -9539,9 +9522,8 @@ fn lower_and_resolve_full_lsp(
         .package_file
         .as_ref()
         .map(|e| e.package_name.as_str());
-    // The caller has already run source-package validation so it can preserve
-    // parse-error precedence. Retain the exact lowering scope's callable
-    // projection instead of rebuilding and revalidating that scope for LSP.
+    // Source-package validation has completed. Reusing its exact callable
+    // projection keeps LSP facts consistent with the lowering scope.
     let Some((lowered_modules, lowered_package_file, callable_declarations)) =
         FullPipeline::lower_projected_package_named_for_lsp(
             modules,
@@ -9566,7 +9548,7 @@ fn resolve_lowered_package<P>(
     lowered_package_file: Option<crate::ast::PackageFile<P>>,
 ) -> Result<PackageEntry<P>, LocatedError>
 where
-    P: ResolvePhase + crate::ast::Phase<ExprResolved = ()> + Clone,
+    P: ResolvePhase + crate::ast::Phase<ExprResolved = (), FnBody = crate::ast::Expr<P>> + Clone,
 {
     // A package-less module tree (no `*.pkg.kio`) is admitted here: the
     // module tree is analysed for its own sake — typechecked and
@@ -9598,7 +9580,7 @@ where
 
 /// Project a dependency package's **contract surface** by lowering only
 /// its *signatures*: every function body (and `rec`-group member body) is
-/// blanked to `()` before lowering, and the surface-only auxiliary
+/// discarded before lowering, and the surface-only auxiliary
 /// declarations that contribute no contract entry are dropped. The digest
 /// is therefore a pure function of the dependency's declared signature
 /// surface, computed **without a function-body typecheck** — so it is
@@ -9606,138 +9588,77 @@ where
 /// (via [`PrimePipeline`]), even when the dependency's bodies use surface
 /// forms the surface-less `kio-prime` lowering would otherwise reject
 /// (see `specs/versioning.md` § Git-dependency contract gate and
-/// [`strip_module_to_signature_surface`]).
+/// [`select_contract_declarations`]).
 #[cfg(feature = "cli")]
 pub(crate) fn contract_snapshot_via_lower<P: Pipeline>(
     parsed: &ParsedPackage,
-) -> Result<crate::sig::ContractSnapshot, LocatedError>
-where
-    P::LoweredPhase: ResolvePhase
-        + crate::pass::resolve::ExportContractPhase
-        + crate::pass::typecheck_core::TyperPhase,
-    P::LoweredPhase: crate::ast::Phase<ExprResolved = (), FnPurity = crate::ast::Purity> + Clone,
-{
+) -> Result<crate::sig::ContractSnapshot, LocatedError> {
     let mut modules = parsed.modules.clone();
+    // Header and projection failures precede the Package's ordered checker.
+    // Give those operations a stable source order as well.
+    modules.sort_by(|(left_file, left), (right_file, right)| {
+        left.path
+            .segments
+            .iter()
+            .map(|segment| segment.as_str())
+            .cmp(right.path.segments.iter().map(|segment| segment.as_str()))
+            .then_with(|| left_file.cmp(right_file))
+    });
+    crate::pass::surface_registry::validate_package(&parsed.root_dir, &modules)?;
     for (_, module) in &mut modules {
         normalize_projected_parameter_patterns(module);
     }
-    let rec_header_errors = projected_rec_header_errors(&modules);
-    if let Some(error) = rec_header_errors
-        .iter()
-        .find(|error| matches!(error.error, Error::Parse(_)))
-    {
-        return Err(LocatedError {
-            file_path: error.file_path.clone(),
-            error: error.error.clone(),
-        });
-    }
-    crate::pass::surface_registry::validate_package(&parsed.root_dir, &parsed.modules)
-        .map_err(|error| parsed.prefer_deferred_body_error(error))?;
+    validate_projected_rec_headers(&modules)?;
     crate::pass::surface_registry::filter_unsealed_contract_imports(&mut modules);
     for (file_path, module) in modules.iter_mut() {
-        strip_module_to_signature_surface(module).map_err(|error| LocatedError {
+        select_contract_declarations(module).map_err(|error| LocatedError {
             file_path: file_path.clone(),
             error,
         })?;
     }
-    let package_file_ast = parsed.package_file.as_ref().map(|e| e.package_file.clone());
-    let package_name = parsed
-        .package_file
-        .as_ref()
-        .map(|e| e.package_name.as_str());
-    let (lowered_modules, lowered_package_file) =
-        P::lower_projected_package_named(modules, package_file_ast, package_name)?;
-    let package_file_entry = match (&parsed.package_file, lowered_package_file) {
-        (Some(prev), Some(package_file)) => Some(PackageFileEntry {
-            file_path: prev.file_path.clone(),
-            package_name: prev.package_name.clone(),
-            package_file,
-        }),
-        _ => None,
-    };
-    let (package, mut name_errors) = Package::<P::LoweredPhase>::build_deferring_contract_checks(
+    let lowered_modules = modules
+        .into_iter()
+        .map(|(file_path, module)| {
+            P::lower_contract_module(module)
+                .map(|module| (file_path.clone(), module))
+                .map_err(|error| LocatedError { file_path, error })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let package_file_entry = parsed.package_file.as_ref().map(|prev| PackageFileEntry {
+        file_path: prev.file_path.clone(),
+        package_name: prev.package_name.clone(),
+        package_file: crate::pass::contract::package_file(prev.package_file.clone()),
+    });
+    let package = Package::<P::ContractPhase>::build_without_bridge_validation(
         &parsed.root_dir,
         lowered_modules,
         package_file_entry,
     )?;
     package.resolve_imports()?;
     package.check_no_value_cycles()?;
-    if let Err(error) = package.check_binding_origins() {
-        name_errors.push(error);
-    }
-    name_errors.extend(
-        rec_header_errors
-            .iter()
-            .filter(|error| matches!(error.error, Error::NameRes(_)))
-            .map(|error| LocatedError {
-                file_path: error.file_path.clone(),
-                error: error.error.clone(),
-            }),
-    );
-    if let Some(error) = earliest_projected_error(parsed, name_errors) {
-        return Err(error);
-    }
-    package.check_in_body_resolution()?;
-    let mut type_errors: Vec<LocatedError> = rec_header_errors
-        .iter()
-        .filter(|error| matches!(error.error, Error::Type(_)))
-        .map(|error| LocatedError {
-            file_path: error.file_path.clone(),
-            error: error.error.clone(),
-        })
-        .collect();
-    if let Err(error) = crate::pass::typecheck_core::check_package_signatures(&package) {
-        if matches!(
-            &error.error,
-            Error::Parse(_) | Error::Import(_) | Error::NameRes(_)
-        ) {
-            return Err(error);
-        }
-        if matches!(&error.error, Error::Type(_)) {
-            type_errors.push(error);
-        } else if type_errors.is_empty() {
-            return Err(error);
-        }
-    }
-    if let Some(error) = earliest_projected_error(parsed, type_errors) {
-        return Err(error);
-    }
+    package.check_binding_origins()?;
+    package.check_signature_resolution()?;
+    crate::pass::typecheck_core::check_package_signatures(&package)?;
     package.validate_bridge_contract()?;
     Ok(crate::sig::ContractSnapshot::from_package(&package))
 }
 
 #[cfg(feature = "cli")]
-fn earliest_projected_error(
-    parsed: &ParsedPackage,
-    errors: Vec<LocatedError>,
-) -> Option<LocatedError> {
-    errors.into_iter().min_by_key(|error| {
-        let module_index = parsed
-            .modules
-            .iter()
-            .position(|(file_path, _)| file_path == &error.file_path)
-            .unwrap_or(usize::MAX);
-        (module_index, error.error.diagnostic().span.start)
-    })
-}
-
-#[cfg(feature = "cli")]
-fn projected_rec_header_errors(modules: &[(PathBuf, Module<Surface>)]) -> Vec<LocatedError> {
-    let mut errors = Vec::new();
+fn validate_projected_rec_headers(
+    modules: &[(PathBuf, Module<Surface>)],
+) -> Result<(), LocatedError> {
     for (file_path, module) in modules {
         for item in &module.items {
             let crate::ast::Item::RecGroup(group, _) = item else {
                 continue;
             };
-            for error in crate::pass::rec_headers::validate_all(group) {
-                errors.push(LocatedError {
-                    file_path: file_path.clone(),
-                    error,
-                });
-            }
+            crate::pass::rec_headers::validate(group).map_err(|error| LocatedError {
+                file_path: file_path.clone(),
+                error,
+            })?;
         }
     }
-    errors
+    Ok(())
 }
 
 #[cfg(feature = "cli")]
@@ -9773,13 +9694,13 @@ fn normalize_projected_signature_patterns(signature: &mut crate::ast::Signature<
 /// dependency's contract is projected from, so it can be lowered for a
 /// contract digest without lowering or typechecking function bodies.
 ///
-/// - Function definitions keep their signature; their body is blanked to
-///   `()` (the contract reads only `sig` / `ret`). Surface parameter patterns
+/// - Function definitions retain their source header for the bodyless lowering
+///   entrypoint. Surface parameter patterns
 ///   are replaced by the product type they declare, which is their complete
 ///   contribution to the signature.
 /// - A `rec` group is surface-only *as an item*, but its members are
 ///   ordinary `fn` definitions whose signatures belong in the contract, so
-///   each member is lifted out as a top-level `fn` (body blanked). The
+///   each member is lifted out as a top-level `fn`. The
 ///   recursion structure is irrelevant once bodies are gone.
 /// - Host types, host fns, and type aliases carry the contract directly.
 ///   Public newtypes are reduced to the same four-state host surface recorded
@@ -9798,28 +9719,19 @@ fn normalize_projected_signature_patterns(signature: &mut crate::ast::Signature<
 ///   `<pkg>.sig.kio`) to freeze them into its contract. See
 ///   `specs/versioning.md` § Git-dependency contract gate.
 #[cfg(feature = "cli")]
-fn strip_module_to_signature_surface(
-    module: &mut crate::ast::Module<Surface>,
-) -> Result<(), Error> {
-    use crate::ast::{Expr, Item, Meta};
-    let blank_body = || Expr::Unit {
-        occurrence: Default::default(),
-        meta: Meta::new(crate::span::Span::new(0, 0)),
-    };
-    let strip_fn = |d: &mut crate::ast::FnDef<Surface>| {
-        normalize_projected_signature_patterns(&mut d.sig);
-        d.body = blank_body();
-    };
+fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Result<(), Error> {
+    use crate::ast::Item;
     let mut kept = Vec::with_capacity(module.items.len());
     for item in std::mem::take(&mut module.items) {
         match item {
             Item::FnDef(mut d) => {
-                strip_fn(&mut d);
+                normalize_projected_signature_patterns(&mut d.sig);
                 kept.push(Item::FnDef(d));
             }
             Item::RecGroup(group, _) => {
-                for mut member in group.members {
-                    strip_fn(&mut member);
+                for member in group.members {
+                    let mut member = member.into_impure();
+                    normalize_projected_signature_patterns(&mut member.sig);
                     kept.push(Item::FnDef(member));
                 }
             }
@@ -9878,8 +9790,28 @@ fn strip_module_to_signature_surface(
     }
     module.items = kept;
 
+    let type_module = Module {
+        path: module.path.clone(),
+        imports: module.imports.clone(),
+        items: module
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item,
+                    Item::TypeAlias(_)
+                        | Item::Newtype(_)
+                        | Item::TypeRecGroup(_)
+                        | Item::HostType(_)
+                )
+            })
+            .cloned()
+            .collect(),
+        meta: module.meta.clone(),
+        doc: module.doc.clone(),
+    };
     let mut analyses =
-        crate::pass::resolve::projected_surface_type_rec_analyses(module)?.into_iter();
+        crate::pass::resolve::projected_surface_type_rec_analyses(&type_module)?.into_iter();
     let mut partitioned = Vec::with_capacity(module.items.len());
     for item in std::mem::take(&mut module.items) {
         let Item::TypeRecGroup(group) = item else {
@@ -10215,7 +10147,7 @@ mod prime_only_contract_surface_tests {
              }",
         )
         .expect("parse Kio'-shaped module");
-        strip_module_to_signature_surface(&mut module)
+        select_contract_declarations(&mut module)
             .expect("Prime-only contract projection repartitions the group");
 
         assert!(
@@ -10243,6 +10175,102 @@ mod contract_surface_tests {
     use crate::error::Error;
     use crate::pass::full::FullPipeline;
     use crate::prime::pipeline::PrimePipeline;
+
+    #[test]
+    fn live_producer_keeps_real_function_headers_without_bodies() {
+        fn check<P: Pipeline>() {
+            let mut module = crate::pass::parser::parse(
+                "module api; \
+                 pure fn private_identity[A](value: A) -> A { missing } \
+                 pub pure fn expose[A][B](left: A, right: B) -> A { (left, right, left) } \
+                 rec(loop) { pub fn recursive[A](value: A) -> A { missing } }",
+            )
+            .unwrap();
+            normalize_projected_parameter_patterns(&mut module);
+            validate_projected_rec_headers(&[(PathBuf::from("api.kio"), module.clone())]).unwrap();
+            select_contract_declarations(&mut module).unwrap();
+            let lowered = P::lower_contract_module(module).unwrap();
+            let defs = lowered
+                .items
+                .iter()
+                .map(|item| {
+                    let crate::ast::Item::FnDef(def) = item else {
+                        panic!("ordinary and recursive functions retain their declaration category")
+                    };
+                    let crate::pass::contract::NoBody = def.body;
+                    def
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                defs.iter().map(|def| def.name.as_str()).collect::<Vec<_>>(),
+                ["private_identity", "expose", "recursive"]
+            );
+            assert_eq!(defs[0].vis, crate::ast::Visibility::Private);
+            assert_eq!(defs[0].purity, crate::ast::Purity::Pure);
+            assert_eq!(defs[1].purity, crate::ast::Purity::Pure);
+            assert_eq!(defs[2].purity, crate::ast::Purity::Impure);
+            assert_eq!(defs[1].sig.groups.len(), 3);
+            assert_eq!(defs[1].sig.params.len(), 4);
+        }
+        check::<FullPipeline>();
+        check::<PrimePipeline>();
+    }
+
+    #[test]
+    fn live_contract_observation_is_independent_of_invalid_and_surface_bodies() {
+        let cases = [
+            "module api; pub pure fn expose[A](value: A) -> A { value }",
+            "module api; pub pure fn expose[A](value: A) -> A { missing }",
+            "module api; pub pure fn expose[A](value: A) -> A { (value, value, value) }",
+        ];
+        let mut expected = None;
+        for source in cases {
+            for result in projected_contracts_for_modules(&[("api.kio", source)]) {
+                let contract = result.expect("only declared signatures are checked");
+                assert_eq!(contract.items.len(), 1);
+                let digest = crate::sig::contract_digest(&contract);
+                match &expected {
+                    Some(expected) => assert_eq!(&digest, expected),
+                    None => expected = Some(digest),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn projected_precheck_errors_are_stable_under_module_permutations() {
+        fn check<P: Pipeline>(declarations: &str) {
+            let tmp = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tmp.path().join("dep.pkg.kio"),
+                "package dep; bridge { **; }",
+            )
+            .unwrap();
+            for name in ["a", "z"] {
+                std::fs::write(
+                    tmp.path().join(format!("{name}.kio")),
+                    format!("module {name}; {declarations}"),
+                )
+                .unwrap();
+            }
+            let mut parsed = crate::package_collection::walk(tmp.path()).unwrap();
+            let dep = parsed.packages.get_mut(&parsed.root).unwrap();
+            let first = contract_snapshot_via_lower::<P>(dep).unwrap_err();
+            assert_eq!(first.file_path.file_name().unwrap(), "a.kio");
+            for _ in 0..4 {
+                dep.modules.reverse();
+                let next = contract_snapshot_via_lower::<P>(dep).unwrap_err();
+                assert_eq!(next.file_path, first.file_path);
+                assert_eq!(next.error, first.error);
+            }
+        }
+        check::<PrimePipeline>("pub fn expose(value: _) -> . { () }");
+        let malformed_rec = "rec(loop) { \
+            pub fn first[A](value: A) -> A { value }; \
+            pub fn second[A, B](value: A) -> A { value } }";
+        check::<FullPipeline>(malformed_rec);
+        check::<PrimePipeline>(malformed_rec);
+    }
 
     fn projected_contract_located_error(module_src: &str) -> LocatedError {
         let tmp = tempfile::tempdir().unwrap();
@@ -10591,26 +10619,26 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_rec_parse_error_precedes_name_and_type_errors() {
-        let error = projected_contract_error(
-            "module api;\n\
+    fn projected_independent_header_errors_are_deterministic() {
+        let source = "module api;\n\
              rec(loop) {\n\
                pub fn same[*F](value: .) -> . { value };\n\
                pub fn same[A, B](value: .) -> . { value }\n\
-             }\n",
-        );
+             }\n";
+        let first = projected_contract_error(source);
         assert!(
-            matches!(error, Error::Parse(_)),
-            "rec-header Parse errors must precede Name and Type errors: {error:?}"
+            matches!(first, Error::Parse(_) | Error::NameRes(_) | Error::Type(_)),
+            "an independent header defect must be reported: {first:?}"
         );
+        for _ in 0..3 {
+            assert_eq!(projected_contract_error(source), first);
+        }
     }
 
     #[test]
-    fn projected_rec_type_error_respects_type_source_order() {
+    fn projected_rec_header_rejects_higher_kinded_parameter() {
         let error = projected_contract_error(
             "module api;\n\
-             type Box[A] = A;\n\
-             pub fn earlier(value: Box(., .)) -> . { () }\n\
              rec(loop) {\n\
                pub fn later[*F](value: .) -> . { value }\n\
              }\n",
@@ -10618,56 +10646,53 @@ mod contract_surface_tests {
         let diagnostic = error.diagnostic();
         assert!(
             matches!(error, Error::Type(_))
-                && !diagnostic.message.contains("`rec(loop)` can only pack"),
-            "the earlier ordinary Type error must precede the later rec-header Type error: \
-             {error:?}"
+                && diagnostic.message.contains("`rec(loop)` can only pack"),
+            "recursive headers reject non-kind-* binders: {error:?}"
         );
     }
 
     #[test]
-    fn projected_contract_reports_name_before_private_type_closure() {
+    fn projected_contract_rejects_forward_type_reference() {
         let error = projected_contract_error(
             "module api;\n\
              pub fn expose(value: Hidden) -> Hidden { value }\n\
-             type Hidden = .;\n",
+             pub type Hidden = .;\n",
         );
         assert!(
             matches!(error, Error::NameRes(_)),
-            "source-order name resolution must precede bridge closure: {error:?}"
+            "signature types obey declaration order: {error:?}"
         );
     }
 
     #[test]
-    fn projected_contract_reports_import_before_name_and_bridge() {
+    fn projected_contract_rejects_missing_import() {
         let error = projected_contract_error(
             "module api;\n\
              import absent(Missing);\n\
-             pub fn expose(value: Hidden) -> Hidden { value }\n\
-             type Hidden = .;\n",
+             pub fn expose() { () }\n",
         );
         assert!(
             matches!(error, Error::Import(_)),
-            "use validation must precede source-order and bridge errors: {error:?}"
+            "missing imports remain visible during projection: {error:?}"
         );
     }
 
     #[test]
-    fn projected_contract_reports_import_before_duplicate_declaration() {
+    fn projected_contract_rejects_duplicate_declaration() {
         let error = projected_contract_error(
             "module api;\n\
-             import absent(Missing);\n\
              type Duplicate = .;\n\
              type Duplicate = .;\n\
-             pub fn expose(value: Duplicate) -> Duplicate { value }\n",
+             pub fn expose() { () }\n",
         );
         assert!(
-            matches!(error, Error::Import(_)),
-            "use validation must precede top-level duplicate-name errors: {error:?}"
+            matches!(error, Error::NameRes(_)),
+            "duplicate declarations remain invalid in projected signatures: {error:?}"
         );
     }
 
     #[test]
-    fn projected_contract_reports_import_cycle_before_name_errors() {
+    fn projected_contract_rejects_import_cycle() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("dep.pkg.kio"),
@@ -10678,7 +10703,7 @@ mod contract_surface_tests {
             tmp.path().join("a.kio"),
             "module a;\n\
              import b as b;\n\
-             pub fn expose(value: Missing) -> Missing { value }\n",
+             pub fn expose() { () }\n",
         )
         .unwrap();
         std::fs::write(
@@ -10695,7 +10720,7 @@ mod contract_surface_tests {
             .error;
         assert!(
             matches!(error, Error::Import(_)),
-            "value-import cycles must precede signature Name errors: {error:?}"
+            "value-import cycles remain invalid during projection: {error:?}"
         );
     }
 
@@ -10754,16 +10779,15 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_contract_reports_type_before_private_type_closure() {
+    fn projected_contract_rejects_wrong_alias_arity() {
         let error = projected_contract_error(
             "module api;\n\
              type Box[A] = A;\n\
-             type Hidden = .;\n\
-             pub fn expose(value: Box(., .)) -> Hidden { () }\n",
+             pub fn expose(value: Box(., .)) { () }\n",
         );
         assert!(
             matches!(error, Error::Type(_)),
-            "kind checking must precede bridge closure: {error:?}"
+            "projected signatures retain ordinary arity checking: {error:?}"
         );
     }
 
@@ -11070,7 +11094,7 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_import_failures_precede_consumed_origin_errors_in_both_pipelines() {
+    fn projected_import_failures_with_consumed_declarations_in_both_pipelines() {
         let elaborator =
             "pub elab same : [Source] Source -> [Target] Target { impl implementation; };";
         for error in projected_errors_for_modules(
@@ -11080,7 +11104,7 @@ mod contract_surface_tests {
                 ("second.kio", &format!("module second; {elaborator}")),
                 (
                     "api.kio",
-                    "module api; import first(same); import second(same); import missing(absent); pub fn expose() -> . { () }",
+                    "module api; import first as first; import second as second; import missing(absent); pub fn expose() -> . { () }",
                 ),
             ],
         ) {
@@ -11093,7 +11117,7 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_import_cycles_precede_consumed_origin_errors_in_both_pipelines() {
+    fn projected_import_cycles_with_consumed_declarations_in_both_pipelines() {
         let elaborator =
             "pub elab same : [Source] Source -> [Target] Target { impl implementation; };";
         for error in projected_errors_for_modules(
@@ -11103,7 +11127,7 @@ mod contract_surface_tests {
                 ("second.kio", &format!("module second; {elaborator}")),
                 (
                     "api.kio",
-                    "module api; import cycle as cycle; import first(same); import second(same); pub fn expose() -> . { () }",
+                    "module api; import cycle as cycle; import first as first; import second as second; pub fn expose() -> . { () }",
                 ),
                 ("cycle.kio", "module cycle; import api as api;"),
             ],

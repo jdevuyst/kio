@@ -15,25 +15,25 @@ public final class Substitution {
     @Override public Integer KioHostBinding_api__I32_toBody(Integer value) { return value; }
 
     @Override
-    public <T> Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, T> KioHostBinding_api__Box_fromBody(Object value) {
-      return Shapes.KioHostType_api__Box.fromNative(new Box<T>(value));
+    public <T> Shapes.Apply1<Shapes.KioModule_api.Box, T> KioHostBinding_api__Box_fromBody(Object value) {
+      return Shapes.KioModule_api.Box.Storage.fromNative(new Box<T>(value));
     }
 
     @Override public <T> Object KioHostBinding_api__Box_toBody(
-        Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, T> value) {
-      if (Shapes.KioHostType_api__Box.toNative(value) instanceof Box<?> box) return box.value();
+        Shapes.Apply1<Shapes.KioModule_api.Box, T> value) {
+      if (Shapes.KioModule_api.Box.Storage.toNative(value) instanceof Box<?> box) return box.value();
       throw new AssertionError("foreign host storage");
     }
 
-    @Override public <T> Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, T> api__echo(
-        Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, T> value) {
+    @Override public <T> Shapes.Apply1<Shapes.KioModule_api.Box, T> api__echo(
+        Shapes.Apply1<Shapes.KioModule_api.Box, T> value) {
       events.add("echo");
       return value;
     }
   }
 
-  private static Object payload(Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, ?> value) {
-    if (Shapes.KioHostType_api__Box.toNative(value) instanceof Box<?> box) return box.value();
+  private static Object payload(Shapes.Apply1<Shapes.KioModule_api.Box, ?> value) {
+    if (Shapes.KioModule_api.Box.Storage.toNative(value) instanceof Box<?> box) return box.value();
     throw new AssertionError("foreign host storage");
   }
 
@@ -46,11 +46,11 @@ public final class Substitution {
     var pkg = substitution.Substitution.create(host);
     var triple = pkg.api.productValue();
     var nested = new Shapes.Product<>(11, new Shapes.Product<>(22, 33));
-    Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>> generic =
+    Shapes.Apply1<Shapes.KioModule_api.Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>> generic =
         pkg.api.<Integer, Shapes.Product<Integer, Integer>>product(
-            Shapes.KioHostType_api__Box.fromNative(new Box<>(nested)));
-    Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>> result =
-        pkg.api.concreteProduct(pkg.api.whole(Shapes.KioHostType_api__Box.fromNative(new Box<>(triple))));
+            Shapes.KioModule_api.Box.Storage.fromNative(new Box<>(nested)));
+    Shapes.Apply1<Shapes.KioModule_api.Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>> result =
+        pkg.api.concreteProduct(pkg.api.whole(Shapes.KioModule_api.Box.Storage.fromNative(new Box<>(triple))));
     equal(payload(result), new Shapes.Product<>(11, new Shapes.Product<>(22, 33)));
 
     var restored = pkg.api.abstractKeep(result);
@@ -67,14 +67,14 @@ public final class Substitution {
     List<String> transport = new ArrayList<>();
     Shapes.Fn1<
         Shapes.Product<Integer, Shapes.Product<Integer, Integer>>,
-        Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>>> packProduct =
+        Shapes.Apply1<Shapes.KioModule_api.Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>>> packProduct =
         value -> {
           equal(List.of(value.left(), value.right().left(), value.right().right()), List.of(11, 22, 33));
           transport.add("pack-product");
-          return Shapes.KioHostType_api__Box.fromNative(new Box<>(new ProductStorage(value)));
+          return Shapes.KioModule_api.Box.Storage.fromNative(new Box<>(new ProductStorage(value)));
         };
     Shapes.Fn1<
-        Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>>,
+        Shapes.Apply1<Shapes.KioModule_api.Box, Shapes.Product<Integer, Shapes.Product<Integer, Integer>>>,
         Shapes.Product<Integer, Shapes.Product<Integer, Integer>>> readProduct =
         value -> {
           if (!(payload(value) instanceof ProductStorage stored)) throw new AssertionError("product storage");
@@ -97,14 +97,14 @@ public final class Substitution {
       var arm = index;
       Shapes.Fn1<
           Shapes.Sum<Integer, Shapes.Sum<Integer, Integer>>,
-          Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, Shapes.Sum<Integer, Shapes.Sum<Integer, Integer>>>> packSum =
+          Shapes.Apply1<Shapes.KioModule_api.Box, Shapes.Sum<Integer, Shapes.Sum<Integer, Integer>>>> packSum =
           value -> {
             equal(value, expected);
             transport.add("pack-sum-" + arm);
-            return Shapes.KioHostType_api__Box.fromNative(new Box<>(new SumStorage(value)));
+            return Shapes.KioModule_api.Box.Storage.fromNative(new Box<>(new SumStorage(value)));
           };
       Shapes.Fn1<
-          Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, Shapes.Sum<Integer, Shapes.Sum<Integer, Integer>>>,
+          Shapes.Apply1<Shapes.KioModule_api.Box, Shapes.Sum<Integer, Shapes.Sum<Integer, Integer>>>,
           Shapes.Sum<Integer, Shapes.Sum<Integer, Integer>>> readSum =
           value -> {
             if (!(payload(value) instanceof SumStorage stored)) throw new AssertionError("sum storage");

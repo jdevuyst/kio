@@ -157,7 +157,7 @@ host as `GreeterHost<AppTypes>` lets `createGreeter(host)` infer the same
 runtime argument; if it still has roleless types, write
 `createGreeter<AppTypes>()` to select them.
 
-The generated facade validates every slot. Missing or partial selections,
+TypeScript checks every slot in the generated facade. Missing or partial selections,
 `any`, `unknown`, `never`, wrong constructor arity, and constructors without a
 concrete result produce branded, uninhabited diagnostic types instead of
 silently weakening the boundary.
@@ -215,6 +215,14 @@ constructor/projector operations. An existential projector exposes its hidden
 type only inside the exact generic CPS continuation. A newtype with no public
 members has an empty namespace type.
 
+Instances created from the same imported factory with the same host selection
+and visible type arguments can exchange nominal values. No new nominal type
+is created per instance, and private members stay private. Their JavaScript
+runtime storage belongs to the loaded artifact, not to an individual factory
+call; separately loaded artifacts do not share that identity. Exchanged
+callbacks retain their original captures and host bindings. See
+[package isolation](../../specs/backends/README.md#4-package-isolation).
+
 An opaque or one-member carrier is already atomic at the JS boundary and cuts
 the recursion walk. An enclosing visible wrapper such as
 `Root : Hidden(Root)` therefore remains the host-constructible structural
@@ -237,14 +245,14 @@ shapes the `.js` produces while preserving Kio's type relations.
   can leave an enclosing public wrapper structural.
 - **Unit** is `null` and **bottom** is `never`. First-class functions use
   `GreeterCallable<A, R>`: one complete `A` argument, including `null` for
-  Unit. `liftGreeterCallable(body)` constructs a host-supplied callable.
+  Unit. Supply an ordinary function with that signature.
 - **Ordinary Kio type variables** are TypeScript generics. A public
   `pub fn id[T](x: T) -> T` is `<T>(p0: T) => T`, and callbacks, returns, and
   nested polymorphic values instead use `GreeterPoly` with one generic
   `.advance<T>()` per type parameter. For example, an identity value is
-  invoked as `identity.advance<string>()("hello")`. Construct one with
-  `liftGreeterPoly({advance<T>() { ... }})`, returning the next callable or
-  polymorphic layer at each step.
+  invoked as `identity.advance<string>()("hello")`. Supply an object with a
+  generic `advance<T>()` method returning the next callable or polymorphic
+  layer at each step.
 - **Roleless host types** use the selected `B["<module>"]["<name>"]` entry.
   Applications of positive-arity host types and higher-kinded binders use
   `GreeterApply`; non-saturating prefixes use `GreeterBind`.
@@ -266,11 +274,20 @@ retaining `/`, and word-case the type leaf. Newtype wrapper keys use the
 word-cased type name; binary product/sum keys remain `_0` and `_1`.
 The nominal type brand's opaque identity is not derived from these display keys.
 
-Concrete structural inputs and outputs are snapshots. Generic `T`, opaque
-host-constructor values, and roleless host references pass through without
-being inspected or copied. Extracting a value through a concrete advertised
-type restores the copying required by that type; the package does not walk
-inside an unknown host container.
+Keep shared tuple fields and nested Kio values unchanged while a retained value
+or closure can still use them; create a new tuple to change a field. A
+host-managed mutable `Box` may change through declared `get` and `set` host
+functions while the tuple keeps the same box. No fresh snapshot is promised.
+See [shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
+Keep values consistent with their declared types, including callback results
+and values transported through generic or opaque containers. TypeScript's
+static checks do not add runtime checks to the JavaScript package. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types).
+
+Tuple and choice field reads must return the same value without side effects.
+A getter that returns a fixed value is fine; a changing or counter-incrementing
+getter is not. This is a behavior rule, not a ban on getter or Proxy syntax.
 
 See [`specs/backends/ts.md` § FFI surface](../../specs/backends/ts.md#ffi-surface) for the full mapping.
 

@@ -284,7 +284,7 @@ fn run_coexist(
     // Both packages export the same `pair() -> (I32 & String)`. Reading the
     // generic product shell through both live package handles proves that
     // equal structural facades coexist without coupling artifact identity.
-    let main = facade_module_selector("main", false);
+    let main = java_module_selector("main", false);
     driver.push_str(&format!(
         "    pa.greeter.{main}.main();\n    pb.greeter.{main}.main();\n    pa.greeter.{main}.main();\n    var qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa.left() + \" \" + qa.right());\n    var qb = pb.greeter.{main}.pair();\n    System.out.println(\"second pair: \" + qb.left() + \" \" + qb.right());\n    qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa.left() + \" \" + qa.right());\n  }}\n}}\n"
     ));
@@ -560,11 +560,48 @@ fn java_host_type_identity(module: &str, leaf: &str) -> String {
     format!("{}__{}", encode(module), encode(leaf))
 }
 
+fn java_module_selector(source: &str, root: bool) -> String {
+    facade_module_selector(source, root && host_api::host_name_core(source) != "java")
+}
+
+fn java_nominal_type(module: &str, leaf: &str, role: &str) -> String {
+    let mut path: Vec<String> = Vec::new();
+    for (depth, component) in module.split('/').enumerate() {
+        let exact = component.replace('_', "_u");
+        let readable = format!("KioModule_{exact}");
+        path.push(
+            if path.iter().any(|part| part.eq_ignore_ascii_case(&readable)) {
+                format!("KioModule_D{depth}_{exact}")
+            } else {
+                readable
+            },
+        );
+    }
+    let folded = leaf.to_ascii_lowercase();
+    path.push(
+        if folded == "shapes"
+            || path.iter().any(|part| part.eq_ignore_ascii_case(leaf))
+            || ["kiomodule_", "kiotype_", "kionominal_"]
+                .iter()
+                .any(|prefix| folded.starts_with(prefix))
+        {
+            format!("KioType_{}", leaf.replace('_', "_u"))
+        } else {
+            leaf.to_owned()
+        },
+    );
+    if format!("Shapes${}$KioStorage.class", path.join("$")).len() > 240 {
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for byte in format!("{role}:{module}/{leaf}").bytes() {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        return format!("Shapes.KioNominal_{role}_H{hash:016x}");
+    }
+    format!("Shapes.{}", path.join("."))
+}
+
 fn java_host_marker(binding: &HostTypeBinding) -> String {
-    format!(
-        "Shapes.KioHostTypeMk_{}",
-        java_host_type_identity(binding.module, binding.leaf)
-    )
+    java_nominal_type(binding.module, binding.leaf, "Host")
 }
 
 fn java_host_application(binding: &HostTypeBinding, argument: &str) -> String {
@@ -572,10 +609,16 @@ fn java_host_application(binding: &HostTypeBinding, argument: &str) -> String {
 }
 
 fn java_host_storage(binding: &HostTypeBinding) -> String {
-    format!(
-        "Shapes.KioHostType_{}",
-        java_host_type_identity(binding.module, binding.leaf)
-    )
+    let nominal = java_host_marker(binding);
+    let helper = if nominal
+        .split('.')
+        .any(|part| part.eq_ignore_ascii_case("Storage"))
+    {
+        "KioStorage"
+    } else {
+        "Storage"
+    };
+    format!("{nominal}.{helper}")
 }
 
 fn java_nullary_host_selection(binding: &HostTypeBinding) -> String {
@@ -638,10 +681,7 @@ fn java_newtype_type(
         .into_iter()
         .map(java_nullary_host_selection)
         .collect::<Vec<_>>();
-    let carrier = format!(
-        "Shapes.KioNewtype_{}",
-        java_host_type_identity(module, leaf)
-    );
+    let carrier = java_nominal_type(module, leaf, "Newtype");
     if declaration_arguments.is_empty() {
         if roots.is_empty() {
             carrier
@@ -663,10 +703,7 @@ fn java_newtype_constructor_marker(
     leaf: &str,
     host_types: &[HostTypeBinding],
 ) -> String {
-    let marker = format!(
-        "Shapes.KioNewtypeMk_{}",
-        java_host_type_identity(module, leaf)
-    );
+    let marker = java_nominal_type(module, leaf, "Newtype");
     let mut roots = host_types
         .iter()
         .filter(|binding| binding.type_arity == 0)
@@ -858,6 +895,13 @@ fn java_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trait
     };
     let role = |role: HostRoleRef| java_role_ref_type(role, host_types);
     match binding.body {
+        HostFnBodyKind::DirectSumForallEcho { number } => {
+            let value = format!(
+                "Shapes.Sum<{}, Shapes.KioForall_Type_Fn_T0_T0>",
+                java_function_type(&["Shapes.Unit"], &role(number))
+            );
+            method(vec![value.clone()], &value)
+        }
         HostFnBodyKind::CallStep { i32, string, bool_ } => {
             let i32 = role(i32);
             let string = role(string);
@@ -951,6 +995,10 @@ fn java_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trait
         HostFnBodyKind::ReturnedForallUnit => {
             method(Vec::new(), &java_returned_forall_type(binding))
         }
+        HostFnBodyKind::ForallStageEffects => method(
+            Vec::new(),
+            &format!("{}<Shapes.Unit>", java_forall_stage("V1;e1;*q*b1;")),
+        ),
         HostFnBodyKind::ObservePacked { i32 } => method(
             vec![java_newtype_type(
                 "testapi/types",
@@ -1006,7 +1054,9 @@ fn java_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]
         HostFnBodyKind::Print { string } | HostFnBodyKind::Eprint { string } => {
             m(vec![role(string)], "()".to_owned())
         }
-        HostFnBodyKind::PrintI32 { value } => m(vec![role(value)], "()".to_owned()),
+        HostFnBodyKind::PrintI32 { value } | HostFnBodyKind::InstanceMark { value } => {
+            m(vec![role(value)], "()".to_owned())
+        }
         HostFnBodyKind::Exit { status_i32 } => m(vec![role(status_i32)], "Void".to_owned()),
         HostFnBodyKind::NumericToString { value, string } => m(vec![role(value)], role(string)),
         HostFnBodyKind::BoolToString { bool_, string } => m(vec![role(bool_)], role(string)),
@@ -1091,6 +1141,7 @@ fn java_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -1105,6 +1156,7 @@ fn java_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -1118,7 +1170,7 @@ fn java_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]
 }
 
 /// One `array_*` host fn's Java-typed method. The array slots use the exact
-/// declaration-owned `Apply1<KioHostTypeMk_<declaration>, T>` index and retain the
+/// declaration-owned `Apply1<Shapes.KioModule_module.Type, T>` index and retain the
 /// element as a method type parameter; only the adapter's private body side
 /// is `Object`.
 fn java_array_method(
@@ -1244,6 +1296,9 @@ fn build_driver_source(
     out.push_str(&format!(
         "final class StubHost implements {handle}Host{root_use} {{\n"
     ));
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str("  String exchangeLabel = \"first\";\n");
+    }
     if needs_returned_forall {
         out.push_str("  boolean returnedForallProduced;\n\n");
     }
@@ -1281,7 +1336,9 @@ fn build_driver_source(
         );
     }
     out.push_str("  public static void main(String[] args) {\n");
-    if protocol == RunnerProtocol::HostExistentialRoundtrip {
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str(&format!("    var firstHost = new StubHost();\n    var secondHost = new StubHost();\n    secondHost.exchangeLabel = \"second\";\n    {handle}{root_use} pkg = {handle}.create(firstHost);\n    {handle}{root_use} pkgSecond = {handle}.create(secondHost);\n"));
+    } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         out.push_str(&format!(
             "    var host = new StubHost();\n    {handle}{root_use} pkg = {handle}.create(host);\n"
         ));
@@ -1374,7 +1431,7 @@ fn render_host_binding_adapters(binding: &HostTypeBinding) -> String {
 fn render_main_body(contract: protocol::ProtocolContract) -> String {
     let export_root = contract.testapi_conformed.then_some("testapi");
     let root_ns = match export_root {
-        Some(root) => format!("pkg.{}", facade_module_selector(root, true)),
+        Some(root) => format!("pkg.{}", java_module_selector(root, true)),
         None => "pkg".to_owned(),
     };
     match contract.execution {
@@ -1394,7 +1451,7 @@ fn java_main_call(module: &str) -> String {
     let path = module
         .split('/')
         .enumerate()
-        .map(|(index, segment)| facade_module_selector(segment, index == 0))
+        .map(|(index, segment)| java_module_selector(segment, index == 0))
         .collect::<Vec<_>>()
         .join(".");
     format!("    pkg.{path}.main();\n")
@@ -1412,10 +1469,11 @@ fn render_export_driver(
     let module = |source| {
         format!(
             "{root_ns}.{}",
-            facade_module_selector(source, !has_export_root)
+            java_module_selector(source, !has_export_root)
         )
     };
     let api_ns = module("api");
+    let second_api_ns = api_ns.replacen("pkg.", "pkgSecond.", 1);
     let main_ns = module("main");
     let utils_ns = module("utils");
     let types_ns = module("types");
@@ -1465,6 +1523,8 @@ fn render_export_driver(
         .unwrap_or_else(|| "Integer".to_owned());
 
     let body = match driver {
+        ExportDriver::IncomingCallableViews => "    throw new IllegalArgumentException(\"this runner has no incoming-callable-views driver\");\n".to_owned(),
+        ExportDriver::IncomingCallableStages => "    throw new IllegalArgumentException(\"this runner has no incoming-callable-stages driver\");\n".to_owned(),
         ExportDriver::RustCallbackAliases => "    throw new IllegalArgumentException(\"rust-callback-aliases tests the Rust public naming contract only\");\n".to_owned(),
         ExportDriver::ModuleRoundtrip => format!(
             "    System.out.println({api_ns}.tag());\n    System.out.println({api_ns}.value());\n    System.out.println({api_ns}.echo(\"module-echo\"));\n"
@@ -1542,6 +1602,40 @@ fn render_export_driver(
 "#
             )
         }
+        ExportDriver::DirectSumForallBoundary => format!(r#"
+    Shapes.Fn1<Shapes.Unit, Integer> thunk = unit -> {{ System.out.println("unit call"); return 17; }};
+    var identity = new Shapes.KioForall_Type_Fn_T0_T0() {{
+      @Override public <A> Shapes.Fn1<A, A> advance() {{
+        return value -> {{ System.out.println("poly call"); return value; }};
+      }}
+    }};
+    Shapes.Sum<Shapes.Fn1<Shapes.Unit, Integer>, Shapes.KioForall_Type_Fn_T0_T0> unit = new Shapes.Left<>(thunk);
+    Shapes.Sum<Shapes.Fn1<Shapes.Unit, Integer>, Shapes.KioForall_Type_Fn_T0_T0> poly = new Shapes.Right<>(identity);
+    Shapes.Fn1<Shapes.Sum<Shapes.Fn1<Shapes.Unit, Integer>, Shapes.KioForall_Type_Fn_T0_T0>, Shapes.Sum<Shapes.Fn1<Shapes.Unit, Integer>, Shapes.KioForall_Type_Fn_T0_T0>> callback = value -> {{ System.out.println("callback"); return value; }};
+    for (boolean viaCallback : new boolean[] {{false, true}}) {{
+      var left = viaCallback ? {api_ns}.throughCallback(unit, callback) : {api_ns}.relay(unit);
+      System.out.println("unit ready");
+      int number = switch (left) {{
+        case Shapes.Left(var step) -> step.apply(new Shapes.Unit());
+        case Shapes.Right(var ignored) -> throw new AssertionError("Unit arm changed");
+      }};
+      if (number != 17) throw new AssertionError("Unit callback result changed");
+      System.out.println(number);
+      var right = viaCallback ? {api_ns}.throughCallback(poly, callback) : {api_ns}.relay(poly);
+      System.out.println("poly ready");
+      switch (right) {{
+        case Shapes.Right(var step) -> {{
+          int integer = step.<Integer>advance().apply(23);
+          if (integer != 23) throw new AssertionError("polymorphic Number result changed");
+          System.out.println(integer);
+          String text = step.<String>advance().apply("identity");
+          if (!text.equals("identity")) throw new AssertionError("polymorphic Text result changed");
+          System.out.println(text);
+        }}
+        case Shapes.Left(var ignored) -> throw new AssertionError("polymorphic arm changed");
+      }}
+    }}
+"#),
         ExportDriver::CallableSlotsRoundtrip => format!(
             "    int[] calls = {{0, 0}};\n\
              \x20   Shapes.Fn1<Integer, Integer> productStep = value -> {{ calls[0]++; return value + 5; }};\n\
@@ -1572,6 +1666,7 @@ fn render_export_driver(
              \x20   for (double value : new double[] {{1.0000000000000002, -3.125}}) if ({main_ns}.echoF64(value) != value) throw new AssertionError(\"F64 payload changed\");\n\
              \x20   System.out.println(\"scalar payloads ok\");\n"
         ),
+        ExportDriver::SameArtifactExchange => format!("var apiFirst = {api_ns};\nvar apiSecond = {second_api_ns};\nvar result0 = apiSecond.readHidden(apiFirst.makeHidden(17));\nif (result0 != 17) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"direct: \" + result0);\nvar result1 = apiFirst.readHidden(apiSecond.makeHidden(29));\nif (result1 != 29) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"direct: \" + result1);\nvar result2 = apiSecond.readBox(apiFirst.boxed(apiFirst.makeHidden(17)));\nif (result2 != 17) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"box: \" + result2);\nvar result3 = apiFirst.readBox(apiSecond.boxed(apiSecond.makeHidden(29)));\nif (result3 != 29) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"box: \" + result3);\nvar result4 = apiSecond.readPacked(apiFirst.makePacked(23));\nif (result4 != 23) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"packed: \" + result4);\nvar result5 = apiFirst.readPacked(apiSecond.makePacked(31));\nif (result5 != 31) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"packed: \" + result5);\nvar result6 = apiSecond.runBox(apiFirst.boxedLater(apiFirst.makeHidden(17)));\nif (result6 != 17) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"callback: \" + result6);\nvar result7 = apiFirst.runBox(apiSecond.boxedLater(apiSecond.makeHidden(29)));\nif (result7 != 29) throw new AssertionError(\"exchange payload changed\");\nSystem.out.println(\"callback: \" + result7);\n"),
         ExportDriver::HostOwnedRoundtrip => {
             let box_storage = host_types
                 .iter()
@@ -1586,6 +1681,55 @@ fn render_export_driver(
                  \x20   if (!((KioRunnerBox<String>) {box_storage}.toNative(text)).value().equals(\"box-value\")) throw new AssertionError(\"string box payload changed\");\n\
                  \x20   System.out.println(\"host-owned payloads ok\");\n"
             )
+        }
+        ExportDriver::GenericNominalOpaqueRoundtrip => {
+            let storage = host_types.iter()
+                .find(|binding| binding.module == "testapi" && binding.leaf == "Box")
+                .map(java_host_storage).expect("generic nominal protocol requires Box");
+            let wrapped = facade_type_selector("Wrapped");
+            let nominal_type = java_newtype_type("testapi/main", "Wrapped", host_types, &[&selected_i32]);
+            format!(r#"
+    var nominal = {main_ns}.{wrapped}.mkWrapped(new {selected_i32}(37));
+    var host = {storage}.<{nominal_type}>fromNative(new KioRunnerBox<>(nominal));
+    System.out.println({main_ns}.read(host).value());
+    var kio = {main_ns}.make(new {selected_i32}(61));
+    System.out.println({main_ns}.read(kio).value());
+    var nativeNominal = ((KioRunnerBox<{nominal_type}>) {storage}.toNative(kio)).value();
+    System.out.println({main_ns}.unwrap(nativeNominal).value());
+"#)
+        }
+        ExportDriver::OpaqueProductRoundtrip | ExportDriver::OpaqueCompoundRoundtrip => {
+            let storage = host_types.iter()
+                .find(|binding| binding.module == "testapi" && binding.leaf == "Box")
+                .map(java_host_storage).expect("opaque compound protocol requires Box");
+            if driver == ExportDriver::OpaqueProductRoundtrip {
+                format!(r#"
+    var host = {storage}.<Shapes.Product<Integer, Integer>>fromNative(new KioRunnerBox<>(new Shapes.Product<>(11, 17)));
+    for (var value : java.util.List.of({main_ns}.direct(host), {main_ns}.relayed(host))) System.out.println(value.left() + " " + value.right());
+    var kio = {main_ns}.make();
+    for (var value : java.util.List.of({main_ns}.direct(kio), {main_ns}.relayed(kio))) System.out.println(value.left() + " " + value.right());
+"#)
+            } else {
+                let wrapped = facade_type_selector("Wrapped");
+                let nominal_type = java_newtype_type("testapi/main", "Wrapped", host_types, &[]);
+                format!(r#"
+    System.out.println({main_ns}.readSum({storage}.<Shapes.Sum<{selected_i32}, Shapes.Unit>>fromNative(new KioRunnerBox<>(new Shapes.Left<>(new {selected_i32}(19))))).value());
+    System.out.println({main_ns}.readSum({storage}.<Shapes.Sum<{selected_i32}, Shapes.Unit>>fromNative(new KioRunnerBox<>(new Shapes.Right<>(new Shapes.Unit())))).value());
+    System.out.println({main_ns}.readSum({main_ns}.makeSum()).value());
+    System.out.println({main_ns}.readSum({main_ns}.makeEmpty()).value());
+    int[] calls = {{0}};
+    Shapes.Fn1<{selected_i32}, {selected_i32}> step = value -> {{ calls[0]++; System.out.println("call"); return new {selected_i32}(value.value() + 1); }};
+    var host = {storage}.<Shapes.Fn1<{selected_i32}, {selected_i32}>>fromNative(new KioRunnerBox<>(step));
+    if (calls[0] != 0) throw new AssertionError("opaque callback called during construction");
+    System.out.println({main_ns}.call(host, new {selected_i32}(31)).value());
+    System.out.println({main_ns}.call(host, new {selected_i32}(43)).value());
+    if (calls[0] != 2) throw new AssertionError("opaque callback count changed");
+    System.out.println({main_ns}.call({main_ns}.makeCallable(), new {selected_i32}(47)).value());
+    var nominal = {main_ns}.{wrapped}.mkWrapped(new Shapes.Product<>(new {selected_i32}(41), new {selected_i32}(43)));
+    var boxed = {storage}.<{nominal_type}>fromNative(new KioRunnerBox<>(nominal));
+    for (var value : java.util.List.of({main_ns}.readNominal(boxed), {main_ns}.readNominal({main_ns}.makeNominal()))) System.out.println(value.left().value() + " " + value.right().value());
+"#)
+            }
         }
         ExportDriver::StructuralRoundtrip => {
             let sum_type = java_structural_type(
@@ -1694,14 +1838,14 @@ fn render_export_driver(
                  }}\n"
         ),
         ExportDriver::FacadeSelectorCollisions => {
-            let child_module = facade_module_selector("child", false);
+            let child_module = java_module_selector("child", false);
             let child_type = facade_type_selector("Child");
             let foo_module = module("foo");
             let foo_bar = module("foo_bar");
             let i = module("i");
             let host = module("host");
             let mod_api_value = module("mod_api_value");
-            let bar = facade_module_selector("bar", false);
+            let bar = java_module_selector("bar", false);
             format!(
                 "    {api_ns}.pkg();\n\
                      {api_ns}.value();\n\
@@ -1934,6 +2078,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         },
         HostFnBodyKind::BoolToString { .. } => CanonicalKind::BoolToString,
         HostFnBodyKind::PrintI32 { .. } => CanonicalKind::PrintI32,
+        HostFnBodyKind::InstanceMark { .. } => CanonicalKind::Custom,
         HostFnBodyKind::StringToInt { .. } => CanonicalKind::StringToInt,
         HostFnBodyKind::Arithmetic { operation, number } => CanonicalKind::Arith {
             op: operation.to_owned(),
@@ -1975,6 +2120,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -1989,6 +2135,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -2034,10 +2181,12 @@ fn render_java_body_for_binding(
         return body;
     }
     match binding.body {
+        HostFnBodyKind::InstanceMark { .. } => "System.out.println(exchangeLabel + \": \" + p0);".to_owned(),
         HostFnBodyKind::CallStep { .. } => {
             "return p0.apply(new Shapes.Product<>(p1, new Shapes.Product<>(\"compound-callback\", true)));".to_owned()
         }
         HostFnBodyKind::MakePairCallback { .. } => "return p0.apply(p1).left();".to_owned(),
+        HostFnBodyKind::DirectSumForallEcho { .. } => "System.out.println(\"echo\"); return p0;".to_owned(),
         HostFnBodyKind::MakeStep { .. } => "return n -> n + p0;".to_owned(),
         HostFnBodyKind::BoxMake { box_type } => format!(
             "return {}.fromNative(new KioRunnerBox<>(p0));",
@@ -2070,6 +2219,10 @@ fn render_java_body_for_binding(
             )
         }
         HostFnBodyKind::TraceUnit { text } => format!("System.out.println({text:?});"),
+        HostFnBodyKind::ForallStageEffects => format!(
+            "System.out.println(\"create\");\n    return new {}() {{\n      @Override\n      public <A> Shapes.Unit advance() {{\n        System.out.println(\"apply\");\n        return new Shapes.Unit();\n      }}\n    }};",
+            m.ret_type
+        ),
         HostFnBodyKind::StagedUnitCall => {
             "System.out.println(\"staged Unit host call\");".to_owned()
         }
@@ -2567,6 +2720,41 @@ mod tests {
     }
 
     #[test]
+    fn nominal_paths_use_independent_readable_and_bounded_identities() {
+        assert_eq!(java_module_selector("java", true), "KioModule_java");
+        assert_eq!(java_module_selector("java", false), "KioModule_java");
+        assert_eq!(java_module_selector("testapi", true), "testapi");
+        assert_eq!(
+            java_nominal_type("api/types", "Pick_first", "Newtype"),
+            "Shapes.KioModule_api.KioModule_types.Pick_first"
+        );
+        assert_eq!(
+            java_nominal_type("api/api", "Storage", "Host"),
+            "Shapes.KioModule_api.KioModule_D1_api.Storage"
+        );
+        assert_eq!(
+            java_nominal_type("java/class", "Shapes", "Newtype"),
+            "Shapes.KioModule_java.KioModule_class.KioType_Shapes"
+        );
+        assert_eq!(
+            java_nominal_type("foo_bar", "Foo_bar", "Newtype"),
+            "Shapes.KioModule_foo_ubar.Foo_bar"
+        );
+        assert_eq!(
+            java_nominal_type("api", "Kiomodule_types", "Newtype"),
+            "Shapes.KioModule_api.KioType_Kiomodule_utypes"
+        );
+        assert_ne!(
+            java_nominal_type("foo_bar", "Foo_bar", "Newtype").to_ascii_lowercase(),
+            java_nominal_type("foobar", "Foobar", "Newtype").to_ascii_lowercase()
+        );
+        assert_eq!(
+            java_nominal_type(&["a"; 20].join("/"), "Box", "Host"),
+            "Shapes.KioNominal_Host_Hc0c1f3f1c3b4c370"
+        );
+    }
+
+    #[test]
     fn higher_kinded_fixture_names_the_exact_nominal_constructor() {
         let contract = RunnerProtocol::HostFunctorDictRoundtrip.contract();
         let binding = contract
@@ -2575,7 +2763,7 @@ mod tests {
             .find(|binding| matches!(binding.body, HostFnBodyKind::RoundFunctor))
             .expect("round-functor binding");
         let method = java_method(binding, contract.host_types);
-        let expected = "Shapes.Apply1<Shapes.KioNewtypeMk_testapi_stypes__Functor<String>, Shapes.KioNewtypeMk_testapi_stypes__Box<String>>";
+        let expected = "Shapes.Apply1<Shapes.KioModule_testapi.KioModule_types.Functor<String>, Shapes.KioModule_testapi.KioModule_types.Box<String>>";
 
         assert_eq!(method.arg_types, [expected]);
         assert_eq!(method.ret_type, expected);

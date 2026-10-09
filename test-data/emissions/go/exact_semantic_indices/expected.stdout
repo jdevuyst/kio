@@ -1,0 +1,2 @@
+exact semantic indices: constructors, opaque applications and recursion pass
+invalid semantic indices, kinds, conversions and private access rejected

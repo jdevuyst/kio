@@ -22,9 +22,8 @@
 //!   already-lowered modules and walks no directory);
 //! - [`crate::pass::typecheck_full::check_package_preserving_normalization`]
 //!   for the checked, normalization-bearing Lowered package;
-//! - [`crate::pass::typecheck_full::validate_substituted_package`] for
-//!   standalone validation of the elaborated Prime package;
-//! - the checked package's evaluator-artifact exit to consume its
+//! - completion of that checked source through standalone Prime validation;
+//! - the completed source's evaluator-artifact exit to consume its
 //!   boundary-local elaborations into an independently resolvable Kio'-shaped
 //!   package;
 //! - [`crate::pass::typecheck_core::ModuleEnv::build`] for the
@@ -118,9 +117,11 @@ pub fn normalize_source(package_src: &str, module_src: &str) -> Result<String, E
     // Kio'-shaped evaluator artifact from the same elaborations.
     let checked =
         check_package_preserving_normalization(&package).map_err(|located| located.error)?;
-    crate::pass::typecheck_full::validate_substituted_package(checked.substituted())
-        .map_err(|located| located.error)?;
-    let eval_package = checked.eval_artifact().map_err(|located| located.error)?;
+    let source = checked
+        .complete()
+        .map_err(|located| located.error)?
+        .into_source();
+    let eval_package = source.eval_artifact().map_err(|located| located.error)?;
 
     // The single regular artifact module — its body holds `main`.
     let (module_path, module) = eval_package
@@ -147,8 +148,10 @@ pub fn normalize_source(package_src: &str, module_src: &str) -> Result<String, E
         })?;
 
     let metrics = EvalMetrics::enabled();
-    let mut ctx = AuthenticatedEvalCtx::for_module(&eval_package, module, &module_path)
+    let prepared = eval_package
+        .prepare_module(&module_path)
         .expect("ModuleEnv::build succeeds post-typecheck");
+    let mut ctx = AuthenticatedEvalCtx::for_module(prepared);
     if let Some(metrics) = &metrics {
         ctx = ctx.with_metrics(metrics.clone());
     }

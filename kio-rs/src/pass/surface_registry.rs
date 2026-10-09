@@ -3,7 +3,7 @@
 //! Literal aliases and operator bindings disappear before the ordinary
 //! resolver builds its environment. This pass validates their written imports
 //! and binding origins while the Surface tree still carries that information,
-//! but schedules the resulting Name errors only after every import has succeeded.
+//! before lowering erases the declarations that define those bindings.
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1227,12 +1227,7 @@ pub fn validate_package(
         modules: index_modules,
     };
 
-    // Local Name errors are deliberately retained but not surfaced here. The
-    // Import tier must finish first; registry-related local collisions are
-    // reconstructed below, and ordinary collisions remain the normal
-    // resolver's responsibility after lowering.
-    let (package, _deferred_name_errors) =
-        Package::build_deferring_contract_checks(package_root, skeletons, None)?;
+    let package = Package::build(package_root, skeletons, None)?;
     validate_visibility(&index)?;
     validate_operator_imports(&index)?;
     validate_label_imports(&index)?;
@@ -1903,12 +1898,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_import_precedes_local_literal_collision() {
+    fn missing_import_with_local_literal() {
         let error = validate(&[(
             "main.kio",
-            "module main; import missing(absent); literal clash = 1; fn clash() -> . { () }",
+            "module main; import missing(absent); literal value = 1; fn distinct() -> . { () }",
         )])
-        .expect_err("the missing module must be reported first");
+        .expect_err("the missing module must be reported");
         assert!(
             matches!(error.error, Error::Import(_)),
             "got: {:?}",
@@ -1917,7 +1912,7 @@ mod tests {
     }
 
     #[test]
-    fn import_cycle_precedes_consumed_binding_collision() {
+    fn import_cycle_with_consumed_declarations() {
         let error = validate(&[
             (
                 "first.kio",
@@ -1929,11 +1924,11 @@ mod tests {
             ),
             (
                 "main.kio",
-                "module main; import cycle as cycle; import first(same); import second(same);",
+                "module main; import cycle as cycle; import first as first; import second as second;",
             ),
             ("cycle.kio", "module cycle; import main as main;"),
         ])
-        .expect_err("the value-import cycle must be reported first");
+        .expect_err("the value-import cycle must be reported");
         assert!(
             matches!(error.error, Error::Import(_)),
             "got: {:?}",

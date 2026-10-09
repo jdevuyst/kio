@@ -266,6 +266,17 @@ references; current hosts remain live-only. See the caveat banner above.
 
 ## FFI shapes at a glance
 
+Keep shared tuple fields and nested Kio data unchanged while a retained
+value or closure can still use them, even after a call returns. Construct a
+changed tuple instead. A host-managed mutable `Box` may change through its
+declared `get` and `set` host functions while the tuple keeps the same box.
+See [shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
+Supply values matching their declared types, including values transported
+through generic or opaque storage. Java's static types and required casts are
+not a recursive runtime validation guarantee. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types).
+
 Each nullary host-type declaration is an independent generic parameter on the
 generated host, package handle, factory, namespaces, shapes, callbacks, and
 newtype carriers that use it. You select the concrete Java type and implement
@@ -297,15 +308,33 @@ as Unit still takes a value. A named method wider than 254 reference
 parameters uses one prepared argument container with typed accessors and a
 builder.
 
-An unsaturated nominal constructor has an exact
-`KioNewtypeMk_<declaration>` or `KioHostTypeMk_<declaration>` marker.
+Declaration-owned types follow their source module paths under `Shapes`:
+`api/types.Pick_first` becomes `Shapes.KioModule_api.KioModule_types.Pick_first`.
+Module holder classes have a fixed `KioModule_` prefix; type leaves retain
+their Kio spelling. Keeping word boundaries makes names such as `Foo_bar`
+and `Foobar` distinct even on case-insensitive filesystems. Import a leaf
+directly when it improves readability.
+A nullary newtype owns its carrier class; a parameterized declaration owns
+its constructor-marker interface at that same readable path.
+
+An unsaturated nominal constructor therefore uses a marker such as
+`Shapes.KioModule_api.Box`.
 Applying it uses `Shapes.Apply1<F, A>`; additional arguments nest another
 `Apply1` around that index. Concrete and generic uses have the same type,
 so passing a product, sum or callable through your opaque host container
 does not require a payload conversion. A host declaration's own
-`KioHostType_<declaration>.fromNative` and `toNative` helpers store and
+`Shapes.KioModule_api.Box.Storage.fromNative` and `toNative` helpers store and
 retrieve host-owned storage at that exact index. There is no general
 `Apply1` payload operation.
+
+Repeated enclosing names and type leaves entering the generated naming
+frames have fixed role-bearing escapes. A host type named `Storage` uses `KioStorage` for its
+storage helper. Exceptionally long or deep nominal paths use a bounded
+root-level identity name; adding unrelated declarations never changes an
+existing path. The exported root module `java` is reached through
+`pkg.KioModule_java`, protecting Java's package qualifier; functions named
+`java` remain ordinary `java()` methods. The precise escape and whole-classfile bounds are specified
+in [Item naming](../../specs/backends/java.md#item-naming).
 
 A public newtype always has its per-type handle under the module namespace.
 Nullary declarations have an exact declaration-owned Java class;

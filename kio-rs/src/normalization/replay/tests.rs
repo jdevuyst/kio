@@ -100,6 +100,7 @@ fn replay_preserves_packet_prefix_effects_and_preorder_spans_on_fallback() {
 fn deep_lets(depth: usize) -> EvalRef<CheckedTerm> {
     let value = EvalRef::new(CheckedTerm::new(
         Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: zero_meta(),
         },
@@ -198,6 +199,7 @@ fn replay_copies_deep_template_inputs_without_changing_metadata() {
             ty: None,
             pattern: (),
             value: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(Span::new(23, 29)),
             }),

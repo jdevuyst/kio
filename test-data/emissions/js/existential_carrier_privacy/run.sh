@@ -1,5 +1,5 @@
 #!/bin/sh
-# SUBJECT: A JavaScript host can open an existential only through its staged public projector and cannot inspect or cross-instance forge its carrier.
+# SUBJECT: A JavaScript host can exchange an existential between instances of one artifact and open it only through its staged public projector; separate artifacts cannot open it.
 # CONTRACT: specs/backends/js.md § Structural and nominal types
 set -eu
 

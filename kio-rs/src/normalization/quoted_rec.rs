@@ -651,6 +651,7 @@ mod tests {
     fn terminal_callback_adaptation_precedes_suspension_without_double_continuation() {
         let unit_value = node(
             CheckedTermNode::Raw(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }),
@@ -756,6 +757,7 @@ mod tests {
     fn ordinary_callee_precedes_suspended_argument_and_projection_keeps_pair_effects() {
         let unit_value = node(
             CheckedTermNode::Raw(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }),
@@ -809,6 +811,7 @@ mod tests {
         );
         let unit_value = node(
             CheckedTermNode::Raw(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }),
@@ -915,6 +918,7 @@ mod tests {
                     term_type(&root),
                     node(
                         CheckedTermNode::Raw(Expr::Unit {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             meta: zero_meta(),
                         }),

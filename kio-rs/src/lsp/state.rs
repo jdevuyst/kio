@@ -444,13 +444,10 @@ pub struct ServerState {
     /// the entry's version is reported back via
     /// `publishDiagnostics.version`.
     documents: BTreeMap<Uri, OpenDocument>,
-    /// URIs we have published a non-empty diagnostic set to. When the
-    /// next reanalysis pass yields no diagnostic for one of these
-    /// URIs, the server publishes an empty `Vec<Diagnostic>` to clear
-    /// the stale set. LSP replaces published diagnostics wholesale
-    /// per URI, so this set is the only piece of state we need to
-    /// track to discharge the "clear stale diagnostics" rule.
-    published_with_diagnostics: BTreeSet<Uri>,
+    /// Package root of the last non-empty publication for each URI. LSP
+    /// replaces diagnostics wholesale per URI, including shared dependencies;
+    /// only that publication's owner may retract it during reanalysis.
+    published_with_diagnostics: BTreeMap<Uri, PathBuf>,
     /// Most-recently-successful analysis per package root. Keyed by
     /// the canonicalized package root path the worker analyzed. Hover
     /// / goto-definition / references queries read from this; they
@@ -612,19 +609,25 @@ impl ServerState {
         self.documents.get_mut(uri)?.with_lazy_module(f)
     }
 
-    /// Record that we just published a non-empty diagnostic set for
-    /// `uri`. The next reanalysis pass uses this list to decide which
-    /// URIs to clear.
-    pub fn mark_published(&mut self, uri: Uri) {
-        self.published_with_diagnostics.insert(uri);
+    /// Transfer ownership of a non-empty publication to its analyzed package.
+    pub fn mark_published(&mut self, package_root: &Path, uri: Uri) {
+        self.published_with_diagnostics
+            .insert(uri, package_root.to_path_buf());
     }
 
-    /// Take and clear the set of URIs we have previously published
-    /// diagnostics for. The caller iterates the returned set and
-    /// publishes an empty `Vec<Diagnostic>` to any URI that the new
-    /// analysis did not produce a diagnostic for.
-    pub fn drain_published(&mut self) -> BTreeSet<Uri> {
-        std::mem::take(&mut self.published_with_diagnostics)
+    /// Take the publications still owned by this package. The caller clears
+    /// those absent from its new diagnostics and republishes the rest.
+    pub fn take_published_for(&mut self, package_root: &Path) -> BTreeSet<Uri> {
+        let mut owned = BTreeSet::new();
+        self.published_with_diagnostics.retain(|uri, owner| {
+            if owner == package_root {
+                owned.insert(uri.clone());
+                false
+            } else {
+                true
+            }
+        });
+        owned
     }
 
     /// Record the newest analysis request scheduled for `package_root`.
@@ -2045,18 +2048,19 @@ mod tests {
     }
 
     #[test]
-    fn drain_published_returns_and_clears() {
+    fn take_published_respects_latest_owner() {
         let mut state = ServerState::new();
         let a = uri("file:///tmp/a.kio");
         let b = uri("file:///tmp/b.kio");
-        state.mark_published(a.clone());
-        state.mark_published(b.clone());
-        let drained = state.drain_published();
-        assert_eq!(drained.len(), 2);
-        assert!(drained.contains(&a));
-        assert!(drained.contains(&b));
-        // Second drain is empty.
-        assert_eq!(state.drain_published().len(), 0);
+        let first = Path::new("first");
+        let second = Path::new("second");
+        state.mark_published(first, a.clone());
+        state.mark_published(first, b.clone());
+        state.mark_published(second, b.clone());
+        assert_eq!(state.take_published_for(first), BTreeSet::from([a]));
+        assert!(state.take_published_for(first).is_empty());
+        assert_eq!(state.take_published_for(second), BTreeSet::from([b]));
+        assert!(state.take_published_for(second).is_empty());
     }
 
     #[test]

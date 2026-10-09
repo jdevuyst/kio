@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func wrongNonregularTail(nest p.Exp_Api__readNest_arg0[int, int, string]) {
+	_ = p.Exp_Api__nest_arg0_1_value[int, int, string]{11, nest}
+}

@@ -418,20 +418,19 @@ impl NewtypeMemberKeyInput {
 /// and reused across the per-module fan-out.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PackageKeyInputs {
-    pub(crate) pure_functions:
-        std::collections::BTreeMap<String, crate::pass::purity::PureFunctions>,
+    pure_functions: std::collections::BTreeMap<String, crate::pass::purity::PureFunctions>,
     /// Newtype field inputs indexed by (consumer module, visible head):
     /// exact nominal identity, FFI key, and constructor member name.
     /// Recovery joins these with `newtype_members` for the projector name.
     /// Sorted by key into a `BTreeMap` for deterministic key
     /// derivation across iteration-order changes upstream.
-    pub newtype_fields: std::collections::BTreeMap<ScopedNewtypeName, NewtypeFieldKeyInput>,
+    newtype_fields: std::collections::BTreeMap<ScopedNewtypeName, NewtypeFieldKeyInput>,
     /// Mirror of `optimize::OptimizerCtx::newtype_members`:
     /// (consumer module, visible newtype head) -> (exact nominal identity,
     /// constructor name, projector name).
     /// Same deterministic-iteration rationale as
     /// [`newtype_fields`](Self::newtype_fields).
-    pub newtype_members: std::collections::BTreeMap<ScopedNewtypeName, NewtypeMemberKeyInput>,
+    newtype_members: std::collections::BTreeMap<ScopedNewtypeName, NewtypeMemberKeyInput>,
 }
 
 impl PackageKeyInputs {
@@ -440,7 +439,7 @@ impl PackageKeyInputs {
     /// written qualified-import member heads. Unrelated same-spelled
     /// declarations therefore neither enter that module's recovery context nor
     /// change its meaning.
-    pub fn from_package(package: &crate::pass::resolve::Package<Prime>) -> Self {
+    fn from_package(package: &crate::pass::resolve::Package<Prime>) -> Self {
         let mut newtype_fields: std::collections::BTreeMap<
             ScopedNewtypeName,
             NewtypeFieldKeyInput,
@@ -495,6 +494,24 @@ impl PackageKeyInputs {
             newtype_fields,
             newtype_members,
         }
+    }
+
+    pub(crate) fn pure_functions(
+        &self,
+    ) -> &std::collections::BTreeMap<String, crate::pass::purity::PureFunctions> {
+        &self.pure_functions
+    }
+
+    pub(crate) fn newtype_fields(
+        &self,
+    ) -> &std::collections::BTreeMap<ScopedNewtypeName, NewtypeFieldKeyInput> {
+        &self.newtype_fields
+    }
+
+    pub(crate) fn newtype_members(
+        &self,
+    ) -> &std::collections::BTreeMap<ScopedNewtypeName, NewtypeMemberKeyInput> {
+        &self.newtype_members
     }
 
     fn scoped_to(&self, module_path: &str) -> Self {
@@ -892,6 +909,50 @@ fn absolutize(workspace_root: &Path, path: &str) -> PathBuf {
 // Cached recover + optimize
 // =========================================================================
 
+/// One validated package and the immutable catalogue derived from it.
+struct RecoveryPreparation<'a> {
+    package: &'a crate::prime::typer::ValidatedPrimePackage,
+    inputs: PackageKeyInputs,
+}
+
+impl<'a> RecoveryPreparation<'a> {
+    fn new(package: &'a crate::prime::typer::ValidatedPrimePackage) -> Self {
+        Self {
+            package,
+            inputs: PackageKeyInputs::from_package(package.package()),
+        }
+    }
+
+    fn modules(&self) -> impl Iterator<Item = (&str, RecoveryModule<'_>)> {
+        self.package.modules().map(|(path, module)| {
+            (
+                path,
+                RecoveryModule {
+                    module,
+                    inputs: &self.inputs,
+                },
+            )
+        })
+    }
+}
+
+/// Recovery cannot pair one module with another package's catalogue.
+#[derive(Clone, Copy)]
+pub(crate) struct RecoveryModule<'a> {
+    module: crate::prime::typer::ValidatedPrimeModule<'a>,
+    inputs: &'a PackageKeyInputs,
+}
+
+impl<'a> RecoveryModule<'a> {
+    pub(crate) fn module(self) -> &'a Module<Prime> {
+        self.module.module()
+    }
+
+    pub(crate) fn inputs(self) -> &'a PackageKeyInputs {
+        self.inputs
+    }
+}
+
 /// Run structural recovery + the optimization catalog over `package`,
 /// consulting `cache` to skip per-module work when the cached
 /// `Module<Enriched>` is fresh.
@@ -922,7 +983,7 @@ fn absolutize(workspace_root: &Path, path: &str) -> PathBuf {
 /// key construction entirely. On the active variant the observable
 /// output is byte-identical; only the timing changes.
 pub fn recover_and_optimize_package_cached(
-    package: &crate::pass::resolve::Package<Prime>,
+    package: &crate::prime::typer::ValidatedPrimePackage,
     cache: &EnrichedCache,
 ) -> crate::pass::resolve::Package<Enriched> {
     // Side tables: built once per package, immutable for the
@@ -930,18 +991,19 @@ pub fn recover_and_optimize_package_cached(
     // `optimize` build their own internal `Ctx` from the package;
     // `PackageKeyInputs` mirrors both, so the cache key reflects
     // exactly the inputs the un-cached path reads.
-    let key_inputs = PackageKeyInputs::from_package(package);
+    let prepared = RecoveryPreparation::new(package);
 
     if !cache.is_enabled() {
-        return recover_and_optimize_package_without_cache(package, &key_inputs);
+        return recover_and_optimize_package_without_cache(&prepared);
     }
 
     // Per-module driver: hit → load cached `Module<Enriched>`;
     // miss → recover + optimize, store, return.
     let entries: Vec<(String, crate::pass::resolve::ModuleEntry<Enriched>)> =
-        crate::maybe_into_par_iter!(package.modules().collect::<Vec<_>>())
-            .map(|(path, entry)| {
-                let key = EnrichedCacheKey::from_module(&entry.module, &key_inputs);
+        crate::maybe_into_par_iter!(prepared.modules().collect::<Vec<_>>())
+            .map(|(path, input)| {
+                let entry = input.module.entry();
+                let key = EnrichedCacheKey::from_module(input.module(), input.inputs());
                 let module = match cache.lookup(&key) {
                     Some(m) => {
                         #[cfg(test)]
@@ -959,14 +1021,13 @@ pub fn recover_and_optimize_package_cached(
                         let recovered_start = probe_enabled().then(Instant::now);
                         let recovered =
                             crate::pass::structural_recovery::recover_module_with_package_inputs(
-                                &entry.module,
-                                &key_inputs,
+                                input,
                             );
                         let recovered_duration = recovered_start.map(|start| start.elapsed());
                         let optimize_start = probe_enabled().then(Instant::now);
                         let optimized = crate::pass::optimize::optimize_module_with_package_inputs(
                             recovered,
-                            &key_inputs,
+                            input.inputs(),
                         );
                         let optimize_duration = optimize_start.map(|start| start.elapsed());
                         cache.store(&key, &optimized);
@@ -987,7 +1048,7 @@ pub fn recover_and_optimize_package_cached(
                     }
                 };
                 (
-                    (*path).to_owned(),
+                    path.to_owned(),
                     crate::pass::resolve::ModuleEntry::<Enriched> {
                         file_path: entry.file_path.clone(),
                         module,
@@ -1007,8 +1068,8 @@ pub fn recover_and_optimize_package_cached(
         package
             .package_file()
             .map(|entry| crate::pass::resolve::PackageFileEntry::<Enriched> {
-                file_path: entry.file_path.clone(),
-                package_name: entry.package_name.clone(),
+                file_path: entry.entry().file_path.clone(),
+                package_name: entry.entry().package_name.clone(),
                 package_file: {
                     // Package-file body is not in the cache's scope —
                     // it's run uncached every time. The single-shot
@@ -1017,7 +1078,7 @@ pub fn recover_and_optimize_package_cached(
                     // `RecoveryCtx`, mirroring the un-cached package
                     // path's behavior for the package-file slice.
                     let recovered_package_file =
-                        crate::pass::structural_recovery::recover_package_file(&entry.package_file);
+                        crate::pass::structural_recovery::recover_package_file(entry);
                     crate::pass::optimize::optimize_package_file(recovered_package_file)
                 },
             });
@@ -1026,22 +1087,20 @@ pub fn recover_and_optimize_package_cached(
 }
 
 fn recover_and_optimize_package_without_cache(
-    package: &crate::pass::resolve::Package<Prime>,
-    key_inputs: &PackageKeyInputs,
+    prepared: &RecoveryPreparation<'_>,
 ) -> crate::pass::resolve::Package<Enriched> {
     let entries: Vec<(String, crate::pass::resolve::ModuleEntry<Enriched>)> =
-        crate::maybe_into_par_iter!(package.modules().collect::<Vec<_>>())
-            .map(|(path, entry)| {
+        crate::maybe_into_par_iter!(prepared.modules().collect::<Vec<_>>())
+            .map(|(path, input)| {
+                let entry = input.module.entry();
                 let recovered =
-                    crate::pass::structural_recovery::recover_module_with_package_inputs(
-                        &entry.module,
-                        key_inputs,
-                    );
+                    crate::pass::structural_recovery::recover_module_with_package_inputs(input);
                 let optimized = crate::pass::optimize::optimize_module_with_package_inputs(
-                    recovered, key_inputs,
+                    recovered,
+                    input.inputs(),
                 );
                 (
-                    (*path).to_owned(),
+                    path.to_owned(),
                     crate::pass::resolve::ModuleEntry::<Enriched> {
                         file_path: entry.file_path.clone(),
                         module: optimized,
@@ -1053,14 +1112,15 @@ fn recover_and_optimize_package_without_cache(
     let modules: std::collections::BTreeMap<String, crate::pass::resolve::ModuleEntry<Enriched>> =
         entries.into_iter().collect();
     let package_file_entry =
-        package
+        prepared
+            .package
             .package_file()
             .map(|entry| crate::pass::resolve::PackageFileEntry::<Enriched> {
-                file_path: entry.file_path.clone(),
-                package_name: entry.package_name.clone(),
+                file_path: entry.entry().file_path.clone(),
+                package_name: entry.entry().package_name.clone(),
                 package_file: {
                     let recovered_package_file =
-                        crate::pass::structural_recovery::recover_package_file(&entry.package_file);
+                        crate::pass::structural_recovery::recover_package_file(entry);
                     crate::pass::optimize::optimize_package_file(recovered_package_file)
                 },
             });
@@ -1120,12 +1180,12 @@ mod tests {
     }
 
     #[cfg(all(feature = "surface", feature = "prime"))]
-    fn prime_package(source: &str) -> crate::pass::resolve::Package<Prime> {
+    fn prime_package(source: &str) -> crate::prime::typer::ValidatedPrimePackage {
         prime_package_many(&[("main.kio", source)])
     }
 
     #[cfg(all(feature = "surface", feature = "prime"))]
-    fn prime_package_many(sources: &[(&str, &str)]) -> crate::pass::resolve::Package<Prime> {
+    fn prime_package_many(sources: &[(&str, &str)]) -> crate::prime::typer::ValidatedPrimePackage {
         let parsed = sources
             .iter()
             .map(|(path, source)| {
@@ -1243,7 +1303,7 @@ mod tests {
     #[cfg(all(feature = "surface", feature = "prime"))]
     fn typed_module_key_ignores_other_consumers_side_tables() {
         let package = prime_package("module main;");
-        let module = &package.module("main").expect("main module").module;
+        let module = package.module("main").expect("main module").module();
         let base = empty_inputs();
         let base_key = EnrichedCacheKey::from_module(module, &base);
 
@@ -1268,7 +1328,7 @@ mod tests {
                newtype Right : Left { constructor make_right; projector read_right; }; \
              }",
         );
-        let inputs = PackageKeyInputs::from_package(&package);
+        let inputs = PackageKeyInputs::from_package(package.package());
         assert_eq!(
             inputs.newtype_members.keys().collect::<Vec<_>>(),
             vec![&nt("main", "Left"), &nt("main", "Right")]
@@ -1292,7 +1352,7 @@ mod tests {
                 "module b; newtype Foo : . { constructor make_b; projector un_b; };",
             ),
         ]);
-        let inputs = PackageKeyInputs::from_package(&package);
+        let inputs = PackageKeyInputs::from_package(package.package());
 
         assert_eq!(
             inputs.newtype_members.get(&nt("a", "Foo")),
@@ -1321,7 +1381,7 @@ mod tests {
             ("consumer.kio", "module consumer; import provider as p;"),
             ("unrelated.kio", "module unrelated;"),
         ]);
-        let inputs = PackageKeyInputs::from_package(&package);
+        let inputs = PackageKeyInputs::from_package(package.package());
 
         assert_eq!(
             inputs.newtype_members.get(&ntq("consumer", "p", "Box")),
@@ -1338,20 +1398,75 @@ mod tests {
 
     #[test]
     #[cfg(all(feature = "surface", feature = "prime"))]
+    fn recovery_preparation_keeps_each_owners_module_and_catalogue_together() {
+        let consumer = ("consumer.kio", "module consumer; import provider as p;");
+        let first = prime_package_many(&[
+            (
+                "provider.kio",
+                "module provider; pub newtype Box : . { pub constructor wrap; pub projector unwrap; };",
+            ),
+            consumer,
+        ]);
+        let second = prime_package_many(&[
+            (
+                "provider.kio",
+                "module provider; pub newtype Box : . { pub constructor make; pub projector read; };",
+            ),
+            consumer,
+        ]);
+        let mut keys = Vec::new();
+        for (package, constructor, projector) in
+            [(&first, "wrap", "unwrap"), (&second, "make", "read")]
+        {
+            let prepared = RecoveryPreparation::new(package);
+            let (_, input) = prepared
+                .modules()
+                .find(|(path, _)| *path == "consumer")
+                .expect("prepared consumer");
+            assert!(std::ptr::eq(
+                input.module(),
+                package.module("consumer").unwrap().module(),
+            ));
+            assert!(std::ptr::eq(input.inputs(), &prepared.inputs));
+            assert_eq!(
+                input
+                    .inputs()
+                    .newtype_members()
+                    .get(&ntq("consumer", "p", "Box")),
+                Some(&member_for("provider", "Box", constructor, projector)),
+            );
+            keys.push(EnrichedCacheKey::from_module(
+                input.module(),
+                input.inputs(),
+            ));
+        }
+        assert_eq!(
+            postcard::to_allocvec(first.module("consumer").unwrap().module()).unwrap(),
+            postcard::to_allocvec(second.module("consumer").unwrap().module()).unwrap(),
+            "identical consumer ASTs do not identify their provider's catalogue",
+        );
+        assert_ne!(keys[0], keys[1]);
+    }
+
+    #[test]
+    #[cfg(all(feature = "surface", feature = "prime"))]
     #[should_panic(expected = "enriched package inputs select one exact nominal per lexical head")]
     fn recovery_rejects_inconsistent_nominal_inputs() {
         let package = prime_package_many(&[(
             "main.kio",
             "module main; newtype Box : . { constructor wrap; projector unwrap; };",
         )]);
-        let mut inputs = PackageKeyInputs::from_package(&package);
-        inputs.newtype_members.insert(
+        let mut prepared = RecoveryPreparation::new(&package);
+        prepared.inputs.newtype_members.insert(
             nt("main", "Box"),
             member_for("other", "Box", "wrap", "unwrap"),
         );
         crate::pass::structural_recovery::recover_module_with_package_inputs(
-            &package.module("main").expect("main module").module,
-            &inputs,
+            prepared
+                .modules()
+                .find(|(path, _)| *path == "main")
+                .expect("main module")
+                .1,
         );
     }
 
@@ -1372,8 +1487,8 @@ mod tests {
             ),
         ];
         let package = prime_package_many(&sources);
-        let inputs = PackageKeyInputs::from_package(&package);
-        let consumer = &package.module("consumer").unwrap().module;
+        let inputs = PackageKeyInputs::from_package(package.package());
+        let consumer = package.module("consumer").unwrap().module();
         let original_key = EnrichedCacheKey::from_module(consumer, &inputs);
         let unrestricted = prime_package_many(&[
             (
@@ -1384,7 +1499,10 @@ mod tests {
         ]);
         assert_ne!(
             original_key,
-            EnrichedCacheKey::from_module(consumer, &PackageKeyInputs::from_package(&unrestricted))
+            EnrichedCacheKey::from_module(
+                consumer,
+                &PackageKeyInputs::from_package(unrestricted.package())
+            )
         );
 
         let direct = crate::pass::optimize::optimize_package(
@@ -1401,7 +1519,7 @@ mod tests {
                 assert_eq!(&entry.module, &candidate.module(path).unwrap().module);
             }
         }
-        let routed = crate::pass::recover_to_low::lower(&hit);
+        let routed = crate::pass::route::route_package(&hit);
         let crate::ast::Item::FnDef(factory) = &routed.module("provider").unwrap().module.items[0]
         else {
             panic!("factory declaration");

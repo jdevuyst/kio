@@ -1,0 +1,7 @@
+package main
+
+import artifact "driver/artifact"
+
+func privatePayload(pkg *artifact.Package[int, int, any]) {
+	_ = pkg.Api.MakeSecret(11, 17).body
+}

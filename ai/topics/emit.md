@@ -7,7 +7,7 @@ A backend emitter ("lowering") translates the post-typecheck IR into idiomatic s
 ## Where the code lives
 
 - [`kio-rs/src/backends/mod.rs`](../../kio-rs/src/backends/mod.rs) — the framework coordinator. Read its module docstring first: it defines the `Profile` descriptor (what the host language natively expresses — named records, sums-with-payload, pattern matching, GC, …), the `RuntimeSupport` convention (`None` vs `EmbeddedFile`), the **per-module `par_iter` fan-out** every `lower_package_*` entry point must follow (modules lower in parallel, concatenated in deterministic `BTreeMap`-order for byte-stable output), and the runtime-support-library convention.
-- `kio-rs/src/backends/<lang>/` — one submodule per shipping backend (`js/`, `ts/`, `rust/`, `go/`, `swift/`, `haskell/`, `java/`, `python/`); the backend-neutral structural machinery they share sits beside them in [`skin.rs`](../../kio-rs/src/backends/skin.rs), [`structural.rs`](../../kio-rs/src/backends/structural.rs), [`reconstruct.rs`](../../kio-rs/src/backends/reconstruct.rs) (see § Runtime model), and [`namespace.rs`](../../kio-rs/src/backends/namespace.rs) (the `namespace` build-block key's per-backend default derivation and validation). Each backend ships a `profile()` plus `lower_*` entry points; two worked examples:
+- `kio-rs/src/backends/<lang>/` — one submodule per shipping backend (`js/`, `ts/`, `rust/`, `go/`, `swift/`, `haskell/`, `java/`, `python/`); the backend-neutral structural machinery they share sits beside them in [`skin.rs`](../../kio-rs/src/backends/skin.rs), [`product_rebuild.rs`](../../kio-rs/src/backends/product_rebuild.rs), [`reconstruct.rs`](../../kio-rs/src/backends/reconstruct.rs) (see § Runtime model), and [`namespace.rs`](../../kio-rs/src/backends/namespace.rs) (the `namespace` build-block key's per-backend default derivation and validation). Each backend ships a `profile()` plus `lower_*` entry points; two worked examples:
   - [`js/`](../../kio-rs/src/backends/js/) — `emit::lower_package_to_factory_module(&Package<Routed>, ns)` fans out per module, emitting a single branded `create<Handle>(host)` factory ES module (`<Handle>` = PascalCase of the artifact stem `ns`; the ts arm reuses this with the same `ns`). `RuntimeSupport::None`: dynamic typing makes every helper a one-liner the per-variant emit inlines.
   - [`rust/`](../../kio-rs/src/backends/rust/) — `emit::lower_package` / `lower_package_with_options(&Package<Routed>)` produces a `RustCrate` (file-name → content map). `runtime.rs` is the embedded `src/__kio_runtime.rs`; `thread_safety.rs` holds the send/sync classification. The body is **erased** behind opaque `KioStoredValue` tokens; the typed FFI skin consumes the prepared facade catalog to emit the sealed `KioType` marker algebra, exact nominal and application carriers, the host trait, and marker-directed conversions in `emit.rs`. `RuntimeSupport::EmbeddedFile` owns the raw default `Rc<dyn Any>` operations and their thread-safe `Arc<dyn Any + Send + Sync>` transform; public facade code never performs an unchecked downcast.
 - [`kio-rs/src/backends/kio_prime.rs`](../../kio-rs/src/backends/kio_prime.rs) — the Kio' backend (`kio build` selects it via `kio_prime::emit_module` / `emit_package_file`): rebuilds `Module<Prime>` as surface and pretty-prints. Not an FFI backend — its emitted `.kio` is what `ci/infra/kio-prime-check-rs` verifies.
@@ -20,7 +20,7 @@ A new backend plugs in as a sibling submodule: a `profile()` plus the `lower_*` 
 Emitters run at the **tail** of the pipeline (see [`kio-rs/src/pass/mod.rs`](../../kio-rs/src/pass/mod.rs) for the full phase list). The full front-end checks `Lowered`, substitutes its completion records into Prime, validates the assembled package with the standalone Prime checker, and canonicalizes its statement spine. The Kio' front-end reaches the same validated, canonical Prime boundary directly. The shared backend-agnostic preparation for host emitters is:
 
 - [`pass::structural_recovery`](../../kio-rs/src/pass/structural_recovery.rs) plus [`pass::optimize`](../../kio-rs/src/pass/optimize.rs) — `Prime → Enriched` and backend-neutral optimization: collapses right-leaning intrinsic chains into the n-ary `Expr::Enriched*` structural nodes (records / tuples / projections / sums / match / conditional), then optimizes that enriched package. The combined result is the enriched-cache boundary.
-- [`pass::recover_to_low`](../../kio-rs/src/pass/recover_to_low.rs) — `Enriched → Routed`: classifies every call site into an `Expr::Low*` variant (host fn, module fn, qualified module fn, closure, the newtype constructor / projector variants; indirect-call, one-binder `LowTypeApplication`, `__absurd__`), with mangled names pre-resolved and type-args pre-split from value-args. A direct call's adjacent leading binders may remain on that call's `type_args`; a standalone or computed type elimination is one nested `LowTypeApplication` per binder. Neither shape may cross a value-application boundary.
+- [`pass::route`](../../kio-rs/src/pass/route.rs) — `Enriched → Routed`: classifies every call site into an `Expr::Low*` variant (host fn, module fn, qualified module fn, closure, the newtype constructor / projector variants; indirect-call, one-binder `LowTypeApplication`, `__absurd__`), with mangled names pre-resolved and type-args pre-split from value-args. A direct call's adjacent leading binders may remain on that call's `type_args`; a standalone or computed type elimination is one nested `LowTypeApplication` per binder. Neither shape may cross a value-application boundary.
 - [`pass::capabilities`](../../kio-rs/src/pass/capabilities.rs) — annotates the `Routed` IR (escape / lifetime annotations the Rust backend consumes).
 
 The Kio' emitter consumes validated, canonical `Prime` directly. A host emitter consumes `Routed`, whose computations came from that strict Kio' and have been structurally recovered, optimized, routed, and annotated. Consequences:
@@ -151,9 +151,57 @@ For a type-erased dynamic runtime, verify
 by tracing emitted direct and escaped/computed generic calls: generic actual
 types are not passed as runtime values or inferred from opaque payloads to
 satisfy the static skin. Nullary computation stages still preserve effects.
-Compiler-prepared shape/protection descriptors and nominal seals are not
+Compiler-prepared representation descriptors and nominal seals are not
 generic-argument reification; retained type syntax alone does not prove a
 violation. Inspect what the runtime consumes, not just what the artifact stores.
+
+### Conversion placement and cost
+
+Classify each conversion by the value's direction, not who initiated the call.
+A host call into Kio has incoming arguments and outgoing results; a Kio call
+into the host reverses those roles. Function-valued arguments and results carry
+their own argument/result obligations when invoked later. Apply the universal
+[shared-data rule](../../specs/backends/README.md#10-shared-data-stays-unchanged):
+Kio data stays unchanged, and reading its fields has no effects. Do not add
+defensive snapshots or mutation/provenance tracking merely to accommodate host
+code violating that rule. Opaque host state and explicit host operations remain
+separate; a mutable host box does not make a contained Kio tuple mutable.
+Apply the common [host-value responsibility](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types):
+hosts supply correctly typed values; generated packages do not recursively
+validate them. Do not add general runtime type validators or callable wrappers
+whose only purpose is eager validation. Keep conversions needed by valid
+programs, native casts and authorized opaque-payload access; generic erasure
+does not make those operations unnecessary. The public guarantees and
+host-author obligations belong in the
+backend spec and matching host guide, per
+[the backend-spec requirements](specs.md#what-goes-into-a-backend-spec).
+
+Trace concrete views recovered after generic specialization or opaque storage,
+including values that escape again before invocation. Do not inspect an opaque
+container to invent a conversion. Compare a direct use with an equivalent use
+through an ordinary Kio helper: an incidental helper wrapper must not be the
+only thing enforcing a required host-crossing guarantee. Conversely, removing
+that wrapper is unsafe until its load-bearing obligations are preserved.
+
+Distinguish required conversion from conservative placement on internal calls.
+For each proposed removal, identify its actual representation or access
+obligation and establish why it is unnecessary or enforced elsewhere,
+preserving host effects, callable stages and stack safety.
+Measure metadata preparation separately from per-value traversals, copies and
+callable dispatch: a warm plan cache does not make those costs disappear.
+Diagnostic runs that disable conversions or access checks can attribute cost,
+but an unchanged benign result does not establish semantic safety. Prefer
+shared semantic planning; host representations may require different concrete
+conversions without changing the shared-data rule.
+
+Immutability does not establish that an invocation is effect-free. Reuse
+[shared callable-purity analysis](#callable-purity-and-dispatch-recovery) when
+an optimization depends on no intervening host calls, accounting for supplied
+callbacks and any host code invoked by boundary operations. Neither that proof
+nor the shared-data rule validates a nominal input, removes an actual callable
+stage, or permits skipping a required effectful host conversion or adapter call.
+A declaration's `pure`
+marker is not a blanket conversion exemption.
 
 ### Backend evidence boundary
 
@@ -493,6 +541,9 @@ complete owner's established digest spelling. Rust uses it for private body
 shapes; Java uses it for exact public structural shells and forall interfaces.
 The helper does not choose identity bytes or merge collision policies: Rust's
 private claim schedule and Java's public collision rejection stay separate.
+Apply target limits to the complete emitted filesystem or linker identity,
+including enclosing names and fixed companion suffixes; bounding individual
+components does not bound the whole.
 Java's ordinary first-class stage heads use the shared ValuePlan readable
 presentation of the same factored identity (`KioForall_Type_Fn_T0_T0` for a
 polymorphic identity). The exact identity and readable spelling share one

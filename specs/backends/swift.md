@@ -463,6 +463,9 @@ the Swift instantiations:
 
 ## FFI surface
 
+Host values follow the shared
+[declared-type responsibility](README.md#11-host-values-satisfy-their-declared-types).
+
 ### Atomic types
 
 An exact nullary host type crosses as the corresponding `<Handle>Host`
@@ -478,6 +481,11 @@ are rejected by Kio typing.
 `Void` is awkward to carry nominally through the erased `Any` body).
 
 ### Structural and nominal types
+
+These values follow the shared
+[unchanged-data rule](README.md#10-shared-data-stays-unchanged). Value-type
+shells do not remove that obligation for nested referenced Kio data; opaque
+host state retains its declared operations.
 
 The skin consumes the shared prepared boundary transaction
 ([`README.md` § Structural FFI shape conventions](README.md)). A compound
@@ -521,6 +529,13 @@ publishes `<slot>Implementation` as a stable alias for its companion protocol,
 so host code can construct the callable without reconstructing its encoded
 type-shape name. Each selected binder publishes its exact residual as
 `<slot>_typeRet`; subsequent binder and function aliases extend that path.
+Callable descendants of structural slots extend the path with `_fieldN` for
+product fields, `_armN` for sum alternatives, and `_typeargN` for exposed type
+arguments. Indices are zero-based along the canonical right-nested product or
+sum spine and canonical type-argument order; a nested left child starts another
+path segment. Only callable descendants receive these additional aliases;
+opaque nominal payloads are not traversed. Their `Implementation`, type-stage
+and function aliases extend the same path.
 
 ### Carve-outs
 

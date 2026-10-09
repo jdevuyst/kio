@@ -1,0 +1,13 @@
+package rec_group_sharing;
+
+build {
+  cache ();
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  api
+}

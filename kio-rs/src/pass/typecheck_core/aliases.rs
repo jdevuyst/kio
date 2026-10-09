@@ -5898,6 +5898,30 @@ mod tests {
     }
 
     #[test]
+    fn materialized_free_names_restore_scope_before_sibling() {
+        let ty = product(forall("X", path("X")), path("X"));
+        let mut bound = HashMap::new();
+        let mut free = HashSet::new();
+
+        AliasMaterializer::<Lowered>::collect_materialized_free_names(&ty, &mut bound, &mut free);
+
+        assert_eq!(free, HashSet::from(["X".to_owned()]));
+        assert!(bound.is_empty());
+    }
+
+    #[test]
+    fn materialized_free_names_restore_repeated_binder_depth() {
+        let ty = forall("X", product(forall("X", path("X")), path("X")));
+        let mut bound = HashMap::new();
+        let mut free = HashSet::new();
+
+        AliasMaterializer::<Lowered>::collect_materialized_free_names(&ty, &mut bound, &mut free);
+
+        assert!(free.is_empty());
+        assert!(bound.is_empty());
+    }
+
+    #[test]
     fn capture_avoiding_alias_materialization_is_linear_in_unique_output() {
         const DEPTH: usize = 128;
 

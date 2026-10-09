@@ -60,7 +60,7 @@
 //! - [`Enriched`] — structural-recovery IR. Intrinsic chains are recovered into
 //!   n-ary structural nodes, and the backend-neutral optimizer consumes and
 //!   returns this phase.
-//! - [`Routed`] — post-`recover_to_low`. Calls and value paths carry their
+//! - [`Routed`] — post-`route`. Calls and value paths carry their
 //!   resolved backend-routing classification; capability passes annotate this
 //!   phase before host emission.
 //!
@@ -102,6 +102,83 @@ pub struct DocComment {
     /// Source span covering the entire doc-comment block, from the
     /// leading `///` of the first line to the end of the last line.
     pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DelimitedTrivia {
+    pub closing: Vec<crate::pass::lexer::Trivia>,
+}
+
+impl DelimitedTrivia {
+    pub fn from_closing(closing: Vec<crate::pass::lexer::Trivia>) -> Option<Box<Self>> {
+        closing
+            .iter()
+            .any(|trivia| matches!(trivia, crate::pass::lexer::Trivia::LineComment { .. }))
+            .then(|| Box::new(Self { closing }))
+    }
+}
+
+/// Erasing punctuation joins its adjacent gaps, not their newline counts.
+pub(crate) fn append_source_trivia(
+    before: &mut Vec<crate::pass::lexer::Trivia>,
+    after: Vec<crate::pass::lexer::Trivia>,
+) {
+    use crate::pass::lexer::Trivia;
+    let left = before
+        .iter()
+        .rev()
+        .take_while(|t| matches!(t, Trivia::Newline))
+        .count();
+    let right = after
+        .iter()
+        .take_while(|t| matches!(t, Trivia::Newline))
+        .count();
+    before.truncate(before.len() - left);
+    before.extend(std::iter::repeat_n(Trivia::Newline, left.max(right)));
+    before.extend(after.into_iter().skip(right));
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SignatureTriviaPosition {
+    BeforeGroup,
+    InsideOpen,
+    InsideClose,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SignatureTriviaAnchor {
+    pub group: usize,
+    pub position: SignatureTriviaPosition,
+    pub trivia: Vec<crate::pass::lexer::Trivia>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SignatureTrivia {
+    pub anchors: Vec<SignatureTriviaAnchor>,
+}
+
+impl SignatureTrivia {
+    pub fn push(
+        &mut self,
+        group: usize,
+        position: SignatureTriviaPosition,
+        trivia: Vec<crate::pass::lexer::Trivia>,
+    ) {
+        if trivia
+            .iter()
+            .any(|trivia| matches!(trivia, crate::pass::lexer::Trivia::LineComment { .. }))
+        {
+            self.anchors.push(SignatureTriviaAnchor {
+                group,
+                position,
+                trivia,
+            });
+        }
+    }
+
+    pub fn into_source(self) -> Option<Box<Self>> {
+        (!self.anchors.is_empty()).then(|| Box::new(self))
+    }
 }
 
 // ---- Uninhabited witness with serde derive --------------------------------
@@ -180,7 +257,7 @@ impl ExpressionOccurrence {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = NEXT
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
                 next.checked_add(1)
             })
             .expect("expression occurrence identity exhausted");
@@ -752,8 +829,8 @@ where
     <Q::LitAnnotation as LitAnnotationExt<Q>>::build(resolved, span)
 }
 
-/// Marker trait for AST phases. Each associated type names the
-/// per-variant extension whose Rust type controls whether the variant
+/// Marker trait for AST phases. Associated types select field representations
+/// and per-variant extensions. A variant's extension controls whether it
 /// is constructible at this phase: `()` admits the variant,
 /// [`Never`] forbids it (the compiler refuses to
 /// construct a value, and `match` arms over a forbidden variant
@@ -765,9 +842,16 @@ where
 /// serde bounds let the enriched-IR cache round-trip a
 /// `Module<Enriched>` through `postcard`; every front-end phase
 /// instantiates the witnesses with serde-derivable concrete types
-/// (`()`, `bool`, `usize`, `NodeId`, `Vec<Trivia>`, `Never`)
+/// (`Expr<Self>`, `()`, `bool`, `usize`, `NodeId`, `Vec<Trivia>`, `Never`)
 /// so the bound is satisfied without per-phase impls.
 pub trait Phase: Sized {
+    type FnBody: Clone
+        + std::fmt::Debug
+        + PartialEq
+        + Eq
+        + serde::Serialize
+        + serde::de::DeserializeOwned;
+
     /// Neutral block calls project to ordinary Surface expressions before
     /// desugaring; later phases cannot retain their syntax or item lists.
     type ExprBlockSyntax: Clone
@@ -940,7 +1024,7 @@ pub trait Phase: Sized {
         + serde::Serialize
         + serde::de::DeserializeOwned;
     /// Witness for the **Low-IR** `Expr` variants the
-    /// [`crate::pass::recover_to_low::lower`] pass introduces:
+    /// [`crate::pass::route::route_package`] pass introduces:
     /// `Expr::LowHostCall`, `Expr::LowModuleCall`,
     /// `Expr::LowQualifiedModuleCall`,
     /// `Expr::LowQualifiedNewtypeMember`, `Expr::LowNewtypeCtor`,
@@ -966,7 +1050,7 @@ pub trait Phase: Sized {
         + serde::de::DeserializeOwned;
     /// Witness for the surface-residual `Expr::Call` / `Expr::Path` variants —
     /// the two forms the
-    /// [`crate::pass::recover_to_low::lower`] pass classifies away. At every
+    /// [`crate::pass::route::route_package`] pass classifies away. At every
     /// pre-`Routed` phase the witness is `()` (the variants are
     /// constructible exactly as before). At [`Routed`] the witness is
     /// [`Never`]: the lower pass has rewritten every call and path into one of
@@ -1123,6 +1207,22 @@ pub trait Phase: Sized {
     /// phase-changing walkers construct it without manufacturing
     /// data.
     type LeadingTrivia: Clone
+        + std::fmt::Debug
+        + PartialEq
+        + Eq
+        + Default
+        + serde::Serialize
+        + serde::de::DeserializeOwned;
+
+    /// Delimiter and signature anchors exist only while source is formatted.
+    type SourceDelimitedTrivia: Clone
+        + std::fmt::Debug
+        + PartialEq
+        + Eq
+        + Default
+        + serde::Serialize
+        + serde::de::DeserializeOwned;
+    type SourceSignatureTrivia: Clone
         + std::fmt::Debug
         + PartialEq
         + Eq
@@ -1335,7 +1435,9 @@ pub struct Capabilities {
 /// Sibling annotation to [`Capabilities`] on [`Expr::FnExpr`]; the
 /// framework is shaped to admit further annotations later without
 /// restructuring.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
+)]
 pub enum Lifetime {
     /// Conservative default: assume the fn-typed slot's value may
     /// escape; lower to whatever heap-managed form the backend
@@ -1362,7 +1464,7 @@ pub enum Lifetime {
 /// between heap-managed and unboxed forms; type-erased /
 /// dynamically-typed backends ignore it because their runtime
 /// handles representation uniformly.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct FnTypeCapabilities {
     /// Whether the slot's value may outlive its constructing stack
     /// frame. See [`Lifetime`].
@@ -1374,6 +1476,7 @@ pub struct FnTypeCapabilities {
 pub struct Surface;
 
 impl Phase for Surface {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = ();
     type ExpressionOccurrence = ();
     type CallDiagnostic = ();
@@ -1395,7 +1498,7 @@ impl Phase for Surface {
     type ExprEnriched = Never;
     type ExprEnrichedSynthTy = Never;
     // Low-IR variants are introduced by the post-`Enriched`
-    // resolution-lowering pass (`crate::pass::recover_to_low`); uninhabited
+    // resolution-lowering pass (`crate::pass::route`); uninhabited
     // at every pre-Routed phase.
     type ExprLow = Never;
     // Pre-Routed phases admit raw `Call` / `Path` / `FnExpr`.
@@ -1413,6 +1516,8 @@ impl Phase for Surface {
     type FnDefRetElided = bool;
     type FnPurity = Purity;
     type LeadingTrivia = Vec<crate::pass::lexer::Trivia>;
+    type SourceDelimitedTrivia = Option<Box<DelimitedTrivia>>;
+    type SourceSignatureTrivia = Option<Box<SignatureTrivia>>;
     // No capability-annotation pass runs at the surface phase.
     type FnExprCapabilities = ();
     type FnTypeCapabilities = ();
@@ -1425,6 +1530,7 @@ impl Phase for Surface {
 pub struct Desugared;
 
 impl Phase for Desugared {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
     type CallDiagnostic = RecLoopDiagnostic;
@@ -1455,6 +1561,8 @@ impl Phase for Desugared {
     type FnDefRetElided = bool;
     type FnPurity = Purity;
     type LeadingTrivia = ();
+    type SourceDelimitedTrivia = ();
+    type SourceSignatureTrivia = ();
     type FnExprCapabilities = ();
     type FnTypeCapabilities = ();
 }
@@ -1470,6 +1578,7 @@ impl Phase for Desugared {
 pub struct Lowered;
 
 impl Phase for Lowered {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ExpressionOccurrence;
     type CallDiagnostic = RecLoopDiagnostic;
@@ -1500,6 +1609,8 @@ impl Phase for Lowered {
     type FnDefRetElided = bool;
     type FnPurity = Purity;
     type LeadingTrivia = ();
+    type SourceDelimitedTrivia = ();
+    type SourceSignatureTrivia = ();
     type FnExprCapabilities = ();
     type FnTypeCapabilities = ();
 }
@@ -1516,6 +1627,7 @@ impl Phase for Lowered {
 pub struct UncheckedPrime;
 
 impl Phase for UncheckedPrime {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
     type CallDiagnostic = ();
@@ -1546,6 +1658,8 @@ impl Phase for UncheckedPrime {
     type FnDefRetElided = ();
     type FnPurity = Purity;
     type LeadingTrivia = ();
+    type SourceDelimitedTrivia = ();
+    type SourceSignatureTrivia = ();
     type FnExprCapabilities = ();
     type FnTypeCapabilities = ();
 }
@@ -1573,6 +1687,7 @@ impl Phase for UncheckedPrime {
 pub struct Prime;
 
 impl Phase for Prime {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ExpressionOccurrence;
     type CallDiagnostic = ();
@@ -1603,6 +1718,8 @@ impl Phase for Prime {
     type FnDefRetElided = ();
     type FnPurity = Purity;
     type LeadingTrivia = ();
+    type SourceDelimitedTrivia = ();
+    type SourceSignatureTrivia = ();
     type FnExprCapabilities = ();
     type FnTypeCapabilities = ();
 }
@@ -1626,6 +1743,7 @@ impl Phase for Prime {
 pub struct Enriched;
 
 impl Phase for Enriched {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
     type CallDiagnostic = ();
@@ -1658,13 +1776,15 @@ impl Phase for Enriched {
     type FnDefRetElided = ();
     type FnPurity = Purity;
     type LeadingTrivia = ();
+    type SourceDelimitedTrivia = ();
+    type SourceSignatureTrivia = ();
     // Capability annotations land at the Routed phase, not here.
     type FnExprCapabilities = ();
     type FnTypeCapabilities = ();
 }
 
 /// Post-`Enriched` host-emission phase produced by the
-/// resolution-lowering pass (`crate::pass::recover_to_low`). Admits
+/// resolution-lowering pass (`crate::pass::route`). Admits
 /// **exactly** what [`Enriched`] admits — every enriched structural
 /// variant carries through — *plus* the `Expr::Low*` family
 /// (`ExprLow = ()`), and *minus* `Expr::Call` / `Expr::Path`
@@ -1681,7 +1801,7 @@ impl Phase for Enriched {
 /// The name `Routed` is deliberately different from [`Lowered`] —
 /// the existing surface-pipeline `Lowered` is the typer-input phase
 /// that emerges from `desugar` + `label_elab`. `Routed` is the
-/// post-typer phase that emerges from `recover_to_low::lower`.
+/// post-typer phase that emerges from `route::route_package`.
 ///
 /// `Routed` is **not** a [`crate::pass::resolve::ResolvePhase`]: name
 /// resolution runs before type-checking, long before lowering, so
@@ -1690,6 +1810,7 @@ impl Phase for Enriched {
 pub struct Routed;
 
 impl Phase for Routed {
+    type FnBody = Expr<Self>;
     type ExprBlockSyntax = Never;
     type ExpressionOccurrence = ();
     type CallDiagnostic = ();
@@ -1727,6 +1848,8 @@ impl Phase for Routed {
     type FnDefRetElided = ();
     type FnPurity = Purity;
     type LeadingTrivia = ();
+    type SourceDelimitedTrivia = ();
+    type SourceSignatureTrivia = ();
     // The Routed phase is the one phase that holds annotation data
     // on an `Expr::FnExpr`. The per-module
     // [`crate::pass::capabilities::annotate_escapes`] pass fills the
@@ -1820,7 +1943,7 @@ pub struct Module<P: Phase = Surface> {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RecGroup<P: Phase = Surface> {
     pub loop_path: Vec<PathSegment>,
-    pub members: Vec<FnDef<P>>,
+    pub members: Vec<FnDef<P, ()>>,
     pub meta: Meta<P>,
 }
 
@@ -2728,9 +2851,9 @@ pub struct ModulePath {
 // ---- Declarations -------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct FnDef<P: Phase = Surface> {
+pub struct FnDef<P: Phase = Surface, PurityField = <P as Phase>::FnPurity> {
     pub vis: Visibility,
-    pub purity: P::FnPurity,
+    pub purity: PurityField,
     pub name: String,
     /// Ordered signature groups. Type-binder groups (`[A]`) and
     /// value-parameter groups (`(x: T)`) stay in source order; each
@@ -2746,10 +2869,26 @@ pub struct FnDef<P: Phase = Surface> {
     /// source shape. Narrows to `()` at [`Prime`] / [`Enriched`] —
     /// see [`Phase::FnDefRetElided`].
     pub ret_elided: P::FnDefRetElided,
-    pub body: Expr<P>,
+    pub body: P::FnBody,
     pub meta: Meta<P>,
     /// Doc-comment attached to this `fn` definition, if any.
     pub doc: Option<DocComment>,
+}
+
+impl FnDef<Surface, ()> {
+    pub(crate) fn into_impure(self) -> FnDef<Surface> {
+        FnDef {
+            vis: self.vis,
+            purity: Purity::Impure,
+            name: self.name,
+            sig: self.sig,
+            ret: self.ret,
+            ret_elided: self.ret_elided,
+            body: self.body,
+            meta: self.meta,
+            doc: self.doc,
+        }
+    }
 }
 
 /// One entry in a signature group. [`Signature`] keeps the group
@@ -3019,12 +3158,17 @@ impl<P: Phase> std::iter::FusedIterator for SignatureGroupRefs<'_, P> {}
 pub struct Signature<P: Phase = Surface> {
     pub params: Vec<SignatureParam<P>>,
     pub groups: Vec<SignatureGroupKind>,
+    pub source_trivia: P::SourceSignatureTrivia,
 }
 
 impl<P: Phase> Signature<P> {
     pub fn new(params: Vec<SignatureParam<P>>) -> Self {
         let groups = infer_signature_groups(&params);
-        Self { params, groups }
+        Self {
+            params,
+            groups,
+            source_trivia: Default::default(),
+        }
     }
 
     pub fn from_parts(params: Vec<SignatureParam<P>>, groups: Vec<SignatureGroupKind>) -> Self {
@@ -3034,7 +3178,11 @@ impl<P: Phase> Signature<P> {
             canonical_type_groups(groups)
         };
         debug_assert!(signature_groups_match(&params, &groups));
-        Self { params, groups }
+        Self {
+            params,
+            groups,
+            source_trivia: Default::default(),
+        }
     }
 
     pub fn from_groups(groups: Vec<SignatureGroup<P>>) -> Self {
@@ -3055,6 +3203,7 @@ impl<P: Phase> Signature<P> {
         Self {
             params,
             groups: group_kinds,
+            source_trivia: Default::default(),
         }
     }
 
@@ -3125,6 +3274,30 @@ impl<P: Phase> Signature<P> {
         self.canonical_group_refs()
             .filter(|group| matches!(group, SignatureGroupRef::Value(_)))
             .count()
+    }
+}
+
+impl Signature<Surface> {
+    pub(crate) fn from_source_groups(groups: Vec<(SignatureGroup, SignatureTrivia)>) -> Self {
+        let mut canonical_offset = 0;
+        let mut source_trivia = SignatureTrivia::default();
+        let mut plain_groups = Vec::with_capacity(groups.len());
+        for (group, trivia) in groups {
+            source_trivia
+                .anchors
+                .extend(trivia.anchors.into_iter().map(|mut anchor| {
+                    anchor.group += canonical_offset;
+                    anchor
+                }));
+            canonical_offset += match &group {
+                SignatureGroup::Type(params) => params.len(),
+                SignatureGroup::Value(_) => 1,
+            };
+            plain_groups.push(group);
+        }
+        let mut signature = Self::from_groups(plain_groups);
+        signature.source_trivia = source_trivia.into_source();
+        signature
     }
 }
 
@@ -4508,7 +4681,7 @@ pub enum Expr<P: Phase = Surface> {
     /// resolution.
     ///
     /// The `ext: P::ExprResolved` field gates this variant out at the
-    /// [`Routed`] phase, where `recover_to_low::lower` has classified
+    /// [`Routed`] phase, where `route::route_package` has classified
     /// every path into one of the `Expr::Low*` variants. Earlier markers with
     /// the `()` witness admit it, including the exported [`Surface`],
     /// [`Desugared`], [`Lowered`], [`UncheckedPrime`], [`Prime`], and
@@ -4544,6 +4717,7 @@ pub enum Expr<P: Phase = Surface> {
         diagnostic: P::CallDiagnostic,
         callee: Box<Expr<P>>,
         args: Vec<CallArg<P>>,
+        source_trivia: P::SourceDelimitedTrivia,
         meta: Meta<P>,
         ext: P::ExprResolved,
     },
@@ -4558,6 +4732,7 @@ pub enum Expr<P: Phase = Surface> {
         modes: Vec<RecCallMode>,
         callee: PathSegment,
         args: Vec<CallArg<P>>,
+        source_trivia: P::SourceDelimitedTrivia,
         meta: Meta<P>,
         ext: P::ExprRecCall,
     },
@@ -4582,7 +4757,7 @@ pub enum Expr<P: Phase = Surface> {
     /// The `caps: P::FnExprCapabilities` field carries the
     /// `captured_from` capability annotation the
     /// per-module [`crate::pass::capabilities::annotate_escapes`] pass
-    /// writes after `recover_to_low::lower` runs. At every pre-
+    /// writes after `route::route_package` runs. At every pre-
     /// [`Routed`] phase the field is `()`; at [`Routed`] it is a
     /// [`Capabilities`] bundle. The framework is shaped to admit
     /// additional annotations without restructuring. Its sibling
@@ -4668,6 +4843,7 @@ pub enum Expr<P: Phase = Surface> {
     Unit {
         #[serde(skip)]
         occurrence: P::ExpressionOccurrence,
+        source_trivia: P::SourceDelimitedTrivia,
         meta: Meta<P>,
     },
     /// String literal, post-escape. `annotation` is the trailing
@@ -4810,6 +4986,7 @@ pub enum Expr<P: Phase = Surface> {
         occurrence: P::ExpressionOccurrence,
         name: String,
         args: Vec<CallArg<P>>,
+        source_trivia: P::SourceDelimitedTrivia,
         form: UserElaboratorCallForm,
         meta: Meta<P>,
         ext: P::ExprElab,
@@ -4853,6 +5030,7 @@ pub enum Expr<P: Phase = Surface> {
         callee_segments: Vec<PathSegment>,
         callee_span: Span,
         args: Vec<CallArg<P>>,
+        source_trivia: P::SourceDelimitedTrivia,
         flavor: UfcsFlavor,
         /// `Some(bang_span)` for the elaborator-UFCS form
         /// (`r.>iso!(T)` etc.); `None` for regular UFCS
@@ -4882,7 +5060,8 @@ pub enum Expr<P: Phase = Surface> {
     /// Flat n-ary product, recovered from a right-leaning
     /// `__pair__` chain. `items.len() >= 2`. Semantically a value
     /// of the n-ary product type whose components are `items` in
-    /// order; the binary `__pair__` spine is gone. Introduced by
+    /// order; the binary `__pair__` spine is gone. Components evaluate
+    /// once from left to right and may have effects. Introduced by
     /// the structural-recovery pass; inhabited at [`Enriched`] and retained at
     /// [`Routed`] (`ExprEnriched = ()`), uninhabited at every front-end phase.
     EnrichedTuple {
@@ -5026,7 +5205,7 @@ pub enum Expr<P: Phase = Surface> {
     /// — both spell `self.__host.<name>(...)` in Rust and
     /// `__host__.<name>(...)` in JS.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowHostCall {
         #[serde(skip)]
@@ -5059,7 +5238,7 @@ pub enum Expr<P: Phase = Surface> {
     /// type-arg list; `args` is the value-arg list; `sig` is the
     /// callee's signature.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowModuleCall {
         #[serde(skip)]
@@ -5091,7 +5270,7 @@ pub enum Expr<P: Phase = Surface> {
     /// because the per-backend lowering may want to print the alias
     /// path verbatim in diagnostics or in source-aware emit modes.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowQualifiedModuleCall {
         #[serde(skip)]
@@ -5124,7 +5303,7 @@ pub enum Expr<P: Phase = Surface> {
     /// `crate::shapes::nominal::<module_path>::<newtype>`; the JS
     /// backend likewise uses `module_path` in its package namespace.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowQualifiedNewtypeMember {
         #[serde(skip)]
@@ -5148,7 +5327,7 @@ pub enum Expr<P: Phase = Surface> {
     /// `type_args[u..u+e]` for existentials); `payload` is the
     /// constructor argument.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowNewtypeCtor {
         #[serde(skip)]
@@ -5168,7 +5347,7 @@ pub enum Expr<P: Phase = Surface> {
     /// [`LowExpr::LowNewtypeCtor`]); `target` is the projected
     /// receiver.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowNewtypeProj {
         #[serde(skip)]
@@ -5191,7 +5370,7 @@ pub enum Expr<P: Phase = Surface> {
     /// invocation boundary (see `specs/backends/rust.md` § Higher-
     /// rank value parameters). Empty when the callee is monomorphic.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowClosureCall {
         #[serde(skip)]
@@ -5217,7 +5396,7 @@ pub enum Expr<P: Phase = Surface> {
     /// borrows it as `(&callee)(args)`; JS calls it directly as
     /// `callee(args)`).
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowIndirectCall {
         #[serde(skip)]
@@ -5235,7 +5414,7 @@ pub enum Expr<P: Phase = Surface> {
     /// representations erase: an erased backend forces one hidden stage,
     /// while a backend with visible type application specializes the value.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowTypeApplication {
         #[serde(skip)]
@@ -5256,7 +5435,7 @@ pub enum Expr<P: Phase = Surface> {
     /// pseudo-intrinsic that's neither a host nor module fn nor a
     /// closure.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowAbsurdCall {
         #[serde(skip)]
@@ -5270,7 +5449,7 @@ pub enum Expr<P: Phase = Surface> {
     /// call to a newtype projector with existentials, with an outer
     /// call passing the continuation. The fold from `LowIndirectCall`
     /// to this variant happens in
-    /// [`crate::pass::recover_to_low::lower`] so the per-backend
+    /// [`crate::pass::route::route_package`] so the per-backend
     /// lowering doesn't re-detect the shape. Static-typed families
     /// consume `type_args` for the projector's generic header
     /// (Rust's turbofish-aware emit; an OCaml or Haskell port would
@@ -5294,7 +5473,7 @@ pub enum Expr<P: Phase = Surface> {
     /// `continuation` is the corresponding value invoked with the unwrapped
     /// payload.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowCpsProjectorApply {
         #[serde(skip)]
@@ -5314,7 +5493,7 @@ pub enum Expr<P: Phase = Surface> {
     /// identifier reference (Rust: `<name>.clone()` if needed; JS:
     /// `<name>`).
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowBoundRef {
         #[serde(skip)]
@@ -5336,7 +5515,7 @@ pub enum Expr<P: Phase = Surface> {
     /// position closure-wrap can spell the dyn-Fn's return type
     /// without consulting a per-host-fn table.
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowHostFnValueRef {
         #[serde(skip)]
@@ -5358,7 +5537,7 @@ pub enum Expr<P: Phase = Surface> {
     /// .(Rust: an `Rc<dyn Fn(...) -> ...>` capturing `self`; JS: a
     /// JS function that delegates to the module-namespace method).
     ///
-    /// Introduced by [`crate::pass::recover_to_low::lower`]; inhabited only
+    /// Introduced by [`crate::pass::route::route_package`]; inhabited only
     /// at [`Routed`].
     LowModuleFnValueRef {
         #[serde(skip)]
@@ -6556,9 +6735,11 @@ where
             meta: Meta::new(value.span()),
         },
         Expr::Unit {
+            source_trivia: _,
             occurrence: _,
             meta,
         } => Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: convert_meta(meta),
         },
@@ -6692,6 +6873,7 @@ where
 pub fn convert_fn_def<P, Q>(d: &FnDef<P>) -> FnDef<Q>
 where
     P: Phase<
+            FnBody = Expr<P>,
             ExprTuple = Never,
             ExprFnPlaceholder = Never,
             ExprOpChain = Never,
@@ -6706,7 +6888,7 @@ where
             ExprLow = Never,
             TypeLabelSugar = Never,
         >,
-    Q: Phase<ExprResolved = ()>,
+    Q: Phase<ExprResolved = (), FnBody = Expr<Q>>,
     Q::FnDefRetElided: PhaseBridge<P::FnDefRetElided>,
     Q::FnPurity: PhaseBridge<P::FnPurity>,
 {
@@ -6852,6 +7034,7 @@ where
 pub fn convert_item<P, Q>(item: &Item<P>) -> Item<Q>
 where
     P: Phase<
+            FnBody = Expr<P>,
             ExprTuple = Never,
             ExprFnPlaceholder = Never,
             ExprOpChain = Never,
@@ -6872,7 +7055,7 @@ where
             ItemElaborator = Never,
             ItemLiteralAlias = Never,
         >,
-    Q: Phase<ExprResolved = ()>,
+    Q: Phase<ExprResolved = (), FnBody = Expr<Q>>,
     Q::FnDefRetElided: PhaseBridge<P::FnDefRetElided>,
     Q::FnPurity: PhaseBridge<P::FnPurity>,
 {
@@ -7017,6 +7200,7 @@ impl<P: Phase> Expr<P> {
             | Expr::RowLet { meta, .. }
             | Expr::Seq { meta, .. }
             | Expr::Unit {
+                source_trivia: _,
                 occurrence: _,
                 meta,
             }
@@ -7067,6 +7251,7 @@ impl<P: Phase> Expr<P> {
             | Expr::RowLet { meta, .. }
             | Expr::Seq { meta, .. }
             | Expr::Unit {
+                source_trivia: _,
                 occurrence: _,
                 meta,
             }
@@ -7123,6 +7308,7 @@ impl<P: Phase> Expr<P> {
         P: Phase<ExprResolved = ()>,
     {
         Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(callee),
@@ -7192,10 +7378,163 @@ impl<P: Phase> Item<P> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn source_comment_owners_roundtrip_and_erase_at_lowering() {
+        use super::{Expr, Item, Module};
+        let source = "module x; fn f( // signature\n) -> . { g(( // unit\n) // call\n) }";
+        let module = crate::pass::parser::parse(source).unwrap();
+        let Item::FnDef(function) = &module.items[0] else {
+            panic!("function")
+        };
+        assert!(function.sig.source_trivia.is_some());
+        let Expr::Call {
+            args,
+            source_trivia,
+            ..
+        } = &function.body
+        else {
+            panic!("call")
+        };
+        assert!(source_trivia.is_some());
+        let super::CallArg::Value(Expr::Unit { source_trivia, .. }) = &args[0] else {
+            panic!("unit")
+        };
+        assert!(source_trivia.is_some());
+        let json = serde_json::to_string(&module).unwrap();
+        let decoded: Module = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, module);
+        let bytes = postcard::to_allocvec(&module).unwrap();
+        let decoded: Module = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(decoded, module);
+        let plain = crate::pass::parser::parse("module x; fn f() -> . { g(()) }").unwrap();
+        let Item::FnDef(function) = &plain.items[0] else {
+            panic!("function")
+        };
+        assert!(function.sig.source_trivia.is_none());
+        let Expr::Call {
+            args,
+            source_trivia,
+            ..
+        } = &function.body
+        else {
+            panic!("call")
+        };
+        assert!(source_trivia.is_none());
+        let super::CallArg::Value(Expr::Unit { source_trivia, .. }) = &args[0] else {
+            panic!("unit")
+        };
+        assert!(source_trivia.is_none());
+
+        // Both Surface exits erase owners, not just their current contents.
+        let prime = crate::prime::lower::lower_module(module.clone()).unwrap();
+        let Item::FnDef(function) = &prime.items[0] else {
+            panic!("function")
+        };
+        let _: &() = &function.sig.source_trivia;
+        let Expr::Call {
+            args,
+            source_trivia,
+            ..
+        } = &function.body
+        else {
+            panic!("call")
+        };
+        let _: &() = source_trivia;
+        let super::CallArg::Value(Expr::Unit { source_trivia, .. }) = &args[0] else {
+            panic!("unit")
+        };
+        let _: &() = source_trivia;
+        #[cfg(feature = "surface")]
+        {
+            let desugared = crate::pass::desugar::desugar_module(module).unwrap();
+            let Item::FnDef(function) = &desugared.items[0] else {
+                panic!("function")
+            };
+            let _: &() = &function.sig.source_trivia;
+            let Expr::Call {
+                args,
+                source_trivia,
+                ..
+            } = &function.body
+            else {
+                panic!("call")
+            };
+            let _: &() = source_trivia;
+            let super::CallArg::Value(Expr::Unit { source_trivia, .. }) = &args[0] else {
+                panic!("unit")
+            };
+            let _: &() = source_trivia;
+        }
+    }
+
+    #[test]
+    fn recursive_member_serde_rejects_purity() {
+        use super::{FnDef, Item, RecGroup, Surface};
+        let source = "module x; rec(loop) { pub fn first[A](x: A) -> A { rec second(A, x) }; fn second[A](x: A) -> A { x } }";
+        let module = crate::pass::parser::parse(source).expect("recursive source");
+        let Item::RecGroup(group, _) = &module.items[0] else {
+            panic!("recursive group")
+        };
+        let _: &[FnDef<Surface, ()>] = &group.members;
+        let json = serde_json::to_value(group).expect("serialize recursive group");
+        assert!(json["members"][0]["purity"].is_null());
+        assert!(json["members"][1]["purity"].is_null());
+        let decoded: RecGroup = serde_json::from_value(json.clone()).expect("JSON roundtrip");
+        assert_eq!(&decoded, group);
+        let bytes = postcard::to_allocvec(group).expect("serialize recursive group");
+        let decoded: RecGroup = postcard::from_bytes(&bytes).expect("postcard roundtrip");
+        assert_eq!(&decoded, group);
+        for index in 0..group.members.len() {
+            let mut forged = json.clone();
+            forged["members"][index]["purity"] = serde_json::json!("Pure");
+            assert!(serde_json::from_value::<RecGroup>(forged).is_err());
+        }
+    }
+
+    #[test]
+    fn ordinary_function_serde_retains_purity() {
+        use super::{FnDef, Item, Purity};
+        for (modifier, purity) in [("", Purity::Impure), ("pure ", Purity::Pure)] {
+            let source = format!("module x; pub {modifier}fn identity[A](x: A) -> A {{ x }}");
+            let module = crate::pass::parser::parse(&source).expect("ordinary function");
+            let Item::FnDef(function) = &module.items[0] else {
+                panic!("ordinary function")
+            };
+            let _: &Purity = &function.purity;
+            assert_eq!(function.purity, purity);
+            let json = serde_json::to_value(function).expect("serialize ordinary function");
+            assert_eq!(json["purity"], serde_json::to_value(purity).unwrap());
+            let decoded: FnDef = serde_json::from_value(json).expect("JSON roundtrip");
+            assert_eq!(&decoded, function);
+            let bytes = postcard::to_allocvec(function).expect("serialize ordinary function");
+            let decoded: FnDef = postcard::from_bytes(&bytes).expect("postcard roundtrip");
+            assert_eq!(&decoded, function);
+        }
+    }
+
+    #[test]
+    fn recursive_member_impure_projection_preserves_function_fields() {
+        use super::{Item, Purity};
+        let module = crate::pass::parser::parse(
+            "module x; /// Member docs.\npub rec(loop) fn identity[A](x: A) -> A { x }",
+        )
+        .expect("recursive source");
+        let Item::RecGroup(group, _) = &module.items[0] else {
+            panic!("recursive group")
+        };
+        let member = &group.members[0];
+        let projected = member.clone().into_impure();
+        assert_eq!(projected.purity, Purity::Impure);
+        let mut expected = serde_json::to_value(member).unwrap();
+        expected["purity"] = serde_json::to_value(Purity::Impure).unwrap();
+        assert_eq!(serde_json::to_value(projected).unwrap(), expected);
+    }
+
+    #[test]
     fn rec_loop_diagnostic_is_transient_and_structurally_neutral() {
         let span = Span::new(3, 5);
         let plain = Expr::<Lowered>::synth_call(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             },
@@ -7237,6 +7576,7 @@ mod tests {
     fn expression_occurrences_are_transient_and_structurally_neutral() {
         use super::{Expr, ExpressionOccurrence, Lowered, Meta};
         let unassigned = Expr::<Lowered>::Unit {
+            source_trivia: Default::default(),
             occurrence: ExpressionOccurrence::default(),
             meta: Meta::new(crate::span::Span::new(3, 5)),
         };
@@ -7511,6 +7851,7 @@ mod tests {
                     meta: Meta::new(span),
                 }),
                 CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 }),
@@ -7531,6 +7872,7 @@ mod tests {
                 ext: (),
             },
             vec![CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             })],
@@ -7553,6 +7895,7 @@ mod tests {
     fn expr_span_returns_declared_span() {
         let span = Span::new(7, 19);
         let e: Expr<Surface> = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         };
@@ -7884,6 +8227,7 @@ mod tests {
     #[test]
     fn signature_group_cursor_infers_value_runs_without_collecting_groups() {
         let signature: Signature<Surface> = Signature {
+            source_trivia: None,
             params: vec![
                 SignatureParam::Type(type_param("A")),
                 SignatureParam::Value(unit_value_param("x")),
@@ -7927,6 +8271,7 @@ mod tests {
         ];
         let stored = Signature::new(params.clone());
         let inferred = Signature {
+            source_trivia: None,
             params,
             groups: vec![],
         };
@@ -7963,6 +8308,7 @@ mod tests {
     #[should_panic(expected = "stored signature groups cover every parameter")]
     fn signature_group_cursor_rejects_under_covering_public_group_storage() {
         let signature: Signature<Surface> = Signature {
+            source_trivia: None,
             params: vec![
                 SignatureParam::Type(type_param("A")),
                 SignatureParam::Value(unit_value_param("x")),
@@ -7977,6 +8323,7 @@ mod tests {
     #[should_panic(expected = "stored signature groups exceed their parameter slice")]
     fn signature_group_cursor_rejects_over_covering_public_group_storage() {
         let signature: Signature<Surface> = Signature {
+            source_trivia: None,
             params: vec![SignatureParam::Type(type_param("A"))],
             groups: vec![SignatureGroupKind::Type { len: 2 }],
         };

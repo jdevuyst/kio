@@ -90,13 +90,13 @@ use crate::pass::typecheck_core::apply::{
 // `typecheck_core` so they are usable without pulling in the
 // elaboration machinery.
 use crate::pass::typecheck_core::{
-    PendingRecOrderState, TypeMemoKey, TyperPhase, UserElaboratorArtifactKey,
-    UserElaboratorEvalArtifactPair, UserElaboratorMemoInputKey, UserElaboratorMemoKey,
-    UserElaboratorPreparedKey, UserElaboratorPreparedPurpose, UserElaboratorTemplate,
-    UserElaboratorTemplateGeneratedImport, UserElaboratorTemplateResult, check_well_formed_type,
-    collect_free_type_vars, compute_kind, display_type, fresh_type_var, intrinsic_call,
-    lookup_newtype_by_name, right_fold_product, source_type_spelling, subst_type, synth_literal,
-    synth_path, synth_seq, ty_path, ty_product, ty_sum,
+    DeclarationPhase, PendingRecOrderState, TypeMemoKey, Typer, TyperPhase,
+    UserElaboratorArtifactKey, UserElaboratorEvalArtifactPair, UserElaboratorMemoInputKey,
+    UserElaboratorMemoKey, UserElaboratorPreparedKey, UserElaboratorPreparedPurpose,
+    UserElaboratorTemplate, UserElaboratorTemplateGeneratedImport, UserElaboratorTemplateResult,
+    check_well_formed_type, collect_free_type_vars, compute_kind, display_type, fresh_type_var,
+    intrinsic_call, lookup_newtype_by_name, right_fold_product, source_type_spelling, subst_type,
+    synth_literal, synth_path, synth_seq, ty_path, ty_product, ty_sum,
 };
 type InternedType = crate::pass::typecheck_core::InternedType<Lowered>;
 type RecordedTypeResolution = crate::pass::typecheck_core::RecordedTypeResolution<Lowered>;
@@ -288,8 +288,6 @@ pub(crate) fn resolved_binder_for_position<'m>(
 }
 
 impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
-    const RECORD_NOMINAL_TYPE_BINDERS: bool = true;
-
     // Surface Kio's call rule locally infers omitted universal type
     // arguments from value arguments and the expected return type.
     const ALLOW_ELIDED_UNIVERSAL_CALL_TYPE_ARGS: bool = true;
@@ -425,37 +423,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
             .record_fn_param_type(&mp, fn_site.id, value_param_index, resolved);
     }
 
-    fn record_binder_at<'m>(
-        segment_span: crate::span::Span,
-        kind: crate::pass::typecheck_core::ResolvedBinderKind,
-        name: &str,
-        parent: Option<&str>,
-        qualifier: Option<&str>,
-        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
-    ) {
-        // The map key identifies the source module containing this written
-        // segment. The binder itself carries the resolved declaration owner;
-        // imported and qualified paths must use that canonical owner so every
-        // syntax surface shares one references/rename identity.
-        let mp = tcx.env.module_path.clone();
-        let binder = resolved_binder_for_position(kind, name, parent, qualifier, tcx);
-        tcx.elaborations
-            .record_position_binder(&mp, segment_span, binder);
-    }
-
-    fn record_nominal_type_binder_at<'m>(
-        segment_span: crate::span::Span,
-        kind: crate::pass::typecheck_core::NominalTypeBinderKind,
-        declaring_module_path: &str,
-        name: &str,
-        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
-    ) {
-        let binder = resolved_nominal_type_binder(kind, declaring_module_path, name);
-        let consumer_module = tcx.env.module_path.clone();
-        tcx.elaborations
-            .record_position_binder(&consumer_module, segment_span, binder);
-    }
-
     fn record_newtype_member_binder_at<'m>(
         segment_span: crate::span::Span,
         declaring_module_path: &str,
@@ -473,44 +440,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
                 member: member.to_owned(),
             },
         );
-    }
-
-    fn record_binder_decl_at<'m>(
-        decl_span: crate::span::Span,
-        kind: crate::pass::typecheck_core::ResolvedBinderKind,
-        name: &str,
-        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
-    ) {
-        tcx.attach_decl_span_to_local(name, decl_span);
-        let mp = tcx.env.module_path.clone();
-        let binder = match kind {
-            crate::pass::typecheck_core::ResolvedBinderKind::Local => ResolvedBinder::Local {
-                name: name.to_owned(),
-                decl_span: Some(decl_span),
-            },
-            crate::pass::typecheck_core::ResolvedBinderKind::TypeParam => {
-                ResolvedBinder::TypeParam {
-                    name: name.to_owned(),
-                    decl_span: Some(decl_span),
-                }
-            }
-            _ => unreachable!("only local and type-parameter binders have lexical declarations"),
-        };
-        tcx.elaborations
-            .record_local_decl(&mp, name, decl_span, binder);
-        if let Some(ty) = tcx.locals.iter().rev().find_map(|local| match local {
-            crate::pass::typecheck_core::Local::Value {
-                name: bound_name,
-                ty,
-                decl_span: Some(span),
-                ..
-            } if bound_name == name && *span == decl_span => Some(ty.clone()),
-            _ => None,
-        }) {
-            // Keep the bound type at its declaration; a use can be adapted
-            // or instantiated without changing the value available in scope.
-            Self::record_position_type(decl_span, ty, tcx);
-        }
     }
 
     fn record_position_type<'m>(
@@ -2298,7 +2227,8 @@ fn complete_user_elaborator_abi(
                     );
                     let source_index = values.len();
                     let source_ty = reflected.as_type().clone();
-                    values.push(Expr::Unit { occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
+                    values.push(Expr::Unit {
+                        source_trivia: Default::default(), occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                         meta: Meta::new(span),
                     });
                     adapter_sources.push(crate::normalization::CheckedTermTemplateSource {
@@ -2531,10 +2461,9 @@ fn resolve_type_name_owner_with_provider<'m>(
     };
     let visibility = if let Some(newtype) = declaration.declaration.newtype() {
         newtype.vis.clone()
-    } else if let Some(alias) = declaration.declaration.type_alias() {
-        alias.vis.clone()
     } else {
-        return None;
+        let alias = declaration.declaration.type_alias()?;
+        alias.vis.clone()
     };
     Some((module_path_string(declaration.owner.module()?), visibility))
 }
@@ -3677,54 +3606,87 @@ fn check_user_elaborator_item<'m>(
     Ok(())
 }
 
-#[derive(Default)]
-struct CapabilitySignatureUses {
-    bound: Vec<String>,
-    handle: Option<(crate::comptime::ComptimeBuiltin, Span)>,
-    fill_ctx: Option<Span>,
-}
+impl crate::pass::typecheck_core::HeaderRecording<Lowered> for LoweredTyper {
+    const RECORD_NOMINAL_TYPE_BINDERS: bool = true;
 
-fn direct_capability_identity(
-    ty: &Type,
-    is_bound: impl Fn(&str) -> bool,
-) -> Option<crate::comptime::ComptimeBuiltin> {
-    let Type::Path { segments, args, .. } = ty else {
-        return None;
-    };
-    let [name] = segments.as_slice() else {
-        return None;
-    };
-    (!is_bound(name.as_str()) && args.is_empty())
-        .then(|| crate::comptime::ComptimeBuiltin::from_public_name(name.as_str()))
-        .flatten()
-        .filter(|builtin| builtin.is_type_name())
-}
+    fn record_binder_at<'m>(
+        segment_span: crate::span::Span,
+        kind: crate::pass::typecheck_core::ResolvedBinderKind,
+        name: &str,
+        parent: Option<&str>,
+        qualifier: Option<&str>,
+        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
+    ) {
+        // The map key identifies the source module containing this written
+        // segment. The binder itself carries the resolved declaration owner;
+        // imported and qualified paths must use that canonical owner so every
+        // syntax surface shares one references/rename identity.
+        let mp = tcx.env.module_path.clone();
+        let binder = resolved_binder_for_position(kind, name, parent, qualifier, tcx);
+        tcx.elaborations
+            .record_position_binder(&mp, segment_span, binder);
+    }
 
-impl crate::pass::visit_mut::TypecheckVisitMut<Lowered> for CapabilitySignatureUses {
-    fn visit_type(&mut self, ty: &mut Type) {
-        if let Some(builtin) =
-            direct_capability_identity(ty, |name| self.bound.iter().any(|bound| bound == name))
-        {
-            self.handle.get_or_insert((builtin, ty.span()));
-            if builtin == crate::comptime::ComptimeBuiltin::FillCtx {
-                self.fill_ctx.get_or_insert(ty.span());
+    fn record_nominal_type_binder_at<'m>(
+        segment_span: crate::span::Span,
+        kind: crate::pass::typecheck_core::NominalTypeBinderKind,
+        declaring_module_path: &str,
+        name: &str,
+        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
+    ) {
+        let binder = resolved_nominal_type_binder(kind, declaring_module_path, name);
+        let consumer_module = tcx.env.module_path.clone();
+        tcx.elaborations
+            .record_position_binder(&consumer_module, segment_span, binder);
+    }
+
+    fn record_binder_decl_at<'m>(
+        decl_span: crate::span::Span,
+        kind: crate::pass::typecheck_core::ResolvedBinderKind,
+        name: &str,
+        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
+    ) {
+        tcx.attach_decl_span_to_local(name, decl_span);
+        let mp = tcx.env.module_path.clone();
+        let binder = match kind {
+            crate::pass::typecheck_core::ResolvedBinderKind::Local => ResolvedBinder::Local {
+                name: name.to_owned(),
+                decl_span: Some(decl_span),
+            },
+            crate::pass::typecheck_core::ResolvedBinderKind::TypeParam => {
+                ResolvedBinder::TypeParam {
+                    name: name.to_owned(),
+                    decl_span: Some(decl_span),
+                }
             }
+            _ => unreachable!("only local and type-parameter binders have lexical declarations"),
+        };
+        tcx.elaborations
+            .record_local_decl(&mp, name, decl_span, binder);
+        if let Some(ty) = tcx.locals.iter().rev().find_map(|local| match local {
+            crate::pass::typecheck_core::Local::Value {
+                name: bound_name,
+                ty,
+                decl_span: Some(span),
+                ..
+            } if bound_name == name && *span == decl_span => Some(ty.clone()),
+            _ => None,
+        }) {
+            // Keep the bound type at its declaration; a use can be adapted
+            // or instantiated without changing the value available in scope.
+            Self::record_position_type(decl_span, ty, tcx);
         }
-        crate::pass::visit_mut::walk_type(self, ty);
-    }
-
-    fn enter_type_binder(&mut self, param: &mut TypeParam, _scope: Span) {
-        self.bound.push(param.name.clone());
-    }
-
-    fn exit_type_binder(&mut self, param: &mut TypeParam, _scope: Span) {
-        debug_assert_eq!(self.bound.pop().as_deref(), Some(param.name.as_str()));
     }
 }
 
 impl TyperPhase for Lowered {
-    type Elaborations = Elaborations;
     type Typer = LoweredTyper;
+}
+
+impl crate::pass::typecheck_core::DeclarationPhase for Lowered {
+    type Elaborations = Elaborations;
+    type HeaderRecording = LoweredTyper;
+    type AuxiliaryItems = crate::pass::typecheck_core::BodyItemChecks;
 
     fn new_elaborations(
         scope: &crate::pass::typecheck_core::PackageTypecheckScope<Self>,
@@ -3744,83 +3706,11 @@ impl TyperPhase for Lowered {
         target.merge(source);
     }
 
-    fn check_fn_capability_signature<'m>(
-        definition: &'m crate::ast::FnDef<Self>,
-        tcx: &TypeCtx<'m, '_>,
-    ) -> Result<(), Error> {
-        if definition.purity != crate::ast::Purity::Pure {
-            return Ok(());
-        }
-        let mut bound = HashSet::new();
-        let mut direct = [None; 2];
-        let mut value_index = 0;
-        let mut imports = CapabilitySignatureUses::default();
-        let missing_receiver = |span, used: &str, required: &str, position: &str| {
-            Error::type_(
-                span,
-                format!(
-                    "pure function `{}` uses `{used}`, but its {position} value parameter is not exactly `{required}`",
-                    definition.name,
-                ),
-            )
-            .with_help(format!("declare a direct `{required}` {position} value parameter"))
-        };
-        let canonicalize = |ty: &Type, bound: &HashSet<String>| {
-            let alias_ctx = AliasCtx {
-                binder_locals: Some(bound),
-                ..tcx.env.alias_ctx()
-            };
-            crate::pass::typecheck_core::canonicalize_deep_for_comparison(ty, &alias_ctx, false).0
-        };
-        for param in &definition.sig.params {
-            if value_index == direct.len() {
-                break;
-            }
-            match param {
-                crate::ast::SignatureParam::Type(param) => {
-                    bound.insert(param.name.clone());
-                }
-                crate::ast::SignatureParam::Value(param) => {
-                    let canonical = canonicalize(
-                        param
-                            .ty
-                            .as_ref()
-                            .expect("named function parameters are annotated"),
-                        &bound,
-                    );
-                    direct[value_index] =
-                        direct_capability_identity(&canonical, |name| bound.contains(name));
-                    value_index += 1;
-                }
-            }
-        }
-        let signature = definition
-            .sig
-            .signature_ty(definition.ret.clone(), definition.meta.span);
-        let mut signature = canonicalize(&signature, &HashSet::new());
-        crate::pass::visit_mut::TypecheckVisitMut::visit_type(&mut imports, &mut signature);
-        if let Some((handle, span)) = imports.handle
-            && direct[0] != Some(crate::comptime::ComptimeBuiltin::ComptimeProof)
-        {
-            return Err(missing_receiver(
-                span,
-                handle.public_name(),
-                "__Comptime__",
-                "first",
-            ));
-        }
-        if let Some(span) = imports.fill_ctx
-            && direct[1] != Some(crate::comptime::ComptimeBuiltin::FillCtx)
-        {
-            return Err(missing_receiver(
-                span,
-                "__Fill_ctx__",
-                "__Fill_ctx__",
-                "second",
-            ));
-        }
-        Ok(())
-    }
+    const CAPABILITY_SIGNATURE: Option<
+        crate::pass::typecheck_core::CapabilitySignatureCheck<Self>,
+    > = Some(
+        crate::pass::typecheck_core::capability_signature::check_fn_capability_signature::<Self>,
+    );
 }
 
 // =========================================================================
@@ -3840,14 +3730,14 @@ impl TyperPhase for Lowered {
 /// in a pointer-keyed side table — the type system enforces the contract.
 pub fn check_package(
     package: &Package,
-) -> Result<crate::pass::resolve::Package<Prime>, LocatedError> {
+) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
     let checked = check_package_preserving_normalization(package)?;
-    validate_substituted_package(checked.substituted())
+    Ok(checked.complete()?.into_runtime())
 }
 
 pub(crate) fn validate_substituted_package(
     substituted: crate::pass::alpha_normalize::AlphaNormalizedPackage<Prime>,
-) -> Result<Package<Prime>, LocatedError> {
+) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
     crate::prime::typer::check_normalized_package(substituted)
 }
 
@@ -3870,7 +3760,6 @@ impl CheckedLoweredPackage {
         self.normalized.package()
     }
 
-    #[cfg(any(feature = "cli", test))]
     pub(crate) fn elaborations(&self) -> &Elaborations {
         &self.elaborations
     }
@@ -3886,8 +3775,54 @@ impl CheckedLoweredPackage {
         substitute::substitute_normalized_package(self.normalized.clone(), &self.elaborations)
     }
 
+    pub(crate) fn complete(self) -> Result<CompletedSourcePackage, LocatedError> {
+        let runtime = validate_substituted_package(self.substituted())?;
+        Ok(CompletedSourcePackage {
+            source: CompletedLoweredSource { checked: self },
+            runtime,
+        })
+    }
+}
+
+/// The exact checked source and its independently validated runtime output.
+pub(crate) struct CompletedSourcePackage {
+    source: CompletedLoweredSource,
+    runtime: crate::prime::typer::ValidatedPrimePackage,
+}
+
+impl CompletedSourcePackage {
+    #[cfg(any(feature = "repl-core", test))]
+    pub(crate) fn runtime(&self) -> &crate::prime::typer::ValidatedPrimePackage {
+        &self.runtime
+    }
+
+    #[cfg(any(feature = "lsp", test))]
+    pub(crate) fn source(&self) -> &CompletedLoweredSource {
+        &self.source
+    }
+
+    pub(crate) fn into_runtime(self) -> crate::prime::typer::ValidatedPrimePackage {
+        self.runtime
+    }
+
+    /// Discard the runtime tree before constructing the distinct evaluator tree.
+    pub(crate) fn into_source(self) -> CompletedLoweredSource {
+        self.source
+    }
+}
+
+/// Ordinary evaluation's source/elaboration pair, after runtime completion.
+pub(crate) struct CompletedLoweredSource {
+    checked: CheckedLoweredPackage,
+}
+
+impl CompletedLoweredSource {
+    pub(crate) fn checked(&self) -> &CheckedLoweredPackage {
+        &self.checked
+    }
+
     pub(crate) fn eval_artifact(&self) -> Result<crate::normalization::EvalArtifact, LocatedError> {
-        substitute::substitute_package_for_eval(&self.normalized, &self.elaborations)
+        crate::normalization::EvalArtifact::from_completed_source(self)
     }
 }
 
@@ -4167,9 +4102,7 @@ pub(crate) struct StagedReadyUserElaboratorEvaluation {
     obligation: DeferredUserElaboratorElaboration,
     returned: crate::normalization::Value,
     initial_fill_context: crate::normalization::Value,
-    artifact: std::sync::Arc<crate::normalization::EvalArtifact>,
-    consumer_module_path: String,
-    elaborator_module_path: String,
+    artifact: std::sync::Arc<UserElaboratorEvalArtifactPair>,
 }
 
 pub(crate) struct StagedReadyProjectedUserElaboratorEvaluation<'m> {
@@ -4179,18 +4112,12 @@ pub(crate) struct StagedReadyProjectedUserElaboratorEvaluation<'m> {
 
 struct EvaluatedUserElaboratorPacket {
     returned: crate::normalization::Value,
-    artifact: std::sync::Arc<crate::normalization::EvalArtifact>,
-    consumer_module_path: String,
-    elaborator_module_path: String,
+    artifact: std::sync::Arc<UserElaboratorEvalArtifactPair>,
 }
 
 impl StagedReadyUserElaboratorEvaluation {
     pub(crate) fn eval_ctx(&self) -> crate::normalization::AuthenticatedEvalCtx<'_> {
-        user_elaborator_eval_ctx_from_artifact(
-            &self.artifact,
-            &self.consumer_module_path,
-            Some(&self.elaborator_module_path),
-        )
+        user_elaborator_eval_ctx_from_artifact(&self.artifact)
     }
 }
 
@@ -4287,8 +4214,6 @@ pub(crate) fn evaluate_ready_fills_user_elaborator_action<'m>(
         returned: evaluated.returned,
         initial_fill_context,
         artifact: evaluated.artifact,
-        consumer_module_path: evaluated.consumer_module_path,
-        elaborator_module_path: evaluated.elaborator_module_path,
     })
 }
 
@@ -4523,7 +4448,7 @@ fn evaluate_user_elaborator_packet<'m>(
                 capture_imports.to_vec(),
             ),
             || {
-                user_elaborator_eval_artifact_pair(
+                user_elaborator_eval_artifact(
                     tcx.env,
                     capture_imports,
                     name,
@@ -4532,7 +4457,7 @@ fn evaluate_user_elaborator_packet<'m>(
                 )
             },
             |cached| {
-                let fresh = user_elaborator_eval_artifact_pair(
+                let fresh = user_elaborator_eval_artifact(
                     tcx.env,
                     capture_imports,
                     name,
@@ -4561,16 +4486,11 @@ fn evaluate_user_elaborator_packet<'m>(
     )?;
     let eval_metrics = crate::timing::user_elaborator_frontend_enabled()
         .then(crate::normalization::EvalMetrics::collect);
-    let artifact = artifact_pair.artifact.clone();
-    let mut ctx = user_elaborator_eval_ctx_from_artifact(
-        artifact.as_ref(),
-        &tcx.env.module_path,
-        Some(&elaborator_module_path),
-    )
-    .with_fn_closure_cache(prepared.fn_closure_cache.clone())
-    .with_eval_function_cache(prepared.eval_function_cache.clone())
-    .with_type_view_cache(prepared.type_view_cache.clone())
-    .with_exact_call_memo_cache(prepared.exact_call_memo_cache.clone());
+    let mut ctx = user_elaborator_eval_ctx_from_artifact(&artifact_pair)
+        .with_fn_closure_cache(prepared.fn_closure_cache.clone())
+        .with_eval_function_cache(prepared.eval_function_cache.clone())
+        .with_type_view_cache(prepared.type_view_cache.clone())
+        .with_exact_call_memo_cache(prepared.exact_call_memo_cache.clone());
     if let Some(metrics) = &eval_metrics {
         ctx = ctx.with_metrics(metrics.clone());
     }
@@ -4596,9 +4516,7 @@ fn evaluate_user_elaborator_packet<'m>(
     drop(ctx);
     Ok(EvaluatedUserElaboratorPacket {
         returned,
-        artifact,
-        consumer_module_path: tcx.env.module_path.clone(),
-        elaborator_module_path,
+        artifact: artifact_pair,
     })
 }
 
@@ -6551,6 +6469,7 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
     match e {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Unit {
+            source_trivia: _,
             occurrence: _,
             meta: Meta { span, .. },
         } => Ok(Synth::value(Type::Unit {
@@ -6595,25 +6514,25 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
             crate::pass::typecheck_core::apply::run_general_ordinary_value(e, None, tcx)
         }
         Expr::StrLit {
-            meta: Meta { span: _, .. },
+            meta: Meta { .. },
             annotation,
             ..
         } => synth_literal(RoleShape::Str, annotation.as_ref(), e.site(), tcx)
             .map(Synth::value_interned),
         Expr::IntLit {
-            meta: Meta { span: _, .. },
+            meta: Meta { .. },
             annotation,
             ..
         } => synth_literal(RoleShape::Int, annotation.as_ref(), e.site(), tcx)
             .map(Synth::value_interned),
         Expr::FloatLit {
-            meta: Meta { span: _, .. },
+            meta: Meta { .. },
             annotation,
             ..
         } => synth_literal(RoleShape::Float, annotation.as_ref(), e.site(), tcx)
             .map(Synth::value_interned),
         Expr::BoolLit {
-            meta: Meta { span: _, .. },
+            meta: Meta { .. },
             annotation,
             ..
         } => synth_literal(RoleShape::Bool, annotation.as_ref(), e.site(), tcx)
@@ -7683,6 +7602,7 @@ fn right_fold_pair_values(items: Vec<(Expr, Type)>, span: Span) -> (Expr, Type) 
     let Some((mut acc_expr, mut acc_ty)) = iter.next() else {
         return (
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                 meta: Meta::new(span),
             },
@@ -7771,7 +7691,7 @@ fn check_value_against<'m>(
         sig,
         ret_ty,
         body,
-        meta: Meta { span: _, .. },
+        meta: Meta { .. },
         ..
     } = e
     {
@@ -8536,7 +8456,7 @@ fn staged_user_elaborator_artifact(
     env: &ModuleEnv<'_>,
     elaborator_name: &str,
     elaborator_module: Option<&Module>,
-) -> Result<(crate::normalization::EvalArtifact, UncheckedPrimeExpr), Error> {
+) -> Result<(crate::normalization::EvalArtifactInput, UncheckedPrimeExpr), Error> {
     let root_module = elaborator_module.unwrap_or(env.module);
     let package = env.package;
     let root_env = eval_module_env(root_module, package, env.typecheck_scope.clone())?;
@@ -8681,7 +8601,7 @@ fn staged_user_elaborator_artifact(
         let primitives =
             substitute::primitive_env_for_eval_module(root_module, &root_env.module_path);
         Ok((
-            crate::normalization::EvalArtifact::from_validated_parts(package, primitives),
+            crate::normalization::EvalArtifactInput::new(package, primitives),
             root_expr,
         ))
     }
@@ -8693,7 +8613,7 @@ fn user_elaborator_eval_artifact(
     elaborator_name: &str,
     diagnostic_span: Span,
     elaborator_module: Option<&Module>,
-) -> Result<(crate::normalization::EvalArtifact, UncheckedPrimeExpr), Error> {
+) -> Result<UserElaboratorEvalArtifactPair, Error> {
     #[cfg(test)]
     record_user_elaborator_artifact_build(elaborator_name, &env.module_path);
     let (mut artifact, implementation) =
@@ -8754,21 +8674,22 @@ fn user_elaborator_eval_artifact(
             entry.scope = crate::pass::resolve::TopLevelScope::build(&entry.module)
                 .map_err(|error| error.with_source_file(entry.file_path.clone()))?;
         }
-        artifact = crate::normalization::EvalArtifact::from_validated_parts(
+        artifact = crate::normalization::EvalArtifactInput::new(
             Package::from_parts(modules, package_file),
             primitives,
         );
     }
     artifact
+        .package()
         .resolve_imports()
         .map_err(LocatedError::into_error)?;
     let implementation_module_path = elaborator_module
         .map(module_path_string)
         .unwrap_or_else(|| env.module_path.clone());
-    validate_user_elaborator_eval_artifact(
-        &artifact,
-        &implementation,
-        &implementation_module_path,
+    UserElaboratorEvalArtifactPair::validate(
+        artifact,
+        implementation,
+        implementation_module_path,
     )
     .map_err(|error| {
         let context = format!(
@@ -8784,30 +8705,7 @@ fn user_elaborator_eval_artifact(
         } else {
             error.reanchored_at(diagnostic_span).with_note(context)
         }
-    })?;
-    Ok((artifact, implementation))
-}
-
-fn user_elaborator_eval_artifact_pair(
-    env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
-    dependencies: &[UserElaboratorTemplateGeneratedImport],
-    elaborator_name: &str,
-    diagnostic_span: Span,
-    elaborator_module: Option<&Module>,
-) -> Result<UserElaboratorEvalArtifactPair, Error> {
-    user_elaborator_eval_artifact(
-        env,
-        dependencies,
-        elaborator_name,
-        diagnostic_span,
-        elaborator_module,
-    )
-    .map(
-        |(artifact, implementation)| UserElaboratorEvalArtifactPair {
-            artifact: std::sync::Arc::new(artifact),
-            implementation,
-        },
-    )
+    })
 }
 
 fn verify_user_elaborator_artifact_memo(
@@ -8815,21 +8713,27 @@ fn verify_user_elaborator_artifact_memo(
     fresh: &UserElaboratorEvalArtifactPair,
 ) {
     assert_eq!(
-        cached.implementation, fresh.implementation,
+        cached.implementation_module_path(),
+        fresh.implementation_module_path(),
+        "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned a different implementation owner"
+    );
+    assert_eq!(
+        cached.implementation(),
+        fresh.implementation(),
         "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned a different implementation"
     );
     assert_eq!(
-        cached.artifact.primitives(),
-        fresh.artifact.primitives(),
+        cached.artifact().primitives(),
+        fresh.artifact().primitives(),
         "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned a different primitive environment"
     );
     let cached_modules = cached
-        .artifact
+        .artifact()
         .modules()
         .map(|(path, entry)| (path, &entry.module))
         .collect::<Vec<_>>();
     let fresh_modules = fresh
-        .artifact
+        .artifact()
         .modules()
         .map(|(path, entry)| (path, &entry.module))
         .collect::<Vec<_>>();
@@ -8838,8 +8742,8 @@ fn verify_user_elaborator_artifact_memo(
         "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned different modules"
     );
     match (
-        cached.artifact.package_file(),
-        fresh.artifact.package_file(),
+        cached.artifact().package_file(),
+        fresh.artifact().package_file(),
     ) {
         (Some(cached), Some(fresh)) => assert_eq!(
             (
@@ -8895,8 +8799,8 @@ fn finish_user_elaborator_artifact_build_probe(elaborator_name: &str) -> HashMap
         .expect("artifact build probe is active")
 }
 
-fn validate_user_elaborator_eval_artifact(
-    artifact: &crate::normalization::EvalArtifact,
+pub(crate) fn validate_user_elaborator_eval_artifact(
+    artifact: &crate::normalization::EvalArtifactInput,
     implementation: &UncheckedPrimeExpr,
     implementation_module_path: &str,
 ) -> Result<(), Error> {
@@ -8992,17 +8896,13 @@ fn validate_user_elaborator_eval_artifact(
 }
 
 fn user_elaborator_eval_ctx_from_artifact<'m>(
-    artifact: &'m crate::normalization::EvalArtifact,
-    consumer_module_path: &str,
-    elaborator_module_path: Option<&str>,
+    prepared: &'m UserElaboratorEvalArtifactPair,
 ) -> crate::normalization::AuthenticatedEvalCtx<'m> {
-    let module_path = elaborator_module_path.unwrap_or(consumer_module_path);
-    let module = &artifact
-        .module(module_path)
-        .unwrap_or_else(|| panic!("evaluator artifact is missing module `{module_path}`"))
-        .module;
-    crate::normalization::AuthenticatedEvalCtx::for_module(artifact, module, module_path)
-        .unwrap_or_else(|error| panic!("invalid evaluator artifact context: {error:?}"))
+    let module = prepared
+        .artifact()
+        .prepare_module(prepared.implementation_module_path())
+        .unwrap_or_else(|error| panic!("invalid evaluator artifact context: {error:?}"));
+    crate::normalization::AuthenticatedEvalCtx::for_module(module)
 }
 
 fn user_elaborator_reflectable_type(ty: Type) -> Result<ReflectableType, Error> {
@@ -9272,21 +9172,17 @@ fn prepare_user_elaborator_value<'m>(
     memo.user_elaborator_prepared_or_try_compute(key, || {
         let caches = memo.user_elaborator_prepared_caches_for_module(&module_path);
         let eval_metrics = record_timing.then(crate::normalization::EvalMetrics::collect);
-        let mut ctx = user_elaborator_eval_ctx_from_artifact(
-            artifact_pair.artifact.as_ref(),
-            &env.module_path,
-            Some(&module_path),
-        )
-        .with_fn_closure_cache(caches.fn_closure_cache.clone())
-        .with_eval_function_cache(caches.eval_function_cache.clone())
-        .with_type_view_cache(caches.type_view_cache.clone())
-        .with_exact_call_memo_cache(caches.exact_call_memo_cache.clone());
+        let mut ctx = user_elaborator_eval_ctx_from_artifact(artifact_pair)
+            .with_fn_closure_cache(caches.fn_closure_cache.clone())
+            .with_eval_function_cache(caches.eval_function_cache.clone())
+            .with_type_view_cache(caches.type_view_cache.clone())
+            .with_exact_call_memo_cache(caches.exact_call_memo_cache.clone());
         if let Some(metrics) = &eval_metrics {
             ctx = ctx.with_metrics(metrics.clone());
         }
         let eval_start = record_timing.then(Instant::now);
         let value = crate::normalization::eval_authenticated(
-            &artifact_pair.implementation,
+            artifact_pair.implementation(),
             &crate::normalization::Env::new(),
             &ctx,
         );
@@ -9327,7 +9223,7 @@ fn compute_user_elaborator_template<'m>(
                 request.capture_imports.clone(),
             ),
             || {
-                user_elaborator_eval_artifact_pair(
+                user_elaborator_eval_artifact(
                     env,
                     &request.capture_imports,
                     request.elaborator_name,
@@ -9336,7 +9232,7 @@ fn compute_user_elaborator_template<'m>(
                 )
             },
             |cached| {
-                let fresh = user_elaborator_eval_artifact_pair(
+                let fresh = user_elaborator_eval_artifact(
                     env,
                     &request.capture_imports,
                     request.elaborator_name,
@@ -9364,12 +9260,7 @@ fn compute_user_elaborator_template<'m>(
         record_timing,
     )?;
     let eval_metrics = record_timing.then(crate::normalization::EvalMetrics::collect);
-    let artifact = &artifact_pair.artifact;
-    let mut ctx = user_elaborator_eval_ctx_from_artifact(
-        artifact.as_ref(),
-        &env.module_path,
-        Some(&elaborator_module_path),
-    );
+    let mut ctx = user_elaborator_eval_ctx_from_artifact(&artifact_pair);
     ctx = ctx
         .with_fn_closure_cache(prepared.fn_closure_cache.clone())
         .with_eval_function_cache(prepared.eval_function_cache.clone())
@@ -9399,6 +9290,7 @@ fn compute_user_elaborator_template<'m>(
     match decode_user_elaborator_result(result, &ctx) {
         Ok(checked) => {
             if let Some(target) = request.result_ty {
+                let artifact = artifact_pair.artifact();
                 let artifact_module = &artifact
                     .module(&elaborator_module_path)
                     .expect("evaluator artifact contains the elaborator module")
@@ -9794,7 +9686,7 @@ fn verify_user_elaborator_template_memo<'m>(
                 user_elaborator_result_type_verification_key(fresh.result_ty()),
                 "KIO_DEBUG_MEMO_VERIFY=1: user elaborator memo returned a different result type"
             );
-            let (artifact, _) = user_elaborator_eval_artifact(
+            let artifact = user_elaborator_eval_artifact(
                 env,
                 &obligation.capture_imports,
                 &obligation.name,
@@ -9807,12 +9699,7 @@ fn verify_user_elaborator_template_memo<'m>(
                     error.diagnostic().message
                 )
             });
-            let elaborator_module_path = elaborator_module.map(module_path_string);
-            let ctx = user_elaborator_eval_ctx_from_artifact(
-                &artifact,
-                &env.module_path,
-                elaborator_module_path.as_deref(),
-            );
+            let ctx = user_elaborator_eval_ctx_from_artifact(&artifact);
             let cached_expr = user_elaborator_template_verification_expr(cached);
             let fresh_expr = user_elaborator_template_verification_expr(fresh);
             let cached_value = crate::normalization::eval_authenticated(
@@ -10053,6 +9940,7 @@ mod tests {
         assert_eq!(visits.get(), 0);
         let source = Expr::synth_call(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(Span::new(0, 1)),
             },
@@ -10148,8 +10036,8 @@ mod tests {
         let plain = check_package(&plain).expect("validate plain Prime");
         for (path, entry) in marked.modules() {
             assert_eq!(
-                postcard::to_allocvec(&entry.module).unwrap(),
-                postcard::to_allocvec(&plain.module(path).unwrap().module).unwrap(),
+                postcard::to_allocvec(&entry.module()).unwrap(),
+                postcard::to_allocvec(&plain.module(path).unwrap().module()).unwrap(),
                 "diagnostic hints must not change the phase artifact",
             );
         }
@@ -11118,6 +11006,7 @@ mod tests {
                 let mut captured = vec![source.site().id];
                 for index in 0..depth {
                     let value = Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: ExpressionOccurrence::fresh(),
                         meta: Meta::new(span),
                     };
@@ -12369,6 +12258,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
         let span = test_span();
         let node_id = NodeId(42);
         let original = Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             form: crate::ast::UserElaboratorCallForm::Ordinary,
             name: "demo".to_owned(),
@@ -12377,6 +12267,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             ext: node_id,
         };
         let replay = crate::ast::Expr::<UncheckedPrime>::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(span),
         };
@@ -16340,11 +16231,13 @@ fn generic_last() -> . {
                 test_span(),
             )),
             CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: crate::ast::ExpressionOccurrence::fresh(),
                 meta: Meta::new(test_span()),
             }),
         ];
         let call = Expr::UserElaborator {
+            source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrence::fresh(),
             form: crate::ast::UserElaboratorCallForm::Ordinary,
             name: "local".to_owned(),
@@ -16750,7 +16643,7 @@ fn generic_last() -> . {
             alias: "_q0".to_owned(),
         };
 
-        let (artifact, _) = user_elaborator_eval_artifact(
+        let prepared = user_elaborator_eval_artifact(
             &env,
             std::slice::from_ref(&dependency),
             "demo",
@@ -16758,6 +16651,7 @@ fn generic_last() -> . {
             None,
         )
         .expect("evaluator artifact");
+        let artifact = prepared.artifact();
         let entry = artifact.package().module("elab").expect("artifact module");
         assert!(entry.module.imports.iter().any(|import_| {
             matches!(
@@ -16781,6 +16675,106 @@ fn generic_last() -> . {
     }
 
     #[test]
+    fn completed_source_preserves_both_consuming_exits() {
+        let package = lowered_package(&[(
+            "main.kio",
+            "module main; pure fn id[T](value: T) -> T { value } \
+             fn main() -> . { id(()) }",
+        )]);
+        let complete = check_package_preserving_normalization(&package)
+            .expect("check source")
+            .complete()
+            .expect("complete source");
+        assert!(
+            complete
+                .source()
+                .checked()
+                .normalized()
+                .module("main")
+                .is_some()
+        );
+        let expected = postcard::to_allocvec(
+            complete
+                .runtime()
+                .module("main")
+                .expect("runtime module")
+                .module(),
+        )
+        .expect("runtime module bytes");
+        let source = complete.into_source();
+        let artifact = source
+            .eval_artifact()
+            .expect("completed evaluator artifact");
+        let module = artifact.module("main").expect("evaluator module");
+        let body = module
+            .module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::FnDef(def) if def.name == "main" => Some(&def.body),
+                _ => None,
+            })
+            .expect("main body");
+        let ctx = crate::normalization::AuthenticatedEvalCtx::for_module(
+            artifact.prepare_module("main").expect("module preparation"),
+        );
+        assert!(matches!(
+            crate::normalization::eval_authenticated(body, &crate::normalization::Env::new(), &ctx),
+            crate::normalization::Value::Unit,
+        ));
+        let runtime = check_package_preserving_normalization(&package)
+            .expect("check compile source")
+            .complete()
+            .expect("complete compile source")
+            .into_runtime();
+        assert_eq!(
+            expected,
+            postcard::to_allocvec(
+                runtime
+                    .module("main")
+                    .expect("compile-only runtime module")
+                    .module(),
+            )
+            .expect("compile-only runtime module bytes")
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "different implementation owner")]
+    fn artifact_memo_verifier_compares_the_validated_implementation_owner() {
+        let package = lowered_package(&[
+            (
+                "left.kio",
+                "module left; pure fn implementation() -> . { () }",
+            ),
+            (
+                "right.kio",
+                "module right; pure fn implementation() -> . { () }",
+            ),
+        ]);
+        let checked = check_package_preserving_normalization(&package).expect("check fixture");
+        let prepare = |owner: &str| {
+            let input = substitute::substitute_package_for_eval(
+                checked.normalized(),
+                checked.elaborations(),
+            )
+            .expect("assemble fixture");
+            UserElaboratorEvalArtifactPair::validate(
+                input,
+                UncheckedPrimeExpr::Path {
+                    occurrence: Default::default(),
+                    segments: vec![PathSegment::new("implementation".to_owned(), test_span())],
+                    meta: Meta::new(test_span()),
+                    ext: (),
+                },
+                owner.to_owned(),
+            )
+            .expect("validate owner")
+        };
+        verify_user_elaborator_artifact_memo(&prepare("left"), &prepare("right"));
+    }
+
+    #[test]
     fn user_elaborator_artifact_pairs_are_analysis_scoped_singleflight() {
         fn key(alias: &str) -> UserElaboratorArtifactKey {
             UserElaboratorArtifactKey::new(
@@ -16794,21 +16788,7 @@ fn generic_last() -> . {
         }
 
         fn empty_artifact(implementation_name: &str) -> UserElaboratorEvalArtifactPair {
-            let span = Span::new(0, 0);
-            UserElaboratorEvalArtifactPair {
-                artifact: std::sync::Arc::new(
-                    crate::normalization::EvalArtifact::from_validated_parts(
-                        Package::from_parts(std::collections::BTreeMap::new(), None),
-                        crate::normalization::EvalPrimitiveEnv::default(),
-                    ),
-                ),
-                implementation: crate::ast::Expr::<UncheckedPrime>::Path {
-                    occurrence: Default::default(),
-                    segments: vec![PathSegment::new(implementation_name.to_owned(), span)],
-                    meta: Meta::new(span),
-                    ext: (),
-                },
-            }
+            UserElaboratorEvalArtifactPair::unit_for_test(implementation_name)
         }
 
         let builds = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -16846,7 +16826,7 @@ fn generic_last() -> . {
                 .iter()
                 .all(|artifact| std::sync::Arc::ptr_eq(&artifacts[0], artifact))
         );
-        let crate::ast::Expr::Path { segments, .. } = &artifacts[0].implementation else {
+        let crate::ast::Expr::Path { segments, .. } = artifacts[0].implementation() else {
             panic!("expected paired staged implementation")
         };
         assert_eq!(segments[0].as_str(), "first");
@@ -16863,7 +16843,7 @@ fn generic_last() -> . {
             )
             .expect("different exact capture imports build a distinct artifact");
         assert!(!std::sync::Arc::ptr_eq(&artifacts[0], &distinct_artifact));
-        let crate::ast::Expr::Path { segments, .. } = &distinct_artifact.implementation else {
+        let crate::ast::Expr::Path { segments, .. } = distinct_artifact.implementation() else {
             panic!("expected paired staged implementation")
         };
         assert_eq!(segments[0].as_str(), "different_captures");
@@ -16896,7 +16876,7 @@ fn generic_last() -> . {
                 |_| {},
             )
             .expect("a failed initialization is retried");
-        let crate::ast::Expr::Path { segments, .. } = &recovered.implementation else {
+        let crate::ast::Expr::Path { segments, .. } = recovered.implementation() else {
             panic!("expected paired staged implementation")
         };
         assert_eq!(segments[0].as_str(), "recovered");
@@ -16905,7 +16885,7 @@ fn generic_last() -> . {
         assert_eq!(artifact_stats.misses, 5);
         assert_eq!(artifact_stats.first_writes, 3);
 
-        let first_artifact = std::sync::Arc::downgrade(&artifacts[0].artifact);
+        let first_artifact = std::sync::Arc::downgrade(artifacts[0].artifact());
         drop(artifacts);
         drop(distinct_artifact);
         drop(recovered);
@@ -16927,7 +16907,7 @@ fn generic_last() -> . {
                 |_| {},
             )
             .expect("new package check builds its own artifact");
-        let crate::ast::Expr::Path { segments, .. } = &second_artifact.implementation else {
+        let crate::ast::Expr::Path { segments, .. } = second_artifact.implementation() else {
             panic!("expected paired staged implementation")
         };
         assert_eq!(segments[0].as_str(), "second_package");
@@ -17188,6 +17168,7 @@ fn generic_last() -> . {
         let checked = crate::normalization::CheckedTerm::type_app_for_test(
             crate::normalization::CheckedTerm::new(
                 crate::ast::Expr::<UncheckedPrime>::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 },
@@ -17241,6 +17222,7 @@ fn generic_last() -> . {
                     meta: Meta::new(span),
                 }),
                 CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(span),
                 }),
@@ -17456,7 +17438,7 @@ fn generic_last() -> . {
         .expect("package");
 
         let prime = check_package(&package).expect("captured import replay");
-        let main = &prime.module("pkg/main").expect("main module").module;
+        let main = &prime.module("pkg/main").expect("main module").module();
         assert!(main.imports.iter().any(|import_| {
             matches!(
                 &import_.kind,
@@ -20704,7 +20686,7 @@ fn generic_last() -> . {
         let run = prime
             .module("x")
             .expect("x module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {

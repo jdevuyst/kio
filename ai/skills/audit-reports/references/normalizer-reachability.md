@@ -1,0 +1,17 @@
+# Production normalizer reachability
+
+Drive [`reports/equiv-eval-reachability.sh`](../../../../reports/equiv-eval-reachability.sh) to locate unexecuted production functions and source-line ranges in [`normalization.rs`](../../../../kio-rs/src/normalization.rs). Anchor: AGENTS.md § Universal rules — Compile-time evaluation observes phase boundaries; Optimizations are justified, not assumed; Bugs surface; never hide them. This is a coverage locator for the exercised workload, not a proof that uncovered code is dead or that covered code is correct.
+
+Prerequisites: Node.js, cargo-llvm-cov and the pinned JS host tools. Inspect the script and [`focused golden manifest`](../../../../reports/equiv-eval-reachability-goldens.txt) before execution. The report combines library tests, the manifest's focused goldens, and POCs using instrumented kio/kio-prime binaries; it uses JS host execution rather than the full backend matrix. It has no duration or case-budget flag: choose it only when this fixed workload fits the authorized run. Its `--self-test` validates analyzer mechanics without collecting coverage and cannot replace a real report.
+
+```sh
+sh reports/equiv-eval-reachability.sh
+```
+
+Findings exit zero; nonzero means evidence is incomplete or malformed. Inspect the failure logs before interpreting coverage. The report retains evidence under `target/reports/equiv-eval-reachability/run-*/`: `locator.txt`, `equiv-eval-reachability.json`, union LCOV/JSON exports, raw cohort profiles, inventories, and execution/build logs. Cohort `%m` merge pools bound raw-profile growth by binary signature rather than invocation count; profile-file counts are storage diagnostics, not executed-case counts. Cite the exact printed evidence directory, not a wildcard. Preserve incomplete isolated state for diagnosis rather than merging it into successful results.
+
+Oversized execution counters are unknown: LLVM's inferred-counter arithmetic can wrap or saturate during unwinding, so a large exported count does not establish a hit. The analyzer emits a partial locator and JSON with `evidenceStatus: incomplete`, unknown regions, functions, and physical-line ranges, then exits 2. Unknown spans cannot establish zero coverage; independent valid positive regions can still prove that a function ran. Coordinates, identifiers, source mapping, and malformed counters remain strict. Reanalyze retained exports after an analyzer repair rather than repeating the workload solely to regenerate that locator.
+
+For each uncovered function or range, read the production source and identify its contract, caller path, and whether the workload could reach it. Classify a missing test witness, a workload limitation, demonstrably unreachable machinery, or an unresolved question. Coverage of a line does not prove every branch fired; uncovered lines do not justify deleting code or adding exclusions. Cross-check relevant mutation findings for a distinguishing behavioral or private-invariant test, rather than manufacturing coverage-only calls.
+
+Report workload/source identity, covered and uncovered production functions/ranges, source locations, evidence paths, and proposed minimal witnesses. Under an authorized fix directive, add meaningful tests at the truthful layer or repair a uniquely established in-scope defect, then rerun this fixed workload when needed. User-visible witnesses need public-surface goldens as appropriate; private evaluator invariants use in-crate tests. Do not weaken the analyzer, manifest, or production inventory to hide a gap.

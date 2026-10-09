@@ -69,6 +69,27 @@ Each `specs/backends/<lang>.md` is a contract for a single backend — how a hos
 8. **Item naming.** Whether the backend imposes name mangling visible at the FFI surface (e.g. reserved-word collisions, illegal characters). State the rule, or state explicitly that no mangling is needed.
 9. **Worked example.** A minimal end-to-end snippet exercising the above.
 
+**Protection and host responsibilities are public contract material.** Within
+the FFI surface, state which relationships the host type system enforces, which
+values are checked at runtime, and which obligations remain with the host
+author. Cover copying versus aliasing, nominal identity and visibility,
+callback argument/result crossings, and any explicitly unsafe operations;
+state the failure behavior where rejection is promised. The matching
+`docs/hosts/<lang>.md` guide explains these guarantees and responsibilities in
+practical terms, linking to the precise contract. Choose a reasonable division
+for the host's capabilities and development idioms while applying the universal
+[shared-data rule](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+Explain unchanged Kio data versus intentionally mutable host objects with
+plain examples; do not promise defensive copies or mutation detection. Apply
+the common [host-value responsibility](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types):
+do not promise general runtime type validation or early rejection of invalid
+host values. Distinguish required native casts, representation conversion and
+authorized opaque-payload access from such validation. Preserve valid Kio
+semantics and existing guarantees:
+an unchecked implementation path or a documentation gap does not authorize
+weakening the contract. Private adapter placement and proof machinery remain
+implementation details, not additions to the public spec.
+
 **Cross-backend properties live in [`specs/backends/README.md`](../../specs/backends/README.md), not on each per-backend page.** This includes the Host API stability contract, universal rules, and rules selected by a semantic capability predicate. The shared preamble enumerates the synchronous calling convention, type erasure at the FFI, open-world property, package isolation, exception propagation, well-foundedness inheritance, and behavioral additivity. A backend page carries its status field, references the applicable shared rules by section number, states its current host realization or concrete caveat, and does not redefine the shared law. New backend pages start by linking the preamble and only spell out what's backend-specific.
 
 Choose the normative home from semantic scope, never from the backend where a

@@ -522,6 +522,13 @@ impl<'p> HaskellShapes<'p> {
         scope: &[TypeParam],
         module: Option<&str>,
     ) -> Result<String, EmitError> {
+        if boundary
+            .tail
+            .iter()
+            .any(|step| matches!(step, BoundaryStep::App(_)))
+        {
+            return Ok(self.opaque_argument_haskell_type_in(ty, scope, module));
+        }
         match ty {
             Type::Product { .. } | Type::Sum { .. } => Ok(self.applied_alias(
                 &self
@@ -611,7 +618,7 @@ impl<'p> HaskellShapes<'p> {
                             module,
                         )?;
                         rendered.push(' ');
-                        rendered.push_str(&paren_arg(&arg));
+                        rendered.push_str(&super::native::paren_ty(&arg));
                     }
                     return Ok(rendered);
                 }
@@ -824,12 +831,9 @@ impl<'p> HaskellShapes<'p> {
             let mut rendered = haskell_type_var(name.as_str());
             for arg in args {
                 rendered.push(' ');
-                rendered.push_str(&paren_arg(&self.haskell_type_of_scoped(
-                    arg,
-                    seen_newtypes,
-                    module,
-                    scope,
-                )?));
+                rendered.push_str(&super::native::paren_ty(
+                    &self.opaque_argument_haskell_type_in(arg, scope, module),
+                ));
             }
             return Ok(rendered);
         }
@@ -918,12 +922,9 @@ impl<'p> HaskellShapes<'p> {
                     let mut rendered = format!("{} h", binding.assoc_name);
                     for arg in args {
                         rendered.push(' ');
-                        rendered.push_str(&paren_arg(&self.haskell_type_of_scoped(
-                            arg,
-                            seen_newtypes,
-                            module,
-                            scope,
-                        )?));
+                        rendered.push_str(&super::native::paren_ty(
+                            &self.opaque_argument_haskell_type_in(arg, scope, module),
+                        ));
                     }
                     return Ok(rendered);
                 }
@@ -976,6 +977,19 @@ impl<'p> HaskellShapes<'p> {
             Type::Infer { ext, .. } => match *ext {},
             Type::Goal { ext, .. } => match *ext {},
         }
+    }
+
+    /// An opaque application is transported unchanged, so its arguments keep
+    /// their native representation rather than a direct boundary-call layout.
+    fn opaque_argument_haskell_type_in(
+        &self,
+        ty: &Type<Routed>,
+        scope: &[TypeParam],
+        module: Option<&str>,
+    ) -> String {
+        let scope = scope.iter().map(|param| param.name.as_str()).collect();
+        self.native_types
+            .render_type_scoped(ty, &scope, module, &self.host_types)
     }
 
     fn render_structural_family(

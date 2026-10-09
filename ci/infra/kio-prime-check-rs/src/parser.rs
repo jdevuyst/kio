@@ -1030,8 +1030,8 @@ impl Parser {
     ///
     /// The `-> Type` annotation is optional per
     /// `specs/language.md` § Function definitions: when omitted, the
-    /// return type defaults to `()`. This is the one optional type
-    /// position in the grammar.
+    /// declaration return type defaults to `.`. Anonymous functions
+    /// have separate optional parameter and return annotations.
     fn fn_def_after_keyword(&mut self) -> Result<(), ParseError> {
         let (name, span) = self.expect_ident_with_span("name after `fn`")?;
         Self::validate_value_name(&name, span)?;
@@ -3178,7 +3178,7 @@ mod tests {
     #[test]
     fn function_type_existential_projector_value_accepted() {
         // The full first-class value type of an existential newtype's
-        // CPS projector. This is what `recover_to_low` eta-expands a
+        // CPS projector. This is what `route` eta-expands a
         // value-position projector reference into, so the kio-prime
         // build-target round-trip must re-verify it.
         ok("module m; \

@@ -1181,7 +1181,10 @@ fn typed_parametric_call_argument_is_baked_into_its_resolved_slot() {
     let package =
         Package::build(Path::new(""), lowered, None).expect("assemble typed ambiguity fixture");
     let prime = FullPipeline::typecheck(&package).expect("typecheck typed ambiguity fixture");
-    let module = &prime.module("matrix").expect("typed matrix module").module;
+    let module = prime
+        .module("matrix")
+        .expect("typed matrix module")
+        .module();
     let subject = module.items.iter().find_map(|item| match item {
         Item::FnDef(def) if def.name == "subject" => Some(&def.body),
         _ => None,

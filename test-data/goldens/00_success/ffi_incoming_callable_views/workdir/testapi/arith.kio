@@ -1,0 +1,5 @@
+module testapi/arith;
+
+import testapi as t;
+
+host fn box_get[T](box: t.Box(T)) -> T;

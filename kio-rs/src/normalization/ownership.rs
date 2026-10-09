@@ -1023,6 +1023,7 @@ mod tests {
             let mut function = template.clone();
             let unit = EvalRef::new(CheckedTerm::new(
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 },
@@ -1030,6 +1031,7 @@ mod tests {
             ));
             let mut term = unit.clone();
             let mut source = Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             };
@@ -1053,6 +1055,7 @@ mod tests {
                 source = Expr::Seq {
                     occurrence: Default::default(),
                     value: Box::new(Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     }),

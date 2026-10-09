@@ -1,5 +1,5 @@
 #!/bin/sh
-# SUBJECT: Independently emitted JavaScript callable carriers compose stages and deep adapters while preserving concrete snapshots, opaque transport, and nominal checks.
+# SUBJECT: Independently emitted JavaScript callables preserve type stages, shared structural values, opaque transport, and authorized nominal payload access.
 # CONTRACT: specs/backends/js.md § Carve-outs
 set -eu
 

@@ -1,0 +1,5 @@
+module capabilities;
+
+host fn typing() -> .;
+
+host fn z_stop() -> !;

@@ -31,14 +31,13 @@
 //! Placement under `breaking` / `nonbreaking` is presentational; replay
 //! applies every change regardless of partition.
 
-use super::{
-    ContractEntry, ContractKind, ContractSide, ContractSnapshot, PublicNewtypeSurface,
-    QualifiedName,
-};
+use super::{ContractEntry, ContractSide, ContractSnapshot, QualifiedName};
+#[cfg(test)]
+use super::{ContractKind, PublicNewtypeSurface};
 use crate::ast::{
-    HostFn, HostFnParam, HostType, Import, ImportItem, ImportKind, ModulePath, Newtype, Param,
-    Phase, Prime, Purity, SigChangeSet, SigItem, SigItemRef, SigModuleSection, SigVersion,
-    Signature, SignatureFile, SignatureParam, Surface, Type, TypeAlias, TypeRecMember,
+    HostFn, HostFnParam, HostType, Import, ImportItem, ImportKind, ModulePath, Newtype, Prime,
+    SigChangeSet, SigItem, SigItemRef, SigModuleSection, SigVersion, SignatureFile, Surface, Type,
+    TypeAlias, TypeRecMember,
 };
 use crate::error::Error;
 use crate::span::Span;
@@ -348,9 +347,11 @@ impl ReplayState {
             record.canonical = Some(validated.item.clone());
             record.canonical_recursive_context = validated.recursive_context.clone();
             record.canonical_comptime_import = validated.comptime_import.clone();
-            let entry = entry_from_sig_item(&name.module_path, &validated.item, &|segments| {
-                segments.to_vec()
-            });
+            let entry = super::surface::entry_from_sig_item(
+                &name.module_path,
+                &validated.item,
+                &|segments| segments.to_vec(),
+            );
             record.entry = entry.clone();
             if let Some(live) = self.live.get_mut(name) {
                 *live = entry;
@@ -539,7 +540,13 @@ impl ReplayState {
                 std::slice::from_ref(&projected_item),
                 section.imports.clone(),
             );
-            let entry = entry_from_sig_item(&module_path, &projected_item, &qualify);
+            let entry = super::surface::PublicDeclaration::from_origin(
+                &module_path,
+                projected_item,
+                &qualify,
+            );
+            let projected_item = entry.item;
+            let entry = entry.entry;
             let qn = entry.name.clone();
             if kind == SectionKind::Modify && !self.live.contains_key(&qn) {
                 if self.frozen.contains_key(&qn) {
@@ -962,7 +969,8 @@ fn validate_context_peers(
             span: declaration.span,
         };
         let qualify = section_qualifier(&section, catalog);
-        let entry = entry_from_sig_item(&name.module_path, &declaration.item, &qualify);
+        let entry =
+            super::surface::entry_from_sig_item(&name.module_path, &declaration.item, &qualify);
         match live.get(name) {
             Some(current) if current == &entry => {}
             Some(_) => {
@@ -1419,111 +1427,6 @@ impl TypeClosureCollector<'_> {
                 Ok(())
             }
         }
-    }
-}
-
-/// Build the contract entry for one `SigItem`, qualifying its types
-/// through the section's `import` clauses.
-fn entry_from_sig_item<P>(
-    module_path: &str,
-    item: &SigItem<P>,
-    qualify: &impl Fn(&[String]) -> Vec<String>,
-) -> ContractEntry
-where
-    P: Phase<FnPurity = Purity> + Clone,
-{
-    match item {
-        SigItem::HostType(h) => ContractEntry {
-            name: QualifiedName::new(module_path, h.name.clone()),
-            side: ContractSide::Env,
-            kind: super::surface::host_type_kind(h),
-        },
-        SigItem::HostFn(h) => ContractEntry {
-            name: QualifiedName::new(module_path, h.name.clone()),
-            side: ContractSide::Env,
-            kind: ContractKind::Fn {
-                signature: sig_fn_signature(h, qualify),
-                pure: false,
-            },
-        },
-        SigItem::ExportFn(export) => ContractEntry {
-            name: QualifiedName::new(module_path, export.function.name.clone()),
-            side: ContractSide::Export,
-            kind: ContractKind::Fn {
-                signature: sig_fn_signature(&export.function, qualify),
-                pure: export.purity.is_pure(),
-            },
-        },
-        SigItem::TypeAlias(a) => ContractEntry {
-            name: QualifiedName::new(module_path, a.name.clone()),
-            side: ContractSide::Export,
-            kind: sig_alias_kind(a, qualify),
-        },
-        SigItem::Newtype(n) => ContractEntry {
-            name: QualifiedName::new(module_path, n.name.clone()),
-            side: ContractSide::Export,
-            kind: sig_newtype_kind(n, qualify),
-        },
-        SigItem::TypeRecGroup(_) => {
-            unreachable!("signature operation targets one recursive-group member, not the group")
-        }
-    }
-}
-
-/// Canonical signature of a sig `host fn` / export fn: build its
-/// System-F type and canonicalize the whole thing through the section
-/// qualifier — the same shape the live snapshot produces.
-fn sig_fn_signature<P>(h: &HostFn<P>, qualify: &impl Fn(&[String]) -> Vec<String>) -> String
-where
-    P: Phase + Clone,
-{
-    let span = Span::new(0, 0);
-    let params: Vec<SignatureParam<P>> = h
-        .params
-        .iter()
-        .map(|p| match p {
-            HostFnParam::Type(tp) => SignatureParam::Type(tp.clone()),
-            HostFnParam::Value(v) => SignatureParam::Value(Param {
-                name: v.name.clone().unwrap_or_default(),
-                ty: Some(v.ty.clone()),
-                pattern: Default::default(),
-                meta: v.meta.clone(),
-            }),
-        })
-        .collect();
-    let sig = Signature::from_parts(params, h.param_groups.clone());
-    let ty = sig.signature_ty(h.ret.clone(), span);
-    super::canonical_type(&ty, qualify)
-}
-
-fn sig_alias_kind<P>(a: &TypeAlias<P>, qualify: &impl Fn(&[String]) -> Vec<String>) -> ContractKind
-where
-    P: Phase,
-{
-    ContractKind::Alias {
-        param_kinds: a
-            .type_params
-            .iter()
-            .map(|p| p.effective_kind().to_string())
-            .collect(),
-        expansion: super::canonical_declaration_type(&a.body, &a.type_params, &[], qualify),
-    }
-}
-
-fn sig_newtype_kind<P>(n: &Newtype<P>, qualify: &impl Fn(&[String]) -> Vec<String>) -> ContractKind
-where
-    P: Phase,
-{
-    let surface = PublicNewtypeSurface::from_host_surface(n.host_surface(), |payload| {
-        super::canonical_declaration_type(payload, &n.type_params, &n.existential_params, qualify)
-    });
-    ContractKind::Newtype {
-        param_kinds: n
-            .type_params
-            .iter()
-            .map(|p| p.effective_kind().to_string())
-            .collect(),
-        surface,
     }
 }
 

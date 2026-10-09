@@ -1720,6 +1720,100 @@ pub newtype _Box[_A] : _A { pub constructor mk_box; pub projector un_box; };
     }
 
     #[test]
+    fn public_projection_full_prime_record_replay_agree_on_all_newtype_surfaces() {
+        fn observe<P>(package: &Package<P>) -> (ContractSnapshot, String, String)
+        where
+            P: ExportContractPhase + Phase<FnPurity = Purity> + Clone,
+        {
+            let live = ContractSnapshot::from_package(package);
+            let recorded = RecordedSurface::from_package(package);
+            let plan = compute_draft("app", None, &recorded, &live).expect("draft public surface");
+            let text = emit_signature_file(&plan.recomputed);
+            let parsed = crate::pass::parser::parse_signature_file(&text, Some("app"))
+                .expect("fresh emitted text parses");
+            let replayed = replay(&parsed).expect("fresh emitted text validates");
+            assert_eq!(replayed.current, live, "{text}");
+            assert_eq!(contract_digest(&replayed.current), contract_digest(&live));
+            let digest = contract_digest(&live);
+            (live, text, digest)
+        }
+
+        let source = "module api;
+            host type A;
+            host fn callback[A](value: A) -> A;
+            pub pure fn direct[A] -> . { () }
+            pub fn staged[A]()(value: A)[B] -> A { value }
+            pub type Alias[A] = A;
+            type Hidden = .;
+            pub(api) type Scoped = .;
+            pub newtype Opaque[A] <Secret> : A & Secret {
+                constructor hidden_make; pub(api) projector hidden_take;
+            };
+            pub newtype Ctor[A] : A {
+                pub constructor make_ctor; projector hidden_ctor_take;
+            };
+            pub newtype Proj[A] : A {
+                constructor hidden_proj_make; pub projector take_proj;
+            };
+            pub newtype Both[A] : A {
+                pub constructor make_both; pub projector take_both;
+            };";
+        let package_source = "package app; bridge { api; }";
+        let full = observe(&lowered_package("api", source, package_source));
+        let prime = observe(&typed_package("api", source, package_source));
+        assert_eq!(full, prime, "Full and Prime preserve bytes and digest");
+        let (live, text, _) = full;
+        assert_eq!(live.items.len(), 9);
+        for (name, expected) in [
+            ("Opaque", PublicNewtypeSurface::Opaque),
+            (
+                "Ctor",
+                PublicNewtypeSurface::Constructor {
+                    name: "make_ctor".to_owned(),
+                    payload: "#tv0".to_owned(),
+                },
+            ),
+            (
+                "Proj",
+                PublicNewtypeSurface::Projector {
+                    name: "take_proj".to_owned(),
+                    payload: "#tv0".to_owned(),
+                },
+            ),
+            (
+                "Both",
+                PublicNewtypeSurface::ConstructorAndProjector {
+                    constructor: "make_both".to_owned(),
+                    projector: "take_both".to_owned(),
+                    payload: "#tv0".to_owned(),
+                },
+            ),
+        ] {
+            assert_eq!(
+                live.items[&QualifiedName::new("api", name)].kind,
+                ContractKind::Newtype {
+                    param_kinds: vec!["*".to_owned()],
+                    surface: expected
+                }
+            );
+        }
+        assert_eq!(
+            live.items[&QualifiedName::new("api", "direct")].kind,
+            ContractKind::Fn {
+                signature: "forall<*>.".to_owned(),
+                pure: true
+            }
+        );
+        assert_eq!(
+            live.items[&QualifiedName::new("api", "callback")].side,
+            ContractSide::Env
+        );
+        for hidden in ["Hidden", "Scoped", "Secret", "hidden_"] {
+            assert!(!text.contains(hidden), "{hidden} leaked into {text}");
+        }
+    }
+
+    #[test]
     fn record_emit_replay_round_trips_cross_module() {
         // Two modules; `main` references `core`'s exported newtype, so
         // the recorded `main` section must carry the `import` that resolves

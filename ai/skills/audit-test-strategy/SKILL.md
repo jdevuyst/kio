@@ -94,6 +94,18 @@ independently authored and durable.
 
 A misplaced test is a finding.
 
+### Determinism and timing
+
+Apply [`TESTING.md` § Deterministic tests](../../../TESTING.md#deterministic-tests)
+across unit, integration, corpus, editor, and harness tests. Inspect clock reads,
+elapsed-time assertions, sleeps, polling deadlines, and unseeded randomness.
+Flag ordinary speed thresholds, sleep-based coordination, and retries that hide
+failures. Distinguish generous hang safeguards and controlled-clock tests from
+speed assertions. For dedicated blowup regressions, verify the explicit resource
+subject and portable bound; prefer operation counts or structural growth checks.
+Optimization guards must fail when the optimization is disabled without relying
+on a noisy timing comparison. Report violations under test-suite reliability.
+
 ## 4. Generator surface coverage
 
 `ci/infra/kio-gen-rs/` is a differential generator — it should track the actual surface. Compare against `specs/grammar.md`:
@@ -246,7 +258,7 @@ Group findings into:
 5. **kio-prime gate failures** — cases marked `IS_KIO_PRIME` that contain surface-only forms or fail under `kio-prime`.
 6. **Single-layer coverage / strategy redundancy gaps** — behaviors that should be covered by multiple layers but aren't, language/runtime paths the cross-implementation runner isn't exercising, missing independent public-host evidence, or decision-tree-mandated coverage that was skipped. Emissions never close runtime coverage gaps.
 7. **Backend inconsistency** — cases declaring only some of the backends they could portably support; per-backend carve-outs in the check pipeline; divergent stdout/stderr/exit across `target=` impls.
-8. **Test-suite failures** — concrete failing cases from the suites.
+8. **Test-suite failures and reliability** — concrete failing cases, flaky timing or synchronization assertions, and hidden nondeterminism.
 
 For each finding, cite the spec section or test path.
 

@@ -697,12 +697,19 @@ impl<'a> GoHostBindingSelection<'a> {
             let adapter = go_role_adapter_identity(binding.module, binding.leaf);
             let selected = go_runner_host_type(binding);
             let native = go_native_role_type(role);
-            let into_native = if selected == native {
+            let offset_i32 = self.contract.execution
+                == ProtocolExecution::Invoke(ExportDriver::GenericNominalOpaqueRoundtrip)
+                && binding.fixture == HostTypeFixture::SelectedRole(RoleFixture::I32);
+            let into_native = if offset_i32 {
+                format!("{native}(value - 1000)")
+            } else if selected == native {
                 "value".to_owned()
             } else {
                 format!("{native}(value)")
             };
-            let from_native = if selected == native {
+            let from_native = if offset_i32 {
+                format!("{selected}(value) + 1000")
+            } else if selected == native {
                 "value".to_owned()
             } else {
                 format!("{selected}(value)")
@@ -843,6 +850,23 @@ fn go_method(
     selection: &GoHostBindingSelection<'_>,
 ) -> TraitMethod {
     match binding.body {
+        HostFnBodyKind::DirectSumForallEcho { .. } => go_method_with_types(
+            binding,
+            vec![env_alias(
+                qualifier,
+                binding.module,
+                binding.leaf,
+                "arg0",
+                &selection.root_arguments(),
+            )],
+            env_alias(
+                qualifier,
+                binding.module,
+                binding.leaf,
+                "ret",
+                &selection.root_arguments(),
+            ),
+        ),
         HostFnBodyKind::CallStep { i32, .. } => {
             let i32 = selection.role_type(i32);
             let callback = env_alias(
@@ -950,7 +974,7 @@ fn go_method(
             )],
             selection.role_type(text),
         ),
-        HostFnBodyKind::ReturnedForallUnit => {
+        HostFnBodyKind::ReturnedForallUnit | HostFnBodyKind::ForallStageEffects => {
             go_alias_method(binding, qualifier, selection, 0, true)
         }
         HostFnBodyKind::ObservePacked { i32 } => go_method_with_types(
@@ -1062,7 +1086,7 @@ fn go_canonical_method(
         HostFnBodyKind::Print { string } | HostFnBodyKind::Eprint { string } => {
             go_method_with_types(binding, vec![selection.role_type(string)], "()".to_owned())
         }
-        HostFnBodyKind::PrintI32 { value } => {
+        HostFnBodyKind::PrintI32 { value } | HostFnBodyKind::InstanceMark { value } => {
             go_method_with_types(binding, vec![selection.role_type(value)], "()".to_owned())
         }
         HostFnBodyKind::ReadAsciiLine { .. } => {
@@ -1194,6 +1218,7 @@ fn go_canonical_method(
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -1208,6 +1233,7 @@ fn go_canonical_method(
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -1342,6 +1368,13 @@ fn build_driver(host: &HostApi, protocol: RunnerProtocol, ns: &str, qual: &str) 
 
     selection.render_selected_types(&mut out);
     if contract
+        .host_types
+        .iter()
+        .any(|binding| binding.fixture == HostTypeFixture::Box)
+    {
+        out.push_str(&format!("type kioBox struct {{ value {qual}.Value }}\n\n"));
+    }
+    if contract
         .host_fns
         .iter()
         .any(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit))
@@ -1371,7 +1404,11 @@ fn build_driver(host: &HostApi, protocol: RunnerProtocol, ns: &str, qual: &str) 
             "var observePacked func({payload}) int32\nvar existentialObservations int\n\n"
         ));
     }
-    out.push_str("type StubHost struct{}\n\n");
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str("type StubHost struct { exchangeLabel string }\n\n");
+    } else {
+        out.push_str("type StubHost struct{}\n\n");
+    }
     selection.render_role_adapters(&mut out);
     for (m, binding) in host.methods().zip(contract.host_fns) {
         let kind = canonical_kind(binding.body);
@@ -1380,10 +1417,14 @@ fn build_driver(host: &HostApi, protocol: RunnerProtocol, ns: &str, qual: &str) 
     }
 
     out.push_str("func main() {\n");
-    out.push_str(&format!(
-        "\tpkg := {qual}.New{}(StubHost{{}})\n",
-        selection.root_arguments()
-    ));
+    if protocol == RunnerProtocol::SameArtifactExchange {
+        out.push_str(&format!("\tpkg := {qual}.New{0}(StubHost{{exchangeLabel: \"first\"}})\n\tpkgSecond := {qual}.New{0}(StubHost{{exchangeLabel: \"second\"}})\n", selection.root_arguments()));
+    } else {
+        out.push_str(&format!(
+            "\tpkg := {qual}.New{}(StubHost{{}})\n",
+            selection.root_arguments()
+        ));
+    }
     out.push_str(&render_main_body(contract, qual));
     out.push_str("\t_ = pkg\n");
     out.push_str("}\n");
@@ -1453,6 +1494,8 @@ fn render_export_driver(
         };
         format!("{root_ns}.{selector}")
     };
+    let api_ns = module("api");
+    let second_api_ns = api_ns.replacen("pkg.", "pkgSecond.", 1);
     let type_handle =
         |module: &str, source: &str| format!("{module}.{}", go_type_handle_selector(source));
 
@@ -1475,12 +1518,11 @@ fn render_export_driver(
                  \tfmt.Println({utils}.Echo(\"namespace-utils\"))\n"
             )
         }
-        // Polymorphic fns exported at the testapi root; each returns the
-        // erased `any`, asserted for printing.
+        // These abstract values are selected solely by the host.
         ExportDriver::PolyRoundtrip => format!(
-            "\tfmt.Println({root_ns}.PolyEcho(\"poly-string\").(string))\n\
-             \tfmt.Println({root_ns}.PolyEcho(int32(42)).(int32))\n\
-             \tfmt.Println({root_ns}.KeepLeft(\"left\", int32(99)).(string))\n"
+            "\tfmt.Println({ns}.NativeAtom[string]({ns}.CallExp_Testapi__polyEcho({root_ns}, {ns}.PrepareAtom(\"poly-string\")).Erase()))\n\
+             \tfmt.Println({ns}.NativeAtom[int32]({ns}.CallExp_Testapi__polyEcho({root_ns}, {ns}.PrepareAtom(int32(42))).Erase()))\n\
+             \tfmt.Println({ns}.NativeAtom[string]({ns}.CallExp_Testapi__keepLeft({root_ns}, {ns}.PrepareAtom(\"left\"), {ns}.PrepareAtom(int32(99))).Erase()))\n"
         ),
         // `apply_twice(step, seed)` and `make_step(delta)` in
         // `testapi/main`; the callback / returned closure are concrete
@@ -1516,6 +1558,12 @@ fn render_export_driver(
             "\tpanic(\"rust-callback-aliases tests the Rust public naming contract only\")\n"
                 .to_owned()
         }
+        ExportDriver::IncomingCallableViews => {
+            "\tpanic(\"this runner has no incoming-callable-views driver\")\n".to_owned()
+        }
+        ExportDriver::IncomingCallableStages => {
+            "\tpanic(\"this runner has no incoming-callable-stages driver\")\n".to_owned()
+        }
         ExportDriver::HostExistentialRoundtrip => {
             let main = module("main");
             let types = module("types");
@@ -1528,7 +1576,7 @@ fn render_export_driver(
             );
             let packed = go_type_handle_selector("Packed");
             format!(
-                "\topenings := 0\n\tobservePacked = func(value {payload}) int32 {{\n\t\treturn {types}.{packed}.ReadPacked(value, func(pair {ns}.Exp_Testapi_types__Packed_readPacked_arg1_cbarg0{root_arguments}) any {{ openings++; return pair.F1(pair.F0) }}).(int32)\n\t}}\n\tresult := {main}.Exercise()\n\tif result.F0 != 37 || result.F1 != 83 || existentialObservations != 2 || openings != 2 {{ panic(\"existential host observations changed\") }}\n\tfmt.Println(\"existential host opening ok\")\n"
+                "\topenings := 0\n\tobservePacked = func(value {payload}) int32 {{\n\t\treturn {ns}.NativeAtom[int32]({types}.{packed}.ReadPacked(value, func() func({ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ return func(pair {ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ openings++; return {ns}.Atom(pair.F1(pair.F0)) }} }}))\n\t}}\n\tresult := {main}.Exercise()\n\tif result.F0 != 37 || result.F1 != 83 || existentialObservations != 2 || openings != 2 {{ panic(\"existential host observations changed\") }}\n\tfmt.Println(\"existential host opening ok\")\n"
             )
         }
         ExportDriver::FunctorDictRoundtrip => {
@@ -1536,26 +1584,70 @@ fn render_export_driver(
             let types = module("types");
             let box_type = type_handle(&types, "Box");
             let functor = type_handle(&types, "Functor");
+            let roots = root_arguments.trim_start_matches('[').trim_end_matches(']');
             format!(
-                r#"    integers := []int32{{}}
+                r#"    type numberIndex = {ns}.Index_testapi__I32[int32]
+    type textIndex = {ns}.Index_testapi__String[string]
+    type boxIndex = {ns}.Index_testapi__types__Box
+    type numberValue = {ns}.Prepared[numberIndex]
+    type textValue = {ns}.Prepared[textIndex]
+    type numberBox = {ns}.Exp_Testapi_types__Box_mkBox_arg0[{roots}, numberIndex]
+    type textBox = {ns}.Exp_Testapi_types__Box_mkBox_arg0[{roots}, textIndex]
+    integers := []int32{{}}
     texts := []string{{}}
-    toText := func(value any) any {{ number := value.(int32); integers = append(integers, number); return fmt.Sprintf("v:%d", number) }}
-    toInteger := func(value any) any {{ text := value.(string); texts = append(texts, text); return int32(len(text)) }}
+    toText := func(value numberValue) textValue {{ number := {ns}.UnprepareHost_testapi_I32(pkg, value); integers = append(integers, number); return {ns}.PrepareHost_testapi_String(pkg, fmt.Sprintf("v:%d", number)) }}
+    toInteger := func(value textValue) numberValue {{ text := {ns}.UnprepareHost_testapi_String(pkg, value); texts = append(texts, text); return {ns}.PrepareHost_testapi_I32(pkg, int32(len(text))) }}
     dict := {main}.EchoFunctor({main}.BoxFunctor())
-    first := {main}.ApplyFunctor(dict, toText, {box_type}.MkBox({ns}.Exp_Testapi_types__Box_mkBox_arg0{root_arguments}{{F0: int32(42), F1: {ns}.Unit{{}}}}))
-    if {box_type}.UnBox(first).F0 != "v:42" {{ panic("functor integer input") }}
-    second := {main}.ApplyFunctor(dict, toInteger, {box_type}.MkBox({ns}.Exp_Testapi_types__Box_mkBox_arg0{root_arguments}{{F0: "apple", F1: {ns}.Unit{{}}}}))
-    if {box_type}.UnBox(second).F0 != int32(5) {{ panic("functor text input") }}
-    abstractDict := func(pair {ns}.Exp_Testapi_types__Functor_fmap_arg0_cbarg0{root_arguments}) any {{
-        return dict({ns}.Exp_Testapi_main__boxFunctor_ret_cbarg0{root_arguments}{{F0: pair.F0, F1: pair.F1.({ns}.Exp_Testapi_types__Box_mkBox_ret{root_arguments})}})
-    }}
-    mapping := {functor}.Fmap(abstractDict)
-    third := mapping({ns}.Exp_Testapi_types__Functor_fmap_ret_cbarg0{root_arguments}{{F0: toText, F1: {box_type}.MkBox({ns}.Exp_Testapi_types__Box_mkBox_arg0{root_arguments}{{F0: int32(7), F1: {ns}.Unit{{}}}})}}).({ns}.Exp_Testapi_types__Box_unBox_arg0{root_arguments})
-    if {box_type}.UnBox(third).F0 != "v:7" {{ panic("projected functor integer input") }}
-    fourth := mapping({ns}.Exp_Testapi_types__Functor_fmap_ret_cbarg0{root_arguments}{{F0: toInteger, F1: {box_type}.MkBox({ns}.Exp_Testapi_types__Box_mkBox_arg0{root_arguments}{{F0: "pear", F1: {ns}.Unit{{}}}})}}).({ns}.Exp_Testapi_types__Box_unBox_arg0{root_arguments})
-    if {box_type}.UnBox(fourth).F0 != int32(4) {{ panic("projected functor text input") }}
+    first := {ns}.CallExp_Testapi_main__applyFunctor({main}, dict, toText, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 42), F1: {ns}.Unit{{}}}}))
+    if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, first).F0) != "v:42" {{ panic("functor integer input") }}
+    second := {ns}.CallExp_Testapi_main__applyFunctor({main}, dict, toInteger, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "apple"), F1: {ns}.Unit{{}}}}))
+    if {ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, second).F0) != int32(5) {{ panic("functor text input") }}
+    abstractDict := {ns}.NativeExp_Testapi_types__Functor_fmap_arg0[{roots}, boxIndex](pkg, {ns}.ValueExp_Testapi_main__boxFunctor_ret(pkg, dict))
+    mapping := {ns}.CallExp_Testapi_types__Functor_fmap({functor}, abstractDict)
+    numberMapping := {ns}.SelectExp_Testapi_types__Functor_fmap_ret_selected[textIndex]({ns}.SelectExp_Testapi_types__Functor_fmap_ret[numberIndex](mapping))
+    thirdValue := numberMapping({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, numberIndex, textIndex]{{F0: toText, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, numberIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 7), F1: {ns}.Unit{{}}}}))}})
+    third := {ns}.UnprepareExp_Testapi_types__Box_unBox_arg0[{roots}, textIndex](pkg, thirdValue)
+    if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, third).F0) != "v:7" {{ panic("projected functor integer input") }}
+    textMapping := {ns}.SelectExp_Testapi_types__Functor_fmap_ret_selected[numberIndex]({ns}.SelectExp_Testapi_types__Functor_fmap_ret[textIndex](mapping))
+    fourthValue := textMapping({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, textIndex, numberIndex]{{F0: toInteger, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, textIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "pear"), F1: {ns}.Unit{{}}}}))}})
+    fourth := {ns}.UnprepareExp_Testapi_types__Box_unBox_arg0[{roots}, numberIndex](pkg, fourthValue)
+    if {ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, fourth).F0) != int32(4) {{ panic("projected functor text input") }}
     if len(integers) != 2 || integers[0] != 42 || integers[1] != 7 || len(texts) != 2 || texts[0] != "apple" || texts[1] != "pear" {{ panic("functor callback events") }}
     fmt.Println("functor dictionary ok")
+"#
+            )
+        }
+        ExportDriver::DirectSumForallBoundary => {
+            let api = module("api");
+            let input = format!("{ns}.Exp_Testapi_api__relay_arg0{root_arguments}");
+            let left = sum_constructor(&input, 0);
+            let right = sum_constructor(&input, 1);
+            let callback = format!("{ns}.Exp_Testapi_api__throughCallback_arg1{root_arguments}");
+            let relay_left = format!("{ns}.Exp_Testapi_api__relay_ret_0{root_arguments}");
+            let relay_right = format!("{ns}.Exp_Testapi_api__relay_ret_1{root_arguments}");
+            format!(
+                r#"
+    unit := {left}(func() int32 {{ fmt.Println("unit call"); return 17 }})
+    poly := {right}({ns}.NewExp_Testapi_api__relay_arg0_1_valueStage{root_arguments}(StubHost{{}}, func() func({ns}.Value) {ns}.Value {{ return func(value {ns}.Value) {ns}.Value {{ fmt.Println("poly call"); return value }} }}))
+    callback := {callback}(func(value {ns}.Exp_Testapi_api__throughCallback_arg1_cbarg0{root_arguments}) {ns}.Exp_Testapi_api__throughCallback_arg1_cbret{root_arguments} {{ fmt.Println("callback"); return value }})
+    for _, viaCallback := range []bool{{false, true}} {{
+        returnedUnit := unit
+        if viaCallback {{ returnedUnit = {api}.ThroughCallback(unit, callback) }} else {{ returnedUnit = {api}.Relay(unit) }}
+        fmt.Println("unit ready")
+        number := returnedUnit.Case().({relay_left}).Value()()
+        if number != 17 {{ panic("Unit callback result changed") }}
+        fmt.Println(number)
+        returnedPoly := poly
+        if viaCallback {{ returnedPoly = {api}.ThroughCallback(poly, callback) }} else {{ returnedPoly = {api}.Relay(poly) }}
+        fmt.Println("poly ready")
+        identity := returnedPoly.Case().({relay_right}).Value()
+        integer := {ns}.NativeAtom[int32](identity.Invoke()({ns}.Atom(int32(23))))
+        if integer != 23 {{ panic("polymorphic Number result changed") }}
+        fmt.Println(integer)
+        text := {ns}.NativeAtom[string](identity.Invoke()({ns}.Atom("identity")))
+        if text != "identity" {{ panic("polymorphic Text result changed") }}
+        fmt.Println(text)
+    }}
 "#
             )
         }
@@ -1604,17 +1696,114 @@ fn render_export_driver(
                  \tfmt.Println(\"scalar payloads ok\")\n"
             )
         }
+        ExportDriver::SameArtifactExchange => format!(
+            "apiFirst := {api_ns}\napiSecond := {second_api_ns}\nresult0 := apiSecond.ReadHidden(apiFirst.MakeHidden(17))\nif result0 != 17 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"direct: %d\\n\", result0)\nresult1 := apiFirst.ReadHidden(apiSecond.MakeHidden(29))\nif result1 != 29 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"direct: %d\\n\", result1)\nresult2 := apiSecond.ReadBox(apiFirst.Boxed(apiFirst.MakeHidden(17)))\nif result2 != 17 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"box: %d\\n\", result2)\nresult3 := apiFirst.ReadBox(apiSecond.Boxed(apiSecond.MakeHidden(29)))\nif result3 != 29 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"box: %d\\n\", result3)\nresult4 := apiSecond.ReadPacked(apiFirst.MakePacked(23))\nif result4 != 23 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"packed: %d\\n\", result4)\nresult5 := apiFirst.ReadPacked(apiSecond.MakePacked(31))\nif result5 != 31 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"packed: %d\\n\", result5)\nresult6 := apiSecond.RunBox(apiFirst.BoxedLater(apiFirst.MakeHidden(17)))\nif result6 != 17 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"callback: %d\\n\", result6)\nresult7 := apiFirst.RunBox(apiSecond.BoxedLater(apiSecond.MakeHidden(29)))\nif result7 != 29 {{ panic(\"exchange payload changed\") }}\nfmt.Printf(\"callback: %d\\n\", result7)\n"
+        ),
         ExportDriver::HostOwnedRoundtrip => {
             let main = module("main");
-            let from_native =
-                go_parametric_host_from_native(ns, HostTypeIdentity::new("testapi", "Box"));
+            let number_box = go_parametric_host_from_native_at(
+                ns,
+                HostTypeIdentity::new("testapi", "Box"),
+                &format!("{ns}.AtomIndex[int32]"),
+            );
+            let text_box = go_parametric_host_from_native_at(
+                ns,
+                HostTypeIdentity::new("testapi", "Box"),
+                &format!("{ns}.AtomIndex[string]"),
+            );
             format!(
                 "\tfor _, value := range []int32{{7, 19}} {{ if {main}.EchoToken(value).(int32) != value {{ panic(\"token payload changed\") }} }}\n\
-                 \tinteger := {main}.EchoBox({from_native}(int32(42))).UnsafeNative()\n\
-                 \tif integer.(int32) != 42 {{ panic(\"integer box payload changed\") }}\n\
-                 \ttext := {main}.EchoBox({from_native}(\"box-value\")).UnsafeNative()\n\
-                 \tif text.(string) != \"box-value\" {{ panic(\"string box payload changed\") }}\n\
+                 \tinteger := {ns}.CallExp_Testapi_main__echoBox({main}, {number_box}(&kioBox{{value: {ns}.Atom(int32(42))}})).UnsafeNative().(*kioBox).value\n\
+                 \tif {ns}.NativeAtom[int32](integer) != 42 {{ panic(\"integer box payload changed\") }}\n\
+                 \ttext := {ns}.CallExp_Testapi_main__echoBox({main}, {text_box}(&kioBox{{value: {ns}.Atom(\"box-value\")}})).UnsafeNative().(*kioBox).value\n\
+                 \tif {ns}.NativeAtom[string](text) != \"box-value\" {{ panic(\"string box payload changed\") }}\n\
                  \tfmt.Println(\"host-owned payloads ok\")\n"
+            )
+        }
+        ExportDriver::GenericNominalOpaqueRoundtrip => {
+            let main = module("main");
+            let wrapped = type_handle(&main, "Wrapped");
+            let nominal = format!("{ns}.IndexExp_Testapi_main__unwrap_arg0{root_arguments}");
+            let boxed = go_parametric_host_from_native_at(
+                ns,
+                HostTypeIdentity::new("testapi", "Box"),
+                &nominal,
+            );
+            format!(
+                r#"
+    wrapped := {ns}.CallExp_Testapi_main__Wrapped_mkWrapped({wrapped}, {ns}.PrepareHost_testapi_I32(pkg, 1037))
+    hostBox := {boxed}(&kioBox{{value: {ns}.ValueExp_Testapi_main__unwrap_arg0(pkg, wrapped)}})
+    fmt.Println({main}.Read(hostBox) - 1000)
+    made := {main}.Make(1061)
+    fmt.Println({main}.Read(made) - 1000)
+    extracted := made.UnsafeNative().(*kioBox).value
+    fmt.Println({main}.Unwrap({ns}.NativeExp_Testapi_main__unwrap_arg0(pkg, extracted)) - 1000)
+"#
+            )
+        }
+        ExportDriver::OpaqueProductRoundtrip => {
+            let main = module("main");
+            let index = format!("{ns}.Exp_Testapi_main__direct_arg0_typearg0{root_arguments}");
+            let boxed = go_parametric_host_from_native_at(
+                ns,
+                HostTypeIdentity::new("testapi", "Box"),
+                &format!("{ns}.IndexExp_Testapi_main__direct_arg0_typearg0{root_arguments}"),
+            );
+            format!(
+                r#"
+    pair := {index}{{F0: 11, F1: 17}}
+    hostBox := {boxed}(&kioBox{{value: {ns}.ValueExp_Testapi_main__direct_arg0_typearg0(pkg, pair)}})
+    for _, result := range []{ns}.Exp_Testapi_main__direct_ret{root_arguments}{{{main}.Direct(hostBox), {main}.Relayed(hostBox)}} {{ fmt.Println(result.F0, result.F1) }}
+    kioBoxed := {main}.Make()
+    native := {ns}.NativeExp_Testapi_main__direct_arg0_typearg0(pkg, kioBoxed.UnsafeNative().(*kioBox).value)
+    if native.F0 != 31 || native.F1 != 37 {{ panic("native product extraction changed") }}
+    for _, result := range []{ns}.Exp_Testapi_main__direct_ret{root_arguments}{{{main}.Direct(kioBoxed), {main}.Relayed(kioBoxed)}} {{ fmt.Println(result.F0, result.F1) }}
+"#
+            )
+        }
+        ExportDriver::OpaqueCompoundRoundtrip => {
+            let main = module("main");
+            let number = selection.host_type(HostTypeIdentity::new("testapi", "I32"));
+            let sum = format!("{ns}.Exp_Testapi_main__readSum_arg0_typearg0{root_arguments}");
+            let callback = format!("{ns}.Exp_Testapi_main__call_arg0_typearg0{root_arguments}");
+            let nominal =
+                format!("{ns}.Exp_Testapi_main__readNominal_arg0_typearg0{root_arguments}");
+            let boxed = |index: &str| {
+                go_parametric_host_from_native_at(
+                    ns,
+                    HostTypeIdentity::new("testapi", "Box"),
+                    &index.replacen(".Exp_", ".IndexExp_", 1),
+                )
+            };
+            let sum_box = boxed(&sum);
+            let callback_box = boxed(&callback);
+            let nominal_box = boxed(&nominal);
+            let left = sum_constructor(&sum, 0);
+            let right = sum_constructor(&sum, 1);
+            let wrapped = type_handle(&main, "Wrapped");
+            format!(
+                r#"
+    left := {left}({number}(19))
+    right := {right}({ns}.Unit{{}})
+    fmt.Println({main}.ReadSum({sum_box}(&kioBox{{value: {ns}.ValueExp_Testapi_main__readSum_arg0_typearg0(pkg, left)}})))
+    fmt.Println({main}.ReadSum({sum_box}(&kioBox{{value: {ns}.ValueExp_Testapi_main__readSum_arg0_typearg0(pkg, right)}})))
+    fmt.Println({main}.ReadSum({main}.MakeSum()))
+    fmt.Println({main}.ReadSum({main}.MakeEmpty()))
+    calls := 0
+    step := func(value {number}) {number} {{ calls++; fmt.Println("call"); return value + 1 }}
+    hostBox := {callback_box}(&kioBox{{value: {ns}.ValueExp_Testapi_main__call_arg0_typearg0(pkg, step)}})
+    if calls != 0 {{ panic("callback ran during preparation") }}
+    fmt.Println({main}.Call(hostBox, {number}(31)))
+    fmt.Println({main}.Call(hostBox, {number}(43)))
+    if calls != 2 {{ panic("callback invocation count changed") }}
+    kioCallable := {main}.MakeCallable()
+    nativeStep := {ns}.NativeExp_Testapi_main__call_arg0_typearg0(pkg, kioCallable.UnsafeNative().(*kioBox).value)
+    if nativeStep({number}(61)) != {number}(61) {{ panic("native callable extraction changed") }}
+    fmt.Println({main}.Call(kioCallable, {number}(47)))
+    nativeNominal := {wrapped}.MkWrapped({ns}.Exp_Testapi_main__Wrapped_mkWrapped_arg0{root_arguments}{{F0: 41, F1: 43}})
+    hostNominal := {nominal_box}(&kioBox{{value: {ns}.ValueExp_Testapi_main__readNominal_arg0_typearg0(pkg, nativeNominal)}})
+    for _, value := range []{nominal}{{{main}.ReadNominal(hostNominal), {main}.ReadNominal({main}.MakeNominal())}} {{ fmt.Println(value.F0, value.F1) }}
+"#
             )
         }
         // `pair_swap((I32, String)) -> (String & I32)` and
@@ -1747,6 +1936,7 @@ fn render_export_driver(
             let projector_spread = type_handle(&types, "Projector_spread");
             let existential_spread = type_handle(&types, "Existential_spread");
             let recursive_existential = type_handle(&types, "Recursive_existential_function");
+            let visible_comptime_outer = type_handle(&types, "Visible_comptime_outer");
             let member_alias = |owner, member, slot| {
                 format!(
                     "{ns}.Exp_{}_{slot}{root_arguments}",
@@ -1760,14 +1950,41 @@ fn render_export_driver(
             let constructor_spread_arg = member_alias(
                 "Constructor_spread",
                 "make_constructor_spread",
-                "arg0_cbarg0",
+                "arg0_result_cbarg0",
             );
-            let projector_spread_arg =
-                member_alias("Projector_spread", "read_projector_spread", "ret_cbarg0");
+            let constructor_spread_stage = format!(
+                "{ns}.NewExp_{}_arg0Stage{root_arguments}",
+                host_api::go_qualified_boundary_member(
+                    "testapi/types",
+                    Some("Constructor_spread"),
+                    "make_constructor_spread"
+                )
+            );
+            let constructor_generic_call = format!(
+                "{ns}.CallExp_{}",
+                host_api::go_qualified_boundary_member(
+                    "testapi/types",
+                    Some("Constructor_generic"),
+                    "make_constructor_generic"
+                )
+            );
+            let projector_generic_call = format!(
+                "{ns}.CallExp_{}",
+                host_api::go_qualified_boundary_member(
+                    "testapi/types",
+                    Some("Projector_generic"),
+                    "read_projector_generic"
+                )
+            );
+            let projector_spread_arg = member_alias(
+                "Projector_spread",
+                "read_projector_spread",
+                "ret_result_cbarg0",
+            );
             let existential_spread_arg = member_alias(
                 "Existential_spread",
                 "read_existential_spread",
-                "arg1_cbarg0",
+                "arg1_result_cbarg0",
             );
             format!(
                 "\tvar inputA {i32_type} = 11\n\
@@ -1804,17 +2021,17 @@ fn render_export_driver(
              \tprojectorPairValue := {types}.MakeProjectorPairValue(constructorPairOut)\n\
              \tprojectorPairOut := {projector_pair}.ReadProjectorPair(projectorPairValue)\n\
              \tfmt.Println(projectorPairOut.F0, projectorPairOut.F1)\n\
-             \tconstructorGenericValue := {constructor_generic}.MakeConstructorGeneric({i32_type}(85))\n\
-             \tfmt.Println({types}.ReadConstructorGenericValue(constructorGenericValue).({i32_type}))\n\
-             \tprojectorGenericValue := {types}.MakeProjectorGenericValue({i32_type}(86))\n\
-             \tfmt.Println({projector_generic}.ReadProjectorGeneric(projectorGenericValue).({i32_type}))\n\
+             \tconstructorGenericValue := {constructor_generic_call}({constructor_generic}, {ns}.PrepareHost_testapi_I32(pkg, 85))\n\
+             \tfmt.Println({ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__readConstructorGenericValue({types}, constructorGenericValue)))\n\
+             \tprojectorGenericValue := {ns}.CallExp_Testapi_types__makeProjectorGenericValue({types}, {ns}.PrepareHost_testapi_I32(pkg, 86))\n\
+             \tfmt.Println({ns}.UnprepareHost_testapi_I32(pkg, {projector_generic_call}({projector_generic}, projectorGenericValue)))\n\
              \tpacked := {packed_function}.MakePackedFunction(func(pair {packed_function_arg}) {i32_type} {{ return pair.F0 + pair.F1 }})\n\
              \tunpacked := {packed_function}.ReadPackedFunction(packed)\n\
              \tfmt.Println(unpacked(constructorPairOut))\n\
              \texistential := {types}.MakeExistentialUnitValue()\n\
-             \tfmt.Println({existential_unit}.ReadExistentialUnit(existential, func(_ any) any {{ return int32(89) }}).(int32))\n\
+             \tfmt.Println({ns}.NativeAtom[int32]({existential_unit}.ReadExistentialUnit(existential, func() func({ns}.Value) {ns}.Value {{ return func(_ {ns}.Value) {ns}.Value {{ return {ns}.Atom(int32(89)) }} }})))\n\
              \texistentialEmptyValue := {types}.MakeExistentialEmptyValue()\n\
-             \tfmt.Println({existential_empty}.ReadExistentialEmpty(existentialEmptyValue, func() any {{ return int32(90) }}).(int32))\n\
+             \tfmt.Println({ns}.NativeAtom[int32]({existential_empty}.ReadExistentialEmpty(existentialEmptyValue, func() func() {ns}.Value {{ return func() {ns}.Value {{ return {ns}.Atom(int32(90)) }} }})))\n\
              \trecursiveBothValue := {recursive_both}.MakeRecursiveBoth({types}.RecursiveBothBasePayload())\n\
              \tfmt.Println({types}.RecursiveBothPayloadIsBase({recursive_both}.ReadRecursiveBoth(recursiveBothValue)))\n\
              \trecursiveConstructorValue := {recursive_constructor}.MakeRecursiveConstructor({types}.RecursiveConstructorBasePayload())\n\
@@ -1822,14 +2039,16 @@ fn render_export_driver(
              \trecursiveProjectorValue := {types}.MakeRecursiveProjectorBase()\n\
              \tfmt.Println({types}.RecursiveProjectorPayloadIsBase({recursive_projector}.ReadRecursiveProjector(recursiveProjectorValue)))\n\
              \tinputs := []{i32_type}{{}}\n\
-             \tconstructed := {constructor_spread}.MakeConstructorSpread(func(pair {constructor_spread_arg}) {i32_type} {{ inputs = append(inputs, pair.F0); return pair.F0 + 3 }})\n\
+             \tconstructed := {constructor_spread}.MakeConstructorSpread({constructor_spread_stage}(StubHost{{}}, func() func({constructor_spread_arg}) {i32_type} {{ return func(pair {constructor_spread_arg}) {i32_type} {{ inputs = append(inputs, pair.F0); return pair.F0 + 3 }} }}))\n\
              \tif {types}.InvokeConstructorSpreadI32(constructed, 101) != 104 || {types}.InvokeConstructorSpreadUnit(constructed, 102) != 105 || len(inputs) != 2 || inputs[0] != 101 || inputs[1] != 102 {{ panic(\"constructor callback changed\") }}\n\
              \tprojected := {projector_spread}.ReadProjectorSpread({types}.MakeProjectorSpreadValue())\n\
-             \tif projected({projector_spread_arg}{{F0: 111, F1: {i32_type}(1)}}) != 111 || projected({projector_spread_arg}{{F0: 112, F1: {ns}.Unit{{}}}}) != 112 {{ panic(\"projector callback changed\") }}\n\
+             \tif projected.Invoke()({projector_spread_arg}{{F0: 111, F1: {ns}.Atom({i32_type}(1))}}) != 111 || projected.Invoke()({projector_spread_arg}{{F0: 112, F1: {ns}.Atom({ns}.Unit{{}})}}) != 112 {{ panic(\"projector callback changed\") }}\n\
              \tspreadOpens, recursiveOpens := 0, 0\n\
-             \topenedSpread := {existential_spread}.ReadExistentialSpread({types}.MakeExistentialSpreadValue(), func(_ {existential_spread_arg}) any {{ spreadOpens++; return int32(91) }})\n\
-             \topenedRecursive := {recursive_existential}.ReadRecursiveExistentialFunction({types}.MakeRecursiveExistentialFunctionValue(), func(_ func(any) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) any {{ recursiveOpens++; return int32(92) }})\n\
-             \tif openedSpread.(int32) != 91 || openedRecursive.(int32) != 92 || spreadOpens != 1 || recursiveOpens != 1 {{ panic(\"existential continuation count changed\") }}\n"
+             \topenedSpread := {existential_spread}.ReadExistentialSpread({types}.MakeExistentialSpreadValue(), func() func({existential_spread_arg}) {ns}.Value {{ return func(_ {existential_spread_arg}) {ns}.Value {{ spreadOpens++; return {ns}.Atom(int32(91)) }} }})\n\
+             \topenedRecursive := {recursive_existential}.ReadRecursiveExistentialFunction({types}.MakeRecursiveExistentialFunctionValue(), func() func(func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ return func(_ func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ recursiveOpens++; return {ns}.Atom(int32(92)) }} }})\n\
+             \tif {ns}.NativeAtom[int32](openedSpread) != 91 || {ns}.NativeAtom[int32](openedRecursive) != 92 || spreadOpens != 1 || recursiveOpens != 1 {{ panic(\"existential continuation count changed\") }}\n\
+             \tinner := {visible_comptime_outer}.ReadVisibleComptimeOuter({types}.MakeVisibleComptimeOuterBase())\n\
+             \t_ = {visible_comptime_outer}.ReadVisibleComptimeOuter({visible_comptime_outer}.MakeVisibleComptimeOuter(inner))\n"
             )
         }
         // `make(String, I32, I32) -> Outer` exported in `testapi/main`,
@@ -1907,24 +2126,24 @@ fn render_export_driver(
             let main = module("main");
             format!(
                 r#"    fmt.Println("ready")
-    direct := {main}.Direct()
+    direct := {ns}.CallExp_Testapi_main__direct[{ns}.AtomIndex[string]]({main})
     fmt.Println("specialized")
-    fmt.Println(direct("direct-string").(string))
-    integer := {main}.Direct()
+    fmt.Println({ns}.NativeAtom[string](direct({ns}.PrepareAtom("direct-string")).Erase()))
+    integer := {ns}.CallExp_Testapi_main__direct[{ns}.AtomIndex[int32]]({main})
     fmt.Println("specialized-again")
-    fmt.Println(integer(int32(42)).(int32))
-    delayed := {main}.Delayed()
+    fmt.Println({ns}.NativeAtom[int32](integer({ns}.PrepareAtom(int32(42))).Erase()))
+    delayed := {ns}.CallExp_Testapi_main__delayed[{ns}.AtomIndex[string]]({main})
     fmt.Println("unit-called")
-    fmt.Println(delayed("unit-string").(string))
-    fmt.Println({main}.Ordinary("ordinary-string").(string))
-    {main}.Phantom()
+    fmt.Println({ns}.NativeAtom[string](delayed({ns}.PrepareAtom("unit-string")).Erase()))
+    fmt.Println({ns}.NativeAtom[string]({ns}.CallExp_Testapi_main__ordinary({main}, {ns}.PrepareAtom("ordinary-string")).Erase()))
+    {ns}.CallExp_Testapi_main__phantom[{ns}.AtomIndex[string]]({main})
     fmt.Println("phantom-called")
-    {main}.PhantomUnit()
+    {ns}.CallExp_Testapi_main__phantomUnit[{ns}.AtomIndex[string]]({main})
     fmt.Println("phantom-unit-called")
-    poly := {main}.Poly()
+    poly := {ns}.CallExp_Testapi_main__poly[{ns}.AtomIndex[string]]({main})
     fmt.Println("poly-returned")
-    fmt.Println(poly("poly-string").(string))
-    fmt.Println(poly(int32(73)).(int32))
+    fmt.Println({ns}.NativeAtom[string](poly.Invoke()({ns}.Atom("poly-string"))))
+    fmt.Println({ns}.NativeAtom[int32](poly.Invoke()({ns}.Atom(int32(73)))))
 "#
             )
         }
@@ -1944,15 +2163,31 @@ fn render_export_driver(
         ExportDriver::PublicWordNames => {
             let word_api = format!("{root_ns}.WordApi");
             let word_nodes = format!("{word_api}.KioModule_wordNodes");
+            let member_call = |member| {
+                format!(
+                    "{ns}.CallExp_{}",
+                    host_api::go_qualified_boundary_member(
+                        "word_api/word_nodes",
+                        Some("_Word_box__"),
+                        member
+                    )
+                )
+            };
+            let wrap = member_call("wrap_word");
+            let unwrap = member_call("unwrap_word");
+            let keep = format!(
+                "{ns}.CallExp_{}",
+                host_api::go_qualified_boundary_member("word_api/word_nodes", None, "keep_word")
+            );
             format!(
                 "\tfmt.Println({word_api}.ReadWord())\n\
                  \tfmt.Println({word_api}.KioItem__ureadWord())\n\
                  \tfmt.Println({word_api}.KioItem_readWord_u())\n\
                  \tfmt.Println({word_api}.KioItem__ureadWord_u())\n\
                  \tfmt.Println({word_api}.KioItem_readWord_u_u())\n\
-                 \tboxed := {word_nodes}.KioType__uWordBox_u_u.WrapWord(55)\n\
-                 \tfmt.Println({word_nodes}.KioType__uWordBox_u_u.UnwrapWord(boxed))\n\
-                 \tfmt.Println({word_nodes}.KeepWord(66))\n\
+                 \tboxed := {wrap}({word_nodes}.KioType__uWordBox_u_u, {ns}.PrepareHost_wordApi_CountValue(pkg, 55))\n\
+                 \tfmt.Println({ns}.UnprepareHost_wordApi_CountValue(pkg, {unwrap}({word_nodes}.KioType__uWordBox_u_u, boxed)))\n\
+                 \tfmt.Println({ns}.UnprepareHost_wordApi_CountValue(pkg, {keep}({word_nodes}, {ns}.PrepareHost_wordApi_CountValue(pkg, 66))))\n\
                  \tpair := {word_api}.KeepPair({ns}.Exp_KioItem_wordApi__keepPair_arg0{root_arguments}{{KioKey_V1_B13__uWordBox_u_u: 77, KioKey_V1_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u: 88}})\n\
                  \tfmt.Println(pair.KioKey_V1_B13__uWordBox_u_u)\n\
                  \tfmt.Println(pair.KioKey_V1_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u)\n"
@@ -2009,37 +2244,26 @@ fn render_export_driver(
                 "\tout := {main}.Select({arguments})\n\tfmt.Println(out.F0)\n\tfmt.Println(out.F1)\n\tfmt.Println(out.F2)\n\tcallbackOut := {main}.MakeSelect()({ns}.Exp_Testapi_main__makeSelect_ret_cbarg0{root_arguments}{{{fields}}})\n\tfmt.Println(callbackOut.F0)\n\tfmt.Println(callbackOut.F1)\n\tfmt.Println(callbackOut.F2)\n"
             )
         }
-        // `apply_via[K][R](f: K -> R, x: K) -> R` erases to
-        // `ApplyVia(func(any) any, any) any` on the Go facade; the
-        // driver's closures pick the concrete instantiation and assert it
-        // back out of `any`.
+        // The driver selects opaque atoms for the abstract K and R slots.
         ExportDriver::PolyCallbackRoundtrip => {
             let main = module("main");
             format!(
-                "\tfmt.Println({main}.ApplyVia(func(v any) any {{ return \"via: \" + v.(string) }}, \"apply\").(string))\n\
-                 \tfmt.Println({main}.ApplyVia(func(v any) any {{ return v.(int) + 8 }}, 7).(int))\n"
+                "\tfmt.Println({ns}.NativeAtom[string]({ns}.CallExp_Testapi_main__applyVia({main}, func(v {ns}.Prepared[{ns}.AtomIndex[string]]) {ns}.Prepared[{ns}.AtomIndex[string]] {{ return {ns}.PrepareAtom(\"via: \" + {ns}.NativeAtom[string](v.Erase())) }}, {ns}.PrepareAtom(\"apply\")).Erase()))\n\
+                 \tfmt.Println({ns}.NativeAtom[int]({ns}.CallExp_Testapi_main__applyVia({main}, func(v {ns}.Prepared[{ns}.AtomIndex[int]]) {ns}.Prepared[{ns}.AtomIndex[int]] {{ return {ns}.PrepareAtom({ns}.NativeAtom[int](v.Erase()) + 8) }}, {ns}.PrepareAtom(7)).Erase()))\n"
             )
         }
-        // The exported `Pair` newtype lives in `testapi/types`; its
-        // `pub constructor mk_pair` / `pub projector un_pair` surface as
-        // identity methods on a role-tagged per-type handle under the
-        // `testapi/types` module (`.MkPair` / `.UnPair`) — a transparent
-        // newtype. Build the
-        // `(A & B)` payload — a type-var product, so positional `F0`/`F1`
-        // fields, both `any` — through the type-qualified
-        // `Exp_..._Pair_mkPair_arg0` alias, round-trip it, read the fields.
         ExportDriver::TypeRoundtrip => {
             let types = module("types");
             let pair = type_handle(&types, "Pair");
             let input = format!(
-                "{ns}.Exp_{}_arg0{root_arguments}",
+                "{ns}.Exp_{}_arg0[{ns}.AtomIndex[string], {ns}.AtomIndex[string]]",
                 host_api::go_qualified_boundary_member("testapi/types", Some("Pair"), "mk_pair")
             );
             format!(
-                "\tboxed := {pair}.MkPair({input}{{F0: \"export-type-left\", F1: \"export-type-right\"}})\n\
-                 \tout := {pair}.UnPair(boxed)\n\
-                 \tfmt.Println(out.F0)\n\
-                 \tfmt.Println(out.F1)\n"
+                "\tboxed := {ns}.CallExp_Testapi_types__Pair_mkPair({pair}, {input}{{F0: {ns}.PrepareAtom(\"export-type-left\"), F1: {ns}.PrepareAtom(\"export-type-right\")}})\n\
+                 \tout := {ns}.CallExp_Testapi_types__Pair_unPair({pair}, boxed)\n\
+                 \tfmt.Println({ns}.NativeAtom[string](out.F0.Erase()))\n\
+                 \tfmt.Println({ns}.NativeAtom[string](out.F1.Erase()))\n"
             )
         }
         ExportDriver::Main { .. } | ExportDriver::Coexist => return None,
@@ -2057,7 +2281,17 @@ fn render_method(
 ) -> String {
     let sig = render_method_sig(m);
     let body = render_go_body_for_binding(binding, kind, m, ns, selection);
-    format!("func (StubHost) {sig} {{\n\t{body}\n}}\n")
+    let receiver = if matches!(
+        binding.body,
+        HostFnBodyKind::InstanceMark { .. }
+            | HostFnBodyKind::ReturnedForallUnit
+            | HostFnBodyKind::ForallStageEffects
+    ) {
+        "host StubHost"
+    } else {
+        "StubHost"
+    };
+    format!("func ({receiver}) {sig} {{\n\t{body}\n}}\n")
 }
 
 fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
@@ -2077,6 +2311,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         },
         HostFnBodyKind::BoolToString { .. } => CanonicalKind::BoolToString,
         HostFnBodyKind::PrintI32 { .. } => CanonicalKind::PrintI32,
+        HostFnBodyKind::InstanceMark { .. } => CanonicalKind::Custom,
         HostFnBodyKind::StringToInt { .. } => CanonicalKind::StringToInt,
         HostFnBodyKind::Arithmetic { operation, number } => CanonicalKind::Arith {
             op: operation.to_owned(),
@@ -2118,6 +2353,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::BoxGet { .. }
         | HostFnBodyKind::BoxMake { .. }
         | HostFnBodyKind::CallStep { .. }
+        | HostFnBodyKind::DirectSumForallEcho { .. }
         | HostFnBodyKind::MakePairCallback { .. }
         | HostFnBodyKind::MakeStep { .. }
         | HostFnBodyKind::ApplyPoly { .. }
@@ -2132,6 +2368,7 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
         | HostFnBodyKind::NestedCurriedRoundtrip { .. }
         | HostFnBodyKind::InvokeSubstitutedUnitCallback { .. }
         | HostFnBodyKind::ReturnedForallUnit
+        | HostFnBodyKind::ForallStageEffects
         | HostFnBodyKind::ObservePacked { .. }
         | HostFnBodyKind::TraceUnit { .. }
         | HostFnBodyKind::StagedUnitCall
@@ -2155,6 +2392,9 @@ fn render_go_body_for_binding(
     selection: &GoHostBindingSelection<'_>,
 ) -> String {
     match binding.body {
+        HostFnBodyKind::InstanceMark { .. } => {
+            "fmt.Printf(\"%s: %d\\n\", host.exchangeLabel, arg0)".to_owned()
+        }
         HostFnBodyKind::Print { string } => format!(
             "os.Stdout.WriteString({})",
             selection.role_into_native(string, "arg0")
@@ -2171,6 +2411,9 @@ fn render_go_body_for_binding(
             let value = selection.role_into_native(value, "arg0");
             let rendered = numeric_to_string_expression(kind, &value);
             format!("return {}", selection.role_from_native(string, &rendered))
+        }
+        HostFnBodyKind::DirectSumForallEcho { .. } => {
+            "fmt.Println(\"echo\"); return arg0".to_owned()
         }
         // `call_step(step, seed)` takes a callback with one product parameter.
         HostFnBodyKind::CallStep { string, bool_, .. } => {
@@ -2196,10 +2439,10 @@ fn render_go_body_for_binding(
         // fixture keeps its native payload erased, but crosses the public
         // boundary through that exact carrier rather than through `any`.
         HostFnBodyKind::BoxMake { box_type } => format!(
-            "return {}(arg0)",
+            "return {}(&kioBox{{value: arg0}})",
             go_parametric_host_from_native(ns, box_type)
         ),
-        HostFnBodyKind::BoxGet { .. } => "return arg0.UnsafeNative()".to_owned(),
+        HostFnBodyKind::BoxGet { .. } => "return arg0.UnsafeNative().(*kioBox).value".to_owned(),
         // `make_token(I32) -> Token`: the opaque `Token` erases to `any`,
         // so the token *is* its `I32` payload (boxed to `any` on return).
         HostFnBodyKind::MakeToken { value_i32, .. } => {
@@ -2228,15 +2471,30 @@ fn render_go_body_for_binding(
             format!("return \"host/\" + arg0({ns}.Unit{{}})")
         }
         HostFnBodyKind::ReturnedForallUnit => {
+            let stage = format!(
+                "{ns}.NewEnv_{}_retStage",
+                go_host_member(binding.module, binding.leaf)
+            );
             format!(
-                "if returnedForallProduced {{\n\t\tfmt.Println(\"throw\")\n\t\tpanic(\"produce failed\")\n\t}}\n\treturnedForallProduced = true\n\tfmt.Println(\"produce\")\n\treturn {ns}.Unit{{}}"
+                "if returnedForallProduced {{\n\t\tfmt.Println(\"throw\")\n\t\tpanic(\"produce failed\")\n\t}}\n\treturnedForallProduced = true\n\tfmt.Println(\"produce\")\n\treturn {stage}(host, func() {ns}.Value {{ return {ns}.Atom({ns}.Unit{{}}) }})"
+            )
+        }
+        HostFnBodyKind::ForallStageEffects => {
+            let stage = format!(
+                "{ns}.NewEnv_{}_retStage",
+                go_host_member(binding.module, binding.leaf)
+            );
+            format!(
+                "fmt.Println(\"create\")\n\treturn {stage}(host, func() {ns}.Unit {{ fmt.Println(\"apply\"); return {ns}.Unit{{}} }})"
             )
         }
         HostFnBodyKind::TraceUnit { text } => format!("fmt.Println({text:?})"),
         HostFnBodyKind::StagedUnitCall => "fmt.Println(\"staged Unit host call\")".to_owned(),
         // `apply_poly(f)`: feed the rank-n callback an erased `String`
         // carrier and return the (erased) result as a string.
-        HostFnBodyKind::ApplyPoly { .. } => "return arg0(\"rank-n\\n\").(string)".to_owned(),
+        HostFnBodyKind::ApplyPoly { .. } => {
+            format!("return {ns}.NativeAtom[string](arg0.Invoke()({ns}.Atom(\"rank-n\\n\")))")
+        }
         // `make_pair(n, s)`: build the `(I32 & String)` product directly.
         HostFnBodyKind::MakePairStructural { .. } => {
             let ret = env_alias(
@@ -2563,6 +2821,10 @@ fn split_go_type_arguments(alias: &str) -> (&str, &str) {
 }
 
 fn go_parametric_host_from_native(ns: &str, identity: HostTypeIdentity) -> String {
+    go_parametric_host_from_native_at(ns, identity, &format!("{ns}.KioErasedIndex_S"))
+}
+
+fn go_parametric_host_from_native_at(ns: &str, identity: HostTypeIdentity, index: &str) -> String {
     let name = identity
         .module
         .split('/')
@@ -2571,7 +2833,7 @@ fn go_parametric_host_from_native(ns: &str, identity: HostTypeIdentity) -> Strin
         .map(go_escape_identity_component)
         .collect::<Vec<_>>()
         .join("__");
-    format!("{ns}.UnsafeKioHostType_{name}FromNative[any]")
+    format!("{ns}.UnsafeKioHostType_{name}FromNative[{index}]")
 }
 
 fn sum_constructors(alias: &str) -> (String, String) {
@@ -2600,7 +2862,7 @@ fn render_array_body(op: &ArrayOp, m: &TraitMethod, ns: &str, from_native: Optio
         ),
         ArrayOp::Len => format!("{recv}return int32(len(a.v))"),
         ArrayOp::Get => format!(
-            "{recv}if arg1 < 0 || int(arg1) >= len(a.v) {{ panic(\"array_get: out of bounds\") }}\n\treturn a.v[arg1]"
+            "{recv}if arg1 < 0 || int(arg1) >= len(a.v) {{ panic(\"array_get: out of bounds\") }}\n\treturn a.v[arg1].({ns}.Value)"
         ),
         ArrayOp::Set => format!(
             "{recv}if arg1 < 0 || int(arg1) >= len(a.v) {{ panic(\"array_set: out of bounds\") }}\n\ta.v[arg1] = arg2"
@@ -2609,7 +2871,7 @@ fn render_array_body(op: &ArrayOp, m: &TraitMethod, ns: &str, from_native: Optio
         ArrayOp::PopBack => {
             let (new_0, new_1) = sum_constructors(&m.ret_type);
             format!(
-                "{recv}if len(a.v) == 0 {{ return {new_1}({ns}.Unit{{}}) }}\n\tlast := a.v[len(a.v)-1]\n\ta.v = a.v[:len(a.v)-1]\n\treturn {new_0}(last)"
+                "{recv}if len(a.v) == 0 {{ return {new_1}({ns}.Unit{{}}) }}\n\tlast := a.v[len(a.v)-1].({ns}.Value)\n\ta.v = a.v[:len(a.v)-1]\n\treturn {new_0}(last)"
             )
         }
         ArrayOp::Swap => format!(
@@ -2735,15 +2997,15 @@ mod tests {
     fn parameterized_host_storage_uses_readable_exact_declaration_paths() {
         assert_eq!(
             go_parametric_host_from_native("pkg", HostTypeIdentity::new("api", "Box")),
-            "pkg.UnsafeKioHostType_api__BoxFromNative[any]"
+            "pkg.UnsafeKioHostType_api__BoxFromNative[pkg.KioErasedIndex_S]"
         );
         assert_eq!(
             go_parametric_host_from_native("pkg", HostTypeIdentity::new("a/_b", "Box")),
-            "pkg.UnsafeKioHostType_a___ub__BoxFromNative[any]"
+            "pkg.UnsafeKioHostType_a___ub__BoxFromNative[pkg.KioErasedIndex_S]"
         );
         assert_eq!(
             go_parametric_host_from_native("pkg", HostTypeIdentity::new("a_/b", "Box")),
-            "pkg.UnsafeKioHostType_a_u__b__BoxFromNative[any]"
+            "pkg.UnsafeKioHostType_a_u__b__BoxFromNative[pkg.KioErasedIndex_S]"
         );
     }
 
@@ -3062,9 +3324,9 @@ mod tests {
             "pkg.WordApi.KioItem_readWord_u()",
             "pkg.WordApi.KioItem__ureadWord_u()",
             "pkg.WordApi.KioItem_readWord_u_u()",
-            "KioModule_wordNodes.KioType__uWordBox_u_u.WrapWord(55)",
-            "KioModule_wordNodes.KioType__uWordBox_u_u.UnwrapWord(boxed)",
-            "KioModule_wordNodes.KeepWord(66)",
+            "demo.CallExp_KioItem_wordApi_swordNodes___uWordBox_u_u__wrapWord(pkg.WordApi.KioModule_wordNodes.KioType__uWordBox_u_u, demo.PrepareHost_wordApi_CountValue(pkg, 55))",
+            "demo.CallExp_KioItem_wordApi_swordNodes___uWordBox_u_u__unwrapWord(pkg.WordApi.KioModule_wordNodes.KioType__uWordBox_u_u, boxed)",
+            "demo.CallExp_KioItem_wordApi_swordNodes__keepWord(pkg.WordApi.KioModule_wordNodes, demo.PrepareHost_wordApi_CountValue(pkg, 66))",
             "pkg.WordApi.KeepPair(demo.Exp_KioItem_wordApi__keepPair_arg0",
             "pair.KioKey_V1_B13__uWordBox_u_u",
             "pair.KioKey_V1_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u",
@@ -3087,10 +3349,10 @@ mod tests {
 
         assert_eq!(
             body,
-            "\tboxed := pkg.Testapi.KioModule_types.KioType_Pair.MkPair(demo.Exp_Testapi_types__Pair_mkPair_arg0{F0: \"export-type-left\", F1: \"export-type-right\"})\n\
-             \tout := pkg.Testapi.KioModule_types.KioType_Pair.UnPair(boxed)\n\
-             \tfmt.Println(out.F0)\n\
-             \tfmt.Println(out.F1)\n"
+            "\tboxed := demo.CallExp_Testapi_types__Pair_mkPair(pkg.Testapi.KioModule_types.KioType_Pair, demo.Exp_Testapi_types__Pair_mkPair_arg0[demo.AtomIndex[string], demo.AtomIndex[string]]{F0: demo.PrepareAtom(\"export-type-left\"), F1: demo.PrepareAtom(\"export-type-right\")})\n\
+             \tout := demo.CallExp_Testapi_types__Pair_unPair(pkg.Testapi.KioModule_types.KioType_Pair, boxed)\n\
+             \tfmt.Println(demo.NativeAtom[string](out.F0.Erase()))\n\
+             \tfmt.Println(demo.NativeAtom[string](out.F1.Erase()))\n"
         );
     }
 

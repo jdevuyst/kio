@@ -421,17 +421,22 @@ pub(super) fn query_expr_for_repl(
     // rendered typed AST; the `Lowered` form remains on this adapter
     // side of the evaluator boundary and is consumed into an
     // `UncheckedPrime` root before reduction.
-    let module = analysis.root_package.module(&current).ok_or_else(|| {
+    let module = analysis.root_package().module(&current).ok_or_else(|| {
         ExprQueryError::PackageError(format!("module `{current}` vanished from the package"))
     })?;
-    let typed_expr = wrap.extract_let_rhs(&module.module.items).ok_or_else(|| {
-        ExprQueryError::PackageError(
-            "the synthetic expression statement was not produced by the type-checker".to_owned(),
-        )
-    })?;
+    let typed_expr = wrap
+        .extract_let_rhs(&module.module().items)
+        .ok_or_else(|| {
+            ExprQueryError::PackageError(
+                "the synthetic expression statement was not produced by the type-checker"
+                    .to_owned(),
+            )
+        })?;
 
     let lowered_module = analysis
-        .checked_lowered
+        .completed
+        .source()
+        .checked()
         .package()
         .module(&current)
         .ok_or_else(|| {
@@ -470,7 +475,7 @@ pub(super) fn query_expr_for_repl(
     // the host-independent partial evaluator: pure expressions collapse to
     // ground values, host items stay as opaque `Value::Atom`s,
     // applications that can't be reduced residualize as `Value::Stuck`.
-    let value = reduce_lowered(&lowered_expr, &analysis.checked_lowered, &current)?;
+    let value = reduce_lowered(&lowered_expr, analysis.completed.source(), &current)?;
     let rendered_value = crate::normalization::value_to_repl_string(&value, &lowered_module.module);
 
     Ok(ExprQueryResult {
@@ -535,9 +540,10 @@ pub(super) fn query_expr_purity_for_repl(
 /// reduces exactly the way `equiv` discharge does.
 fn reduce_lowered(
     expr: &Expr<Lowered>,
-    checked: &crate::pass::typecheck_full::CheckedLoweredPackage,
+    source: &crate::pass::typecheck_full::CompletedLoweredSource,
     module_path: &str,
 ) -> Result<Value, ReplExprQueryError> {
+    let checked = source.checked();
     let package = checked.package();
     let source_module = package.module(module_path).ok_or_else(|| {
         ExprQueryError::PackageError(format!(
@@ -551,18 +557,14 @@ fn reduce_lowered(
         Some(package),
         Some(&source_module.module),
     );
-    let eval_package = checked.eval_artifact().map_err(|located| {
+    let eval_package = source.eval_artifact().map_err(|located| {
         ExprQueryError::PackageError(located.error.diagnostic().message.clone())
     })?;
-    let eval_module = eval_package.module(module_path).ok_or_else(|| {
-        ExprQueryError::PackageError(format!(
-            "module `{module_path}` vanished from the evaluator artifact"
-        ))
-    })?;
-
     let metrics = EvalMetrics::enabled();
-    let mut ctx = AuthenticatedEvalCtx::for_module(&eval_package, &eval_module.module, module_path)
+    let prepared = eval_package
+        .prepare_module(module_path)
         .map_err(|error| ExprQueryError::PackageError(error.diagnostic().message.clone()))?;
+    let mut ctx = AuthenticatedEvalCtx::for_module(prepared);
     if let Some(metrics) = &metrics {
         ctx = ctx.with_metrics(metrics.clone());
     }
@@ -737,7 +739,7 @@ impl SyntheticWrap {
     /// the caller can extract from either the `Prime` (source-faithful
     /// render path) or the `Lowered` (residual-NF reduction path) AST
     /// produced by the same typecheck.
-    fn extract_let_rhs<'a, P: crate::ast::Phase + Clone>(
+    fn extract_let_rhs<'a, P: crate::ast::Phase<FnBody = Expr<P>> + Clone>(
         &self,
         items: &'a [Item<P>],
     ) -> Option<Cow<'a, Expr<P>>> {
@@ -1088,7 +1090,11 @@ pure fn main(ct: __Comptime__) -> . {
 
     #[test]
     fn reduce_lowered_propagates_executed_structural_fault() {
-        let checked = checked_structural_fault_package();
+        let source = checked_structural_fault_package()
+            .complete()
+            .expect("complete fault fixture")
+            .into_source();
+        let checked = source.checked();
         let module = checked.package().module("main").expect("main module");
         let body = module
             .module
@@ -1099,7 +1105,7 @@ pure fn main(ct: __Comptime__) -> . {
                 _ => None,
             })
             .expect("main definition");
-        let error = reduce_lowered(body, &checked, "main")
+        let error = reduce_lowered(body, &source, "main")
             .expect_err("the actual REPL reduction seam must surface Totality");
         let ReplExprQueryError::Totality(message) = error else {
             panic!("structural fault lost its private Totality category");

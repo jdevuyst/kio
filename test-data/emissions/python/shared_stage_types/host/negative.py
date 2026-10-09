@@ -33,7 +33,7 @@ def identity(value: int) -> int:
     return value
 
 
-def adapted(poly: second.KioViewExport_api__poly_Result) -> int:
-    integers: first.KioFn[int, int] = poly.advance()
-    protected = integers.adapt(identity, identity)
-    return protected("wrong")
+def lifted() -> int:
+    integers: first.KioFn[int, int] = second.kio_lift(identity)
+    selected: second.KioFn[int, int] = integers
+    return selected("wrong")

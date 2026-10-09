@@ -413,7 +413,7 @@ mod tests {
             .check_in_body_resolution()
             .expect("check in-body resolution");
         let prime = FullPipeline::typecheck(&package).expect("typecheck surface package");
-        crate::pass::recover_to_low::lower(&crate::pass::structural_recovery::recover_package(
+        crate::pass::route::route_package(&crate::pass::structural_recovery::recover_package(
             &prime,
         ))
     }

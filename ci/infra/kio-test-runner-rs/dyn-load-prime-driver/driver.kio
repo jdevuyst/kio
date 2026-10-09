@@ -15,9 +15,11 @@ import loader(
   , {hostfn_in}
   , {i32_in}
   , {i32_out}
+  , {left_in}
   , {lookup}
   , {pair_in}
   , {pair_out}
+  , {right_in}
   , {str_in}
   , {str_out}
   , {sum_is_left}
@@ -181,6 +183,18 @@ fn cb_pair_descriptor() -> Host_fn {
     )
 }
 
+fn forall_stage_descriptor() -> Host_fn {
+  descriptor("driver"(String), "driver_forall_stage"(String), "() -> ."(String))
+}
+
+fn opaque_step_descriptor() -> Host_fn {
+  descriptor(
+    , "driver"(String)
+    , "driver_opaque_step"(String)
+    , "(h{testapi.I32}) -> h{testapi.I32}"(String)
+    )
+}
+
 fn base_param_kinds(arity: I32) -> Param_kinds {
   loop(
     , .(state: I32 & Param_kinds) {
@@ -310,6 +324,11 @@ fn protocol_host_adapter() -> Host_adapter {
     } else if! string_eq(protocol_name(), "export-compound-input-once"(String)) {
       host_fn_bindings_cons(
         , mk_host_fn_binding(cb_pair_descriptor(), group_slots_cons(0(I32), group_slots_nil()))
+        , functions
+        )
+    } else if! string_eq(protocol_name(), "opaque-compound-roundtrip"(String)) {
+      host_fn_bindings_cons(
+        , mk_host_fn_binding(opaque_step_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
         , functions
         )
     } else {
@@ -774,7 +793,30 @@ fn arm_exit(dom: Value) -> Call_result {
 // handle.
 fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
   let identity = host_id_local(host_fn_id(descriptor));
-  if! string_eq(protocol_name(), "type-only-stage-trace"(String)) {
+  if! string_eq(protocol_name(), "host-forall-stage-effects"(String)) {
+    if! host_fn_eq(
+      , descriptor
+      , mk_host_fn(mk_host_id("testapi/main"(String), "produce"(String)), "() -> ([#0] .)"(String))
+      ) {
+      print("create\n"(String));
+      call_done(vhostfn(
+        , forall_stage_descriptor()
+        , group_slots_cons(0(I32), group_slots_nil())
+        , vals_nil()
+        ))
+    } else if! host_fn_eq(descriptor, forall_stage_descriptor()) {
+      print("apply\n"(String));
+      call_done(vunit())
+    } else if! host_fn_eq(
+      , descriptor
+      , mk_host_fn(mk_host_id("testapi/main"(String), "observe"(String)), "() -> ."(String))
+      ) {
+      print("observe\n"(String));
+      call_done(vunit())
+    } else {
+      call_stuck("host-forall-stage-effects received an unexpected host descriptor"(String))
+    }
+  } else if! string_eq(protocol_name(), "type-only-stage-trace"(String)) {
     if! host_fn_eq(
       , descriptor
       , mk_host_fn(mk_host_id("testapi/main"(String), "observe"(String)), "() -> ."(String))
@@ -796,6 +838,13 @@ fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
   } else if! host_fn_eq(descriptor, cb_pair_descriptor()) {
     print("callback\n"(String));
     call_done(vproduct(vi32(9(I32)), vhost(scalar_of_str("callback-value"(String)))))
+  } else if! host_fn_eq(descriptor, opaque_step_descriptor()) {
+    match! as_i32(dom) {
+      (
+        , .(number: I32) { print("call\n"(String)); call_done(vi32(add_i32(number, 1(I32)))) }
+        , .(_bad: .) { call_stuck("opaque callback expected an i32"(String)) }
+        )
+    }
   } else if! string_eq(identity, "staged"(String)) {
     if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "staged"(String))) {
       arm_staged(dom)
@@ -1500,6 +1549,145 @@ fn unsupported_protocol_script() -> . {
   runner_failure("dyn-load-prime driver: unsupported protocol script\n"(String))
 }
 
+fn opaque_print_pair[P](surf: Surface(P), result: P | Diag) {
+  compound_input_value(
+    , result
+    , .(value: P) {
+        compound_input_pair(
+          , surf
+          , value
+          , .(left: P, right: P) {
+              match! surf.?{i32_out}(left) {
+                (
+                  , .(a: I32) {
+                      match! surf.?{i32_out}(right) {
+                        (
+                          , .(b: I32) {
+                              print(string_concat(
+                                , int_to_string(a)
+                                , string_concat(
+                                    , " "(String)
+                                    , string_concat(int_to_string(b), "\n"(String))
+                                    )
+                                ))
+                            }
+                          , .(d: Diag) {
+                              runner_failure(diag_line("opaque pair right — "(String), d))
+                            }
+                          )
+                      }
+                    }
+                  , .(d: Diag) { runner_failure(diag_line("opaque pair left — "(String), d)) }
+                  )
+              }
+            }
+          )
+      }
+    )
+}
+
+// This adapter's ordinary Box fixture stores its payload unchanged; box_make
+// and box_get above are its explicit storage operations. Surface constructors
+// below therefore build the host-origin payload before it enters the guest.
+fn script_opaque_product[P](surf: Surface(P)) {
+  let host = surf.?{pair_in}((surf.?{i32_in}(11(I32)), surf.?{i32_in}(17(I32))));
+  opaque_print_pair(surf, call_export(surf, "testapi/main.direct"(String), host));
+  opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"(String), host));
+  compound_input_value(
+    , call_export(surf, "testapi/main.make"(String), surf.?{unit_in})
+    , .(kio: P) {
+        opaque_print_pair(surf, call_export(surf, "testapi/main.direct"(String), kio));
+        opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"(String), kio))
+      }
+    )
+}
+
+fn script_generic_nominal_opaque[P](surf: Surface(P)) {
+  compound_input_value(
+    , call_export(surf, "testapi/main.Wrapped.mk_wrapped"(String), surf.?{i32_in}(37(I32)))
+    , .(nominal: P) {
+        print(i32_line(surf, call_export(surf, "testapi/main.read"(String), nominal)))
+      }
+    );
+  compound_input_value(
+    , call_export(surf, "testapi/main.make"(String), surf.?{i32_in}(61(I32)))
+    , .(kio: P) {
+        print(i32_line(surf, call_export(surf, "testapi/main.read"(String), kio)));
+        print(i32_line(surf, call_export(surf, "testapi/main.unwrap"(String), kio)))
+      }
+    )
+}
+
+fn script_opaque_compound[P](surf: Surface(P)) {
+  print(i32_line(
+    , surf
+    , call_export(surf, "testapi/main.read_sum"(String), surf.?{left_in}(surf.?{i32_in}(19(I32))))
+    ));
+  print(i32_line(
+    , surf
+    , call_export(surf, "testapi/main.read_sum"(String), surf.?{right_in}(surf.?{unit_in}))
+    ));
+  compound_input_value(
+    , call_export(surf, "testapi/main.make_sum"(String), surf.?{unit_in})
+    , .(value: P) {
+        print(i32_line(surf, call_export(surf, "testapi/main.read_sum"(String), value)))
+      }
+    );
+  compound_input_value(
+    , call_export(surf, "testapi/main.make_empty"(String), surf.?{unit_in})
+    , .(value: P) {
+        print(i32_line(surf, call_export(surf, "testapi/main.read_sum"(String), value)))
+      }
+    );
+  compound_input_value(
+    , surf.?{hostfn_in}(opaque_step_descriptor())
+    , .(host: P) {
+        print(i32_line(
+          , surf
+          , call_export(
+              , surf
+              , "testapi/main.call"(String)
+              , surf.?{pair_in}((host, surf.?{i32_in}(31(I32))))
+              )
+          ));
+        print(i32_line(
+          , surf
+          , call_export(
+              , surf
+              , "testapi/main.call"(String)
+              , surf.?{pair_in}((host, surf.?{i32_in}(43(I32))))
+              )
+          ))
+      }
+    );
+  compound_input_value(
+    , call_export(surf, "testapi/main.make_callable"(String), surf.?{unit_in})
+    , .(value: P) {
+        print(i32_line(
+          , surf
+          , call_export(
+              , surf
+              , "testapi/main.call"(String)
+              , surf.?{pair_in}((value, surf.?{i32_in}(47(I32))))
+              )
+          ))
+      }
+    );
+  let payload = surf.?{pair_in}((surf.?{i32_in}(41(I32)), surf.?{i32_in}(43(I32))));
+  compound_input_value(
+    , call_export(surf, "testapi/main.Wrapped.mk_wrapped"(String), payload)
+    , .(nominal: P) {
+        opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"(String), nominal))
+      }
+    );
+  compound_input_value(
+    , call_export(surf, "testapi/main.make_nominal"(String), surf.?{unit_in})
+    , .(value: P) {
+        opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"(String), value))
+      }
+    )
+}
+
 // Keep these script adapters aligned with the canonical support inventory
 // in src/shared/protocol.rs, which the coverage lint consumes.
 fn dispatch_script[P](surf: Surface(P), proto: String) -> . {
@@ -1525,6 +1713,12 @@ fn dispatch_script[P](surf: Surface(P), proto: String) -> . {
     script_curried(surf)
   } else if! string_eq(proto, "export-type-roundtrip"(String)) {
     script_type_roundtrip(surf)
+  } else if! string_eq(proto, "opaque-product-roundtrip"(String)) {
+    script_opaque_product(surf)
+  } else if! string_eq(proto, "opaque-compound-roundtrip"(String)) {
+    script_opaque_compound(surf)
+  } else if! string_eq(proto, "generic-nominal-opaque-roundtrip"(String)) {
+    script_generic_nominal_opaque(surf)
   } else {
     unsupported_protocol_script()
   }

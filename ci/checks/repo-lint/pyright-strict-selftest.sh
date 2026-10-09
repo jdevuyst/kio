@@ -284,33 +284,41 @@ if ! grep -Fq 'not assignable' "$fixture/layout-negative.log"; then
   exit 1
 fi
 
-# Mypy is not a repository toolchain dependency. A maintainer can supply the
-# pinned secondary checker to replay the same positive/negative layout proof;
-# the version check keeps that recorded evidence reproducible.
-if [ -n "${KIO_MYPY_BIN:-}" ]; then
-  case $("$KIO_MYPY_BIN" --version) in
-    'mypy 1.18.2 '*) ;;
-    *)
-      printf 'pyright-strict-selftest: KIO_MYPY_BIN must be mypy 1.18.2\n' >&2
-      exit 2
-      ;;
-  esac
-  (cd "$layout" && "$KIO_MYPY_BIN" --strict --python-version 3.10 consumer.py) \
-    >"$fixture/mypy-positive.log" 2>&1 || {
-      printf 'pyright-strict-selftest: mypy cross-shard positive fixture failed\n' >&2
-      cat "$fixture/mypy-positive.log" >&2
-      exit 1
-    }
-  if (cd "$layout" && "$KIO_MYPY_BIN" --strict --python-version 3.10 \
-      consumer_negative.py) >"$fixture/mypy-negative.log" 2>&1; then
-    printf 'pyright-strict-selftest: mypy cross-shard identity mismatch passed\n' >&2
+# Replay the bounded layout proof with the repository's second checker.
+if command -v mise >/dev/null 2>&1 &&
+   MYPY=$(cd "$REPO_ROOT" && mise which mypy 2>/dev/null) &&
+   [ -n "$MYPY" ]; then
+  :
+elif command -v mypy >/dev/null 2>&1; then
+  MYPY=mypy
+else
+  printf 'pyright-strict-selftest: required mypy is unavailable; install core mise tools\n' >&2
+  exit 2
+fi
+case $("$MYPY" --version) in
+  'mypy 2.4.0 '*) ;;
+  *)
+    printf 'pyright-strict-selftest: required mypy version is 2.4.0\n' >&2
+    exit 2
+    ;;
+esac
+(cd "$layout" && "$MYPY" --strict --python-version 3.10 --no-incremental \
+    --cache-dir="$fixture/mypy-cache" consumer.py) \
+  >"$fixture/mypy-positive.log" 2>&1 || {
+    printf 'pyright-strict-selftest: mypy cross-shard positive fixture failed\n' >&2
+    cat "$fixture/mypy-positive.log" >&2
     exit 1
-  fi
-  if ! grep -Fq 'Incompatible types in assignment' "$fixture/mypy-negative.log"; then
-    printf 'pyright-strict-selftest: mypy cross-shard negative failed unexpectedly\n' >&2
-    cat "$fixture/mypy-negative.log" >&2
-    exit 1
-  fi
+  }
+if (cd "$layout" && "$MYPY" --strict --python-version 3.10 --no-incremental \
+    --cache-dir="$fixture/mypy-cache" consumer_negative.py) \
+    >"$fixture/mypy-negative.log" 2>&1; then
+  printf 'pyright-strict-selftest: mypy cross-shard identity mismatch passed\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'Incompatible types in assignment' "$fixture/mypy-negative.log"; then
+  printf 'pyright-strict-selftest: mypy cross-shard negative failed unexpectedly\n' >&2
+  cat "$fixture/mypy-negative.log" >&2
+  exit 1
 fi
 
 PYTHONPATH=$layout python3 "$layout/runtime_probe.py"

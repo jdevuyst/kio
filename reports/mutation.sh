@@ -77,7 +77,7 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 # audit-backend-completeness own them; mutating them here would drown
 # the semantic core).
 #
-# The audit-mutation skill's scope-review step diffs this list against
+# The audit-reports skill's scope-review step diffs this list against
 # the kio-rs module inventory each run; change the list only together
 # with the charter argument above.
 #
@@ -130,6 +130,7 @@ absurd_propagate
 match_fusion
 let_fuse
 beta_reduce_unary_iife
+beta_reduce_nullary_iife
 dead_code_elimination
 newtype_identity_elision
 constant_fold'

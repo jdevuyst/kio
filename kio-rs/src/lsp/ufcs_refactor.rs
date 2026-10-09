@@ -284,7 +284,7 @@ fn prove(
     .then_some(())
 }
 
-fn calls<P: Phase>(module: &Module<P>) -> Vec<&Expr<P>> {
+fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
     let mut pending = Vec::new();
     for item in &module.items {
         match item {

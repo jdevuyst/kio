@@ -1578,7 +1578,7 @@ fn schedule_analysis(
     };
     if lsp_timing_enabled() {
         eprintln!(
-            "lsp-timing: schedule snapshot={} priority={} scope={} package={} overlays={}",
+            "lsp-timing: schedule snapshot={} priority={} scope={} package={} overlays={} trigger_uri={} trigger_version={:?}",
             req.snapshot.id().raw(),
             req.priority.as_str(),
             if req.focus.is_some() {
@@ -1588,6 +1588,8 @@ fn schedule_analysis(
             },
             req.package_root.display(),
             req.snapshot.versions().len(),
+            triggering_uri.as_str(),
+            req.snapshot.version(triggering_uri),
         );
     }
     match priority {
@@ -1684,11 +1686,11 @@ fn publish_worker_result(
         }
     }
 
-    // Clear stale diagnostics: every URI that previously had a
-    // diagnostic but doesn't now publishes an empty set.
+    // Retract this package's previous publications, not diagnostics owned by
+    // another package (which may include a republished shared dependency).
     let mut cleared_count = 0usize;
     if clear_stale_diagnostics {
-        let previously_published = state.drain_published();
+        let previously_published = state.take_published_for(&package_root);
         for uri in &previously_published {
             if !new_diags.contains_key(uri) {
                 // A clear produced by analysis of an open overlay belongs to
@@ -1711,7 +1713,7 @@ fn publish_worker_result(
     for (uri, diags) in new_diags {
         let version = overlay_versions.get(&uri).copied();
         publish(connection, uri.clone(), diags, version)?;
-        state.mark_published(uri);
+        state.mark_published(&package_root, uri);
     }
 
     if lsp_timing_enabled() {
@@ -3064,6 +3066,122 @@ mod tests {
             .expect("focused shard retained after full failure");
         assert_eq!(retained.snapshot().id(), focused_id);
         assert!(!state.focused_worker_result_is_obsolete(&file_path, &uri, &focused_snapshot));
+    }
+
+    #[test]
+    fn shared_diagnostic_publication_can_only_be_cleared_by_its_current_package() {
+        use crate::error::Error;
+        use crate::lsp::snapshot::{Snapshot, SnapshotIdGen};
+        use crate::pass::resolve::LocatedError;
+        use crate::span::Span;
+
+        let (server, client) = Connection::memory();
+        let mut state = ServerState::new();
+        let ids = SnapshotIdGen::new();
+        let first = workspace_path("first-package");
+        let second = workspace_path("second-package");
+        // Dependency diagnostics need not lie below either analyzed root.
+        let file = workspace_path("shared/dependency.kio");
+        let uri = workspace_uri("shared/dependency.kio");
+        let source = "module dependency;\n";
+        state.open(uri.clone(), source.to_owned(), 4);
+        let result = |root: &Path, snapshot: Snapshot, error: bool| WorkerResult {
+            overlay_versions: snapshot.versions().clone(),
+            snapshot,
+            package_root: root.to_path_buf(),
+            outcome: WorkerOutcome::Full(if error {
+                Err(AnalysisFailure {
+                    errors: vec![LocatedError {
+                        file_path: file.clone(),
+                        error: Error::type_(Span::new(0, 1), "dependency error"),
+                    }],
+                    sources: Box::new(HashMap::from([(file.clone(), source.to_owned())])),
+                })
+            } else {
+                Ok(analysis_for_file(
+                    &root.join("main.kio"),
+                    "main",
+                    "module main;",
+                ))
+            }),
+        };
+        let snapshot = || Snapshot::new(ids.next(), BTreeMap::from([(uri.clone(), 4)]));
+        let received = || {
+            let Message::Notification(notification) = client.receiver.try_recv().unwrap() else {
+                panic!("expected diagnostic publication");
+            };
+            assert_eq!(notification.method, PublishDiagnostics::METHOD);
+            serde_json::from_value::<lsp_types::PublishDiagnosticsParams>(notification.params)
+                .unwrap()
+        };
+
+        publish_worker_result(&server, &mut state, result(&first, snapshot(), true)).unwrap();
+        assert_eq!(received().diagnostics.len(), 1);
+        let obsolete = snapshot();
+        state.mark_scheduled(&first, ids.next());
+        publish_worker_result(&server, &mut state, result(&second, snapshot(), true)).unwrap();
+        let transferred = received();
+        assert_eq!(transferred.uri, uri);
+        assert_eq!(transferred.version, Some(4));
+        assert_eq!(transferred.diagnostics.len(), 1);
+
+        publish_worker_result(&server, &mut state, result(&first, obsolete, true)).unwrap();
+        assert!(
+            client.receiver.try_recv().is_err(),
+            "obsolete result ignored"
+        );
+        let focused = snapshot();
+        state.mark_focused_scheduled(&uri, &file, focused.id());
+        publish_worker_result(
+            &server,
+            &mut state,
+            WorkerResult {
+                overlay_versions: focused.versions().clone(),
+                snapshot: focused,
+                package_root: second.clone(),
+                outcome: WorkerOutcome::Focused {
+                    uri: uri.clone(),
+                    file_path: file.clone(),
+                    outcome: Ok(analysis_for_file(&file, "dependency", source)),
+                },
+            },
+        )
+        .unwrap();
+        assert!(
+            client.receiver.try_recv().is_err(),
+            "focused results do not retract"
+        );
+        publish_worker_result(&server, &mut state, result(&first, snapshot(), false)).unwrap();
+        assert!(
+            client.receiver.try_recv().is_err(),
+            "former owner cannot retract"
+        );
+
+        // Closing drops the overlay, not its publication. The owner's next
+        // full result no longer includes the dependency and must clear it.
+        state.close(&uri);
+        assert!(client.receiver.try_recv().is_err());
+        publish_worker_result(
+            &server,
+            &mut state,
+            result(&first, Snapshot::new(ids.next(), BTreeMap::new()), false),
+        )
+        .unwrap();
+        assert!(
+            client.receiver.try_recv().is_err(),
+            "unrelated closed-file retraction"
+        );
+        publish_worker_result(
+            &server,
+            &mut state,
+            result(&second, Snapshot::new(ids.next(), BTreeMap::new()), false),
+        )
+        .unwrap();
+        let cleared = received();
+        assert_eq!(cleared.uri, uri);
+        assert_eq!(cleared.version, None);
+        assert!(cleared.diagnostics.is_empty());
+        assert!(client.receiver.try_recv().is_err());
     }
 
     #[test]

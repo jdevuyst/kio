@@ -24,7 +24,7 @@ git log <window> --pretty=format:"%h %ad %an %s" --date=short
 git log <window> --stat
 ```
 
-Cluster the commits by area (parser, typer, formatter, backend X, specs, docs, tests, CI, repo config). Read each commit message and its diff.
+Cluster the commits by coherent outcome, using area and dependencies to guide inspection. Read messages and diffs needed for the requested review. For history-only preparation, reuse authenticated prior authority/review/test receipts and inspect the mapping, final tree identity, attribution, boundaries and any resolutions; do not automatically repeat a semantic audit of every original checkpoint. New source changes or unresolved authority still require the full applicable review below.
 
 ## 2. Commit hygiene
 
@@ -32,8 +32,8 @@ For each commit in the window:
 
 - **DCO sign-off** — unsigned commits are normal on unpushed/local work; sign-off is added only when the user asks, immediately before a push (AGENTS.md § Universal rules — Commits, sign-off, and push). Don't flag a missing `Signed-off-by:` as a hygiene defect — just report whether the window is fully signed, since it must be before it can be pushed.
 - **Message accuracy** — does the message accurately describe the diff? Watch for overclaim ("fix issue #X" when only one of X's sub-cases is handled), generic verbs that hide content ("update", "tweak"), and missing scope prefixes if the repo uses them.
-- **Granularity** — is the same file touched many times across separate commits in a way that should have been one? Are there commits that should have been split (one commit doing two unrelated things)?
-- **Style consistency** — subject lines follow the conventions visible in adjacent commits.
+- **Granularity** — prefer far fewer large coherent publication commits. Related features, fixes, optimizations and refactors may share one outcome; separate unrelated compiler/CI changes when useful. Local checkpoints are allowed, but prepare them before publication with [`prepare-commits`](../prepare-commits/SKILL.md), never an unapproved rewrite.
+- **Messages** — concise subjects name salient features, breaks, fixes, optimizations or refactors; bodies retain necessary technical impact/rationale/validation, not every checkpoint. No session links or private context. Neighboring verbose history is not authority to repeat it. Required public metadata trailers and author attribution remain intact.
 
 ## 3. Behavioral-contract authority
 
@@ -102,7 +102,7 @@ supplies evidence of quality, correctness, completeness, or conformance.
 For compiler changes, enforce AGENTS.md § Universal rules — "User declarations
 never become compiler primitives by name." Inspect new or modified semantic
 branches in parsing/desugaring, typing/substitution, recursive lowering,
-structural recovery including `recover_to_low`, capability annotation,
+structural recovery including `route`, capability annotation,
 evaluation/optimization, and backends for hard-coded user-spellable names,
 constants naming shipped Kio libraries, comparisons against compiler-hard-coded
 or otherwise distinguished ordinary-library identities, and raw source argument
@@ -211,7 +211,7 @@ Look at the diff for the window:
 Check `ROADMAP.md` changes in the window:
 
 - Threads that settled into `specs/` should have had their ROADMAP entry removed in the same commit. Flag mismatches.
-- New ROADMAP entries — does the commit message reference the explicit authorization ai/topics/roadmap.md requires?
+- New ROADMAP entries — does the available authority record establish the explicit exact-text approval required by AGENTS.md and ai/topics/roadmap.md? Preserve that evidence for review without requiring session links or approval narration in the commit message.
 
 ## 7. Scope / velocity smells
 

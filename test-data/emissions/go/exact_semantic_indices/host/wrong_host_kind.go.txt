@@ -1,0 +1,5 @@
+package main
+
+import p "driver/out/go"
+
+var wrongHostKind p.KioHostType_api__Vault[p.Index_api__Vault]

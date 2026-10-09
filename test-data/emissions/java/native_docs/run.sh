@@ -42,18 +42,18 @@ for module, marker, other in (("main", "FIRST-SAME-DOC", "SECOND-SAME-DOC"),
                               ("other", "SECOND-SAME-DOC", "FIRST-SAME-DOC")):
     selected = method("NativeDocs.Ns_M_testapi__M_" + module + ".html", "same()")
     assert marker in selected and other not in selected, module
-opaque = (scratch / "docs/native_docs/Shapes.KioNewtype_testapi__Opaque.html").read_text()
+opaque = (scratch / "docs/native_docs/Shapes.KioModule_testapi.Opaque.html").read_text()
 assert "OPAQUE-DOC" in opaque and "GENERIC-DOC" not in opaque
-for carrier, marker in (("KioHostType_testapi__Box", "HOST-GENERIC-DOC"),
-                        ("KioHostTypeMk_testapi__Box", "HOST-GENERIC-DOC"),
-                        ("KioNewtype_testapi__Token", "NEWTYPE-DOC"),
-                        ("KioNewtypeMk_testapi__Wrapper", "GENERIC-DOC"),
-                        ("KioNewtype_testapi__Packed", "EXISTENTIAL-DOC")):
+for carrier, marker in (("KioModule_testapi.Box.Storage", "HOST-GENERIC-DOC"),
+                        ("KioModule_testapi.Box", "HOST-GENERIC-DOC"),
+                        ("KioModule_testapi.Token", "NEWTYPE-DOC"),
+                        ("KioModule_testapi.Wrapper", "GENERIC-DOC"),
+                        ("KioModule_testapi.Packed", "EXISTENTIAL-DOC")):
     page = (scratch / "docs/native_docs" / ("Shapes." + carrier + ".html")).read_text()
     selected = re.search(r'<section class="class-description" id="class-description">(.*?)</section>', page, re.S)
     assert selected and marker in selected.group(1), carrier
-for carrier, note in (("KioHostType_testapi_sretired__Gone", "Storage operations for this exact host declaration."),
-                      ("KioHostTypeMk_testapi_sretired__Gone", "Exact constructor marker for `testapi/retired.Gone` (arity 1; kinds: *).")):
+for carrier, note in (("KioModule_testapi.KioModule_retired.Gone.Storage", "Storage operations for this exact host declaration."),
+                      ("KioModule_testapi.KioModule_retired.Gone", "Exact constructor marker for `testapi/retired.Gone` (arity 1; kinds: *).")):
     page = (scratch / "docs/native_docs" / ("Shapes." + carrier + ".html")).read_text()
     selected = re.search(r'<section class="class-description" id="class-description">(.*?)</section>', page, re.S)
     assert selected, carrier

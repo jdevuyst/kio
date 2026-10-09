@@ -625,7 +625,7 @@ mod fallback_facade_tests {
             .check_in_body_resolution()
             .expect("check in-body resolution");
         let prime = FullPipeline::typecheck(&package).expect("typecheck package");
-        crate::pass::recover_to_low::lower(&crate::pass::structural_recovery::recover_package(
+        crate::pass::route::route_package(&crate::pass::structural_recovery::recover_package(
             &prime,
         ))
     }
@@ -1414,6 +1414,68 @@ v(2) {
     }
 
     #[test]
+    fn discarded_values_keep_exact_rank_n_types_and_strictness() {
+        let mut package = routed_package_files_with_bridge(
+            &[(
+                "api.kio",
+                "module api; \
+             host fn observe() -> .; \
+             newtype Receiver : [A][B] A -> A { constructor mk; projector get }; \
+             fn identity[A][B](value: A) -> A { value } \
+             fn factory() -> Receiver { observe(); Receiver.mk(identity) } \
+             fn pure_discard(value: Receiver) -> . { let unused = Receiver.get(value); () } \
+             fn effectful_discard() -> . { let unused = Receiver.get(factory()); observe() } \
+             fn ordinary_discard() -> . { observe(); () }",
+            )],
+            "**;",
+        );
+        let mut replaced = 0;
+        for entry in package.modules_mut() {
+            for item in &mut entry.module.items {
+                let Item::FnDef(function) = item else {
+                    continue;
+                };
+                if !matches!(function.name.as_str(), "pure_discard" | "effectful_discard") {
+                    continue;
+                }
+                let Expr::Let {
+                    value, body, meta, ..
+                } = &function.body
+                else {
+                    panic!("discard fixture begins with its unused binding")
+                };
+                function.body = Expr::Seq {
+                    occurrence: Default::default(),
+                    value: value.clone(),
+                    body: body.clone(),
+                    meta: meta.clone(),
+                };
+                replaced += 1;
+            }
+        }
+        assert_eq!(replaced, 2);
+        let emitted = render_package(&package).expect("render discarded values");
+        let equation = |name: &str| {
+            let prefix = format!("{} _pkg", module_fn("api", name));
+            emitted
+                .lines()
+                .find(|line| line.starts_with(&prefix))
+                .expect("module equation")
+        };
+        let pure = equation("pure_discard");
+        assert!(pure.contains("seq @(forall"), "{pure}");
+        assert!(!pure.contains("kioBind"), "{pure}");
+        let effectful = equation("effectful_discard");
+        assert!(effectful.contains("kioBind @(forall"), "{effectful}");
+        assert!(effectful.contains("seq @(forall"), "{effectful}");
+        assert!(!effectful.contains(" >> "), "{effectful}");
+        let ordinary = equation("ordinary_discard");
+        assert!(ordinary.contains(" >>= "), "{ordinary}");
+        assert!(ordinary.contains(" `seq` "), "{ordinary}");
+        assert!(!ordinary.contains("kioBind"), "{ordinary}");
+    }
+
+    #[test]
     fn effectful_residual_module_call_uses_rank_n_lift() {
         let emitted = render(
             "module api; \
@@ -1970,6 +2032,150 @@ v(2) {
     }
 
     #[test]
+    fn opaque_application_arguments_keep_canonical_callable_domains() {
+        let output = render(
+            "module api; host type N; host type Box[A]; \
+             pub fn boxed(value: Box(. -> N)) -> Box(. -> N) { value } \
+             pub fn abstract_box[*F](value: F(. -> N)) -> F(. -> N) { value } \
+             pub fn direct(value: . -> N) -> . -> N { value } \
+             pub fn compound(value: Box((. -> N) & ([A] A -> A))) \
+                 -> Box((. -> N) & ([A] A -> A)) { value } \
+             pub fn visible(value: (. -> N) & ([A] A -> A)) \
+                 -> (. -> N) & ([A] A -> A) { value }",
+        )
+        .expect("render opaque native callable arguments");
+        let line = |prefix: &str| {
+            output
+                .lines()
+                .find(|line| line.starts_with(prefix))
+                .unwrap_or_else(|| panic!("missing {prefix}: {output}"))
+        };
+        for name in ["boxed", "abstractBox"] {
+            let signature = line(&format!("export__api__{name} ::"));
+            let head = if name == "boxed" {
+                "HostType__api__Box h"
+            } else {
+                "t_f"
+            };
+            assert!(
+                signature.contains(&format!("{head} (() -> m (HostType__api__N h))")),
+                "{signature}"
+            );
+        }
+        let direct = line("export__api__direct ::");
+        assert!(!direct.contains("() -> m"), "{direct}");
+        let nested = line("type Export_api__compound_Arg0_App0 ");
+        assert!(nested.contains("() -> m"), "{nested}");
+        let visible = line("type Export_api__visible_Result ");
+        assert!(!visible.contains("() -> m"), "{visible}");
+    }
+
+    #[test]
+    fn sum_boundary_conversion_retains_exact_polymorphic_arms() {
+        let output = render(
+            "module api; host type N; \
+             pub fn direct_choice(value: (. -> N) | ([A] A -> A)) \
+                 -> (. -> N) | ([A] A -> A) { value } \
+             pub fn ordinary(value: N | .) -> N | . { value }",
+        )
+        .expect("render polymorphic sum conversion");
+        let direct = output
+            .lines()
+            .find(|line| line.starts_with("export__api__directChoice _pkg"))
+            .expect("direct sum wrapper");
+        assert_eq!(direct.matches("either @").count(), 2, "{direct}");
+        assert!(
+            direct.contains("either @(m (HostType__api__N h)) @(Either (() -> m"),
+            "{direct}"
+        );
+        assert!(
+            direct.contains("either @(() -> m (HostType__api__N h)) @(Either (m"),
+            "{direct}"
+        );
+        assert_eq!(direct.matches("Left @").count(), 2, "{direct}");
+        assert_eq!(direct.matches("Right @").count(), 2, "{direct}");
+        assert_eq!(direct.matches("(arg0)").count(), 1, "{direct}");
+        assert!(!direct.contains("case "), "{direct}");
+
+        let ordinary = output
+            .lines()
+            .find(|line| line.starts_with("export__api__ordinary _pkg"))
+            .expect("ordinary sum wrapper");
+        assert!(ordinary.contains("case "), "{ordinary}");
+        assert!(!ordinary.contains("either @"), "{ordinary}");
+    }
+
+    #[test]
+    fn sum_boundary_conversion_covers_nested_arms_and_callback_legs() {
+        let output = render(
+            "module api; host type N; \
+             host fn echo(value: (. -> N) | ([A] A -> A)) \
+                 -> (. -> N) | ([A] A -> A); \
+             pub fn via_host(value: (. -> N) | ([A] A -> A)) \
+                 -> (. -> N) | ([A] A -> A) { echo(value) } \
+             pub fn three(value: (. -> N) | . | ([A] A -> A)) \
+                 -> (. -> N) | . | ([A] A -> A) { value } \
+             pub fn callback(value: (. -> N) | ([A] A -> A), \
+                 apply: ((. -> N) | ([A] A -> A)) -> ((. -> N) | ([A] A -> A))) \
+                 -> (. -> N) | ([A] A -> A) { apply(value) } \
+             pub fn nested[A](value: ((. -> A) | ([B] B -> B)) & N) \
+                 -> ((. -> A) | ([B] B -> B)) & N { value }",
+        )
+        .expect("render nested and callback sum conversion");
+        let wrapper = |name: &str| {
+            output
+                .lines()
+                .find(|line| line.starts_with(&format!("export__api__{name} _pkg")))
+                .unwrap_or_else(|| panic!("missing wrapper {name}: {output}"))
+        };
+        assert_eq!(wrapper("three").matches("either @").count(), 4);
+        assert_eq!(wrapper("three").matches("(arg0)").count(), 1);
+        assert_eq!(wrapper("callback").matches("either @").count(), 4);
+        assert_eq!(wrapper("nested").matches("either @").count(), 2);
+        assert!(wrapper("nested").contains("either @(m t_a)"));
+        let host_body = output
+            .lines()
+            .find(|line| line.contains("__api__viaHost _pkg k_value ="))
+            .expect("native host-calling body");
+        assert_eq!(host_body.matches("either @").count(), 2, "{host_body}");
+    }
+
+    #[test]
+    fn wide_polymorphic_sum_conversion_does_not_duplicate_arm_adapters() {
+        let mut small_size = None;
+        for arity in [4, 16, 32] {
+            let mut arms = vec![". -> N"; arity - 1];
+            arms.push("[A] A -> A");
+            let sum = arms
+                .iter()
+                .map(|arm| format!("({arm})"))
+                .collect::<Vec<_>>()
+                .join(" | ");
+            let output = render(&format!(
+                "module api; host type N; \
+                 pub fn wide(value: {sum}) -> {sum} {{ value }}"
+            ))
+            .expect("render wide polymorphic boundary sum");
+            let wrapper = output
+                .lines()
+                .find(|line| line.starts_with("export__api__wide _pkg"))
+                .expect("wide wrapper");
+            assert_eq!(wrapper.matches("either @").count(), 2 * (arity - 1));
+            assert_eq!(wrapper.matches("Left @").count(), 2 * (arity - 1));
+            assert_eq!(wrapper.matches("Right @").count(), 2 * (arity - 1));
+            assert_eq!(wrapper.matches("\\ @t_a ->").count(), 2);
+            assert_eq!(wrapper.matches("(arg0)").count(), 1);
+            if let Some(bytes) = small_size {
+                // Explicit tail type arguments repeat type text quadratically;
+                // arm converters and constructor/eliminator nodes stay linear.
+                assert!(wrapper.len() <= bytes * (arity / 4).pow(2));
+            } else {
+                small_size = Some(wrapper.len());
+            }
+        }
+    }
+
+    #[test]
     fn rank_n_pattern_normalization_preserves_source_type_equalities() {
         let package = routed_package(
             "module api; \
@@ -2005,7 +2211,7 @@ v(2) {
                 })
                 .expect("host function value parameter");
             let slots = Type::right_spine_product(value);
-            rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes)
+            rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes, false)
                 .expect("normalize rank-N pattern shape")
                 .expect("test shape contains a rank-N slot")
         };
@@ -2019,6 +2225,67 @@ v(2) {
             "{:?}",
             outer_result.slots
         );
+    }
+
+    #[test]
+    fn rank_n_patterns_keep_canonical_domains_only_inside_opaque_arguments() {
+        let package = routed_package(
+            "module api; host type N; host type Box[A]; \
+             host fn nested(value: Box((. -> N) & ([A] A -> A))) -> .;",
+        );
+        let names = HaskellNames::derive("FallbackProbe");
+        let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
+        let declaration = package
+            .modules()
+            .flat_map(|(_, entry)| &entry.module.items)
+            .find_map(|item| match item {
+                Item::HostFn(declaration) => Some(declaration),
+                _ => None,
+            })
+            .expect("nested host function");
+        let ty = declaration
+            .params
+            .iter()
+            .find_map(|param| match param {
+                HostFnParam::Value(param) => Some(&param.ty),
+                _ => None,
+            })
+            .expect("host value parameter");
+        let Type::Path { args, .. } = ty else {
+            panic!("host Box application")
+        };
+        let slots = Type::right_spine_product(&args[0]);
+        let native = rank_n_pattern_shape(&slots, &[], Some("api"), &shapes, true)
+            .expect("opaque argument pattern")
+            .expect("rank-N slot");
+        let direct = rank_n_pattern_shape(&slots, &[], Some("api"), &shapes, false)
+            .expect("direct boundary pattern")
+            .expect("rank-N slot");
+        assert!(native.slots[0].contains("() ->"), "{:?}", native.slots);
+        assert!(!direct.slots[0].contains("() ->"), "{:?}", direct.slots);
+        let nested = rank_n_pattern_shape(&[ty], &[], Some("api"), &shapes, false)
+            .expect("nested opaque application")
+            .expect("rank-N argument");
+        assert!(nested.slots[0].contains("() ->"), "{:?}", nested.slots);
+        let Type::Product { left, right, meta } = &args[0] else {
+            panic!("compound argument")
+        };
+        let sum = Type::Sum {
+            left: left.clone(),
+            right: right.clone(),
+            meta: meta.clone(),
+        };
+        for canonical in [false, true] {
+            let shape = rank_n_pattern_shape(&[&sum], &[], Some("api"), &shapes, canonical)
+                .expect("sum context")
+                .expect("rank-N arm");
+            assert_eq!(
+                shape.slots[0].contains("() ->"),
+                canonical,
+                "{:?}",
+                shape.slots
+            );
+        }
     }
 
     #[test]
@@ -2079,7 +2346,7 @@ v(2) {
                         super::normalize_rank_n_boundary_type(slot, &[], Some("api"), &shapes)
                             .expect("normalize exact boundary representation");
                     super::RankNPatternRenderer::new(&[], Some("api"), &shapes)
-                        .render(&normalized)
+                        .render(&normalized, false)
                         .expect("render normalized boundary representation")
                 })
                 .collect::<Vec<_>>();
@@ -2089,7 +2356,7 @@ v(2) {
                 standard_hs("forall (rq0 :: %KIND%.Type). rp0 (rq0 -> rp0 rq0)"),
                 "{function_name}"
             );
-            rank_n_pattern_shape(&slots, &[], Some("api"), &shapes)
+            rank_n_pattern_shape(&slots, &[], Some("api"), &shapes, false)
                 .expect("normalize rank-N boundary shape")
                 .expect("expanded alias or newtype contains forall");
         }
@@ -2230,7 +2497,7 @@ v(2) {
             })
             .expect("rank value parameter type");
         let slots = Type::right_spine_product(value);
-        let shape = rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes)
+        let shape = rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes, false)
             .expect("normalize rank-N product")
             .expect("rank product has a rank-N slot");
         assert_eq!(
@@ -2325,7 +2592,7 @@ v(2) {
             .boundary_haskell_type_scoped_in(value, &scope, Some("api"))
             .expect("render scoped HKT");
         assert_eq!(
-            rendered, "t_f (FallbackProbeProduct '[t_a, t_b])",
+            rendered, "t_f (t_a, t_b)",
             "scoped constructor was reinterpreted"
         );
     }
@@ -3888,27 +4155,35 @@ fn emit_ffi_slot_aliases(
                 .iter()
                 .map(|slot| slot.ty())
                 .collect::<Vec<_>>();
-            let (decl, helpers) =
-                if let Some(shape) = rank_n_pattern_shape(&product_slots, scope, module, shapes)? {
-                    acc.has_rank_n_patterns = true;
-                    render_rank_n_product_pattern(
-                        &pattern_id,
-                        &pat,
-                        &rendered_selectors,
-                        &shape,
-                        shapes.structural_names(),
-                        shapes.standard_names(),
-                    )
-                } else {
-                    (
-                        format!(
-                            "pattern {pat} {{ {} }} = {}\n",
-                            rendered_selectors.join(", "),
-                            nested_product_pattern(&rendered_selectors),
-                        ),
-                        Vec::new(),
-                    )
-                };
+            let (decl, helpers) = if let Some(shape) = rank_n_pattern_shape(
+                &product_slots,
+                scope,
+                module,
+                shapes,
+                boundary
+                    .tail
+                    .iter()
+                    .any(|step| matches!(step, BoundaryStep::App(_))),
+            )? {
+                acc.has_rank_n_patterns = true;
+                render_rank_n_product_pattern(
+                    &pattern_id,
+                    &pat,
+                    &rendered_selectors,
+                    &shape,
+                    shapes.structural_names(),
+                    shapes.standard_names(),
+                )
+            } else {
+                (
+                    format!(
+                        "pattern {pat} {{ {} }} = {}\n",
+                        rendered_selectors.join(", "),
+                        nested_product_pattern(&rendered_selectors),
+                    ),
+                    Vec::new(),
+                )
+            };
             let complete = format!("{{-# COMPLETE {pat} #-}}\n");
             let payload = format!("{decl}{complete}");
             if acc.claims.claim(pattern_name, &pat, &payload) {
@@ -3947,7 +4222,16 @@ fn emit_ffi_slot_aliases(
                 .iter()
                 .map(|slot| slot.ty())
                 .collect::<Vec<_>>();
-            let rank_n_shape = rank_n_pattern_shape(&sum_slots, scope, module, shapes)?;
+            let rank_n_shape = rank_n_pattern_shape(
+                &sum_slots,
+                scope,
+                module,
+                shapes,
+                boundary
+                    .tail
+                    .iter()
+                    .any(|step| matches!(step, BoundaryStep::App(_))),
+            )?;
             let mut complete = Vec::with_capacity(keys.len());
             for (k, key) in keys.iter().enumerate() {
                 let pattern = SumPatternId {
@@ -4268,7 +4552,7 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
         Ok(name)
     }
 
-    fn render(&mut self, ty: &Type<Routed>) -> Result<String, EmitError> {
+    fn render(&mut self, ty: &Type<Routed>, canonical: bool) -> Result<String, EmitError> {
         match ty {
             Type::Path { segments, args, .. } => {
                 let local = if let [name] = segments.as_slice() {
@@ -4332,7 +4616,7 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
                     self.representation_head(key, kind)?
                 };
                 for arg in args {
-                    let arg = self.render(arg)?;
+                    let arg = self.render(arg, true)?;
                     rendered.push(' ');
                     rendered.push_str(&ty_arg_paren(&arg));
                 }
@@ -4351,12 +4635,20 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
                     Kind::Arrow(Box::new(Kind::Star), Box::new(Kind::Star)),
                 )?;
                 let mut rendered = String::new();
-                for param in Type::right_spine_take(param, *abi_arity) {
-                    let param = self.render(param)?;
+                let params = Type::right_spine_take(param, *abi_arity)
+                    .into_iter()
+                    .map(|param| self.render(param, canonical))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let params = if canonical {
+                    vec![raw_product_type(&params)]
+                } else {
+                    params
+                };
+                for param in params {
                     rendered.push_str(&fn_arg_paren(&param));
                     rendered.push_str(" -> ");
                 }
-                let ret = self.render(ret)?;
+                let ret = self.render(ret, canonical)?;
                 rendered.push_str(&effect);
                 rendered.push(' ');
                 rendered.push_str(&ty_arg_paren(&ret));
@@ -4365,14 +4657,14 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
             Type::Product { .. } => {
                 let slots = Type::right_spine_product(ty)
                     .into_iter()
-                    .map(|slot| self.render(slot))
+                    .map(|slot| self.render(slot, canonical))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(raw_product_type(&slots))
             }
             Type::Sum { .. } => {
                 let slots = Type::right_spine_sum(ty)
                     .into_iter()
-                    .map(|slot| self.render(slot))
+                    .map(|slot| self.render(slot, canonical))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(raw_sum_type(&slots, self.shapes.standard_names()))
             }
@@ -4380,7 +4672,7 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
                 let name = format!("rq{}", self.forall_depth);
                 self.forall_depth += 1;
                 self.local_binders.push((param.name.clone(), name.clone()));
-                let body = self.render(body)?;
+                let body = self.render(body, canonical)?;
                 self.local_binders.pop();
                 let effect = self.representation_head(
                     "effect".to_owned(),
@@ -4407,6 +4699,7 @@ fn rank_n_pattern_shape(
     scope: &[TypeParam],
     module: Option<&str>,
     shapes: &super::skin::HaskellShapes<'_>,
+    canonical: bool,
 ) -> Result<Option<RankNPatternShape>, EmitError> {
     let normalized = slots
         .iter()
@@ -4418,7 +4711,7 @@ fn rank_n_pattern_shape(
     let mut renderer = RankNPatternRenderer::new(scope, module, shapes);
     let mut rendered = Vec::with_capacity(slots.len());
     for slot in &normalized {
-        rendered.push(renderer.render(slot)?);
+        rendered.push(renderer.render(slot, canonical)?);
     }
     Ok(Some(RankNPatternShape {
         slots: rendered,
@@ -4587,7 +4880,7 @@ fn render_rank_n_product_pattern(
     )
 }
 
-fn raw_sum_expr(
+pub(super) fn raw_sum_expr(
     slots: &[String],
     index: usize,
     payload: &str,
@@ -4610,6 +4903,22 @@ fn raw_sum_expr(
     }
 }
 
+pub(super) fn typed_either(
+    source: (&str, &str),
+    result: &str,
+    handlers: (&str, &str),
+    value: &str,
+) -> String {
+    format!(
+        "either {} {} {} ({}) ({}) ({value})",
+        explicit_type_arg(source.0),
+        explicit_type_arg(result),
+        explicit_type_arg(source.1),
+        handlers.0,
+        handlers.1,
+    )
+}
+
 fn raw_sum_view_expr(
     slots: &[String],
     index: usize,
@@ -4621,18 +4930,17 @@ fn raw_sum_view_expr(
 ) -> String {
     match slots {
         [_] if index == 0 => format!("{matched} {value}"),
-        [head, rest @ ..] if index == 0 => format!(
-            "either {} {} {} (\\__kioPayload -> {matched} __kioPayload) (\\_ -> {missed}) ({value})",
-            explicit_type_arg(head),
-            explicit_type_arg(result_type),
-            explicit_type_arg(&raw_sum_type(rest, standard_names))
+        [head, rest @ ..] if index == 0 => typed_either(
+            (head, &raw_sum_type(rest, standard_names)),
+            result_type,
+            (
+                &format!("\\__kioPayload -> {matched} __kioPayload"),
+                &format!("\\_ -> {missed}"),
+            ),
+            value,
         ),
-        [head, rest @ ..] => format!(
-            "either {} {} {} (\\_ -> {missed}) (\\__kioTail -> {}) ({value})",
-            explicit_type_arg(head),
-            explicit_type_arg(result_type),
-            explicit_type_arg(&raw_sum_type(rest, standard_names)),
-            raw_sum_view_expr(
+        [head, rest @ ..] => {
+            let tail = raw_sum_view_expr(
                 rest,
                 index - 1,
                 "__kioTail",
@@ -4640,8 +4948,17 @@ fn raw_sum_view_expr(
                 matched,
                 missed,
                 standard_names,
+            );
+            typed_either(
+                (head, &raw_sum_type(rest, standard_names)),
+                result_type,
+                (
+                    &format!("\\_ -> {missed}"),
+                    &format!("\\__kioTail -> {tail}"),
+                ),
+                value,
             )
-        ),
+        }
         _ => unreachable!("sum pattern arm is in range"),
     }
 }

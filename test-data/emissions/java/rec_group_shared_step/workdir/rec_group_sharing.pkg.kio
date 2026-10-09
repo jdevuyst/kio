@@ -1,0 +1,13 @@
+package rec_group_sharing;
+
+build {
+  cache ();
+
+  target java {
+    out "out/java/"
+  }
+}
+
+bridge {
+  api
+}

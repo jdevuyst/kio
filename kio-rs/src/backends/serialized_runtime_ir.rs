@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use serde::Serialize;
@@ -13,98 +14,54 @@ use crate::pass::resolve::{Package, follow_type_reexport, qualify_routed_contrac
 use super::boundary_facade::{
     BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadeExecutionUse,
     BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, BoundaryHostBindingOrigin,
-    BoundaryHostTypeBinding, BoundaryNewtypePayloadPlan, BoundaryNewtypeSurface,
-    BoundaryNominalDeclaration, CallableExecutionLayout, CallableExecutionStage,
-    CallableSourceParamAdapter, CallableValueStageLayout, FacadeKind, FacadeShellId, FacadeUse,
-    PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
+    BoundaryHostTypeBinding, BoundaryNewtypeSurface, CallableExecutionLayout,
+    CallableExecutionStage, CallableSourceParamAdapter, CallableValueStageLayout, FacadeKind,
+    FacadeShellId, FacadeUse, PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
 };
-use super::value_plan::{ValueApplicationHead, ValuePlan, ValueUse};
-use super::value_protection::{ValueProtectionPolicy, ValueProtectionUse};
+use super::value_plan::{ValuePlan, ValueUse};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RuntimeStageRepresentation {
+    /// One callable carrier implements each erased type stage.
+    Erased,
+    /// Type-stage factories are indexed by canonical value-plan nodes.
+    Typed,
+}
 
 #[derive(Serialize)]
 pub(crate) struct RuntimePackageIr {
     bridged: Vec<String>,
     modules: Vec<RuntimeModuleIr>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     value_plans: Vec<RuntimeValuePlanIr>,
     #[serde(skip)]
     body_value_plans: Vec<ValuePlan>,
-    #[serde(skip)]
-    body_occurrences: HashMap<(String, usize), BodyOccurrencePlans>,
-    #[serde(skip)]
-    body_functions: HashMap<(String, String), usize>,
 }
 
 impl RuntimePackageIr {
-    pub(crate) fn nominal_inventory_json(&self) -> Result<String, String> {
-        let declarations = self
-            .modules
-            .iter()
-            .flat_map(|module| module.module.items.iter())
-            .filter_map(|item| match item {
-                RuntimeItem::HostType { nominal, .. } => Some(serde_json::json!({
-                    "name": nominal, "kind": "host_type",
-                })),
-                RuntimeItem::Newtype(def) => Some(serde_json::json!({
-                    "name": def.nominal, "kind": "newtype", "arity": def.type_params.len(),
-                })),
-                RuntimeItem::FnDef(_) | RuntimeItem::HostFn(_) => None,
-            })
-            .collect::<Vec<_>>();
-        serde_json::to_string(&declarations)
-            .map_err(|error| format!("cannot serialize exact nominal inventory: {error}"))
-    }
-
     pub(crate) fn body_value_plans(&self) -> &[ValuePlan] {
         &self.body_value_plans
     }
+}
 
-    pub(crate) fn application_plan(&self, module: &str, expr: &Expr<Routed>) -> usize {
-        self.occurrence_plans(module, expr)
-            .application
-            .expect("the prepared application occurrence has its instantiated plan")
+pub(crate) fn newtype_inventory_json(package: &Package<Routed>) -> Result<String, String> {
+    let mut declarations = Vec::new();
+    for (module_key, entry) in package.modules() {
+        for item in &entry.module.items {
+            crate::pass::resolve::for_each_item_declaration(item, |declaration| {
+                if let Some(newtype) = declaration.newtype() {
+                    let name = QualifiedTypeName::new(
+                        module_key.split('/').map(str::to_owned).collect(),
+                        &newtype.name,
+                    )
+                    .expect("a routed newtype has its exact declaring module");
+                    declarations.push(python_qualified_name(&name));
+                }
+            });
+        }
     }
-
-    pub(crate) fn creation_plan(&self, module: &str, expr: &Expr<Routed>) -> usize {
-        self.occurrence_plans(module, expr)
-            .creation
-            .expect("the prepared callable occurrence has its creation plan")
-    }
-
-    pub(crate) fn continuation_plan(&self, module: &str, expr: &Expr<Routed>) -> usize {
-        self.occurrence_plans(module, expr)
-            .continuation
-            .expect("the prepared CPS occurrence has its original continuation plan")
-    }
-
-    pub(crate) fn field_nominal_frame(&self, module: &str, expr: &Expr<Routed>) -> &str {
-        self.occurrence_plans(module, expr)
-            .field_nominal_frame
-            .as_deref()
-            .expect("the prepared field projection has its exact nominal identity")
-    }
-
-    pub(crate) fn function_plan(&self, module: &str, name: &str) -> usize {
-        *self
-            .body_functions
-            .get(&(module.to_owned(), name.to_owned()))
-            .expect("the exact prepared function declaration has its creation plan")
-    }
-
-    fn occurrence_plans(&self, module: &str, expr: &Expr<Routed>) -> &BodyOccurrencePlans {
-        self.body_occurrences
-            .get(&(module.to_owned(), std::ptr::from_ref(expr) as usize))
-            .expect("the exact Routed occurrence was prepared in this invocation")
-    }
-
-    pub(crate) fn value_plans_json(&self, policy: ValueProtectionPolicy) -> Result<String, String> {
-        let plans = self
-            .body_value_plans
-            .iter()
-            .map(|plan| runtime_value_plan(plan, policy))
-            .collect::<Vec<_>>();
-        serde_json::to_string(&plans)
-            .map_err(|error| format!("cannot serialize body value plans: {error}"))
-    }
+    serde_json::to_string(&declarations)
+        .map_err(|error| format!("cannot serialize exact newtype inventory: {error}"))
 }
 
 /// Shared evaluator IR and its compiler-prepared live execution boundaries.
@@ -176,7 +133,6 @@ struct PythonBoundarySiteIr {
     #[serde(skip_serializing_if = "Option::is_none")]
     doc: Option<String>,
     callable: PythonCallablePlanIr,
-    nominals: Vec<PythonNominalIr>,
     execution: PythonCallableExecutionIr,
 }
 
@@ -192,7 +148,6 @@ enum PythonBoundaryOwnerIr {
 #[derive(Serialize)]
 struct PythonCallablePlanIr {
     facade: PythonFacadePlanIr,
-    values: RuntimeValuePlanIr,
     head: Vec<PythonCallableHeadIr>,
     returned: usize,
 }
@@ -258,63 +213,9 @@ struct PythonShellIr {
 }
 
 #[derive(Serialize)]
-struct PythonNominalIr {
-    name: PythonQualifiedNameIr,
-    declaration: PythonNominalDeclarationIr,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum PythonNominalDeclarationIr {
-    HostType {
-        type_params: Vec<PythonTypeParamIr>,
-        role: Option<&'static str>,
-    },
-    Newtype {
-        type_params: Vec<PythonTypeParamIr>,
-        existential_params: Vec<PythonTypeParamIr>,
-        transparent_payload: Option<Box<PythonNewtypePayloadIr>>,
-        surface: PythonNewtypeSurfaceIr,
-    },
-}
-
-#[derive(Serialize)]
-struct PythonNewtypePayloadIr {
-    facade: PythonFacadePlanIr,
-    values: RuntimeValuePlanIr,
-    declaration_binders: Vec<usize>,
-    payload_root: usize,
-}
-
-#[derive(Serialize)]
 struct RuntimeValuePlanIr {
-    binders: Vec<PythonFacadeBinderIr>,
-    uses: Vec<RuntimeValueNodeIr>,
-    source_uses: Vec<usize>,
-    ambient: Vec<usize>,
+    uses: Vec<RuntimeValueUseIr>,
     root: usize,
-    protection: Vec<serde_json::Value>,
-}
-
-#[derive(Serialize)]
-struct RuntimeValueNodeIr {
-    #[serde(flatten)]
-    value: RuntimeValueUseIr,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    application: Option<RuntimeValueApplicationIr>,
-}
-
-#[derive(Serialize)]
-struct RuntimeValueApplicationIr {
-    head: RuntimeValueApplicationHeadIr,
-    args: Vec<usize>,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum RuntimeValueApplicationHeadIr {
-    Nominal { name: PythonQualifiedNameIr },
-    Bound { binder: usize },
 }
 
 #[derive(Serialize)]
@@ -354,7 +255,6 @@ enum RuntimeValueUseIr {
 struct PythonCallableExecutionIr {
     head: Vec<PythonExecutionStageIr>,
     root_uses: Vec<PythonExecutionUseIr>,
-    transparent_payloads: BTreeMap<String, Vec<PythonExecutionUseIr>>,
 }
 
 #[derive(Serialize)]
@@ -417,7 +317,8 @@ struct RuntimeFnDef {
     name: String,
     sig: RuntimeSignature,
     ret: RuntimeType,
-    value_plan: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value_plan: Option<usize>,
     body: RuntimeExpr,
 }
 
@@ -426,7 +327,8 @@ struct RuntimeNewtype {
     vis: RuntimeVisibility,
     name: String,
     nominal: PythonQualifiedNameIr,
-    payload_plan: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload_plan: Option<usize>,
     type_params: Vec<RuntimeTypeParam>,
     has_existentials: bool,
     payload: RuntimeType,
@@ -438,7 +340,8 @@ struct RuntimeNewtype {
 struct RuntimeTypeMember {
     vis: RuntimeVisibility,
     name: String,
-    value_plan: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value_plan: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -522,19 +425,39 @@ enum RuntimeType {
     },
 }
 
-#[derive(Debug, Default)]
-struct BodyOccurrencePlans {
-    application: Option<usize>,
-    creation: Option<usize>,
-    continuation: Option<usize>,
-    field_nominal_frame: Option<String>,
+#[derive(Debug)]
+struct BodyPlanCollector {
+    stages: RuntimeStageRepresentation,
+    values: Vec<ValuePlan>,
+    identities: HashMap<u64, Vec<usize>>,
 }
 
-#[derive(Debug, Default)]
-struct BodyPlanCollector {
-    values: Vec<ValuePlan>,
-    occurrences: HashMap<(String, usize), BodyOccurrencePlans>,
-    functions: HashMap<(String, String), usize>,
+impl Default for BodyPlanCollector {
+    fn default() -> Self {
+        Self {
+            stages: RuntimeStageRepresentation::Typed,
+            values: Vec::new(),
+            identities: HashMap::new(),
+        }
+    }
+}
+
+impl BodyPlanCollector {
+    fn intern(&mut self, plan: ValuePlan) -> usize {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        plan.body_storage_identity().hash(&mut hash);
+        let candidates = self.identities.entry(hash.finish()).or_default();
+        if let Some(id) = candidates
+            .iter()
+            .find(|&&id| self.values[id].body_storage_identity() == plan.body_storage_identity())
+        {
+            return *id;
+        }
+        let id = self.values.len();
+        candidates.push(id);
+        self.values.push(plan);
+        id
+    }
 }
 
 #[derive(Clone)]
@@ -585,13 +508,13 @@ impl RuntimeTypeScope {
         package: &Package<Routed>,
         module: &Module<Routed>,
         ty: &Type<Routed>,
-    ) -> usize {
+    ) -> Option<usize> {
+        if self.plans.borrow().stages == RuntimeStageRepresentation::Erased {
+            return None;
+        }
         let plan = ValuePlan::from_routed_type(package, module, &self.type_params, ty)
             .expect("a checked Routed type has a compositional value plan");
-        let mut plans = self.plans.borrow_mut();
-        let id = plans.values.len();
-        plans.values.push(plan);
-        id
+        Some(self.plans.borrow_mut().intern(plan))
     }
 
     fn applied_value_plan(
@@ -600,9 +523,9 @@ impl RuntimeTypeScope {
         module: &Module<Routed>,
         scheme: &Type<Routed>,
         type_args: &[Type<Routed>],
-        source: &Expr<Routed>,
     ) -> Option<usize> {
-        if type_args.is_empty() {
+        if type_args.is_empty() || self.plans.borrow().stages == RuntimeStageRepresentation::Erased
+        {
             return None;
         }
         let arguments = type_args
@@ -618,29 +541,7 @@ impl RuntimeTypeScope {
             .collect::<Vec<_>>();
         let applied = super::reconstruct::instantiate_type_stages(scheme, &arguments)
             .expect("a routed application consumes exactly its explicit leading type stages");
-        let id = self.value_plan(package, module, &applied);
-        self.record_occurrence_plan(module, source, id, |plans| &mut plans.application);
-        Some(id)
-    }
-
-    fn record_occurrence_plan<T>(
-        &self,
-        module: &Module<Routed>,
-        source: &Expr<Routed>,
-        id: T,
-        slot: impl FnOnce(&mut BodyOccurrencePlans) -> &mut Option<T>,
-    ) {
-        let key = (
-            module_path_string(&module.path),
-            std::ptr::from_ref(source) as usize,
-        );
-        let mut plans = self.plans.borrow_mut();
-        assert!(
-            slot(plans.occurrences.entry(key).or_default())
-                .replace(id)
-                .is_none(),
-            "one Routed source occurrence is prepared once in its lexical context"
-        );
+        self.value_plan(package, module, &applied)
     }
 
     fn bind(&mut self, param: &TypeParam) -> RuntimeTypeParam {
@@ -692,7 +593,8 @@ impl RuntimeTypeScope {
 enum RuntimeExpr {
     FnExpr {
         sig: RuntimeSignature,
-        value_plan: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        value_plan: Option<usize>,
         body: Box<RuntimeExpr>,
     },
     Let {
@@ -757,7 +659,9 @@ enum RuntimeExpr {
         args: Vec<RuntimeExpr>,
         sig: RuntimeSignature,
         ret_ty: RuntimeType,
-        callee_plan: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        callee_plan: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         applied_plan: Option<usize>,
     },
     LowModuleCall {
@@ -766,7 +670,9 @@ enum RuntimeExpr {
         type_args: Vec<RuntimeType>,
         args: Vec<RuntimeExpr>,
         sig: RuntimeSignature,
+        #[serde(skip_serializing_if = "Option::is_none")]
         callee_plan: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         applied_plan: Option<usize>,
     },
     LowQualifiedModuleCall {
@@ -775,7 +681,9 @@ enum RuntimeExpr {
         type_args: Vec<RuntimeType>,
         args: Vec<RuntimeExpr>,
         sig: RuntimeSignature,
+        #[serde(skip_serializing_if = "Option::is_none")]
         callee_plan: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         applied_plan: Option<usize>,
     },
     LowQualifiedNewtypeMember {
@@ -795,20 +703,26 @@ enum RuntimeExpr {
         name: String,
         type_args: Vec<RuntimeType>,
         args: Vec<RuntimeExpr>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         callee_plan: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         applied_plan: Option<usize>,
     },
     LowIndirectCall {
         callee: Box<RuntimeExpr>,
         type_args: Vec<RuntimeType>,
         args: Vec<RuntimeExpr>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         callee_plan: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         applied_plan: Option<usize>,
     },
     LowTypeApplication {
         callee: Box<RuntimeExpr>,
-        callee_plan: usize,
-        applied_plan: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        callee_plan: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        applied_plan: Option<usize>,
     },
     LowAbsurdCall {
         value_arg: Box<RuntimeExpr>,
@@ -820,7 +734,8 @@ enum RuntimeExpr {
         // continuation contract, never on reopening its newtype declaration.
         continuation_type_stages: usize,
         continuation_abi_arity: usize,
-        continuation_plan: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        continuation_plan: Option<usize>,
         nominal: PythonQualifiedNameIr,
         receiver: Box<RuntimeExpr>,
         continuation: Box<RuntimeExpr>,
@@ -833,7 +748,8 @@ enum RuntimeExpr {
         module_path: String,
         sig: RuntimeSignature,
         ret_ty: RuntimeType,
-        value_plan: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        value_plan: Option<usize>,
     },
     LowModuleFnValueRef {
         mangled: String,
@@ -847,14 +763,20 @@ struct RuntimeArm {
     body: RuntimeExpr,
 }
 
-pub(crate) fn package_ir(package: &Package<Routed>) -> Result<RuntimePackageIr, &'static str> {
+pub(crate) fn package_ir(
+    package: &Package<Routed>,
+    stages: RuntimeStageRepresentation,
+) -> Result<RuntimePackageIr, &'static str> {
     package
         .package_file()
         .ok_or("serialized runtime emit requires a package file")?;
     let bridged = crate::pass::resolve::bridged_module_paths(package)
         .into_iter()
         .collect();
-    let plans = Rc::default();
+    let plans = Rc::new(RefCell::new(BodyPlanCollector {
+        stages,
+        ..BodyPlanCollector::default()
+    }));
     let modules = package
         .modules()
         .map(|(key, entry)| RuntimeModuleIr {
@@ -866,17 +788,12 @@ pub(crate) fn package_ir(package: &Package<Routed>) -> Result<RuntimePackageIr, 
         .expect("body serialization releases its lexical plan collectors")
         .into_inner();
     let body_value_plans = collected.values;
-    let value_plans = body_value_plans
-        .iter()
-        .map(|plan| runtime_value_plan(plan, ValueProtectionPolicy::Validate))
-        .collect();
+    let value_plans = body_value_plans.iter().map(runtime_value_plan).collect();
     Ok(RuntimePackageIr {
         bridged,
         modules,
         value_plans,
         body_value_plans,
-        body_occurrences: collected.occurrences,
-        body_functions: collected.functions,
     })
 }
 
@@ -893,8 +810,9 @@ pub(crate) fn prepared_package_ir(
     package: &Package<Routed>,
     prepared: &PreparedBoundaryCallableSites,
 ) -> Result<PythonRuntimePackageIr, String> {
-    let package_ir = package_ir(package).map_err(str::to_owned)?;
-    let boundary = python_boundary_ir(package, prepared, ValueProtectionPolicy::Validate)?;
+    let package_ir =
+        package_ir(package, RuntimeStageRepresentation::Erased).map_err(str::to_owned)?;
+    let boundary = python_boundary_ir(package, prepared)?;
     Ok(PythonRuntimePackageIr {
         package: package_ir,
         boundary,
@@ -904,7 +822,6 @@ pub(crate) fn prepared_package_ir(
 fn python_boundary_ir(
     package: &Package<Routed>,
     prepared: &PreparedBoundaryCallableSites,
-    policy: ValueProtectionPolicy,
 ) -> Result<PythonBoundaryIr, String> {
     let host_bindings = prepared
         .host_bindings()
@@ -969,56 +886,6 @@ fn python_boundary_ir(
             let execution = site
                 .execution()
                 .expect("the filtered Python boundary site is live");
-            let nominals = site
-                .nominals()
-                .declarations()
-                .map(|(name, declaration)| PythonNominalIr {
-                    name: python_qualified_name(name),
-                    declaration: match declaration {
-                        BoundaryNominalDeclaration::HostType {
-                            type_params,
-                            binding,
-                        } => PythonNominalDeclarationIr::HostType {
-                            type_params: type_params
-                                .iter()
-                                .map(|param| PythonTypeParamIr {
-                                    name: param.name().to_owned(),
-                                    kind_arity: param.kind().arity(),
-                                })
-                                .collect(),
-                            role: match binding {
-                                BoundaryHostTypeBinding::Role(role) => Some(role.as_str()),
-                                BoundaryHostTypeBinding::Roleless => None,
-                            },
-                        },
-                        BoundaryNominalDeclaration::Newtype {
-                            type_params,
-                            existential_params,
-                            transparent_payload,
-                            surface,
-                        } => PythonNominalDeclarationIr::Newtype {
-                            type_params: type_params
-                                .iter()
-                                .map(|param| PythonTypeParamIr {
-                                    name: param.name().to_owned(),
-                                    kind_arity: param.kind().arity(),
-                                })
-                                .collect(),
-                            existential_params: existential_params
-                                .iter()
-                                .map(|param| PythonTypeParamIr {
-                                    name: param.name().to_owned(),
-                                    kind_arity: param.kind().arity(),
-                                })
-                                .collect(),
-                            transparent_payload: transparent_payload
-                                .as_ref()
-                                .map(|payload| Box::new(python_newtype_payload(payload, policy))),
-                            surface: python_newtype_surface(surface),
-                        },
-                    },
-                })
-                .collect();
             Ok(PythonBoundarySiteIr {
                 key: boundary_site_key(site.site()),
                 module: site.site().module_segments().to_vec(),
@@ -1053,7 +920,6 @@ fn python_boundary_ir(
                 },
                 callable: PythonCallablePlanIr {
                     facade: python_facade_plan(plan.facade()),
-                    values: runtime_value_plan(plan.value_plan(), policy),
                     head: entry
                         .head_stages
                         .iter()
@@ -1070,12 +936,7 @@ fn python_boundary_ir(
                         .collect(),
                     returned: entry.returned.index(),
                 },
-                nominals,
-                execution: python_callable_execution(
-                    site.plan().facade(),
-                    execution,
-                    site.nominals(),
-                )?,
+                execution: python_callable_execution(site.plan().facade(), execution)?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1126,32 +987,6 @@ fn python_newtype_surface(surface: &BoundaryNewtypeSurface) -> PythonNewtypeSurf
     }
 }
 
-fn python_newtype_payload(
-    payload: &BoundaryNewtypePayloadPlan,
-    policy: ValueProtectionPolicy,
-) -> PythonNewtypePayloadIr {
-    PythonNewtypePayloadIr {
-        facade: python_facade_plan(payload.facade()),
-        values: runtime_value_plan(payload.value_plan(), policy),
-        declaration_binders: payload
-            .declaration_binders()
-            .iter()
-            .map(|id| id.index())
-            .collect(),
-        payload_root: payload.payload_root().index(),
-    }
-}
-
-pub(crate) fn boundary_value_plans_json(
-    package: &Package<Routed>,
-    prepared: &PreparedBoundaryCallableSites,
-    policy: ValueProtectionPolicy,
-) -> Result<String, String> {
-    let boundary = python_boundary_ir(package, prepared, policy)?;
-    serde_json::to_string(&boundary)
-        .map_err(|error| format!("cannot encode prepared value plans: {error}"))
-}
-
 pub(crate) fn boundary_site_key(site: &BoundaryFacadeSiteId) -> String {
     let owner = match site.owner() {
         BoundaryFacadeSiteOwner::HostFunction { name } => vec!["host", name],
@@ -1167,81 +1002,43 @@ pub(crate) fn boundary_site_key(site: &BoundaryFacadeSiteId) -> String {
         .expect("a prepared site identity is serializable")
 }
 
-fn runtime_value_plan(plan: &ValuePlan, policy: ValueProtectionPolicy) -> RuntimeValuePlanIr {
+fn runtime_value_plan(plan: &ValuePlan) -> RuntimeValuePlanIr {
     RuntimeValuePlanIr {
-        binders: plan
-            .binders()
-            .iter()
-            .map(|binder| PythonFacadeBinderIr {
-                name: binder.name.clone(),
-                kind_arity: binder.kind.arity(),
-            })
-            .collect(),
         uses: plan
             .uses()
             .iter()
-            .map(|node| RuntimeValueNodeIr {
-                value: match node {
-                    ValueUse::Unit => RuntimeValueUseIr::Unit,
-                    ValueUse::Bottom => RuntimeValueUseIr::Bottom,
-                    ValueUse::Bound(binder) => RuntimeValueUseIr::Bound {
-                        binder: binder.index(),
-                    },
-                    ValueUse::Nominal(name) => RuntimeValueUseIr::Nominal {
-                        name: python_qualified_name(name),
-                    },
-                    ValueUse::Apply { constructor, args } => RuntimeValueUseIr::Apply {
-                        constructor: constructor.index(),
-                        args: args.iter().map(|id| id.index()).collect(),
-                    },
-                    ValueUse::Product { left, right } => RuntimeValueUseIr::Product {
-                        left: left.index(),
-                        right: right.index(),
-                    },
-                    ValueUse::Sum { left, right } => RuntimeValueUseIr::Sum {
-                        left: left.index(),
-                        right: right.index(),
-                    },
-                    ValueUse::Function { domain, result, .. } => RuntimeValueUseIr::Function {
-                        domain: domain.index(),
-                        result: result.index(),
-                    },
-                    ValueUse::Forall { binder, result } => RuntimeValueUseIr::Forall {
-                        binder: binder.index(),
-                        result: result.index(),
-                    },
+            .map(|node| match node {
+                ValueUse::Unit => RuntimeValueUseIr::Unit,
+                ValueUse::Bottom => RuntimeValueUseIr::Bottom,
+                ValueUse::Bound(binder) => RuntimeValueUseIr::Bound {
+                    binder: binder.index(),
                 },
-                application: plan
-                    .application(node)
-                    .map(|application| RuntimeValueApplicationIr {
-                        head: match application.head {
-                            ValueApplicationHead::Nominal(name) => {
-                                RuntimeValueApplicationHeadIr::Nominal {
-                                    name: python_qualified_name(name),
-                                }
-                            }
-                            ValueApplicationHead::Bound(binder) => {
-                                RuntimeValueApplicationHeadIr::Bound {
-                                    binder: binder.index(),
-                                }
-                            }
-                        },
-                        args: application.args.iter().map(|id| id.index()).collect(),
-                    }),
+                ValueUse::Nominal(name) => RuntimeValueUseIr::Nominal {
+                    name: python_qualified_name(name),
+                },
+                ValueUse::Apply { constructor, args } => RuntimeValueUseIr::Apply {
+                    constructor: constructor.index(),
+                    args: args.iter().map(|id| id.index()).collect(),
+                },
+                ValueUse::Product { left, right } => RuntimeValueUseIr::Product {
+                    left: left.index(),
+                    right: right.index(),
+                },
+                ValueUse::Sum { left, right } => RuntimeValueUseIr::Sum {
+                    left: left.index(),
+                    right: right.index(),
+                },
+                ValueUse::Function { domain, result, .. } => RuntimeValueUseIr::Function {
+                    domain: domain.index(),
+                    result: result.index(),
+                },
+                ValueUse::Forall { binder, result } => RuntimeValueUseIr::Forall {
+                    binder: binder.index(),
+                    result: result.index(),
+                },
             })
             .collect(),
-        source_uses: plan.source_uses().iter().map(|id| id.index()).collect(),
-        ambient: plan.ambient_binders().iter().map(|id| id.index()).collect(),
         root: plan.root().index(),
-        protection: plan.uses().iter().map(|value| match policy.project(value) {
-            ValueProtectionUse::Identity => serde_json::json!({"kind": "identity"}),
-            ValueProtectionUse::Bound(binder) => serde_json::json!({"kind": "bound", "binder": binder.index()}),
-            ValueProtectionUse::Product { left, right, snapshot } => serde_json::json!({"kind":"product", "left":left.index(), "right":right.index(), "snapshot":snapshot}),
-            ValueProtectionUse::Sum { left, right, snapshot } => serde_json::json!({"kind":"sum", "left":left.index(), "right":right.index(), "snapshot":snapshot}),
-            ValueProtectionUse::Function { domain, result } => serde_json::json!({"kind":"function", "domain":domain.index(), "result":result.index()}),
-            ValueProtectionUse::Forall { result } => serde_json::json!({"kind":"forall", "result":result.index()}),
-            ValueProtectionUse::Application { snapshot } => serde_json::json!({"kind":"application", "snapshot":snapshot}),
-        }).collect(),
     }
 }
 
@@ -1333,7 +1130,6 @@ fn python_semantic_key(key: &SemanticKey) -> String {
 fn python_callable_execution(
     facade: &BoundaryFacadePlan,
     execution: &CallableExecutionLayout,
-    nominals: &super::boundary_facade::BoundaryNominalDependencies,
 ) -> Result<PythonCallableExecutionIr, String> {
     let head = execution
         .head_stages()
@@ -1346,32 +1142,7 @@ fn python_callable_execution(
         })
         .collect();
     let root_uses = python_execution_uses(facade, execution.root_uses())?;
-    let mut transparent_payloads = BTreeMap::new();
-    for (name, declaration) in nominals.declarations() {
-        let BoundaryNominalDeclaration::Newtype {
-            transparent_payload: Some(payload),
-            ..
-        } = declaration
-        else {
-            continue;
-        };
-        let payload_execution = execution.transparent_payload(name).ok_or_else(|| {
-            format!(
-                "prepared Python boundary omitted transparent execution for {}.{}",
-                name.module_segments().join("."),
-                name.name()
-            )
-        })?;
-        transparent_payloads.insert(
-            exact_nominal_identity_frame(name),
-            python_execution_uses(payload.facade(), payload_execution)?,
-        );
-    }
-    Ok(PythonCallableExecutionIr {
-        head,
-        root_uses,
-        transparent_payloads,
-    })
+    Ok(PythonCallableExecutionIr { head, root_uses })
 }
 
 fn python_execution_uses(
@@ -1478,14 +1249,6 @@ fn runtime_items(
                 package,
                 module,
                 &def.sig.signature_ty(def.ret.clone(), def.meta.span),
-            );
-            assert!(
-                plans
-                    .borrow_mut()
-                    .functions
-                    .insert((module_key.to_owned(), def.name.clone()), value_plan,)
-                    .is_none(),
-                "a routed module has one declaration per function identity"
             );
             let sig = runtime_signature(package, module, &def.sig, &mut scope);
             vec![RuntimeItem::FnDef(RuntimeFnDef {
@@ -1856,7 +1619,6 @@ fn runtime_expr_expected(
             let (sig, ret) = super::reconstruct::signature_from_expected(sig, &scheme)
                 .expect("a routed closure signature binds the stages of its checked type");
             let value_plan = scope.value_plan(package, module, &scheme);
-            scope.record_occurrence_plan(module, expr, value_plan, |plans| &mut plans.creation);
             let mut nested_scope = scope.clone();
             RuntimeExpr::FnExpr {
                 sig: runtime_signature(package, module, &sig, &mut nested_scope),
@@ -2014,9 +1776,6 @@ fn runtime_expr_expected(
                 )
                 .expect("a routed field projection fits its resolved product arity"),
             );
-            scope.record_occurrence_plan(module, expr, field_nominal.frame.clone(), |plans| {
-                &mut plans.field_nominal_frame
-            });
             RuntimeExpr::EnrichedFieldGet {
                 target: Box::new(nested(target)),
                 nominal: field_nominal,
@@ -2057,7 +1816,7 @@ fn runtime_expr_expected(
                 sig,
                 ret_ty: runtime_type(package, target_module, ret_ty, &target_scope),
                 callee_plan,
-                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args, expr),
+                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args),
             }
         }
         Expr::LowModuleCall {
@@ -2080,7 +1839,8 @@ fn runtime_expr_expected(
             )
             .expect("a routed module call retains its resolved declaration scheme");
             let callee_plan = (!type_args.is_empty())
-                .then(|| target_scope.value_plan(package, target_module, &scheme));
+                .then(|| target_scope.value_plan(package, target_module, &scheme))
+                .flatten();
             RuntimeExpr::LowModuleCall {
                 mangled: mangled.clone(),
                 module_path: target_key,
@@ -2093,7 +1853,7 @@ fn runtime_expr_expected(
                 ),
                 sig: runtime_signature(package, target_module, sig, &mut target_scope),
                 callee_plan,
-                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args, expr),
+                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args),
             }
         }
         Expr::LowQualifiedModuleCall {
@@ -2118,7 +1878,8 @@ fn runtime_expr_expected(
             )
             .expect("a routed qualified call retains its resolved declaration scheme");
             let callee_plan = (!type_args.is_empty())
-                .then(|| target_scope.value_plan(package, target_module, &scheme));
+                .then(|| target_scope.value_plan(package, target_module, &scheme))
+                .flatten();
             RuntimeExpr::LowQualifiedModuleCall {
                 mangled: member.to_owned(),
                 module_path: target_key,
@@ -2131,7 +1892,7 @@ fn runtime_expr_expected(
                 ),
                 sig: runtime_signature(package, target_module, sig, &mut target_scope),
                 callee_plan,
-                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args, expr),
+                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args),
             }
         }
         Expr::LowQualifiedNewtypeMember {
@@ -2211,8 +1972,9 @@ fn runtime_expr_expected(
                     package, module_key, module, scope, &scheme, type_args, args,
                 ),
                 callee_plan: (!type_args.is_empty())
-                    .then(|| scope.value_plan(package, module, &scheme)),
-                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args, expr),
+                    .then(|| scope.value_plan(package, module, &scheme))
+                    .flatten(),
+                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args),
             }
         }
         Expr::LowIndirectCall {
@@ -2235,8 +1997,9 @@ fn runtime_expr_expected(
                     package, module_key, module, scope, &scheme, type_args, args,
                 ),
                 callee_plan: (!type_args.is_empty())
-                    .then(|| scope.value_plan(package, module, &scheme)),
-                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args, expr),
+                    .then(|| scope.value_plan(package, module, &scheme))
+                    .flatten(),
+                applied_plan: scope.applied_value_plan(package, module, &scheme, type_args),
             }
         }
         Expr::LowTypeApplication {
@@ -2249,15 +2012,12 @@ fn runtime_expr_expected(
             RuntimeExpr::LowTypeApplication {
                 callee: Box::new(with_expected(callee, Some(&scheme))),
                 callee_plan: scope.value_plan(package, module, &scheme),
-                applied_plan: scope
-                    .applied_value_plan(
-                        package,
-                        module,
-                        &scheme,
-                        std::slice::from_ref(type_arg),
-                        expr,
-                    )
-                    .expect("a routed type application has one explicit type argument"),
+                applied_plan: scope.applied_value_plan(
+                    package,
+                    module,
+                    &scheme,
+                    std::slice::from_ref(type_arg),
+                ),
             }
         }
         Expr::LowAbsurdCall { value_arg, .. } => RuntimeExpr::LowAbsurdCall {
@@ -2274,9 +2034,6 @@ fn runtime_expr_expected(
             let (continuation_type_stages, continuation_abi_arity) =
                 cps_continuation_runtime_shape(continuation_ty);
             let continuation_plan = scope.value_plan(package, module, continuation_ty);
-            scope.record_occurrence_plan(module, expr, continuation_plan, |plans| {
-                &mut plans.continuation
-            });
             RuntimeExpr::LowCpsProjectorApply {
                 continuation_type_stages,
                 continuation_abi_arity,
@@ -2302,7 +2059,6 @@ fn runtime_expr_expected(
                 target_module,
                 &sig.signature_ty(ret_ty.clone(), expr.span()),
             );
-            scope.record_occurrence_plan(module, expr, value_plan, |plans| &mut plans.creation);
             let sig = runtime_signature(package, target_module, sig, &mut target_scope);
             RuntimeExpr::LowHostFnValueRef {
                 name: name.clone(),
@@ -2392,64 +2148,203 @@ mod tests {
     use crate::pass::full::FullPipeline;
     use crate::pass::optimize::optimize_package;
     use crate::pass::parser::parse;
-    use crate::pass::recover_to_low::lower;
+    use crate::pass::route::route_package;
     use crate::pass::structural_recovery::recover_package;
     use crate::pipeline::Pipeline;
     use crate::prime::pipeline::PrimePipeline;
     use std::path::{Path, PathBuf};
 
     #[test]
-    fn boxed_nominal_payload_preserves_serialized_fields() {
-        let package = routed(&full_prime("module x/main; fn unit() -> . { () }"));
-        let module = &package.module("x/main").unwrap().module;
-        let Item::FnDef(def) = &module.items[0] else {
-            panic!("unit function")
-        };
-        let (facade, _) = BoundaryFacadePlan::from_routed_type(&package, module, &[], &def.ret)
-            .expect("unit payload plan");
-        let values = ValuePlan::from_facade(&facade);
-        let payload = PythonNewtypePayloadIr {
-            facade: python_facade_plan(&facade),
-            values: runtime_value_plan(&values, ValueProtectionPolicy::Validate),
-            declaration_binders: Vec::new(),
-            payload_root: facade.root().index(),
-        };
-        let mut declaration = PythonNominalDeclarationIr::Newtype {
-            type_params: Vec::new(),
-            existential_params: Vec::new(),
-            transparent_payload: Some(Box::new(payload)),
-            surface: PythonNewtypeSurfaceIr::Both {
-                constructor: "make".to_owned(),
-                projector: "get".to_owned(),
-            },
-        };
-        for has_payload in [true, false] {
-            let PythonNominalDeclarationIr::Newtype {
-                type_params,
-                existential_params,
-                transparent_payload,
-                surface,
-            } = &mut declaration
-            else {
-                unreachable!()
-            };
-            if !has_payload {
-                *transparent_payload = None;
-            }
-            let inline_fields = serde_json::json!({
-                "kind": "newtype", "type_params": type_params,
-                "existential_params": existential_params,
-                "transparent_payload": transparent_payload.as_deref(), "surface": surface,
-            });
-            assert_eq!(serde_json::to_value(&declaration).unwrap(), inline_fields);
+    fn erased_runtime_package_omits_admission_plans_and_keeps_execution_layouts() {
+        let modules = vec![(
+            PathBuf::from("x/main.kio"),
+            parse(
+                "module x/main; host type N; \
+             pub newtype Box[A] : A { pub constructor make; pub projector get; }; \
+             pub fn keep[A](value: Box(A)) -> Box(A) { value } \
+             pub fn apply(callback: [A] A -> A, value: N) -> N { callback(N, value) }",
+            )
+            .unwrap(),
+        )];
+        let package_file =
+            crate::pass::parser::parse_package_file("package fixture; bridge { x/main; }", None)
+                .unwrap();
+        let (modules, package_file) =
+            FullPipeline::lower_package(modules, Some(package_file)).unwrap();
+        let package = Package::build(
+            Path::new(""),
+            modules,
+            package_file.map(|package_file| crate::pass::resolve::PackageFileEntry {
+                file_path: PathBuf::from("fixture.pkg.kio"),
+                package_name: "fixture".to_owned(),
+                package_file,
+            }),
+        )
+        .unwrap();
+        package.resolve_imports().unwrap();
+        package.check_in_body_resolution().unwrap();
+        let package = routed(&FullPipeline::typecheck(&package).unwrap());
+        let ir = python_package_ir(&package, None).unwrap();
+        assert!(ir.package.body_value_plans.is_empty());
+        let json = serde_json::to_value(ir).unwrap();
+        assert!(json.get("value_plans").is_none());
+        let sites = json["boundary"]["sites"].as_array().unwrap();
+        assert_eq!(sites.len(), 4);
+        for site in sites {
+            assert!(site.get("nominals").is_none());
+            assert!(site["callable"].get("values").is_none());
+            assert!(site["execution"].get("transparent_payloads").is_none());
+            assert!(
+                !site["callable"]["facade"]["uses"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(
+                !site["execution"]["root_uses"]
+                    .as_array()
+                    .unwrap()
+                    .is_empty()
+            );
         }
-        let boundary_bytes = std::mem::size_of::<BoundaryNominalDeclaration>();
-        let serialized_bytes = std::mem::size_of::<PythonNominalDeclarationIr>();
-        eprintln!(
-            "nominal declaration bytes: boundary={boundary_bytes}, serialized={serialized_bytes}"
+    }
+
+    #[test]
+    fn newtype_inventory_retains_exact_identity_and_recursive_group_members() {
+        let package = routed(&full_prime_modules(&[
+            (
+                "x/left.kio",
+                "module x/left; host type H; type Alias = .; \
+             newtype Mark : . { constructor make; projector get; }; \
+             rec { newtype Tree : . | Forest { constructor make; projector get; }; \
+             newtype Forest : . | Tree { constructor make; projector get; }; } \
+             fn unit() -> . { () }",
+            ),
+            (
+                "x/right.kio",
+                "module x/right; \
+             newtype Mark : . { constructor make; projector get; };",
+            ),
+        ]));
+        let inventory: serde_json::Value =
+            serde_json::from_str(&newtype_inventory_json(&package).unwrap()).unwrap();
+        let entries = inventory.as_array().unwrap();
+        assert_eq!(entries.len(), 4);
+        let mut names = BTreeSet::new();
+        let mut frames = BTreeSet::new();
+        for entry in entries {
+            let module = entry["module"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|part| part.as_str().unwrap())
+                .collect::<Vec<_>>()
+                .join("/");
+            names.insert((module, entry["name"].as_str().unwrap()));
+            assert!(frames.insert(entry["frame"].as_str().unwrap()));
+            assert_eq!(entry.as_object().unwrap().len(), 3);
+        }
+        assert_eq!(
+            names,
+            BTreeSet::from([
+                ("x/left".to_owned(), "Mark"),
+                ("x/right".to_owned(), "Mark"),
+                ("x/left".to_owned(), "Tree"),
+                ("x/left".to_owned(), "Forest"),
+            ])
         );
-        assert!(boundary_bytes <= 128);
-        assert!(serialized_bytes <= 128);
+    }
+
+    #[test]
+    fn boundary_nominal_payload_uses_bounded_storage() {
+        assert!(
+            std::mem::size_of::<super::super::boundary_facade::BoundaryNominalDeclaration>() <= 128
+        );
+    }
+
+    #[test]
+    fn body_plan_interning_retains_exact_structure_and_checks_hash_collisions() {
+        let package = routed(&full_prime(
+            "module x/main; fn keep[A](value: A) -> A { value } \
+             fn same[A](value: A) -> A { value } fn unit() -> . { () }",
+        ));
+        let module = &package.module("x/main").unwrap().module;
+        let collected = Rc::default();
+        let emitted = runtime_module(&package, "x/main", module, &collected);
+        let retained = emitted
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                RuntimeItem::FnDef(def) if matches!(def.name.as_str(), "keep" | "same") => {
+                    def.value_plan
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(retained.len(), 2);
+        assert_eq!(retained[0], retained[1]);
+        let plans = collected.borrow().values.clone();
+        assert!(plans.len() > 1);
+        let mut shared = BodyPlanCollector::default();
+        for _ in 0..128 {
+            assert_eq!(shared.intern(plans[0].clone()), 0);
+        }
+        assert_eq!(shared.values.len(), 1);
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        plans[1].body_storage_identity().hash(&mut hash);
+        shared.identities.insert(hash.finish(), vec![0]);
+        assert_eq!(shared.intern(plans[1].clone()), 1);
+        assert_eq!(shared.values, plans[..2]);
+        assert_eq!(shared.intern(plans[1].clone()), 1);
+    }
+
+    #[test]
+    fn typed_stage_serialization_retains_node_indices_and_execution_edges() {
+        let package = routed(&full_prime(
+            "module x/main; host type N role(i32); \
+             fn keep[*F][A](value: (A & F(N)) | .) -> (A & F(N)) | . { value }",
+        ));
+        let module = &package.module("x/main").unwrap().module;
+        let collected = Rc::default();
+        runtime_module(&package, "x/main", module, &collected);
+        for plan in &collected.borrow().values {
+            let json = serde_json::to_value(runtime_value_plan(plan)).unwrap();
+            assert_eq!(json.as_object().unwrap().len(), 2);
+            assert_eq!(json["root"], plan.root().index());
+            let uses = json["uses"].as_array().unwrap();
+            assert_eq!(uses.len(), plan.uses().len());
+            for (node, source) in uses.iter().zip(plan.uses()) {
+                match source {
+                    ValueUse::Function { domain, result, .. } => {
+                        assert_eq!(node["kind"], "function");
+                        assert_eq!(node["domain"], domain.index());
+                        assert_eq!(node["result"], result.index());
+                    }
+                    ValueUse::Forall { binder, result } => {
+                        assert_eq!(node["kind"], "forall");
+                        assert_eq!(node["binder"], binder.index());
+                        assert_eq!(node["result"], result.index());
+                    }
+                    ValueUse::Product { left, right } | ValueUse::Sum { left, right } => {
+                        assert_eq!(node["left"], left.index());
+                        assert_eq!(node["right"], right.index());
+                    }
+                    ValueUse::Apply { constructor, args } => {
+                        assert_eq!(node["constructor"], constructor.index());
+                        assert_eq!(
+                            node["args"],
+                            serde_json::json!(args.iter().map(|id| id.index()).collect::<Vec<_>>())
+                        );
+                    }
+                    ValueUse::Bound(binder) => assert_eq!(node["binder"], binder.index()),
+                    ValueUse::Nominal(name) => {
+                        assert_eq!(node["name"]["frame"], exact_nominal_identity_frame(name))
+                    }
+                    ValueUse::Unit => assert_eq!(node["kind"], "unit"),
+                    ValueUse::Bottom => assert_eq!(node["kind"], "bottom"),
+                }
+            }
+        }
     }
 
     #[test]
@@ -2467,50 +2362,70 @@ mod tests {
             }
             let package = routed(&full_prime(&source));
             let module = &package.module("x/main").unwrap().module;
-            let plans = Rc::default();
-            let start = std::time::Instant::now();
-            let body = runtime_module(&package, "x/main", module, &plans);
-            let collected = plans.borrow();
-            let serialized_plans = collected
-                .values
-                .iter()
-                .map(|plan| runtime_value_plan(plan, ValueProtectionPolicy::Validate))
-                .collect::<Vec<_>>();
-            let preparation = start.elapsed();
-            let occurrences = collected.occurrences.len();
-            let applications = collected
-                .occurrences
-                .values()
-                .filter(|entry| entry.application.is_some())
-                .count();
-            let plan_count = collected.values.len();
-            let nodes = collected
-                .values
-                .iter()
-                .map(|plan| plan.uses().len())
-                .sum::<usize>();
-            let bytes = serde_json::to_vec(&(&body, &serialized_plans))
-                .unwrap()
-                .len();
-            eprintln!(
-                "repeated schemes={count} occurrences={occurrences} applications={applications} plans={plan_count} nodes={nodes} bytes={bytes} preparation_us={}",
-                preparation.as_micros()
-            );
-            assert_eq!(applications, count, "each generic call retains its plan");
-            assert!(plan_count >= count && nodes > plan_count);
-            if let Some((old_occurrences, old_plans, old_nodes, old_bytes)) = previous {
-                assert!(occurrences <= old_occurrences * 5);
-                assert!(plan_count <= old_plans * 5);
-                assert!(nodes <= old_nodes * 5);
-                assert!(bytes <= old_bytes * 5);
+            let mut measures = Vec::new();
+            for stages in [
+                RuntimeStageRepresentation::Erased,
+                RuntimeStageRepresentation::Typed,
+            ] {
+                let plans = Rc::new(RefCell::new(BodyPlanCollector {
+                    stages,
+                    ..BodyPlanCollector::default()
+                }));
+                let body = runtime_module(&package, "x/main", module, &plans);
+                let collected = plans.borrow();
+                let serialized = collected
+                    .values
+                    .iter()
+                    .map(runtime_value_plan)
+                    .collect::<Vec<_>>();
+                let json = serde_json::to_value(&body).unwrap();
+                let mut pending = vec![&json];
+                let mut applications = 0;
+                while let Some(value) = pending.pop() {
+                    match value {
+                        serde_json::Value::Object(object) => {
+                            if stages == RuntimeStageRepresentation::Erased {
+                                assert!(object.keys().all(|key| !key.ends_with("_plan")));
+                            }
+                            applications += usize::from(object.contains_key("applied_plan"));
+                            pending.extend(object.values());
+                        }
+                        serde_json::Value::Array(array) => pending.extend(array),
+                        _ => {}
+                    }
+                }
+                let plan_count = collected.values.len();
+                let nodes = collected
+                    .values
+                    .iter()
+                    .map(|plan| plan.uses().len())
+                    .sum::<usize>();
+                let bytes = serde_json::to_vec(&(&body, &serialized)).unwrap().len();
+                if stages == RuntimeStageRepresentation::Erased {
+                    assert_eq!((applications, plan_count, nodes), (0, 0, 0));
+                    assert!(collected.identities.is_empty());
+                } else {
+                    assert_eq!(applications, count);
+                    assert!(plan_count < count && nodes > plan_count);
+                }
+                measures.push((plan_count, nodes, bytes));
             }
-            previous = Some((occurrences, plan_count, nodes, bytes));
+            assert!(measures[0].2 < measures[1].2);
+            if let Some(old) = previous {
+                let old: Vec<(usize, usize, usize)> = old;
+                for (current, old) in measures.iter().zip(old) {
+                    assert!(current.0 <= old.0 * 5);
+                    assert!(current.1 <= old.1 * 5);
+                    assert!(current.2 <= old.2 * 5);
+                }
+            }
+            previous = Some(measures);
         }
     }
 
     fn build_package<P>(modules: Vec<(PathBuf, Module<P>)>) -> Package<P>
     where
-        P: crate::ast::Phase + crate::pass::resolve::ResolvePhase + Clone,
+        P: crate::ast::Phase<FnBody = Expr<P>> + crate::pass::resolve::ResolvePhase + Clone,
     {
         let package = Package::build(Path::new(""), modules, None).expect("Package::build");
         package.resolve_imports().expect("resolve_imports");
@@ -2520,7 +2435,7 @@ mod tests {
         package
     }
 
-    fn full_prime_modules(sources: &[(&str, &str)]) -> Package<Prime> {
+    fn full_prime_modules(sources: &[(&str, &str)]) -> crate::prime::typer::ValidatedPrimePackage {
         let parsed = sources
             .iter()
             .map(|(path, source)| {
@@ -2535,7 +2450,7 @@ mod tests {
         FullPipeline::typecheck(&build_package(modules)).expect("typecheck surface package")
     }
 
-    fn full_prime(src: &str) -> Package<Prime> {
+    fn full_prime(src: &str) -> crate::prime::typer::ValidatedPrimePackage {
         full_prime_modules(&[("x/main.kio", src)])
     }
 
@@ -2664,12 +2579,14 @@ mod tests {
         }
     }
 
-    fn emitted_prime(package: &Package<Prime>) -> (String, Package<Prime>) {
+    fn emitted_prime(
+        package: &crate::prime::typer::ValidatedPrimePackage,
+    ) -> (String, crate::prime::typer::ValidatedPrimePackage) {
         let mut source = String::new();
         let parsed = package
             .modules()
             .map(|(module_path, entry)| {
-                let emitted = emit_module(&entry.module);
+                let emitted = emit_module(entry);
                 source.push_str(&emitted);
                 source.push('\n');
                 (
@@ -2684,8 +2601,8 @@ mod tests {
         (source, prime)
     }
 
-    fn routed(package: &Package<Prime>) -> Package<Routed> {
-        lower(&optimize_package(recover_package(package)))
+    fn routed(package: &crate::prime::typer::ValidatedPrimePackage) -> Package<Routed> {
+        route_package(&optimize_package(recover_package(package)))
     }
 
     fn routed_body<'a>(
@@ -2897,6 +2814,51 @@ mod tests {
     }
 
     #[test]
+    fn monomorphic_calls_need_no_typed_stage_plan() {
+        let package = routed(&full_prime(
+            "module x/main; \
+             newtype N : . { constructor make; projector get; }; \
+             fn local(f: N -> N, value: N) -> N { f(value) } \
+             fn computed(f: . -> (N -> N), value: N) -> N { f()(value) }",
+        ));
+        let module = &package.module("x/main").unwrap().module;
+        for stages in [
+            RuntimeStageRepresentation::Erased,
+            RuntimeStageRepresentation::Typed,
+        ] {
+            let plans = Rc::new(RefCell::new(BodyPlanCollector {
+                stages,
+                ..BodyPlanCollector::default()
+            }));
+            let emitted = runtime_module(&package, "x/main", module, &plans);
+            let json = serde_json::to_value(emitted).unwrap();
+            let mut pending = vec![&json];
+            let mut unknown = 0;
+            while let Some(node) = pending.pop() {
+                match node {
+                    serde_json::Value::Object(object) => {
+                        for tag in ["LowClosureCall", "LowIndirectCall"] {
+                            if let Some(call) = object.get(tag) {
+                                assert_eq!(call["type_args"], serde_json::json!([]));
+                                assert!(call.get("applied_plan").is_none());
+                                unknown += 1;
+                            }
+                        }
+                        pending.extend(object.values());
+                    }
+                    serde_json::Value::Array(array) => pending.extend(array),
+                    _ => {}
+                }
+            }
+            assert_eq!(unknown, 3, "all and only the fixture's unknown calls fire");
+            assert_eq!(
+                plans.borrow().values.is_empty(),
+                stages == RuntimeStageRepresentation::Erased
+            );
+        }
+    }
+
+    #[test]
     fn specialization_plans_retain_concrete_escaping_callable_contracts() {
         let prime = full_prime(
             "module x/main; \
@@ -2939,7 +2901,7 @@ mod tests {
                             applied_plan,
                             ..
                         } => {
-                            applications.push(("type", *applied_plan, under_let));
+                            applications.push(("type", applied_plan.unwrap(), under_let));
                             pending.push((callee, under_let));
                         }
                         RuntimeExpr::LowModuleCall {
@@ -3013,7 +2975,7 @@ mod tests {
     }
 
     #[test]
-    fn protection_policy_preserves_abstract_slots_and_callable_stages() {
+    fn typed_stage_plans_preserve_abstract_slots_and_callable_stages() {
         let package = routed(&full_prime(
             "module x/main; \
              fn keep[*F][A](value: A & F(A)) -> A & F(A) { value }",
@@ -3025,29 +2987,16 @@ mod tests {
             panic!("the fixture has one function")
         };
         let collected = plans.borrow();
-        let plans = &collected.values;
-        let plan = &plans[def.value_plan];
-        let snapshot = runtime_value_plan(plan, ValueProtectionPolicy::Snapshot);
-        let validate = runtime_value_plan(plan, ValueProtectionPolicy::Validate);
-        assert_eq!(snapshot.protection.len(), plan.uses().len());
-        let mut kinds = BTreeSet::new();
-        for (snapshot, validate) in snapshot.protection.iter().zip(&validate.protection) {
-            assert_eq!(snapshot["kind"], validate["kind"]);
-            kinds.insert(snapshot["kind"].as_str().unwrap());
-            match snapshot["kind"].as_str().unwrap() {
-                "product" | "sum" | "application" => {
-                    assert_eq!(snapshot["snapshot"], true);
-                    assert_eq!(validate["snapshot"], false);
-                }
-                _ => assert_eq!(snapshot, validate),
-            }
-        }
+        let plan = &collected.values[def.value_plan.unwrap()];
+        let json = serde_json::to_value(runtime_value_plan(plan)).unwrap();
+        let kinds = json["uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|node| node["kind"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
         assert!(kinds.is_superset(&BTreeSet::from([
-            "bound",
-            "application",
-            "product",
-            "function",
-            "forall",
+            "bound", "apply", "product", "function", "forall",
         ])));
     }
 
@@ -3073,12 +3022,13 @@ mod tests {
                 match item {
                     RuntimeItem::FnDef(def) => {
                         assert!(matches!(
-                            plans[def.value_plan].use_at(plans[def.value_plan].root()),
+                            plans[def.value_plan.unwrap()]
+                                .use_at(plans[def.value_plan.unwrap()].root()),
                             ValueUse::Forall { .. }
                         ));
                         match def.body {
                             RuntimeExpr::FnExpr { value_plan, .. } => {
-                                let plan = &plans[value_plan];
+                                let plan = &plans[value_plan.unwrap()];
                                 assert!(matches!(
                                     plan.use_at(plan.root()),
                                     ValueUse::Function { .. }
@@ -3104,7 +3054,7 @@ mod tests {
                         }
                     }
                     RuntimeItem::Newtype(def) => {
-                        let plan = &plans[def.payload_plan];
+                        let plan = &plans[def.payload_plan.unwrap()];
                         assert_eq!(def.nominal.module, ["x", "main"]);
                         assert_eq!(def.nominal.name, "Box");
                         assert_eq!(plan.ambient_binders().len(), 1);
@@ -3142,7 +3092,7 @@ mod tests {
     fn field_update_generated_binder_does_not_capture_later_rhs() {
         let (source, collision) = generated_field_rhs_collision_source();
         let full = full_prime(&source);
-        let module = &full.module("x/main").expect("module").module;
+        let module = full.module("x/main").expect("module").module();
         let def = module
             .items
             .iter()

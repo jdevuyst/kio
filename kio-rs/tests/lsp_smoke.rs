@@ -15,7 +15,7 @@
 mod support;
 
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -79,9 +79,11 @@ impl Drop for TempDir {
 /// `read` call.
 struct LspProcess {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     /// Messages framed off the child's stdout.
     rx: Receiver<Value>,
+    /// Existing debug telemetry, streamed independently of protocol output.
+    analysis_events: Receiver<String>,
     /// Counter for client-side request ids.
     next_id: i64,
 }
@@ -89,13 +91,14 @@ struct LspProcess {
 impl LspProcess {
     fn spawn() -> Self {
         let mut command = Command::new(test_binary!("kio"));
-        command.stderr(Stdio::inherit());
+        command.env("KIO_DEBUG_LSP_TIMING", "1");
         Self::spawn_command(&mut command).0
     }
 
     fn spawn_with_env_and_captured_stderr(envs: &[(&str, &str)]) -> (Self, Receiver<String>) {
         let mut command = Command::new(test_binary!("kio"));
         command.stderr(Stdio::piped());
+        command.env_remove("KIO_DEBUG_LSP_TIMING");
         for (key, value) in envs {
             command.env(key, value);
         }
@@ -107,6 +110,7 @@ impl LspProcess {
             .arg("lsp")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("spawn kio lsp");
         let stdin = child.stdin.take().expect("stdin");
@@ -115,19 +119,29 @@ impl LspProcess {
         thread::spawn(move || drain_stdout(stdout, tx));
 
         let (stderr_tx, stderr_rx) = mpsc::channel::<String>();
-        if let Some(mut stderr) = child.stderr.take() {
-            thread::spawn(move || {
-                let mut out = String::new();
-                let _ = stderr.read_to_string(&mut out);
-                let _ = stderr_tx.send(out);
-            });
-        }
+        let (analysis_tx, analysis_events) = mpsc::channel();
+        let stderr = child.stderr.take().expect("stderr");
+        thread::spawn(move || {
+            let mut out = String::new();
+            for line in BufReader::new(stderr).lines() {
+                let line = line.expect("read LSP stderr");
+                out.push_str(&line);
+                out.push('\n');
+                if line.starts_with("lsp-timing: schedule ")
+                    || line.starts_with("lsp-timing: publish ")
+                {
+                    let _ = analysis_tx.send(line);
+                }
+            }
+            let _ = stderr_tx.send(out);
+        });
 
         (
             Self {
                 child,
-                stdin,
+                stdin: Some(stdin),
                 rx,
+                analysis_events,
                 next_id: 1,
             },
             stderr_rx,
@@ -138,8 +152,9 @@ impl LspProcess {
     fn send(&mut self, msg: &Value) {
         let body = serde_json::to_string(msg).expect("serialize");
         let frame = format!("Content-Length: {}\r\n\r\n{body}", body.len());
-        self.stdin.write_all(frame.as_bytes()).expect("write");
-        self.stdin.flush().expect("flush");
+        let stdin = self.stdin.as_mut().expect("open LSP stdin");
+        stdin.write_all(frame.as_bytes()).expect("write");
+        stdin.flush().expect("flush");
     }
 
     /// Send a request and return the allocated id.
@@ -234,7 +249,7 @@ impl LspProcess {
         self.send_notification("exit", json!(null));
         // Drop stdin so the server's main_loop sees EOF if it
         // doesn't react to `exit` immediately.
-        drop(self.stdin);
+        self.stdin.take();
         // Wait for the child with a deadline.
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -249,6 +264,14 @@ impl LspProcess {
                 }
             }
         }
+    }
+}
+
+impl Drop for LspProcess {
+    fn drop(&mut self) {
+        self.stdin.take();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -615,6 +638,79 @@ fn lsp_fills_computed_input_diagnostic_clears_with_an_outside_annotation() {
         }),
     );
     let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
+    assert_eq!(cleared["diagnostics"], json!([]), "{cleared:?}");
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn lsp_unrelated_package_keeps_current_diagnostic_and_its_quick_fix() {
+    let dir = TempDir::new("diagnostic-package-ownership");
+    let source =
+        "module main; import support as host; pub rec(host.drive) fn again(x: .) { again(x) }\n";
+    let call_path = dir.write("call/main.kio", source);
+    dir.write(
+        "call/support.kio",
+        "module support; host fn drive[S][R](step: S -> S | R, state: S) -> R;\n",
+    );
+    dir.write(
+        "call/call.pkg.kio",
+        "package call; bridge { main; support; }\n",
+    );
+    let other_source = "module main; pub fn main() { () }\n";
+    let other_path = dir.write("other/main.kio", other_source);
+    dir.write("other/other.pkg.kio", "package other; bridge { main; }\n");
+    let call_uri = path_to_file_uri(&call_path);
+    let other_uri = path_to_file_uri(&other_path);
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    open_and_wait_for_analysis(&mut lsp, &call_uri, source);
+    let initial = wait_for_publish_version(&mut lsp, &call_uri, 1);
+    let original = initial["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(original.len(), 1, "{initial:?}");
+    assert!(
+        original[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("recursive")
+    );
+
+    open_and_wait_for_analysis(&mut lsp, &other_uri, other_source);
+    // The accepted worker event precedes this request. Its response fences
+    // all earlier diagnostic publications on the same protocol stream.
+    let id = lsp.send_request(
+        "textDocument/codeAction",
+        json!({
+            "textDocument": { "uri": call_uri },
+            "range": original[0]["range"],
+            "context": { "diagnostics": original, "only": ["quickfix"] },
+        }),
+    );
+    let actions = loop {
+        let message = lsp.recv().expect("code-action response");
+        if message["method"] == "textDocument/publishDiagnostics"
+            && message["params"]["uri"] == call_uri
+        {
+            assert_eq!(
+                message["params"]["diagnostics"], initial["diagnostics"],
+                "checking another package must not retract this unchanged diagnostic"
+            );
+        }
+        if message["id"].as_i64() == Some(id) {
+            break message;
+        }
+    };
+    let action = actions["result"]
+        .as_array()
+        .expect("code actions")
+        .iter()
+        .find(|action| action["title"] == "Mark recursive call with `rec`")
+        .unwrap_or_else(|| panic!("missing native repair: {actions:?}"));
+    let (edits, version) = action_edits_for_uri(action, &call_uri);
+    assert_eq!(version, Some(1));
+    let repaired = apply_lsp_text_edits(source, edits);
+    assert_eq!(repaired, source.replace("{ again(x) }", "{ rec again(x) }"));
+    send_full_text_change(&mut lsp, &call_uri, 2, &repaired);
+    let cleared = wait_for_publish_version(&mut lsp, &call_uri, 2);
     assert_eq!(cleared["diagnostics"], json!([]), "{cleared:?}");
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -2193,10 +2289,8 @@ fn send_definition(lsp: &mut LspProcess, uri: &str, line: u64, character: u64) -
     result
 }
 
-/// Open a file and wait briefly for any analysis notification (e.g.
-/// `publishDiagnostics`). For clean packages the server may not emit
-/// one; the bounded wait lets the debounce timer fire and lets the
-/// worker store the position index before the test queries it.
+/// Clean packages need not publish diagnostics. Wait for the exact scheduled
+/// overlay's accepted worker result, rather than interpreting silence as ready.
 fn open_and_wait_for_analysis(lsp: &mut LspProcess, uri: &str, text: &str) {
     lsp.send_notification(
         "textDocument/didOpen",
@@ -2209,10 +2303,70 @@ fn open_and_wait_for_analysis(lsp: &mut LspProcess, uri: &str, text: &str) {
             }
         }),
     );
-    // Drain any publishDiagnostics that arrives, then proceed.
-    // For clean packages, no notification is sent; the try_recv_for
-    // timeout gives the debounce + analysis time to complete.
-    let _ = lsp.try_recv_for(Duration::from_millis(600));
+    wait_for_analysis_event(&lsp.analysis_events, uri, 1);
+}
+
+fn wait_for_analysis_event(events: &Receiver<String>, uri: &str, version: i32) -> u64 {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let expected_version = format!("Some({version})");
+    let mut scheduled = None;
+    let mut observed = Vec::new();
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "analysis deadline exceeded: {observed:#?}"
+        );
+        let line = events
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap_or_else(|error| {
+                panic!("no completed analysis for {uri} version {version}: {error}\n{observed:#?}")
+            });
+        let field = |key: &str| {
+            line.split_whitespace()
+                .find_map(|word| word.split_once('=').filter(|(name, _)| *name == key))
+                .map(|(_, value)| value)
+        };
+        let snapshot = field("snapshot").and_then(|value| value.parse::<u64>().ok());
+        if line.starts_with("lsp-timing: schedule ")
+            && field("trigger_uri") == Some(uri)
+            && field("trigger_version") == Some(expected_version.as_str())
+            && field("priority") == Some("background")
+            && field("scope") == Some("full")
+        {
+            scheduled = Some(snapshot.expect("scheduled snapshot identity"));
+        } else if line.starts_with("lsp-timing: publish ")
+            && scheduled.is_some()
+            && snapshot == scheduled
+            && field("obsolete") == Some("0")
+        {
+            return scheduled.unwrap();
+        }
+        observed.push(line);
+    }
+}
+
+#[test]
+fn analysis_barrier_matches_uri_version_and_accepted_snapshot() {
+    let (tx, rx) = mpsc::channel();
+    for line in [
+        "lsp-timing: schedule snapshot=1 priority=background scope=full trigger_uri=file:///other.kio trigger_version=Some(1)",
+        "lsp-timing: publish snapshot=1 obsolete=0",
+        "lsp-timing: schedule snapshot=2 priority=background scope=full trigger_uri=file:///main.kio trigger_version=Some(0)",
+        "lsp-timing: publish snapshot=2 obsolete=0",
+        "lsp-timing: schedule snapshot=3 priority=background scope=full trigger_uri=file:///main.kio trigger_version=Some(1)",
+        "lsp-timing: publish snapshot=3 obsolete=1",
+        "lsp-timing: schedule snapshot=4 priority=background scope=full trigger_uri=file:///main.kio trigger_version=Some(1)",
+        "lsp-timing: publish snapshot=3 obsolete=0",
+        "lsp-timing: publish snapshot=4 obsolete=0",
+    ] {
+        tx.send(line.to_owned()).unwrap();
+    }
+    drop(tx);
+    assert_eq!(wait_for_analysis_event(&rx, "file:///main.kio", 1), 4);
+    assert!(
+        rx.try_recv().is_err(),
+        "the accepted publication must be consumed"
+    );
 }
 
 fn assert_unused_private_diagnostics(diagnostics: &Value, expected: &[(&str, &str)]) {
@@ -5918,7 +6072,9 @@ fn lsp_doc_roles_follow_current_utf16_source_and_hidden_fence_recovery() {
         result["data"]
             .as_array()
             .expect("semantic token data")
-            .chunks_exact(5)
+            .as_chunks::<5>()
+            .0
+            .iter()
             .map(|cell| {
                 let values = cell
                     .iter()
@@ -6354,7 +6510,7 @@ fn lsp_semantic_tokens_keep_rec_contextual_across_value_and_declaration_sites() 
     let mut line = 0_u64;
     let mut column = 0_u64;
     let mut decoded = Vec::new();
-    for token in data.chunks_exact(5) {
+    for token in data.as_chunks::<5>().0 {
         let delta_line = token[0].as_u64().expect("delta line");
         let delta_start = token[1].as_u64().expect("delta start");
         if delta_line == 0 {
@@ -10097,7 +10253,28 @@ fn lsp_rec_loop_diagnostics_select_written_path_and_related_signature() {
         let repaired =
             "module pkg/provider;\n\nhost fn selected[S][R](step: S -> S | R, state: S) -> R;\n";
         send_full_text_change(&mut lsp, &provider_uri, 2, repaired);
-        let cleared = wait_for_publish_version(&mut lsp, &uri, 1);
+        wait_for_analysis_event(&lsp.analysis_events, &provider_uri, 2);
+        // Provider edits preserve the consumer's version. Fence the accepted
+        // provider snapshot so queued earlier publications cannot satisfy it.
+        let fence = lsp.send_request(
+            "textDocument/semanticTokens/full",
+            json!({"textDocument": {"uri": uri}}),
+        );
+        let mut cleared = None;
+        loop {
+            let message = lsp.recv().expect("analysis publication fence");
+            if message["method"] == "textDocument/publishDiagnostics"
+                && message["params"]["uri"] == uri
+            {
+                assert_eq!(message["params"]["version"], 1, "{message:?}");
+                cleared = Some(message["params"].clone());
+            }
+            if message["id"].as_i64() == Some(fence) {
+                assert!(message.get("error").is_none(), "{message:?}");
+                break;
+            }
+        }
+        let cleared = cleared.expect("provider repair must publish consumer diagnostics");
         assert!(
             cleared["diagnostics"]
                 .as_array()

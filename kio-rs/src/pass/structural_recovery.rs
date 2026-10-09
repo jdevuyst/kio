@@ -1,9 +1,9 @@
 //! Structural recovery: `Module<Prime>` → `Module<Enriched>`.
 //!
 //! On the backend-facing build route this is a post-validation, pre-emit pass:
-//! its `Module<Prime>` input has passed standalone Kio' checking and
-//! statement-spine canonicalization. The `Prime` marker itself guarantees the
-//! AST shape, not that a direct caller ran that validation route.
+//! its owner-issued input has passed standalone Kio' checking and
+//! statement-spine canonicalization. A raw `Module<Prime>` carries only AST
+//! shape and cannot enter the production recovery boundary.
 //! Products, sums, matches and conditionals are expressed through
 //! right-leaning chains of the
 //! intrinsics (`__pair__` / `__fst__` / `__snd__` /
@@ -90,6 +90,7 @@ use crate::ast::{
     convert_signature, convert_type, convert_type_alias,
 };
 use crate::pass::resolve::{ModuleEntry, Package, PackageFileEntry};
+use crate::prime::typer::{ValidatedPrimePackage, ValidatedPrimePackageFile};
 use crate::span::Span;
 
 /// Recover a whole typed package into the enriched-IR phase. Each
@@ -104,7 +105,11 @@ use crate::span::Span;
 /// match-arm scope, so per-module counters don't collide. The
 /// `BTreeMap` collect preserves input order, so the resulting
 /// package's module iteration is byte-identical to the serial walk.
-pub fn recover_package(package: &Package<Prime>) -> Package<Enriched> {
+pub fn recover_package(package: &ValidatedPrimePackage) -> Package<Enriched> {
+    recover_package_impl(package.package())
+}
+
+fn recover_package_impl(package: &Package<Prime>) -> Package<Enriched> {
     // Per-module recovery via rayon. Each module resolves its own exact
     // local/selective/qualified newtype surface and mutates only its per-walk
     // `Recoverer` (just a `fresh` counter for synthetic param names). The
@@ -138,6 +143,11 @@ pub fn recover_package(package: &Package<Prime>) -> Package<Enriched> {
     Package::<Enriched>::from_parts(modules, package_file)
 }
 
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn recover_package_for_test(package: &Package<Prime>) -> Package<Enriched> {
+    recover_package_impl(package)
+}
+
 /// Recover a single typed module using a pre-computed package catalogue.
 /// Only entries whose consumer identity is this module enter the local
 /// recovery context. Used by the
@@ -148,22 +158,23 @@ pub fn recover_package(package: &Package<Prime>) -> Package<Enriched> {
 /// only ever called from `cache::enriched`, so it compiles only when the
 /// `cache` module is in the build.
 #[cfg(feature = "cli")]
-pub fn recover_module_with_package_inputs(
-    module: &Module<Prime>,
-    inputs: &crate::cache::enriched::PackageKeyInputs,
+pub(crate) fn recover_module_with_package_inputs(
+    prepared: crate::cache::enriched::RecoveryModule<'_>,
 ) -> Module<Enriched> {
+    let module = prepared.module();
+    let inputs = prepared.inputs();
     let mut ctx = RecoveryCtx::default();
     let module_path = module.path.segments.join("/");
     ctx.pure_functions = inputs
-        .pure_functions
+        .pure_functions()
         .get(&module_path)
         .cloned()
         .unwrap_or_default();
-    for (scoped_name, input) in &inputs.newtype_fields {
+    for (scoped_name, input) in inputs.newtype_fields() {
         if scoped_name.module_path() != module_path {
             continue;
         }
-        let Some(member) = inputs.newtype_members.get(scoped_name) else {
+        let Some(member) = inputs.newtype_members().get(scoped_name) else {
             continue;
         };
         assert_eq!(
@@ -182,9 +193,9 @@ pub fn recover_module_with_package_inputs(
 
 /// Recover a single package file. Companion to
 /// [`recover_module_with_package_inputs`].
-pub fn recover_package_file(export: &PackageFile<Prime>) -> PackageFile<Enriched> {
+pub fn recover_package_file(export: ValidatedPrimePackageFile<'_>) -> PackageFile<Enriched> {
     let ctx = RecoveryCtx::default();
-    Recoverer::new(&ctx).recover_package_file(export)
+    Recoverer::new(&ctx).recover_package_file(export.package_file())
 }
 
 /// One non-immediate value argument lifted out of a recovered
@@ -380,6 +391,7 @@ impl<'a> Recoverer<'a> {
                 ext: (),
             },
             Expr::Call {
+                source_trivia: _,
                 occurrence: _,
                 diagnostic: _,
                 callee,
@@ -410,6 +422,7 @@ impl<'a> Recoverer<'a> {
                 }
                 // Not a recoverable chain root — recurse structurally.
                 Expr::Call {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     diagnostic: Default::default(),
                     callee: Box::new(self.recover_expr(callee)),
@@ -480,9 +493,11 @@ impl<'a> Recoverer<'a> {
                 meta: convert_meta(meta),
             },
             Expr::Unit {
+                source_trivia: _,
                 occurrence: _,
                 meta,
             } => Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: convert_meta(meta),
             },
@@ -1083,6 +1098,7 @@ impl<'a> Recoverer<'a> {
             let param = self.fresh_name();
             EnrichedArm {
                 body: Expr::Call {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     diagnostic: Default::default(),
                     callee: Box::new(enriched_local_path(binding, span)),
@@ -1115,6 +1131,7 @@ impl<'a> Recoverer<'a> {
             let callee = self.recover_expr(handler);
             EnrichedArm {
                 body: Expr::Call {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     diagnostic: Default::default(),
                     callee: Box::new(callee),
@@ -1191,6 +1208,7 @@ impl<'a> Recoverer<'a> {
         if let Some(binding) = binding {
             let span = thunk.span();
             return Expr::Call {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 diagnostic: Default::default(),
                 callee: Box::new(enriched_local_path(binding, span)),
@@ -1204,6 +1222,7 @@ impl<'a> Recoverer<'a> {
         }
         let span = thunk.span();
         Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(self.recover_expr(thunk)),
@@ -2063,6 +2082,7 @@ mod tests {
     fn effect_call(name: &str) -> Expr<Enriched> {
         let span = Span::new(0, 0);
         Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(local_path(name)),
@@ -2234,6 +2254,7 @@ mod tests {
         let body = enriched_tuple(
             vec![
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(Span::new(0, 0)),
                 },

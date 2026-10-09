@@ -1,6 +1,6 @@
 //! Capability annotations on the [`Routed`] AST.
 //!
-//! A post-[`crate::pass::recover_to_low`] suite of per-module passes that
+//! A post-[`crate::pass::route`] suite of per-module passes that
 //! write capability annotations onto the AST at the [`Routed`]
 //! phase. Each pass is purely additive — every sub-expression is the
 //! same shape it was before, only the per-position capability
@@ -23,7 +23,7 @@
 //! ## Pipeline position
 //!
 //! ```text
-//! recover_to_low::lower → Routed
+//! route::route_package → Routed
 //!                       → annotate_escapes         ← Expr::FnExpr
 //!                       → annotate_lifetime        ← Type::Function
 //!                       → per-backend lowering
@@ -914,8 +914,8 @@ mod tests {
             .collect(),
             None,
         );
-        let enriched = crate::pass::structural_recovery::recover_package(&package);
-        crate::pass::recover_to_low::lower(&enriched)
+        let enriched = crate::pass::structural_recovery::recover_package_for_test(&package);
+        crate::pass::route::route_package(&enriched)
     }
 
     use crate::ast::Module;

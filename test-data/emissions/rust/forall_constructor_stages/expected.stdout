@@ -1,0 +1,5 @@
+unit stages: 2
+kio applications: 2
+nested result stages: 1 2
+function stages: 2
+panicking stages: 2

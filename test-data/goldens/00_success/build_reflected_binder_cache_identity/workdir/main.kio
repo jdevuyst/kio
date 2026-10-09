@@ -1,0 +1,206 @@
+module main;
+
+import __intrinsics__;
+
+import __comptime__;
+
+type Pair_view = __Type__ & __Type__;
+
+type Function_view = __Type__ & __Type_arity__ & __Type__;
+
+type Forall_view = __Type_var__ & __Type_arity__ & __Type__;
+
+type Tail6 = __Type_var__ | __Type_name__;
+
+type Tail5 = Forall_view | Tail6;
+
+type Tail4 = Function_view | Tail5;
+
+type Tail3 = Pair_view | Tail4;
+
+type Tail2 = Pair_view | Tail3;
+
+type Tail1 = . | Tail2;
+
+pure fn skip[A][B](ct: __Comptime__, view: A | B, next: B -> __Checked_term__) -> __Checked_term__ {
+  __either__(
+    , view
+    , .(_unexpected: A) -> __Checked_term__ { __elab_error__(ct, "wrong type-view arm") }
+    , next
+    )
+}
+
+pure fn with_var(ct: __Comptime__, typ: __Type__, next: __Type_var__ -> __Checked_term__) -> __Checked_term__ {
+  skip(
+    , ct
+    , __type_view__(ct, typ)
+    , .(tail1: Tail1) -> __Checked_term__ {
+        skip(
+          , ct
+          , tail1
+          , .(tail2: Tail2) -> __Checked_term__ {
+              skip(
+                , ct
+                , tail2
+                , .(tail3: Tail3) -> __Checked_term__ {
+                    skip(
+                      , ct
+                      , tail3
+                      , .(tail4: Tail4) -> __Checked_term__ {
+                          skip(
+                            , ct
+                            , tail4
+                            , .(tail5: Tail5) -> __Checked_term__ {
+                                __either__(
+                                  , tail5
+                                  , .(view: Forall_view) -> __Checked_term__ { next(__fst__(view)) }
+                                  , .(_unexpected: Tail6) -> __Checked_term__ {
+                                      __elab_error__(ct, "missing forall view")
+                                    }
+                                  )
+                              }
+                            )
+                        }
+                      )
+                  }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn identity_body(ct: __Comptime__, var: __Type_var__) -> __Type__ {
+  __type_arrow__(
+    , ct
+    , __type_var__(ct, var)
+    , __type_arity_succ__(ct, __type_arity_zero__(ct))
+    , __type_var__(ct, var)
+    )
+}
+
+pure fn cold_single(ct: __Comptime__) -> __Checked_term__ {
+  let a =
+    __type_forall__(
+      , ct
+      , __type_arity_zero__(ct)
+      , .(var: __Type_var__) -> __Type__ { identity_body(ct, var) }
+      );
+  __if_then_else__(
+    , __type_equal__(ct, a, __reflect_type__(ct, [A] A -> A))
+    , .() -> __Checked_term__ {
+        with_var(
+          , ct
+          , a
+          , .(var: __Type_var__) -> __Checked_term__ {
+              __if_then_else__(
+                , __type_var_equal__(ct, var, var)
+                , .() -> __Checked_term__ {
+                    with_var(
+                      , ct
+                      , a
+                      , .(again: __Type_var__) -> __Checked_term__ {
+                          __if_then_else__(
+                            , __type_var_equal__(ct, var, again)
+                            , .() -> __Checked_term__ { __term_unit__(ct) }
+                            , .() -> __Checked_term__ {
+                                __elab_error__(ct, "repeated projection changed identity")
+                              }
+                            )
+                        }
+                      )
+                  }
+                , .() -> __Checked_term__ { __elab_error__(ct, "self identity failed") }
+                )
+            }
+          )
+      }
+    , .() -> __Checked_term__ { __elab_error__(ct, "cold type equivalence failed") }
+    )
+}
+
+pure fn compare_projected(ct: __Comptime__, first: __Type__, second: __Type__) -> __Checked_term__ {
+  with_var(
+    , ct
+    , first
+    , .(first_var: __Type_var__) -> __Checked_term__ {
+        with_var(
+          , ct
+          , second
+          , .(second_var: __Type_var__) -> __Checked_term__ {
+              __if_then_else__(
+                , __type_var_equal__(ct, first_var, second_var)
+                , .() -> __Checked_term__ {
+                    __elab_error__(ct, "independent fresh binders collapsed")
+                  }
+                , .() -> __Checked_term__ { __term_unit__(ct) }
+                )
+            }
+          )
+      }
+    )
+}
+
+pure fn warm_pair(ct: __Comptime__, reverse: Comptime_bool) -> __Checked_term__ {
+  let a =
+    __type_forall__(
+      , ct
+      , __type_arity_zero__(ct)
+      , .(var: __Type_var__) -> __Type__ { identity_body(ct, var) }
+      );
+  let b =
+    __type_forall__(
+      , ct
+      , __type_arity_zero__(ct)
+      , .(var: __Type_var__) -> __Type__ { identity_body(ct, var) }
+      );
+  __if_then_else__(
+    , __type_equal__(ct, a, b)
+    , .() -> __Checked_term__ {
+        __if_then_else__(
+          , reverse
+          , .() -> __Checked_term__ { compare_projected(ct, b, a) }
+          , .() -> __Checked_term__ { compare_projected(ct, a, b) }
+          )
+      }
+    , .() -> __Checked_term__ { __elab_error__(ct, "alpha-equivalent types differed") }
+    )
+}
+
+pure fn fresh_identity(ct: __Comptime__) -> __Type__ {
+  __type_forall__(
+    , ct
+    , __type_arity_zero__(ct)
+    , .(var: __Type_var__) -> __Type__ { identity_body(ct, var) }
+    )
+}
+
+pure fn factory_pair(ct: __Comptime__) -> __Checked_term__ {
+  let a = fresh_identity(ct);
+  let b = fresh_identity(ct);
+  compare_projected(ct, a, b)
+}
+
+pure fn probe_impl(ct: __Comptime__) -> __Checked_term__ { warm_pair(ct, .f) }
+
+pure fn reverse_impl(ct: __Comptime__) -> __Checked_term__ { warm_pair(ct, .t) }
+
+pure fn cold_impl(ct: __Comptime__) -> __Checked_term__ { cold_single(ct) }
+
+elab probe : . -> . { impl probe_impl }
+
+elab reverse_probe : . -> . { impl reverse_impl }
+
+elab cold_probe : . -> . { impl cold_impl }
+
+elab factory_probe : . -> . { impl factory_pair }
+
+fn forward() { probe!(()) }
+
+fn reverse() { reverse_probe!(()) }
+
+fn cold() { cold_probe!(()) }
+
+fn factory() { factory_probe!(()) }
+
+pub fn main() { forward(); reverse(); cold(); factory() }

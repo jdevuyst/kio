@@ -740,6 +740,7 @@ set -eu
 shift
 target=
 binary=
+: >"$KIO_TEST_CORPUS_TOOL_CONFIG_OUTPUT"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --target-dir)
@@ -750,6 +751,11 @@ while [ "$#" -gt 0 ]; do
     --bin)
       [ "$#" -ge 2 ] || exit 92
       binary=$2
+      shift 2
+      ;;
+    --config)
+      [ "$#" -ge 2 ] || exit 92
+      printf '%s\n' "$2" >>"$KIO_TEST_CORPUS_TOOL_CONFIG_OUTPUT"
       shift 2
       ;;
     *) shift ;;
@@ -793,6 +799,7 @@ EOF
       KIO_TEST_CORPUS_TOOL_BUILD_LOG=$tsct_build_log
       KIO_TEST_CORPUS_TOOL_INVOCATION_LOG=$tsct_invocation_log
       KIO_TEST_CORPUS_TOOL_COPY_LOG=$tsct_copy_log
+      KIO_TEST_CORPUS_TOOL_CONFIG_OUTPUT=$tsct_call_destination.config
       KIO_TEST_REAL_CP=$tsct_real_cp
       export \
         ORCHESTRATOR_TMP \
@@ -804,6 +811,7 @@ EOF
         KIO_TEST_CORPUS_TOOL_BUILD_LOG \
         KIO_TEST_CORPUS_TOOL_INVOCATION_LOG \
         KIO_TEST_CORPUS_TOOL_COPY_LOG \
+        KIO_TEST_CORPUS_TOOL_CONFIG_OUTPUT \
         KIO_TEST_REAL_CP
       PATH=$tsct_path
       export PATH
@@ -867,6 +875,8 @@ EOF
       fail "corpus-tool caller $tsct_i copy escaped its private destination"
     [ -f "$tsct_destination.cargo" ] ||
       fail "corpus-tool caller $tsct_i did not request cargo admission"
+    [ ! -s "$tsct_destination.config" ] ||
+      fail 'ordinary corpus tool received compiler profile overrides'
     tsct_i=$((tsct_i + 1))
   done
 
@@ -903,6 +913,8 @@ EOF
       fail 'scheduler bypass did not retain its private corpus-tool target'
     [ "$(cat "$tsct_bypass/fixture-tool")" = 'fixture corpus tool' ] ||
       fail 'scheduler bypass did not receive its private copy'
+    [ ! -s "$tsct_bypass/fixture-tool.config" ] ||
+      fail 'bypassed ordinary tool received compiler profile overrides'
     grep -Fxq "$tsct_bypass/fixture-tool-target" "$tsct_build_log" ||
       fail 'scheduler bypass mutated the persistent corpus-tool target'
     tsct_bypass_i=$((tsct_bypass_i + 1))
@@ -915,6 +927,38 @@ EOF
     '; then
     fail 'scheduler bypass unexpectedly retained cargo admission'
   fi
+
+  # Both compiler cohorts keep their profile choice across admission routes;
+  # the independently built grammar verifier remains an ordinary dev tool.
+  printf '%s\n' \
+    profile.dev.package.kio-lang.opt-level=1 \
+    profile.dev.package.kio-lang.debug-assertions=true \
+    profile.dev.package.kio-lang.overflow-checks=true \
+    >"$scratch/expected-compiler-profile"
+  for tsct_profile_key in kio-lsp-cli kio-prime kio-prime-check; do
+    for tsct_profile_route in scheduled bypass; do
+      tsct_profile_private=$scratch/profile-$tsct_profile_key-$tsct_profile_route
+      mkdir -p "$tsct_profile_private"
+      tsct_profile_schedule=
+      if [ "$tsct_profile_route" = bypass ]; then
+        tsct_profile_schedule=DISABLE
+      fi
+      tsct_call \
+        "$tsct_profile_private" '' "$tsct_profile_schedule" \
+        "$tsct_profile_key" "$tsct_workspace" \
+        "$tsct_profile_private/fixture-tool" --bin fixture-tool
+      if [ "$tsct_profile_key" = kio-prime-check ]; then
+        [ ! -s "$tsct_profile_private/fixture-tool.config" ] ||
+          fail 'grammar verifier received compiler profile overrides'
+      else
+        assert_same "$scratch/expected-compiler-profile" \
+          "$tsct_profile_private/fixture-tool.config" \
+          "$tsct_profile_key $tsct_profile_route changed compiler profile"
+      fi
+      [ "$(cat "$tsct_profile_private/fixture-tool")" = 'fixture corpus tool' ] ||
+        fail "$tsct_profile_key $tsct_profile_route lost its private copy"
+    done
+  done
 }
 
 test_windows_smoke_compiler_admission() {

@@ -1,0 +1,5 @@
+module main;
+
+import java as platform;
+
+pub fn main() { platform.unit() }

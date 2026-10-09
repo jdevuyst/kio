@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func explicitDeclaration(list p.Exp_Api__readList_arg0[int, int, string]) {
+	_ = p.Exp_Api__readTree_arg0[int, int, string](list)
+}

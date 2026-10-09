@@ -157,19 +157,9 @@ impl TestRunner for JsRunner {
                 .catch(&ctx)
                 .map_err(|e| format!("reading `{factory_name}` export: {}", format_caught(&e)))?;
 
-            // Host callbacks use the package's documented lift operations.
-            for (suffix, binding) in [
-                ("Callable", "__kio_lift_callable__"),
-                ("Poly", "__kio_lift_poly__"),
-            ] {
-                let name = format!("lift{}{suffix}", pascal_case(&self.identity.namespace));
-                let lift: Function = evaluated
-                    .get(name.as_str())
-                    .catch(&ctx)
-                    .map_err(|e| format!("reading `{name}` export: {}", format_caught(&e)))?;
-                ctx.globals()
-                    .set(binding, lift)
-                    .map_err(|e| format!("installing public callable lift: {e}"))?;
+            if protocol == RunnerProtocol::SameArtifactExchange {
+                run_same_artifact_exchange_js(&ctx, &create_fn, host, protocol)?;
+                return Ok(0);
             }
 
             // Build the runner's default host record by evaluating
@@ -345,6 +335,9 @@ fn run_js_protocol<'js>(
     pkg_obj: &Object<'js>,
 ) -> Result<(), String> {
     match protocol.contract().execution {
+        ProtocolExecution::Invoke(ExportDriver::SameArtifactExchange) => {
+            unreachable!("same-artifact exchange uses the single evaluated module's factory")
+        }
         ProtocolExecution::CompileOnly | ProtocolExecution::ConstructOnly => Ok(()),
         ProtocolExecution::Invoke(ExportDriver::Main { module }) => {
             run_default_main_js(ctx, pkg_obj, module)
@@ -371,13 +364,26 @@ fn run_js_protocol<'js>(
             run_export_structural_roundtrip_js(ctx, pkg_obj, protocol)
         }
         ProtocolExecution::Invoke(
-            ExportDriver::ScalarRoundtrip | ExportDriver::HostOwnedRoundtrip,
+            ExportDriver::ScalarRoundtrip
+            | ExportDriver::HostOwnedRoundtrip
+            | ExportDriver::OpaqueProductRoundtrip
+            | ExportDriver::OpaqueCompoundRoundtrip
+            | ExportDriver::GenericNominalOpaqueRoundtrip,
         ) => run_export_native_payload_roundtrip_js(ctx, pkg_obj, protocol),
         ProtocolExecution::Invoke(ExportDriver::PositionalProductRoundtrip) => {
             run_export_positional_product_roundtrip_js(ctx, pkg_obj, protocol)
         }
         ProtocolExecution::Invoke(ExportDriver::CallableSlotsRoundtrip) => {
             run_export_callable_slots_roundtrip_js(ctx, pkg_obj, protocol)
+        }
+        ProtocolExecution::Invoke(ExportDriver::DirectSumForallBoundary) => {
+            run_direct_sum_forall_boundary_js(ctx, pkg_obj, protocol)
+        }
+        ProtocolExecution::Invoke(ExportDriver::IncomingCallableViews) => {
+            run_incoming_callable_views_js(ctx, pkg_obj, protocol)
+        }
+        ProtocolExecution::Invoke(ExportDriver::IncomingCallableStages) => {
+            run_incoming_callable_stages_js(ctx, pkg_obj, protocol)
         }
         ProtocolExecution::Invoke(ExportDriver::RustCallbackAliases) => {
             Err("rust-callback-aliases tests the Rust public naming contract only".to_owned())
@@ -627,17 +633,17 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
     types.makeProjectorGenericValue(86)));
 
   const packed = types[{packed_function}].makePackedFunction(
-    __kio_lift_callable__(value => value._0 + value._1));
+    (value => value._0 + value._1));
   const unpacked = types[{packed_function}].readPackedFunction(packed);
   print(unpacked(constructorPairOut));
 
   print(types[{existential_unit}].readExistentialUnit(
     types.makeExistentialUnitValue()).advance()(
-      __kio_lift_poly__({{ advance: () => __kio_lift_callable__(_value => 89) }})));
+      ({{ advance: () => (_value => 89) }})));
 
   print(types[{existential_empty}].readExistentialEmpty(
-    types.makeExistentialEmptyValue()).advance()(__kio_lift_poly__({{
-    advance: () => __kio_lift_callable__((...args) => {{
+    types.makeExistentialEmptyValue()).advance()(({{
+    advance: () => ((...args) => {{
       if (args.length !== 1 || args[0] !== null) {{
         throw new Error("unit existential continuation lost its null domain");
       }}
@@ -659,8 +665,8 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
       types.makeRecursiveProjectorBase())));
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("visibility callable changed"); }};
   const constructorInputs = [];
-  const constructed = types[{constructor_spread}].makeConstructorSpread(__kio_lift_poly__({{
-    advance: () => __kio_lift_callable__(value => {{
+  const constructed = types[{constructor_spread}].makeConstructorSpread(({{
+    advance: () => (value => {{
     constructorInputs.push(value._0); return value._0 + 3;
   }}) }}));
   check(types.invokeConstructorSpreadI32(constructed, 101), 104);
@@ -670,10 +676,10 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
   check(projected.advance()({{_0: 111, _1: 1}}), 111);
   check(projected.advance()({{_0: 112, _1: null}}), 112);
   let spreadOpens = 0, recursiveOpens = 0;
-  const openSpread = __kio_lift_poly__({{ advance: () => __kio_lift_callable__(value => {{
+  const openSpread = ({{ advance: () => (value => {{
     check(typeof value.advance, "function"); spreadOpens++; return 91;
   }}) }});
-  const openRecursive = __kio_lift_poly__({{ advance: () => __kio_lift_callable__(value => {{
+  const openRecursive = ({{ advance: () => (value => {{
     check(typeof value, "function"); recursiveOpens++; return 92;
   }}) }});
   check(types[{existential_spread}].readExistentialSpread(types.makeExistentialSpreadValue()).advance()(openSpread), 91);
@@ -747,7 +753,7 @@ fn run_export_callback_roundtrip_js<'js>(
     throw new Error("export-callback-roundtrip: missing exported fn makeStep");
   }}
 
-  __kio_host_print__(String(main.applyTwice(__kio_lift_callable__((n) => n + 3), 10)) + "\n");
+  __kio_host_print__(String(main.applyTwice(((n) => n + 3), 10)) + "\n");
   const step = main.makeStep(4);
   if (typeof step !== "function") {{
     throw new Error("export-callback-roundtrip: makeStep returned non-function");
@@ -774,7 +780,7 @@ fn run_nested_curried_roundtrip_js<'js>(
         r#"
 (() => {{
   const api = {api};
-  const join = __kio_lift_callable__(left => __kio_lift_callable__(right => left + "/" + right));
+  const join = (left => (right => left + "/" + right));
   const viaHost = api.viaHost(join);
   if (typeof viaHost !== "function") {{
     throw new Error("nested-curried-roundtrip: viaHost returned non-function");
@@ -815,7 +821,7 @@ fn run_host_substituted_unit_callback_js<'js>(
         r#"
 (() => {{
   const api = {api};
-  __kio_host_print__(api.viaHost(__kio_lift_callable__((unit) => {{
+  __kio_host_print__(api.viaHost(((unit) => {{
     if (unit !== null) throw new Error("substituted Unit lost its semantic slot");
     return "callback";
   }})) + "\n");
@@ -1120,8 +1126,8 @@ fn run_host_existential_roundtrip_js<'js>(
   let observations = 0, openings = 0;
   globalThis.__kio_existential_observe__ = value => {{
     observations++;
-    return {types}[{packed}].readPacked(value).advance()(__kio_lift_poly__({{
-      advance: () => __kio_lift_callable__(payload => {{
+    return {types}[{packed}].readPacked(value).advance()(({{
+      advance: () => (payload => {{
       openings++;
       return payload._1(payload._0);
     }}) }}));
@@ -1155,8 +1161,8 @@ fn run_export_functor_dict_roundtrip_js<'js>(
   const box = {types}[{box_type}];
   const functor = {types}[{functor_type}];
   const integers = [], texts = [];
-  const toText = __kio_lift_callable__(value => {{ integers.push(value); return "v:" + value; }});
-  const toInteger = __kio_lift_callable__(value => {{ texts.push(value); return value.length; }});
+  const toText = (value => {{ integers.push(value); return "v:" + value; }});
+  const toInteger = (value => {{ texts.push(value); return value.length; }});
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("functor payload changed"); }};
   const wrap = value => box.mkBox({{_0: value, _1: null}});
   const unwrap = value => {{ const row = box.unBox(value); check(row._1, null); return row._0; }};
@@ -1181,6 +1187,122 @@ fn run_export_functor_dict_roundtrip_js<'js>(
         })
 }
 
+fn run_incoming_callable_stages_js<'js>(
+    ctx: &Ctx<'js>,
+    pkg_obj: &Object<'js>,
+    protocol: RunnerProtocol,
+) -> Result<(), String> {
+    ctx.globals()
+        .set("__kio_protocol_pkg__", pkg_obj.clone())
+        .map_err(|e| format!("installing protocol package binding: {e}"))?;
+    let main = export_base_js_expr(protocol, "main");
+    let script = format!(
+        r#"(() => {{
+  const api = {main}, lift = value => value, poly = value => value;
+  const check = (condition, message) => {{ if (!condition) throw new Error(message); }};
+  const seal = api.makeSeal(5), other = api.makeOther(5);
+  for (const name of ["typeOnlyResult", "cpsResult"]) {{
+    for (const value of [seal]) {{
+      const trace = [];
+      const stage = poly({{ advance() {{
+        trace.push("advance");
+        return name === "typeOnlyResult" ? value : lift(_hidden => {{ trace.push("invoke"); return value; }});
+      }} }});
+      api[name](api.stash(stage), lift(_unit => {{ trace.push("consume"); return null; }}));
+      const expected = name === "typeOnlyResult" ? ["advance", "consume"] : ["advance", "invoke", "consume"];
+      check(JSON.stringify(trace) === JSON.stringify(expected), "stage result effect order");
+    }}
+    const thrown = {{}};
+    let effects = 0, caught;
+    const failing = poly({{ advance() {{
+      if (name === "typeOnlyResult") throw thrown;
+      return lift(_hidden => {{ throw thrown; }});
+    }} }});
+    try {{ api[name](api.stash(failing), lift(_unit => {{ effects++; return null; }})); }}
+    catch (error) {{ caught = error; }}
+    check(caught === thrown && effects === 0, "stage exception identity");
+  }}
+  let effects = 0;
+  const consume = lift(_unit => {{ effects++; return null; }});
+  api.typeOnlyResult(api.localStage(seal), consume);
+  api.cpsResult(api.localContinuation(seal), consume);
+  check(effects === 2, "Kio-origin stages");
+  const observer = api.release(api.specializedObserver(consume));
+  observer(seal);
+  check(effects === 3, "escaping Kio specialization");
+  check(api.readSeal(seal) === 5, "local nominal payload access");
+  for (const value of [other, {{}}]) {{
+    let rejected = false;
+    try {{ api.readSeal(value); }} catch (error) {{ if (!(error instanceof TypeError)) throw error; rejected = true; }}
+    check(rejected, "opaque payload access requires its exact storage owner");
+  }}
+  __kio_host_print__("incoming callable stages ok\n");
+}})()"#
+    );
+    ctx.eval::<(), _>(script.into_bytes())
+        .catch(ctx)
+        .map_err(|e| format!("running incoming-callable-stages: {}", format_caught(&e)))
+}
+
+fn run_incoming_callable_views_js<'js>(
+    ctx: &Ctx<'js>,
+    pkg_obj: &Object<'js>,
+    protocol: RunnerProtocol,
+) -> Result<(), String> {
+    ctx.globals()
+        .set("__kio_protocol_pkg__", pkg_obj.clone())
+        .map_err(|e| format!("installing protocol package binding: {e}"))?;
+    let main = export_base_js_expr(protocol, "main");
+    let script = format!(
+        r#"(() => {{
+  const api = {main}, lift = value => value;
+  const check = (condition, message) => {{ if (!condition) throw new Error(message); }};
+  const seal = api.makeSeal(5), other = api.makeOther(5);
+  let effects = 0;
+  const consume = lift(_unit => {{ effects++; return null; }});
+  const rejects = action => {{
+    effects = 0;
+    let caught = false;
+    try {{ action(); }} catch (error) {{ if (!(error instanceof TypeError)) throw error; caught = true; }}
+    check(caught, "opaque payload access requires its exact storage owner");
+    check(effects === 0, "nominal payload access invoked an unrelated consumer");
+  }};
+  for (const invoke of [api.hostResult, api.hostValueResult]) {{
+    effects = 0; invoke({{value: seal}}, consume); check(effects === 1, "valid host result");
+  }}
+  for (const invoke of [api.receive, api.receiveComputed]) {{
+    effects = 0; invoke(api.stash(lift(_unit => seal)), consume); check(effects === 1, "valid callback result");
+    effects = 0; invoke(api.localCallback(seal), consume); check(effects === 1, "Kio-origin callback");
+  }}
+  const specialized = api.release(api.specializedObserver(consume));
+  effects = 0; specialized(seal); check(effects === 1, "valid escaping specialization");
+  check(api.readSeal(seal) === 5, "local nominal payload access");
+  for (const value of [other, {{}}]) rejects(() => api.readSeal(value));
+  for (const invoke of [api.invokeViaHelper, api.invokeDirect, api.invokeComputed]) {{
+    const input = {{_0: {{_0: 7, _1: 8}}, _1: 9}};
+    let calls = 0, received;
+    const callback = lift(value => {{ calls++; received = value; return null; }});
+    const output = invoke(api.stash(callback), input);
+    check(calls === 1 && received._0._0 === 7 && received._0._1 === 8 && received._1 === 9,
+      "callback did not receive the complete nested pair exactly once");
+    check(input._0._0 === 7 && output._0._0 === 7 && output._0._1 === 8 && output._1 === 9,
+      "callback changed shared structural data");
+  }}
+  const retained = {{_0: {{_0: 7, _1: 8}}, _1: 9}};
+  let returns = 0, after = 0;
+  const returned = api.receivePair(api.stash(lift(_unit => {{ returns++; return retained; }})),
+    lift(_unit => {{ check(returns === 1, "effect preceded callback return"); after++; return null; }}));
+  check(returns === 1 && after === 1 && retained._0._0 === 7 &&
+    returned._0._0 === 7 && returned._0._1 === 8 && returned._1 === 9,
+    "host callback result or following effect changed");
+  __kio_host_print__("incoming callable views ok\n");
+}})()"#
+    );
+    ctx.eval::<(), _>(script.into_bytes())
+        .catch(ctx)
+        .map_err(|e| format!("running incoming-callable-views: {}", format_caught(&e)))
+}
+
 fn run_export_callable_slots_roundtrip_js<'js>(
     ctx: &Ctx<'js>,
     pkg_obj: &Object<'js>,
@@ -1197,7 +1319,7 @@ fn run_export_callable_slots_roundtrip_js<'js>(
     if (actual !== expected) throw new Error("callable slot payload changed");
   }};
   let productCalls = 0;
-  const productStep = __kio_lift_callable__(value => {{ productCalls++; return value + 5; }});
+  const productStep = (value => {{ productCalls++; return value + 5; }});
   check(main.applyProduct({{_0: productStep, _1: 11}}), 16);
   const echoedProduct = main.echoProduct({{_0: productStep, _1: 17}});
   check(echoedProduct._1, 17);
@@ -1206,7 +1328,7 @@ fn run_export_callable_slots_roundtrip_js<'js>(
   check(madeProduct._1, 23);
   check(madeProduct._0(29), 29);
   let sumCalls = 0;
-  const sumStep = __kio_lift_callable__(value => {{ sumCalls++; return value + 7; }});
+  const sumStep = (value => {{ sumCalls++; return value + 7; }});
   check(main.applySum({{_0: sumStep}}, 31), 38);
   const echoedSum = main.echoSum({{_0: sumStep}});
   check(Object.keys(echoedSum).join(), "_0");
@@ -1234,6 +1356,41 @@ fn run_export_callable_slots_roundtrip_js<'js>(
                 format_caught(&e)
             )
         })
+}
+
+fn run_same_artifact_exchange_js<'js>(
+    ctx: &Ctx<'js>,
+    factory: &Function<'js>,
+    host: &HostApi,
+    protocol: RunnerProtocol,
+) -> Result<(), String> {
+    ctx.globals()
+        .set("__kio_exchange_factory__", factory.clone())
+        .map_err(|e| format!("installing public package factory: {e}"))?;
+    let record = build_host_record_expression(host, protocol);
+    let selector = js_string_literal(&host_api::facade_module_selector("api", false));
+    let script = format!(
+        r#"(() => {{
+      const create = (__exchange_label) => __kio_exchange_factory__({record});
+      const first = create("first").testapi[{selector}];
+      const second = create("second").testapi[{selector}];
+      const report = (kind, actual, expected) => {{
+        if (actual !== expected) throw new Error(kind + " exchange changed");
+        __kio_host_print__(kind + ": " + actual + "\n");
+      }};
+      report("direct", second.readHidden(first.makeHidden(17)), 17);
+      report("direct", first.readHidden(second.makeHidden(29)), 29);
+      report("box", second.readBox(first.boxed(first.makeHidden(17))), 17);
+      report("box", first.readBox(second.boxed(second.makeHidden(29))), 29);
+      report("packed", second.readPacked(first.makePacked(23)), 23);
+      report("packed", first.readPacked(second.makePacked(31)), 31);
+      report("callback", second.runBox(first.boxedLater(first.makeHidden(17))), 17);
+      report("callback", first.runBox(second.boxedLater(second.makeHidden(29))), 29);
+    }})()"#
+    );
+    ctx.eval::<(), _>(script.into_bytes())
+        .catch(ctx)
+        .map_err(|e| format!("running {}: {}", protocol.name(), format_caught(&e)))
 }
 
 fn run_export_native_payload_roundtrip_js<'js>(
@@ -1273,7 +1430,48 @@ fn run_export_native_payload_roundtrip_js<'js>(
   __kio_host_print__("host-owned payloads ok\n");
 "#
         }
-        _ => unreachable!("native payload helper only handles its two fixed drivers"),
+        ProtocolExecution::Invoke(ExportDriver::OpaqueProductRoundtrip) => {
+            r#"
+  const host = {value: {_0: 11, _1: 17}};
+  const printPair = value => __kio_host_print__(value._0 + " " + value._1 + "\n");
+  printPair(main.direct(host));
+  printPair(main.relayed(host));
+  const kio = main.make();
+  printPair(main.direct(kio));
+  printPair(main.relayed(kio));
+"#
+        }
+        ProtocolExecution::Invoke(ExportDriver::GenericNominalOpaqueRoundtrip) => {
+            r#"
+  const printNumber = value => __kio_host_print__(String(value) + "\n");
+  const nominal = main.KioType_Wrapped.mkWrapped(37);
+  printNumber(main.read({value: nominal}));
+  const kio = main.make(61);
+  printNumber(main.read(kio));
+  printNumber(main.unwrap(kio.value));
+"#
+        }
+        ProtocolExecution::Invoke(ExportDriver::OpaqueCompoundRoundtrip) => {
+            r#"
+  const printNumber = value => __kio_host_print__(String(value) + "\n");
+  printNumber(main.readSum({value: {_0: 19}}));
+  printNumber(main.readSum({value: {_1: null}}));
+  printNumber(main.readSum(main.makeSum()));
+  printNumber(main.readSum(main.makeEmpty()));
+  let calls = 0;
+  const host = {value: value => { calls++; __kio_host_print__('call\n'); return value + 1; }};
+  if (calls !== 0) throw new Error('opaque callback called during construction');
+  printNumber(main.call(host, 31));
+  printNumber(main.call(host, 43));
+  if (calls !== 2) throw new Error('opaque callback count changed');
+  printNumber(main.call(main.makeCallable(), 47));
+  const nominal = main.KioType_Wrapped.mkWrapped({_0: 41, _1: 43});
+  const printPair = value => __kio_host_print__(value._0 + " " + value._1 + "\n");
+  printPair(main.readNominal({value: nominal}));
+  printPair(main.readNominal(main.makeNominal()));
+"#
+        }
+        _ => unreachable!("native payload helper only handles its fixed drivers"),
     };
     let script = format!("(() => {{ const main = {base}; {body} }})()");
     ctx.eval::<(), _>(script.into_bytes())
@@ -1555,6 +1753,48 @@ fn run_export_wide_callable_js<'js>(
         .map_err(|e| format!("running export-wide-callable: {}", format_caught(&e)))
 }
 
+fn run_direct_sum_forall_boundary_js<'js>(
+    ctx: &Ctx<'js>,
+    pkg_obj: &Object<'js>,
+    protocol: RunnerProtocol,
+) -> Result<(), String> {
+    ctx.globals()
+        .set("__kio_protocol_pkg__", pkg_obj.clone())
+        .map_err(|e| format!("installing protocol package binding: {e}"))?;
+    let api = export_base_js_expr(protocol, "api");
+    let script = format!(
+        r#"
+(() => {{
+  const api = {api};
+  const print = (value) => __kio_host_print__(String(value) + "\n");
+  const unit = {{ _0: (_unit) => {{ print("unit call"); return 17; }} }};
+  const poly = {{ _1: {{ advance() {{ return (value) => {{ print("poly call"); return value; }}; }} }} }};
+  const callback = (value) => {{ print("callback"); return value; }};
+  for (const transport of [(value) => api.relay(value), (value) => api.throughCallback(value, callback)]) {{
+    const left = transport(unit);
+    print("unit ready");
+    if (!("_0" in left)) throw new Error("Unit arm changed");
+    const number = left._0(null);
+    if (number !== 17) throw new Error("Unit callback result changed");
+    print(number);
+    const right = transport(poly);
+    print("poly ready");
+    if (!("_1" in right)) throw new Error("polymorphic arm changed");
+    const integer = right._1.advance()(23);
+    if (integer !== 23) throw new Error("polymorphic Number result changed");
+    print(integer);
+    const text = right._1.advance()("identity");
+    if (text !== "identity") throw new Error("polymorphic Text result changed");
+    print(text);
+  }}
+}})()
+"#
+    );
+    ctx.eval::<(), _>(script.into_bytes())
+        .catch(ctx)
+        .map_err(|e| format!("running direct-sum-forall-boundary: {}", format_caught(&e)))
+}
+
 fn run_export_poly_callback_roundtrip_js<'js>(
     ctx: &Ctx<'js>,
     pkg_obj: &Object<'js>,
@@ -1575,8 +1815,8 @@ fn run_export_poly_callback_roundtrip_js<'js>(
     throw new Error("export-poly-callback-roundtrip: missing exported fn applyVia");
   }}
 
-  __kio_host_print__(main_ns.applyVia(__kio_lift_callable__((s) => "via: " + s), "apply") + "\n");
-  __kio_host_print__(String(main_ns.applyVia(__kio_lift_callable__((n) => n + 8), 7)) + "\n");
+  __kio_host_print__(main_ns.applyVia(((s) => "via: " + s), "apply") + "\n");
+  __kio_host_print__(String(main_ns.applyVia(((n) => n + 8), 7)) + "\n");
 }})()
 "#
     );
@@ -1611,48 +1851,40 @@ fn run_compound_input_once_js<'js>(
   }};
   const direct = api.direct();
   print(direct._0); print(direct._1);
-  const callback = api.callback(__kio_lift_callable__(unit => {{
+  let callbackCalls = 0;
+  const callback = api.callback((unit => {{
+    callbackCalls += 1;
     equal(unit, null); print("callback"); return {{ _0: 9, _1: "callback-value" }};
   }}));
+  equal(callbackCalls, 1);
   print(callback._0); print(callback._1);
 
-  let reads = [];
-  const field = (object, key, label, value) => Object.defineProperty(object, key, {{
-    enumerable: true, get() {{ reads.push(label); return value; }}
+  const field = (object, key, value) => Object.defineProperty(object, key, {{
+    enumerable: true, get() {{ return value; }}
   }});
-  const inner = (left, right) => field(field({{}}, "_0", "left", left), "_1", "right", right);
-  const outer = (text, left, right) => field(field({{}}, "_0", "text", text), "_1", "inner-slot",
-    field({{}}, "Inner", "Inner", inner(left, right)));
-  const input = field({{}}, "Outer", "Outer", outer("nest", 11, 13));
+  const inner = (left, right) => field(field({{}}, "_0", left), "_1", right);
+  const outer = (text, left, right) => field(field({{}}, "_0", text), "_1",
+    field({{}}, "Inner", inner(left, right)));
+  const input = field({{}}, "Outer", outer("nest", 11, 13));
   const nested = api.echoOuter(input).Outer;
-  equal(reads, ["Outer", "text", "inner-slot", "Inner", "left", "right"]);
   print(nested._0); print(nested._1.Inner._0); print(nested._1.Inner._1);
   equal(api.echoOuter(api.makeOuter("nest", 11, 13)), {{ Outer: {{ _0: "nest", _1: {{ Inner: {{ _0: 11, _1: 13 }} }} }} }});
 
-  for (const [arm, payload, expectedReads, expected] of [
-    [0, 17, ["Choice", "selected"], {{ Choice: {{ _0: 17 }} }}],
-    [1, field({{}}, "Inner", "Inner", inner(19, 23)),
-      ["Choice", "tail", "selected", "Inner", "left", "right"],
+  for (const [arm, payload, expected] of [
+    [0, 17, {{ Choice: {{ _0: 17 }} }}],
+    [1, field({{}}, "Inner", inner(19, 23)),
       {{ Choice: {{ _1: {{ _0: {{ Inner: {{ _0: 19, _1: 23 }} }} }} }} }}],
-    [2, field({{}}, "Outer", "Outer", outer("choice", 29, 31)),
-      ["Choice", "tail", "selected", "Outer", "text", "inner-slot", "Inner", "left", "right"],
+    [2, field({{}}, "Outer", outer("choice", 29, 31)),
       {{ Choice: {{ _1: {{ _1: {{ Outer: {{ _0: "choice", _1: {{ Inner: {{ _0: 29, _1: 31 }} }} }} }} }} }} }}],
   ]) {{
-    reads = [];
-    const branch = (key, label, value) => {{
-      const target = field({{}}, key, label, value);
+    const branch = (key, value) => {{
+      const target = field({{}}, key, value);
       equal(Object.keys(target), [key]);
-      return new Proxy(target, {{ get(object, name, receiver) {{
-        if (["_0", "_1"].includes(name) && !Reflect.has(object, name)) {{
-          throw new Error("compound-input-once: read unselected " + name);
-        }}
-        return Reflect.get(object, name, receiver);
-      }} }});
+      return target;
     }};
-    const oneKey = arm === 0 ? branch("_0", "selected", payload)
-      : branch("_1", "tail", branch(arm === 1 ? "_0" : "_1", "selected", payload));
-    const out = api.echoChoice(field({{}}, "Choice", "Choice", oneKey));
-    equal(reads, expectedReads);
+    const oneKey = arm === 0 ? branch("_0", payload)
+      : branch("_1", branch(arm === 1 ? "_0" : "_1", payload));
+    const out = api.echoChoice(field({{}}, "Choice", oneKey));
     equal(out, expected);
     if (arm === 0) print(out.Choice._0);
     else if (arm === 1) {{ const value = out.Choice._1._0.Inner; print(value._0); print(value._1); }}
@@ -1932,11 +2164,14 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
         HostFnBodyKind::CallStep { .. } => {
             "(step, seed) => step({ _0: seed, _1: { _0: 'compound-callback', _1: true } })".to_owned()
         }
+        HostFnBodyKind::DirectSumForallEcho { .. } => {
+            "(value) => { __kio_host_print__('echo\\n'); return value; }".to_owned()
+        }
         HostFnBodyKind::MakePairCallback { .. } => {
             "(build, seed) => build(seed)._0".to_owned()
         }
         HostFnBodyKind::MakeStep { .. } => {
-            "(delta) => __kio_lift_callable__((n) => Number(BigInt.asIntN(32, BigInt(n) + BigInt(delta))))".to_owned()
+            "(delta) => ((n) => Number(BigInt.asIntN(32, BigInt(n) + BigInt(delta))))".to_owned()
         }
         HostFnBodyKind::BoxMake { .. } => "(v) => ({ value: v })".to_owned(),
         HostFnBodyKind::BoxGet { .. } => "(box) => box.value".to_owned(),
@@ -1960,14 +2195,14 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
         HostFnBodyKind::ObservePacked { .. } => "value => globalThis.__kio_existential_observe__(value)".to_owned(),
         HostFnBodyKind::RoundPolyThunk => {
             "(thunk) => { const payload = thunk.PolyThunk; \
-             if (typeof payload.advance !== 'function' || typeof payload.adapt !== 'function') \
+             if (typeof payload.advance !== 'function') \
              throw new Error('round_poly_thunk: expected an unentered polymorphic stage'); \
              return thunk; }"
                 .to_owned()
         }
         HostFnBodyKind::RoundPolyUnitSlot => {
             "(step) => { const payload = step.UnitSlot; \
-             if (typeof payload.advance !== 'function' || typeof payload.adapt !== 'function') \
+             if (typeof payload.advance !== 'function') \
              throw new Error('round_unit_slot: expected an unentered polymorphic stage'); \
              return step; }"
                 .to_owned()
@@ -1980,7 +2215,10 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
             "(callback) => 'host/' + callback(null)".to_owned()
         }
         HostFnBodyKind::ReturnedForallUnit => {
-            "(() => { let produced = false; return () => { if (produced) { __kio_host_print__('throw\\n'); throw new Error('produce failed'); } produced = true; __kio_host_print__('produce\\n'); return __kio_lift_poly__({ advance: () => null }); }; })()".to_owned()
+            "(() => { let produced = false; return () => { if (produced) { __kio_host_print__('throw\\n'); throw new Error('produce failed'); } produced = true; __kio_host_print__('produce\\n'); return ({ advance: () => null }); }; })()".to_owned()
+        }
+        HostFnBodyKind::ForallStageEffects => {
+            "() => { __kio_host_print__('create\\n'); return { advance: () => { __kio_host_print__('apply\\n'); return null; } }; }".to_owned()
         }
         HostFnBodyKind::TraceUnit { text } => format!(
             "() => {{ __kio_host_print__({} + '\\n'); }}",
@@ -2014,6 +2252,7 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
         }
         HostFnBodyKind::BoolToString { .. } => "(v) => String(v)".to_owned(),
         HostFnBodyKind::PrintI32 { .. } => "(n) => __kio_host_print__(String(n))".to_owned(),
+        HostFnBodyKind::InstanceMark { .. } => "(n) => { __kio_host_print__(__exchange_label + ': ' + String(n) + '\\n'); return null; }".to_owned(),
         HostFnBodyKind::StringToInt { .. } => {
             "(s) => { if (!/^[+-]?\\d+$/.test(s)) return { _1: null }; \
              const n = BigInt(s); \
@@ -2323,6 +2562,34 @@ mod tests {
     }
 
     #[test]
+    fn instance_mark_returns_js_unit_and_captures_its_host_label() {
+        let binding = RunnerProtocol::SameArtifactExchange.contract().host_fns[2];
+        let body = render_js_host_fn_value(&binding);
+        let runtime = Runtime::new().expect("runtime");
+        let context = Context::full(&runtime).expect("context");
+        context.with(|ctx| {
+            let result: bool = ctx.eval(format!(
+                "let observed = ''; const __kio_host_print__ = s => {{ observed += s; }}; const makeMark = __exchange_label => ({body}); const first = makeMark('first'); const second = makeMark('second'); first(1) === null && second(2) === null && observed === 'first: 1\\nsecond: 2\\n'"
+            )).expect("host mark body");
+            assert!(result);
+        });
+    }
+
+    #[test]
+    fn host_forall_creation_is_inert_and_selections_repeat_effects() {
+        let binding = RunnerProtocol::HostForallStageEffects.contract().host_fns[0];
+        let body = render_js_host_fn_value(&binding);
+        let runtime = Runtime::new().expect("runtime");
+        let context = Context::full(&runtime).expect("context");
+        context.with(|ctx| {
+            let result: bool = ctx.eval(format!(
+                "let trace = ''; const __kio_host_print__ = s => {{ trace += s; }}; const produce = ({body}); produce(); const stage = produce(); const inert = trace === 'create\\ncreate\\n'; const first = stage.advance(); const second = stage.advance(); inert && first === null && second === null && trace === 'create\\ncreate\\napply\\napply\\n'"
+            )).expect("host forall stage body");
+            assert!(result);
+        });
+    }
+
+    #[test]
     fn package_factory_result_must_be_an_object() {
         let runtime = Runtime::new().expect("runtime");
         let context = Context::full(&runtime).expect("context");
@@ -2487,8 +2754,7 @@ mod tests {
         let dir = ScratchDir::new("non-object-factory");
         fs::write(
             dir.path().join("pkg.js"),
-            "export const liftPkgCallable = f => f; export const liftPkgPoly = p => p;\n\
-             export function createPkg(_host) { return 42; }\n",
+            " export function createPkg(_host) { return 42; }\n",
         )
         .expect("write package");
         let protocol = RunnerProtocol::Empty;
@@ -2509,8 +2775,7 @@ mod tests {
         let dir = ScratchDir::new("exact-main-module");
         fs::write(
             dir.path().join("pkg.js"),
-            "export const liftPkgCallable = f => f; export const liftPkgPoly = p => p;\n\
-             export function createPkg(_host) { return { main: { main() {} } }; }\n",
+            " export function createPkg(_host) { return { main: { main() {} } }; }\n",
         )
         .expect("write package");
         let protocol = RunnerProtocol::EmptyApiMain;
@@ -2700,9 +2965,7 @@ mod tests {
         let protocol = RunnerProtocol::HostCallbackReturnRoundtrip;
         let host = host_api::dynamic_host_api(protocol.contract());
         let s = build_host_record_expression(&host, protocol);
-        assert!(s.contains(
-            "\"makeStep\": (delta) => __kio_lift_callable__((n) => Number(BigInt.asIntN(32"
-        ));
+        assert!(s.contains("\"makeStep\": (delta) => ((n) => Number(BigInt.asIntN(32"));
         assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
     }
 

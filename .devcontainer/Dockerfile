@@ -106,6 +106,7 @@ RUN apt-get update \
 
 ENV MISE_VERSION=2026.6.14 \
     MISE_DATA_DIR=/usr/local/share/mise \
+    MISE_GLOBAL_CONFIG_FILE=/opt/kio-toolchain/mise.toml \
     GHCUP_INSTALL_BASE_PREFIX=/usr/local \
     RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
@@ -138,6 +139,7 @@ RUN --mount=type=secret,id=github_token,required=false \
         'aqua:wasm-bindgen/wasm-pack' \
         npm:typescript \
         npm:pyright \
+        pipx:mypy \
         npm:markdownlint-cli2 \
         'github:mszostok/codeowners-validator[exe=codeowners-validator]'; \
     mise install --locked -y yamllint; \

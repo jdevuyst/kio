@@ -28,6 +28,18 @@ pub struct PrimeLoweringContext {
 impl Pipeline for PrimePipeline {
     type LoweredPhase = Prime;
     type LoweringContext = PrimeLoweringContext;
+    type ContractPhase = crate::pass::contract::Contract<Prime>;
+
+    fn lower_contract_module(
+        module: Module<Surface>,
+    ) -> Result<Module<Self::ContractPhase>, crate::error::Error> {
+        lower::check_imports(&module.imports)?;
+        crate::pass::contract::lower_module(
+            module,
+            lower::lower_contract_signature,
+            lower::lower_contract_declaration,
+        )
+    }
 
     const CACHE_TAG: &'static str = "prime-alpha.";
 
@@ -103,7 +115,9 @@ impl Pipeline for PrimePipeline {
     /// shared scoped per-module checker from `typecheck_core`, with
     /// the recursive `synth_expr` / `check_value_against` calls
     /// landing in `PrimeTyper`'s `Typer<Prime>` impl.
-    fn typecheck(package: &Package<Prime>) -> Result<Package<Prime>, LocatedError> {
+    fn typecheck(
+        package: &Package<Prime>,
+    ) -> Result<crate::prime::typer::ValidatedPrimePackage, LocatedError> {
         typer::check_package(package)
     }
 

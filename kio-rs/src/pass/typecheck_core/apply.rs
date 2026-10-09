@@ -29,6 +29,7 @@ use crate::ast::{RecOrderDisposition, RecOrderTailRequirement, RecOrderTypeFlow}
 use crate::error::Error;
 use crate::span::Span;
 
+use super::HeaderRecording;
 #[cfg(all(test, feature = "surface"))]
 use super::type_contains_infer;
 use super::types::collect_free_type_vars;
@@ -1681,43 +1682,6 @@ fn try_synth_immediate_fn_call_prime<'m>(
     Ok(Some(Synth::value_interned(result)))
 }
 
-pub fn synth_ufcs<'m, P>(
-    receiver: &'m crate::ast::Expr<P>,
-    callee_segments: &'m [crate::ast::PathSegment],
-    callee_span: Span,
-    args: &'m [crate::ast::CallArg<P>],
-    flavor: crate::ast::UfcsFlavor,
-    site: crate::ast::ExpressionSite,
-    tcx: &mut TypeCtx<'m, '_, P>,
-) -> Result<Synth<P>, Error>
-where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
-{
-    let callee_synth = synth_path(callee_segments, callee_span, tcx)?;
-    let arg_refs = call_arg_refs(args);
-    let effective_args = effective_rec_order_args(&arg_refs, tcx);
-    let selection_args = effective_args.as_deref().unwrap_or(&arg_refs);
-    let spliced_args = splice_ufcs_arg_refs_interned(
-        &callee_synth.ty,
-        receiver,
-        &arg_refs,
-        selection_args,
-        flavor,
-        site.span,
-        &tcx.env.alias_ctx(),
-    )?;
-    let result_ty = apply_mono_refs_interned(
-        &callee_synth.ty,
-        &spliced_args,
-        callee_span,
-        site,
-        0,
-        None,
-        tcx,
-    )?;
-    Ok(Synth::value_interned(result_ty))
-}
-
 /// Apply a function type to positional call arguments. The callee
 /// may be monomorphic, polymorphic (`Forall(binders, Function(...))`),
 /// or a multi-layer curried function that needs flat-call iteration
@@ -2325,43 +2289,6 @@ where
         matches!(arg, CallArgRef::Value(_))
             && take_expected_value_arg(&mut current, index + 1 == args.len(), ctx).is_some()
     })
-}
-
-/// [`apply_mono`] threading a `slot_offset` — the count of canonical
-/// argument slots consumed by preceding layers of a multi-layer flat
-/// call (`specs/language.md` § 4c). Entry-point callers use offset 0
-/// via [`apply_mono`]; the flat-call iteration advances the offset by
-/// each consumed layer's slot count so type-arg resolutions are
-/// recorded at call-global positions (the substitute pass walks one
-/// global slot index across the whole flat argument list). See
-/// [`apply_polymorphic_function`]'s `slot_offset` doc.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn apply_mono_refs_interned<'m, P>(
-    callee_ty: &InternedType<P>,
-    args: &[CallArgRef<'m, P>],
-    callee_span: Span,
-    call_site: crate::ast::ExpressionSite,
-    slot_offset: usize,
-    expected_ret: Option<&InternedType<P>>,
-    tcx: &mut TypeCtx<'m, '_, P>,
-) -> Result<InternedType<P>, Error>
-where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
-{
-    apply_mono_refs_with_context(
-        callee_ty,
-        args,
-        ApplyContext {
-            inferred_type_arg_suffix: 0,
-            callee_span,
-            call_site,
-            slot_offset,
-            expected_ret,
-            preparation_mode: ValuePreparationMode::LexicalFallback,
-        },
-        tcx,
-    )
-    .map(|applied| applied.ty)
 }
 
 fn plan_consuming_application<'m, P>(
@@ -3053,7 +2980,7 @@ fn publish_written_call_type_argument_binders<P>(
 where
     P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
-    if !<P::Typer as Typer<P>>::RECORD_NOMINAL_TYPE_BINDERS {
+    if !<P::HeaderRecording as HeaderRecording<P>>::RECORD_NOMINAL_TYPE_BINDERS {
         return Ok(());
     }
     for argument in written {
@@ -3267,13 +3194,7 @@ fn collect_path_unit_call_chain<'m>(
                 SelectedPathUnitCallLayers::Many(layers)
             }
         });
-        let crate::ast::Expr::Call {
-            callee,
-            args,
-            meta: _,
-            ..
-        } = direct_callee
-        else {
+        let crate::ast::Expr::Call { callee, args, .. } = direct_callee else {
             break;
         };
         current_call_span = direct_callee.site();
@@ -3419,36 +3340,7 @@ impl PreparedDirectCallee {
         let crate::ast::Expr::Path { segments, meta, .. } = source else {
             return Ok(None);
         };
-        let mut binders = Vec::new();
-        let mut retained_type = None;
-        #[cfg(feature = "lsp")]
-        let mut selected_role = None;
-        let synth = super::synth::synth_path_with_binder_recorder(
-            segments,
-            meta.span,
-            tcx,
-            |span, kind, name, parent, qualifier, local_index, tcx| {
-                if let Some(index) = local_index {
-                    retained_type = tcx.capture_retained_local_type(index);
-                }
-                binders.push((
-                    span,
-                    crate::pass::typecheck_full::resolved_binder_for_position(
-                        kind, name, parent, qualifier, tcx,
-                    ),
-                ));
-            },
-            #[cfg(feature = "lsp")]
-            |span, binding, _| selected_role = Some((span, binding.to_owned())),
-        )?;
-        Ok(Some(Self {
-            span: source.span(),
-            synth,
-            binders,
-            #[cfg(feature = "lsp")]
-            selected_role,
-            retained_type,
-        }))
+        Self::path_segments(segments, meta.span, tcx).map(Some)
     }
 
     fn path_segments<'m>(
@@ -3841,6 +3733,7 @@ impl<'m> PreparedOrdinaryValue<'m> {
                 )?
             }
             crate::ast::Expr::Unit {
+                source_trivia: _,
                 occurrence: _,
                 meta,
             } => Synth::value_interned(InternedType::fresh_canonical(crate::ast::Type::Unit {
@@ -7587,12 +7480,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             | crate::ast::Expr::IntLit { .. }
             | crate::ast::Expr::FloatLit { .. }
             | crate::ast::Expr::BoolLit { .. } => OrdinaryValueSeed::Literal,
-            crate::ast::Expr::Call {
-                callee,
-                args,
-                meta: _,
-                ..
-            } => {
+            crate::ast::Expr::Call { callee, args, .. } => {
                 if let crate::ast::Expr::FnExpr { sig, ret_ty, .. } = callee.as_ref() {
                     let mut header = super::annotation_plan::plan_lowered_lambda_header(
                         sig,
@@ -7636,6 +7524,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }
             }
             crate::ast::Expr::Ufcs {
+                source_trivia: _,
                 occurrence: _,
                 receiver,
                 callee_segments,
@@ -15274,7 +15163,6 @@ impl<'m> OrdinaryValueCursor<'m> {
         let crate::ast::Expr::Call {
             callee: callee_source,
             args,
-            meta: _,
             ..
         } = source
         else {
@@ -21244,7 +21132,7 @@ fn record_lambda_binders<'m, P>(
     for param in &sig.params {
         match param {
             crate::ast::SignatureParam::Type(param) => {
-                <P::Typer as Typer<P>>::record_binder_decl_at(
+                <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                     param.span,
                     super::ResolvedBinderKind::TypeParam,
                     &param.name,
@@ -21252,7 +21140,7 @@ fn record_lambda_binders<'m, P>(
                 );
             }
             crate::ast::SignatureParam::Value(param) => {
-                <P::Typer as Typer<P>>::record_binder_decl_at(
+                <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
                     param.meta.span,
                     super::ResolvedBinderKind::Local,
                     &param.name,
@@ -21513,7 +21401,7 @@ where
         }
         let mark = tcx.save();
         tcx.push_value_interned(name.clone(), bound_ty.clone());
-        <P::Typer as Typer<P>>::record_binder_decl_at(
+        <P::HeaderRecording as HeaderRecording<P>>::record_binder_decl_at(
             *name_span,
             super::ResolvedBinderKind::Local,
             name,
@@ -23143,6 +23031,7 @@ mod tests {
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             meta: Meta::new(sp()),
         };
@@ -23385,13 +23274,7 @@ mod tests {
             let Expr::Call { callee, .. } = callee.as_ref() else {
                 panic!("ordinary witness must contain its retained value layer")
             };
-            let Expr::Call {
-                occurrence: _,
-                diagnostic: _,
-                meta: _,
-                ..
-            } = callee.as_ref()
-            else {
+            let Expr::Call { .. } = callee.as_ref() else {
                 panic!("ordinary witness must contain its inferred type-only layer")
             };
             callee.site()
@@ -23443,7 +23326,7 @@ mod tests {
         ));
 
         let prime = FullPipeline::typecheck(&package).expect("typecheck ordinary/UFCS package");
-        let module = &prime.module("main").expect("main module").module;
+        let module = prime.module("main").expect("main module").module();
         let body = |name: &str| {
             module
                 .items
@@ -24094,6 +23977,7 @@ mod tests {
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             meta: Meta::new(sp()),
         };
@@ -24398,7 +24282,6 @@ mod tests {
                 occurrence: meta_occurrence,
                 diagnostic: _,
                 args,
-                meta: _,
                 ..
             } = &def.body
             else {
@@ -24494,7 +24377,6 @@ mod tests {
                 occurrence: _,
                 diagnostic: _,
                 callee,
-                meta: _,
                 ..
             } = &def.body
             else {
@@ -25016,7 +24898,7 @@ mod tests {
             )
             .expect("shared result survives independent Prime typing");
         }
-        for pair in owner_work.chunks_exact(2) {
+        for pair in owner_work.as_chunks::<2>().0 {
             assert_eq!(pair[0], pair[1], "pending completion reserves no new owner");
         }
     }
@@ -25369,6 +25251,71 @@ mod tests {
         });
         assert_eq!(expected_work.ordinary_retained, 0);
         assert_eq!(expected_work.expected_lambda, 1);
+    }
+
+    #[cfg(all(feature = "surface", feature = "prime", feature = "parallel"))]
+    #[test]
+    fn contextual_rank_n_lambda_keeps_outer_binder_in_both_value_slot_orders() {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("single-thread expected-lambda observation pool");
+        for (parameters, arguments) in [
+            ("f: [U] U -> T, value: T", ".[U](ignored) { BODY }, value"),
+            ("value: T, f: [U] U -> T", "value, .[U](ignored) { BODY }"),
+        ] {
+            for body in ["value", "ignored"] {
+                let arguments = arguments.replace("BODY", body);
+                let source = format!(
+                    "module main;\n\
+                     host fn keep[T]({parameters}) -> T;\n\
+                     fn witness[U](value: U) -> U {{ keep(U, {arguments}) }}\n"
+                );
+                let full = typecheck_surface_source(&source, "contextual rank-N binder");
+                let module = parse(&source).expect("parse contextual rank-N Prime witness");
+                let (modules, _) = crate::prime::pipeline::PrimePipeline::lower_package(
+                    vec![(PathBuf::from("main.kio"), module)],
+                    None,
+                )
+                .expect("lower contextual rank-N Prime witness");
+                let package = Package::<crate::ast::Prime>::build(Path::new(""), modules, None)
+                    .expect("build contextual rank-N Prime witness");
+                package.resolve_imports().expect("resolve imports");
+                let (prime, work) = pool.install(|| {
+                    super::super::annotation_plan::reset_annotation_plan_consumer_work();
+                    let result =
+                        crate::prime::pipeline::PrimePipeline::typecheck(&package).map(|_| ());
+                    (
+                        result,
+                        super::super::annotation_plan::annotation_plan_consumer_work(),
+                    )
+                });
+                assert_eq!(work.expected_lambda, 1, "{source}");
+                assert_eq!(work.ordinary_retained, 0, "{source}");
+                for (phase, result) in [("full", full), ("Prime", prime)] {
+                    if body == "value" {
+                        result.unwrap_or_else(|error| {
+                            panic!("{phase} must retain the outer U: {error:?}\n{source}")
+                        });
+                    } else {
+                        let error = result.expect_err("the inner U cannot satisfy the outer U");
+                        let Error::Type(diagnostic) = &error.error else {
+                            panic!("{phase} must reach the body type conflict: {error:?}");
+                        };
+                        assert!(
+                            diagnostic.message.contains("type mismatch"),
+                            "{phase}: {diagnostic:?}"
+                        );
+                        let body_start = source.rfind("ignored").unwrap() as u32;
+                        assert_eq!(
+                            diagnostic.span,
+                            Span::new(body_start, body_start + "ignored".len() as u32),
+                            "{phase} must reject the returned inner-bound value"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[cfg(feature = "surface")]
@@ -25892,6 +25839,7 @@ mod tests {
             .expect("module environment");
         let source_span = Span::new(40, 41);
         let source = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             meta: Meta::new(source_span),
         };
@@ -26190,6 +26138,7 @@ mod tests {
                 pending_expected_result: Some(PendingExpectedResult::new(expected.clone())),
             };
             let source = Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                 meta: Meta::new(sp()),
             };
@@ -26274,6 +26223,7 @@ mod tests {
             let mut elaborations = Elaborations::new();
             let tcx = TypeCtx::new(&env, &mut elaborations);
             let source = Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                 meta: Meta::new(sp()),
             };
@@ -26395,6 +26345,7 @@ mod tests {
                 )
                 .expect("scope transcript-chain result");
             let source = Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                 meta: Meta::new(sp()),
             };
@@ -27418,7 +27369,7 @@ mod tests {
             let function = prime
                 .module("main")
                 .expect("Prime main module")
-                .module
+                .module()
                 .items
                 .iter()
                 .find_map(|item| match item {
@@ -28291,7 +28242,6 @@ mod tests {
                 diagnostic: _,
                 callee,
                 args,
-                meta: _,
                 ..
             } = body
             else {
@@ -28838,7 +28788,7 @@ mod tests {
                 prime
                     .module("main")
                     .expect("Prime main module")
-                    .module
+                    .module()
                     .items
                     .iter()
                     .any(|item| matches!(item, Item::FnDef(def) if def.name == name)),
@@ -28888,7 +28838,6 @@ mod tests {
             occurrence: meta_occurrence,
             diagnostic: _,
             callee,
-            meta: _,
             ..
         } = &def.body
         else {
@@ -29112,7 +29061,6 @@ mod tests {
                 diagnostic: _,
                 callee,
                 args,
-                meta: _,
                 ..
             } = &def.body
             else {
@@ -31177,6 +31125,7 @@ mod tests {
                 ),
                 annotation: None,
                 value: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                     meta: Meta::new(span),
                 }),
@@ -31257,6 +31206,7 @@ mod tests {
                 ),
                 annotation: None,
                 value: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                     meta: Meta::new(span),
                 }),
@@ -32657,13 +32607,17 @@ mod tests {
                 .expect("product-packed immediate lambdas should pass standalone Prime");
 
         for function in ["distinct", "whole", "aliased"] {
-            assert_prime_three_parameter_lambda(&prime, function, ["I32", "String", "N", "N"]);
+            assert_prime_three_parameter_lambda(
+                prime.package(),
+                function,
+                ["I32", "String", "N", "N"],
+            );
         }
 
         let non_final = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -32718,7 +32672,7 @@ mod tests {
         let rank_n = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -32814,12 +32768,16 @@ mod tests {
             crate::pass::typecheck_full::validate_substituted_package(checked.substituted())
                 .expect("direct-pair immediate-lambda arguments should pass standalone Prime");
 
-        assert_prime_three_parameter_lambda(&prime, "final_suffix", ["I32", "String", "N", "N"]);
+        assert_prime_three_parameter_lambda(
+            prime.package(),
+            "final_suffix",
+            ["I32", "String", "N", "N"],
+        );
 
         let rank_n = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -32891,7 +32849,7 @@ mod tests {
             prime
                 .module("main")
                 .expect("Prime main module")
-                .module
+                .module()
                 .items
                 .iter()
                 .find_map(|item| match item {
@@ -33021,7 +32979,7 @@ mod tests {
             prime
                 .module("main")
                 .expect("Prime main module")
-                .module
+                .module()
                 .items
                 .iter()
                 .any(|item| matches!(item, Item::FnDef(def) if def.name == "accepted")),
@@ -33056,7 +33014,7 @@ mod tests {
         let keep = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -33121,7 +33079,7 @@ mod tests {
         let witness = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -33260,7 +33218,7 @@ mod tests {
         let witness = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -33362,7 +33320,7 @@ mod tests {
         let witness = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -33991,7 +33949,7 @@ mod tests {
         let keep = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -34661,7 +34619,7 @@ mod tests {
         let main = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -34712,7 +34670,7 @@ mod tests {
         let binder_param = prime
             .module("main")
             .expect("Prime main module")
-            .module
+            .module()
             .items
             .iter()
             .find_map(|item| match item {
@@ -34751,7 +34709,7 @@ mod tests {
             let def = prime
                 .module("main")
                 .expect("Prime main module")
-                .module
+                .module()
                 .items
                 .iter()
                 .find_map(|item| match item {
@@ -35431,6 +35389,7 @@ mod tests {
             sig: crate::ast::Signature::new(params),
             ret_ty: None,
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
                 meta: Meta::new(sp()),
             }),
@@ -35893,6 +35852,7 @@ mod tests {
     #[test]
     fn is_inline_fn_expr_rejects_non_lambda() {
         let e: Expr = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             meta: Meta::new(sp()),
         };
@@ -36104,6 +36064,7 @@ mod tests {
 
     fn unit_expr() -> Expr {
         Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
             meta: Meta::new(sp()),
         }

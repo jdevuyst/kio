@@ -37,7 +37,7 @@ a Kio-authored elaborator's name is a user-declaration-privilege breach.
 The built-in `match!` apparatus was Apparatus A. Do **not** confuse it
 with [`Expr::EnrichedMatch`] (Apparatus B) — the live post-typecheck
 sum-dispatch IR produced by `structural_recovery`, carried by
-`recover_to_low`, optimized by `optimize.rs`, and emitted by the Rust /
+`route`, optimized by `optimize.rs`, and emitted by the Rust /
 JS backends. `EnrichedMatch` is a different node, has firing coverage
 through every sum elimination, and is not in this audit's scope. A
 finding here is an `ElaboratorKind` / `ElaboratorCall` variant, never an
@@ -215,7 +215,7 @@ Kio-authored elaborators are ordinary imported declarations. Audit every
 semantic pass that handles `Expr::UserElaborator` or bang-UFCS calls, and every
 hard-coded constant, string, or distinguished identity matching a shipped
 elaborator. Include the parser/desugarer, typer, substitution, recursive
-lowering, structural recovery (including `recover_to_low`), capability
+lowering, structural recovery (including `route`), capability
 annotation, evaluator, optimizer, and every backend; do not limit the sweep to
 `ElaboratorKind` or to files changed by the triggering commit.
 

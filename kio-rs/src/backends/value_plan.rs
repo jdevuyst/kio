@@ -1,4 +1,4 @@
-//! Compositional value topology shared by public facades and erased bodies.
+//! Compositional value topology shared by public facades and typed stages.
 //!
 //! Named-call parameter partitions belong to `CallableExecutionLayout`. A
 //! first-class function instead has one semantic domain, including Unit.
@@ -52,16 +52,6 @@ impl IdentityPresentation {
     }
 }
 
-pub(crate) enum ValueApplicationHead<'a> {
-    Nominal(&'a QualifiedTypeName),
-    Bound(FacadeBinderId),
-}
-
-pub(crate) struct ValueApplicationRef<'a> {
-    pub(crate) head: ValueApplicationHead<'a>,
-    pub(crate) args: &'a [ValueUseId],
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ValueCapture {
     Use(ValueUseId),
@@ -112,7 +102,7 @@ pub(crate) fn nominal_declaration<'a>(
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct ValueUseId(usize);
 
 impl ValueUseId {
@@ -121,7 +111,7 @@ impl ValueUseId {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ValueUse {
     Unit,
     Bottom,
@@ -163,21 +153,28 @@ pub(crate) struct ValuePlan {
 }
 
 impl ValuePlan {
-    /// Application heads are resolved declaration identities or lexical
-    /// binders. A consumer can follow a declaration-payload binding, but an
-    /// erased ambient/forall binder supplies no constructor evidence.
-    pub(crate) fn application<'a>(&'a self, use_: &'a ValueUse) -> Option<ValueApplicationRef<'a>> {
-        let (head, args) = match use_ {
-            ValueUse::Nominal(_) | ValueUse::Bound(_) => (use_, &[][..]),
-            ValueUse::Apply { constructor, args } => (self.use_at(*constructor), args.as_slice()),
-            _ => return None,
-        };
-        let head = match head {
-            ValueUse::Nominal(name) => ValueApplicationHead::Nominal(name),
-            ValueUse::Bound(binder) => ValueApplicationHead::Bound(*binder),
-            _ => unreachable!("a prepared type constructor has a nominal or lexical head"),
-        };
-        Some(ValueApplicationRef { head, args })
+    /// Body storage preserves every plan field except diagnostic binder spans.
+    /// It is consumed after validation; runtime projection and stage rendering
+    /// depend on binder IDs and kinds, not their source locations.
+    pub(crate) fn body_storage_identity(&self) -> impl Eq + std::hash::Hash + '_ {
+        let Self {
+            uses,
+            source_uses,
+            binders,
+            ambient,
+            root,
+        } = self;
+        let binders = binders
+            .iter()
+            .map(
+                |FacadeBinder {
+                     name,
+                     kind,
+                     span: _,
+                 }| (name, kind),
+            )
+            .collect::<Vec<_>>();
+        (uses, source_uses, binders, ambient, root)
     }
 
     pub(crate) fn from_facade(facade: &BoundaryFacadePlan) -> Self {
@@ -777,14 +774,6 @@ impl ValuePlan {
         parts
     }
 
-    pub(crate) fn source_uses(&self) -> &[ValueUseId] {
-        &self.source_uses
-    }
-
-    pub(crate) fn binders(&self) -> &[FacadeBinder] {
-        &self.binders
-    }
-
     pub(crate) fn binder(&self, id: FacadeBinderId) -> &FacadeBinder {
         &self.binders[id.index()]
     }
@@ -829,13 +818,59 @@ mod tests {
     use crate::span::Span;
 
     #[test]
+    fn body_storage_identity_ignores_only_binder_spans() {
+        let plan =
+            ValuePlan::from_facade(&facade(&forall("A", function(path("A"), path("api.N")))));
+        let mut moved = plan.clone();
+        moved.binders[0].span = Span::new(10, 20);
+        assert_ne!(plan, moved);
+        assert!(plan.body_storage_identity() == moved.body_storage_identity());
+
+        let changes: [fn(&mut ValuePlan); 8] = [
+            |plan| plan.binders[0].name = "B".to_owned(),
+            |plan| plan.binders[0].kind = Kind::arrow_chain(1),
+            |plan| {
+                let node = plan
+                    .uses
+                    .iter_mut()
+                    .find(|node| matches!(node, ValueUse::Function { .. }))
+                    .unwrap();
+                let ValueUse::Function { caps, .. } = node else {
+                    unreachable!()
+                };
+                caps.lifetime = crate::ast::Lifetime::Stack;
+            },
+            |plan| {
+                let node = plan
+                    .uses
+                    .iter_mut()
+                    .find(|node| matches!(node, ValueUse::Nominal(_)))
+                    .unwrap();
+                *node =
+                    ValueUse::Nominal(QualifiedTypeName::new(vec!["api".to_owned()], "M").unwrap());
+            },
+            |plan| plan.source_uses.reverse(),
+            |plan| plan.ambient.push(FacadeBinderId::from_index(0)),
+            |plan| plan.root = ValueUseId(0),
+            |plan| plan.uses.push(ValueUse::Unit),
+        ];
+        for change in changes {
+            let mut changed = plan.clone();
+            change(&mut changed);
+            assert!(plan.body_storage_identity() != changed.body_storage_identity());
+        }
+    }
+
+    #[test]
     fn stage_symbols_preserve_the_full_identity_without_registration() {
         for identity in ["", "a_b", "a/b", "α\0β", "forall(bound(0),capture(1))"] {
             let symbol = canonical_stage_symbol(identity);
             let hex = symbol.strip_prefix("KioForall_").unwrap();
             let bytes = hex
                 .as_bytes()
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
                 .collect::<Vec<_>>();
             assert_eq!(bytes, identity.as_bytes());
@@ -1173,28 +1208,6 @@ mod tests {
                 2 * plan.uses().len()
             );
         }
-    }
-
-    #[test]
-    fn application_annotation_preserves_exact_and_lexical_heads() {
-        let nominal = ValuePlan::from_facade(&facade(&application("api.Box", vec![path("api.A")])));
-        let nominal_application = nominal.application(nominal.use_at(nominal.root())).unwrap();
-        let ValueApplicationHead::Nominal(name) = nominal_application.head else {
-            panic!("exact declaration")
-        };
-        assert_eq!(name.name(), "Box");
-        assert_eq!(nominal_application.args.len(), 1);
-        let bound = ValuePlan::from_facade(&facade(&forall_kind(
-            "F",
-            Kind::arrow_chain(1),
-            application("F", vec![path("api.A")]),
-        )));
-        let ValueUse::Forall { result, .. } = bound.use_at(bound.root()) else {
-            panic!("forall")
-        };
-        let application = bound.application(bound.use_at(*result)).unwrap();
-        assert!(matches!(application.head, ValueApplicationHead::Bound(_)));
-        assert_eq!(application.args.len(), 1);
     }
 
     fn facade(ty: &Type<Routed>) -> BoundaryFacadePlan {

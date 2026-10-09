@@ -1,0 +1,5 @@
+module forward;
+
+import api as a;
+
+pub fn unwrap(value: a.Outer) -> a.Secret { value.>a.Outer.unwrap }

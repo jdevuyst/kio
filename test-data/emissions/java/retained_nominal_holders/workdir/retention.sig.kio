@@ -1,0 +1,27 @@
+signature retention v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module retired/deep {
+        host type Gone;
+        host fn archived(value: Gone) -> Gone
+      };
+      module shared/removed {
+        host type Forgotten;
+        host fn forgotten(value: Forgotten) -> Forgotten
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      retired/deep.Gone;
+      retired/deep.archived;
+      shared/removed.Forgotten;
+      shared/removed.forgotten
+    }
+  }
+}

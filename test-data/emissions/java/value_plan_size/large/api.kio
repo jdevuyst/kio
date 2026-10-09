@@ -1,0 +1,133 @@
+module api;
+
+host type N;
+
+pub newtype Box[A] : A & N { pub constructor make_box; pub projector read_box }
+
+pub fn pipeline_n1[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n2[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n3[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n4[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n5[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n6[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n7[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n8[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n9[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n10[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n11[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n12[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n13[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n14[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n15[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n16[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n17[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n18[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n19[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n20[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n21[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n22[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n23[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n24[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n25[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n26[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n27[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n28[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n29[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n30[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n31[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }
+
+pub fn pipeline_n32[A](value: Box(A), callback: Box(A) -> Box(A)) ->
+  Box(A) & Box(A) & Box(A) & Box(A)
+   { (callback(value), callback(value), callback(value), callback(value)) }

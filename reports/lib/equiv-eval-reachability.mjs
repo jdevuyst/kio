@@ -17,6 +17,20 @@ const integer = (value, label, positive = false) => {
   need(Number.isSafeInteger(value) && value >= (positive ? 1 : 0), `${label} is not a safe ${positive ? "positive" : "nonnegative"} integer`);
   return value;
 };
+const executionCount = (value, label, token) => {
+  need(typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= Number(0xffffffffffffffffn), `${label} is not a uint64 execution count`);
+  if (token !== undefined) need(/^[0-9]+$/.test(token) && BigInt(token) <= 0xffffffffffffffffn, `${label} is not an exact uint64 counter token`);
+  // LLVM counter expressions can wrap or saturate; oversized counts are unknown.
+  return Number.isSafeInteger(value) ? value : null;
+};
+function parseCoverageJson(input) {
+  const countTokens = new WeakMap();
+  const raw = JSON.parse(input, function (key, value, context) {
+    if (Array.isArray(this) && key === "4" && typeof value === "number" && (!Number.isSafeInteger(value) || /[.eE]/.test(context.source))) countTokens.set(this, context.source);
+    return value;
+  });
+  return { raw, countTokens };
+}
 const regular = (file, label) => {
   const stat = fs.lstatSync(file);
   need(stat.isFile() && !stat.isSymbolicLink(), `${label} is not a regular file: ${file}`);
@@ -205,7 +219,7 @@ function acceptedPath(filename, aliases, label) {
   return false;
 }
 
-function lcovLines(lcov, aliases, info) {
+function lcovLines(lcov, aliases, info, unknownRegions) {
   need(lcov.trim().endsWith("end_of_record"), "malformed or empty LCOV export");
   let targets = 0; const hits = new Map();
   for (const block of lcov.split("end_of_record")) {
@@ -218,24 +232,31 @@ function lcovLines(lcov, aliases, info) {
     for (const row of rows.filter((line) => line.startsWith("DA:"))) {
       const match = /^DA:([0-9]+),([0-9]+)(?:,.*)?$/.exec(row);
       need(match, `malformed LCOV line record: ${row}`);
-      const line = Number(match[1]), count = Number(match[2]); integer(line, "LCOV line", true); integer(count, "LCOV count");
+      need(BigInt(match[2]) <= 0xffffffffffffffffn, "LCOV count exceeds uint64");
+      const line = Number(match[1]), count = executionCount(Number(match[2]), "LCOV count"); integer(line, "LCOV line", true);
       need(line <= info.lines.length, `LCOV line ${line} exceeds source length`);
-      if (!excluded(line, info)) hits.set(line, (hits.get(line) || false) || count > 0);
+      if (!excluded(line, info)) {
+        const unknown = count === null || hits.get(line) === null || unknownRegions.some((region) => line >= region.startLine && line <= region.endLine);
+        hits.set(line, unknown ? null : (hits.get(line) || false) || count > 0);
+      }
     }
   }
   need(targets > 0 && hits.size > 0, `expected a nonempty target LCOV record, got ${targets}`);
-  const ranges = [];
-  for (const line of [...hits].filter(([, hit]) => !hit).map(([line]) => line).sort((a, b) => a - b)) {
-    const last = ranges.at(-1);
-    if (last && line === last.endLine + 1) { last.endLine = line; last.lineCount++; }
-    else ranges.push({ startLine: line, endLine: line, lineCount: 1 });
-  }
-  return ranges;
+  const ranges = (state) => {
+    const result = [];
+    for (const line of [...hits].filter(([, hit]) => hit === state).map(([line]) => line).sort((a, b) => a - b)) {
+      const last = result.at(-1);
+      if (last && line === last.endLine + 1) { last.endLine = line; last.lineCount++; }
+      else result.push({ startLine: line, endLine: line, lineCount: 1 });
+    }
+    return result;
+  };
+  return { zeroRanges: ranges(false), unknownRanges: ranges(null) };
 }
 
-function jsonFunctions(raw, aliases, info) {
+function jsonFunctions(raw, aliases, info, countTokens) {
   need(raw?.type === "llvm.coverage.json.export" && typeof raw.version === "string" && /^(?:2|3)\.[0-9]+\.[0-9]+$/.test(raw.version) && Array.isArray(raw.data) && raw.data.length, "empty or unsupported LLVM JSON export");
-  const groups = new Map(), mappedSpans = [], unmapped = [];
+  const groups = new Map(), mappedSpans = [], unmapped = [], unknownRegions = [];
   for (const [di, data] of raw.data.entries()) {
     need(Array.isArray(data?.functions), `data[${di}].functions is missing`);
     for (const [fi, fn] of data.functions.entries()) {
@@ -246,11 +267,16 @@ function jsonFunctions(raw, aliases, info) {
       const targetCode = [];
       for (const [ri, tuple] of fn.regions.entries()) {
         need(Array.isArray(tuple) && tuple.length === 8, `function ${fn.name} region ${ri} is malformed (${JSON.stringify(tuple)})`);
-        tuple.forEach((value, index) => integer(value, `function ${fn.name} region ${ri}[${index}]`));
-        const [sl, sc, el, ec, count, fileId, expanded, kind] = tuple;
+        tuple.forEach((value, index) => { if (index !== 4) integer(value, `function ${fn.name} region ${ri}[${index}]`); });
+        const [sl, sc, el, ec, exportedCount, fileId, expanded, kind] = tuple;
+        const count = executionCount(exportedCount, `function ${fn.name} region ${ri} count`, countTokens?.get(tuple));
         need(fileId < fn.filenames.length && expanded < fn.filenames.length && sl > 0 && sc > 0 && el > 0 && ec > 0 && (sl < el || sl === el && sc <= ec), `function ${fn.name} region ${ri} has invalid bounds`);
         if (!ids.has(fileId)) continue;
         need(el <= info.lines.length && sc <= Buffer.byteLength(info.lines[sl - 1]) + 1 && ec <= Buffer.byteLength(info.lines[el - 1]) + 1, `function ${fn.name} region ${ri} exceeds target source bounds`);
+        if (count === null && !info.exclusions.some((range) => sl >= range.startLine && el <= range.endLine)) unknownRegions.push({
+          llvmFunction: fn.name, dataIndex: di, functionIndex: fi, regionIndex: ri, kind,
+          startLine: sl, startColumn: sc, endLine: el, endColumn: ec,
+        });
         if (kind === 0) targetCode.push({ sl, sc, el, ec, count });
       }
       if (!targetCode.length) continue;
@@ -263,40 +289,54 @@ function jsonFunctions(raw, aliases, info) {
       need(code.every((region) => region.el < declaration.endLine || region.el === declaration.endLine && region.ec <= declaration.endColumn), `mapped function ${fn.name} has code beyond its source function`);
       const end = code.reduce((best, region) => region.el > best.el || region.el === best.el && region.ec > best.ec ? region : best, root);
       const span = { ...root, el: end.el, ec: end.ec };
-      const group = groups.get(key) || { name: declaration.name, startLine: declaration.startLine, endLine: root.el, llvmRecords: 0, hit: false };
-      mappedSpans.push(span);
-      group.endLine = Math.max(group.endLine, span.el); group.llvmRecords++; group.hit ||= code.some((region) => region.count > 0); groups.set(key, group);
+      const group = groups.get(key) || { name: declaration.name, startLine: declaration.startLine, endLine: root.el, llvmRecords: 0, hit: false, unknown: false };
+      mappedSpans.push({ ...span, key });
+      group.endLine = Math.max(group.endLine, span.el); group.llvmRecords++; group.hit ||= code.some((region) => region.count !== null && region.count > 0); group.unknown ||= code.some((region) => region.count === null); groups.set(key, group);
     }
   }
   need(groups.size > 0, "no link-present production function mapped to the target");
   const contains = (outer, inner) => (outer.sl < inner.sl || outer.sl === inner.sl && outer.sc < inner.sc)
     && (inner.el < outer.el || inner.el === outer.el && inner.ec < outer.ec);
-  for (const record of unmapped) need(mappedSpans.some((outer) => record.code.every((inner) => contains(outer, inner))),
-    `unmapped target function ${record.name} is not strictly nested in a mapped production function`);
-  return [...groups.values()].sort((a, b) => a.startLine - b.startLine);
+  for (const record of unmapped) {
+    const owners = mappedSpans.filter((span) => record.code.every((inner) => contains(span, inner)));
+    need(owners.length, `unmapped target function ${record.name} is not strictly nested in a mapped production function`);
+    owners.forEach((owner) => { groups.get(owner.key).unknown ||= record.code.some((region) => region.count === null); });
+  }
+  return { functions: [...groups.values()].sort((a, b) => a.startLine - b.startLine), unknownRegions };
 }
 
-function analyzeValues(lcov, raw, source, aliases) {
-  const info = sourceInfo(source), functions = jsonFunctions(raw, aliases, info);
-  const zeroFunctions = functions.filter((fn) => !fn.hit).map(({ hit, ...fn }) => fn);
-  const zeroRanges = lcovLines(lcov, aliases, info).map((range) => ({
+function analyzeValues(lcov, raw, source, aliases, countTokens) {
+  const info = sourceInfo(source), { functions, unknownRegions } = jsonFunctions(raw, aliases, info, countTokens);
+  const lines = lcovLines(lcov, aliases, info, unknownRegions);
+  functions.forEach((fn) => { fn.unknown ||= lines.unknownRanges.some((range) => fn.startLine <= range.endLine && fn.endLine >= range.startLine); });
+  const zeroFunctions = functions.filter((fn) => !fn.hit && !fn.unknown).map(({ hit, unknown, ...fn }) => fn);
+  const unknownFunctions = functions.filter((fn) => !fn.hit && fn.unknown).map(({ hit, unknown, ...fn }) => fn);
+  const annotate = (ranges) => ranges.map((range) => ({
     ...range,
     functions: functions.filter((fn) => fn.startLine <= range.endLine && fn.endLine >= range.startLine).map((fn) => fn.name),
   }));
+  const zeroRanges = annotate(lines.zeroRanges), unknownRanges = annotate(lines.unknownRanges);
   const displayRanges = zeroRanges.filter((range) => range.lineCount >= 5 && !zeroFunctions.some((fn) => fn.startLine <= range.startLine && fn.endLine >= range.endLine));
-  return { schemaVersion: 1, target: LOGICAL, cohorts: ["all-feature-lib-unit", "focused-equiv-goldens", "all-pocs"], claim: "informational union reachability locator; not a confidence gate", retainedReplCoreCfgSites: info.replCfg, zeroExecutedFunctions: zeroFunctions, zeroExecutableLineRanges: zeroRanges, displayedLargeRanges: displayRanges };
+  return { schemaVersion: 2, target: LOGICAL, cohorts: ["all-feature-lib-unit", "focused-equiv-goldens", "all-pocs"], claim: "informational union reachability locator; not a confidence gate", evidenceStatus: unknownRegions.length || unknownRanges.length ? "incomplete" : "complete", retainedReplCoreCfgSites: info.replCfg, zeroExecutedFunctions: zeroFunctions, zeroExecutableLineRanges: zeroRanges, displayedLargeRanges: displayRanges, unknownExecutionRegions: unknownRegions, unknownExecutionFunctions: unknownFunctions, unknownExecutableLineRanges: unknownRanges };
 }
 
 function analyze([lcovFile, jsonFile, sourceFile, nativeSource, out]) {
   need(out, "analyze requires LCOV JSON SOURCE NATIVE_SOURCE OUT");
   const aliases = new Set([sourceFile, nativeSource, LOGICAL, REMAPPED].map(normalize));
-  const result = analyzeValues(text(lcovFile), JSON.parse(text(jsonFile)), text(sourceFile), aliases);
+  const { raw, countTokens } = parseCoverageJson(text(jsonFile));
+  const result = analyzeValues(text(lcovFile), raw, text(sourceFile), aliases, countTokens);
   json(out, result);
   process.stdout.write("equiv-eval production reachability locator (not a confidence gate)\n");
+  process.stdout.write(`evidence status: ${result.evidenceStatus}\n`);
   process.stdout.write(`functions with no executed code region: ${result.zeroExecutedFunctions.length}\n`);
   result.zeroExecutedFunctions.forEach((fn) => process.stdout.write(`  ${fn.name} (${fn.startLine}-${fn.endLine})\n`));
   process.stdout.write(`zero-hit executable source-line ranges: ${result.zeroExecutableLineRanges.length}; showing ${result.displayedLargeRanges.length} non-whole-function ranges of at least 5 lines\n`);
   result.displayedLargeRanges.forEach((range) => process.stdout.write(`  ${range.startLine}-${range.endLine} [${range.functions.join(", ") || "module"}]\n`));
+  process.stdout.write(`unknown execution regions: ${result.unknownExecutionRegions.length}; unknown-only functions: ${result.unknownExecutionFunctions.length}; unknown source-line ranges: ${result.unknownExecutableLineRanges.length}\n`);
+  result.unknownExecutionRegions.forEach((region) => process.stdout.write(`  ${region.startLine}:${region.startColumn}-${region.endLine}:${region.endColumn} [${region.llvmFunction}]\n`));
+  result.unknownExecutionFunctions.forEach((fn) => process.stdout.write(`  unknown function ${fn.name} (${fn.startLine}-${fn.endLine})\n`));
+  result.unknownExecutableLineRanges.forEach((range) => process.stdout.write(`  unknown lines ${range.startLine}-${range.endLine} [${range.functions.join(", ") || "module"}]\n`));
+  if (result.evidenceStatus === "incomplete") process.exitCode = 2;
 }
 
 function selfTest([productionSource]) {
@@ -314,11 +354,43 @@ function selfTest([productionSource]) {
   need(uncovered.zeroExecutedFunctions.length === 1 && uncovered.zeroExecutedFunctions[0].name === "cold" && uncovered.zeroExecutableLineRanges[0].lineCount === 7 && uncovered.retainedReplCoreCfgSites === 1, "uncovered/test-exclusion fixture failed");
   const clear = analyzeValues(lcov(1), make(1), source, aliases);
   need(!clear.zeroExecutedFunctions.length && !clear.zeroExecutableLineRanges.length, "no-findings fixture failed");
+  const oversized = Number(0x7fffffffffffffffn);
+  const unsafeOnly = analyzeValues(lcov(0), make(oversized), source, aliases);
+  need(unsafeOnly.evidenceStatus === "incomplete" && unsafeOnly.unknownExecutionFunctions.some((fn) => fn.name === "cold") && !unsafeOnly.zeroExecutedFunctions.some((fn) => fn.name === "cold"), "unknown-only function was classified as zero or reached");
+  need(!unsafeOnly.zeroExecutableLineRanges.some((range) => range.startLine <= 10 && range.endLine >= 4) && unsafeOnly.unknownExecutableLineRanges.some((range) => range.startLine === 4 && range.endLine === 10), "unknown JSON region did not taint wrapped-zero LCOV lines");
+  const safeAndUnknown = make(oversized);
+  safeAndUnknown.data[0].functions[1].regions.push([5,3,5,7,1,0,0,0]);
+  const reachedUnknown = analyzeValues(lcov(0), safeAndUnknown, source, aliases);
+  need(reachedUnknown.evidenceStatus === "incomplete" && !reachedUnknown.unknownExecutionFunctions.some((fn) => fn.name === "cold") && !reachedUnknown.zeroExecutedFunctions.some((fn) => fn.name === "cold"), "valid positive region did not independently prove function reachability");
+  const nestedUnknown = make(0);
+  nestedUnknown.data[0].functions[2].regions[0][4] = oversized;
+  need(analyzeValues(lcov(0), nestedUnknown, source, aliases).unknownExecutionFunctions.some((fn) => fn.name === "cold"), "nested unknown region left its mapped owner classified as zero");
+  const gapUnknown = make(0);
+  gapUnknown.data[0].functions[1].regions.push([5,3,9,4,oversized,0,0,3]);
+  need(analyzeValues(lcov(0), gapUnknown, source, aliases).unknownExecutableLineRanges.some((range) => range.startLine === 5 && range.endLine === 9), "unknown gap region did not taint wrapped-zero LCOV lines");
+  const largeLcov = analyzeValues(lcov(0).replace("DA:5,0", "DA:5,18446744073709551615"), make(0), source, aliases);
+  need(largeLcov.evidenceStatus === "incomplete" && largeLcov.unknownExecutableLineRanges.some((range) => range.startLine === 5 && range.endLine === 5) && largeLcov.unknownExecutionFunctions.some((fn) => fn.name === "cold"), "oversized LCOV count was classified as zero or hit");
+  const largeLcovHit = analyzeValues(lcov(1).replace("DA:5,1", "DA:5,18446744073709551615"), make(1), source, aliases);
+  need(!largeLcovHit.unknownExecutionFunctions.some((fn) => fn.name === "cold") && !largeLcovHit.zeroExecutedFunctions.some((fn) => fn.name === "cold"), "independent safe-positive function evidence was lost to LCOV ambiguity");
   const v3 = make(0); v3.version = "3.1.0"; v3.data[0].functions[1].regions = [[4,1,4,10,0,0,0,0], [5,3,10,2,0,0,0,0]]; need(analyzeValues(lcov(0), v3, source, aliases).zeroExecutedFunctions.length === 1, "LLVM JSON v3 fixture failed");
   const at = (file) => { const raw = make(0); raw.data[0].functions.forEach((fn) => { fn.filenames = [file]; }); return raw; };
   const windows = "C:\\repo\\kio-rs\\src\\normalization.rs"; aliases.add(normalize(windows)); need(analyzeValues(lcov(0).replace(sf, windows), at(windows), source, aliases).zeroExecutedFunctions.length === 1, "Windows path fixture failed");
   need(analyzeValues(lcov(0).replace(sf, REMAPPED), at(REMAPPED), source, aliases).zeroExecutedFunctions.length === 1, "remapped path fixture failed");
   const fails = (action) => { try { action(); } catch { return true; } return false; };
+  for (const invalid of [-1, 0.5, Infinity, NaN, "1", null, 1e20]) {
+    const invalidCount = make(0); invalidCount.data[0].functions[1].regions[0][4] = invalid;
+    need(fails(() => analyzeValues(lcov(0), invalidCount, source, aliases)), "malformed execution count was accepted as unknown");
+  }
+  for (const index of [0,1,2,3,5,6,7]) {
+    const invalidPosition = make(0); invalidPosition.data[0].functions[1].regions[0][index] = oversized;
+    need(fails(() => analyzeValues(lcov(0), invalidPosition, source, aliases)), "oversized non-count region field was accepted");
+  }
+  for (const invalid of ["-1", "0.5", "bad", "18446744073709551616"]) need(fails(() => analyzeValues(lcov(0).replace("DA:5,0", `DA:5,${invalid}`), make(0), source, aliases)), "malformed LCOV counter was accepted");
+  for (const invalid of ["9223372036854775807.5", "8000000000000000.1", "18446744073709551616"]) {
+    const encoded = JSON.stringify(make(0)).replace('[4,1,10,2,0,0,0,0]', `[4,1,10,2,${invalid},0,0,0]`);
+    const parsed = parseCoverageJson(encoded);
+    need(fails(() => analyzeValues(lcov(0), parsed.raw, source, aliases, parsed.countTokens)), "rounded fractional or overflowing JSON counter was accepted");
+  }
   const cfgSource = ["fn live() {}", '#[cfg(all(feature = "surface", test))]', "thread_local! {", "  static ONE: usize = 1;", "  static TWO: usize = 2;", "}", "fn after_macro() {}", '#[cfg(all(test, target_os = "linux"))]', "#[derive(Clone, Copy)]", "struct Helper {", "  field: usize,", "}", "fn after_struct() {}", "#[cfg(test)]", "mod tests {", "  fn ignored() {}", "}", ""].join("\n");
   const cfgInfo = sourceInfo(cfgSource);
   need([1,7,13].every((line) => !excluded(line, cfgInfo)) && [2,3,4,5,6,8,9,10,11,12].every((line) => excluded(line, cfgInfo)), "test-only cfg conjunction exclusion failed");

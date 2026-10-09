@@ -92,24 +92,34 @@
 //!   and the reduced body.
 
 use std::cell::RefCell;
-#[cfg(any(feature = "repl-core", test))]
-use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
+mod artifact;
 mod checked_traversal;
+mod metrics;
 pub(crate) mod ownership;
 #[cfg(feature = "surface")]
 mod quoted_rec;
+mod render;
 mod replay;
 mod type_traversal;
+pub use artifact::EvalArtifact;
+pub(crate) use artifact::{
+    AuthenticatedEvalCtx, EvalArtifactInput, PreparedEvalModule, UserElaboratorEvalArtifactPair,
+    eval_authenticated,
+};
+use metrics::ReflectionMetricKind;
+pub use metrics::{EvalFunctionHotspot, EvalMetrics, EvalMetricsSnapshot};
 pub use ownership::EvalRef;
+#[cfg(any(feature = "repl-core", test))]
+pub(crate) use render::value_to_repl_string;
+pub use render::value_to_string;
 
-#[cfg(test)]
-use crate::ast::Lowered as SourcePhase;
 use crate::ast::{
     CallArg, Expr, FnDef, HostType, ImportKind, Item, Meta, Module, ModulePath, Newtype, Param,
     PathSegment, Signature, SignatureGroupRef, SignatureParam, Type, TypeParam, UncheckedPrime,
@@ -118,10 +128,11 @@ use crate::ast::{
 use crate::comptime::ComptimeBuiltin;
 use crate::pass::resolve::Package;
 use crate::pass::substitute::PrePrime;
-use crate::pass::typecheck_core::{AliasCtx, InferFreeType, TypeMemoKey, subst_type, type_equiv};
+use crate::pass::typecheck_core::{AliasCtx, InferFreeType, subst_type, type_equiv};
 #[cfg(test)]
 use crate::pass::typecheck_full::Elaborations;
 use crate::span::Span;
+use type_traversal::ReflectionTypeKey;
 
 type EvalPhase = UncheckedPrime;
 type EvalPackage = Package<EvalPhase>;
@@ -172,56 +183,6 @@ impl EvalSourceOccurrence {
     #[cfg(test)]
     fn for_test(id: usize) -> Self {
         Self(id)
-    }
-}
-
-/// Independently validated Kio' evaluator input paired with the explicit
-/// host-provided primitive environment under which it may reduce.
-/// Cloning retains one private evaluator generation; constructing another
-/// artifact, including from identical parts, creates a distinct generation.
-#[derive(Debug, Clone)]
-pub struct EvalArtifact {
-    package: Arc<EvalPackage>,
-    primitives: EvalPrimitiveEnv,
-    source_generation: EvalSourceGeneration,
-}
-
-impl EvalArtifact {
-    pub(crate) fn from_validated_parts(package: EvalPackage, primitives: EvalPrimitiveEnv) -> Self {
-        Self {
-            package: Arc::new(package),
-            primitives,
-            source_generation: EvalSourceGeneration::fresh(),
-        }
-    }
-
-    pub fn package(&self) -> &Package<UncheckedPrime> {
-        &self.package
-    }
-
-    pub fn primitives(&self) -> &EvalPrimitiveEnv {
-        &self.primitives
-    }
-
-    fn source_generation(&self) -> EvalSourceGeneration {
-        self.source_generation.clone()
-    }
-
-    /// Consume the prepared artifact and discard its nominal generation.
-    /// Rebuilding from these parts is an independent preparation.
-    pub(crate) fn into_parts(self) -> (EvalPackage, EvalPrimitiveEnv) {
-        (
-            Arc::try_unwrap(self.package).unwrap_or_else(|package| (*package).clone()),
-            self.primitives,
-        )
-    }
-}
-
-impl std::ops::Deref for EvalArtifact {
-    type Target = Package<UncheckedPrime>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.package
     }
 }
 
@@ -2146,6 +2107,7 @@ fn checked_term_node_expr_with(
             ],
         ),
         CheckedTermNode::ElabError { .. } => Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: zero_meta(),
         },
@@ -2234,910 +2196,6 @@ fn checked_template_intrinsic_expr_at(
     span: Span,
 ) -> Expr<PrePrime> {
     crate::pass::typecheck_core::intrinsic_call(name, args, span)
-}
-
-#[derive(Default)]
-pub struct EvalMetrics {
-    root_eval_ns: AtomicU64,
-    root_eval_calls: AtomicUsize,
-    expr_visits: AtomicUsize,
-    apply_ns: AtomicU64,
-    apply_calls: AtomicUsize,
-    apply_generic_ns: AtomicU64,
-    apply_generic_calls: AtomicUsize,
-    apply_atom_ns: AtomicU64,
-    apply_atom_calls: AtomicUsize,
-    apply_fn_ns: AtomicU64,
-    apply_fn_calls: AtomicUsize,
-    closure_apply_ns: AtomicU64,
-    closure_apply_calls: AtomicUsize,
-    reflection_ns: AtomicU64,
-    reflection_calls: AtomicUsize,
-    reflection_type_view_ns: AtomicU64,
-    reflection_type_view_calls: AtomicUsize,
-    reflection_type_equal_ns: AtomicU64,
-    reflection_type_equal_calls: AtomicUsize,
-    reflection_type_fold_ns: AtomicU64,
-    reflection_type_fold_calls: AtomicUsize,
-    reflection_term_ns: AtomicU64,
-    reflection_term_calls: AtomicUsize,
-    reflection_term_let_ns: AtomicU64,
-    reflection_term_let_calls: AtomicUsize,
-    reflection_term_fn_ns: AtomicU64,
-    reflection_term_fn_calls: AtomicUsize,
-    reflection_term_call_ns: AtomicU64,
-    reflection_term_call_calls: AtomicUsize,
-    reflection_term_type_ns: AtomicU64,
-    reflection_term_type_calls: AtomicUsize,
-    reflection_term_unit_ns: AtomicU64,
-    reflection_term_unit_calls: AtomicUsize,
-    reflection_intrinsic_pair_ns: AtomicU64,
-    reflection_intrinsic_pair_calls: AtomicUsize,
-    reflection_intrinsic_projection_ns: AtomicU64,
-    reflection_intrinsic_projection_calls: AtomicUsize,
-    reflection_intrinsic_injection_ns: AtomicU64,
-    reflection_intrinsic_injection_calls: AtomicUsize,
-    reflection_intrinsic_either_ns: AtomicU64,
-    reflection_intrinsic_either_calls: AtomicUsize,
-    reflection_intrinsic_other_ns: AtomicU64,
-    reflection_intrinsic_other_calls: AtomicUsize,
-    reflection_structural_recur_ns: AtomicU64,
-    reflection_structural_recur_calls: AtomicUsize,
-    reflection_other_ns: AtomicU64,
-    reflection_other_calls: AtomicUsize,
-    type_unfold_ns: AtomicU64,
-    type_unfold_calls: AtomicUsize,
-    type_equiv_ns: AtomicU64,
-    type_equiv_calls: AtomicUsize,
-    nf_eq_ns: AtomicU64,
-    nf_eq_calls: AtomicUsize,
-    eta_contract_ns: AtomicU64,
-    eta_contract_calls: AtomicUsize,
-    env_clones: AtomicUsize,
-    closure_builds: AtomicUsize,
-    arg_vec_builds: AtomicUsize,
-    arg_vec_values: AtomicUsize,
-    capture_vec_builds: AtomicUsize,
-    capture_vec_values: AtomicUsize,
-    exact_call_memo_hits: AtomicUsize,
-    exact_call_memo_misses: AtomicUsize,
-    exact_call_memo_key_skips: AtomicUsize,
-    exact_call_memo_stores: AtomicUsize,
-    function_apply: Mutex<HashMap<String, EvalFunctionMetric>>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct EvalFunctionMetric {
-    duration: Duration,
-    calls: usize,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct EvalFunctionHotspot {
-    pub label: String,
-    pub duration: Duration,
-    pub calls: usize,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct EvalMetricsSnapshot {
-    pub root_eval: Duration,
-    pub root_eval_calls: usize,
-    pub expr_visits: usize,
-    pub apply: Duration,
-    pub apply_calls: usize,
-    pub apply_generic: Duration,
-    pub apply_generic_calls: usize,
-    pub apply_atom: Duration,
-    pub apply_atom_calls: usize,
-    pub apply_fn: Duration,
-    pub apply_fn_calls: usize,
-    pub closure_apply: Duration,
-    pub closure_apply_calls: usize,
-    pub reflection: Duration,
-    pub reflection_calls: usize,
-    pub reflection_type_view: Duration,
-    pub reflection_type_view_calls: usize,
-    pub reflection_type_equal: Duration,
-    pub reflection_type_equal_calls: usize,
-    pub reflection_type_fold: Duration,
-    pub reflection_type_fold_calls: usize,
-    pub reflection_term: Duration,
-    pub reflection_term_calls: usize,
-    pub reflection_term_let: Duration,
-    pub reflection_term_let_calls: usize,
-    pub reflection_term_fn: Duration,
-    pub reflection_term_fn_calls: usize,
-    pub reflection_term_call: Duration,
-    pub reflection_term_call_calls: usize,
-    pub reflection_term_type: Duration,
-    pub reflection_term_type_calls: usize,
-    pub reflection_term_unit: Duration,
-    pub reflection_term_unit_calls: usize,
-    pub reflection_intrinsic_pair: Duration,
-    pub reflection_intrinsic_pair_calls: usize,
-    pub reflection_intrinsic_projection: Duration,
-    pub reflection_intrinsic_projection_calls: usize,
-    pub reflection_intrinsic_injection: Duration,
-    pub reflection_intrinsic_injection_calls: usize,
-    pub reflection_intrinsic_either: Duration,
-    pub reflection_intrinsic_either_calls: usize,
-    pub reflection_intrinsic_other: Duration,
-    pub reflection_intrinsic_other_calls: usize,
-    pub reflection_structural_recur: Duration,
-    pub reflection_structural_recur_calls: usize,
-    pub reflection_other: Duration,
-    pub reflection_other_calls: usize,
-    pub type_unfold: Duration,
-    pub type_unfold_calls: usize,
-    pub type_equiv: Duration,
-    pub type_equiv_calls: usize,
-    pub nf_eq: Duration,
-    pub nf_eq_calls: usize,
-    pub eta_contract: Duration,
-    pub eta_contract_calls: usize,
-    pub env_clones: usize,
-    pub closure_builds: usize,
-    pub arg_vec_builds: usize,
-    pub arg_vec_values: usize,
-    pub capture_vec_builds: usize,
-    pub capture_vec_values: usize,
-    pub exact_call_memo_hits: usize,
-    pub exact_call_memo_misses: usize,
-    pub exact_call_memo_key_skips: usize,
-    pub exact_call_memo_stores: usize,
-    pub function_hotspots: Vec<EvalFunctionHotspot>,
-}
-
-impl EvalMetrics {
-    pub fn collect() -> Arc<Self> {
-        Arc::new(Self::default())
-    }
-
-    pub fn enabled() -> Option<Arc<Self>> {
-        crate::timing::eval_enabled().then(Self::collect)
-    }
-
-    pub fn snapshot(&self) -> EvalMetricsSnapshot {
-        EvalMetricsSnapshot {
-            root_eval: duration_from_nanos(self.root_eval_ns.load(Ordering::Relaxed)),
-            root_eval_calls: self.root_eval_calls.load(Ordering::Relaxed),
-            expr_visits: self.expr_visits.load(Ordering::Relaxed),
-            apply: duration_from_nanos(self.apply_ns.load(Ordering::Relaxed)),
-            apply_calls: self.apply_calls.load(Ordering::Relaxed),
-            apply_generic: duration_from_nanos(self.apply_generic_ns.load(Ordering::Relaxed)),
-            apply_generic_calls: self.apply_generic_calls.load(Ordering::Relaxed),
-            apply_atom: duration_from_nanos(self.apply_atom_ns.load(Ordering::Relaxed)),
-            apply_atom_calls: self.apply_atom_calls.load(Ordering::Relaxed),
-            apply_fn: duration_from_nanos(self.apply_fn_ns.load(Ordering::Relaxed)),
-            apply_fn_calls: self.apply_fn_calls.load(Ordering::Relaxed),
-            closure_apply: duration_from_nanos(self.closure_apply_ns.load(Ordering::Relaxed)),
-            closure_apply_calls: self.closure_apply_calls.load(Ordering::Relaxed),
-            reflection: duration_from_nanos(self.reflection_ns.load(Ordering::Relaxed)),
-            reflection_calls: self.reflection_calls.load(Ordering::Relaxed),
-            reflection_type_view: duration_from_nanos(
-                self.reflection_type_view_ns.load(Ordering::Relaxed),
-            ),
-            reflection_type_view_calls: self.reflection_type_view_calls.load(Ordering::Relaxed),
-            reflection_type_equal: duration_from_nanos(
-                self.reflection_type_equal_ns.load(Ordering::Relaxed),
-            ),
-            reflection_type_equal_calls: self.reflection_type_equal_calls.load(Ordering::Relaxed),
-            reflection_type_fold: duration_from_nanos(
-                self.reflection_type_fold_ns.load(Ordering::Relaxed),
-            ),
-            reflection_type_fold_calls: self.reflection_type_fold_calls.load(Ordering::Relaxed),
-            reflection_term: duration_from_nanos(self.reflection_term_ns.load(Ordering::Relaxed)),
-            reflection_term_calls: self.reflection_term_calls.load(Ordering::Relaxed),
-            reflection_term_let: duration_from_nanos(
-                self.reflection_term_let_ns.load(Ordering::Relaxed),
-            ),
-            reflection_term_let_calls: self.reflection_term_let_calls.load(Ordering::Relaxed),
-            reflection_term_fn: duration_from_nanos(
-                self.reflection_term_fn_ns.load(Ordering::Relaxed),
-            ),
-            reflection_term_fn_calls: self.reflection_term_fn_calls.load(Ordering::Relaxed),
-            reflection_term_call: duration_from_nanos(
-                self.reflection_term_call_ns.load(Ordering::Relaxed),
-            ),
-            reflection_term_call_calls: self.reflection_term_call_calls.load(Ordering::Relaxed),
-            reflection_term_type: duration_from_nanos(
-                self.reflection_term_type_ns.load(Ordering::Relaxed),
-            ),
-            reflection_term_type_calls: self.reflection_term_type_calls.load(Ordering::Relaxed),
-            reflection_term_unit: duration_from_nanos(
-                self.reflection_term_unit_ns.load(Ordering::Relaxed),
-            ),
-            reflection_term_unit_calls: self.reflection_term_unit_calls.load(Ordering::Relaxed),
-            reflection_intrinsic_pair: duration_from_nanos(
-                self.reflection_intrinsic_pair_ns.load(Ordering::Relaxed),
-            ),
-            reflection_intrinsic_pair_calls: self
-                .reflection_intrinsic_pair_calls
-                .load(Ordering::Relaxed),
-            reflection_intrinsic_projection: duration_from_nanos(
-                self.reflection_intrinsic_projection_ns
-                    .load(Ordering::Relaxed),
-            ),
-            reflection_intrinsic_projection_calls: self
-                .reflection_intrinsic_projection_calls
-                .load(Ordering::Relaxed),
-            reflection_intrinsic_injection: duration_from_nanos(
-                self.reflection_intrinsic_injection_ns
-                    .load(Ordering::Relaxed),
-            ),
-            reflection_intrinsic_injection_calls: self
-                .reflection_intrinsic_injection_calls
-                .load(Ordering::Relaxed),
-            reflection_intrinsic_either: duration_from_nanos(
-                self.reflection_intrinsic_either_ns.load(Ordering::Relaxed),
-            ),
-            reflection_intrinsic_either_calls: self
-                .reflection_intrinsic_either_calls
-                .load(Ordering::Relaxed),
-            reflection_intrinsic_other: duration_from_nanos(
-                self.reflection_intrinsic_other_ns.load(Ordering::Relaxed),
-            ),
-            reflection_intrinsic_other_calls: self
-                .reflection_intrinsic_other_calls
-                .load(Ordering::Relaxed),
-            reflection_structural_recur: duration_from_nanos(
-                self.reflection_structural_recur_ns.load(Ordering::Relaxed),
-            ),
-            reflection_structural_recur_calls: self
-                .reflection_structural_recur_calls
-                .load(Ordering::Relaxed),
-            reflection_other: duration_from_nanos(self.reflection_other_ns.load(Ordering::Relaxed)),
-            reflection_other_calls: self.reflection_other_calls.load(Ordering::Relaxed),
-            type_unfold: duration_from_nanos(self.type_unfold_ns.load(Ordering::Relaxed)),
-            type_unfold_calls: self.type_unfold_calls.load(Ordering::Relaxed),
-            type_equiv: duration_from_nanos(self.type_equiv_ns.load(Ordering::Relaxed)),
-            type_equiv_calls: self.type_equiv_calls.load(Ordering::Relaxed),
-            nf_eq: duration_from_nanos(self.nf_eq_ns.load(Ordering::Relaxed)),
-            nf_eq_calls: self.nf_eq_calls.load(Ordering::Relaxed),
-            eta_contract: duration_from_nanos(self.eta_contract_ns.load(Ordering::Relaxed)),
-            eta_contract_calls: self.eta_contract_calls.load(Ordering::Relaxed),
-            env_clones: self.env_clones.load(Ordering::Relaxed),
-            closure_builds: self.closure_builds.load(Ordering::Relaxed),
-            arg_vec_builds: self.arg_vec_builds.load(Ordering::Relaxed),
-            arg_vec_values: self.arg_vec_values.load(Ordering::Relaxed),
-            capture_vec_builds: self.capture_vec_builds.load(Ordering::Relaxed),
-            capture_vec_values: self.capture_vec_values.load(Ordering::Relaxed),
-            exact_call_memo_hits: self.exact_call_memo_hits.load(Ordering::Relaxed),
-            exact_call_memo_misses: self.exact_call_memo_misses.load(Ordering::Relaxed),
-            exact_call_memo_key_skips: self.exact_call_memo_key_skips.load(Ordering::Relaxed),
-            exact_call_memo_stores: self.exact_call_memo_stores.load(Ordering::Relaxed),
-            function_hotspots: self.function_hotspots(),
-        }
-    }
-
-    pub fn add_snapshot(&self, snapshot: EvalMetricsSnapshot) {
-        add_duration(&self.root_eval_ns, snapshot.root_eval);
-        self.root_eval_calls
-            .fetch_add(snapshot.root_eval_calls, Ordering::Relaxed);
-        self.expr_visits
-            .fetch_add(snapshot.expr_visits, Ordering::Relaxed);
-        add_duration(&self.apply_ns, snapshot.apply);
-        self.apply_calls
-            .fetch_add(snapshot.apply_calls, Ordering::Relaxed);
-        add_duration(&self.apply_generic_ns, snapshot.apply_generic);
-        self.apply_generic_calls
-            .fetch_add(snapshot.apply_generic_calls, Ordering::Relaxed);
-        add_duration(&self.apply_atom_ns, snapshot.apply_atom);
-        self.apply_atom_calls
-            .fetch_add(snapshot.apply_atom_calls, Ordering::Relaxed);
-        add_duration(&self.apply_fn_ns, snapshot.apply_fn);
-        self.apply_fn_calls
-            .fetch_add(snapshot.apply_fn_calls, Ordering::Relaxed);
-        add_duration(&self.closure_apply_ns, snapshot.closure_apply);
-        self.closure_apply_calls
-            .fetch_add(snapshot.closure_apply_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_ns, snapshot.reflection);
-        self.reflection_calls
-            .fetch_add(snapshot.reflection_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_type_view_ns, snapshot.reflection_type_view);
-        self.reflection_type_view_calls
-            .fetch_add(snapshot.reflection_type_view_calls, Ordering::Relaxed);
-        add_duration(
-            &self.reflection_type_equal_ns,
-            snapshot.reflection_type_equal,
-        );
-        self.reflection_type_equal_calls
-            .fetch_add(snapshot.reflection_type_equal_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_type_fold_ns, snapshot.reflection_type_fold);
-        self.reflection_type_fold_calls
-            .fetch_add(snapshot.reflection_type_fold_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_term_ns, snapshot.reflection_term);
-        self.reflection_term_calls
-            .fetch_add(snapshot.reflection_term_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_term_let_ns, snapshot.reflection_term_let);
-        self.reflection_term_let_calls
-            .fetch_add(snapshot.reflection_term_let_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_term_fn_ns, snapshot.reflection_term_fn);
-        self.reflection_term_fn_calls
-            .fetch_add(snapshot.reflection_term_fn_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_term_call_ns, snapshot.reflection_term_call);
-        self.reflection_term_call_calls
-            .fetch_add(snapshot.reflection_term_call_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_term_type_ns, snapshot.reflection_term_type);
-        self.reflection_term_type_calls
-            .fetch_add(snapshot.reflection_term_type_calls, Ordering::Relaxed);
-        add_duration(&self.reflection_term_unit_ns, snapshot.reflection_term_unit);
-        self.reflection_term_unit_calls
-            .fetch_add(snapshot.reflection_term_unit_calls, Ordering::Relaxed);
-        add_duration(
-            &self.reflection_intrinsic_pair_ns,
-            snapshot.reflection_intrinsic_pair,
-        );
-        self.reflection_intrinsic_pair_calls
-            .fetch_add(snapshot.reflection_intrinsic_pair_calls, Ordering::Relaxed);
-        add_duration(
-            &self.reflection_intrinsic_projection_ns,
-            snapshot.reflection_intrinsic_projection,
-        );
-        self.reflection_intrinsic_projection_calls.fetch_add(
-            snapshot.reflection_intrinsic_projection_calls,
-            Ordering::Relaxed,
-        );
-        add_duration(
-            &self.reflection_intrinsic_injection_ns,
-            snapshot.reflection_intrinsic_injection,
-        );
-        self.reflection_intrinsic_injection_calls.fetch_add(
-            snapshot.reflection_intrinsic_injection_calls,
-            Ordering::Relaxed,
-        );
-        add_duration(
-            &self.reflection_intrinsic_either_ns,
-            snapshot.reflection_intrinsic_either,
-        );
-        self.reflection_intrinsic_either_calls.fetch_add(
-            snapshot.reflection_intrinsic_either_calls,
-            Ordering::Relaxed,
-        );
-        add_duration(
-            &self.reflection_intrinsic_other_ns,
-            snapshot.reflection_intrinsic_other,
-        );
-        self.reflection_intrinsic_other_calls
-            .fetch_add(snapshot.reflection_intrinsic_other_calls, Ordering::Relaxed);
-        add_duration(
-            &self.reflection_structural_recur_ns,
-            snapshot.reflection_structural_recur,
-        );
-        self.reflection_structural_recur_calls.fetch_add(
-            snapshot.reflection_structural_recur_calls,
-            Ordering::Relaxed,
-        );
-        add_duration(&self.reflection_other_ns, snapshot.reflection_other);
-        self.reflection_other_calls
-            .fetch_add(snapshot.reflection_other_calls, Ordering::Relaxed);
-        add_duration(&self.type_unfold_ns, snapshot.type_unfold);
-        self.type_unfold_calls
-            .fetch_add(snapshot.type_unfold_calls, Ordering::Relaxed);
-        add_duration(&self.type_equiv_ns, snapshot.type_equiv);
-        self.type_equiv_calls
-            .fetch_add(snapshot.type_equiv_calls, Ordering::Relaxed);
-        add_duration(&self.nf_eq_ns, snapshot.nf_eq);
-        self.nf_eq_calls
-            .fetch_add(snapshot.nf_eq_calls, Ordering::Relaxed);
-        add_duration(&self.eta_contract_ns, snapshot.eta_contract);
-        self.eta_contract_calls
-            .fetch_add(snapshot.eta_contract_calls, Ordering::Relaxed);
-        self.env_clones
-            .fetch_add(snapshot.env_clones, Ordering::Relaxed);
-        self.closure_builds
-            .fetch_add(snapshot.closure_builds, Ordering::Relaxed);
-        self.arg_vec_builds
-            .fetch_add(snapshot.arg_vec_builds, Ordering::Relaxed);
-        self.arg_vec_values
-            .fetch_add(snapshot.arg_vec_values, Ordering::Relaxed);
-        self.capture_vec_builds
-            .fetch_add(snapshot.capture_vec_builds, Ordering::Relaxed);
-        self.capture_vec_values
-            .fetch_add(snapshot.capture_vec_values, Ordering::Relaxed);
-        self.exact_call_memo_hits
-            .fetch_add(snapshot.exact_call_memo_hits, Ordering::Relaxed);
-        self.exact_call_memo_misses
-            .fetch_add(snapshot.exact_call_memo_misses, Ordering::Relaxed);
-        self.exact_call_memo_key_skips
-            .fetch_add(snapshot.exact_call_memo_key_skips, Ordering::Relaxed);
-        self.exact_call_memo_stores
-            .fetch_add(snapshot.exact_call_memo_stores, Ordering::Relaxed);
-        self.add_function_hotspots(snapshot.function_hotspots);
-    }
-
-    fn record_root_eval(&self, duration: Duration) {
-        add_duration(&self.root_eval_ns, duration);
-        self.root_eval_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_expr_visit(&self) {
-        self.expr_visits.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_apply(&self, duration: Duration) {
-        add_duration(&self.apply_ns, duration);
-        self.apply_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_apply_generic(&self, duration: Duration) {
-        self.record_apply(duration);
-        add_duration(&self.apply_generic_ns, duration);
-        self.apply_generic_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_apply_atom(&self, duration: Duration) {
-        self.record_apply(duration);
-        add_duration(&self.apply_atom_ns, duration);
-        self.apply_atom_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_apply_fn(&self, duration: Duration) {
-        self.record_apply(duration);
-        add_duration(&self.apply_fn_ns, duration);
-        self.apply_fn_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_function_apply(&self, label: &str, duration: Duration) {
-        self.record_apply_fn(duration);
-        let mut function_apply = self
-            .function_apply
-            .lock()
-            .expect("eval function metric lock poisoned");
-        let entry = function_apply.entry(label.to_string()).or_default();
-        entry.duration = saturating_duration_add(entry.duration, duration);
-        entry.calls = entry.calls.saturating_add(1);
-    }
-
-    fn add_function_hotspots(&self, hotspots: Vec<EvalFunctionHotspot>) {
-        if hotspots.is_empty() {
-            return;
-        }
-        let mut function_apply = self
-            .function_apply
-            .lock()
-            .expect("eval function metric lock poisoned");
-        for hotspot in hotspots {
-            let entry = function_apply.entry(hotspot.label).or_default();
-            entry.duration = saturating_duration_add(entry.duration, hotspot.duration);
-            entry.calls = entry.calls.saturating_add(hotspot.calls);
-        }
-    }
-
-    fn function_hotspots(&self) -> Vec<EvalFunctionHotspot> {
-        let function_apply = self
-            .function_apply
-            .lock()
-            .expect("eval function metric lock poisoned");
-        let mut hotspots: Vec<_> = function_apply
-            .iter()
-            .map(|(label, metric)| EvalFunctionHotspot {
-                label: label.clone(),
-                duration: metric.duration,
-                calls: metric.calls,
-            })
-            .collect();
-        hotspots.sort_by(|a, b| {
-            b.duration
-                .cmp(&a.duration)
-                .then_with(|| b.calls.cmp(&a.calls))
-                .then_with(|| a.label.cmp(&b.label))
-        });
-        hotspots
-    }
-
-    fn record_closure_apply(&self, duration: Duration) {
-        add_duration(&self.closure_apply_ns, duration);
-        self.closure_apply_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_reflection(&self, duration: Duration) {
-        add_duration(&self.reflection_ns, duration);
-        self.reflection_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_reflection_kind(&self, kind: ReflectionMetricKind, duration: Duration) {
-        self.record_reflection(duration);
-        match kind {
-            ReflectionMetricKind::TypeView => {
-                add_duration(&self.reflection_type_view_ns, duration);
-                self.reflection_type_view_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            ReflectionMetricKind::TypeEqual => {
-                add_duration(&self.reflection_type_equal_ns, duration);
-                self.reflection_type_equal_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            ReflectionMetricKind::TypeFold => {
-                add_duration(&self.reflection_type_fold_ns, duration);
-                self.reflection_type_fold_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            ReflectionMetricKind::Term => {
-                add_duration(&self.reflection_term_ns, duration);
-                self.reflection_term_calls.fetch_add(1, Ordering::Relaxed);
-            }
-            ReflectionMetricKind::StructuralRecur => {
-                add_duration(&self.reflection_structural_recur_ns, duration);
-                self.reflection_structural_recur_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            ReflectionMetricKind::Other => {
-                add_duration(&self.reflection_other_ns, duration);
-                self.reflection_other_calls.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-    }
-
-    fn record_reflection_name(&self, name: &str, duration: Duration) {
-        self.record_reflection_kind(reflection_metric_kind(name), duration);
-        match reflection_term_metric_kind(name) {
-            Some(ReflectionTermMetricKind::Let) => {
-                add_duration(&self.reflection_term_let_ns, duration);
-                self.reflection_term_let_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::Fn) => {
-                add_duration(&self.reflection_term_fn_ns, duration);
-                self.reflection_term_fn_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::Call) => {
-                add_duration(&self.reflection_term_call_ns, duration);
-                self.reflection_term_call_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::Type) => {
-                add_duration(&self.reflection_term_type_ns, duration);
-                self.reflection_term_type_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::Unit) => {
-                add_duration(&self.reflection_term_unit_ns, duration);
-                self.reflection_term_unit_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::IntrinsicPair) => {
-                add_duration(&self.reflection_intrinsic_pair_ns, duration);
-                self.reflection_intrinsic_pair_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::IntrinsicProjection) => {
-                add_duration(&self.reflection_intrinsic_projection_ns, duration);
-                self.reflection_intrinsic_projection_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::IntrinsicInjection) => {
-                add_duration(&self.reflection_intrinsic_injection_ns, duration);
-                self.reflection_intrinsic_injection_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::IntrinsicEither) => {
-                add_duration(&self.reflection_intrinsic_either_ns, duration);
-                self.reflection_intrinsic_either_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            Some(ReflectionTermMetricKind::IntrinsicOther) => {
-                add_duration(&self.reflection_intrinsic_other_ns, duration);
-                self.reflection_intrinsic_other_calls
-                    .fetch_add(1, Ordering::Relaxed);
-            }
-            None => {}
-        }
-    }
-
-    fn record_type_unfold(&self, duration: Duration) {
-        add_duration(&self.type_unfold_ns, duration);
-        self.type_unfold_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_type_equiv(&self, duration: Duration) {
-        add_duration(&self.type_equiv_ns, duration);
-        self.type_equiv_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_nf_eq(&self, duration: Duration) {
-        add_duration(&self.nf_eq_ns, duration);
-        self.nf_eq_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_eta_contract(&self, duration: Duration) {
-        add_duration(&self.eta_contract_ns, duration);
-        self.eta_contract_calls.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_closure_build(&self) {
-        self.closure_builds.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_arg_vec(&self, len: usize) {
-        self.arg_vec_builds.fetch_add(1, Ordering::Relaxed);
-        self.arg_vec_values.fetch_add(len, Ordering::Relaxed);
-    }
-
-    fn record_capture_vec(&self, len: usize) {
-        self.capture_vec_builds.fetch_add(1, Ordering::Relaxed);
-        self.capture_vec_values.fetch_add(len, Ordering::Relaxed);
-    }
-
-    fn record_exact_call_memo_hit(&self) {
-        self.exact_call_memo_hits.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_exact_call_memo_miss(&self) {
-        self.exact_call_memo_misses.fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_exact_call_memo_key_skip(&self) {
-        self.exact_call_memo_key_skips
-            .fetch_add(1, Ordering::Relaxed);
-    }
-
-    fn record_exact_call_memo_store(&self) {
-        self.exact_call_memo_stores.fetch_add(1, Ordering::Relaxed);
-    }
-}
-
-impl EvalMetricsSnapshot {
-    pub fn add_assign(&mut self, other: Self) {
-        self.root_eval = saturating_duration_add(self.root_eval, other.root_eval);
-        self.root_eval_calls = self.root_eval_calls.saturating_add(other.root_eval_calls);
-        self.expr_visits = self.expr_visits.saturating_add(other.expr_visits);
-        self.apply = saturating_duration_add(self.apply, other.apply);
-        self.apply_calls = self.apply_calls.saturating_add(other.apply_calls);
-        self.apply_generic = saturating_duration_add(self.apply_generic, other.apply_generic);
-        self.apply_generic_calls = self
-            .apply_generic_calls
-            .saturating_add(other.apply_generic_calls);
-        self.apply_atom = saturating_duration_add(self.apply_atom, other.apply_atom);
-        self.apply_atom_calls = self.apply_atom_calls.saturating_add(other.apply_atom_calls);
-        self.apply_fn = saturating_duration_add(self.apply_fn, other.apply_fn);
-        self.apply_fn_calls = self.apply_fn_calls.saturating_add(other.apply_fn_calls);
-        self.closure_apply = saturating_duration_add(self.closure_apply, other.closure_apply);
-        self.closure_apply_calls = self
-            .closure_apply_calls
-            .saturating_add(other.closure_apply_calls);
-        self.reflection = saturating_duration_add(self.reflection, other.reflection);
-        self.reflection_calls = self.reflection_calls.saturating_add(other.reflection_calls);
-        self.reflection_type_view =
-            saturating_duration_add(self.reflection_type_view, other.reflection_type_view);
-        self.reflection_type_view_calls = self
-            .reflection_type_view_calls
-            .saturating_add(other.reflection_type_view_calls);
-        self.reflection_type_equal =
-            saturating_duration_add(self.reflection_type_equal, other.reflection_type_equal);
-        self.reflection_type_equal_calls = self
-            .reflection_type_equal_calls
-            .saturating_add(other.reflection_type_equal_calls);
-        self.reflection_type_fold =
-            saturating_duration_add(self.reflection_type_fold, other.reflection_type_fold);
-        self.reflection_type_fold_calls = self
-            .reflection_type_fold_calls
-            .saturating_add(other.reflection_type_fold_calls);
-        self.reflection_term = saturating_duration_add(self.reflection_term, other.reflection_term);
-        self.reflection_term_calls = self
-            .reflection_term_calls
-            .saturating_add(other.reflection_term_calls);
-        self.reflection_term_let =
-            saturating_duration_add(self.reflection_term_let, other.reflection_term_let);
-        self.reflection_term_let_calls = self
-            .reflection_term_let_calls
-            .saturating_add(other.reflection_term_let_calls);
-        self.reflection_term_fn =
-            saturating_duration_add(self.reflection_term_fn, other.reflection_term_fn);
-        self.reflection_term_fn_calls = self
-            .reflection_term_fn_calls
-            .saturating_add(other.reflection_term_fn_calls);
-        self.reflection_term_call =
-            saturating_duration_add(self.reflection_term_call, other.reflection_term_call);
-        self.reflection_term_call_calls = self
-            .reflection_term_call_calls
-            .saturating_add(other.reflection_term_call_calls);
-        self.reflection_term_type =
-            saturating_duration_add(self.reflection_term_type, other.reflection_term_type);
-        self.reflection_term_type_calls = self
-            .reflection_term_type_calls
-            .saturating_add(other.reflection_term_type_calls);
-        self.reflection_term_unit =
-            saturating_duration_add(self.reflection_term_unit, other.reflection_term_unit);
-        self.reflection_term_unit_calls = self
-            .reflection_term_unit_calls
-            .saturating_add(other.reflection_term_unit_calls);
-        self.reflection_intrinsic_pair = saturating_duration_add(
-            self.reflection_intrinsic_pair,
-            other.reflection_intrinsic_pair,
-        );
-        self.reflection_intrinsic_pair_calls = self
-            .reflection_intrinsic_pair_calls
-            .saturating_add(other.reflection_intrinsic_pair_calls);
-        self.reflection_intrinsic_projection = saturating_duration_add(
-            self.reflection_intrinsic_projection,
-            other.reflection_intrinsic_projection,
-        );
-        self.reflection_intrinsic_projection_calls = self
-            .reflection_intrinsic_projection_calls
-            .saturating_add(other.reflection_intrinsic_projection_calls);
-        self.reflection_intrinsic_injection = saturating_duration_add(
-            self.reflection_intrinsic_injection,
-            other.reflection_intrinsic_injection,
-        );
-        self.reflection_intrinsic_injection_calls = self
-            .reflection_intrinsic_injection_calls
-            .saturating_add(other.reflection_intrinsic_injection_calls);
-        self.reflection_intrinsic_either = saturating_duration_add(
-            self.reflection_intrinsic_either,
-            other.reflection_intrinsic_either,
-        );
-        self.reflection_intrinsic_either_calls = self
-            .reflection_intrinsic_either_calls
-            .saturating_add(other.reflection_intrinsic_either_calls);
-        self.reflection_intrinsic_other = saturating_duration_add(
-            self.reflection_intrinsic_other,
-            other.reflection_intrinsic_other,
-        );
-        self.reflection_intrinsic_other_calls = self
-            .reflection_intrinsic_other_calls
-            .saturating_add(other.reflection_intrinsic_other_calls);
-        self.reflection_structural_recur = saturating_duration_add(
-            self.reflection_structural_recur,
-            other.reflection_structural_recur,
-        );
-        self.reflection_structural_recur_calls = self
-            .reflection_structural_recur_calls
-            .saturating_add(other.reflection_structural_recur_calls);
-        self.reflection_other =
-            saturating_duration_add(self.reflection_other, other.reflection_other);
-        self.reflection_other_calls = self
-            .reflection_other_calls
-            .saturating_add(other.reflection_other_calls);
-        self.type_unfold = saturating_duration_add(self.type_unfold, other.type_unfold);
-        self.type_unfold_calls = self
-            .type_unfold_calls
-            .saturating_add(other.type_unfold_calls);
-        self.type_equiv = saturating_duration_add(self.type_equiv, other.type_equiv);
-        self.type_equiv_calls = self.type_equiv_calls.saturating_add(other.type_equiv_calls);
-        self.nf_eq = saturating_duration_add(self.nf_eq, other.nf_eq);
-        self.nf_eq_calls = self.nf_eq_calls.saturating_add(other.nf_eq_calls);
-        self.eta_contract = saturating_duration_add(self.eta_contract, other.eta_contract);
-        self.eta_contract_calls = self
-            .eta_contract_calls
-            .saturating_add(other.eta_contract_calls);
-        self.env_clones = self.env_clones.saturating_add(other.env_clones);
-        self.closure_builds = self.closure_builds.saturating_add(other.closure_builds);
-        self.arg_vec_builds = self.arg_vec_builds.saturating_add(other.arg_vec_builds);
-        self.arg_vec_values = self.arg_vec_values.saturating_add(other.arg_vec_values);
-        self.capture_vec_builds = self
-            .capture_vec_builds
-            .saturating_add(other.capture_vec_builds);
-        self.capture_vec_values = self
-            .capture_vec_values
-            .saturating_add(other.capture_vec_values);
-        self.exact_call_memo_hits = self
-            .exact_call_memo_hits
-            .saturating_add(other.exact_call_memo_hits);
-        self.exact_call_memo_misses = self
-            .exact_call_memo_misses
-            .saturating_add(other.exact_call_memo_misses);
-        self.exact_call_memo_key_skips = self
-            .exact_call_memo_key_skips
-            .saturating_add(other.exact_call_memo_key_skips);
-        self.exact_call_memo_stores = self
-            .exact_call_memo_stores
-            .saturating_add(other.exact_call_memo_stores);
-        add_hotspots(&mut self.function_hotspots, other.function_hotspots);
-    }
-}
-
-fn add_hotspots(target: &mut Vec<EvalFunctionHotspot>, other: Vec<EvalFunctionHotspot>) {
-    if other.is_empty() {
-        return;
-    }
-    let mut by_label: HashMap<String, EvalFunctionHotspot> = target
-        .drain(..)
-        .map(|hotspot| (hotspot.label.clone(), hotspot))
-        .collect();
-    for hotspot in other {
-        let entry = by_label
-            .entry(hotspot.label.clone())
-            .or_insert(EvalFunctionHotspot {
-                label: hotspot.label,
-                duration: Duration::ZERO,
-                calls: 0,
-            });
-        entry.duration = saturating_duration_add(entry.duration, hotspot.duration);
-        entry.calls = entry.calls.saturating_add(hotspot.calls);
-    }
-    *target = by_label.into_values().collect();
-    target.sort_by(|a, b| {
-        b.duration
-            .cmp(&a.duration)
-            .then_with(|| b.calls.cmp(&a.calls))
-            .then_with(|| a.label.cmp(&b.label))
-    });
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ReflectionMetricKind {
-    TypeView,
-    TypeEqual,
-    TypeFold,
-    Term,
-    StructuralRecur,
-    Other,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ReflectionTermMetricKind {
-    Let,
-    Fn,
-    Call,
-    Type,
-    Unit,
-    IntrinsicPair,
-    IntrinsicProjection,
-    IntrinsicInjection,
-    IntrinsicEither,
-    IntrinsicOther,
-}
-
-fn reflection_metric_kind(name: &str) -> ReflectionMetricKind {
-    match name {
-        "__type_view__" => ReflectionMetricKind::TypeView,
-        "__type_equal__"
-        | "__type_name_equal__"
-        | "__type_var_equal__"
-        | "__type_arity_equal__" => ReflectionMetricKind::TypeEqual,
-        "__type_product_spine_fold__"
-        | "__type_sum_spine_fold__"
-        | "__type_args_fold__"
-        | "__type_function_params_fold__"
-        | "__type_arity_fold__"
-        | "__type_name_param_arities_fold__"
-        | "__type_instantiate__" => ReflectionMetricKind::TypeFold,
-        "__structural_recur__" => ReflectionMetricKind::StructuralRecur,
-        _ if name.starts_with("__term_") || name.starts_with("__intrinsic_") => {
-            ReflectionMetricKind::Term
-        }
-        _ => ReflectionMetricKind::Other,
-    }
-}
-
-fn reflection_term_metric_kind(name: &str) -> Option<ReflectionTermMetricKind> {
-    Some(match name {
-        "__term_let__" => ReflectionTermMetricKind::Let,
-        "__term_fn__" => ReflectionTermMetricKind::Fn,
-        "__term_call__" => ReflectionTermMetricKind::Call,
-        "__term_type_fn__" | "__term_type_app__" => ReflectionTermMetricKind::Type,
-        "__term_unit__" => ReflectionTermMetricKind::Unit,
-        "__intrinsic_pair__" => ReflectionTermMetricKind::IntrinsicPair,
-        "__intrinsic_fst__" | "__intrinsic_snd__" => ReflectionTermMetricKind::IntrinsicProjection,
-        "__intrinsic_left__" | "__intrinsic_right__" => {
-            ReflectionTermMetricKind::IntrinsicInjection
-        }
-        "__intrinsic_either__" => ReflectionTermMetricKind::IntrinsicEither,
-        "__intrinsic_absurd__" | "__intrinsic_if_then_else__" => {
-            ReflectionTermMetricKind::IntrinsicOther
-        }
-        _ => return None,
-    })
-}
-
-fn add_duration(slot: &AtomicU64, duration: Duration) {
-    slot.fetch_add(duration_nanos(duration), Ordering::Relaxed);
-}
-
-fn duration_nanos(duration: Duration) -> u64 {
-    duration.as_nanos().min(u128::from(u64::MAX)) as u64
-}
-
-fn duration_from_nanos(nanos: u64) -> Duration {
-    Duration::from_nanos(nanos)
-}
-
-fn saturating_duration_add(left: Duration, right: Duration) -> Duration {
-    left.checked_add(right).unwrap_or(Duration::MAX)
 }
 
 /// Declaration-site identity of a newtype constructor. Source spellings are
@@ -3798,7 +2856,7 @@ pub struct SharedTypeViewCache {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TypeViewCacheKey {
-    ty: TypeMemoKey,
+    ty: ReflectionTypeKey,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -3824,7 +2882,7 @@ enum EvalValueMemoKey {
     IntAtom(String, Option<String>),
     FloatAtom(String, Option<String>),
     StrAtom(String),
-    ReflType(TypeMemoKey),
+    ReflType(ReflectionTypeKey),
     ReflTypeArity(usize),
     ReflTypeVar(String, usize),
     ReflTypeName(Vec<String>, Vec<usize>),
@@ -3848,6 +2906,11 @@ struct ExactCallMemoKey {
     function: EvalFunctionCacheKey,
     captured: Vec<EvalValueMemoKey>,
     args: Vec<EvalValueMemoKey>,
+}
+
+struct ExactCallMemoTicket {
+    key: ExactCallMemoKey,
+    reflected_binder_epoch: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -4025,7 +3088,7 @@ fn value_memo_key(value: &Value, budget: &mut usize) -> Option<EvalValueMemoKey>
             annotation.clone(),
         )),
         Value::StrAtom(value) => Some(EvalValueMemoKey::StrAtom(value.clone())),
-        Value::ReflType(typ) => Some(EvalValueMemoKey::ReflType(TypeMemoKey::from_type(
+        Value::ReflType(typ) => Some(EvalValueMemoKey::ReflType(ReflectionTypeKey::new(
             typ.as_type(),
         ))),
         Value::CheckedTerm(_) => None,
@@ -4622,6 +3685,8 @@ pub struct EvalCtx<'m> {
     eval_function_cache: SharedEvalFunctionCache,
     type_view_cache: SharedTypeViewCache,
     exact_call_memo: SharedExactCallMemoCache,
+    // Results of calls that mint observable binder handles cannot be replayed.
+    reflected_binder_epoch: std::sync::atomic::AtomicU64,
     primitive_env: EvalPrimitiveEnv,
     /// Dotted path for flat-map eval contexts. Package-backed eval
     /// carries the current owner module path in the compile state so
@@ -4661,6 +3726,7 @@ impl<'m> EvalCtx<'m> {
             eval_function_cache: SharedEvalFunctionCache::default(),
             type_view_cache: SharedTypeViewCache::default(),
             exact_call_memo: SharedExactCallMemoCache::default(),
+            reflected_binder_epoch: std::sync::atomic::AtomicU64::new(0),
             primitive_env: EvalPrimitiveEnv::default(),
             module_path: String::new(),
             metrics: None,
@@ -4881,7 +3947,7 @@ impl<'m> EvalCtx<'m> {
                 );
                 #[cfg(test)]
                 self.structural_recur_site_lookup_work
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |work| {
+                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |work| {
                         work.checked_add(1)
                     })
                     .expect("structural recursion site lookup work overflow");
@@ -4984,86 +4050,6 @@ impl<'m> EvalCtx<'m> {
                 frame_number,
             },
         ))
-    }
-}
-
-/// Immutable evaluator context bound to one validated artifact generation.
-///
-/// This wrapper is crate-private so the shared compile/closure caches can be
-/// used only while the package, primitive grants, and root resolution tables
-/// remain exactly those validated for the retained artifact. Public mutable
-/// [`EvalCtx`] values always compile under a fresh root generation instead.
-pub(crate) struct AuthenticatedEvalCtx<'m> {
-    inner: EvalCtx<'m>,
-    source_generation: EvalSourceGeneration,
-}
-
-impl<'m> AuthenticatedEvalCtx<'m> {
-    pub(crate) fn for_module(
-        artifact: &'m EvalArtifact,
-        module: &'m Module<EvalPhase>,
-        module_path: &str,
-    ) -> Result<Self, crate::error::Error> {
-        let (fn_defs, qualified_fn_defs) = eval_fn_tables(artifact.package(), module)?;
-        Ok(Self::for_module_with_fn_tables(
-            artifact,
-            module,
-            module_path,
-            fn_defs,
-            qualified_fn_defs,
-        ))
-    }
-
-    pub(crate) fn for_module_with_fn_tables(
-        artifact: &'m EvalArtifact,
-        module: &'m Module<EvalPhase>,
-        module_path: &str,
-        fn_defs: FnMap<'m>,
-        qualified_fn_defs: QualifiedFnMap<'m>,
-    ) -> Self {
-        Self {
-            inner: EvalCtx::new()
-                .with_fn_defs(fn_defs)
-                .with_qualified_fn_defs(qualified_fn_defs)
-                .with_module_path(module_path)
-                .with_root_module(module)
-                .with_package(Some(artifact.package()))
-                .with_primitive_env(artifact.primitives().clone()),
-            source_generation: artifact.source_generation(),
-        }
-    }
-
-    pub(crate) fn with_metrics(mut self, metrics: Arc<EvalMetrics>) -> Self {
-        self.inner = self.inner.with_metrics(metrics);
-        self
-    }
-
-    pub(crate) fn with_fn_closure_cache(mut self, cache: SharedFnClosureCache) -> Self {
-        self.inner = self.inner.with_fn_closure_cache(cache);
-        self
-    }
-
-    pub(crate) fn with_eval_function_cache(mut self, cache: SharedEvalFunctionCache) -> Self {
-        self.inner = self.inner.with_eval_function_cache(cache);
-        self
-    }
-
-    pub(crate) fn with_type_view_cache(mut self, cache: SharedTypeViewCache) -> Self {
-        self.inner = self.inner.with_type_view_cache(cache);
-        self
-    }
-
-    pub(crate) fn with_exact_call_memo_cache(mut self, cache: SharedExactCallMemoCache) -> Self {
-        self.inner = self.inner.with_exact_call_memo_cache(cache);
-        self
-    }
-}
-
-impl<'m> std::ops::Deref for AuthenticatedEvalCtx<'m> {
-    type Target = EvalCtx<'m>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
 
@@ -5303,14 +4289,6 @@ pub fn eval_fn_tables<'m>(
 /// returned by the call retain that root's private source-origin namespace.
 pub fn eval(expr: &Expr<EvalPhase>, env: &Env, ctx: &EvalCtx<'_>) -> Value {
     eval_with_compile_scope(expr, env, ctx, EvalSourceGeneration::fresh(), false)
-}
-
-pub(crate) fn eval_authenticated(
-    expr: &Expr<EvalPhase>,
-    env: &Env,
-    ctx: &AuthenticatedEvalCtx<'_>,
-) -> Value {
-    eval_with_compile_scope(expr, env, ctx, ctx.source_generation.clone(), true)
 }
 
 fn eval_with_compile_scope(
@@ -8762,7 +7740,7 @@ fn function_param_types(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Vec<Type<Eva
 
 fn type_view_value(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Option<Value> {
     let key = TypeViewCacheKey {
-        ty: TypeMemoKey::from_type(ty),
+        ty: ReflectionTypeKey::new(ty),
     };
     if let Some(cached) = ctx
         .type_view_cache
@@ -8980,6 +7958,7 @@ fn checked_product_packet(terms: &[EvalRef<CheckedTerm>]) -> EvalRef<CheckedTerm
     match terms {
         [] => EvalRef::new(CheckedTerm::new(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -9411,6 +8390,7 @@ fn reflection_term_type_value(term: &Value, ctx: &EvalCtx<'_>) -> Option<Value> 
 fn reflection_term_unit_value() -> Value {
     checked_term_value(
         Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: zero_meta(),
         },
@@ -9651,10 +8631,9 @@ fn specialization_nominal_kind(
     ) -> Option<crate::ast::Kind> {
         let params = if let Some(newtype) = declaration.newtype().filter(|item| item.name == name) {
             &newtype.type_params
-        } else if let Some(host) = declaration.host_type().filter(|item| item.name == name) {
-            &host.type_params
         } else {
-            return None;
+            let host = declaration.host_type().filter(|item| item.name == name)?;
+            &host.type_params
         };
         Some(
             params
@@ -10689,7 +9668,7 @@ fn lookup_exact_call_memo(
     captured: &[Value],
     args: &[Value],
     ctx: &EvalCtx<'_>,
-) -> Result<Option<ExactCallMemoKey>, Value> {
+) -> Result<Option<ExactCallMemoTicket>, Value> {
     // A cached result cannot replace work performed while a recursion origin
     // is active, and a fault already recorded by this operation cannot be
     // hidden by a later cache hit.
@@ -10726,13 +9705,25 @@ fn lookup_exact_call_memo(
     {
         metrics.record_exact_call_memo_miss();
     }
-    Ok(memo_key)
+    Ok(memo_key.map(|key| ExactCallMemoTicket {
+        key,
+        reflected_binder_epoch: ctx
+            .reflected_binder_epoch
+            .load(std::sync::atomic::Ordering::Relaxed),
+    }))
 }
 
-fn insert_exact_call_memo(ctx: &EvalCtx<'_>, key: Option<ExactCallMemoKey>, value: Value) {
-    let Some(key) = key else {
+fn insert_exact_call_memo(ctx: &EvalCtx<'_>, ticket: Option<ExactCallMemoTicket>, value: Value) {
+    let Some(ticket) = ticket else {
         return;
     };
+    if ticket.reflected_binder_epoch
+        != ctx
+            .reflected_binder_epoch
+            .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return;
+    }
     // The body may have executed and then discarded a totality failure while
     // producing an otherwise shareable result. The operation retains that
     // first fault until its public boundary, so never cache the apparent
@@ -10749,7 +9740,7 @@ fn insert_exact_call_memo(ctx: &EvalCtx<'_>, key: Option<ExactCallMemoKey>, valu
         .lock()
         .expect("exact call memo lock poisoned");
     if memo.len() < EXACT_CALL_MEMO_MAX_ENTRIES {
-        memo.insert(key, value);
+        memo.insert(ticket.key, value);
         if let Some(metrics) = ctx.metrics.as_deref() {
             metrics.record_exact_call_memo_store();
         }
@@ -11073,413 +10064,6 @@ fn closure_partition_width(value: &Value) -> Option<usize> {
     }
 }
 
-// =========================================================================
-// Pretty-printing for diagnostics
-// =========================================================================
-
-/// Render a [`Value`] as a human-readable string for diagnostic
-/// output. Pure ground values (`Unit`, `Bool`, literal atoms, string
-/// atoms) print as their source form; `Stuck` applications render as
-/// `callee(arg, …)`; closures print as source-shaped Kio' expressions.
-pub fn value_to_string(v: &Value) -> String {
-    ValueRenderer {
-        newtype_type_heads: None,
-        render_closure_origins: false,
-    }
-    .render(v)
-}
-
-/// Render a residual value in the scope of `module` for the REPL.
-///
-/// Evaluator values preserve the declaration identity of newtype
-/// constructors and projectors. A residual can originate in an inlined
-/// function from another module, where its source-local import alias has no
-/// meaning in the REPL's current module. Re-spell those exact identities
-/// through the current scope and introduce ordinary qualified imports only
-/// when the scope has no spelling for their owner module.
-#[cfg(any(feature = "repl-core", test))]
-pub(crate) fn value_to_repl_string<P>(v: &Value, module: &Module<P>) -> String
-where
-    P: crate::pass::resolve::ResolvePhase,
-{
-    let mut scan = ReplReferenceScan::default();
-    scan_repl_value(v, &[], &mut scan);
-
-    let current_module = module_path_string(module);
-    let mut requalifier = crate::pass::typecheck_core::PrimeTypeRequalifier::new(module);
-    let mut newtype_type_heads = BTreeMap::new();
-    for (owner, type_name) in &scan.referenced_newtypes {
-        let forbidden = scan.forbidden_for_owner(owner);
-        let can_use_unqualified = !forbidden.contains(type_name)
-            && (owner == &current_module
-                || module.imports.iter().any(|import_| {
-                    matches!(
-                        &import_.kind,
-                        ImportKind::Selective { items, from }
-                            if module_import_path(from) == *owner
-                                && items
-                                    .iter()
-                                    .filter_map(crate::ast::ImportItem::as_name)
-                                    .any(|name| name == *type_name)
-                    )
-                }));
-        let head = if can_use_unqualified {
-            type_name.clone()
-        } else {
-            format!(
-                "{}.{}",
-                requalifier.ensure_module_import_avoiding(owner, &forbidden),
-                type_name
-            )
-        };
-        newtype_type_heads.insert((owner.clone(), type_name.clone()), head);
-    }
-
-    let expression = ValueRenderer {
-        newtype_type_heads: Some(&newtype_type_heads),
-        render_closure_origins: true,
-    }
-    .render(v);
-    let imports = requalifier.take_imports();
-    if imports.is_empty() {
-        expression
-    } else {
-        let prelude = imports
-            .iter()
-            .map(crate::pretty::pretty_import)
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!("{prelude}\n\n{expression}")
-    }
-}
-
-#[cfg(any(feature = "repl-core", test))]
-#[derive(Default)]
-struct ReplReferenceScan {
-    referenced_newtypes: BTreeSet<(String, String)>,
-    forbidden_by_owner: BTreeMap<String, BTreeSet<String>>,
-    atom_heads: BTreeSet<String>,
-}
-
-#[cfg(any(feature = "repl-core", test))]
-impl ReplReferenceScan {
-    fn record_newtype<'a>(
-        &mut self,
-        identity: &NewtypeCtorIdentity,
-        bound: impl Iterator<Item = &'a String>,
-    ) {
-        self.referenced_newtypes
-            .insert((identity.module_path.clone(), identity.type_name.clone()));
-        self.forbidden_by_owner
-            .entry(identity.module_path.clone())
-            .or_default()
-            .extend(bound.cloned());
-    }
-
-    fn record_atom(&mut self, name: &str) {
-        if let Some(head) = name.split('.').next()
-            && !head.is_empty()
-        {
-            self.atom_heads.insert(head.to_owned());
-        }
-    }
-
-    fn forbidden_for_owner(&self, owner: &str) -> BTreeSet<String> {
-        let mut forbidden = self.atom_heads.clone();
-        if let Some(scoped) = self.forbidden_by_owner.get(owner) {
-            forbidden.extend(scoped.iter().cloned());
-        }
-        forbidden
-    }
-}
-
-#[cfg(any(feature = "repl-core", test))]
-fn scan_repl_value(v: &Value, enclosing_bound: &[String], scan: &mut ReplReferenceScan) {
-    match v {
-        Value::NewtypeMember(member) => {
-            scan.record_newtype(&member.constructor, enclosing_bound.iter());
-        }
-        Value::Data(data) => {
-            if data.structural_recur_identity().is_some() {
-                return;
-            }
-            if let DataConstructorIdentity::Newtype(identity) = &data.identity {
-                scan.record_newtype(identity, enclosing_bound.iter());
-            }
-            for arg in data.args() {
-                scan_repl_value(arg, enclosing_bound, scan);
-            }
-        }
-        Value::CaseSplit {
-            scrutinee,
-            left_payload,
-            left,
-            right_payload,
-            right,
-        } => {
-            scan_repl_value(scrutinee, enclosing_bound, scan);
-            let mut left_bound = enclosing_bound.to_vec();
-            left_bound.push(left_payload.clone());
-            scan_repl_value(left, &left_bound, scan);
-            let mut right_bound = enclosing_bound.to_vec();
-            right_bound.push(right_payload.clone());
-            scan_repl_value(right, &right_bound, scan);
-        }
-        Value::Seq { value, body } => {
-            scan_repl_value(value, enclosing_bound, scan);
-            scan_repl_value(body, enclosing_bound, scan);
-        }
-        Value::Stuck(callee, args) => {
-            scan_repl_value(callee, enclosing_bound, scan);
-            for arg in args.iter() {
-                scan_repl_value(arg, enclosing_bound, scan);
-            }
-        }
-        Value::Atom(name) => scan.record_atom(name),
-        #[cfg(feature = "surface")]
-        Value::Projected(_) => {}
-        Value::Unit
-        | Value::Bool(_)
-        | Value::IntAtom(_, _)
-        | Value::FloatAtom(_, _)
-        | Value::StrAtom(_)
-        | Value::ReflType(_)
-        | Value::CheckedTerm(_)
-        | Value::ReflTypeArity(_)
-        | Value::ReflTypeVar { .. }
-        | Value::ReflTypeName { .. }
-        | Value::DiagnosticText(_)
-        | Value::Primitive(_)
-        | Value::EvalClosure { .. }
-        | Value::StructuralRecur { .. } => {}
-    }
-}
-
-struct ValueRenderer<'a> {
-    newtype_type_heads: Option<&'a BTreeMap<(String, String), String>>,
-    render_closure_origins: bool,
-}
-
-impl ValueRenderer<'_> {
-    fn render(&self, v: &Value) -> String {
-        match v {
-            Value::Unit => "()".to_string(),
-            Value::Bool(true) => ".t".to_string(),
-            Value::Bool(false) => ".f".to_string(),
-            Value::IntAtom(d, ann) | Value::FloatAtom(d, ann) => match ann {
-                Some(t) => format!("{d}({})", t.rsplit('.').next().unwrap_or(t)),
-                None => d.clone(),
-            },
-            Value::StrAtom(s) => format!("{s:?}"),
-            Value::DiagnosticText(s) => format!("{s:?}"),
-            Value::ReflType(t) => format!(
-                "<type {}>",
-                crate::pass::typecheck_core::display_type(t.as_type())
-            ),
-            Value::CheckedTerm(_) => "<checked_term>".to_string(),
-            #[cfg(feature = "surface")]
-            Value::Projected(projected) => if projected.is_type() {
-                "<projected-type>"
-            } else {
-                "<projected-checked-term>"
-            }
-            .to_string(),
-            Value::ReflTypeArity(n) => format!("<arity {n}>"),
-            Value::ReflTypeVar { name, arity } => format!("<type-var {name}/{arity}>"),
-            Value::ReflTypeName {
-                segments,
-                param_arities,
-            } => format!("<type-name {} {:?}>", segments.join("."), param_arities),
-            Value::StructuralRecur { .. } => "<comptime-recur>".to_string(),
-            Value::Primitive(builtin) => builtin.public_name().to_string(),
-            Value::NewtypeMember(member) => self.newtype_head(&member.constructor).map_or_else(
-                || member.display.clone(),
-                |head| format!("{head}.{}", member.member_name),
-            ),
-            Value::Atom(name) => name.clone(),
-            Value::Data(data) => {
-                if let Some(identity) = data.structural_recur_identity() {
-                    return match identity {
-                        StructuralRecurDataIdentity::Primitive { .. } => {
-                            ComptimeBuiltin::StructuralRecur.public_name().to_owned()
-                        }
-                        StructuralRecurDataIdentity::InitialRejected => {
-                            "<structural-recur-initial-rejected>".to_owned()
-                        }
-                        StructuralRecurDataIdentity::SiteRejected { .. } => {
-                            "<structural-recur-origin-rejected>".to_owned()
-                        }
-                    };
-                }
-                let ctor = match &data.identity {
-                    DataConstructorIdentity::Newtype(identity) => {
-                        self.newtype_head(identity).map_or_else(
-                            || data.ctor().to_owned(),
-                            |head| format!("{head}.{}", identity.constructor_name),
-                        )
-                    }
-                    DataConstructorIdentity::Core(_) => data.ctor().to_owned(),
-                    DataConstructorIdentity::StructuralRecur(_) => {
-                        unreachable!("structural-recursion evaluator data renders opaquely")
-                    }
-                    #[cfg(feature = "surface")]
-                    DataConstructorIdentity::MarkedComptimeProof(_) => {
-                        "<marked-comptime-proof>".to_owned()
-                    }
-                    #[cfg(feature = "surface")]
-                    DataConstructorIdentity::FillContext(_) => "<fill-context>".to_owned(),
-                };
-                let arg_strs: Vec<String> =
-                    data.args().iter().map(|arg| self.render(arg)).collect();
-                format!("{ctor}({})", arg_strs.join(", "))
-            }
-            Value::CaseSplit {
-                scrutinee,
-                left_payload,
-                left,
-                right_payload,
-                right,
-            } => format!(
-                "case {} {{ left({left_payload}) -> {}, right({right_payload}) -> {} }}",
-                self.render(scrutinee),
-                self.render(left),
-                self.render(right),
-            ),
-            Value::Seq { value, body } => {
-                format!("{}; {}", self.render(value), self.render(body))
-            }
-            Value::Stuck(c, args) => {
-                let arg_strs: Vec<String> = args.iter().map(|arg| self.render(arg)).collect();
-                format!("{}({})", self.render(c), arg_strs.join(", "))
-            }
-            Value::EvalClosure { function, .. } => {
-                if self.render_closure_origins {
-                    render_closure_origin(function)
-                } else {
-                    render_closure_source(function)
-                }
-            }
-        }
-    }
-
-    fn newtype_head(&self, identity: &NewtypeCtorIdentity) -> Option<&str> {
-        self.newtype_type_heads?
-            .get(&(identity.module_path.clone(), identity.type_name.clone()))
-            .map(String::as_str)
-    }
-}
-
-fn render_closure_source(function: &EvalFunction) -> String {
-    let params = function
-        .params
-        .iter()
-        .map(|param| param.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!(
-        ".({params}) {{ {} }}",
-        render_eval_expr(&function.diagnostic_body)
-    )
-}
-
-fn render_eval_expr(expr: &EvalAstExpr) -> String {
-    match expr {
-        crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        Expr::Unit { .. } => "()".to_string(),
-        Expr::BoolLit { value: true, .. } => ".t".to_string(),
-        Expr::BoolLit { value: false, .. } => ".f".to_string(),
-        Expr::IntLit { digits, .. } | Expr::FloatLit { digits, .. } => digits.clone(),
-        Expr::StrLit { value, .. } => format!("{value:?}"),
-        Expr::Path { segments, .. } => segments.join("."),
-        Expr::Call { callee, args, .. } => {
-            let args = args
-                .iter()
-                .filter_map(|arg| match arg {
-                    CallArg::Value(value) => Some(render_eval_expr(value)),
-                    CallArg::Type(_) => None,
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{}({args})", render_eval_expr(callee))
-        }
-        Expr::Let {
-            name, value, body, ..
-        } => format!(
-            "let {name} = {}; {}",
-            render_eval_expr(value),
-            render_eval_expr(body)
-        ),
-        Expr::Seq { value, body, .. } => {
-            format!("{}; {}", render_eval_expr(value), render_eval_expr(body))
-        }
-        Expr::FnExpr { sig, body, .. } => {
-            let params = collect_value_param_names(&sig.params).join(", ");
-            format!(".({params}) {{ {} }}", render_eval_expr(body))
-        }
-        Expr::Elaborator { ext, .. }
-        | Expr::RecOrder { ext, .. }
-        | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
-        | Expr::Tuple { ext, .. }
-        | Expr::LabelValue { ext, .. }
-        | Expr::RowLet { ext, .. }
-        | Expr::FnPlaceholder { ext, .. }
-        | Expr::OpChain { ext, .. }
-        | Expr::RecCall { ext, .. }
-        | Expr::Ufcs { ext, .. }
-        | Expr::EnrichedTuple { ext, .. }
-        | Expr::EnrichedProject { ext, .. }
-        | Expr::EnrichedInject { ext, .. }
-        | Expr::EnrichedMatch { ext, .. }
-        | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedFieldGet { ext, .. }
-        | Expr::LowHostCall { ext, .. }
-        | Expr::LowModuleCall { ext, .. }
-        | Expr::LowQualifiedModuleCall { ext, .. }
-        | Expr::LowQualifiedNewtypeMember { ext, .. }
-        | Expr::LowNewtypeCtor { ext, .. }
-        | Expr::LowNewtypeProj { ext, .. }
-        | Expr::LowClosureCall { ext, .. }
-        | Expr::LowIndirectCall { ext, .. }
-        | Expr::LowTypeApplication { ext, .. }
-        | Expr::LowAbsurdCall { ext, .. }
-        | Expr::LowCpsProjectorApply { ext, .. }
-        | Expr::LowBoundRef { ext, .. }
-        | Expr::LowHostFnValueRef { ext, .. }
-        | Expr::LowModuleFnValueRef { ext, .. } => match *ext {},
-    }
-}
-
-fn render_closure_origin(function: &EvalFunction) -> String {
-    let owner = if function.owner_module_path.is_empty() {
-        String::new()
-    } else {
-        format!("{}.", function.owner_module_path)
-    };
-    let identity = match &function.source_origin {
-        EvalFunctionOrigin::Named { item } => format!("{owner}{item}"),
-        EvalFunctionOrigin::Anonymous { enclosing, span } => {
-            let enclosing = enclosing
-                .as_deref()
-                .map_or_else(String::new, |name| format!("{name}::"));
-            format!("{owner}{enclosing}<fn@{}-{}>", span.start, span.end)
-        }
-    };
-    let params = function
-        .value_groups
-        .iter()
-        .map(|group| {
-            let names = function.params[group.param_start..group.param_start + group.param_count]
-                .iter()
-                .map(|param| param.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("({names})")
-        })
-        .collect::<String>();
-    format!("<closure {identity}{params}>")
-}
-
 pub fn structural_recur_stuck_message(value: &Value, ctx: &EvalCtx<'_>) -> Option<String> {
     // Totality failures are represented internally as fault values, so a deep
     // but finite evaluation may wrap one in many ordinary value constructors.
@@ -11610,12 +10194,15 @@ fn structural_recur_recursive_stuck_message(
 
 #[cfg(test)]
 mod tests {
+    use super::artifact::tests::{lowered_package, reserved_shadow_artifact};
     use super::*;
     use crate::ast::Item;
     use crate::comptime::PUBLIC_COMPTIME_NAMES;
 
     mod differential_oracle;
     mod nf_eq_properties;
+    mod reflection_memo;
+    mod render;
 
     #[test]
     fn checked_signature_instantiation_preserves_empty_value_group() {
@@ -12093,20 +10680,22 @@ mod tests {
         let artifact = lowered_package(&[("x.kio", source)]);
         let cloned = artifact.clone();
         let rebuilt = lowered_package(&[("x.kio", source)]);
-        assert!(Arc::ptr_eq(&artifact.package, &cloned.package));
-        assert!(!Arc::ptr_eq(&artifact.package, &rebuilt.package));
-        assert_eq!(artifact.source_generation(), cloned.source_generation());
-        assert_ne!(artifact.source_generation(), rebuilt.source_generation());
-
         let module = &artifact.module("x").expect("artifact module").module;
-        let cloned_module = &cloned.module("x").expect("cloned module").module;
-        let rebuilt_module = &rebuilt.module("x").expect("rebuilt module").module;
-        let ctx = AuthenticatedEvalCtx::for_module(&artifact, module, "x")
-            .expect("authenticated artifact context");
-        let cloned_ctx = AuthenticatedEvalCtx::for_module(&cloned, cloned_module, "x")
-            .expect("authenticated cloned context");
-        let rebuilt_ctx = AuthenticatedEvalCtx::for_module(&rebuilt, rebuilt_module, "x")
-            .expect("authenticated rebuilt context");
+        let ctx = AuthenticatedEvalCtx::for_module(
+            artifact
+                .prepare_module("x")
+                .expect("authenticated artifact context"),
+        );
+        let cloned_ctx = AuthenticatedEvalCtx::for_module(
+            cloned
+                .prepare_module("x")
+                .expect("authenticated cloned context"),
+        );
+        let rebuilt_ctx = AuthenticatedEvalCtx::for_module(
+            rebuilt
+                .prepare_module("x")
+                .expect("authenticated rebuilt context"),
+        );
         let helper_expr = path_expr("__structural_recur__");
         let token = eval_authenticated(&helper_expr, &Env::new(), &ctx);
         let cloned_token = eval_authenticated(&helper_expr, &Env::new(), &cloned_ctx);
@@ -12199,22 +10788,21 @@ mod tests {
         let cloned = artifact.clone();
         let rebuilt = lowered_package(&[("x.kio", source)]);
         let module = &artifact.module("x").expect("artifact module").module;
-        let cloned_module = &cloned.module("x").expect("cloned module").module;
-        let rebuilt_module = &rebuilt.module("x").expect("rebuilt module").module;
         let eval_functions = SharedEvalFunctionCache::default();
         let closures = SharedFnClosureCache::default();
-        let ctx = AuthenticatedEvalCtx::for_module(&artifact, module, "x")
-            .expect("artifact context")
-            .with_eval_function_cache(eval_functions.clone())
-            .with_fn_closure_cache(closures.clone());
-        let cloned_ctx = AuthenticatedEvalCtx::for_module(&cloned, cloned_module, "x")
-            .expect("cloned context")
-            .with_eval_function_cache(eval_functions.clone())
-            .with_fn_closure_cache(closures.clone());
-        let rebuilt_ctx = AuthenticatedEvalCtx::for_module(&rebuilt, rebuilt_module, "x")
-            .expect("rebuilt context")
-            .with_eval_function_cache(eval_functions.clone())
-            .with_fn_closure_cache(closures.clone());
+        let ctx = AuthenticatedEvalCtx::for_module(
+            artifact.prepare_module("x").expect("artifact context"),
+        )
+        .with_eval_function_cache(eval_functions.clone())
+        .with_fn_closure_cache(closures.clone());
+        let cloned_ctx =
+            AuthenticatedEvalCtx::for_module(cloned.prepare_module("x").expect("cloned context"))
+                .with_eval_function_cache(eval_functions.clone())
+                .with_fn_closure_cache(closures.clone());
+        let rebuilt_ctx =
+            AuthenticatedEvalCtx::for_module(rebuilt.prepare_module("x").expect("rebuilt context"))
+                .with_eval_function_cache(eval_functions.clone())
+                .with_fn_closure_cache(closures.clone());
         let held = path_expr("held");
 
         let first = eval_authenticated(&held, &Env::new(), &ctx);
@@ -12295,25 +10883,23 @@ mod tests {
     fn authenticated_compile_and_closure_caches_preserve_cold_warm_and_shared_results() {
         let artifact = lowered_package(&[("x.kio", "module x; fn held(value: .) -> . { value }")]);
         let same_generation = artifact.clone();
-        let module = &artifact.module("x").expect("artifact module").module;
-        let same_generation_module = &same_generation
-            .module("x")
-            .expect("same-generation module")
-            .module;
         let eval_functions = SharedEvalFunctionCache::default();
         let closures = SharedFnClosureCache::default();
         let metrics = Arc::new(EvalMetrics::default());
-        let ctx = AuthenticatedEvalCtx::for_module(&artifact, module, "x")
-            .expect("artifact context")
-            .with_metrics(metrics.clone())
-            .with_eval_function_cache(eval_functions.clone())
-            .with_fn_closure_cache(closures.clone());
-        let same_generation_ctx =
-            AuthenticatedEvalCtx::for_module(&same_generation, same_generation_module, "x")
-                .expect("same-generation context")
-                .with_metrics(metrics.clone())
-                .with_eval_function_cache(eval_functions.clone())
-                .with_fn_closure_cache(closures.clone());
+        let ctx = AuthenticatedEvalCtx::for_module(
+            artifact.prepare_module("x").expect("artifact context"),
+        )
+        .with_metrics(metrics.clone())
+        .with_eval_function_cache(eval_functions.clone())
+        .with_fn_closure_cache(closures.clone());
+        let same_generation_ctx = AuthenticatedEvalCtx::for_module(
+            same_generation
+                .prepare_module("x")
+                .expect("same-generation context"),
+        )
+        .with_metrics(metrics.clone())
+        .with_eval_function_cache(eval_functions.clone())
+        .with_fn_closure_cache(closures.clone());
         let held = path_expr("held");
 
         let cold = eval_authenticated(&held, &Env::new(), &ctx);
@@ -12386,11 +10972,11 @@ mod tests {
         let evaluate = |artifact: &EvalArtifact,
                         eval_functions: SharedEvalFunctionCache,
                         closures: SharedFnClosureCache| {
-            let module = &artifact.module("x").expect("x module").module;
-            let ctx = AuthenticatedEvalCtx::for_module(artifact, module, "x")
-                .expect("artifact context")
-                .with_eval_function_cache(eval_functions)
-                .with_fn_closure_cache(closures);
+            let ctx = AuthenticatedEvalCtx::for_module(
+                artifact.prepare_module("x").expect("artifact context"),
+            )
+            .with_eval_function_cache(eval_functions)
+            .with_fn_closure_cache(closures);
             let held = eval_authenticated(&path_expr("held"), &Env::new(), &ctx);
             apply(held, vec![Value::Unit], &ctx)
         };
@@ -12441,10 +11027,10 @@ mod tests {
              lambda: &Expr<EvalPhase>,
              fuel: Value,
              exact_call_memo: SharedExactCallMemoCache| {
-                let module = &artifact.module("x").expect("x module").module;
-                let ctx = AuthenticatedEvalCtx::for_module(artifact, module, "x")
-                    .expect("artifact context")
-                    .with_exact_call_memo_cache(exact_call_memo);
+                let ctx = AuthenticatedEvalCtx::for_module(
+                    artifact.prepare_module("x").expect("artifact context"),
+                )
+                .with_exact_call_memo_cache(exact_call_memo);
                 let closure = eval_authenticated(lambda, &Env::new(), &ctx);
                 let Value::EvalClosure { function, .. } = &closure else {
                     panic!("lambda must evaluate to a closure")
@@ -12525,11 +11111,13 @@ mod tests {
         let eval_functions = SharedEvalFunctionCache::default();
         let closures = SharedFnClosureCache::default();
         let evaluate = |artifact: &EvalArtifact| {
-            let module = &artifact.module("consumer").expect("consumer module").module;
-            let ctx = AuthenticatedEvalCtx::for_module(artifact, module, "consumer")
-                .expect("consumer context")
-                .with_eval_function_cache(eval_functions.clone())
-                .with_fn_closure_cache(closures.clone());
+            let ctx = AuthenticatedEvalCtx::for_module(
+                artifact
+                    .prepare_module("consumer")
+                    .expect("consumer context"),
+            )
+            .with_eval_function_cache(eval_functions.clone())
+            .with_fn_closure_cache(closures.clone());
             let top = eval_authenticated(&path_expr("top"), &Env::new(), &ctx);
             apply(top, vec![Value::Unit], &ctx)
         };
@@ -13026,6 +11614,7 @@ mod tests {
 
     fn test_source_unit() -> EvalRef<EvalAstExpr> {
         EvalRef::new(Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(zero_span()),
         })
@@ -13341,6 +11930,7 @@ mod tests {
         let checked = |ty: Type<EvalPhase>| {
             checked_term_value(
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 },
@@ -14504,6 +13094,7 @@ mod tests {
                     branches[index] = Expr::Seq {
                         occurrence: Default::default(),
                         value: Box::new(Expr::Unit {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             meta: zero_meta(),
                         }),
@@ -14752,6 +13343,7 @@ mod tests {
             CallArg::Value(Expr::synth_call(
                 path_expr("reject"),
                 vec![CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 })],
@@ -14760,6 +13352,7 @@ mod tests {
         };
         let unit = || {
             CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             })
@@ -15129,6 +13722,7 @@ mod tests {
                 assert!(matches!(
                     eval(
                         &Expr::Unit {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             meta: zero_meta()
                         },
@@ -15194,6 +13788,7 @@ mod tests {
                 caps: (),
             },
             vec![CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             })],
@@ -16683,6 +15278,7 @@ mod tests {
 
         let clean = eval(
             &Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -16825,6 +15421,7 @@ mod tests {
             Expr::synth_call(
                 path_expr("reject"),
                 vec![CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 })],
@@ -16842,6 +15439,7 @@ mod tests {
         };
         let unit = || {
             CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             })
@@ -17574,6 +16172,7 @@ mod tests {
                         CallArg::Value(path_expr("A")),
                         CallArg::Value(path_expr("B")),
                         CallArg::Value(Expr::Unit {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             meta: zero_meta(),
                         }),
@@ -17700,6 +16299,7 @@ mod tests {
             "left".to_string(),
             checked_term_value(
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 },
@@ -17710,6 +16310,7 @@ mod tests {
             "right".to_string(),
             checked_term_value(
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 },
@@ -17755,6 +16356,7 @@ mod tests {
                     CallArg::Type(unit_ty.clone()),
                     CallArg::Type(unit_ty.clone()),
                     CallArg::Value(Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     }),
@@ -18379,6 +16981,7 @@ mod tests {
         ));
         let arg_packet = EvalRef::new(CheckedTerm::new(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -18422,12 +17025,14 @@ mod tests {
         assert_eq!(template.template_value_arity(), 2);
 
         let first = Expr::<PrePrime>::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(Span::new(1, 3)),
         };
         let nested_span = Span::new(17, 31);
         let enclosing_span = Span::new(5, 31);
         let current_value = Expr::<PrePrime>::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(Expr::Path {
@@ -18844,6 +17449,7 @@ mod tests {
         let ctx = EvalCtx::new().with_metrics(metrics.clone());
         let checked = Value::CheckedTerm(EvalRef::new(CheckedTerm::new(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -19647,218 +18253,6 @@ mod tests {
         assert_eq!(value_to_repl_string(&a_data, a), "Wrap.mk(())");
         assert_eq!(value_to_repl_string(&a_data, consumer), "n.Wrap.mk(())");
         assert_eq!(value_to_repl_string(&a_data, selective), "Wrap.mk(())");
-    }
-
-    #[test]
-    fn repl_rendering_requalifies_distinct_newtype_owners_without_alias_collisions() {
-        let pkg = lowered_package(&[
-            (
-                "a/one.kio",
-                "module a/one; pub newtype Wrap : . { pub constructor mk; pub projector get; };",
-            ),
-            (
-                "b/two.kio",
-                "module b/two; pub newtype Wrap : . { pub constructor mk; pub projector get; };",
-            ),
-            (
-                "left.kio",
-                "module left; import a/one as _q0; fn keep() -> . { () }",
-            ),
-            (
-                "right.kio",
-                "module right; import b/two as _q0; fn keep() -> . { () }",
-            ),
-            ("occupied.kio", "module occupied; fn keep() -> . { () }"),
-            (
-                "consumer.kio",
-                "module consumer; import occupied as _q1; fn _q0() -> . { () }",
-            ),
-        ]);
-        let left = &pkg.module("left").expect("left module").module;
-        let right = &pkg.module("right").expect("right module").module;
-        let consumer = &pkg.module("consumer").expect("consumer module").module;
-        let path = |parts: &[&str]| {
-            parts
-                .iter()
-                .map(|part| PathSegment::synth((*part).to_owned(), zero_span()))
-                .collect::<Vec<_>>()
-        };
-        let left_ctx = EvalCtx::for_module(&pkg, left, "left").expect("left context");
-        let right_ctx = EvalCtx::for_module(&pkg, right, "right").expect("right context");
-
-        let left_ctor =
-            resolve_module_newtype_member(&left_ctx, left, &path(&["_q0", "Wrap", "mk"]))
-                .expect("left imported constructor");
-        let right_projector =
-            resolve_module_newtype_member(&right_ctx, right, &path(&["_q0", "Wrap", "get"]))
-                .expect("right imported projector");
-        let residual = data_value(
-            "__pair__",
-            vec![
-                apply(
-                    Value::NewtypeMember(left_ctor),
-                    vec![Value::Unit],
-                    &left_ctx,
-                ),
-                Value::NewtypeMember(right_projector),
-            ],
-        );
-
-        assert_eq!(
-            value_to_string(&residual),
-            "__pair__(_q0.Wrap.mk(()), _q0.Wrap.get)"
-        );
-        assert_eq!(
-            value_to_repl_string(&residual, consumer),
-            "import a/one as _q2;\nimport b/two as _q3;\n\n__pair__(_q2.Wrap.mk(()), _q3.Wrap.get)"
-        );
-    }
-
-    #[test]
-    fn repl_rendering_avoids_residual_atom_heads_when_allocating_imports() {
-        let pkg = lowered_package(&[
-            (
-                "inner/a.kio",
-                "module inner/a; pub newtype Wrap : . { pub constructor mk; pub projector get; };",
-            ),
-            ("consumer.kio", "module consumer; fn keep() -> . { () }"),
-        ]);
-        let inner = &pkg.module("inner/a").expect("inner/a module").module;
-        let consumer = &pkg.module("consumer").expect("consumer module").module;
-        let ctx = EvalCtx::for_module(&pkg, inner, "inner/a").expect("inner/a context");
-        let path = ["Wrap", "mk"]
-            .into_iter()
-            .map(|part| PathSegment::synth(part.to_owned(), zero_span()))
-            .collect::<Vec<_>>();
-        let ctor = resolve_module_newtype_member(&ctx, inner, &path).expect("inner/a.Wrap.mk");
-        let wrapped = apply(Value::NewtypeMember(ctor), vec![Value::Unit], &ctx);
-        let residual = data_value("__pair__", vec![Value::Atom("_q0".to_owned()), wrapped]);
-
-        assert_eq!(
-            value_to_repl_string(&residual, consumer),
-            "import inner/a as _q1;\n\n__pair__(_q0, _q1.Wrap.mk(()))"
-        );
-    }
-
-    #[test]
-    fn repl_rendering_names_named_closures_and_suffix_parameters() {
-        let pkg = lowered_package(&[
-            (
-                "provider.kio",
-                "module provider; pub pure fn wrap(x: .)(y: .) -> . { x; y }",
-            ),
-            (
-                "consumer.kio",
-                "module consumer; import provider as p; fn expose() -> . { p.wrap }",
-            ),
-        ]);
-        let consumer = &pkg.module("consumer").expect("consumer").module;
-        let expose = find_module_fn(consumer, "expose").expect("expose fn");
-        let ctx = EvalCtx::for_module(&pkg, consumer, "consumer").expect("consumer context");
-        let closure = eval(&expose.body, &Env::new(), &ctx);
-
-        assert_eq!(
-            value_to_repl_string(&closure, consumer),
-            "<closure provider.wrap(x)(y)>"
-        );
-
-        let suffix = apply(closure, vec![Value::Unit], &ctx);
-        assert_eq!(
-            value_to_repl_string(&suffix, consumer),
-            "<closure provider.wrap(y)>"
-        );
-    }
-
-    #[test]
-    fn repl_rendering_names_anonymous_closures_by_owner_and_source_span() {
-        let pkg = lowered_package(&[
-            (
-                "provider.kio",
-                "module provider; pub pure fn make() -> . -> . { .(z: .) -> . { z } }",
-            ),
-            (
-                "consumer.kio",
-                "module consumer; import provider as p; fn expose() -> . { p.make() }",
-            ),
-        ]);
-        let provider = &pkg.module("provider").expect("provider").module;
-        let make = find_module_fn(provider, "make").expect("make fn");
-        let Expr::FnExpr { meta, .. } = &make.body else {
-            panic!("make body should be a lambda");
-        };
-        let consumer = &pkg.module("consumer").expect("consumer").module;
-        let expose = find_module_fn(consumer, "expose").expect("expose fn");
-        let ctx = EvalCtx::for_module(&pkg, consumer, "consumer").expect("consumer context");
-        let closure = eval(&expose.body, &Env::new(), &ctx);
-        let expected = format!(
-            "<closure provider.make::<fn@{}-{}>(z)>",
-            meta.span.start, meta.span.end
-        );
-
-        assert_eq!(value_to_repl_string(&closure, consumer), expected);
-    }
-
-    #[test]
-    fn repl_rendering_preserves_private_saturated_and_residual_newtype_members() {
-        let pkg = lowered_package(&[
-            (
-                "secret.kio",
-                "module secret; \
-                 newtype Hidden[A, B, C] : A & B & C { constructor mk; projector get; };",
-            ),
-            ("consumer.kio", "module consumer; fn keep() -> . { () }"),
-        ]);
-        let secret = &pkg.module("secret").expect("secret").module;
-        let consumer = &pkg.module("consumer").expect("consumer").module;
-        let ctx = EvalCtx::for_module(&pkg, secret, "secret").expect("secret context");
-        let path = |parts: &[&str]| {
-            parts
-                .iter()
-                .map(|part| PathSegment::synth((*part).to_owned(), zero_span()))
-                .collect::<Vec<_>>()
-        };
-        let ctor = resolve_module_newtype_member(&ctx, secret, &path(&["Hidden", "mk"]))
-            .expect("private constructor");
-        let projector = resolve_module_newtype_member(&ctx, secret, &path(&["Hidden", "get"]))
-            .expect("private projector");
-        let saturated = apply(
-            Value::NewtypeMember(ctor.clone()),
-            vec![
-                Value::Atom("left".to_owned()),
-                Value::Atom("middle".to_owned()),
-                Value::Atom("right".to_owned()),
-            ],
-            &ctx,
-        );
-        let partial = apply(
-            Value::NewtypeMember(ctor),
-            vec![
-                Value::Atom("partial_left".to_owned()),
-                Value::Atom("partial_right".to_owned()),
-            ],
-            &ctx,
-        );
-        let residual_projector = apply(
-            Value::NewtypeMember(projector),
-            vec![Value::Atom("opaque".to_owned())],
-            &ctx,
-        );
-        assert!(matches!(saturated, Value::Data(_)));
-        assert!(matches!(partial, Value::Stuck(_, _)));
-        assert!(matches!(residual_projector, Value::Stuck(_, _)));
-        let residual = data_value(
-            "__pair__",
-            vec![
-                saturated,
-                data_value("__pair__", vec![partial, residual_projector]),
-            ],
-        );
-
-        assert_eq!(
-            value_to_repl_string(&residual, consumer),
-            "import secret as _q0;\n\n\
-             __pair__(_q0.Hidden.mk(__pair__(left, __pair__(middle, right))), __pair__(_q0.Hidden.mk(partial_left, partial_right), _q0.Hidden.get(opaque)))"
-        );
     }
 
     #[test]
@@ -21071,6 +19465,7 @@ mod tests {
         let checked_unit = || {
             checked_term_value(
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 },
@@ -21916,6 +20311,7 @@ mod tests {
         let unit_term = || {
             checked_term_value(
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 },
@@ -22318,6 +20714,7 @@ mod tests {
         };
         let pair_value = checked_term_value(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -22353,6 +20750,7 @@ mod tests {
         };
         let payload = checked_term_value(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -22384,6 +20782,7 @@ mod tests {
         };
         let scrutinee = checked_term_value(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -22405,6 +20804,7 @@ mod tests {
         // __intrinsic_absurd__ over a bottom-typed value.
         let bottom_value = checked_term_value(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -22420,6 +20820,7 @@ mod tests {
         // __intrinsic_if_then_else__ with unit-typed condition + branches.
         let condition = checked_term_value(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -22451,6 +20852,7 @@ mod tests {
             vec![
                 checked_term_value(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -22458,6 +20860,7 @@ mod tests {
                 ),
                 checked_term_value(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -22479,6 +20882,7 @@ mod tests {
             Value::Primitive(ComptimeBuiltin::TermType),
             vec![checked_term_value(
                 Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 },
@@ -22578,6 +20982,7 @@ mod tests {
         let fn_value = checked_term_value(path_expr("g"), call_fn_ty.clone());
         let arg_packet = checked_term_value(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -22629,6 +21034,99 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn term_specialize_resolves_closed_nominals_and_preserves_binder_order() {
+        let package = lowered_package(&[
+            (
+                "owner.kio",
+                "module owner; host type Box[A]; \
+                 fn keep[A][B](value: Box(A) & Box(B)) -> Box(A) & Box(B) { value }",
+            ),
+            ("other.kio", "module other; host type Box[A];"),
+        ]);
+        let owner = &package.module("owner").expect("owner module").module;
+        let ctx = EvalCtx::for_module(&package, owner, "owner").expect("owner context");
+        let boxed = |module: &str, arg| {
+            Type::synth_path(vec![module.into(), "Box".into()], vec![arg], zero_span())
+        };
+        let product = |left, right| Type::Product {
+            left: Box::new(left),
+            right: Box::new(right),
+            meta: zero_meta(),
+        };
+        let pattern = product(
+            boxed("owner", type_path("A")),
+            boxed("owner", type_path("B")),
+        );
+        let mut scheme = Type::synth_function(vec![pattern.clone()], pattern.clone(), zero_span());
+        for name in ["B", "A"] {
+            scheme = Type::Forall {
+                param: TypeParam {
+                    name: name.into(),
+                    span: zero_span(),
+                    kind: None,
+                },
+                body: Box::new(scheme),
+                meta: zero_meta(),
+            };
+        }
+        let term = checked_term_value(path_expr("keep"), scheme);
+        let target = product(
+            boxed("owner", Type::Unit { meta: zero_meta() }),
+            boxed("owner", Type::Bottom { meta: zero_meta() }),
+        );
+        let specialize = |target| {
+            apply(
+                Value::Primitive(ComptimeBuiltin::TermSpecialize),
+                vec![
+                    term.clone(),
+                    refl_type_value(pattern.clone()),
+                    refl_type_value(target),
+                ],
+                &ctx,
+            )
+        };
+        let result = specialize(target.clone());
+        let Value::Data(success) = &result else {
+            panic!("closed nominal specialization did not return a sum: {result:?}")
+        };
+        assert_eq!(success.ctor(), "__left__", "{result:?}");
+        let [Value::CheckedTerm(specialized)] = success.args() else {
+            panic!("specialization success did not carry a checked term: {result:?}")
+        };
+        assert_eq!(
+            specialized.ty(),
+            &Type::synth_function(vec![target.clone()], target, zero_span()),
+        );
+        let CheckedTermNode::TermTypeApp {
+            fn_value: first,
+            arg: Type::Bottom { .. },
+        } = specialized.node.as_ref()
+        else {
+            panic!("second binder must receive bottom: {specialized:?}")
+        };
+        assert!(matches!(
+            first.node.as_ref(),
+            CheckedTermNode::TermTypeApp {
+                arg: Type::Unit { .. },
+                ..
+            }
+        ));
+
+        let miss = specialize(product(
+            boxed("other", Type::Unit { meta: zero_meta() }),
+            boxed("owner", Type::Bottom { meta: zero_meta() }),
+        ));
+        assert!(
+            matches!(&miss, Value::Data(outer)
+                if outer.ctor() == "__right__"
+                    && matches!(outer.args(), [Value::Data(inner)]
+                        if inner.ctor() == "__left__"
+                            && matches!(inner.args(), [Value::Unit]))),
+            "different nominal owners must be a structural miss: {miss:?}"
+        );
     }
 
     #[test]
@@ -22961,6 +21459,7 @@ mod tests {
                 refl_type_value(unit.clone()),
                 checked_term_value(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -23156,6 +21655,7 @@ mod tests {
                 refl_type_value(unit.clone()),
                 checked_term_value(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -24054,6 +22554,7 @@ mod tests {
         };
         let value = EvalRef::new(CheckedTerm::new(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -24192,6 +22693,7 @@ mod tests {
             ProjectedTermConstruction::Pair {
                 left: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -24199,6 +22701,7 @@ mod tests {
                 )),
                 right: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -24716,6 +23219,7 @@ mod tests {
                     params: vec![unit.clone()],
                     arg_packet: EvalRef::new(CheckedTerm::new(
                         Expr::Unit {
+                            source_trivia: Default::default(),
                             occurrence: Default::default(),
                             meta: zero_meta(),
                         },
@@ -24883,6 +23387,7 @@ mod tests {
                 params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -24976,6 +23481,7 @@ mod tests {
                 params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -25075,6 +23581,7 @@ mod tests {
                 params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -25153,6 +23660,7 @@ mod tests {
                 params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -25202,6 +23710,7 @@ mod tests {
                 params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -25235,6 +23744,7 @@ mod tests {
                 params: vec![unit.clone()],
                 arg_packet: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -25252,6 +23762,7 @@ mod tests {
             ProjectedTermConstruction::Absurd {
                 bottom_value: EvalRef::new(CheckedTerm::new(
                     Expr::Unit {
+                        source_trivia: Default::default(),
                         occurrence: Default::default(),
                         meta: zero_meta(),
                     },
@@ -25358,6 +23869,53 @@ mod tests {
         assert!(
             matches!(&instantiated, Value::Data(d) if d.ctor() == "__left__"),
             "{instantiated:?}"
+        );
+    }
+
+    #[test]
+    fn apply_reflection_type_instantiate_non_forall_returns_diagnostic() {
+        let result = apply(
+            Value::Primitive(ComptimeBuiltin::TypeInstantiate),
+            vec![
+                refl_type_value(Type::Unit { meta: zero_meta() }),
+                refl_type_value(Type::Unit { meta: zero_meta() }),
+            ],
+            &EvalCtx::new(),
+        );
+        assert!(
+            matches!(&result, Value::Data(data)
+                if data.ctor() == "__right__"
+                    && matches!(data.args(), [Value::DiagnosticText(message)]
+                        if message.contains("forall"))),
+            "a non-forall reflected type must return a diagnostic: {result:?}"
+        );
+    }
+
+    #[test]
+    fn apply_reflection_type_instantiate_higher_kind_returns_diagnostic() {
+        let scheme = Type::Forall {
+            param: TypeParam {
+                name: "F".into(),
+                span: zero_span(),
+                kind: Some(crate::ast::Kind::arrow_chain(1)),
+            },
+            body: Box::new(Type::Unit { meta: zero_meta() }),
+            meta: zero_meta(),
+        };
+        let result = apply(
+            Value::Primitive(ComptimeBuiltin::TypeInstantiate),
+            vec![
+                refl_type_value(scheme),
+                refl_type_value(Type::Unit { meta: zero_meta() }),
+            ],
+            &EvalCtx::new(),
+        );
+        assert!(
+            matches!(&result, Value::Data(data)
+                if data.ctor() == "__right__"
+                    && matches!(data.args(), [Value::DiagnosticText(message)]
+                        if message.contains("higher-kinded") && message.contains('F'))),
+            "a structural higher-kinded argument must return a diagnostic: {result:?}"
         );
     }
 
@@ -25982,33 +24540,13 @@ mod tests {
         );
     }
 
-    fn lowered_package(mods: &[(&str, &str)]) -> EvalArtifact {
-        use std::path::PathBuf;
-        let parsed: Vec<(PathBuf, _)> = mods
-            .iter()
-            .map(|(path, src)| {
-                let surface = crate::pass::parser::parse(src).expect("parse");
-                let desugared = crate::pass::desugar::desugar_module(surface).expect("desugar");
-                (PathBuf::from(path), desugared)
-            })
-            .collect();
-        let (lowered, _) =
-            crate::pass::label_elab::elaborate_package(parsed, None).expect("label_elab");
-        let package: crate::pass::resolve::Package<SourcePhase> =
-            crate::pass::resolve::Package::build(std::path::Path::new(""), lowered, None)
-                .expect("package build");
-        package.resolve_imports().expect("resolve imports");
-        let package = crate::pass::alpha_normalize::normalize_package(&package);
-        crate::pass::substitute::substitute_package_for_eval(&package, &Elaborations::new())
-            .expect("evaluator artifact")
-    }
-
     #[test]
     fn checked_term_serialization_preserves_nested_type_binders() {
         use crate::pass::typecheck_core::PrimeTypeRequalifier;
 
         let unit = EvalRef::new(CheckedTerm::new(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -26435,95 +24973,27 @@ mod tests {
         );
     }
 
-    fn reserved_shadow_artifact() -> EvalArtifact {
-        use std::path::PathBuf;
-
-        let sources = [
-            (
-                "provider.kio",
-                "module provider; import __comptime__; \
-                 pub fn shadow(proof: .)(left: ., middle: ., right: .) -> . { left }",
-            ),
-            (
-                "selective.kio",
-                "module selective; import __comptime__; import provider(shadow); fn keep() -> . { () }",
-            ),
-            (
-                "qualified.kio",
-                "module qualified; import __comptime__; import provider as p; fn keep() -> . { () }",
-            ),
-            (
-                "builtin.kio",
-                "module builtin; import __comptime__; fn keep() -> . { () }",
-            ),
-        ];
-        let parsed = sources
-            .iter()
-            .map(|(path, source)| {
-                let surface = crate::pass::parser::parse(source).expect("parse shadow package");
-                let desugared =
-                    crate::pass::desugar::desugar_module(surface).expect("desugar shadow package");
-                (PathBuf::from(path), desugared)
-            })
-            .collect();
-        let (mut lowered, _) = crate::pass::label_elab::elaborate_package(parsed, None)
-            .expect("label-elaborate shadow package");
-        for (_, module) in &mut lowered {
-            match module_path_string(module).as_str() {
-                "provider" => {
-                    let def = module
-                        .items
-                        .iter_mut()
-                        .find_map(|item| match item {
-                            Item::FnDef(def) if def.name == "shadow" => Some(def),
-                            _ => None,
-                        })
-                        .expect("provider shadow definition");
-                    def.name = "__structural_recur__".to_owned();
-                }
-                "selective" => {
-                    let import_item = module
-                        .imports
-                        .iter_mut()
-                        .find_map(|import_| match &mut import_.kind {
-                            ImportKind::Selective { items, .. } => items.first_mut(),
-                            _ => None,
-                        })
-                        .expect("selective shadow import");
-                    let crate::ast::ImportItem::Name { name, .. } = import_item else {
-                        panic!("ordinary selective shadow import")
-                    };
-                    *name = "__structural_recur__".to_owned();
-                }
-                _ => {}
-            }
-        }
-        let package: crate::pass::resolve::Package<SourcePhase> =
-            crate::pass::resolve::Package::build(std::path::Path::new(""), lowered, None)
-                .expect("shadow package build");
-        package.resolve_imports().expect("resolve shadow uses");
-        let package = crate::pass::alpha_normalize::normalize_package(&package);
-        crate::pass::substitute::substitute_package_for_eval(&package, &Elaborations::new())
-            .expect("shadow evaluator artifact")
-    }
-
     #[test]
     fn ordinary_resolution_precedes_structural_recur_authority_for_every_path_shape() {
         let artifact = reserved_shadow_artifact();
         let proof = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: zero_meta(),
         };
         let grouped_args = vec![
             CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }),
             CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }),
             CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             }),
@@ -26543,12 +25013,11 @@ mod tests {
             ("selective", vec!["__structural_recur__"]),
             ("qualified", vec!["p", "__structural_recur__"]),
         ] {
-            let module = &artifact
-                .module(module_path)
-                .unwrap_or_else(|| panic!("{module_path} module"))
-                .module;
-            let ctx = AuthenticatedEvalCtx::for_module(&artifact, module, module_path)
-                .expect("ordinary shadow context");
+            let ctx = AuthenticatedEvalCtx::for_module(
+                artifact
+                    .prepare_module(module_path)
+                    .expect("ordinary shadow context"),
+            );
             let callee = path(&segments);
             let bare = eval_authenticated(&callee, &Env::new(), &ctx);
             assert!(
@@ -26573,9 +25042,9 @@ mod tests {
             ));
         }
 
-        let builtin_module = &artifact.module("builtin").expect("builtin module").module;
-        let builtin_ctx = AuthenticatedEvalCtx::for_module(&artifact, builtin_module, "builtin")
-            .expect("builtin context");
+        let builtin_ctx = AuthenticatedEvalCtx::for_module(
+            artifact.prepare_module("builtin").expect("builtin context"),
+        );
         let builtin =
             eval_authenticated(&path(&["__structural_recur__"]), &Env::new(), &builtin_ctx);
         assert!(structural_recur_primitive_site(&builtin).is_some());
@@ -26622,6 +25091,7 @@ mod tests {
             callee,
             vec![
                 CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 }),
@@ -26851,6 +25321,7 @@ mod tests {
             let proof = Expr::synth_call(
                 path_expr("computed"),
                 vec![CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 })],
@@ -26899,6 +25370,7 @@ mod tests {
             let proof = Expr::synth_call(
                 path_expr("reject"),
                 vec![CallArg::Value(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: zero_meta(),
                 })],
@@ -26951,6 +25423,7 @@ mod tests {
         );
         let checked = CheckedTerm::new(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },
@@ -27566,6 +26039,7 @@ mod tests {
         };
         let scrutinee = checked_term_value(
             Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: zero_meta(),
             },

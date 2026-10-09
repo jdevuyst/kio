@@ -25,7 +25,7 @@
 //!    path starts at this standalone-check step.
 //! 8. [`structural_recovery`] converts `Prime → Enriched`, and [`optimize`]
 //!    performs backend-neutral optimizations over that enriched IR.
-//! 9. [`recover_to_low`] converts `Enriched → Routed` and classifies call
+//! 9. [`route`] converts `Enriched → Routed` and classifies call
 //!    sites into `Expr::Low*` variants for host-backend dispatch.
 //! 10. [`capabilities`] annotates the Routed package before host emission.
 //!     The Kio' backend instead emits validated, canonical Prime directly.
@@ -37,6 +37,8 @@
 pub(crate) mod alpha_normalize;
 pub(crate) mod binder_presentation;
 pub mod capabilities;
+#[doc(hidden)]
+pub mod contract;
 pub mod lexer;
 pub mod optimize;
 pub mod parser;
@@ -44,8 +46,8 @@ pub(crate) mod placeholder;
 pub(crate) mod purity;
 #[cfg(any(feature = "surface", feature = "cli"))]
 pub(crate) mod rec_headers;
-pub mod recover_to_low;
 pub mod resolve;
+pub mod route;
 pub mod structural_recovery;
 pub mod tree_skeleton;
 pub mod typecheck_core;

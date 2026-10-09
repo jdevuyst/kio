@@ -2582,7 +2582,7 @@ pub(crate) struct GoalStore {
 impl Default for GoalStore {
     fn default() -> Self {
         let nonce = NEXT_GOAL_STORE_NONCE
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
                 next.checked_add(1)
             })
             .expect("process exhausted unique type-inference goal-store identities");
@@ -3341,7 +3341,7 @@ impl GoalStore {
         );
         let token = if self.nonce.is_process() {
             NEXT_GOAL_DELTA_TOKEN
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
                     next.checked_add(1)
                 })
                 .map(GoalDeltaToken)
@@ -12897,6 +12897,7 @@ mod tests {
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(sp()),
         };
@@ -12966,6 +12967,7 @@ mod tests {
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let source = Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: Meta::new(sp()),
         };
@@ -13198,6 +13200,7 @@ mod tests {
             sig: crate::ast::Signature::new(Vec::new()),
             ret_ty: Some(mixed.ty().clone_type()),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(sp()),
             }),
@@ -13283,10 +13286,12 @@ mod tests {
                 ),
                 annotation: None,
                 value: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(sp()),
                 }),
                 body: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(sp()),
                 }),
@@ -13338,6 +13343,7 @@ mod tests {
                 sig: crate::ast::Signature::new(Vec::new()),
                 ret_ty: Some(replacement_open.ty().clone_type()),
                 body: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(sp()),
                 }),
@@ -13345,6 +13351,7 @@ mod tests {
                 caps: (),
             }),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(sp()),
             }),
@@ -13381,10 +13388,12 @@ mod tests {
                 ),
                 annotation: None,
                 value: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(sp()),
                 }),
                 body: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(sp()),
                 }),
@@ -14686,6 +14695,7 @@ mod tests {
             ]),
             ret_ty: Some(open.ty().clone_type()),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(sp()),
             }),
@@ -14733,6 +14743,7 @@ mod tests {
             })]),
             ret_ty: Some(open_return.ty().clone_type()),
             body: Box::new(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(sp()),
             }),
@@ -14781,10 +14792,12 @@ mod tests {
                 ),
                 annotation: None,
                 value: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(sp()),
                 }),
                 body: Box::new(Expr::Unit {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     meta: Meta::new(sp()),
                 }),

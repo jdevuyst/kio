@@ -4981,6 +4981,44 @@ fn ok() -> . { () }
     }
 
     #[test]
+    fn recursive_members_are_impure_across_eager_lazy_and_tooling_parses() {
+        for source in [
+            "module x; pub rec(loop) fn f[A](x: A) -> A { rec f(A, x) }",
+            "module x; rec(loop) { pub fn f(x: .) { rec g(x) }; fn g(x: .) { x } }",
+        ] {
+            let eager = parse(source).expect("recursive declaration");
+            let lazy = parse_lazy(source).expect("deferred recursive declaration");
+            let Item::RecGroup(group, _) = &lazy.module().items[0] else {
+                panic!("recursive group")
+            };
+            for member in &group.members {
+                let _: &() = &member.purity;
+                assert!(matches!(member.body, Expr::Unit { .. }));
+            }
+            assert_eq!(lazy.force_all().expect("recursive bodies"), eager);
+            let probe = probe_tooling_source(source, None);
+            assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
+            let Some(ToolingSyntax::Module(tooling)) = probe.syntax else {
+                panic!("tooling module")
+            };
+            assert_eq!(tooling, eager);
+        }
+    }
+
+    #[test]
+    fn recursive_member_body_errors_remain_deferred() {
+        for source in [
+            "module x; rec(loop) fn f() { let x = ; () }",
+            "module x; rec(loop) { fn good() { () }; fn bad() { let x = ; () } }",
+        ] {
+            let eager = parse(source).expect_err("invalid body");
+            let lazy = parse_lazy(source).expect("headers do not parse the body");
+            let forced = lazy.force_all().expect_err("forcing parses the body");
+            assert_eq!(forced.diag(), eager.diag());
+        }
+    }
+
+    #[test]
     fn rec_prefix_accepts_flexible_visibility_order() {
         for src in [
             "module x; pub rec(loop) fn f() -> . { () }",
@@ -5071,9 +5109,20 @@ fn ok() -> . { () }
     fn pure_rec_diagnostic_explains_required_loop_call() {
         for source in [
             "module x; pure rec(loop) fn f() -> . { () }",
+            "module x; rec(loop) pure fn f() -> . { () }",
+            "module x; rec(loop) pub pure fn f() -> . { () }",
+            "module x; pure rec(loop) { fn f() -> . { () } }",
             "module x; rec(loop) { pure fn f() -> . { () } }",
+            "module x; rec(loop) { pub pure fn f() -> . { () } }",
         ] {
-            let message = p_err(source);
+            let eager = parse(source).expect_err("pure recursive member");
+            let lazy = parse_lazy(source).expect_err("pure recursive header");
+            let tooling = probe_tooling_source(source, None)
+                .parse_error
+                .expect("pure recursive tooling header");
+            assert_eq!(lazy.diag(), eager.diag());
+            assert_eq!(tooling.diag(), eager.diag());
+            let message = eager.diag().1;
             assert!(
                 message.contains(
                     "every recursive member's execution requires the group's declared `loop` function"

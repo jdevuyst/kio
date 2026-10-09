@@ -1,0 +1,57 @@
+module prog;
+
+import __intrinsics__;
+
+host type I8 role(i8);
+
+host type I16 role(i16);
+
+host type I32 role(i32);
+
+host type I64 role(i64);
+
+host type I128 role(i128);
+
+host type U8 role(u8);
+
+host type U16 role(u16);
+
+host type U32 role(u32);
+
+host type U64 role(u64);
+
+host type U128 role(u128);
+
+host type F32 role(f32);
+
+host type F64 role(f64);
+
+host type String role(str);
+
+host type Bool role(bool);
+
+host fn print_i32(value: I32) -> .;
+
+pure fn id[A](value: A) -> A { value }
+
+fn gen(pair: I32 & I32, pick: (I32 & I32) -> I32) -> I32 {
+  pick(__fst__(I32, I32, pair), __snd__(I32, I32, pair))
+}
+
+fn kio_gen_observed() -> I32 {
+  gen(
+    , __pair__(I32, I32, 17(I32), 23(I32))
+    , .(first: I32, second: I32) -> I32 {
+        __either__(
+          , I32
+          , I32
+          , I32
+          , __left__(I32, I32, id(I32, first))
+          , .(value: I32) -> I32 { value }
+          , .(value: I32) -> I32 { value }
+          )
+      }
+    )
+}
+
+pub fn main() -> . { print_i32(kio_gen_observed()) }

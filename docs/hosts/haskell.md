@@ -85,6 +85,13 @@ at the boundary. This matters in practice in two ways:
   returns the next stage through the package monad, so bind that result before
   calling the resulting value function.
 
+An opaque constructor keeps its argument's native value representation. Thus
+a Kio `Box(. -> A)` holds a Haskell `() -> m a` callback, even though a direct
+Unit-domain callback at the public boundary is a nullary `m a` action. The
+backend can adapt the direct callback, but does not inspect or map your box.
+The same distinction applies inside an abstract `F` and inside its nested
+products, sums or polymorphic values.
+
 The package is polymorphic in two host choices:
 
 - A marker type `h` selects the exact Haskell representation of every
@@ -249,6 +256,17 @@ has a result such as `IO Data.Void.Void` and must diverge, for example by
 terminating the process; it cannot manufacture a normal return value.
 
 ## Structural values at the boundary
+
+Keep shared tuple fields and nested Kio data unchanged while a retained
+value or closure can still use them, even after a call returns. Construct a
+changed tuple instead. A host-managed mutable `Box` may change through its
+declared `get` and `set` host functions while the tuple keeps the same box.
+See [shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
+Supply values matching the selected types and associated storage equations.
+GHC's static checks and representation conversions remain required; they do not
+add a general runtime validation pass. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types).
 
 A structural Kio type crosses as ordinary Haskell pairs or `Either`:
 

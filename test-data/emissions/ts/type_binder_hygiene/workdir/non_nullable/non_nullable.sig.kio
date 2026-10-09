@@ -1,0 +1,22 @@
+signature non_nullable v(3);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        host type Token;
+        pub fn keep[A](value: A) -> A;
+        host fn old(value: Token) -> Token
+      }
+    }
+  }
+}
+
+v(2) {
+  nonbreaking {
+    remove {
+      api.Token;
+      api.old
+    }
+  }
+}

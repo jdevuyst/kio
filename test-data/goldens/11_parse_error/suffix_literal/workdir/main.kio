@@ -1,4 +1,4 @@
-module parse_err_suffix_literal/main;
+module main;
 
 // The lexer-side width suffix is gone (specs/language.md § Literals):
 // `42i32` lexes as the integer `42` followed by the identifier

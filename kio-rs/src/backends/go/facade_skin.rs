@@ -21,9 +21,9 @@ use crate::backends::boundary_facade::{CallableSourceParamAdapter, CallableValue
 use crate::backends::skin::FfiDir;
 
 use super::facade::{
-    GoFacadeError, GoFunctionUse, GoLiveFacadeUseRef, GoLiveFacadeUseView, GoLiveTypeHeadStage,
-    GoLiveValueHeadStage, GoLiveValueSourceGroup, GoLiveValueSourceGroupView, GoProductUse,
-    GoPublicParameter, GoSumUse,
+    GoFacadeError, GoForallUse, GoFunctionUse, GoLiveFacadeUseRef, GoLiveFacadeUseView,
+    GoLiveTypeHeadStage, GoLiveValueHeadStage, GoLiveValueSourceGroup, GoLiveValueSourceGroupView,
+    GoProductUse, GoPublicParameter, GoRoleAdapter, GoSumUse,
 };
 
 const ERASED_TYPE: &str = "any";
@@ -50,6 +50,19 @@ pub(crate) trait GoStatementSink {
 pub(crate) trait GoFreshNames {
     fn fresh(&mut self, class: &'static str) -> String;
     fn host_expression(&self) -> &str;
+
+    fn role_host_expression(&self, _adapter: &GoRoleAdapter, _direction: FfiDir) -> String {
+        self.host_expression().to_owned()
+    }
+
+    fn child_conversion(
+        &self,
+        _cursor: &GoLiveFacadeUseRef<'_, '_>,
+        _expression: &str,
+        _direction: FfiDir,
+    ) -> Option<String> {
+        None
+    }
 }
 
 /// Failure to render one prepared live boundary conversion.
@@ -80,6 +93,227 @@ impl From<GoFacadeError> for GoFacadeSkinError {
     }
 }
 
+/// A value cursor or a source-grouped product already paired with its live
+/// semantic slots. Both use the ordinary converter; the Value helpers add
+/// storage, not another type interpretation.
+pub(crate) enum GoValueView<'view, 'site, 'source> {
+    Host(&'view super::facade::GoHostPreparation<'view>),
+    Value(&'view GoLiveFacadeUseRef<'site, 'source>),
+    Product(
+        &'view GoProductUse<'site, 'source>,
+        &'view [GoLiveFacadeUseRef<'site, 'source>],
+    ),
+}
+
+pub(crate) struct GoValueViewChild<'site, 'source> {
+    pub(crate) cursor: GoLiveFacadeUseRef<'site, 'source>,
+    pub(crate) spelling: String,
+    pub(crate) type_arguments: String,
+}
+
+impl GoValueView<'_, '_, '_> {
+    pub(crate) fn index_parameters(&self) -> Result<Vec<(String, String)>, GoFacadeSkinError> {
+        Ok(match self {
+            Self::Host(host) => host.indices.clone(),
+            Self::Value(value) => value.semantic().index_parameters()?,
+            Self::Product(_, fields) => {
+                let mut parameters = std::collections::BTreeMap::new();
+                for field in *fields {
+                    parameters.extend(field.semantic().index_parameters()?);
+                }
+                parameters.into_iter().collect()
+            }
+        })
+    }
+    fn index_type(&self) -> Result<Option<String>, GoFacadeSkinError> {
+        Ok(match self {
+            Self::Host(host) => Some(host.index_type.clone()),
+            Self::Value(value) => value.semantic().index_type()?,
+            Self::Product(product, _) => product.index_type()?,
+        }
+        .map(|index| index.to_string()))
+    }
+    fn boundary_type(&self) -> Result<String, GoFacadeSkinError> {
+        Ok(match self {
+            Self::Host(host) => host.boundary_type.to_string(),
+            Self::Value(value) => value.boundary_type()?.to_string(),
+            Self::Product(product, _) => product.boundary_type().to_string(),
+        })
+    }
+
+    fn convert(
+        &self,
+        expression: &str,
+        direction: FfiDir,
+        statements: &mut GoSourceBlock,
+        names: &mut ValueViewNames<'_, '_, '_>,
+    ) -> Result<String, GoFacadeSkinError> {
+        match self {
+            Self::Host(host) => Ok(match (host.carrier, direction) {
+                (Some(carrier), FfiDir::In) => carrier.render_in(expression),
+                (Some(carrier), FfiDir::Out) => carrier.render_out(&host.boundary_type, expression),
+                (None, _) => convert_exact_host(
+                    &host.boundary_type,
+                    host.role_adapter,
+                    expression,
+                    direction,
+                    names,
+                ),
+            }),
+            // Render this root itself; only its child conversions dispatch
+            // to already-selected views, so no root can call itself.
+            Self::Value(value) => {
+                convert_unmaterialized(value, expression, direction, statements, names)
+            }
+            Self::Product(product, fields) => {
+                convert_product(product, fields, expression, direction, statements, names)
+            }
+        }
+    }
+}
+
+/// Emit effect-free native preparation and a typed native view. The static
+/// converter receives the consuming instance; it never captures the instance
+/// used to prepare the stored value. Only role operations actually selected
+/// by this cursor demand an adapter from that instance.
+pub(crate) fn render_value_view(
+    view: GoValueView<'_, '_, '_>,
+    children: &[GoValueViewChild<'_, '_>],
+    spelling: &str,
+    handle_type: &str,
+    type_declaration: &str,
+    type_arguments: &str,
+) -> Result<(String, bool), GoFacadeSkinError> {
+    let ty = view.boundary_type()?;
+    let converter = format!("kioValue{spelling}IntoBody");
+    let from_body = format!("kioValue{spelling}FromBody");
+    let mut names = ValueViewNames { next: 0, children };
+    let mut input = GoSourceBlock::with_indent(1);
+    input.line(&format!("native := kioNative[{ty}](value)"));
+    let value = view.convert("native", FfiDir::In, &mut input, &mut names)?;
+    input.line(&format!("return {value}"));
+
+    let mut names = ValueViewNames { next: 0, children };
+    let mut output = GoSourceBlock::with_indent(1);
+    let value = view.convert("value", FfiDir::Out, &mut output, &mut names)?;
+    output.line(&format!("return {value}"));
+    let declaration =
+        |prefix: &str| format!("func {prefix}{spelling}{type_declaration}(pkg {handle_type}, ");
+    let value_declaration = declaration("Value");
+    let native_declaration = declaration("Native");
+    let index = view.index_type()?;
+    let has_preparation = index.is_some();
+    let prepare = match index {
+        Some(index) => format!(
+            "\n// Prepare{spelling} retains this exact semantic index without running adapters.\n\
+             {}value {ty}) Prepared[{index}] {{\n\
+             \treturn Prepared[{index}]{{value: Value{{value: value, intoBody: {converter}{type_arguments}}}}}\n}}\n\
+             {}value Prepared[{index}]) {ty} {{\n\
+             \treturn {from_body}{type_arguments}(pkg.host, value.value.kioIntoBody(pkg.host))\n}}\n",
+            declaration("Prepare"),
+            declaration("Unprepare"),
+        ),
+        None => String::new(),
+    };
+    Ok((
+        format!(
+            "\n// Value{spelling} prepares a native value for an erased slot without running adapters.\n\
+         {value_declaration}value {ty}) Value {{\n\
+         \treturn Value{{value: value, intoBody: {converter}{type_arguments}}}\n}}\n\n\
+         func {converter}{type_declaration}(host any, value any) any {{\n{input}}}\n\n\
+         func {from_body}{type_declaration}(host any, value any) {ty} {{\n{output}}}\n\n\
+         // Native{spelling} recovers this exact native view using the receiving package's host.\n\
+         {native_declaration}value Value) {ty} {{\n\
+         \treturn {from_body}{type_arguments}(pkg.host, value.kioIntoBody(pkg.host))\n}}\n{prepare}",
+            input = input.finish(),
+            output = output.finish(),
+        ),
+        has_preparation,
+    ))
+}
+
+fn convert_exact_host(
+    boundary_type: &super::facade::GoType,
+    role_adapter: Option<&GoRoleAdapter>,
+    expression: &str,
+    direction: FfiDir,
+    names: &impl GoFreshNames,
+) -> String {
+    match (direction, role_adapter) {
+        (FfiDir::In, Some(adapter)) => format!(
+            "{}.{}({expression})",
+            names.role_host_expression(adapter, direction),
+            adapter.convert_in()
+        ),
+        (FfiDir::Out, Some(adapter)) => format!(
+            "{}.{}(({expression}).({}))",
+            names.role_host_expression(adapter, direction),
+            adapter.convert_out(),
+            adapter.internal_type()
+        ),
+        (FfiDir::In, None) => expression.to_owned(),
+        (FfiDir::Out, None) => format!("kioNative[{boundary_type}]({expression})"),
+    }
+}
+
+struct ValueViewNames<'children, 'site, 'source> {
+    next: usize,
+    children: &'children [GoValueViewChild<'site, 'source>],
+}
+
+impl GoFreshNames for ValueViewNames<'_, '_, '_> {
+    fn fresh(&mut self, class: &'static str) -> String {
+        let name = format!("__kio_{class}{}", self.next);
+        self.next += 1;
+        name
+    }
+
+    fn host_expression(&self) -> &str {
+        "host"
+    }
+
+    fn role_host_expression(&self, adapter: &GoRoleAdapter, direction: FfiDir) -> String {
+        let (method, argument, result) = match direction {
+            FfiDir::In => (
+                adapter.convert_in(),
+                adapter.boundary_type(),
+                adapter.internal_type(),
+            ),
+            FfiDir::Out => (
+                adapter.convert_out(),
+                adapter.internal_type(),
+                adapter.boundary_type(),
+            ),
+        };
+        format!(
+            "({}).(interface {{ {method}({argument}) {result} }})",
+            self.host_expression()
+        )
+    }
+
+    fn child_conversion(
+        &self,
+        cursor: &GoLiveFacadeUseRef<'_, '_>,
+        expression: &str,
+        direction: FfiDir,
+    ) -> Option<String> {
+        let child = self.children.iter().find(|child| {
+            child
+                .cursor
+                .semantic()
+                .same_conversion_use(cursor.semantic())
+        })?;
+        let suffix = match direction {
+            FfiDir::In => "IntoBody",
+            FfiDir::Out => "FromBody",
+        };
+        Some(format!(
+            "kioValue{}{suffix}{}(host, {expression})",
+            child.spelling, child.type_arguments
+        ))
+    }
+}
+
 /// Convert one live contextual value between the typed facade and erased body.
 ///
 /// `In` maps a typed host value to `any`; `Out` maps an erased body value to
@@ -101,7 +335,11 @@ where
         FfiDir::In => ERASED_TYPE,
         FfiDir::Out => boundary_type.as_str(),
     };
-    let converted = convert_unmaterialized(cursor, expression, direction, statements, names)?;
+    let converted = if let Some(converted) = names.child_conversion(cursor, expression, direction) {
+        converted
+    } else {
+        convert_unmaterialized(cursor, expression, direction, statements, names)?
+    };
     Ok(materialize(
         statements,
         names,
@@ -337,37 +575,42 @@ where
             FfiDir::In => expression.to_owned(),
             FfiDir::Out => format!("({expression}).({UNIT_TYPE})"),
         }),
-        GoLiveFacadeUseView::Bottom | GoLiveFacadeUseView::Erased { .. } => {
-            Ok(expression.to_owned())
-        }
+        GoLiveFacadeUseView::Prepared { boundary_type } => Ok(match direction {
+            FfiDir::In => format!(
+                "({expression}).value.kioIntoBody({})",
+                names.host_expression()
+            ),
+            FfiDir::Out => format!("{boundary_type}{{value: Value{{value: {expression}}}}}"),
+        }),
+        GoLiveFacadeUseView::Bottom | GoLiveFacadeUseView::Erased { .. } => Ok(match direction {
+            FfiDir::In => format!("({expression}).kioIntoBody({})", names.host_expression()),
+            FfiDir::Out => format!("Value{{value: {expression}}}"),
+        }),
         GoLiveFacadeUseView::ExactHost {
             boundary_type,
             role_adapter,
-        } => Ok(match (direction, role_adapter) {
-            (FfiDir::In, Some(adapter)) => format!(
-                "{}.{}({expression})",
-                names.host_expression(),
-                adapter.convert_in()
-            ),
-            (FfiDir::Out, Some(adapter)) => format!(
-                "{}.{}(({expression}).({}))",
-                names.host_expression(),
-                adapter.convert_out(),
-                adapter.internal_type()
-            ),
-            (FfiDir::In, None) => expression.to_owned(),
-            (FfiDir::Out, None) => format!("({expression}).({boundary_type})"),
-        }),
+        } => Ok(convert_exact_host(
+            &boundary_type,
+            role_adapter.as_ref(),
+            expression,
+            direction,
+            names,
+        )),
         GoLiveFacadeUseView::HostCarrier {
             boundary_type,
             carrier,
+            ..
         } => Ok(match direction {
             FfiDir::In => carrier.render_in(expression),
             FfiDir::Out => carrier.render_out(&boundary_type, expression),
         }),
-        GoLiveFacadeUseView::Carrier { carrier, .. } => Ok(match direction {
+        GoLiveFacadeUseView::Carrier {
+            boundary_type,
+            carrier,
+            ..
+        } => Ok(match direction {
             FfiDir::In => carrier.render_in(expression),
-            FfiDir::Out => carrier.render_out(expression),
+            FfiDir::Out => carrier.render_out(&boundary_type, expression),
         }),
         GoLiveFacadeUseView::Transparent { payload, .. } => {
             convert(&payload, expression, direction, statements, names)
@@ -386,8 +629,12 @@ where
         } => convert_function(
             &semantic, &slots, &result, layout, expression, direction, statements, names,
         ),
-        GoLiveFacadeUseView::Forall { result, .. } => {
-            convert_forall(&result, expression, direction, statements, names)
+        GoLiveFacadeUseView::Forall { semantic, result } => {
+            if semantic.selection().is_some() {
+                convert_type_stage(&semantic, &result, expression, direction, names)
+            } else {
+                convert_forall(&result, expression, direction, statements, names)
+            }
         }
     }
 }
@@ -695,23 +942,124 @@ where
     S: GoStatementSink,
     N: GoFreshNames,
 {
-    match direction {
-        FfiDir::Out => {
-            let callee = materialize(statements, names, "forall_callee", ERASED_TYPE, expression);
-            let applied = materialize(
-                statements,
-                names,
-                "forall_result",
-                ERASED_TYPE,
-                &format!("({callee}).(func() any)()"),
-            );
-            convert(result, &applied, direction, statements, names)
-        }
-        FfiDir::In => {
-            let captured = convert(result, expression, direction, statements, names)?;
-            Ok(format!("func() any {{ return {captured} }}"))
-        }
+    let result_type = result.boundary_type()?;
+    let facade_type = format!("func() {result_type}");
+    let (source_type, applied_type, returned_type) = match direction {
+        FfiDir::Out => (ERASED_TYPE, ERASED_TYPE, result_type.as_str()),
+        FfiDir::In => (facade_type.as_str(), result_type.as_str(), ERASED_TYPE),
+    };
+    let callee = materialize(statements, names, "forall_callee", source_type, expression);
+    let mut body = GoSourceBlock::with_indent(1);
+    let call = match direction {
+        FfiDir::Out => format!("({callee}).(func() any)()"),
+        FfiDir::In => format!("{callee}()"),
+    };
+    let applied = materialize(&mut body, names, "forall_result", applied_type, &call);
+    let returned = convert(result, &applied, direction, &mut body, names)?;
+    body.line(&format!("return {returned}"));
+    Ok(render_function_literal(&[], returned_type, body.finish()))
+}
+
+fn convert_type_stage(
+    semantic: &GoForallUse<'_, '_>,
+    result: &GoLiveFacadeUseRef<'_, '_>,
+    expression: &str,
+    direction: FfiDir,
+    names: &impl GoFreshNames,
+) -> Result<String, GoFacadeSkinError> {
+    if direction == FfiDir::In {
+        return Ok(format!(
+            "({expression}).value.kioIntoBody({})",
+            names.host_expression()
+        ));
     }
+    let mut body = GoSourceBlock::with_indent(1);
+    let mut result_names = ValueViewNames {
+        next: 0,
+        children: &[],
+    };
+    let returned = convert(result, "value", FfiDir::Out, &mut body, &mut result_names)?;
+    body.line(&format!("return {returned}"));
+    let converter = render_function_literal(
+        &["host any".to_owned(), "value any".to_owned()],
+        result.boundary_type()?.as_str(),
+        body.finish(),
+    );
+    Ok(format!(
+        "{}{{value: Value{{value: {expression}}}, host: {}, result: {converter}}}",
+        semantic.boundary_type(),
+        names.host_expression()
+    ))
+}
+
+/// Both public selection paths invoke the same canonical stage. Static
+/// selection retains the stage's native host context instead of rebinding it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn render_type_stage_helpers(
+    stage: &GoLiveFacadeUseRef<'_, '_>,
+    selected: &GoLiveFacadeUseRef<'_, '_>,
+    spelling: &str,
+    host_type: &str,
+    type_declaration: &str,
+    selected_declaration: &str,
+    selected_arguments: Option<&str>,
+) -> Result<String, GoFacadeSkinError> {
+    let GoLiveFacadeUseView::Forall { semantic, result } = stage.view()? else {
+        return Err(GoFacadeSkinError::invariant(
+            "type-stage helpers require a paired Forall",
+        ));
+    };
+    let mut names = ValueViewNames {
+        next: 0,
+        children: &[],
+    };
+    let mut body = GoSourceBlock::with_indent(1);
+    let canonical = convert_forall(&result, "native", FfiDir::In, &mut body, &mut names)?;
+    body.line(&format!("return {canonical}"));
+    let into_body = render_function_literal(
+        &["host any".to_owned(), "value any".to_owned()],
+        "any",
+        format!(
+            "\tnative := value.(func() {})\n{}",
+            result.boundary_type()?,
+            body.finish()
+        ),
+    );
+    let names = ValueViewNames {
+        next: 0,
+        children: &[],
+    };
+    let mut body = GoSourceBlock::with_indent(1);
+    let wrapped = convert_type_stage(&semantic, &result, "nil", FfiDir::Out, &names)?;
+    body.line(&format!("stage := {wrapped}"));
+    body.line(&format!(
+        "stage.value = Value{{value: native, intoBody: {into_body}}}"
+    ));
+    body.line("return stage");
+    let maker = body.finish();
+    // The selected result's ordinary view owns all recursive conversion work.
+    let selected_type = selected.boundary_type()?;
+    let mut selection = GoSourceBlock::with_indent(1);
+    selection.line("host := stage.host");
+    selection.line("value := stage.value.kioIntoBody(host).(func() any)()");
+    let converted = match selected_arguments {
+        Some(arguments) => format!("kioValue{spelling}_selectedFromBody{arguments}(host, value)"),
+        None => {
+            let mut names = ValueViewNames {
+                next: 0,
+                children: &[],
+            };
+            convert(selected, "value", FfiDir::Out, &mut selection, &mut names)?
+        }
+    };
+    selection.line(&format!("return {converted}"));
+    let selection = selection.finish();
+    Ok(format!(
+        "\nfunc New{spelling}Stage{type_declaration}(host {host_type}, native func() {}) {} {{\n{maker}}}\n\nfunc Select{spelling}{selected_declaration}(stage {}) {selected_type} {{\n{selection}}}\n",
+        result.boundary_type()?,
+        semantic.boundary_type(),
+        semantic.boundary_type(),
+    ))
 }
 
 fn validate_layout(
@@ -1051,7 +1399,7 @@ mod prepared_tests {
             .check_in_body_resolution()
             .expect("check facade-skin test body resolution");
         let prime = check_package(&package).expect("typecheck facade-skin test package");
-        crate::pass::recover_to_low::lower(&structural_recovery::recover_package(&prime))
+        crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
     }
 
     fn host_site(name: &str) -> BoundaryFacadeSiteId {
@@ -1338,15 +1686,16 @@ mod prepared_tests {
         let forall_entry = live_entry(&catalog, "nested_forall");
         let forall_out = render_conversion(forall_entry.returned(), "nextForallOut()", FfiDir::Out);
         assert_once(&forall_out, "nextForallOut()");
-        assert!(forall_out.contains(".(func() any)()"));
+        assert!(forall_out.contains("TypeStage["));
+        assert!(!forall_out.contains(".(func() any)()"));
         let forall_in = render_conversion(forall_entry.returned(), "nextForallIn()", FfiDir::In);
         assert_once(&forall_in, "nextForallIn()");
-        assert!(forall_in.contains("func() any { return"));
+        assert!(forall_in.contains(".value.kioIntoBody("));
         assert_in_order(
             &forall_in,
             &[
                 "nextForallIn()".to_owned(),
-                "func() any { return".to_owned(),
+                ".value.kioIntoBody(".to_owned(),
             ],
         );
 

@@ -6,13 +6,13 @@
 //! and all ordinary imports brought in by `import` statements.
 //!
 //! [`TypeCtx`] adds the per-fn binding stack and the phase's
-//! elaboration table (see [`super::TyperPhase`]) — together with
+//! elaboration table (see [`super::DeclarationPhase`]) — together with
 //! [`ModuleEnv`] it is everything a `synth_*` / `check_*` helper
 //! needs to walk a fn body.
 //!
 //! Extracted from [`super::typecheck_core`] for navigability;
 //! depends on the aliases sub-module ([`AliasCtx`], [`PayloadCtx`])
-//! and the umbrella's [`super::TyperPhase`] trait.
+//! and the umbrella's [`super::DeclarationPhase`] trait.
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -27,8 +27,8 @@ use crate::pass::resolve::{NominalProvider, NominalRoute, NominalSelection};
 use crate::span::Span;
 
 use super::{
-    AliasCtx, MemoCtx, PackageTypecheckScope, PayloadCtx, TypeInterner, TypecheckExecution,
-    TyperPhase,
+    AliasCtx, DeclarationPhase, MemoCtx, PackageTypecheckScope, PayloadCtx, TypeInterner,
+    TypecheckExecution,
 };
 
 // =========================================================================
@@ -1129,7 +1129,7 @@ pub fn populate_cross_module_imports<'m, P>(
                         // Host items are ordinary public declarations, so a
                         // selective `import` brings them into scope like any
                         // other item. Their host-boundary provenance is
-                        // recovered by module name-scan in `recover_to_low`,
+                        // recovered by module name-scan in `route`,
                         // so resolving the name here suffices. Mirrors the
                         // local items-loop handling above.
                         } else if let Some(h) = declaration.host_type().filter(|h| h.name == name) {
@@ -1648,7 +1648,7 @@ impl<P: crate::ast::Phase> Clone for PendingRecOrderState<P> {
 /// bake into the checked AST.
 pub struct TypeCtx<'m, 'e, P>
 where
-    P: TyperPhase,
+    P: DeclarationPhase,
 {
     context_id: std::cell::Cell<Option<TypeContextId>>,
     local_revision: std::cell::Cell<u64>,
@@ -1658,7 +1658,7 @@ where
     /// Earliest recursive-ordering local in `locals`. `None` keeps ordinary
     /// and Prime expression checking on the pre-carrier fast path.
     pending_rec_order_start: Option<usize>,
-    /// Phase-specific elaboration table. See [`TyperPhase::Elaborations`].
+    /// Phase-specific elaboration table. See [`DeclarationPhase::Elaborations`].
     pub elaborations: &'e mut P::Elaborations,
     pub pure_context: bool,
     item_index: Option<usize>,
@@ -1667,7 +1667,7 @@ where
 
 impl<'m, 'e, P> TypeCtx<'m, 'e, P>
 where
-    P: TyperPhase,
+    P: DeclarationPhase,
 {
     pub fn new(env: &'e ModuleEnv<'m, P>, elaborations: &'e mut P::Elaborations) -> Self {
         TypeCtx {
@@ -1688,7 +1688,7 @@ where
             return context_id;
         }
         let context_id = NEXT_TYPE_CONTEXT_ID
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
                 (next < u64::MAX).then_some(next + 1)
             })
             .map(TypeContextId)
@@ -1886,7 +1886,7 @@ where
     fn fresh_type_binder_id(&self) -> TypeBinderId {
         TypeBinderId(
             NEXT_TYPE_BINDER_ID
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
                     next.checked_add(1)
                 })
                 .expect("process exhausted rigid-binder identities"),
@@ -2342,7 +2342,7 @@ where
 
 impl<P> super::aliases::AliasBinderLookup for TypeCtx<'_, '_, P>
 where
-    P: TyperPhase,
+    P: DeclarationPhase,
 {
     fn contains_alias_binder(&self, name: &str) -> bool {
         self.in_scope_type_param_bindings()

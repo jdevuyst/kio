@@ -1405,7 +1405,7 @@ mod tests {
         package.check_in_body_resolution().expect("body resolution");
         let prime = check_package(&package).expect("typecheck");
         let enriched = crate::pass::structural_recovery::recover_package(&prime);
-        crate::pass::recover_to_low::lower(&enriched)
+        crate::pass::route::route_package(&enriched)
     }
 
     #[cfg(feature = "surface")]

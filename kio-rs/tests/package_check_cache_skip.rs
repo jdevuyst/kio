@@ -835,6 +835,97 @@ fn user_elaborator_template_memo_replays_across_forced_modules() {
     );
 }
 
+#[cfg(feature = "prime")]
+#[test]
+fn user_elaborator_template_memo_preserves_free_binders_in_both_forced_orders() {
+    for (first, second, binders, target) in [
+        ("a", "b", "[A][B]", "B"),
+        ("b", "a", "[B][A]", "B"),
+        ("a", "b", "[A][B]", "A"),
+    ] {
+        let pkg = TempPkg::new();
+        pkg.write(
+            "pkg.pkg.kio",
+            &package_file_no_cache_with_prime_target(
+                "pkg",
+                "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n",
+            ),
+        );
+        pkg.write("pkg.kio", pkg_root_module());
+        pkg.write("elaborators.kio", second_value_user_elaborator_module());
+        pkg.write(
+            &format!("pkg/{first}.kio"),
+            &format!(
+                "module pkg/{first};\n\
+                 import elaborators(second_value);\n\
+                 pub fn {first}{binders}(left: A, from_{first}: B) -> B {{
+                     second_value!(left, from_{first}, B)
+                 }}\n"
+            ),
+        );
+        pkg.write(
+            &format!("pkg/{second}.kio"),
+            &format!(
+                "module pkg/{second};\n\
+                 import elaborators(second_value);\n\
+                 import pkg/{first}({first});\n\
+                 pub fn {second}{binders}(left: A, from_{second}: B) -> {target} {{
+                     second_value!({first}(A, A, left, left), from_{second}, {target})
+                 }}\n"
+            ),
+        );
+
+        let (code, log) = kio_build_prime_with_extra_env(
+            pkg.path(),
+            &[("KIO_DEBUG_MEMO", "1"), ("KIO_DEBUG_MEMO_VERIFY", "1")],
+        );
+        if target == "A" {
+            assert_eq!(code, 15, "returning B must not satisfy target A: {log}");
+            assert!(
+                log.contains(
+                    "user elaborator returned a checked term of type `B` but the declared result type was `A`"
+                ),
+                "the negative control must reach checked-result validation: {log}"
+            );
+            continue;
+        }
+
+        assert_eq!(code, 0, "{first} before {second}: {log}");
+        let stats = log
+            .lines()
+            .filter_map(|line| line.strip_prefix("memo user-elaborator: "))
+            .filter(|counts| *counts != "hits=0 misses=0 first-writes=0")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            stats,
+            ["hits=1 misses=1 first-writes=1"],
+            "exactly one active template scope must produce one verified replay: {log}"
+        );
+        for owner in [first, second] {
+            let emitted =
+                fs::read_to_string(pkg.path().join(format!("out/kio-prime/pkg/{owner}.kio")))
+                    .expect("read emitted polymorphic caller");
+            assert!(
+                emitted.contains(&format!(
+                    "pub fn {owner}{binders}(left: A, from_{owner}: B) -> B {{ from_{owner} }}"
+                )),
+                "each caller must retain its own B value: {emitted}"
+            );
+        }
+        let checked = Command::new(test_binary!("kio-prime"))
+            .args(["check", "--no-cache"])
+            .current_dir(pkg.path().join("out/kio-prime"))
+            .output()
+            .expect("fresh-check emitted free-binder callers");
+        assert!(
+            checked.status.success(),
+            "fresh Prime checking must reconstruct both caller scopes: {}",
+            String::from_utf8_lossy(&checked.stderr)
+        );
+        assert!(checked.stdout.is_empty());
+    }
+}
+
 #[test]
 fn user_elaborator_infer_branch_memo_hits_repeated_shape() {
     let pkg = TempPkg::new();

@@ -1,0 +1,13 @@
+package rec_group_sharing;
+
+build {
+  cache ();
+
+  target swift {
+    out "out/swift/"
+  }
+}
+
+bridge {
+  api
+}

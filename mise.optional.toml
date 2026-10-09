@@ -5,3 +5,5 @@
 "cargo:cargo-audit" = { version = "0.22.2", depends = ["rust"] }
 # Release tooling: builds the distributed binaries and installers.
 "aqua:axodotdev/cargo-dist" = "0.32.0"
+# Published development-environment acceptance uses the official consumer CLI.
+"npm:@devcontainers/cli" = "0.89.0"

@@ -314,7 +314,7 @@ fn program_basename_hex(program: Option<&OsStr>) -> String {
 
 fn next_acquisition_sequence() -> Result<u64, Error> {
     PROCESS_ACQUISITION_SEQUENCE
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |sequence| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |sequence| {
             sequence.checked_add(1)
         })
         .map(|previous| previous + 1)

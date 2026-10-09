@@ -1,5 +1,5 @@
 #!/bin/sh
-# SUBJECT: Haskell public names stay readable on safe routes and use distinct exact fallbacks on ambiguous routes.
+# SUBJECT: Haskell public names typecheck and distinct affix-path exports execute their matching host fields.
 set -eu
 
 scratch=$(mktemp -d "${TMPDIR:?}/emissions.abi-name-collisions.XXXXXX")
@@ -11,8 +11,10 @@ mkdir -p "$scratch/ghc"
 
 cd "$scratch/workdir"
 "${KIO_BIN:?}" build "${KIO_TARGET:?}"
-ghc -v0 -fforce-recomp -fno-code \
+ghc -v0 -fforce-recomp -main-is Host.main \
   -odir "$scratch/ghc" \
   -hidir "$scratch/ghc" \
   -iout/haskell \
-  "$scratch/host/Host.hs"
+  "$scratch/host/Host.hs" \
+  -o "$scratch/host-main"
+"$scratch/host-main"

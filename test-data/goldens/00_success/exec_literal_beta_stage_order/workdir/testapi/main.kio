@@ -1,0 +1,14 @@
+module testapi/main;
+
+host fn observe(_unit: .) -> .;
+
+host fn consume(_unit: .) -> .;
+
+pub fn main() {
+  let leading = .()(_value: .) { observe() }(consume());
+  consume();
+  leading();
+  let trailing = .(_value: .)() { consume() }(observe());
+  observe();
+  trailing()
+}

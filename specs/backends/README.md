@@ -221,11 +221,23 @@ contract change.
 ### 4. Package isolation
 
 Each instantiation of a package produces an independent instance.
-Two instances — whether created from the same emitted artifact or
-from different packages — share no state, no caches, no host-record
-references. Multi-instance hosting is the default, not an opt-in: a
-host running multiple Kio packages does so without interference
-between them. Isolation covers instance *state*; the symbol-level
+Each instance retains its own host bindings and execution state; creating or
+calling another instance does not replace them. Hosts can deliberately share
+values and capabilities between instances. A received callback retains its
+original captures and host bindings, while a function belonging to the
+receiving instance uses that instance's bindings.
+
+Instances of the same loaded compiled artifact can exchange nominal values
+when their exact native host/type instantiations and value representations
+are compatible. Instantiation does not create a fresh nominal declaration.
+Declaration-owned private storage may therefore be shared by those instances;
+constructor and projector visibility remains unchanged. Different declarations
+or separately loaded artifacts are not identified merely because their names,
+source, or payload shapes match. The host remains responsible for supplying
+values at the declared types, including the native type arguments required by
+its backend.
+
+Multi-instance hosting is the default, not an opt-in. The symbol-level
 coexistence of two artifacts in one host program is
 [§ The package facade](#the-package-facade)'s guarantee.
 
@@ -367,6 +379,58 @@ uses monadic binds, `seq`, bang patterns, or an equivalent wherever a body
 sequences host effects, so its artifact observes the same effect order as every
 other backend.
 
+### 10. Shared data stays unchanged
+
+Host code must not modify Kio products, sums, or visible nominal payloads that
+it shares with a package while the package can still use them. This includes
+nested Kio values, whether passed directly, through a generic parameter, or
+inside a host-managed container. The rule applies in both directions: to data
+given to Kio and to data received from Kio, including callback arguments and
+results. Returning from a call does not end this obligation if a retained
+value or function can still reach the data. To change such data, the host
+constructs a changed copy instead.
+
+Reading a product field, a sum's selected alternative or payload, or a visible
+nominal payload must behave like reading stored data: it yields the same value
+without side effects. A stable, side-effect-free accessor is permitted; an
+accessor that changes its result, updates state, or throws on a read is not.
+This requirement concerns data fields, not invocation of a function value.
+
+Opaque host types follow their own declared contracts. A host-provided mutable
+`Box` may change through host functions such as `get` and `set`. A Kio tuple
+containing that box keeps the same box in the same field; the box's
+host-managed contents may change. The shared-data rule does not prohibit
+stateful host capabilities or inspect opaque host objects to find their contents.
+Replacing a box's stored value is allowed; modifying a Kio tuple that was
+already shared remains forbidden even when the tuple is stored in that box.
+
+Backends may reuse unchanged data rather than copy it. The boundary does not
+promise fresh objects or independent snapshots, and hosts must not rely on
+object identity being preserved or changed by a conversion. This does not
+remove the backend's representation conversions, visibility guarantees, or
+callable argument/result contracts.
+
+### 11. Host values satisfy their declared types
+
+The host is responsible for supplying values that match the declared types and
+the backend's representations. This covers arguments passed to Kio, results
+returned by host functions, and later callback arguments and results, including
+values transported through generic parameters or opaque host containers.
+Kio's static type guarantees assume that the host fulfills these obligations.
+
+Generated packages do not perform general runtime type validation of host
+values. Passing, returning, storing, or ignoring an invalid value need not
+produce an error; a failure may occur only when the value is used, after other
+host effects, or not at all. Hosts must not rely on a particular rejection
+point or diagnostic for a violation of this obligation.
+
+Representation conversions and the host language's required casts remain part
+of the calling interface. Opaque nominal storage exposes a payload only through
+the authorized operations and nominal ownership rules specified by that backend.
+Such operations can reject an invalid value when accessing it; they do not imply a
+recursive validation pass over its enclosing values. Host-record completeness
+and precompiled-artifact loading have their separately specified checks.
+
 ## The package facade
 
 Every emitted artifact exposes one uniform facade: a factory that takes
@@ -499,6 +563,12 @@ their semantic input bytes; public presentation does not redefine type identity.
 raw exact fallback bytes likewise remain unchanged while its cosmetic suffix
 uses word casing. Each backend's § Item naming specifies its host syntax and
 role-framing realization.
+
+Names within one artifact that become separate filesystem entries must also
+remain distinct under case-insensitive filename comparison. For Java's
+class-bearing nominal and facade type names, preserving source word boundaries
+takes precedence over word casing; value and member selectors still use word
+casing. See [Java item naming](java.md#item-naming).
 
 Naming is declaration-local: the resolved semantic identity, naming role and
 effective package namespace determine a public name, never declaration order
@@ -637,7 +707,8 @@ the backend to inspect or map `F` to convert its payload into `F(Int & Bool)`.
 The same rule applies when the host constructs the payload and Kio later
 receives it through a generic operation. Representations and typed adapters
 must preserve this relation without assuming container operations, guessing
-types from values, or changing the backend's ownership rules. Adapters also
+types from values, or weakening the
+[shared-data rule](#10-shared-data-stays-unchanged). Adapters also
 preserve each computation's [application stage](#2-type-erasure-at-the-ffi).
 
 ### Facade topology and execution provenance
@@ -1095,7 +1166,7 @@ Each backend page documents its own realization under a § Higher-kinded types s
 - **Python** ([`python.md`](python.md#higher-kinded-types)) — natural-exact skin over a type-erased runtime; type application does not rewrap values, while the typed-stub package preserves its declaration-owned constructor and application relation. Nominal construction and projection follow the declared carrier and visibility contract, and a polymorphic newtype payload retains its staged callable shape.
 - **Java** ([`java.md`](java.md#higher-kinded-types)) — the private body uses `Object`; the exact public skin names each declaration with a constructor marker, records `F(A)` through its typed application witness, and owns the conversion to that carrier. Private body identity does not replace the public witness relation.
 - **Rust** ([`rust.md`](rust.md#higher-kinded-types)) — the body is type-erased; the exact public skin represents every saturated value type with a `KioType` marker and `Facade`, represents an abstract constructor application with `KioAppliedN<F, ...>` / `KioApplyN<F, ...>`, and converts explicitly through the opaque stored representation. Rust does not require or claim native `F::Apply` equality.
-- **Go** ([`go.md`](go.md)) — a free function-local type binder erases to `any`; exact parameterized declarations instead use their declaration-owned generic carrier and adapter at the public boundary. Go therefore does not assert a native generic-constructor equality.
+- **Go** ([`go.md`](go.md#higher-kinded-types)) — the private body uses `any`; the public skin uses exact kind-constrained type indices, `Prepared[I]`, free slot/declaration boundary conversion functions, declaration-owned application carriers, and typed selection helpers for first-class `TypeStage` values. Selection preserves each application stage and its captured host conversion context without traversing opaque host storage.
 - **Swift** ([`swift.md`](swift.md)) — the private body stores canonical native values as `Any`; the exact public skin uses declaration-owned constructor markers and unary application carriers. Private lexical type witnesses construct those same native types; opaque host-owned payloads are neither traversed nor reindexed.
 - **Haskell** ([`haskell.md`](haskell.md#body-model)) — native-HKT; `F(A)` maps to `f a`. Direct known declarations may use consecutive native `forall`s, while escaped polymorphic values have one internal monadic stage per binder.
 

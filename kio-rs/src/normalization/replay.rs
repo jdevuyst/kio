@@ -466,7 +466,8 @@ where
                 node_span,
             )
         }
-        CheckedTermNode::ElabError { .. } => Expr::Unit { occurrence: Default::default(),
+        CheckedTermNode::ElabError { .. } => Expr::Unit {
+            source_trivia: Default::default(), occurrence: Default::default(),
             meta: Meta::new(node_span),
         },
     }
@@ -507,6 +508,7 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
             Expr::Call {
                 args, meta, ext, ..
             } => Expr::Call {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 diagnostic: Default::default(),
                 callee: Box::new(child()),

@@ -67,6 +67,14 @@ fn batch_in_memory(seed: u64, count: u64) -> Vec<Vec<(String, String)>> {
                 out
             } else {
                 let mut out = emit::render_package_files(&prog);
+                out.push((
+                    "expected.stdout".into(),
+                    prog.control_probe
+                        .as_ref()
+                        .map(kio_gen::control::expected_stdout)
+                        .unwrap_or_default(),
+                ));
+                out.push(("run.args".into(), emit::program_protocol(&prog).into()));
                 out.insert(0, ("__category".to_string(), "00_success".to_string()));
                 out.insert(1, ("__exit_code".to_string(), "0".to_string()));
                 out
@@ -109,6 +117,14 @@ fn batch_in_memory_par(seed: u64, count: u64, threads: usize) -> Vec<Vec<(String
                     out
                 } else {
                     let mut out = emit::render_package_files(&prog);
+                    out.push((
+                        "expected.stdout".into(),
+                        prog.control_probe
+                            .as_ref()
+                            .map(kio_gen::control::expected_stdout)
+                            .unwrap_or_default(),
+                    ));
+                    out.push(("run.args".into(), emit::program_protocol(&prog).into()));
                     out.insert(0, ("__category".to_string(), "00_success".to_string()));
                     out.insert(1, ("__exit_code".to_string(), "0".to_string()));
                     out

@@ -9,14 +9,10 @@
 //!
 //! Go's body is **erased** — every value flows as `interface{}` /
 //! `[]any` (the JS dynamic body's shape, on a statically-typed host).
-//! `interface{}` is a genuine dynamic universal carrier, so a
-//! higher-kinded carrier (`F(A)` inside a Functor / Monad dictionary)
-//! needs **no carrier-walk**: the concrete-use-site carrier and the
-//! dictionary-internal binder-erased carrier share one uniform `[]any`
-//! runtime rep, and the host never sees the body's types. Go, Rust, and
-//! Swift all erase their bodies to a dynamic universal carrier this way;
-//! a carrier-walk is load-bearing only for a **native-HKT** host
-//! (Haskell) that threads a typed carrier. See
+//! `interface{}` is a dynamic universal carrier. Public generic slots use
+//! `Value` to prepare exact native-to-body views without inspecting opaque
+//! host containers; nominal envelopes retain their access boundary inside
+//! that transport. Runtime type arguments remain erased. See
 //! [`ai/topics/emit.md`](../../../../ai/topics/emit.md) § Runtime model.
 //!
 //! The content lives here as canonical `&str` constants so it ships
@@ -50,8 +46,8 @@ pub const RUNTIME_SUPPORT_FILE_PATH: &str = "kio_runtime.go";
 /// - `kioProductSlots` / `kioProductSlot` and `kioSumPayload` /
 ///   `kioSumInject` name the erased structural carrier walks.
 ///
-/// Go's erased body carries higher-kinded payloads in the uniform
-/// `[]any` rep, so it needs **no** runtime brand value or carrier-walk.
+/// `Value` keeps public abstract transport distinct from native Go shapes;
+/// exact boundary conversion code owns the native views.
 /// The file is package-level documented as generated; gofmt-stable.
 pub fn runtime_support_content(ns: &str) -> String {
     format!("{RUNTIME_SUPPORT_HEADER}package {ns}\n{RUNTIME_SUPPORT_BODY}")
@@ -71,6 +67,80 @@ const RUNTIME_SUPPORT_BODY: &str = r#"
 // Unit is the Go representation of Kio's `()` (unit). Go has no unit
 // value, so `struct{}` stands in; every `()` lowers to `Unit{}`.
 type Unit = struct{}
+
+// Value transports a Kio value at a polymorphic or abstract position. Its
+// contents are private; typed boundary helpers prepare and recover native
+// views without inspecting an opaque host container.
+type Value struct {
+	value any
+	intoBody func(any, any) any
+}
+
+// Prepared retains an exact static index while transporting a canonical value.
+type Prepared[I any] struct {
+	kioPreparedIndex [0]*I
+	value Value
+}
+
+// TypeStage retains one delayed type-selection stage and its native view.
+// I identifies its Kio signature; H retains the package's native host bindings.
+type TypeStage[I, R, H any] struct {
+	kioStageIndex [0]*I
+	kioStageHost [0]*H
+	value Value
+	host any
+	result func(any, any) R
+}
+
+// Invoke executes one stage with its abstract Value interface.
+func (stage TypeStage[I, R, H]) Invoke() R {
+	return stage.result(stage.host, stage.value.kioIntoBody(stage.host).(func() any)())
+}
+
+// Erase transports the prepared value through an abstract host slot.
+func (value Prepared[I]) Erase() Value { return value.value }
+
+// AtomIndex identifies a native atom selected for an abstract type parameter.
+type AtomIndex[T any] struct { kioAtomIndex [0]*T }
+func (AtomIndex[T]) kioIndexKind_S() {}
+func PrepareAtom[T any](value T) Prepared[AtomIndex[T]] {
+	return Prepared[AtomIndex[T]]{value: Atom(value)}
+}
+
+type kioAtom struct { value any }
+
+// Atom selects an opaque native value for an otherwise abstract type slot.
+// Declared Kio shapes use the package's exact typed Value helpers instead.
+func Atom[T any](value T) Value { return Value{value: kioAtom{value: value}} }
+
+// NativeAtom reads an opaque atom previously supplied with Atom. It does not
+// expose structural Kio data or a nominal payload.
+func NativeAtom[T any](value Value) T { return kioNative[T](value.value.(kioAtom).value) }
+
+func (value Value) kioIntoBody(host any) any {
+	if value.intoBody != nil {
+		return value.intoBody(host, value.value)
+	}
+	return value.value
+}
+
+func kioNative[T any](value any) T {
+	if value == nil {
+		var zero T
+		return zero
+	}
+	return value.(T)
+}
+
+type kioSealedValue struct { value any }
+
+func (value kioSealedValue) kioNominalPayload() any { return value.value }
+
+// Only resolved nominal projectors and label-field eliminations call this
+// operation. Public structural views never peel a nominal envelope.
+func kioNominalPayload(value any) any {
+	return value.(interface { kioNominalPayload() any }).kioNominalPayload()
+}
 
 func kioProductSlots(v any, arity int) []any {
 	slots := make([]any, 0, arity)

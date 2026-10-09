@@ -1,0 +1,7 @@
+package main
+
+import p "driver/out/go"
+
+func wrongRecursive(pkg *p.Package[int, int, string], list p.Exp_Api__readList_arg0[int, int, string]) {
+	pkg.Api.ReadTree(list)
+}

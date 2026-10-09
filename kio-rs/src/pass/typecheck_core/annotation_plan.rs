@@ -116,12 +116,12 @@ fn update_annotation_plan_consumer_work(update: impl FnOnce(&mut AnnotationPlanC
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "surface", feature = "prime")))]
 pub(crate) fn reset_annotation_plan_consumer_work() {
     ANNOTATION_PLAN_CONSUMER_WORK.with(|work| work.set(AnnotationPlanConsumerWork::default()));
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "surface", feature = "prime")))]
 pub(crate) fn annotation_plan_consumer_work() -> AnnotationPlanConsumerWork {
     ANNOTATION_PLAN_CONSUMER_WORK.with(std::cell::Cell::get)
 }
@@ -2590,7 +2590,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                         .expect("lambda publication lost a retained source binder");
                     assert_eq!(binder.param().span, param.span);
                     tcx.push_retained_type_binder(binder);
-                    <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::record_binder_decl_at(
+                    <<Lowered as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<Lowered>>::record_binder_decl_at(
                         param.span,
                         super::ResolvedBinderKind::TypeParam,
                         param.name.as_str(),
@@ -2605,7 +2605,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                         .ty
                         .expect("a checked lambda publication lost its expected value slot");
                     tcx.push_value_interned(param.name.clone(), ty.clone());
-                    <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::record_binder_decl_at(
+                    <<Lowered as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<Lowered>>::record_binder_decl_at(
                         param.meta.span,
                         super::ResolvedBinderKind::Local,
                         param.name.as_str(),
@@ -2802,7 +2802,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                         .expect("lambda publication lost a retained source binder");
                     assert_eq!(binder.param().span, param.span);
                     tcx.push_retained_type_binder(binder);
-                    <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::record_binder_decl_at(
+                    <<Lowered as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<Lowered>>::record_binder_decl_at(
                         param.span,
                         super::ResolvedBinderKind::TypeParam,
                         param.name.as_str(),
@@ -2817,7 +2817,7 @@ impl<'m> LambdaHeaderPlan<'m> {
                         .ty
                         .expect("a synthesized lambda lost its value-parameter type");
                     tcx.push_value_interned(param.name.clone(), ty);
-                    <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::record_binder_decl_at(
+                    <<Lowered as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<Lowered>>::record_binder_decl_at(
                         param.meta.span,
                         super::ResolvedBinderKind::Local,
                         param.name.as_str(),
@@ -3079,7 +3079,7 @@ pub(crate) fn check_lowered_let_against<'m>(
     }
     let mark = tcx.save();
     tcx.push_value_interned(name.to_owned(), bound_ty);
-    <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::record_binder_decl_at(
+    <<Lowered as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<Lowered>>::record_binder_decl_at(
         *name_span,
         super::ResolvedBinderKind::Local,
         name,
@@ -3143,12 +3143,9 @@ pub(crate) fn synth_prime_let<'m>(
     }
     let mark = tcx.save();
     tcx.push_value_interned(name.to_owned(), bound_ty);
-    <<crate::ast::Prime as TyperPhase>::Typer as super::Typer<crate::ast::Prime>>::record_binder_decl_at(
-        name_span,
-        super::ResolvedBinderKind::Local,
-        name,
-        tcx,
-    );
+    <<crate::ast::Prime as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<
+        crate::ast::Prime,
+    >>::record_binder_decl_at(name_span, super::ResolvedBinderKind::Local, name, tcx);
     let body_ty =
         <<crate::ast::Prime as TyperPhase>::Typer as super::Typer<crate::ast::Prime>>::synth_expr(
             body, tcx,
@@ -3185,12 +3182,9 @@ pub(crate) fn check_prime_let_against<'m>(
     }
     let mark = tcx.save();
     tcx.push_value_interned(name.to_owned(), bound_ty);
-    <<crate::ast::Prime as TyperPhase>::Typer as super::Typer<crate::ast::Prime>>::record_binder_decl_at(
-        *name_span,
-        super::ResolvedBinderKind::Local,
-        name,
-        tcx,
-    );
+    <<crate::ast::Prime as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<
+        crate::ast::Prime,
+    >>::record_binder_decl_at(*name_span, super::ResolvedBinderKind::Local, name, tcx);
     let checked = <<crate::ast::Prime as TyperPhase>::Typer as super::Typer<
         crate::ast::Prime,
     >>::check_value_against_interned(body, expected, tcx);
@@ -3224,7 +3218,7 @@ pub(crate) fn synth_let<'m>(
     }
     let mark = tcx.save();
     tcx.push_value_interned(name.to_owned(), bound_ty);
-    <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::record_binder_decl_at(
+    <<Lowered as super::DeclarationPhase>::HeaderRecording as super::HeaderRecording<Lowered>>::record_binder_decl_at(
         name_span,
         super::ResolvedBinderKind::Local,
         name,
@@ -3248,7 +3242,7 @@ fn publish_annotation_binder_events<'m, P>(
             AnnotationBinderEvent::Enter(param) => {
                 let mark = tcx.save();
                 tcx.push_owned_retained_type_param(&param);
-                <P::Typer as super::Typer<P>>::record_binder_decl_at(
+                <P::HeaderRecording as super::HeaderRecording<P>>::record_binder_decl_at(
                     param.span,
                     super::ResolvedBinderKind::TypeParam,
                     param.name.as_str(),
@@ -3285,7 +3279,7 @@ fn publish_annotation_binder_events<'m, P>(
                         "annotation binder publication changed its embedded proof"
                     ),
                 }
-                <P::Typer as super::Typer<P>>::record_binder_at(
+                <P::HeaderRecording as super::HeaderRecording<P>>::record_binder_at(
                     span,
                     super::ResolvedBinderKind::TypeParam,
                     name.as_str(),

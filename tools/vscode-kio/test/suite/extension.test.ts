@@ -171,10 +171,7 @@ suite("Kio extension — activation & highlighting", () => {
 
   test("semantic tokens provider classifies UFCS roles in both directions", async () => {
     const doc = await openFixture("highlight.kio");
-    // Give the activation a chance to run (extension activation
-    // is lazy and the semantic-tokens provider registers in
-    // `activate`).
-    await new Promise((r) => setTimeout(r, 2000));
+    await vscode.extensions.getExtension("kio-lang.kio")!.activate();
     const tokens = (await vscode.commands.executeCommand(
       "vscode.provideDocumentSemanticTokens",
       doc.uri,
@@ -225,7 +222,7 @@ suite("Kio extension — activation & highlighting", () => {
       "dependency.lock.kio",
     ]) {
       const doc = await openFixture(fixture);
-      await new Promise((r) => setTimeout(r, 2000));
+      await vscode.extensions.getExtension("kio-lang.kio")!.activate();
       const tokens = (await vscode.commands.executeCommand(
         "vscode.provideDocumentSemanticTokens",
         doc.uri,
@@ -505,11 +502,20 @@ suite("Kio extension — real kio lsp", () => {
           && diagnostic.severity === vscode.DiagnosticSeverity.Error);
       await waitFor(() => errors().length > 0, 20_000, `${name} diagnostic`);
       assert.strictEqual(errors().length, 1);
-      const actions = await completeEditorRequest(() =>
-        vscode.commands.executeCommand<vscode.CodeAction[]>(
-          "vscode.executeCodeActionProvider", doc.uri, errors()[0].range,
+      let requestSnapshot: string | undefined;
+      const actions = await completeEditorRequest(() => {
+        const requestedRange = errors()[0].range;
+        requestSnapshot = JSON.stringify({
+          uri: doc.uri.toString(),
+          version: doc.version,
+          range: requestedRange,
+          diagnostics: errors(),
+        });
+        return vscode.commands.executeCommand<vscode.CodeAction[]>(
+          "vscode.executeCodeActionProvider", doc.uri, requestedRange,
           vscode.CodeActionKind.QuickFix.value,
-        ), () => doc.version, Date.now() + 5_000);
+        );
+      }, () => doc.version, Date.now() + 5_000);
       assert.ok(Array.isArray(actions), "the native provider completes the request");
       if (expected === undefined) {
         assert.match(errors()[0].message, /only allowed inside a `rec\(loop\)` function/);
@@ -518,7 +524,24 @@ suite("Kio extension — real kio lsp", () => {
         continue;
       }
       const action = actions.find((candidate) => candidate.title === title);
-      assert.ok(action?.edit, `${name}: a native edit is discoverable`);
+      assert.ok(action?.edit, action?.edit ? `${name}: a native edit is discoverable`
+        : `${name}: a native edit is discoverable; ${JSON.stringify({
+        expectedTitle: title,
+        request: requestSnapshot,
+        response: {
+          version: doc.version,
+          diagnostics: errors(),
+          actions: actions.map((candidate) => ({
+            title: candidate.title,
+            kind: candidate.kind?.value,
+            command: candidate.command,
+            disabled: candidate.disabled,
+            edit: candidate.edit?.entries().map(([uri, edits]) => ({
+              uri: uri.toString(), edits,
+            })),
+          })),
+        },
+      })}`);
       assert.strictEqual(action.kind?.value, "quickfix");
       assert.strictEqual(action.command, undefined, "applying the fix needs no command or AI service");
       assert.strictEqual(await vscode.workspace.applyEdit(action.edit), true);
@@ -613,26 +636,20 @@ suite("Kio extension — real kio lsp", () => {
   });
 });
 
-// A `kio` that cannot serve fails identically on every attempt, so
-// spawning it can only produce the same crash until the language client's
-// restart budget runs out. The extension is supposed to read `--help`,
-// see no `lsp` subcommand, and not spawn it at all.
+// Initial probe rejection and absence of a spawn are observed at the
+// terminal notification in availability.test.ts. This real editor launch
+// verifies that highlighting survives selection of the stale binary.
 if (MODE === "stale")
 suite("Kio extension — a kio that cannot serve LSP", () => {
-  test("the extension declines to spawn it, and survives", async () => {
+  test("the extension activates and highlights with a stale compiler", async () => {
     const doc = await openFixture("lsp-pkg/main.kio");
 
-    // Long enough for activation, the probe, and any spawn that should
-    // not have happened — the assertion is a negative, so it needs to
-    // outlast the thing it denies.
-    await new Promise((r) => setTimeout(r, 8_000));
-
-    const marker = process.env.VSCODE_KIO_STALE_MARKER;
-    assert.ok(marker !== undefined && marker !== "", "runTest.ts must set the marker path");
-    assert.ok(
-      !fs.existsSync(marker),
-      "the extension spawned a server whose `--help` has no `lsp` subcommand",
+    const ext = vscode.extensions.getExtension("kio-lang.kio")!;
+    await ext.activate();
+    const tokens = await vscode.commands.executeCommand<vscode.SemanticTokens>(
+      "vscode.provideDocumentSemanticTokens", doc.uri,
     );
+    assert.ok(tokens && tokens.data.length > 0, "highlighting survives the stale compiler");
 
     assert.strictEqual(
       vscode.languages.getDiagnostics(doc.uri).length,
@@ -640,9 +657,6 @@ suite("Kio extension — a kio that cannot serve LSP", () => {
       "a server that cannot serve should publish nothing",
     );
 
-    // Highlighting is independent of the server, and must not go down
-    // with it.
-    const ext = vscode.extensions.getExtension("kio-lang.kio");
     assert.ok(ext?.isActive, "the extension should still be active");
   });
 });

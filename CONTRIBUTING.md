@@ -50,7 +50,7 @@ A non-draft PR that is neither a contrib-lane PR (it touches only `test-data/con
 
 ## Developer Certificate of Origin (DCO)
 
-Every commit must be signed off under the [Developer Certificate of Origin] version 1.1. Sign-off is your statement that you have the right to submit the change under this project's license; it is not a copyright assignment.
+Every submitted commit must be signed off under the [Developer Certificate of Origin] version 1.1. Sign-off is your statement that you have the right to submit the change under this project's license; it is not a copyright assignment.
 
 Add a sign-off automatically with `git commit -s`. The trailer looks like:
 

@@ -1337,7 +1337,11 @@ fn walk_host_fn(h: &ast::HostFn<ast::Surface>, raw: &[LexToken], overrides: &mut
     walk_type(&h.ret, raw, overrides);
 }
 
-fn walk_fn_def(f: &ast::FnDef<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
+fn walk_fn_def<PurityField>(
+    f: &ast::FnDef<ast::Surface, PurityField>,
+    raw: &[LexToken],
+    overrides: &mut AstOverrides,
+) {
     mark_declaration_keyword(raw, f.meta.span, "fn", overrides);
     if let Some(s) = find_name_after_kw(raw, f.meta.span, "fn", &f.name) {
         overrides.insert(s.start, TokenKind::EntityNameFunction);

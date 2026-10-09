@@ -736,19 +736,25 @@ mod windows {
     #[cfg(test)]
     mod tests {
         use super::{
-            Job, output, readiness_status, resume_suspended_process, status, status_cancellable,
+            Job, OwnedHandle, output, readiness_status, resume_suspended_process, status,
+            status_cancellable,
         };
         use std::fs;
         use std::os::windows::process::CommandExt;
         use std::process::Command;
         use std::thread;
         use std::time::{Duration, Instant};
-        use windows::Win32::System::Threading::CREATE_SUSPENDED;
+        use windows::Win32::Foundation::{WAIT_OBJECT_0, WAIT_TIMEOUT};
+        use windows::Win32::System::Threading::{
+            CREATE_SUSPENDED, OpenProcess, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+            TerminateProcess, WaitForSingleObject,
+        };
 
         const MODE: &str = "KIO_TEST_WINDOWS_SUPERVISOR_MODE";
         const STARTED: &str = "KIO_TEST_WINDOWS_SUPERVISOR_STARTED";
         const FINISHED: &str = "KIO_TEST_WINDOWS_SUPERVISOR_FINISHED";
         const RELEASE: &str = "KIO_TEST_WINDOWS_SUPERVISOR_RELEASE";
+        const HOLD_UNTIL_KILLED: &str = "KIO_TEST_WINDOWS_SUPERVISOR_HOLD_UNTIL_KILLED";
 
         #[test]
         fn exit_status_and_captured_output_are_preserved() {
@@ -796,7 +802,15 @@ mod windows {
                         .unwrap();
                 }
                 "kill-descendant" => {
-                    fs::write(started.unwrap(), b"started").unwrap();
+                    let started = started.unwrap();
+                    let pending = started.with_extension("pending");
+                    fs::write(&pending, std::process::id().to_string()).unwrap();
+                    fs::rename(pending, started).unwrap();
+                    if std::env::var_os(HOLD_UNTIL_KILLED).is_some() {
+                        loop {
+                            thread::park();
+                        }
+                    }
                     wait_for_path(release.as_ref().unwrap());
                     fs::write(finished.unwrap(), b"finished").unwrap();
                 }
@@ -887,14 +901,60 @@ mod windows {
         #[test]
         fn supervisor_death_terminates_the_complete_process_tree() {
             let paths = FixturePaths::new("death");
-            let mut supervisor = paths.command("supervisor").spawn().unwrap();
+            let mut supervisor = FixtureSupervisor(
+                paths
+                    .command("supervisor")
+                    .env(HOLD_UNTIL_KILLED, "1")
+                    .spawn()
+                    .unwrap(),
+            );
             wait_for_path(&paths.started);
-            supervisor.kill().unwrap();
-            supervisor.wait().unwrap();
-            fs::write(&paths.release, b"release").unwrap();
-            thread::sleep(Duration::from_millis(500));
+            let pid = fs::read_to_string(&paths.started).unwrap().parse().unwrap();
+            // Capture a handle while the descendant is held at its release gate;
+            // a later PID lookup could observe a reused process identity.
+            let descendant = FixtureDescendant(OwnedHandle(unsafe {
+                OpenProcess(PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, false, pid).unwrap()
+            }));
+            // SAFETY: the fixture owns this live process handle.
+            assert_eq!(
+                unsafe { WaitForSingleObject(descendant.0.0, 0) },
+                WAIT_TIMEOUT
+            );
+            supervisor.0.kill().unwrap();
+            supervisor.0.wait().unwrap();
+            // Do not release the descendant: a natural exit would mask a
+            // failure of kill-on-supervisor-death. This is only a hang bound.
+            // SAFETY: the owned process handle remains valid after termination.
+            let outcome = unsafe { WaitForSingleObject(descendant.0.0, 10_000) };
+            drop(descendant);
+            assert_eq!(
+                outcome, WAIT_OBJECT_0,
+                "supervisor left its descendant alive"
+            );
             assert!(!paths.finished.exists());
             paths.remove();
+        }
+
+        struct FixtureDescendant(OwnedHandle);
+
+        struct FixtureSupervisor(std::process::Child);
+
+        impl Drop for FixtureSupervisor {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        impl Drop for FixtureDescendant {
+            fn drop(&mut self) {
+                // SAFETY: this captured handle belongs only to our fixture.
+                // Force cleanup even when an assertion or the hang guard fails.
+                unsafe {
+                    let _ = TerminateProcess(self.0.0, 1);
+                    let _ = WaitForSingleObject(self.0.0, 10_000);
+                }
+            }
         }
 
         #[test]

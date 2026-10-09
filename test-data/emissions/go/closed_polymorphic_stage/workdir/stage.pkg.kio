@@ -1,0 +1,13 @@
+package stage;
+
+build {
+  cache ();
+
+  target go {
+    out "out/go"
+  }
+}
+
+bridge {
+  api
+}

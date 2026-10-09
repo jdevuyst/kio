@@ -91,9 +91,8 @@ fn lower_module_with_stage_bases(
     out.push_str(RUNTIME);
     for name in stage_bases {
         out.push_str(&format!(
-            "\n{name} = type({}, (_KioTypeStage,), {{}})\n{name}Source = {name}\n{name}Check = type({}, (_KioTypeIndex,), {{}})\n",
+            "\n{name} = type({}, (_KioTypeStage,), {{}})\n{name}Source = {name}\n",
             python_string_literal(name),
-            python_string_literal(&format!("{name}Check"))
         ));
     }
     out.push_str("\n\n_KIO_IR = json.loads(");

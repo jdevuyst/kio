@@ -6581,6 +6581,24 @@ fn canonical_parse_diag(detail: String) -> Diag {
   mk_diag(string_concat("dyn_load_prime: malformed exact host-function signature: "(String), detail))
 }
 
+fn checked_canonical_arrow(left: Canonical_type, right: Canonical_type) -> Canonical_type | Diag {
+  if! canonical_type_has_base_kind(left) {
+    if! canonical_type_has_base_kind(right) {
+      widen_sum!(canonical_arrow(left, right), Canonical_type | Diag)
+    } else {
+      widen_sum!(
+        , canonical_parse_diag("an arrow result must have base kind"(String))
+        , Canonical_type | Diag
+        )
+    }
+  } else {
+    widen_sum!(
+      , canonical_parse_diag("an arrow parameter must have base kind"(String))
+      , Canonical_type | Diag
+      )
+  }
+}
+
 fn validate_application_args(params: Param_kinds, reversed_args: Canonical_types) ->
   Param_kinds | Diag
    {
@@ -6678,45 +6696,6 @@ fn canonical_application(head: Canonical_type, args: Canonical_types) -> Canonic
   }
 }
 
-fn source_binders_text(bs: Binders) -> String {
-  loop(
-    , .(state: Binders & String) {
-        match! state {
-          .(remaining: Binders, acc: String) {
-            match! un_binders(remaining) {
-              (
-                , .(binder: Binder_info, rest: Binders) {
-                    match! Binder_info.get(binder) {
-                      .(name: String, stars: I32) {
-                        let piece =
-                          string_concat(
-                            , "["(String)
-                            , string_concat(star_run(stars), string_concat(name, "]"(String)))
-                            );
-                        widen_sum!(
-                          , (
-                              , rest
-                              , if! string_eq(acc, ""(String)) {
-                                  piece
-                                } else {
-                                  string_concat(acc, string_concat(" "(String), piece))
-                                }
-                              )
-                          , (Binders & String) | String
-                          )
-                      }
-                    }
-                  }
-                , .(_empty: .) { widen_sum!(acc, (Binders & String) | String) }
-                )
-            }
-          }
-        }
-      }
-    , (bs, ""(String))
-    )
-}
-
 fn canonical_forall(bs: Canonical_binders, body: Canonical_type) -> Canonical_type {
   if! eq_i32(canonical_binders_len(bs), 0(I32)) {
     body
@@ -6741,6 +6720,24 @@ fn canonical_forall(bs: Canonical_binders, body: Canonical_type) -> Canonical_ty
       , no_terminal_host_type()
       , param_kinds_nil()
       , canonical_type_is_function_scheme(body)
+      )
+  }
+}
+
+fn checked_canonical_forall(bs: Canonical_binders, body: Canonical_type) -> Canonical_type | Diag {
+  if! canonical_type_has_base_kind(body) {
+    if! canonical_binders_admit_body(bs, body) {
+      widen_sum!(canonical_forall(bs, body), Canonical_type | Diag)
+    } else {
+      widen_sum!(
+        , canonical_parse_diag("higher-kinded forall binders require a complete function scheme"(String))
+        , Canonical_type | Diag
+        )
+    }
+  } else {
+    widen_sum!(
+      , canonical_parse_diag("a forall body must have base kind"(String))
+      , Canonical_type | Diag
       )
   }
 }
@@ -8352,6 +8349,45 @@ fn type_env_with_bounds(env: Type_env, bounds: Type_bounds, next_index: I32) -> 
     , type_env_substs(env)
     , type_env_aliases(env)
     , next_index
+    )
+}
+
+fn canonical_bound_lookup(env: Type_env, name: String) -> . | Canonical_type | Diag {
+  match! type_bound_index(type_env_bounds(env), name) {
+    (
+      , .(index: I32) {
+          match! type_bound_kind(type_env_bounds(env), name) {
+            (
+              , .(kind: Param_kind) {
+                  widen_sum!(
+                    , canonical_atom_params(
+                        , canonical_render_bound(index)
+                        , params_from_binder_kind(kind)
+                        )
+                    , . | Canonical_type | Diag
+                    )
+                }
+              , .(_missing: .) {
+                  widen_sum!(
+                    , canonical_parse_diag("resolved type binder has no retained kind"(String))
+                    , . | Canonical_type | Diag
+                    )
+                }
+              )
+          }
+        }
+      , .(_missing: .) { widen_sum!((), . | Canonical_type | Diag) }
+      )
+  }
+}
+
+// The key advances the shared supply without becoming a source-name binding.
+fn fresh_canonical_result(env: Type_env) -> Canonical_binders & Canonical_type & Type_env {
+  let key = type_env_next(env);
+  (
+    , canonical_binders_cons(key, 0(I32), canonical_binders_nil())
+    , canonical_atom_params(canonical_render_bound(key), param_kinds_nil())
+    , type_env_with_bounds(env, type_env_bounds(env), add_i32(key, 1(I32)))
     )
 }
 
@@ -10788,27 +10824,16 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                         .(name: String, rest: Toks) {
                           if! string_eq(name, "_"(String)) {
                             canonical_parse_failure("`_` is not allowed in an exact host-function signature"(String))
-                          } else match! type_bound_index(type_env_bounds(env), name) {
+                          } else match! canonical_bound_lookup(env, name) {
                             (
-                              , .(index: I32) {
-                                  match! type_bound_kind(type_env_bounds(env), name) {
-                                    (
-                                      , .(kind: Param_kind) {
-                                          continue_type_head(
-                                            , ctp_head_canonical(canonical_atom_params(
-                                                , canonical_render_bound(index)
-                                                , params_from_binder_kind(kind)
-                                                ))
-                                            , rest
-                                            , cont
-                                            , env
-                                            )
-                                        }
-                                      , .(_missing_kind: .) {
-                                          canonical_parse_failure("resolved type binder has no retained kind"(String))
-                                        }
-                                      )
-                                  }
+                              , .(bound: Canonical_type) {
+                                  continue_type_head(ctp_head_canonical(bound), rest, cont, env)
+                                }
+                              , .(diag: Diag) {
+                                  widen_sum!(
+                                    , widen_sum!({ctp_bad = diag}, Canonical_type_result)
+                                    , Ctp_state | Canonical_type_result
+                                    )
                                 }
                               , .(_not_bound: .) {
                                   match! type_subst_find(type_env_substs(env), name) {
@@ -10873,19 +10898,23 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                       , .(prefix: Ctc_prefix) {
                           match! Ctc_prefix.get(prefix) {
                             .(bs: Canonical_binders, saved: Type_env, parent: Ctp_cont) {
-                              if! canonical_type_has_base_kind(value) {
-                                if! canonical_binders_admit_body(bs, value) {
-                                  ctp_return_type(
-                                    , canonical_forall(bs, value)
-                                    , rest
-                                    , parent
-                                    , restore_type_env(saved, env)
-                                    )
-                                } else {
-                                  canonical_parse_failure("higher-kinded forall binders require a complete function scheme"(String))
-                                }
-                              } else {
-                                canonical_parse_failure("a forall body must have base kind"(String))
+                              match! checked_canonical_forall(bs, value) {
+                                (
+                                  , .(quantified: Canonical_type) {
+                                      ctp_return_type(
+                                        , quantified
+                                        , rest
+                                        , parent
+                                        , restore_type_env(saved, env)
+                                        )
+                                    }
+                                  , .(diag: Diag) {
+                                      widen_sum!(
+                                        , widen_sum!({ctp_bad = diag}, Canonical_type_result)
+                                        , Ctp_state | Canonical_type_result
+                                        )
+                                    }
+                                  )
                               }
                             }
                           }
@@ -10896,14 +10925,18 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                       , .(outer_arrow: Ctc_expr_arrow) {
                           match! Ctc_expr_arrow.get(outer_arrow) {
                             .(left: Canonical_type, parent: Ctp_cont) {
-                              if! canonical_type_has_base_kind(left) {
-                                if! canonical_type_has_base_kind(value) {
-                                  ctp_return_type(canonical_arrow(left, value), rest, parent, env)
-                                } else {
-                                  canonical_parse_failure("an arrow result must have base kind"(String))
-                                }
-                              } else {
-                                canonical_parse_failure("an arrow parameter must have base kind"(String))
+                              match! checked_canonical_arrow(left, value) {
+                                (
+                                  , .(arrow: Canonical_type) {
+                                      ctp_return_type(arrow, rest, parent, env)
+                                    }
+                                  , .(diag: Diag) {
+                                      widen_sum!(
+                                        , widen_sum!({ctp_bad = diag}, Canonical_type_result)
+                                        , Ctp_state | Canonical_type_result
+                                        )
+                                    }
+                                  )
                               }
                             }
                           }
@@ -10929,14 +10962,18 @@ fn ctp_step(state: Ctp_state) -> Ctp_state | Canonical_type_result {
                       , .(arrow_rhs: Ctc_arrow_rhs) {
                           match! Ctc_arrow_rhs.get(arrow_rhs) {
                             .(left: Canonical_type, parent: Ctp_cont) {
-                              if! canonical_type_has_base_kind(left) {
-                                if! canonical_type_has_base_kind(value) {
-                                  ctp_return_type(canonical_arrow(left, value), rest, parent, env)
-                                } else {
-                                  canonical_parse_failure("an arrow result must have base kind"(String))
-                                }
-                              } else {
-                                canonical_parse_failure("an arrow parameter must have base kind"(String))
+                              match! checked_canonical_arrow(left, value) {
+                                (
+                                  , .(arrow: Canonical_type) {
+                                      ctp_return_type(arrow, rest, parent, env)
+                                    }
+                                  , .(diag: Diag) {
+                                      widen_sum!(
+                                        , widen_sum!({ctp_bad = diag}, Canonical_type_result)
+                                        , Ctp_state | Canonical_type_result
+                                        )
+                                    }
+                                  )
                               }
                             }
                           }
@@ -11139,7 +11176,7 @@ fn parse_canonical_type(ts: Toks, env: Type_env) -> Canonical_type_result {
     )
 }
 
-labels { parsed_host_group: Canonical_type & I32 & Toks & Type_env };
+labels { parsed_host_group: Canonical_type & Toks & Type_env };
 
 type Parsed_host_group_result = Parsed_host_group | Diag;
 
@@ -11156,15 +11193,107 @@ fn signature_diag(subject: String, detail: String) -> Diag {
   mk_diag(string_concat(subject, string_concat(": "(String), detail)))
 }
 
+fn signature_kind_check(subject: String, t: Canonical_type, role: String) -> . | Diag {
+  match! canonical_type_kind(t) {
+    (
+      , .(kind: Param_kind) {
+          if! param_kind_eq(kind, base_kind()) {
+            widen_sum!((), . | Diag)
+          } else {
+            widen_sum!(
+              , signature_diag(subject, string_concat(role, " must have base kind"(String)))
+              , . | Diag
+              )
+          }
+        }
+      , .(_unknown: .) {
+          widen_sum!(
+            , signature_diag(subject, string_concat(role, " must be fully saturated"(String)))
+            , . | Diag
+            )
+        }
+      )
+  }
+}
+
+fn parse_value_contract_payload(subject: String, tokens: Toks, env: Type_env) -> Ctp_ok | Diag {
+  match! parse_canonical_type(tokens, env) {
+    (
+      , .(ok: Ctp_ok) {
+          match! Ctp_ok.get(ok) {
+            .(payload: Canonical_type, after: Toks, _final_env: Type_env) {
+              match! signature_kind_check(subject, payload, "a value parameter type"(String)) {
+                (
+                  , .(diag: Diag) { widen_sum!(diag, Ctp_ok | Diag) }
+                  , .(_valid: .) {
+                      if! toks_empty(after) {
+                        widen_sum!(ok, Ctp_ok | Diag)
+                      } else {
+                        widen_sum!(
+                          , signature_diag(
+                              , subject
+                              , "expected `,` or `)` after a value parameter type"(String)
+                              )
+                          , Ctp_ok | Diag
+                          )
+                      }
+                    }
+                  )
+              }
+            }
+          }
+        }
+      , .(bad: Ctp_bad) {
+          widen_sum!(signature_diag(subject, diag_message(Ctp_bad.get(bad))), Ctp_ok | Diag)
+        }
+      )
+  }
+}
+
+fn parse_result_contract_payload(subject: String, tokens: Toks, env: Type_env) ->
+  Canonical_type | Diag
+   {
+  match! parse_canonical_type(tokens, env) {
+    (
+      , .(ok: Ctp_ok) {
+          match! Ctp_ok.get(ok) {
+            .(result: Canonical_type, after: Toks, _final_env: Type_env) {
+              if! toks_empty(after) {
+                match! signature_kind_check(subject, result, "the return type"(String)) {
+                  (
+                    , .(diag: Diag) { widen_sum!(diag, Canonical_type | Diag) }
+                    , .(_valid: .) { widen_sum!(result, Canonical_type | Diag) }
+                    )
+                }
+              } else {
+                widen_sum!(
+                  , signature_diag(subject, "unexpected tokens after the return type"(String))
+                  , Canonical_type | Diag
+                  )
+              }
+            }
+          }
+        }
+      , .(bad: Ctp_bad) {
+          widen_sum!(signature_diag(subject, diag_message(Ctp_bad.get(bad))), Canonical_type | Diag)
+        }
+      )
+  }
+}
+
+fn canonical_group_slots(domain: Canonical_type) -> I32 {
+  if! canonical_type_is_unit(domain) {
+    0(I32)
+  } else {
+    canonical_type_tail_slots(domain)
+  }
+}
+
 fn host_group_success(reversed: Canonical_types, rest: Toks, env: Type_env) -> Parsed_host_group_result {
-  let domain = fold_canonical_chain(reversed, .t(Bool));
-  let slots =
-    if! canonical_type_is_unit(domain) {
-      0(I32)
-    } else {
-      canonical_type_tail_slots(domain)
-    };
-  widen_sum!({parsed_host_group = (domain, (slots, (rest, env)))}, Parsed_host_group_result)
+  widen_sum!(
+    , {parsed_host_group = (fold_canonical_chain(reversed, .t(Bool)), rest, env)}
+    , Parsed_host_group_result
+    )
 }
 
 fn parse_host_value_group(subject: String, ts: Toks, initial: Type_env) -> Parsed_host_group_result {
@@ -11193,61 +11322,48 @@ fn parse_host_value_group(subject: String, ts: Toks, initial: Type_env) -> Parse
                                     , after_type: Toks
                                     , next_env: Type_env
                                     ) {
-                                    match! canonical_type_kind(parameter_type) {
+                                    match! signature_kind_check(
+                                      , subject
+                                      , parameter_type
+                                      , "a value parameter type"(String)
+                                      ) {
                                       (
-                                        , .(kind: Param_kind) {
-                                            if! param_kind_eq(kind, base_kind()) {
-                                              let next_reversed = canonical_types_cons(
-                                                , parameter_type
-                                                , reversed
-                                                );
-                                              if! sig_head_is(after_type, 44(I32)) {
-                                                widen_sum!(
-                                                  , {host_group_parse_state = (
-                                                      , after_type
-                                                      , (next_reversed, next_env)
-                                                      )}
-                                                  , (| Host_group_parse_state
-                                                    | Parsed_host_group_result)
-                                                  )
-                                              } else if! sig_head_is(after_type, 41(I32)) {
-                                                widen_sum!(
-                                                  , host_group_success(
-                                                      , next_reversed
-                                                      , sig_rest(after_type)
-                                                      , next_env
-                                                      )
-                                                  , (| Host_group_parse_state
-                                                    | Parsed_host_group_result)
-                                                  )
-                                              } else {
-                                                widen_sum!(
-                                                  , signature_diag(
-                                                      , subject
-                                                      , "expected `,` or `)` after a value parameter type"(String)
-                                                      )
-                                                  , (| Host_group_parse_state
-                                                    | Parsed_host_group_result)
-                                                  )
-                                              }
+                                        , .(diag: Diag) {
+                                            widen_sum!(
+                                              , diag
+                                              , Host_group_parse_state | Parsed_host_group_result
+                                              )
+                                          }
+                                        , .(_valid: .) {
+                                            let next_reversed =
+                                              canonical_types_cons(parameter_type, reversed);
+                                            if! sig_head_is(after_type, 44(I32)) {
+                                              widen_sum!(
+                                                , {host_group_parse_state = (
+                                                    , after_type
+                                                    , next_reversed
+                                                    , next_env
+                                                    )}
+                                                , Host_group_parse_state | Parsed_host_group_result
+                                                )
+                                            } else if! sig_head_is(after_type, 41(I32)) {
+                                              widen_sum!(
+                                                , host_group_success(
+                                                    , next_reversed
+                                                    , sig_rest(after_type)
+                                                    , next_env
+                                                    )
+                                                , Host_group_parse_state | Parsed_host_group_result
+                                                )
                                             } else {
                                               widen_sum!(
                                                 , signature_diag(
                                                     , subject
-                                                    , "a value parameter type must have base kind"(String)
+                                                    , "expected `,` or `)` after a value parameter type"(String)
                                                     )
                                                 , Host_group_parse_state | Parsed_host_group_result
                                                 )
                                             }
-                                          }
-                                        , .(_unknown: .) {
-                                            widen_sum!(
-                                              , signature_diag(
-                                                  , subject
-                                                  , "a value parameter type must be fully saturated"(String)
-                                                  )
-                                              , Host_group_parse_state | Parsed_host_group_result
-                                              )
                                           }
                                         )
                                     }
@@ -11272,7 +11388,7 @@ fn parse_host_value_group(subject: String, ts: Toks, initial: Type_env) -> Parse
                           )
                       }
                     }
-                  , .(_missing_name: .) {
+                  , .(_missing: .) {
                       widen_sum!(
                         , signature_diag(subject, "expected a value parameter name"(String))
                         , Host_group_parse_state | Parsed_host_group_result
@@ -11283,7 +11399,7 @@ fn parse_host_value_group(subject: String, ts: Toks, initial: Type_env) -> Parse
             }
           }
         }
-      , {host_group_parse_state = (sig_rest(ts), (canonical_types_nil(), initial))}
+      , {host_group_parse_state = (sig_rest(ts), canonical_types_nil(), initial)}
       )
   } else {
     widen_sum!(
@@ -11345,15 +11461,10 @@ labels { canonical_stages: List(Canonical_stage) };
 
 fn canonical_stages_nil() -> Canonical_stages { {canonical_stages = nil(Canonical_stage)} }
 
-fn canonical_stages_cons(
-  , binders: Canonical_binders
-  , domain: Canonical_type
-  , value_slots: I32
-  , rest: Canonical_stages
-  ) -> Canonical_stages {
+fn canonical_stages_cons(binders: Canonical_binders, domain: Canonical_type, rest: Canonical_stages) -> Canonical_stages {
   {canonical_stages = cons(
     , Canonical_stage
-    , {canonical_stage = (binders, (domain, value_slots))}
+    , {canonical_stage = (binders, (domain, canonical_group_slots(domain)))}
     , Canonical_stages.get(rest)
     )}
 }
@@ -11458,154 +11569,191 @@ labels { derived_hostfn: Runtime_hostfn & Type_dependencies };
 
 type Derived_hostfn_result = Derived_hostfn | Diag;
 
-labels { host_signature_state: Toks & Type_env & Canonical_stages & Group_slots & Type_dependencies };
+labels { canonical_signature: Canonical_render & Group_slots & Group_slots & Type_dependencies };
+
+type Canonical_signature_result = Canonical_signature | Diag;
+
+labels { host_signature_state: Toks & Type_env & Canonical_stages };
 
 fn finish_signature(
-  , id: Host_id
   , reversed_stages: Canonical_stages
-  , reversed_groups: Group_slots
-  , dependencies: Type_dependencies
   , trailing_binders: Canonical_binders
   , result: Canonical_type
-  ) -> Derived_hostfn_result {
-  match! render_canonical_type(canonical_signature_render(
-    , reversed_stages
-    , canonical_forall(trailing_binders, result)
-    )) {
-    (
-      , .(rendered: String) {
-          let descriptor = mk_host_fn(id, rendered);
-          widen_sum!(
-            , {derived_hostfn = (
-                , mk_runtime_hostfn(
-                    , mk_hostfn(descriptor, group_slots_reverse(reversed_groups))
-                    , runtime_groups_from_reversed_stages(
-                        , reversed_stages
-                        , group_slots_prepend_type_stages(
-                            , canonical_binders_len(trailing_binders)
-                            , group_slots_nil()
+  ) -> Canonical_signature {
+  let metadata =
+    loop(
+      , .(state: Canonical_stages & Group_slots & Type_dependencies) {
+          match! state {
+            .(remaining: Canonical_stages, groups: Group_slots, dependencies: Type_dependencies) {
+              match! un_canonical_stages(remaining) {
+                (
+                  , .(stage: Canonical_stage, rest: Canonical_stages) {
+                      match! Canonical_stage.get(stage) {
+                        .(_binders: Canonical_binders, domain: Canonical_type, slots: I32) {
+                          widen_sum!(
+                            , (
+                                , rest
+                                , group_slots_cons(slots, groups)
+                                , type_dependencies_union(
+                                    , dependencies
+                                    , canonical_type_dependencies(domain)
+                                    )
+                                )
+                            , (| (Canonical_stages & Group_slots & Type_dependencies)
+                              | (Group_slots & Type_dependencies))
                             )
+                        }
+                      }
+                    }
+                  , .(_empty: .) {
+                      widen_sum!(
+                        , (groups, dependencies)
+                        , (| (Canonical_stages & Group_slots & Type_dependencies)
+                          | (Group_slots & Type_dependencies))
                         )
-                    )
-                , type_dependencies_union(dependencies, canonical_type_dependencies(result))
-                )}
-            , Derived_hostfn_result
-            )
+                    }
+                  )
+              }
+            }
+          }
         }
-      , .(diag: Diag) { widen_sum!(diag, Derived_hostfn_result) }
+      , (
+          , {canonical_stages = reverse(Canonical_stages.get(reversed_stages))}
+          , group_slots_nil()
+          , type_dependencies_nil()
+          )
+      );
+  match! metadata {
+    .(reversed_groups: Group_slots, dependencies: Type_dependencies) {
+      {canonical_signature = (
+        , canonical_signature_render(reversed_stages, canonical_forall(trailing_binders, result))
+        , group_slots_reverse(reversed_groups)
+        , runtime_groups_from_reversed_stages(
+            , reversed_stages
+            , group_slots_prepend_type_stages(
+                , canonical_binders_len(trailing_binders)
+                , group_slots_nil()
+                )
+            )
+        , type_dependencies_union(dependencies, canonical_type_dependencies(result))
+        )}
+    }
+  }
+}
+
+fn project_signature(id: Host_id, signature: Canonical_signature) -> Derived_hostfn_result {
+  match! Canonical_signature.get(signature) {
+    .(
+      , render: Canonical_render
+      , groups: Group_slots
+      , runtime: Group_slots
+      , dependencies: Type_dependencies
+      ) {
+      match! render_canonical_type(render) {
+        (
+          , .(rendered: String) {
+              widen_sum!(
+                , {derived_hostfn = (
+                    , mk_runtime_hostfn(mk_hostfn(mk_host_fn(id, rendered), groups), runtime)
+                    , dependencies
+                    )}
+                , Derived_hostfn_result
+                )
+            }
+          , .(diag: Diag) { widen_sum!(diag, Derived_hostfn_result) }
+          )
+      }
+    }
+  }
+}
+
+fn finish_type_only_result(
+  , subject: String
+  , stages: Canonical_stages
+  , binders: Canonical_binders
+  , result: Canonical_type
+  ) -> Canonical_signature_result {
+  if! canonical_type_has_base_kind(result) {
+    if! canonical_binders_admit_body(binders, result) {
+      widen_sum!(finish_signature(stages, binders, result), Canonical_signature_result)
+    } else {
+      widen_sum!(
+        , signature_diag(
+            , subject
+            , "higher-kinded forall binders require a complete function scheme"(String)
+            )
+        , Canonical_signature_result
+        )
+    }
+  } else {
+    widen_sum!(
+      , signature_diag(subject, "the return type must have base kind"(String))
+      , Canonical_signature_result
       )
   }
 }
 
-fn finish_host_signature(
-  , id: Host_id
-  , reversed_stages: Canonical_stages
-  , reversed_groups: Group_slots
-  , dependencies: Type_dependencies
-  , result: Canonical_type
-  ) -> Derived_hostfn_result {
-  finish_signature(
-    , id
-    , reversed_stages
-    , reversed_groups
-    , dependencies
-    , canonical_binders_nil()
-    , result
-    )
-}
-
 fn finish_type_only_signature(
-  , id: Host_id
   , subject: String
-  , reversed_stages: Canonical_stages
-  , reversed_groups: Group_slots
-  , dependencies: Type_dependencies
+  , stages: Canonical_stages
   , binders: Canonical_binders
-  , return_tokens: Toks
+  , tokens: Toks
   , env: Type_env
-  ) -> Derived_hostfn_result {
-  match! parse_canonical_type(return_tokens, env) {
+  ) -> Canonical_signature_result {
+  match! parse_canonical_type(tokens, env) {
     (
       , .(ok: Ctp_ok) {
           match! Ctp_ok.get(ok) {
             .(result: Canonical_type, after: Toks, _final_env: Type_env) {
               if! toks_empty(after) {
-                if! canonical_type_has_base_kind(result) {
-                  if! canonical_binders_admit_body(binders, result) {
-                    finish_signature(
-                      , id
-                      , reversed_stages
-                      , reversed_groups
-                      , dependencies
-                      , binders
-                      , result
-                      )
-                  } else {
-                    widen_sum!(
-                      , signature_diag(
-                          , subject
-                          , "higher-kinded forall binders require a complete function scheme"(String)
-                          )
-                      , Derived_hostfn_result
-                      )
-                  }
-                } else {
-                  widen_sum!(
-                    , signature_diag(subject, "the return type must have base kind"(String))
-                    , Derived_hostfn_result
-                    )
-                }
+                finish_type_only_result(subject, stages, binders, result)
               } else {
                 widen_sum!(
                   , signature_diag(subject, "unexpected tokens after the return type"(String))
-                  , Derived_hostfn_result
+                  , Canonical_signature_result
                   )
               }
             }
           }
         }
       , .(bad: Ctp_bad) {
-          widen_sum!(signature_diag(subject, diag_message(Ctp_bad.get(bad))), Derived_hostfn_result)
+          widen_sum!(
+            , signature_diag(subject, diag_message(Ctp_bad.get(bad)))
+            , Canonical_signature_result
+            )
         }
       )
   }
 }
 
-fn derive_hostfn_header_with_type_scope(
+fn parse_source_signature(
   , modules: Modules
   , types: Host_types
   , module: Module
   , header: Host_header
   , subject: String
   , recursive_scope: . | Recursive_type_scope
-  , initial_substs: Type_substs
   , require_value_group: Bool
-  ) -> Derived_hostfn_result {
-  let id = mk_host_id(module_name(module), host_header_name(header));
+  , implicit_unit: Bool
+  ) -> Canonical_signature_result {
   let context =
     mk_type_context(modules, types, module, host_header_decl_pos(header), recursive_scope);
   let initial_env =
-    mk_type_env(context, type_bounds_nil(), initial_substs, alias_refs_nil(), 0(I32));
+    mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32));
   loop(
     , .(state: Host_signature_state) {
         match! Host_signature_state.get(state) {
-          .(
-            , remaining: Toks
-            , env: Type_env
-            , reversed_stages: Canonical_stages
-            , reversed_groups: Group_slots
-            , dependencies: Type_dependencies
-            ) {
+          .(remaining: Toks, env: Type_env, reversed_stages: Canonical_stages) {
             match! parse_host_binders(remaining) {
               (
-                , .(binders_done: Host_binders_done) {
-                    match! Host_binders_done.get(binders_done) {
+                , .(done: Host_binders_done) {
+                    match! Host_binders_done.get(done) {
                       .(source_binders: Binders, at_group: Toks) {
                         match! Canonical_binders_result.get(canonicalize_binders(
                           , source_binders
                           , env
                           )) {
-                          .(canonical_bs: Canonical_binders, group_env: Type_env) {
+                          .(binders: Canonical_binders, group_env: Type_env) {
                             if! sig_head_is(at_group, 40(I32)) {
                               match! parse_host_value_group(subject, at_group, group_env) {
                                 (
@@ -11613,102 +11761,36 @@ fn derive_hostfn_header_with_type_scope(
                                       match! Parsed_host_group.get(group) {
                                         .(
                                           , domain: Canonical_type
-                                          , group_slots: I32
                                           , after_group: Toks
                                           , next_env: Type_env
                                           ) {
                                           let stages =
-                                            canonical_stages_cons(
-                                              , canonical_bs
-                                              , domain
-                                              , group_slots
-                                              , reversed_stages
-                                              );
-                                          let groups =
-                                            group_slots_cons(group_slots, reversed_groups);
-                                          let deps =
-                                            type_dependencies_union(
-                                              , dependencies
-                                              , canonical_type_dependencies(domain)
-                                              );
+                                            canonical_stages_cons(binders, domain, reversed_stages);
                                           match! punct_after_arrow(after_group) {
                                             (
                                               , .(return_tokens: Toks) {
-                                                  match! parse_canonical_type(
+                                                  match! parse_result_contract_payload(
+                                                    , subject
                                                     , return_tokens
                                                     , next_env
                                                     ) {
                                                     (
-                                                      , .(ok: Ctp_ok) {
-                                                          match! Ctp_ok.get(ok) {
-                                                            .(
-                                                              , result: Canonical_type
-                                                              , after_result: Toks
-                                                              , _final_env: Type_env
-                                                              ) {
-                                                              if! toks_empty(after_result) {
-                                                                match! canonical_type_kind(result) {
-                                                                  (
-                                                                    , .(kind: Param_kind) {
-                                                                        if! param_kind_eq(
-                                                                          , kind
-                                                                          , base_kind()
-                                                                          ) {
-                                                                          widen_sum!(
-                                                                            , finish_host_signature(
-                                                                                , id
-                                                                                , stages
-                                                                                , groups
-                                                                                , deps
-                                                                                , result
-                                                                                )
-                                                                            , (| Host_signature_state
-                                                                              | Derived_hostfn_result)
-                                                                            )
-                                                                        } else {
-                                                                          widen_sum!(
-                                                                            , signature_diag(
-                                                                                , subject
-                                                                                , "the return type must have base kind"(String)
-                                                                                )
-                                                                            , (| Host_signature_state
-                                                                              | Derived_hostfn_result)
-                                                                            )
-                                                                        }
-                                                                      }
-                                                                    , .(_unknown: .) {
-                                                                        widen_sum!(
-                                                                          , signature_diag(
-                                                                              , subject
-                                                                              , "the return type must be fully saturated"(String)
-                                                                              )
-                                                                          , (| Host_signature_state
-                                                                            | Derived_hostfn_result)
-                                                                          )
-                                                                      }
-                                                                    )
-                                                                }
-                                                              } else {
-                                                                widen_sum!(
-                                                                  , signature_diag(
-                                                                      , subject
-                                                                      , "unexpected tokens after the return type"(String)
-                                                                      )
-                                                                  , (| Host_signature_state
-                                                                    | Derived_hostfn_result)
-                                                                  )
-                                                              }
-                                                            }
-                                                          }
-                                                        }
-                                                      , .(bad: Ctp_bad) {
+                                                      , .(result: Canonical_type) {
                                                           widen_sum!(
-                                                            , signature_diag(
-                                                                , subject
-                                                                , diag_message(Ctp_bad.get(bad))
+                                                            , finish_signature(
+                                                                , stages
+                                                                , canonical_binders_nil()
+                                                                , result
                                                                 )
                                                             , (| Host_signature_state
-                                                              | Derived_hostfn_result)
+                                                              | Canonical_signature_result)
+                                                            )
+                                                        }
+                                                      , .(diag: Diag) {
+                                                          widen_sum!(
+                                                            , diag
+                                                            , (| Host_signature_state
+                                                              | Canonical_signature_result)
                                                             )
                                                         }
                                                       )
@@ -11716,28 +11798,45 @@ fn derive_hostfn_header_with_type_scope(
                                                 }
                                               , .(_no_arrow: .) {
                                                   if! toks_empty(after_group) {
-                                                    widen_sum!(
-                                                      , signature_diag(
-                                                          , subject
-                                                          , "expected `->` and a return type after the final value group"(String)
-                                                          )
-                                                      , Host_signature_state | Derived_hostfn_result
-                                                      )
+                                                    if! implicit_unit {
+                                                      widen_sum!(
+                                                        , finish_signature(
+                                                            , stages
+                                                            , canonical_binders_nil()
+                                                            , canonical_unit()
+                                                            )
+                                                        , (| Host_signature_state
+                                                          | Canonical_signature_result)
+                                                        )
+                                                    } else {
+                                                      widen_sum!(
+                                                        , signature_diag(
+                                                            , subject
+                                                            , "expected `->` and a return type after the final value group"(String)
+                                                            )
+                                                        , (| Host_signature_state
+                                                          | Canonical_signature_result)
+                                                        )
+                                                    }
                                                   } else if! sig_head_is(after_group, 91(I32)) {
                                                     widen_sum!(
                                                       , {host_signature_state = (
                                                           , after_group
-                                                          , (next_env, (stages, (groups, deps)))
+                                                          , next_env
+                                                          , stages
                                                           )}
-                                                      , Host_signature_state | Derived_hostfn_result
+                                                      , (| Host_signature_state
+                                                        | Canonical_signature_result)
                                                       )
                                                   } else if! sig_head_is(after_group, 40(I32)) {
                                                     widen_sum!(
                                                       , {host_signature_state = (
                                                           , after_group
-                                                          , (next_env, (stages, (groups, deps)))
+                                                          , next_env
+                                                          , stages
                                                           )}
-                                                      , Host_signature_state | Derived_hostfn_result
+                                                      , (| Host_signature_state
+                                                        | Canonical_signature_result)
                                                       )
                                                   } else {
                                                     widen_sum!(
@@ -11745,7 +11844,8 @@ fn derive_hostfn_header_with_type_scope(
                                                           , subject
                                                           , "expected another value group or `->`"(String)
                                                           )
-                                                      , Host_signature_state | Derived_hostfn_result
+                                                      , (| Host_signature_state
+                                                        | Canonical_signature_result)
                                                       )
                                                   }
                                                 }
@@ -11755,7 +11855,10 @@ fn derive_hostfn_header_with_type_scope(
                                       }
                                     }
                                   , .(diag: Diag) {
-                                      widen_sum!(diag, Host_signature_state | Derived_hostfn_result)
+                                      widen_sum!(
+                                        , diag
+                                        , Host_signature_state | Canonical_signature_result
+                                        )
                                     }
                                   )
                               }
@@ -11765,41 +11868,60 @@ fn derive_hostfn_header_with_type_scope(
                                     , subject
                                     , "expected a value-parameter group"(String)
                                     )
-                                , Host_signature_state | Derived_hostfn_result
+                                , Host_signature_state | Canonical_signature_result
                                 )
-                            } else if! eq_i32(canonical_binders_len(canonical_bs), 0(I32)) {
+                            } else if! eq_i32(canonical_binders_len(binders), 0(I32)) {
                               widen_sum!(
                                 , signature_diag(
                                     , subject
                                     , "expected a function parameter group"(String)
                                     )
-                                , Host_signature_state | Derived_hostfn_result
+                                , Host_signature_state | Canonical_signature_result
                                 )
                             } else match! punct_after_arrow(at_group) {
                               (
                                 , .(return_tokens: Toks) {
                                     widen_sum!(
                                       , finish_type_only_signature(
-                                          , id
                                           , subject
                                           , reversed_stages
-                                          , reversed_groups
-                                          , dependencies
-                                          , canonical_bs
+                                          , binders
                                           , return_tokens
                                           , group_env
                                           )
-                                      , Host_signature_state | Derived_hostfn_result
+                                      , Host_signature_state | Canonical_signature_result
                                       )
                                   }
                                 , .(_no_arrow: .) {
-                                    widen_sum!(
-                                      , signature_diag(
-                                          , subject
-                                          , "expected a value group or `->` after type parameters"(String)
+                                    if! implicit_unit {
+                                      if! toks_empty(at_group) {
+                                        widen_sum!(
+                                          , finish_type_only_result(
+                                              , subject
+                                              , reversed_stages
+                                              , binders
+                                              , canonical_unit()
+                                              )
+                                          , Host_signature_state | Canonical_signature_result
                                           )
-                                      , Host_signature_state | Derived_hostfn_result
-                                      )
+                                      } else {
+                                        widen_sum!(
+                                          , signature_diag(
+                                              , subject
+                                              , "expected a value group or `->` after type parameters"(String)
+                                              )
+                                          , Host_signature_state | Canonical_signature_result
+                                          )
+                                      }
+                                    } else {
+                                      widen_sum!(
+                                        , signature_diag(
+                                            , subject
+                                            , "expected a value group or `->` after type parameters"(String)
+                                            )
+                                        , Host_signature_state | Canonical_signature_result
+                                        )
+                                    }
                                   }
                                 )
                             }
@@ -11811,7 +11933,7 @@ fn derive_hostfn_header_with_type_scope(
                 , .(bad: Host_binders_bad) {
                     widen_sum!(
                       , signature_diag(subject, Host_binders_bad.get(bad))
-                      , Host_signature_state | Derived_hostfn_result
+                      , Host_signature_state | Canonical_signature_result
                       )
                   }
                 )
@@ -11819,24 +11941,28 @@ fn derive_hostfn_header_with_type_scope(
           }
         }
       }
-    , {host_signature_state = (
-        , host_header_tokens(header)
-        , (initial_env, (canonical_stages_nil(), (group_slots_nil(), type_dependencies_nil())))
-        )}
+    , {host_signature_state = (host_header_tokens(header), initial_env, canonical_stages_nil())}
     )
 }
 
 fn derive_hostfn_header(modules: Modules, types: Host_types, module: Module, header: Host_header) -> Derived_hostfn_result {
-  derive_hostfn_header_with_type_scope(
+  match! parse_source_signature(
     , modules
     , types
     , module
     , header
     , host_signature_subject(mk_host_id(module_name(module), host_header_name(header)))
     , no_recursive_type_scope()
-    , type_substs_nil()
     , .t(Bool)
-    )
+    , .f(Bool)
+    ) {
+    (
+      , .(signature: Canonical_signature) {
+          project_signature(mk_host_id(module_name(module), host_header_name(header)), signature)
+        }
+      , .(diag: Diag) { widen_sum!(diag, Derived_hostfn_result) }
+      )
+  }
 }
 
 labels { source_hostfn_search: Host_headers & (. | (Runtime_hostfn & Type_dependencies)) };
@@ -13689,53 +13815,6 @@ fn exact_bool_type_for_decl(modules: Modules, types: Host_types, owner: String, 
 // =====================================================================
 // Member-export signatures — derived from the retained newtype header
 // =====================================================================
-//
-// A member's signature is assembled as source-spelled text from the
-// header's raw tokens, then passed through the same exact resolver as host
-// declarations. Host expectations copy the resulting canonical export string;
-// they are not reparsed or granted source-name resolution.
-
-// The source spelling of a token run, single-space separated (the lexer
-// is whitespace-insensitive, so this only needs to re-lex faithfully).
-fn toks_source_text(ts: Toks) -> String {
-  loop(
-    , .(st: Toks & String) {
-        match! st {
-          .(cur: Toks, acc: String) {
-            match! un_toks(cur) {
-              (
-                , .(t: Token, _p: I32, rest: Toks) {
-                    let piece =
-                      match! un_token(t) {
-                        (
-                          , .(w: Tk_word) { Tk_word.get(w) }
-                          , .(n: Tk_num) { Tk_num.get(n) }
-                          , .(_str: Tk_str) { "<string>"(String) }
-                          , .(pc: Tk_punct) {
-                              match! ascii_char(Tk_punct.get(pc)) {
-                                (.(ch: String) { ch }, .(_wide: .) { "?"(String) })
-                              }
-                            }
-                          )
-                      };
-                    let acc1 =
-                      if! string_eq(acc, ""(String)) {
-                        piece
-                      } else {
-                        string_concat(acc, string_concat(" "(String), piece))
-                      };
-                    widen_sum!((rest, acc1), (Toks & String) | String)
-                  }
-                , .(_e: .) { widen_sum!(acc, (Toks & String) | String) }
-                )
-            }
-          }
-        }
-      }
-    , (ts, ""(String))
-    )
-}
-
 fn rest_toks(ts: Toks) -> Toks {
   match! un_toks(ts) {
     (.(_t: Token, _p: I32, r: Toks) { r }, .(_e: .) { toks_nil() })
@@ -14136,206 +14215,217 @@ fn take_existential_names(ts0: Toks) -> Pnames & Toks {
   }
 }
 
-// The comma-separated raw binder names of the leading universal groups —
-// the type-application arguments a member signature names.
-fn binder_names_csv(header: Toks) -> String {
-  match! collect_binders(header) {
-    .(bs: Binders, _after: Toks) {
-      loop(
-        , .(st: Binders & String) {
-            match! st {
-              .(rem: Binders, acc: String) {
-                match! un_binders(rem) {
-                  (
-                    , .(h: Binder_info, rest: Binders) {
-                        match! Binder_info.get(h) {
-                          .(n: String, _stars: I32) {
-                            let acc1 =
-                              if! string_eq(acc, ""(String)) {
-                                n
-                              } else {
-                                string_concat(acc, string_concat(", "(String), n))
-                              };
-                            widen_sum!((rest, acc1), (Binders & String) | String)
-                          }
-                        }
-                      }
-                    , .(_e: .) { widen_sum!(acc, (Binders & String) | String) }
-                    )
-                }
-              }
-            }
-          }
-        , (bs, ""(String))
-        )
-    }
-  }
-}
-
-// The member's applied type spelling: `Head(A, B)`, or bare `Head` for a
-// monomorphic newtype.
-fn member_applied_type(md: Member_decl, head: String) -> String {
-  let csv = binder_names_csv(member_header(md));
-  if! string_eq(csv, ""(String)) {
-    head
-  } else {
-    string_concat(head, string_concat("("(String), string_concat(csv, ")"(String))))
-  }
-}
-
-// Each existential name as its own `[U]` binder-group text.
-fn existential_groups_text(names: Pnames) -> String {
+fn existential_source_binders(names: Pnames) -> Binders {
   loop(
-    , .(st: Pnames & String) {
-        match! st {
-          .(rem: Pnames, acc: String) {
-            match! un_pnames(rem) {
+    , .(state: Pnames & Binders) {
+        match! state {
+          .(remaining: Pnames, reversed: Binders) {
+            match! un_pnames(remaining) {
               (
-                , .(n: String, rest: Pnames) {
+                , .(name: String, rest: Pnames) {
                     widen_sum!(
-                      , (
-                          , rest
-                          , string_concat(
-                              , acc
-                              , string_concat("["(String), string_concat(n, "]"(String)))
-                              )
-                          )
-                      , (Pnames & String) | String
+                      , (rest, binders_cons({binder_info = (name, 0(I32))}, reversed))
+                      , (Pnames & Binders) | Binders
                       )
                   }
-                , .(_e: .) { widen_sum!(acc, (Pnames & String) | String) }
+                , .(_empty: .) {
+                    widen_sum!(binders_reverse(reversed), (Pnames & Binders) | Binders)
+                  }
                 )
             }
           }
         }
       }
-    , (names, ""(String))
+    , (names, binders_nil())
     )
 }
 
-fn toks_contain_word(ts: Toks, wanted: String) -> Bool {
+fn member_nominal_type(o: Omember, universals: Binders, env: Type_env) -> Canonical_type | Diag {
+  let head =
+    canonical_nominal_atom(
+      , mk_host_id(omember_owner(o), member_name(omember_decl(o)))
+      , host_param_kinds(universals)
+      );
   loop(
-    , .(remaining: Toks) {
-        match! un_toks(remaining) {
-          (
-            , .(token: Token, _position: I32, rest: Toks) {
-                let matches =
-                  match! un_token(token) {
-                    (
-                      , .(word: Tk_word) { string_eq(Tk_word.get(word), wanted) }
-                      , .(_number: Tk_num) { .f(Bool) }
-                      , .(_string: Tk_str) { .f(Bool) }
-                      , .(_punct: Tk_punct) { .f(Bool) }
-                      )
-                  };
-                if! matches {
-                  widen_sum!(.t(Bool), Toks | Bool)
-                } else {
-                  widen_sum!(rest, Toks | Bool)
-                }
-              }
-            , .(_empty: .) { widen_sum!(.f(Bool), Toks | Bool) }
-            )
-        }
-      }
-    , ts
-    )
-}
-
-labels { fresh_type_name_candidate: String };
-
-// The candidate is absent from every original word token in the complete
-// retained header, including binders, existentials, and the payload. Appending
-// `x` preserves TypeName syntax, and a finite token run makes the deterministic
-// search terminate.
-fn fresh_member_type_name(header: Toks, initial: String) -> String {
-  loop(
-    , .(state: Fresh_type_name_candidate) {
-        let candidate = Fresh_type_name_candidate.get(state);
-        if! toks_contain_word(header, candidate) {
-          widen_sum!(
-            , {fresh_type_name_candidate = string_concat(candidate, "x"(String))}
-            , Fresh_type_name_candidate | String
-            )
-        } else {
-          widen_sum!(candidate, Fresh_type_name_candidate | String)
-        }
-      }
-    , {fresh_type_name_candidate = initial}
-    )
-}
-
-fn fresh_member_result_binder(header: Toks) -> String {
-  fresh_member_type_name(header, "Zzcps_r"(String))
-}
-
-fn fresh_member_nominal_placeholder(header: Toks) -> String {
-  fresh_member_type_name(header, "Zzcps_n"(String))
-}
-
-// The member export's source-spelled signature text. Constructors take the
-// payload to the applied type; projectors reverse that mapping, with
-// existential projectors exposing their payload through CPS.
-fn member_sig_text(o: Omember, is_proj: Bool, nominal_placeholder: String) -> String {
-  let md = omember_decl(o);
-  match! take_binder_runs(member_header(md)) {
-    .(uni: Toks, rest0: Toks, _binder_count: I32, _valid_binders: Bool) {
-      match! take_existential_names(rest0) {
-        .(exi: Pnames, rest1: Toks) {
-          let payload = toks_source_text(drop_colon(rest1));
-          let ub = toks_source_text(uni);
-          let applied = member_applied_type(md, nominal_placeholder);
-          if! is_proj {
-            if! nt_existential(member_info(md)) {
-              let result_binder = fresh_member_result_binder(member_header(md));
-              let continuation = string_concat(
-                , existential_groups_text(exi)
-                , string_concat(
-                    , " ("(String)
-                    , string_concat(payload, string_concat(") -> "(String), result_binder))
-                    )
-                );
-              string_concat(
-                , ub
-                , string_concat(
-                    , "(value: "(String)
-                    , string_concat(
-                        , applied
-                        , string_concat(
-                            , ")["(String)
-                            , string_concat(
-                                , result_binder
-                                , string_concat(
-                                    , "](continuation: "(String)
-                                    , string_concat(
-                                        , continuation
-                                        , string_concat(") -> "(String), result_binder)
-                                        )
-                                    )
-                                )
+    , .(state: Binders & Canonical_types) {
+        match! state {
+          .(remaining: Binders, arguments: Canonical_types) {
+            match! un_binders(remaining) {
+              (
+                , .(binder: Binder_info, rest: Binders) {
+                    match! Binder_info.get(binder) {
+                      .(name: String, _stars: I32) {
+                        match! canonical_bound_lookup(env, name) {
+                          (
+                            , .(bound: Canonical_type) {
+                                widen_sum!(
+                                  , (rest, canonical_types_cons(bound, arguments))
+                                  , (Binders & Canonical_types) | Canonical_type | Diag
+                                  )
+                              }
+                            , .(diag: Diag) {
+                                widen_sum!(
+                                  , diag
+                                  , (Binders & Canonical_types) | Canonical_type | Diag
+                                  )
+                              }
+                            , .(_missing: .) {
+                                widen_sum!(
+                                  , canonical_parse_diag("internal member signature lost a universal binder"(String))
+                                  , (Binders & Canonical_types) | Canonical_type | Diag
+                                  )
+                              }
                             )
+                        }
+                      }
+                    }
+                  }
+                , .(_empty: .) {
+                    if! eq_i32(binders_len(universals), 0(I32)) {
+                      widen_sum!(head, (Binders & Canonical_types) | Canonical_type | Diag)
+                    } else match! canonical_application(head, arguments) {
+                      (
+                        , .(ok: Canonical_application_ok) {
+                            widen_sum!(
+                              , Canonical_application_ok.get(ok)
+                              , (Binders & Canonical_types) | Canonical_type | Diag
+                              )
+                          }
+                        , .(bad: Canonical_application_bad) {
+                            widen_sum!(
+                              , Canonical_application_bad.get(bad)
+                              , (Binders & Canonical_types) | Canonical_type | Diag
+                              )
+                          }
                         )
-                    )
-                )
-            } else {
-              string_concat(
-                , ub
-                , string_concat(
-                    , "(value: "(String)
-                    , string_concat(applied, string_concat(") -> "(String), payload))
-                    )
+                    }
+                  }
                 )
             }
-          } else {
-            string_concat(
-              , ub
-              , string_concat(
-                  , existential_groups_text(exi)
-                  , string_concat(
-                      , "(value: "(String)
-                      , string_concat(payload, string_concat(") -> "(String), applied))
-                      )
+          }
+        }
+      }
+    , (universals, canonical_types_nil())
+    )
+}
+
+fn build_constructor_signature(
+  , subject: String
+  , o: Omember
+  , universals: Binders
+  , binders: Canonical_binders
+  , payload_tokens: Toks
+  , env: Type_env
+  ) -> Canonical_signature_result {
+  match! parse_value_contract_payload(subject, payload_tokens, env) {
+    (
+      , .(ok: Ctp_ok) {
+          match! Ctp_ok.get(ok) {
+            .(payload: Canonical_type, _after: Toks, final_env: Type_env) {
+              match! member_nominal_type(o, universals, final_env) {
+                (
+                  , .(nominal: Canonical_type) {
+                      widen_sum!(
+                        , finish_signature(
+                            , canonical_stages_cons(binders, payload, canonical_stages_nil())
+                            , canonical_binders_nil()
+                            , nominal
+                            )
+                        , Canonical_signature_result
+                        )
+                    }
+                  , .(diag: Diag) {
+                      widen_sum!(
+                        , signature_diag(subject, diag_message(diag))
+                        , Canonical_signature_result
+                        )
+                    }
                   )
+              }
+            }
+          }
+        }
+      , .(diag: Diag) { widen_sum!(diag, Canonical_signature_result) }
+      )
+  }
+}
+
+fn build_existential_projector_signature(
+  , subject: String
+  , universals: Canonical_binders
+  , nominal: Canonical_type
+  , existentials: Binders
+  , payload_tokens: Toks
+  , env: Type_env
+  ) -> Canonical_signature_result {
+  match! fresh_canonical_result(env) {
+    .(result_binders: Canonical_binders, result: Canonical_type, result_env: Type_env) {
+      match! Canonical_binders_result.get(canonicalize_binders(existentials, result_env)) {
+        .(existential_binders: Canonical_binders, payload_env: Type_env) {
+          match! parse_canonical_type(payload_tokens, payload_env) {
+            (
+              , .(ok: Ctp_ok) {
+                  match! Ctp_ok.get(ok) {
+                    .(payload: Canonical_type, after: Toks, _final_env: Type_env) {
+                      if! toks_empty(after) {
+                        match! checked_canonical_arrow(payload, result) {
+                          (
+                            , .(arrow: Canonical_type) {
+                                match! checked_canonical_forall(existential_binders, arrow) {
+                                  (
+                                    , .(continuation: Canonical_type) {
+                                        widen_sum!(
+                                          , finish_signature(
+                                              , canonical_stages_cons(
+                                                  , result_binders
+                                                  , continuation
+                                                  , canonical_stages_cons(
+                                                      , universals
+                                                      , nominal
+                                                      , canonical_stages_nil()
+                                                      )
+                                                  )
+                                              , canonical_binders_nil()
+                                              , result
+                                              )
+                                          , Canonical_signature_result
+                                          )
+                                      }
+                                    , .(diag: Diag) {
+                                        widen_sum!(
+                                          , signature_diag(subject, diag_message(diag))
+                                          , Canonical_signature_result
+                                          )
+                                      }
+                                    )
+                                }
+                              }
+                            , .(diag: Diag) {
+                                widen_sum!(
+                                  , signature_diag(subject, diag_message(diag))
+                                  , Canonical_signature_result
+                                  )
+                              }
+                            )
+                        }
+                      } else {
+                        widen_sum!(
+                          , signature_diag(
+                              , subject
+                              , diag_message(canonical_parse_diag("expected `)` after grouped type"(String)))
+                              )
+                          , Canonical_signature_result
+                          )
+                      }
+                    }
+                  }
+                }
+              , .(bad: Ctp_bad) {
+                  widen_sum!(
+                    , signature_diag(subject, diag_message(Ctp_bad.get(bad)))
+                    , Canonical_signature_result
+                    )
+                }
               )
           }
         }
@@ -14344,21 +14434,152 @@ fn member_sig_text(o: Omember, is_proj: Bool, nominal_placeholder: String) -> St
   }
 }
 
-fn alias_sig_text(alias: Alias_decl) -> String {
-  let binders = source_binders_text(tyalias_binders(alias));
-  let prefix =
-    if! string_eq(binders, ""(String)) {
-      ""(String)
-    } else {
-      string_concat(binders, " "(String))
-    };
-  string_concat(
-    , prefix
-    , string_concat(
-        , "(value: "(String)
-        , string_concat(toks_source_text(tyalias_body(alias)), ") -> ."(String))
-        )
-    )
+fn build_member_signature(
+  , modules: Modules
+  , types: Host_types
+  , module: Module
+  , o: Omember
+  , is_proj: Bool
+  ) -> Canonical_signature_result {
+  let member = omember_decl(o);
+  let subject = dependency_subject("export signature"(String), omember_qualified(o, is_proj));
+  let context =
+    mk_type_context(modules, types, module, member_decl_pos(member), member_recursive_scope(member));
+  match! parse_host_binders(member_header(member)) {
+    (
+      , .(done: Host_binders_done) {
+          match! Host_binders_done.get(done) {
+            .(source_universals: Binders, after_universals: Toks) {
+              match! Canonical_binders_result.get(canonicalize_binders(
+                , source_universals
+                , mk_type_env(
+                    , context
+                    , type_bounds_nil()
+                    , type_substs_nil()
+                    , alias_refs_nil()
+                    , 0(I32)
+                    )
+                )) {
+                .(universals: Canonical_binders, universal_env: Type_env) {
+                  match! take_existential_names(after_universals) {
+                    .(names: Pnames, after_existentials: Toks) {
+                      let existentials = existential_source_binders(names);
+                      let payload_tokens = drop_colon(after_existentials);
+                      if! is_proj {
+                        match! member_nominal_type(o, source_universals, universal_env) {
+                          (
+                            , .(nominal: Canonical_type) {
+                                if! nt_existential(member_info(member)) {
+                                  build_existential_projector_signature(
+                                    , subject
+                                    , universals
+                                    , nominal
+                                    , existentials
+                                    , payload_tokens
+                                    , universal_env
+                                    )
+                                } else match! parse_result_contract_payload(
+                                  , subject
+                                  , payload_tokens
+                                  , universal_env
+                                  ) {
+                                  (
+                                    , .(payload: Canonical_type) {
+                                        widen_sum!(
+                                          , finish_signature(
+                                              , canonical_stages_cons(
+                                                  , universals
+                                                  , nominal
+                                                  , canonical_stages_nil()
+                                                  )
+                                              , canonical_binders_nil()
+                                              , payload
+                                              )
+                                          , Canonical_signature_result
+                                          )
+                                      }
+                                    , .(diag: Diag) { widen_sum!(diag, Canonical_signature_result) }
+                                    )
+                                }
+                              }
+                            , .(diag: Diag) {
+                                widen_sum!(
+                                  , signature_diag(subject, diag_message(diag))
+                                  , Canonical_signature_result
+                                  )
+                              }
+                            )
+                        }
+                      } else match! Canonical_binders_result.get(canonicalize_binders(
+                        , existentials
+                        , universal_env
+                        )) {
+                        .(existential_binders: Canonical_binders, payload_env: Type_env) {
+                          build_constructor_signature(
+                            , subject
+                            , o
+                            , source_universals
+                            , {canonical_binders = append(
+                                , Canonical_binders.get(universals)
+                                , Canonical_binders.get(existential_binders)
+                                )}
+                            , payload_tokens
+                            , payload_env
+                            )
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      , .(bad: Host_binders_bad) {
+          widen_sum!(
+            , exact_type_resolution_diag(member_name(member), Host_binders_bad.get(bad))
+            , Canonical_signature_result
+            )
+        }
+      )
+  }
+}
+
+fn build_alias_signature(
+  , modules: Modules
+  , types: Host_types
+  , module: Module
+  , alias: Alias_decl
+  , subject: String
+  ) -> Canonical_signature_result {
+  let context =
+    mk_type_context(modules, types, module, tyalias_decl_pos(alias), tyalias_recursive_scope(alias));
+  match! Canonical_binders_result.get(canonicalize_binders(
+    , tyalias_binders(alias)
+    , mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32))
+    )) {
+    .(binders: Canonical_binders, env: Type_env) {
+      match! parse_value_contract_payload(subject, tyalias_body(alias), env) {
+        (
+          , .(ok: Ctp_ok) {
+              match! Ctp_ok.get(ok) {
+                .(body: Canonical_type, _after: Toks, _final_env: Type_env) {
+                  widen_sum!(
+                    , finish_signature(
+                        , canonical_stages_cons(binders, body, canonical_stages_nil())
+                        , canonical_binders_nil()
+                        , canonical_unit()
+                        )
+                    , Canonical_signature_result
+                    )
+                }
+              }
+            }
+          , .(diag: Diag) { widen_sum!(diag, Canonical_signature_result) }
+          )
+      }
+    }
+  }
 }
 
 // =====================================================================
@@ -14423,32 +14644,18 @@ fn reverse_export_infos(es: Export_infos) -> Export_infos {
     )
 }
 
-fn derive_validated_signature(
+fn project_validated_signature(
   , modules: Modules
-  , types: Host_types
-  , module: Module
-  , local_name: String
-  , header: Toks
-  , decl_position: I32
+  , signature: Canonical_signature
+  , id: Host_id
   , bridge: Bridge
   , subject: String
-  , recursive_scope: . | Recursive_type_scope
-  , initial_substs: Type_substs
   ) -> Derived_hostfn_result {
-  match! derive_hostfn_header_with_type_scope(
-    , modules
-    , types
-    , module
-    , mk_host_header(.t(Bool), local_name, header, decl_position)
-    , subject
-    , recursive_scope
-    , initial_substs
-    , .f(Bool)
-    ) {
+  match! project_signature(id, signature) {
     (
       , .(derived: Derived_hostfn) {
           match! Derived_hostfn.get(derived) {
-            .(_runtime_hostfn: Runtime_hostfn, dependencies: Type_dependencies) {
+            .(_runtime: Runtime_hostfn, dependencies: Type_dependencies) {
               match! validate_bridge_type_dependencies(modules, dependencies, bridge, subject) {
                 (
                   , .(diag: Diag) { widen_sum!(diag, Derived_hostfn_result) }
@@ -14459,6 +14666,30 @@ fn derive_validated_signature(
           }
         }
       , .(diag: Diag) { widen_sum!(diag, Derived_hostfn_result) }
+      )
+  }
+}
+
+fn validated_signature_text(
+  , modules: Modules
+  , signature: Canonical_signature
+  , id: Host_id
+  , bridge: Bridge
+  , subject: String
+  ) -> String | Diag {
+  match! project_validated_signature(modules, signature, id, bridge, subject) {
+    (
+      , .(derived: Derived_hostfn) {
+          match! Derived_hostfn.get(derived) {
+            .(runtime: Runtime_hostfn, _dependencies: Type_dependencies) {
+              widen_sum!(
+                , host_fn_signature(hostfn_descriptor(runtime_hostfn_public(runtime)))
+                , String | Diag
+                )
+            }
+          }
+        }
+      , .(diag: Diag) { widen_sum!(diag, String | Diag) }
       )
   }
 }
@@ -14475,29 +14706,27 @@ fn canonical_export_signature(
   , header: Toks
   , decl_position: I32
   , bridge: Bridge
-  , recursive_scope: . | Recursive_type_scope
-  , initial_substs: Type_substs
   ) -> String | Diag {
-  match! derive_validated_signature(
+  let subject = dependency_subject("export signature"(String), qualified_name);
+  match! parse_source_signature(
     , modules
     , types
     , module
-    , local_name
-    , header
-    , decl_position
-    , bridge
-    , dependency_subject("export signature"(String), qualified_name)
-    , recursive_scope
-    , initial_substs
+    , mk_host_header(.t(Bool), local_name, header, decl_position)
+    , subject
+    , no_recursive_type_scope()
+    , .f(Bool)
+    , .t(Bool)
     ) {
     (
-      , .(derived: Derived_hostfn) {
-          match! Derived_hostfn.get(derived) {
-            .(runtime_hostfn: Runtime_hostfn, _dependencies: Type_dependencies) {
-              let hostfn = runtime_hostfn_public(runtime_hostfn);
-              widen_sum!(host_fn_signature(hostfn_descriptor(hostfn)), String | Diag)
-            }
-          }
+      , .(signature: Canonical_signature) {
+          validated_signature_text(
+            , modules
+            , signature
+            , mk_host_id(module_name(module), local_name)
+            , bridge
+            , subject
+            )
         }
       , .(diag: Diag) { widen_sum!(diag, String | Diag) }
       )
@@ -14514,67 +14743,6 @@ fn export_owner_missing(owner: String) -> Diag {
 labels { fn_export_rows_state: Gdecls & Export_infos };
 
 type Fn_export_rows_step = Fn_export_rows_state | Export_infos | Diag;
-
-// Whether a fn header carries its top-level result arrow. Arrows inside a
-// value parameter's function type remain nested under its parameter group.
-fn export_header_has_result_arrow(header: Toks) -> Bool {
-  loop(
-    , .(state: Toks & I32) {
-        match! state {
-          .(remaining: Toks, paren_depth: I32) {
-            match! un_toks(remaining) {
-              (
-                , .(token: Token, _pos: I32, rest: Toks) {
-                    if! is_punct(token, 40(I32)) {
-                      widen_sum!((rest, add_i32(paren_depth, 1(I32))), (Toks & I32) | Bool)
-                    } else if! is_punct(token, 41(I32)) {
-                      widen_sum!((rest, sub_i32(paren_depth, 1(I32))), (Toks & I32) | Bool)
-                    } else if! eq_i32(paren_depth, 0(I32)) {
-                      if! is_punct(token, 45(I32)) {
-                        if! head_is_punct_tok(rest, 62(I32)) {
-                          widen_sum!(.t(Bool), (Toks & I32) | Bool)
-                        } else {
-                          widen_sum!((rest, paren_depth), (Toks & I32) | Bool)
-                        }
-                      } else {
-                        widen_sum!((rest, paren_depth), (Toks & I32) | Bool)
-                      }
-                    } else {
-                      widen_sum!((rest, paren_depth), (Toks & I32) | Bool)
-                    }
-                  }
-                , .(_empty: .) { widen_sum!(.f(Bool), (Toks & I32) | Bool) }
-                )
-            }
-          }
-        }
-      }
-    , (header, 0(I32))
-    )
-}
-
-// Ordinary Kio fns may omit `-> .`; host fns may not. Supply only that
-// language-defined default before handing the header to the shared exact
-// host-signature resolver.
-fn ordinary_export_header(header: Toks) -> Toks | Diag {
-  if! export_header_has_result_arrow(header) {
-    widen_sum!(header, Toks | Diag)
-  } else match! lex(string_concat(toks_source_text(header), " -> ."(String))) {
-    (
-      , .(with_unit: Toks) { widen_sum!(with_unit, Toks | Diag) }
-      , .(err: Lex_err) {
-          widen_sum!(
-            , mk_diag(string_concat(
-                , "dyn_load_prime: malformed image — could not add the implicit unit result "
-                  "to an export: "(String)
-                , lex_err_message(err)
-                ))
-            , Toks | Diag
-            )
-        }
-      )
-  }
-}
 
 // Canonical fn rows, most-recent first. Derivation does not touch the
 // Gdecl/Terms_acc ordering used to execute bodies.
@@ -14593,40 +14761,28 @@ fn canonical_fn_export_rows(modules: Modules, types: Host_types, bridge: Bridge,
                         (
                           , .(module: Module) {
                               let decl = gdecl_decl(g);
-                              match! ordinary_export_header(decl_header(decl)) {
+                              match! canonical_export_signature(
+                                , modules
+                                , types
+                                , module
+                                , decl_name(decl)
+                                , gdecl_qualified(g)
+                                , decl_header(decl)
+                                , decl_pos(decl)
+                                , bridge
+                                ) {
                                 (
-                                  , .(header: Toks) {
-                                      match! canonical_export_signature(
-                                        , modules
-                                        , types
-                                        , module
-                                        , decl_name(decl)
-                                        , gdecl_qualified(g)
-                                        , header
-                                        , decl_pos(decl)
-                                        , bridge
-                                        , no_recursive_type_scope()
-                                        , type_substs_nil()
-                                        ) {
-                                        (
-                                          , .(signature: String) {
-                                              widen_sum!(
-                                                , {fn_export_rows_state = (
-                                                    , rest
-                                                    , export_infos_cons(
-                                                        , mk_export_info(
-                                                            , gdecl_qualified(g)
-                                                            , signature
-                                                            )
-                                                        , acc
-                                                        )
-                                                    )}
-                                                , Fn_export_rows_step
+                                  , .(signature: String) {
+                                      widen_sum!(
+                                        , {fn_export_rows_state = (
+                                            , rest
+                                            , export_infos_cons(
+                                                , mk_export_info(gdecl_qualified(g), signature)
+                                                , acc
                                                 )
-                                            }
-                                          , .(diag: Diag) { widen_sum!(diag, Fn_export_rows_step) }
-                                          )
-                                      }
+                                            )}
+                                        , Fn_export_rows_step
+                                        )
                                     }
                                   , .(diag: Diag) { widen_sum!(diag, Fn_export_rows_step) }
                                   )
@@ -14668,49 +14824,16 @@ fn canonical_member_signature(
   , o: Omember
   , is_proj: Bool
   ) -> String | Diag {
-  let member = omember_decl(o);
-  let placeholder = fresh_member_nominal_placeholder(member_header(member));
-  match! member_param_kinds(member) {
+  match! build_member_signature(modules, types, module, o, is_proj) {
     (
-      , .(params: Param_kinds) {
-          match! lex(member_sig_text(o, is_proj, placeholder)) {
-            (
-              , .(header: Toks) {
-                  canonical_export_signature(
-                    , modules
-                    , types
-                    , module
-                    , member_local_name(o, is_proj)
-                    , omember_qualified(o, is_proj)
-                    , header
-                    , member_decl_pos(member)
-                    , bridge
-                    , member_recursive_scope(member)
-                    , type_substs_cons(
-                        , placeholder
-                        , canonical_nominal_atom(
-                            , mk_host_id(omember_owner(o), member_name(member))
-                            , params
-                            )
-                        , type_substs_nil()
-                        )
-                    )
-                }
-              , .(err: Lex_err) {
-                  widen_sum!(
-                    , mk_diag(string_concat(
-                        , "dyn_load_prime: malformed image — could not assemble signature for "
-                          "export `"(String)
-                        , string_concat(
-                            , omember_qualified(o, is_proj)
-                            , string_concat("`: "(String), lex_err_message(err))
-                            )
-                        ))
-                    , String | Diag
-                    )
-                }
-              )
-          }
+      , .(signature: Canonical_signature) {
+          validated_signature_text(
+            , modules
+            , signature
+            , mk_host_id(omember_owner(o), member_local_name(o, is_proj))
+            , bridge
+            , dependency_subject("export signature"(String), omember_qualified(o, is_proj))
+            )
         }
       , .(diag: Diag) { widen_sum!(diag, String | Diag) }
       )
@@ -14809,17 +14932,6 @@ fn canonical_member_export_rows(
     )
 }
 
-fn public_alias_lex_diag(owner: String, alias: Alias_decl, error: Lex_err) -> Diag {
-  mk_diag(string_concat(
-    , "dyn_load_prime: malformed image — could not assemble contract for public "
-      "type alias `"(String)
-    , string_concat(
-        , dot_join(owner, tyalias_name(alias))
-        , string_concat("`: "(String), lex_err_message(error))
-        )
-    ))
-}
-
 fn validate_public_aliases(modules: Modules, types: Host_types, bridge: Bridge, module: Module) ->
   . | Diag
    {
@@ -14830,50 +14942,36 @@ fn validate_public_aliases(modules: Modules, types: Host_types, bridge: Bridge, 
             (
               , .(alias: Alias_decl, rest: Tyaliases) {
                   if! visibility_is_public(tyalias_visibility(alias)) {
-                    match! lex(alias_sig_text(alias)) {
+                    let subject = dependency_subject(
+                      , "public type alias"(String)
+                      , dot_join(module_name(module), tyalias_name(alias))
+                      );
+                    match! build_alias_signature(modules, types, module, alias, subject) {
                       (
-                        , .(header: Toks) {
-                            match! derive_validated_signature(
+                        , .(signature: Canonical_signature) {
+                            match! project_validated_signature(
                               , modules
-                              , types
-                              , module
-                              , "type_contract"(String)
-                              , header
-                              , tyalias_decl_pos(alias)
+                              , signature
+                              , mk_host_id(module_name(module), "type_contract"(String))
                               , bridge
-                              , dependency_subject(
-                                  , "public type alias"(String)
-                                  , dot_join(module_name(module), tyalias_name(alias))
-                                  )
-                              , tyalias_recursive_scope(alias)
-                              , type_substs_nil()
+                              , subject
                               ) {
                               (
                                 , .(_valid: Derived_hostfn) {
                                     widen_sum!(rest, Tyaliases | . | Diag)
                                   }
-                                , .(diag: Diag) {
-                                    widen_sum!(widen_sum!(diag, . | Diag), Tyaliases | . | Diag)
-                                  }
+                                , .(diag: Diag) { widen_sum!(diag, Tyaliases | . | Diag) }
                                 )
                             }
                           }
-                        , .(error: Lex_err) {
-                            widen_sum!(
-                              , widen_sum!(
-                                  , public_alias_lex_diag(module_name(module), alias, error)
-                                  , . | Diag
-                                  )
-                              , Tyaliases | . | Diag
-                              )
-                          }
+                        , .(diag: Diag) { widen_sum!(diag, Tyaliases | . | Diag) }
                         )
                     }
                   } else {
                     widen_sum!(rest, Tyaliases | . | Diag)
                   }
                 }
-              , .(_empty: .) { widen_sum!(widen_sum!((), . | Diag), Tyaliases | . | Diag) }
+              , .(_empty: .) { widen_sum!((), Tyaliases | . | Diag) }
               )
           }
         }

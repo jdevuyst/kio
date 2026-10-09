@@ -84,7 +84,6 @@ pub(crate) enum BoundaryStep {
     App(u32),
     #[cfg(test)]
     Slot(u32),
-    #[cfg(test)]
     CallbackArg(u32),
     CallbackRet,
 }
@@ -663,7 +662,6 @@ fn encode_boundary(boundary: &BoundaryId, out: &mut Vec<u8>) {
                 out.push(0x02);
                 push_u32(*index, out);
             }
-            #[cfg(test)]
             BoundaryStep::CallbackArg(index) => {
                 out.push(0x03);
                 push_u32(*index, out);
@@ -869,7 +867,6 @@ fn public_boundary(boundary: &BoundaryId) -> String {
             BoundaryStep::App(index) => format!("_App{index}"),
             #[cfg(test)]
             BoundaryStep::Slot(index) => format!("_Slot{index}"),
-            #[cfg(test)]
             BoundaryStep::CallbackArg(index) => format!("_CallbackArg{index}"),
             BoundaryStep::CallbackRet => "_CallbackResult".to_owned(),
         });
@@ -910,7 +907,6 @@ fn boundary_readable(boundary: &BoundaryId) -> String {
             BoundaryStep::App(index) => rendered.push_str(&format!("_app{index}")),
             #[cfg(test)]
             BoundaryStep::Slot(index) => rendered.push_str(&format!("_slot{index}")),
-            #[cfg(test)]
             BoundaryStep::CallbackArg(index) => rendered.push_str(&format!("_cbarg{index}")),
             BoundaryStep::CallbackRet => rendered.push_str("_cbret"),
         }

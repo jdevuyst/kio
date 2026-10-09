@@ -424,30 +424,6 @@ pub struct ParsedPackage {
     pub sources: BTreeMap<PathBuf, String>,
 }
 
-impl ParsedPackage {
-    /// Prefer an error from a deferred body over `later_error`.
-    ///
-    /// Package collection deliberately leaves bodies lazy. When a header-only
-    /// validation has already found a later-pipeline error, this failure-path
-    /// probe preserves Parse before every later pipeline tier without forcing
-    /// any body on the successful, cacheable path.
-    #[cfg(feature = "cli")]
-    pub(crate) fn prefer_deferred_body_error(&self, later_error: LocatedError) -> LocatedError {
-        for (file_path, _) in &self.modules {
-            let Some(lazy) = self.lazy_modules.get(file_path) else {
-                continue;
-            };
-            if let Err(error) = lazy.force_all() {
-                return LocatedError {
-                    file_path: file_path.clone(),
-                    error,
-                };
-            }
-        }
-        later_error
-    }
-}
-
 #[derive(Debug)]
 pub struct ParsedPackageCollection {
     pub root: PackageKey,
@@ -1883,6 +1859,7 @@ fn host_fn_to_wrapper(h: &crate::ast::HostFn, provider_alias: &str) -> crate::as
         ext: (),
     };
     let body = Expr::Call {
+        source_trivia: Default::default(),
         occurrence: Default::default(),
         diagnostic: Default::default(),
         callee: Box::new(callee),
@@ -3875,11 +3852,9 @@ fn materialize_one_dependency(
         let located = walk_err.into_located();
         dependency_error_with_context(&local_name, located.file_path, located.error)
     })?;
-    crate::pass::surface_registry::validate_package(&dep_pkg.root_dir, &dep_pkg.modules)
-        .map_err(|error| dep_pkg.prefer_deferred_body_error(error))
-        .map_err(|located| {
-            dependency_error_with_context(&local_name, located.file_path, located.error)
-        })?;
+    crate::pass::surface_registry::validate_package(&dep_pkg.root_dir, &dep_pkg.modules).map_err(
+        |located| dependency_error_with_context(&local_name, located.file_path, located.error),
+    )?;
 
     // A dependency's own dependencies, if it declares any, are
     // materialized within its tree (each package materializes its own) and

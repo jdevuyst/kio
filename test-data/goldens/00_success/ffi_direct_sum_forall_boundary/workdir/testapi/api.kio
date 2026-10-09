@@ -1,0 +1,14 @@
+module testapi/api;
+
+import testapi as t;
+
+host fn echo(value: (. -> t.Number) | ([A] A -> A)) -> (. -> t.Number) | ([A] A -> A);
+
+pub fn relay(value: (. -> t.Number) | ([A] A -> A)) -> (. -> t.Number) | ([A] A -> A) {
+  echo(value)
+}
+
+pub fn through_callback(
+  , value: (. -> t.Number) | ([A] A -> A)
+  , callback: ((. -> t.Number) | ([A] A -> A)) -> (. -> t.Number) | ([A] A -> A)
+  ) -> (. -> t.Number) | ([A] A -> A) { callback(value) }

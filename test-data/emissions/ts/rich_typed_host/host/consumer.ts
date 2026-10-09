@@ -1,18 +1,13 @@
 import {
   createRichTypedHost,
-  liftRichTypedHostCallable,
-  liftRichTypedHostPoly,
   type RichTypedHostApply,
   type RichTypedHostHost,
   type RichTypedHostTypeLambda,
 } from "../workdir/out/ts/rich_typed_host.js";
 
-type NativeCallable<A, R> = ((value: A) => R) & {
-  adapt(before: (value: A) => A, after: (value: R) => R): NativeCallable<A, R>;
-};
+type NativeCallable<A, R> = (value: A) => R;
 interface NativePoly<Advance extends () => unknown> {
   advance: Advance;
-  adapt(after: <T>(value: T) => T): NativePoly<Advance>;
 }
 type NativeBox<A> = { readonly Box: A };
 interface NativeBoxLambda extends RichTypedHostTypeLambda<readonly [unknown]> {
@@ -61,9 +56,9 @@ if (pkg.api.KioType_Box.readBox(hktRoundTrip) !== "hkt") {
 }
 const shadow = pkg.api.KioType_Shadow.makeShadow({
   _0: boxed,
-  _1: liftRichTypedHostPoly({
-    advance: <T>() => liftRichTypedHostCallable((value: T): T => value),
-  }),
+  _1: {
+    advance: <T>() => (value: T): T => value,
+  },
 });
 const shadowPayload = pkg.api.KioType_Shadow.readShadow(pkg.api.shadow(shadow));
 if (pkg.api.KioType_Box.readBox(shadowPayload._0) !== "hkt") {
@@ -75,11 +70,10 @@ if (shadowPayload._1.advance<number>()(37) !== 37) {
 
 const packed = pkg.api.pack({ witness: "existential" });
 const opened = pkg.api.KioType_Pack.openPack(packed).advance<string>()(
-  liftRichTypedHostPoly({
-    advance: <T>() => liftRichTypedHostCallable((value: T): string =>
+  {
+    advance: <T>() => (value: T): string =>
       typeof value === "object" && value !== null ? "opened" : "wrong payload",
-    ),
-  }),
+  },
 );
 if (opened !== "opened") {
   throw new Error("existential CPS projector lost its payload");

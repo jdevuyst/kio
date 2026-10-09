@@ -1273,6 +1273,7 @@ mod tests {
 
     fn eval_unit_expr() -> Expr<UncheckedPrime> {
         Expr::Unit {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
         }

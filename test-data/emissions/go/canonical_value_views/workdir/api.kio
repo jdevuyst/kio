@@ -1,0 +1,63 @@
+module api;
+
+host type Number role(i32);
+
+host type Count role(i32);
+
+host type Token;
+
+host type Box[A];
+
+host fn store[A](value: A) -> Box(A);
+
+host fn extract[A](value: Box(A)) -> A;
+
+host fn inspect(value: Count) -> Count;
+
+host fn created() -> .;
+
+host fn tick() -> .;
+
+pub newtype Secret : Number & Count { constructor hide; projector reveal }
+
+pub newtype Outer : Secret { pub constructor wrap; pub projector unwrap }
+
+pub newtype Packed <U> : Secret & U { pub constructor pack; pub projector open }
+
+pub labels Tagged = { secret_slot: Secret };
+
+pub fn through_outer(value: Outer) -> Secret { value.>Outer.unwrap }
+
+pub fn labelled(value: Secret) -> Secret_slot { {secret_slot = value} }
+
+pub fn field(value: Secret_slot & .) -> Secret { value.?{secret_slot} }
+
+pub fn make_packed(value: Secret) -> Packed { Packed.pack(., (value, ())) }
+
+pub fn open_packed(value: Packed) -> Secret {
+  value.>Packed.open(.[U](secret: Secret, payload: U) { secret })
+}
+
+pub fn make_secret(number: Number, count: Count) -> Secret { Secret.hide((number, count)) }
+
+pub fn read_secret(value: Secret) -> Number & Count { value.>Secret.reveal }
+
+pub fn pair(value: Number & Count) -> Number & Count { value }
+
+pub fn relay[A](value: A) -> A { value }
+
+pub fn ignore[A](value: A) { () }
+
+pub fn stage() -> [A] . { created(); .[A] { tick() } }
+
+pub fn relay_box[*F][A](value: F(A)) -> F(A) { value }
+
+pub fn use_callback(value: Box(Number -> Count), number: Number) -> Count {
+  inspect(extract(value)(number))
+}
+
+pub fn own_callback() -> Box(Number -> Count) { store(.(number: Number) { 7(Count) }) }
+
+pub fn echo_token(value: Token) -> Token { value }
+
+pub fn unit() { () }

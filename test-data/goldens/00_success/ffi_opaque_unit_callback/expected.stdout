@@ -1,0 +1,7 @@
+ready
+thunk
+42
+compound ready
+compound thunk
+identity
+43

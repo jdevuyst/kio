@@ -1,6 +1,6 @@
 ---
 name: push-it
-description: Pre-push gate — run ci/all.sh and review-commits, verify contract authority and DCO sign-off, then push
+description: Verify prepared publication history, contract authority, checks and authorized DCO sign-off before an explicitly requested push
 allowed-tools: Bash, Skill
 ---
 
@@ -10,7 +10,11 @@ Pre-push gate: nothing reaches the remote unchecked, unreviewed, unauthorized, o
 
 ## 1. Preflight
 
-Abort if `git status` shows uncommitted changes. The user should commit or stash first.
+Authenticate the intended remote, destination and exact push range, including commits introduced through merges. With no upstream, resolve the actual destination and its published tip rather than using `main..HEAD` as a substitute. Surface dirty work and ask which committed revision is intended; do not automatically include, stash or commit it. A dirty tree cannot supply validation for a different committed candidate.
+
+Verify that the range has coherent publication commits, concise accurate messages and no session links under AGENTS.md. If preparation is missing, route to [`prepare-commits`](../prepare-commits/SKILL.md), present the necessary plan and request rewrite authority; a push request does not automatically authorize rewriting history. Normal consolidation is unpublished; preserve published main/release history. An exceptional shared-development-branch rewrite requires separate explicit range/ref/dependent-consumer approval.
+
+Check DCO before spending the broad-gate budget. Every commit reaching a pull request or remote main must carry a real `Signed-off-by: Name <email>` trailer. If missing, stop and report the range and needed certification; ask for explicit sign-off authority and the real certifier's identity/agreement, rather than signing automatically. Only when that push-preparation authority is already explicit may the agent add the requested trailers, preserving authorship and authenticating the resulting range/tree. Never infer DCO authorization from a general push request or add it at ordinary local commit creation.
 
 ## 2. Run the project check suite
 
@@ -18,10 +22,10 @@ Abort if `git status` shows uncommitted changes. The user should commit or stash
 
 ## 3. Run review-commits
 
-Invoke the `review-commits` skill on the default unpushed window (`@{u}..HEAD`). If it surfaces an **unverified** normative delta, stop until the prior authority record is identified; if no prior authority exists, classify it as unauthorized. If it surfaces an **unauthorized** delta, remove or revert that delta from the push range. A later user decision may authorize a new work unit, but the retained implementation is then an unlanded proposal that must receive a fresh contract review and every required spec, docs, regression-test, and CI gate before it can re-enter the push range. Pairing gaps, unauthorized scope expansion, partial work, failed tests, and mandatory hygiene defects are blockers: fix them, narrow the range, or meet the repository's explicit incremental-slice contract. A request to proceed does not waive these gates.
+Invoke the `review-commits` skill on the authenticated outgoing range, normally `@{u}..HEAD` when that matches the intended destination. If it surfaces an **unverified** normative delta, stop until the prior authority record is identified; if no prior authority exists, classify it as unauthorized. If it surfaces an **unauthorized** delta, remove or revert that delta from the push range. A later user decision may authorize a new work unit, but the retained implementation is then an unlanded proposal that must receive a fresh contract review and every required spec, docs, regression-test, and CI gate before it can re-enter the push range. Pairing gaps, unauthorized scope expansion, partial work, failed tests, and mandatory hygiene defects are blockers: fix them, narrow the range, or meet the repository's explicit incremental-slice contract. A request to proceed does not waive these gates.
 
 ## 4. Push
 
-First confirm every commit in the push range (`@{u}..HEAD`, or `main..HEAD` when there's no upstream) carries a `Signed-off-by` trailer. If any commit is unsigned, **stop and report** — do not sign them yourself; DCO sign-off is the user's explicit act (AGENTS.md § Universal rules — Commits, sign-off, and push). Only once the range is fully signed off:
+Reauthenticate the destination and prepared/reviewed candidate; verify the exact outgoing range is fully signed off. Refuse an unsigned remote-main range. If the remote changed, reconsider range, publication boundary and applicable evidence before pushing; do not overwrite it. A clean tree or successful check never supplies rewrite, DCO or publication authority.
 
-`git push` to the remote tracking branch. No `--force`; `--force-with-lease` only if the user has explicitly asked for a force push.
+Push only the resolved candidate to the explicitly requested remote/destination. No `--force`; `--force-with-lease` only for an explicitly requested force push under the separately approved shared-development-branch range/ref/dependent-consumer plan. Never use it to rewrite published main/release history.

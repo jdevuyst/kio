@@ -154,9 +154,10 @@ fn declarations_matching(
     let mut out = BTreeMap::new();
     for entry in crate::doc_entry::documented_items_module(module) {
         let kind = match &entry {
-            DocEntry::Fn(_) | DocEntry::HostFn(_) | DocEntry::Elaborator(_) => {
-                CompletionItemKind::FUNCTION
-            }
+            DocEntry::Fn(_)
+            | DocEntry::RecFn(_)
+            | DocEntry::HostFn(_)
+            | DocEntry::Elaborator(_) => CompletionItemKind::FUNCTION,
             DocEntry::LiteralAlias(_) => CompletionItemKind::CONSTANT,
             DocEntry::Op(..) | DocEntry::VariadicOperator(..) => CompletionItemKind::OPERATOR,
             DocEntry::LabelForward(..) => CompletionItemKind::FIELD,

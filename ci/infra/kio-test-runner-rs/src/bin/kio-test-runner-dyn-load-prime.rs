@@ -257,13 +257,20 @@ fn export_driver_execution_mode(driver: ExportDriver) -> Result<&'static str, &'
         | ExportDriver::NewtypeSumRoundtrip
         | ExportDriver::NewtypeScalarRoundtrip
         | ExportDriver::NestedProductRoundtrip
+        | ExportDriver::OpaqueProductRoundtrip
+        | ExportDriver::OpaqueCompoundRoundtrip
+        | ExportDriver::GenericNominalOpaqueRoundtrip
         | ExportDriver::CompoundInputOnce => Ok("script"),
         ExportDriver::PolyCallbackRoundtrip
         | ExportDriver::TypeOnlyRoundtrip
         | ExportDriver::StructuralRoundtrip
         | ExportDriver::ScalarRoundtrip
         | ExportDriver::HostOwnedRoundtrip
+        | ExportDriver::SameArtifactExchange
+        | ExportDriver::DirectSumForallBoundary
         | ExportDriver::CallableSlotsRoundtrip
+        | ExportDriver::IncomingCallableViews
+        | ExportDriver::IncomingCallableStages
         | ExportDriver::RustCallbackAliases
         | ExportDriver::FunctorDictRoundtrip
         | ExportDriver::HostExistentialRoundtrip
@@ -1068,6 +1075,17 @@ mod tests {
     }
 
     #[test]
+    fn host_forall_effects_project_creation_separately_from_returned_stage() {
+        let protocol = RunnerProtocol::HostForallStageEffects;
+        assert_eq!(protocol_execution_mode(protocol), Ok("main"));
+        assert!(protocol.supports_dyn_load_prime());
+        assert_eq!(
+            protocol_host_functions_expression(protocol),
+            r#"[{module:"testapi/main",leaf:"produce",signature:"() -> ([#0] .)",groups:[0]},{module:"testapi/main",leaf:"observe",signature:"() -> .",groups:[0]}]"#
+        );
+    }
+
+    #[test]
     fn protocol_support_classification_matches_execution_dispatch() {
         for &protocol in RunnerProtocol::ALL {
             assert_eq!(
@@ -1109,6 +1127,9 @@ mod tests {
             ExportDriver::NewtypeScalarRoundtrip,
             ExportDriver::NestedProductRoundtrip,
             ExportDriver::CompoundInputOnce,
+            ExportDriver::OpaqueProductRoundtrip,
+            ExportDriver::OpaqueCompoundRoundtrip,
+            ExportDriver::GenericNominalOpaqueRoundtrip,
         ] {
             assert_eq!(export_driver_execution_mode(driver), Ok("script"));
         }
@@ -1118,7 +1139,11 @@ mod tests {
             ExportDriver::StructuralRoundtrip,
             ExportDriver::ScalarRoundtrip,
             ExportDriver::HostOwnedRoundtrip,
+            ExportDriver::SameArtifactExchange,
+            ExportDriver::DirectSumForallBoundary,
             ExportDriver::CallableSlotsRoundtrip,
+            ExportDriver::IncomingCallableViews,
+            ExportDriver::IncomingCallableStages,
             ExportDriver::RustCallbackAliases,
             ExportDriver::FunctorDictRoundtrip,
             ExportDriver::HostExistentialRoundtrip,

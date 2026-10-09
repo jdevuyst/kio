@@ -49,6 +49,17 @@ rm -f .devcontainer/kio.vsix
 
 The publish workflow builds both `linux/amd64` and `linux/arm64` with QEMU; a local smoke test may target only the host architecture unless the change specifically needs the emulated architecture path.
 
+Published composition acceptance is a separate release-only check:
+[`ci/infra/devcontainer-acceptance.sh`](../../ci/infra/devcontainer-acceptance.sh).
+Its official `npm:@devcontainers/cli` pin belongs to the optional mise
+environment, outside the default tool pool. Run it with an immutable
+published image and cached official editor/server distributions as
+described in [`.devcontainer/README.md`](../../.devcontainer/README.md#published-image-acceptance).
+It tests the baked VSIX rather than an extension rebuilt from source;
+the ordinary lifecycle/editor orchestrators retain their distinct
+source-build checks. Reserve a cold-build resource slot and retain the
+receipt's explicit architecture and integration gaps.
+
 Docker image and BuildKit state is daemon-wide, not worktree-local. Inspect it before and after a devcontainer build with:
 
 ```sh

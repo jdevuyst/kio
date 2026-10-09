@@ -562,9 +562,11 @@ pub trait SurfaceToPrime {
                 meta: Meta::new(span),
             }),
             Expr::Unit {
+                source_trivia: _,
                 occurrence: _,
                 meta: Meta { span, .. },
             } => Ok(Expr::Unit {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 meta: Meta::new(span),
             }),

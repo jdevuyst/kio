@@ -9,8 +9,8 @@ allowed-tools: Read, Grep, Glob, Bash
 [`ai/topics/docs.md`](../../topics/docs.md) names
 [`ci/checks/orchestrators/host-docs-snippets.sh`](../../../ci/checks/orchestrators/host-docs-snippets.sh)
 as the owner of host-language fence validity on `docs/hosts/<lang>.md` pages:
-each page's own example package is built and every host fence is compiled
-against the freshly-built facade
+each page's own example package is built and every host fence receives its
+documented syntax, type, or worked-host execution check
 ([`specs/backends/README.md`](../../../specs/backends/README.md) § The package
 facade is the surface being validated). This skill is the meta-check over
 that mechanical gate — it verifies the gate's *coverage* cannot silently
@@ -33,7 +33,7 @@ must still be present in the script; its removal is a finding.
 ## 2. Every fence is validated or exempt-with-reason
 
 For each page, enumerate its host-language fences and confirm each is either
-compiled by the script or covered by an exemption **documented in the script
+validated at its documented level or covered by an exemption **documented in the script
 header** (the standing one: structural-shape illustration fences whose mint
 names have no counterpart in the tiny example package compile against a
 self-contained harness instead of the real artifact). An undocumented
@@ -46,7 +46,13 @@ stopped teaching that snippet.
 
 The script's per-language compile steps must match the real toolchain set the
 per-backend runners use (same compilers, resolved the same mise-owned way)
-and must exercise the page's snippets against the **current** facade shape.
+and must exercise static facade consumers and the JS worked host against the
+**current** facade shape. JS's other fences receive syntax checks; Python's
+facade-importing fences receive strict Pyright checks in addition to syntax
+checks, while its other fences receive syntax checks only. Declaration
+illustrations must receive semantic checking, not `skipLibCheck` suppression.
+Summaries must distinguish these validation levels without claiming runtime
+execution for compile-only paths.
 If a backend's loading protocol changed (new file layout, new marker, new
 factory spelling) and the script still compiles the old shape, that is a
 finding even while the gate passes.
@@ -80,7 +86,7 @@ floor.
 
 Every actual Rust, Go, Java, Swift, or Haskell compiler invocation in the
 script—including emitted-package prebuilds and self-contained illustration
-harnesses—must go through its shared `run_native_compiler` boundary. A direct
+harnesses—must go through its shared `run_compiler` boundary. A direct
 `rustc`, compiler-producing `go`, `javac`, `swiftc`, or `ghc` invocation is a
 finding because it bypasses repository-wide compiler admission. Review helper
 functions and newly added language branches manually; do not rely on a
@@ -88,10 +94,11 @@ syntax-only grep to prove the call graph.
 
 ## 4. Toolchain-absent behavior matches the shard model
 
-The script skips a page's compile step when that host toolchain is absent
-(mirroring CI's implementation-shard model) while still building the Kio
-package. Confirm the always-on set (js / ts / python / rust) is never
-skipped, and that the skip prints loudly rather than passing silently.
+The script skips an optional page's validation when its host toolchain is absent
+(mirroring CI's implementation-shard model) while still building the Kio package.
+Confirm missing always-on tools (js / ts / python / rust), including Pyright,
+fail before expensive builds, and optional skips print loudly. Neither syntax
+success nor a missing checker may be credited as facade type validation.
 
 ## How to report
 

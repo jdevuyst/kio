@@ -19,10 +19,10 @@
 
 use super::{ContractSide, QualifiedName};
 use crate::ast::{
-    HostType, Import, ImportItem, ImportKind, Item, Newtype, Phase, Purity, SigExportFn, SigItem,
-    SigItemRef, SigModuleSection, Surface, TypeAlias, TypeRecGroup, TypeRecMember,
+    Import, ImportItem, ImportKind, Phase, Purity, SigItem, SigItemRef, SigModuleSection, Surface,
+    TypeRecMember,
 };
-use crate::pass::resolve::{ExportContractPhase, Package, bridged_module_paths};
+use crate::pass::resolve::{ExportContractPhase, Package};
 use crate::span::Span;
 use std::collections::BTreeMap;
 
@@ -61,81 +61,60 @@ impl RecordedSurface {
     where
         P: ExportContractPhase + Phase<FnPurity = Purity> + Clone,
     {
-        let bridged = bridged_module_paths(package);
         let mut items = BTreeMap::new();
         let mut module_imports = BTreeMap::new();
         let mut recursive_contexts = BTreeMap::new();
-        for (path, entry) in package.modules() {
-            if !bridged.contains(path) {
+        for module in super::surface::public_modules(package) {
+            if module.declarations.is_empty() {
                 continue;
             }
-            let mut any = false;
             let mut projected_items = Vec::new();
-            let mut projected_contexts = Vec::new();
-            for item in &entry.module.items {
-                if let Item::TypeRecGroup(group) = item {
-                    let (group_items, contexts) = recorded_type_rec_group(path, group);
-                    for (name, recorded) in group_items {
-                        projected_items.push(recorded.item.clone());
-                        items.insert(name, recorded);
-                        any = true;
-                    }
-                    projected_contexts.extend(contexts);
-                    continue;
-                }
-                let Some((name, recorded)) = recorded_item(path, item) else {
-                    continue;
-                };
-                if matches!(
-                    &recorded.item,
-                    SigItem::Newtype(newtype) if newtype.rec_span.is_some()
-                ) {
-                    projected_contexts.push(recorded.item.clone());
-                }
-                projected_items.push(recorded.item.clone());
-                items.insert(name, recorded);
-                any = true;
-            }
-            if any {
-                let imports: Vec<Import> =
-                    entry.module.imports.iter().map(convert_import).collect();
-                module_imports.insert(
-                    path.to_owned(),
-                    imports_needed_by(&projected_items, imports.clone()),
+            for declaration in module.declarations {
+                projected_items.push(declaration.item.clone());
+                items.insert(
+                    declaration.entry.name,
+                    RecordedItem {
+                        side: declaration.entry.side,
+                        item: declaration.item,
+                    },
                 );
-                for item in projected_contexts {
-                    let group_imports =
-                        imports_needed_by(std::slice::from_ref(&item), imports.clone());
-                    let member_names = match &item {
-                        SigItem::TypeRecGroup(group) => group
-                            .members
-                            .iter()
-                            .filter_map(type_rec_member_name)
-                            .map(str::to_owned)
-                            .collect::<Vec<_>>(),
-                        SigItem::Newtype(newtype) if newtype.rec_span.is_some() => {
-                            vec![newtype.name.clone()]
-                        }
-                        _ => unreachable!("only cyclic declarations have signature contexts"),
-                    };
-                    let key = format!("{path}:{}", member_names.join(","));
-                    let section = SigModuleSection {
-                        leading_trivia: Vec::new(),
-                        trailing_trivia: Vec::new(),
-                        path: module_path_of(path),
-                        imports: group_imports,
-                        items: vec![item],
-                        span: Span::new(0, 0),
-                    };
-                    for member in member_names {
-                        recursive_contexts.insert(
-                            QualifiedName::new(path, member),
-                            RecordedTypeContext {
-                                key: key.clone(),
-                                section: section.clone(),
-                            },
-                        );
+            }
+            let imports = &module.origin.module.imports;
+            module_imports.insert(
+                module.path.to_owned(),
+                imports_needed_by(&projected_items, imports.clone()),
+            );
+            for item in module.recursive_contexts {
+                let group_imports = imports_needed_by(std::slice::from_ref(&item), imports.clone());
+                let member_names = match &item {
+                    SigItem::TypeRecGroup(group) => group
+                        .members
+                        .iter()
+                        .filter_map(type_rec_member_name)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>(),
+                    SigItem::Newtype(newtype) if newtype.rec_span.is_some() => {
+                        vec![newtype.name.clone()]
                     }
+                    _ => unreachable!("only cyclic declarations have signature contexts"),
+                };
+                let key = format!("{}:{}", module.path, member_names.join(","));
+                let section = SigModuleSection {
+                    leading_trivia: Vec::new(),
+                    trailing_trivia: Vec::new(),
+                    path: module_path_of(module.path),
+                    imports: group_imports,
+                    items: vec![item],
+                    span: Span::new(0, 0),
+                };
+                for member in member_names {
+                    recursive_contexts.insert(
+                        QualifiedName::new(module.path, member),
+                        RecordedTypeContext {
+                            key: key.clone(),
+                            section: section.clone(),
+                        },
+                    );
                 }
             }
         }
@@ -394,212 +373,12 @@ fn collect_type_refs<'a>(
     }
 }
 
-fn recorded_type_rec_group<P>(
-    module_path: &str,
-    group: &TypeRecGroup<P>,
-) -> (Vec<(QualifiedName, RecordedItem)>, Vec<SigItem<Surface>>)
-where
-    P: ExportContractPhase + Phase<FnPurity = Purity>,
-{
-    let mut recorded = Vec::new();
-    let mut members = Vec::new();
-    for member in &group.members {
-        match member {
-            TypeRecMember::TypeAlias(alias) if alias.vis.is_exported() => {
-                let mut alias: TypeAlias<Surface> = crate::ast::convert_type_alias(alias);
-                alias.doc = None;
-                let item = SigItem::TypeAlias(alias.clone());
-                recorded.push((
-                    QualifiedName::new(module_path, alias.name.clone()),
-                    RecordedItem {
-                        side: ContractSide::Export,
-                        item,
-                    },
-                ));
-                members.push(TypeRecMember::TypeAlias(alias));
-            }
-            TypeRecMember::Newtype(newtype) if newtype.is_host_exported() => {
-                let newtype = recorded_newtype(newtype);
-                let item = SigItem::Newtype(newtype.clone());
-                recorded.push((
-                    QualifiedName::new(module_path, newtype.name.clone()),
-                    RecordedItem {
-                        side: ContractSide::Export,
-                        item,
-                    },
-                ));
-                members.push(TypeRecMember::Newtype(newtype));
-            }
-            TypeRecMember::TypeAlias(_) | TypeRecMember::Newtype(_) => {}
-            TypeRecMember::Labels(_, ext) => match *ext {},
-        }
-    }
-
-    let projected = super::repartition_recorded_type_rec_group(TypeRecGroup {
-        members,
-        doc: None,
-        source_layout: None,
-        rec_span: group.rec_span,
-        open_brace_span: None,
-        close_brace_span: None,
-        deferred_rec_labels_diagnostic: None,
-        meta: crate::ast::Meta::new(group.meta.span),
-    });
-    let contexts = projected
-        .into_iter()
-        .filter(|item| {
-            matches!(
-                item,
-                SigItem::TypeRecGroup(_)
-                    | SigItem::Newtype(Newtype {
-                        rec_span: Some(_),
-                        ..
-                    })
-            )
-        })
-        .collect();
-    (recorded, contexts)
-}
-
 fn type_rec_member_name(member: &TypeRecMember<Surface>) -> Option<&str> {
     match member {
         TypeRecMember::TypeAlias(alias) => Some(&alias.name),
         TypeRecMember::Newtype(newtype) => Some(&newtype.name),
         TypeRecMember::Labels(_, _) => None,
     }
-}
-
-/// Build the `(QualifiedName, RecordedItem)` for one module item, or
-/// `None` for a non-contract item (private fn / surface-only form).
-fn recorded_item<P>(module_path: &str, item: &Item<P>) -> Option<(QualifiedName, RecordedItem)>
-where
-    P: ExportContractPhase + Phase<FnPurity = Purity>,
-{
-    match item {
-        Item::HostType(h) => {
-            let mut h: HostType<Surface> = crate::ast::convert_host_type(h);
-            // The sig is backend-independent: drop the redundant
-            // source-compatible `{ owned }` annotation. Replay's host-type
-            // identity is param kinds + role only, so this never changes the
-            // recorded contract.
-            h.owned = false;
-            h.doc = None;
-            Some((
-                QualifiedName::new(module_path, h.name.clone()),
-                RecordedItem {
-                    side: ContractSide::Env,
-                    item: SigItem::HostType(h),
-                },
-            ))
-        }
-        Item::HostFn(h) => {
-            let mut h = crate::ast::convert_host_fn::<P, Surface>(h);
-            h.doc = None;
-            Some((
-                QualifiedName::new(module_path, h.name.clone()),
-                RecordedItem {
-                    side: ContractSide::Env,
-                    item: SigItem::HostFn(h),
-                },
-            ))
-        }
-        Item::FnDef(d) if d.vis.is_exported() => {
-            // An exported fn records as a body-less `pub fn f(p) -> R;`
-            // export signature, carried in a `HostFn` node (the
-            // body-less fn-signature shape) and tagged `ExportFn`.
-            let export = export_fn_from_def(d);
-            Some((
-                QualifiedName::new(module_path, d.name.clone()),
-                RecordedItem {
-                    side: ContractSide::Export,
-                    item: SigItem::ExportFn(export),
-                },
-            ))
-        }
-        Item::TypeAlias(a) if a.vis.is_exported() => {
-            let mut a: TypeAlias<Surface> = crate::ast::convert_type_alias(a);
-            a.doc = None;
-            Some((
-                QualifiedName::new(module_path, a.name.clone()),
-                RecordedItem {
-                    side: ContractSide::Export,
-                    item: SigItem::TypeAlias(a),
-                },
-            ))
-        }
-        Item::Newtype(n) if n.is_host_exported() => {
-            let n = recorded_newtype(n);
-            Some((
-                QualifiedName::new(module_path, n.name.clone()),
-                RecordedItem {
-                    side: ContractSide::Export,
-                    item: SigItem::Newtype(n),
-                },
-            ))
-        }
-        // Private fn / type / newtype, and every surface-only / non-
-        // contract item, contribute no recorded contract entry.
-        _ => None,
-    }
-}
-
-/// Project a public newtype into ordinary signature-file syntax without
-/// retaining facts hidden from the host contract. A hidden member needs a
-/// syntactic stand-in because the ordinary newtype grammar always carries
-/// both members; the stand-in is deterministic, private, and chosen without
-/// consulting the hidden source name. With no public member the payload is
-/// similarly replaced by unit and hidden existentials are dropped.
-fn recorded_newtype<P>(newtype: &Newtype<P>) -> Newtype<Surface>
-where
-    P: ExportContractPhase + Phase<FnPurity = Purity>,
-{
-    super::project_newtype_declaration(crate::ast::convert_newtype(newtype))
-}
-
-/// Convert an exported `fn` definition into the body-less export-fn
-/// `HostFn` shape the sig records. The body is discarded — only the
-/// signature and return type are recorded.
-fn export_fn_from_def<P>(d: &crate::ast::FnDef<P>) -> SigExportFn<Surface>
-where
-    P: ExportContractPhase + Phase<FnPurity = Purity>,
-{
-    let params = d
-        .sig
-        .params
-        .iter()
-        .map(|p| match p {
-            crate::ast::SignatureParam::Type(tp) => crate::ast::HostFnParam::Type(tp.clone()),
-            crate::ast::SignatureParam::Value(v) => {
-                crate::ast::HostFnParam::Value(crate::ast::HostFnValueParam {
-                    name: Some(v.name.clone()),
-                    ty: v
-                        .ty
-                        .as_ref()
-                        .map(crate::ast::convert_type::<P, Surface>)
-                        .unwrap_or_else(|| crate::ast::Type::Unit {
-                            meta: crate::ast::Meta::new(Span::new(0, 0)),
-                        }),
-                    meta: crate::ast::convert_meta(&v.meta),
-                })
-            }
-        })
-        .collect();
-    SigExportFn {
-        purity: d.purity,
-        function: crate::ast::HostFn {
-            name: d.name.clone(),
-            params,
-            param_groups: d.sig.groups.clone(),
-            ret: crate::ast::convert_type::<P, Surface>(&d.ret),
-            meta: crate::ast::convert_meta(&d.meta),
-            doc: None,
-        },
-    }
-}
-
-fn convert_import(u: &Import) -> Import {
-    // `Use` is phase-independent — clone verbatim.
-    u.clone()
 }
 
 fn module_path_of(path: &str) -> crate::ast::ModulePath {

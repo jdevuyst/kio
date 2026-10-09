@@ -16,6 +16,7 @@ use crate::ast::{
     Surface, Type, TypeRecMember, Visibility,
 };
 use crate::error::Error;
+use crate::pass::contract::{Contract, NoBody};
 use crate::pass::resolve::{NominalProvider, NominalSelection, Package};
 use crate::span::Span;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -407,25 +408,36 @@ fn lower_pending(
 }
 
 fn lower_section(section: &SigModuleSection<Surface>) -> Result<SigModuleSection<Prime>, Error> {
+    crate::prime::lower::check_imports(&section.imports)?;
     let items = section
         .items
         .iter()
-        .map(sig_item_as_module_item)
-        .collect::<Vec<_>>();
-    let module = Module {
-        path: section.path.clone(),
-        imports: section.imports.clone(),
-        items,
-        meta: Meta::new(section.span),
-        doc: None,
-    };
-    let lowered = crate::prime::lower::lower_module(module)?;
-    let items = section
-        .items
-        .iter()
-        .zip(lowered.items)
-        .map(|(source, item)| lowered_sig_item(source, item))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|item| {
+            Ok(match item {
+                SigItem::HostType(item) => {
+                    SigItem::HostType(crate::prime::lower::lower_host_type(item.clone())?)
+                }
+                SigItem::HostFn(item) => {
+                    SigItem::HostFn(crate::prime::lower::lower_host_fn(item.clone())?)
+                }
+                SigItem::ExportFn(item) => SigItem::ExportFn(SigExportFn {
+                    purity: item.purity,
+                    function: crate::prime::lower::lower_host_fn(item.function.clone())?,
+                }),
+                SigItem::TypeAlias(item) => {
+                    let mut item = item.clone();
+                    item.vis = Visibility::Public;
+                    SigItem::TypeAlias(crate::prime::lower::lower_type_alias(item)?)
+                }
+                SigItem::Newtype(item) => {
+                    SigItem::Newtype(crate::prime::lower::lower_newtype(item.clone())?)
+                }
+                SigItem::TypeRecGroup(item) => {
+                    SigItem::TypeRecGroup(crate::prime::lower::lower_type_rec_group(item.clone())?)
+                }
+            })
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
     Ok(SigModuleSection {
         leading_trivia: section.leading_trivia.clone(),
         trailing_trivia: section.trailing_trivia.clone(),
@@ -456,42 +468,6 @@ fn lower_item(
         .expect("a one-declaration lowering stays non-empty"))
 }
 
-fn sig_item_as_module_item(item: &SigItem<Surface>) -> Item<Surface> {
-    match item {
-        SigItem::HostType(item) => Item::HostType(item.clone()),
-        SigItem::HostFn(item) => Item::HostFn(item.clone()),
-        SigItem::TypeAlias(item) => {
-            let mut item = item.clone();
-            item.vis = Visibility::Public;
-            Item::TypeAlias(item)
-        }
-        SigItem::Newtype(item) => Item::Newtype(item.clone()),
-        SigItem::TypeRecGroup(item) => Item::TypeRecGroup(item.clone()),
-        SigItem::ExportFn(item) => Item::HostFn(item.function.clone()),
-    }
-}
-
-fn lowered_sig_item(
-    source: &SigItem<Surface>,
-    lowered: Item<Prime>,
-) -> Result<SigItem<Prime>, Error> {
-    match (source, lowered) {
-        (SigItem::HostType(_), Item::HostType(item)) => Ok(SigItem::HostType(item)),
-        (SigItem::HostFn(_), Item::HostFn(item)) => Ok(SigItem::HostFn(item)),
-        (SigItem::TypeAlias(_), Item::TypeAlias(item)) => Ok(SigItem::TypeAlias(item)),
-        (SigItem::Newtype(_), Item::Newtype(item)) => Ok(SigItem::Newtype(item)),
-        (SigItem::TypeRecGroup(_), Item::TypeRecGroup(item)) => Ok(SigItem::TypeRecGroup(item)),
-        (SigItem::ExportFn(source), Item::HostFn(function)) => Ok(SigItem::ExportFn(SigExportFn {
-            purity: source.purity,
-            function,
-        })),
-        (_, item) => Err(Error::bridge(
-            item.meta().span,
-            "signature Kio' lowering changed a declaration's kind",
-        )),
-    }
-}
-
 fn canonicalize_section(
     section: &SigModuleSection<Prime>,
     imports: &[Import],
@@ -513,7 +489,7 @@ fn canonicalize_section(
     Ok(canonical)
 }
 
-/// Run ordinary in-body resolution for one immutable declaration origin.
+/// Run ordinary signature resolution for one immutable declaration origin.
 ///
 /// Earlier origins in the candidate epoch are already identity-qualified, so
 /// replaying all of their bodies under this origin's imports would be both
@@ -527,11 +503,11 @@ fn validate_origin_section(
     section: &SigModuleSection<Prime>,
     candidate: &CanonicalEpoch,
     candidate_modules: &BTreeSet<String>,
-) -> Result<Package<Prime>, Error> {
+) -> Result<Package<Contract>, Error> {
     let modules = resolution_modules(section, candidate, candidate_modules);
     let slice_result = build_package_from_modules(modules).and_then(|package| {
         package
-            .check_in_body_resolution()
+            .check_signature_resolution()
             .map_err(|error| error.error)?;
         Ok(package)
     });
@@ -543,7 +519,7 @@ fn validate_origin_section(
             // means the dependency collector missed a semantic edge.
             let full_modules = full_resolution_modules(section, candidate);
             let package = build_package_from_modules(full_modules)?;
-            match package.check_in_body_resolution() {
+            match package.check_signature_resolution() {
                 Err(error) => Err(error.error),
                 Ok(()) => unreachable!(
                     "signature origin dependency slice rejected a section accepted by the full candidate: {slice_error:?}"
@@ -557,7 +533,7 @@ fn resolution_modules(
     section: &SigModuleSection<Prime>,
     candidate: &CanonicalEpoch,
     candidate_modules: &BTreeSet<String>,
-) -> Vec<(PathBuf, Module<Prime>)> {
+) -> Vec<(PathBuf, Module<Contract>)> {
     let origin = path_string(&section.path);
     let target_names = section
         .items
@@ -565,7 +541,7 @@ fn resolution_modules(
         .flat_map(sig_item_names)
         .map(|name| QualifiedName::new(&origin, name))
         .collect::<BTreeSet<_>>();
-    let mut by_module = BTreeMap::<String, Vec<Item<Prime>>>::new();
+    let mut by_module = BTreeMap::<String, Vec<Item<Contract>>>::new();
     let mut stub_names = BTreeSet::new();
     let references = origin_type_references(&section.items);
     let mut qualified_imports = BTreeMap::<String, String>::new();
@@ -641,13 +617,10 @@ fn resolution_modules(
             .or_default()
             .push(resolution_stub(&declaration.item));
     }
-    by_module.entry(origin.clone()).or_default().extend(
-        section
-            .items
-            .iter()
-            .cloned()
-            .map(sig_item_as_prime_module_item),
-    );
+    by_module
+        .entry(origin.clone())
+        .or_default()
+        .extend(section.items.iter().cloned().map(sig_item_as_contract_item));
 
     by_module
         .into_iter()
@@ -674,7 +647,7 @@ fn resolution_modules(
 fn full_resolution_modules(
     section: &SigModuleSection<Prime>,
     candidate: &CanonicalEpoch,
-) -> Vec<(PathBuf, Module<Prime>)> {
+) -> Vec<(PathBuf, Module<Contract>)> {
     let origin = path_string(&section.path);
     let target_names = section
         .items
@@ -682,7 +655,7 @@ fn full_resolution_modules(
         .flat_map(sig_item_names)
         .map(|name| QualifiedName::new(&origin, name))
         .collect::<BTreeSet<_>>();
-    let mut by_module = BTreeMap::<String, Vec<Item<Prime>>>::new();
+    let mut by_module = BTreeMap::<String, Vec<Item<Contract>>>::new();
     for (name, declaration) in candidate {
         if !target_names.contains(name) {
             by_module
@@ -691,13 +664,10 @@ fn full_resolution_modules(
                 .push(resolution_stub(&declaration.item));
         }
     }
-    by_module.entry(origin.clone()).or_default().extend(
-        section
-            .items
-            .iter()
-            .cloned()
-            .map(sig_item_as_prime_module_item),
-    );
+    by_module
+        .entry(origin.clone())
+        .or_default()
+        .extend(section.items.iter().cloned().map(sig_item_as_contract_item));
     by_module
         .into_iter()
         .map(|(path, items)| {
@@ -851,37 +821,31 @@ fn collect_origin_type_references(
     }
 }
 
-fn resolution_stub(item: &SigItem<Prime>) -> Item<Prime> {
+fn resolution_stub(item: &SigItem<Prime>) -> Item<Contract> {
     let unit = |span| Type::Unit {
         meta: Meta::new(span),
     };
-    match item {
-        SigItem::HostType(item) => Item::HostType(item.clone()),
-        SigItem::HostFn(item) | SigItem::ExportFn(SigExportFn { function: item, .. }) => {
-            let mut item = item.clone();
-            for parameter in &mut item.params {
+    let mut item = item.clone();
+    match &mut item {
+        SigItem::HostType(_) => {}
+        SigItem::HostFn(function) | SigItem::ExportFn(SigExportFn { function, .. }) => {
+            for parameter in &mut function.params {
                 if let HostFnParam::Value(parameter) = parameter {
                     parameter.ty = unit(parameter.meta.span);
                 }
             }
-            item.ret = unit(item.meta.span);
-            Item::HostFn(item)
+            function.ret = unit(function.meta.span);
         }
-        SigItem::TypeAlias(item) => {
-            let mut item = item.clone();
-            item.body = unit(item.meta.span);
-            Item::TypeAlias(item)
-        }
-        SigItem::Newtype(item) => {
-            let mut item = item.clone();
-            item.rec_span = None;
-            item.payload = unit(item.meta.span);
-            Item::Newtype(item)
+        SigItem::TypeAlias(alias) => alias.body = unit(alias.meta.span),
+        SigItem::Newtype(newtype) => {
+            newtype.rec_span = None;
+            newtype.payload = unit(newtype.meta.span);
         }
         SigItem::TypeRecGroup(_) => {
             unreachable!("a canonical epoch stores recursive-group members individually")
         }
     }
+    sig_item_as_contract_item(item)
 }
 
 fn sig_item_names(item: &SigItem<Prime>) -> Vec<&str> {
@@ -893,8 +857,8 @@ fn sig_item_names(item: &SigItem<Prime>) -> Vec<&str> {
 
 fn canonicalize_sig_item<'a>(
     item: &mut SigItem<Prime>,
-    provider: &NominalProvider<'a, Prime>,
-    scope: crate::pass::resolve::NominalScope<'a, Prime>,
+    provider: &NominalProvider<'a, Contract>,
+    scope: crate::pass::resolve::NominalScope<'a, Contract>,
 ) -> Result<(), Error> {
     match item {
         SigItem::HostType(_) => Ok(()),
@@ -947,8 +911,8 @@ fn canonicalize_sig_item<'a>(
 
 fn canonicalize_host_fn<'a>(
     function: &mut HostFn<Prime>,
-    provider: &NominalProvider<'a, Prime>,
-    scope: crate::pass::resolve::NominalScope<'a, Prime>,
+    provider: &NominalProvider<'a, Contract>,
+    scope: crate::pass::resolve::NominalScope<'a, Contract>,
 ) -> Result<(), Error> {
     let mut bound = Vec::new();
     for param in &mut function.params {
@@ -965,8 +929,8 @@ fn canonicalize_host_fn<'a>(
 fn canonicalize_type<'a>(
     ty: &mut Type<Prime>,
     bound: &mut Vec<String>,
-    provider: &NominalProvider<'a, Prime>,
-    scope: crate::pass::resolve::NominalScope<'a, Prime>,
+    provider: &NominalProvider<'a, Contract>,
+    scope: crate::pass::resolve::NominalScope<'a, Contract>,
 ) -> Result<(), Error> {
     match ty {
         Type::Path {
@@ -1040,15 +1004,15 @@ fn build_package(
     epoch: &CanonicalEpoch,
     origin_path: Option<&crate::ast::ModulePath>,
     origin_imports: &[Import],
-) -> Result<Package<Prime>, Error> {
+) -> Result<Package<Contract>, Error> {
     let origin = origin_path.map(path_string);
     let modules = epoch_modules(epoch, origin.as_deref(), origin_imports);
     build_package_from_modules(modules)
 }
 
 fn build_package_from_modules(
-    modules: Vec<(PathBuf, Module<Prime>)>,
-) -> Result<Package<Prime>, Error> {
+    modules: Vec<(PathBuf, Module<Contract>)>,
+) -> Result<Package<Contract>, Error> {
     #[cfg(test)]
     ACTIVE_CANONICALIZATION_WORK.with(|slot| {
         if let Some(work) = slot.borrow_mut().as_mut() {
@@ -1059,17 +1023,8 @@ fn build_package_from_modules(
                 .sum::<usize>();
         }
     });
-    #[cfg(any(feature = "surface", feature = "cli"))]
-    let (package, name_errors) =
-        Package::build_deferring_contract_checks(Path::new("."), modules, None)
-            .map_err(|error| error.error)?;
-    #[cfg(not(any(feature = "surface", feature = "cli")))]
     let package = Package::build(Path::new("."), modules, None).map_err(|error| error.error)?;
     package.resolve_imports().map_err(|error| error.error)?;
-    #[cfg(any(feature = "surface", feature = "cli"))]
-    if let Some(error) = name_errors.into_iter().next() {
-        return Err(error.error);
-    }
     package
         .check_binding_origins()
         .map_err(|error| error.error)?;
@@ -1080,7 +1035,7 @@ fn epoch_modules(
     epoch: &CanonicalEpoch,
     origin_path: Option<&str>,
     origin_imports: &[Import],
-) -> Vec<(PathBuf, Module<Prime>)> {
+) -> Vec<(PathBuf, Module<Contract>)> {
     let declarations = || {
         let entries = epoch.iter();
         #[cfg(test)]
@@ -1089,7 +1044,7 @@ fn epoch_modules(
         });
         entries
     };
-    let mut by_module = BTreeMap::<String, Vec<Item<Prime>>>::new();
+    let mut by_module = BTreeMap::<String, Vec<Item<Contract>>>::new();
     let mut comptime_imports = BTreeMap::new();
     let mut emitted_contexts = BTreeSet::new();
     for (name, declaration) in declarations() {
@@ -1107,13 +1062,13 @@ fn epoch_modules(
                 by_module
                     .entry(name.module_path.clone())
                     .or_default()
-                    .push(sig_item_as_prime_module_item(item));
+                    .push(sig_item_as_contract_item(item));
             }
         } else {
             by_module
                 .entry(name.module_path.clone())
                 .or_default()
-                .push(sig_item_as_prime_module_item(declaration.item.clone()));
+                .push(sig_item_as_contract_item(declaration.item.clone()));
         }
     }
     by_module
@@ -1263,14 +1218,44 @@ fn context_item(context: &SigModuleSection<Prime>, name: &QualifiedName) -> Opti
     None
 }
 
-fn sig_item_as_prime_module_item(item: SigItem<Prime>) -> Item<Prime> {
+fn sig_item_as_contract_item(item: SigItem<Prime>) -> Item<Contract> {
     match item {
-        SigItem::HostType(item) => Item::HostType(item),
-        SigItem::HostFn(item) => Item::HostFn(item),
-        SigItem::TypeAlias(item) => Item::TypeAlias(item),
-        SigItem::Newtype(item) => Item::Newtype(item),
-        SigItem::TypeRecGroup(item) => Item::TypeRecGroup(item),
-        SigItem::ExportFn(item) => Item::HostFn(item.function),
+        SigItem::HostType(item) => Item::HostType(crate::ast::convert_host_type(&item)),
+        SigItem::HostFn(item) => Item::HostFn(crate::ast::convert_host_fn(&item)),
+        SigItem::TypeAlias(item) => Item::TypeAlias(crate::ast::convert_type_alias(&item)),
+        SigItem::Newtype(item) => Item::Newtype(crate::ast::convert_newtype(&item)),
+        SigItem::TypeRecGroup(item) => {
+            Item::TypeRecGroup(crate::ast::convert_type_rec_group(&item))
+        }
+        SigItem::ExportFn(item) => {
+            let function = item.function;
+            let params = function
+                .params
+                .iter()
+                .map(|param| match param {
+                    HostFnParam::Type(param) => crate::ast::SignatureParam::Type(param.clone()),
+                    HostFnParam::Value(param) => {
+                        crate::ast::SignatureParam::Value(crate::ast::Param {
+                            name: param.name.clone().unwrap_or_default(),
+                            ty: Some(crate::ast::convert_type(&param.ty)),
+                            pattern: Default::default(),
+                            meta: crate::ast::convert_meta(&param.meta),
+                        })
+                    }
+                })
+                .collect();
+            Item::FnDef(crate::ast::FnDef {
+                vis: Visibility::Public,
+                purity: item.purity,
+                name: function.name,
+                sig: crate::ast::Signature::from_parts(params, function.param_groups),
+                ret: crate::ast::convert_type(&function.ret),
+                ret_elided: (),
+                body: NoBody,
+                meta: crate::ast::convert_meta(&function.meta),
+                doc: function.doc,
+            })
+        }
     }
 }
 
@@ -1335,6 +1320,45 @@ mod tests {
     use super::*;
     use std::fmt::Write as _;
 
+    #[test]
+    fn fresh_exports_keep_ordinary_category_purity_and_written_stages() {
+        let parsed = crate::pass::parser::parse_signature_file(
+            "signature app v(1); v(1) { nonbreaking { add { module api {
+                pub pure fn direct[A] -> A -> A;
+                pub fn staged[A]()(value: A)[B] -> A;
+                host fn callback[A](value: A) -> A;
+            } } } }",
+            Some("app"),
+        )
+        .expect("parse category witnesses");
+        let section = lower_section(&parsed.versions[0].nonbreaking.as_ref().unwrap().add[0])
+            .expect("lower declaration grammar");
+        let items = section
+            .items
+            .iter()
+            .cloned()
+            .map(sig_item_as_contract_item)
+            .collect::<Vec<_>>();
+        for (index, pure, has_value_group) in [(0, true, false), (1, false, true)] {
+            let Item::FnDef(function) = &items[index] else {
+                panic!("an exported ordinary function must not become a host declaration")
+            };
+            let SigItem::ExportFn(source) = &section.items[index] else {
+                panic!("fixture export")
+            };
+            assert_eq!(function.body, NoBody);
+            assert_eq!(function.purity.is_pure(), pure);
+            assert_eq!(function.sig.has_value_group(), has_value_group);
+            assert_eq!(function.sig.groups, source.function.param_groups);
+            assert_eq!(function.meta.span, source.function.meta.span);
+            let stub = resolution_stub(&section.items[index]);
+            assert!(matches!(stub, Item::FnDef(ref function) if function.purity.is_pure() == pure));
+        }
+        assert!(matches!(&items[2], Item::HostFn(_)));
+        let replayed = crate::sig::replay(&parsed).expect("fresh ordinary signatures validate");
+        assert_eq!(replayed.current.items.len(), 3);
+    }
+
     fn compare_origin_with_full_epoch(
         section: &SigModuleSection<Prime>,
         candidate: &CanonicalEpoch,
@@ -1349,7 +1373,7 @@ mod tests {
             let resolution =
                 build_package_from_modules(full_resolution_modules(section, candidate))?;
             resolution
-                .check_in_body_resolution()
+                .check_signature_resolution()
                 .map_err(|error| error.error)?;
             let package = build_package(candidate, Some(&section.path), &section.imports)?;
             let path = path_string(&section.path);

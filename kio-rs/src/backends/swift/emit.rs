@@ -26,15 +26,15 @@ use crate::backends::boundary_facade::{
     CallableExecutionStage, CallableSourceParamAdapter, CallableValueStageLayout, FacadeBinderId,
     FacadeUse, FacadeUseId, PreparedBoundaryCallableSite, PreparedBoundaryCallableSites,
 };
+use crate::backends::product_rebuild::{
+    NominalValueRepresentation, bound_product_rebuild_plan, render_cached_product_rebuild,
+};
 use crate::backends::public_names::{
     FacadeSelector, encode_host_identity, encode_source_identity, has_readable_snake_components,
     host_name_core,
 };
 use crate::backends::reconstruct::RoutedBodyTypes;
 use crate::backends::skin::exact_nullary_host_type_table;
-use crate::backends::structural::{
-    NominalValueRepresentation, bound_product_rebuild_plan, render_cached_product_rebuild,
-};
 use crate::backends::value_plan::{ValuePlan, ValueUse};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
@@ -573,25 +573,34 @@ fn emit_prepared_nested_callable_aliases(
             continue;
         };
         for source in layout.source_params() {
-            if source.adapter() == CallableSourceParamAdapter::Identity {
-                let range = source.facade_slots();
-                let [slot] = &slots[range] else {
-                    return Err(EmitError::internal(
-                        "Swift FFI alias identity source does not own one slot",
-                    ));
-                };
-                emit_prepared_nested_use_aliases(
-                    render,
-                    *slot,
-                    &format!("{prefix}_arg{public_index}"),
-                    SwiftNestedAliasContext {
-                        scope: &callable.scope,
-                        callable_generics: &callable.generic_params,
-                        names,
-                        deprecation: deprecation_message,
-                    },
-                    out,
-                )?;
+            let alias = format!("{prefix}_arg{public_index}");
+            let context = SwiftNestedAliasContext {
+                scope: &callable.scope,
+                callable_generics: &callable.generic_params,
+                names,
+                deprecation: deprecation_message,
+            };
+            let source_slots = &slots[source.facade_slots()];
+            match source.adapter() {
+                CallableSourceParamAdapter::UnitValue => {}
+                CallableSourceParamAdapter::Identity => {
+                    let [slot] = source_slots else {
+                        return Err(EmitError::internal(
+                            "Swift FFI alias identity source does not own one slot",
+                        ));
+                    };
+                    emit_prepared_nested_use_aliases(render, *slot, &alias, context, out)?;
+                }
+                CallableSourceParamAdapter::RightNest => {
+                    emit_prepared_structural_callable_aliases(
+                        render,
+                        source_slots,
+                        "field",
+                        &alias,
+                        context,
+                        out,
+                    )?;
+                }
             }
             public_index += 1;
         }
@@ -610,6 +619,35 @@ fn emit_prepared_nested_callable_aliases(
     )
 }
 
+fn emit_prepared_structural_callable_aliases(
+    render: PreparedSwiftRender<'_, '_>,
+    children: &[FacadeUseId],
+    step: &str,
+    alias: &str,
+    context: SwiftNestedAliasContext<'_, '_, '_, '_>,
+    out: &mut String,
+) -> Result<(), EmitError> {
+    for (index, child) in children.iter().enumerate() {
+        let alias = format!("{alias}_{step}{index}");
+        if matches!(
+            render.plan.use_at(*child),
+            FacadeUse::Function { .. } | FacadeUse::Forall { .. }
+        ) {
+            let ty = render_prepared_use(render, *child, context.scope, "H")?;
+            emit_prepared_ffi_alias(
+                &alias,
+                &ty,
+                context.callable_generics,
+                context.names,
+                context.deprecation,
+                out,
+            );
+        }
+        emit_prepared_nested_use_aliases(render, *child, &alias, context, out)?;
+    }
+    Ok(())
+}
+
 fn emit_prepared_nested_use_aliases(
     render: PreparedSwiftRender<'_, '_>,
     id: FacadeUseId,
@@ -618,6 +656,17 @@ fn emit_prepared_nested_use_aliases(
     out: &mut String,
 ) -> Result<(), EmitError> {
     match render.plan.use_at(id) {
+        FacadeUse::Product { args, .. } => {
+            emit_prepared_structural_callable_aliases(render, args, "field", alias, context, out)?;
+        }
+        FacadeUse::Sum { args, .. } => {
+            emit_prepared_structural_callable_aliases(render, args, "arm", alias, context, out)?;
+        }
+        FacadeUse::Apply { args, .. } => {
+            emit_prepared_structural_callable_aliases(
+                render, args, "typearg", alias, context, out,
+            )?;
+        }
         FacadeUse::Function { slots, result, .. } => {
             let values = prepared_values(render);
             let ValueUse::Function { domain, .. } = values.plan.use_at(values.plan.source(id))
@@ -636,6 +685,15 @@ fn emit_prepared_nested_use_aliases(
             );
             if let [slot] = slots.as_slice() {
                 emit_prepared_nested_use_aliases(render, *slot, &nested_alias, context, out)?;
+            } else {
+                emit_prepared_structural_callable_aliases(
+                    render,
+                    slots,
+                    "field",
+                    &nested_alias,
+                    context,
+                    out,
+                )?;
             }
             let ret = render_prepared_use(render, *result, context.scope, "H")?;
             let nested_alias = format!("{alias}_cbret");
@@ -3128,7 +3186,7 @@ mod tests {
             .check_in_body_resolution()
             .expect("check body resolution");
         let prime = check_package(&package).expect("typecheck");
-        crate::pass::recover_to_low::lower(&structural_recovery::recover_package(&prime))
+        crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
     }
 
     fn single_api_package(source: &str) -> Package<Routed> {
@@ -3154,7 +3212,7 @@ mod tests {
             .check_in_body_resolution()
             .expect("check body resolution");
         let prime = check_package(&package).expect("typecheck");
-        crate::pass::recover_to_low::lower(&structural_recovery::recover_package(&prime))
+        crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
     }
 
     fn retained_carrier_signature() -> (u32, crate::sig::ReplayedInterface) {
@@ -3592,7 +3650,7 @@ v(2) {
             .check_in_body_resolution()
             .expect("check staged body resolution");
         let prime = check_package(&package).expect("typecheck staged package");
-        crate::pass::recover_to_low::lower(&structural_recovery::recover_package(&prime))
+        crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
     }
 
     #[test]
@@ -3731,7 +3789,7 @@ v(2) {
             .check_in_body_resolution()
             .expect("check body resolution");
         let prime = check_package(&package).expect("typecheck");
-        crate::pass::recover_to_low::lower(&structural_recovery::recover_package(&prime))
+        crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
     }
 
     #[test]
@@ -3810,7 +3868,7 @@ v(2) {
             .check_in_body_resolution()
             .expect("check body resolution");
         let prime = check_package(&package).expect("typecheck");
-        crate::pass::recover_to_low::lower(&structural_recovery::recover_package(&prime))
+        crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
     }
 
     #[test]
@@ -4057,6 +4115,184 @@ v(2) {
             emitted.ffi_swift
         );
         assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    fn callable_aliases_follow_structural_signature_paths() {
+        let package = single_api_package(
+            "module api; \
+             host type N; host type Box[A]; \
+             host fn exchange[Outer, More]( \
+                 choice: (. -> N) | ([A] A -> A), \
+                 product: (Outer -> More) & ([B] B -> Outer), \
+                 wrapped: Box([C] C -> Outer), \
+                 callback: ((. -> N) | ([D] D -> D)) -> (. -> N) | ([E] E -> E) \
+             ) -> Box([R] R -> More); \
+             host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
+             host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
+             pub newtype Secret : [A] A -> A { constructor wrap; projector get; }; \
+             host fn opaque(value: Secret) -> Secret;",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit structural callable aliases");
+        let ffi = &emitted.ffi_swift;
+        for alias in [
+            "Env_api__exchange_arg0_arm0",
+            "Env_api__exchange_arg0_arm1",
+            "Env_api__exchange_arg1_field0",
+            "Env_api__exchange_arg1_field1",
+            "Env_api__exchange_arg2_typearg0",
+            "Env_api__exchange_arg3_cbarg0_arm1",
+            "Env_api__exchange_arg3_cbret_arm1",
+            "Env_api__exchange_ret_typearg0",
+            "Env_api__nested_arg0_field0_field0",
+            "Env_api__nested_arg0_field1",
+            "Env_api__grouped_arg0_cbarg0_field0",
+            "Env_api__grouped_arg0_cbarg0_field1",
+        ] {
+            assert!(
+                ffi.contains(&format!("public typealias {alias}")),
+                "{alias}:\n{ffi}"
+            );
+        }
+        for alias in [
+            "Env_api__exchange_arg0_arm1",
+            "Env_api__exchange_arg1_field1",
+            "Env_api__exchange_arg2_typearg0",
+            "Env_api__exchange_arg3_cbarg0_arm1",
+            "Env_api__exchange_arg3_cbret_arm1",
+            "Env_api__exchange_ret_typearg0",
+        ] {
+            let carrier = ffi
+                .lines()
+                .find(|line| line.starts_with(&format!("public typealias {alias}<")))
+                .unwrap();
+            let implementation = ffi
+                .lines()
+                .find(|line| {
+                    line.starts_with(&format!("public typealias {alias}Implementation = "))
+                })
+                .unwrap();
+            let name = implementation
+                .split(" = ")
+                .nth(1)
+                .unwrap()
+                .strip_suffix("Implementation")
+                .unwrap();
+            assert!(carrier.contains(&format!(" = {name}<")), "{carrier}");
+        }
+        let field = ffi
+            .lines()
+            .find(|line| line.starts_with("public typealias Env_api__exchange_arg1_field0<"))
+            .unwrap();
+        assert!(
+            field.contains("<KioType_0, KioType_1> = (KioType_0) -> KioType_1"),
+            "{field}"
+        );
+        assert!(
+            !ffi.lines()
+                .any(|line| line.contains("Env_api__opaque_") && line.contains("Implementation")),
+            "{ffi}"
+        );
+        assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    fn retained_structural_callable_aliases_keep_origin_and_binder_hygiene() {
+        let package = single_api_package("module api; pub fn unit() -> . { () }");
+        let source = "signature pkg v(3); \
+            v(1) { nonbreaking { add { module api { \
+                host fn old_field0[H](value: ([A] A -> H) | (. -> H)) -> .; \
+            } } } } \
+            v(2) { nonbreaking { remove { module api { old_field0; } } } }";
+        let file = crate::pass::parser::parse_signature_file(source, None)
+            .expect("parse retained alias signature");
+        let sig = (
+            2,
+            crate::sig::replay(&file).expect("replay retained alias signature"),
+        );
+        let emitted = lower_package_with_signature(&package, "Pkg", Some(&sig))
+            .expect("emit retained aliases");
+        let ffi = &emitted.ffi_swift;
+        assert!(
+            ffi.contains("public typealias Env_api__oldField0_arg0_arm0<H: PkgHost, KioType_0>"),
+            "{ffi}"
+        );
+        assert!(
+            ffi.contains("public typealias Env_api__oldField0_arg0_arm0Implementation = "),
+            "{ffi}"
+        );
+        let lines = ffi.lines().collect::<Vec<_>>();
+        for (index, line) in lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.starts_with("public typealias Env_api__oldField0_arg0_arm"))
+        {
+            assert!(
+                index > 0 && lines[index - 1].contains("@available(*, deprecated"),
+                "{line}\n{ffi}"
+            );
+        }
+        assert!(!emitted.pkg_swift.contains("api__oldField0"));
+        assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    fn callable_alias_paths_do_not_render_higher_kinded_containers_as_values() {
+        let package = single_api_package(
+            "module api; \
+             host type Box[A]; host type Pair[A][B]; \
+             pub newtype Holder[*F][A] : . { constructor wrap; projector get; }; \
+             host fn higher[*F](bound: Holder(F, [A] A -> A), \
+                 nominal: Holder(Box, [B] B -> B), \
+                 partial: Holder(Pair([C] C -> C), .)) -> .;",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit higher-kinded alias paths");
+        let ffi = &emitted.ffi_swift;
+        for suffix in ["arg0_typearg1", "arg1_typearg1", "arg2_typearg0_typearg0"] {
+            assert!(
+                ffi.contains(&format!("public typealias Env_api__higher_{suffix}<")),
+                "{ffi}"
+            );
+            assert!(
+                ffi.contains(&format!(
+                    "public typealias Env_api__higher_{suffix}Implementation = "
+                )),
+                "{ffi}"
+            );
+        }
+        for suffix in ["arg0_typearg0", "arg1_typearg0", "arg2_typearg0"] {
+            assert!(
+                !ffi.contains(&format!("public typealias Env_api__higher_{suffix}<")),
+                "{ffi}"
+            );
+        }
+        assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    fn structural_callable_alias_count_grows_with_occurrences() {
+        for width in [4, 16] {
+            let arms = vec!["[A] A -> A"; width].join(") | (");
+            let source = format!("module api; host fn many(value: ({arms})) -> .;");
+            let emitted =
+                lower_package(&single_api_package(&source), "Pkg").expect("emit wide aliases");
+            assert_eq!(
+                emitted.ffi_swift.matches("Implementation = ").count(),
+                width
+            );
+            assert_eq!(
+                emitted
+                    .ffi_swift
+                    .lines()
+                    .filter(
+                        |line| line.starts_with("public typealias Env_api__many_arg0_arm")
+                            && line.contains(" = KioForall_")
+                            && !line.contains("Implementation")
+                    )
+                    .count(),
+                width,
+            );
+        }
     }
 
     #[test]

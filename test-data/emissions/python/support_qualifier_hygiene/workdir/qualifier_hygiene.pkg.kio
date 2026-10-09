@@ -1,0 +1,14 @@
+package qualifier_hygiene;
+
+build {
+  cache "out/.kio-cache/";
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  api;
+  capabilities
+}

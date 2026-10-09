@@ -50,6 +50,12 @@ For each `specs/backends/*.md` file other than `README.md`, check the page cover
 5. **Package API** — exported items + generic intrinsic API for constructing / inspecting opaque structural values. Documents methods, not value shapes. Must present the **branded typed facade** — handle / `<Handle>Host` / factory per § The package facade § Branded naming; a statically-typed backend page documenting string-keyed lookup or host-side casts as the current surface is a finding.
 6. **Host record contract** — how `host fn` declarations map to host-supplied callables. Spelled out so users don't read a value-layout table as a host-item checklist.
 7. **FFI surface** — atomic types, structural and nominal types, carve-outs.
+   Check the protection/host-responsibility division required by
+   `ai/topics/specs.md`: static enforcement, runtime validation, copying and
+   aliasing, nominal identity/visibility, callback crossings and unsafe host
+   obligations. The matching host guide explains how to use those guarantees
+   correctly. Flag omitted or contradictory promises without inferring a
+   uniform checking policy or treating unchecked behavior as contract authority.
 8. **Item naming** — name-mangling rules at the FFI surface, or explicit "no mangling needed" — **and the namespace derivation** (the default from the package name plus the backend's keyword / unimportable-name mangles).
 9. **Worked example** — minimal end-to-end snippet.
 

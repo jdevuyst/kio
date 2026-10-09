@@ -174,6 +174,17 @@ their fixed role and index suffixes; semantic nominal identity is unchanged.
 
 ## Generic values and functions
 
+Keep shared tuple fields and nested Kio data unchanged while a retained
+value or closure can still use them, even after a call returns. Construct a
+changed tuple instead. A host-managed mutable `Box` may change through its
+declared `get` and `set` host functions while the tuple keeps the same box.
+See [shared data stays unchanged](../../specs/backends/README.md#10-shared-data-stays-unchanged).
+
+Keep native values and erased storage consistent with the selected Kio type
+marker. Rust's static types and representation conversions remain required;
+they do not add a general runtime validation pass. See
+[host values satisfy their declared types](../../specs/backends/README.md#11-host-values-satisfy-their-declared-types).
+
 Rust distinguishes a generic Kio *type marker* from the Rust value that
 represents it. A generated generic signature binds `A: KioType` and uses
 `A::Facade` for each value of type `A`. At a concrete host call,
@@ -214,25 +225,43 @@ parameters, not the contents of a product parameter: substituting
 
 A rank-N value (`[A] ...`) has a site-owned
 `KioForall_<site>` implementation trait with a generic
-`apply<A: KioType>` method. Host code supplies an ordinary struct implementing
+`specialize<A: KioType>(&self)` method. It selects one type and returns the
+next value, without also selecting another type or calling a returned
+function. For `[A][B] P -> R`, use
+`value.specialize::<A>().specialize::<B>().call(argument)`; the intermediate
+values can be kept and reused independently. Host code supplies an ordinary struct implementing
 that trait, then calls the generated
 `KioForall_<site>Value::new(implementation)` constructor. The same cloneable
 `Value` carrier is used for direct parameters, returns, and occurrences inside
-another value, so substitution never changes its Rust representation. Stable
+another value, so substitution never changes its Rust representation.
+Constructing or cloning it runs no host body; selecting a type runs that
+stage each time, including any effects or panic. Stable
 `ffi::<env|exp>::<member>` aliases name every non-Unit, nameable ordinary
 parameter as `argN` and return as `ret`; newtype members instead use
-`<member>_argN` and `<member>_ret`. A callable alias also exposes
+`<member>_argN` and `<member>_ret`. A function alias also exposes
 `<slot>_cbarg` (or indexed `<slot>_cbarg{i}`) and `<slot>_cbret`, omitting
 Unit types. These names work for returned callbacks as well as inputs and
 repeat when a callback parameter or result is itself callable. A forall
-carrier pairs its slot alias with `<slot>_impl`; an existential projector uses
-the pair `<member>_continuation` / `<member>_continuation_impl`. For example,
-`<member>_continuation_cbarg` names the payload parameter in the continuation's
-generic `apply` method, and a polymorphic payload also has
-`<member>_continuation_cbarg_impl`. The aliases retain the host parameter first
+carrier pairs its slot alias with `<slot>_impl`. Its selected result is named
+`<slot>_type_ret` unless it is Unit; another type stage adds another
+`_type_ret`. For example, implementing a two-type input uses `arg0_impl`,
+then `arg0_type_ret_impl` for the second stage. The final function is named
+`arg0_type_ret_type_ret`, with its own `_cbarg` and `_cbret` aliases.
+An existential projector uses the pair
+`<member>_continuation` / `<member>_continuation_impl`. Select each hidden
+type before reaching its payload function: with one hidden type,
+`<member>_continuation_type_ret_cbarg` names that function's payload parameter.
+A polymorphic payload also has a matching `_impl` alias.
+The aliases retain the host parameter first
 when needed, followed by the enclosing and callback type markers they
 reference, in declaration order. Host code does not need to copy a generated
-site name. Rust closures cannot
+site name. For a callable inside a product, sum or exposed type argument,
+extend the slot name with `_fieldN`, `_armN` or `_typeargN`, respectively.
+Indices start at zero; right-nested products and sums number their fields or
+alternatives from left to right. For example, a polymorphic second sum arm in
+`arg0` uses `arg0_arm1` and `arg0_arm1_impl`. Nested structures add another
+segment. These names describe callable types, not access to opaque payloads.
+Rust closures cannot
 have a type-generic call method, and the generated API does not try to make
 this trait into a `dyn` object.
 

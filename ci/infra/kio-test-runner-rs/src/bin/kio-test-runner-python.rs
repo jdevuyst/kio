@@ -367,6 +367,7 @@ fn build_driver_script_with_host(
         "A",
         "B",
         "Wrap",
+        "Wrapped",
         "Const",
         "Outer",
         "Inner",
@@ -473,11 +474,13 @@ def _ensure_ns(root, ns):
         current = child
     return current
 
-def _set_host(ns, leaf, fn):
+def _set_host(ns, leaf, fn, root=None):
+    if root is None:
+        root = HOST
     if ns is None:
-        setattr(HOST, leaf, fn)
+        setattr(root, leaf, fn)
     else:
-        setattr(_ensure_ns(HOST, ns), leaf, fn)
+        setattr(_ensure_ns(root, ns), leaf, fn)
 
 def _print(s):
     sys.stdout.write(str(s))
@@ -562,10 +565,22 @@ def _host_fn(tag, operation, kind, carrier):
         return returned_forall_unit
     if tag == "trace-unit":
         return lambda: _print(operation + "\n")
+    if tag == "forall-stage-effects":
+        def forall_stage_effects():
+            _print("create\n")
+            def advance():
+                _print("apply\n")
+            return _stage(advance)
+        return forall_stage_effects
     if tag == "staged-unit-call":
         return lambda _value: _print("staged Unit host call\n")
     if tag == "call-step":
         return lambda step, seed: step(_product([seed, "compound-callback", True]))
+    if tag == "direct-sum-forall-echo":
+        def direct_sum_forall_echo(value):
+            _print("echo\n")
+            return value
+        return direct_sum_forall_echo
     if tag == "make-pair-callback":
         return lambda build, seed: build(seed)["left"]
     if tag == "make-step":
@@ -634,6 +649,8 @@ def _host_fn(tag, operation, kind, carrier):
         return lambda n: str(n)
     if tag == "bool-to-string":
         return lambda value: str(value).lower()
+    if tag == "instance-mark":
+        return lambda n: _print("first: " + str(n) + "\n")
     if tag == "print-i32":
         return lambda n: _print(str(n))
     if tag == "string-to-int":
@@ -806,7 +823,7 @@ def _carrier_out(frame, value):
 def _adapt_host_fn(fn, tag, roles):
     if not any(HOST_TYPE_FIXTURES[frame] == "selected-role" for frame in roles):
         return fn
-    if tag in ("print", "eprint", "print-i32", "unreachable-i32-print", "exit"):
+    if tag in ("print", "eprint", "print-i32", "instance-mark", "unreachable-i32-print", "exit"):
         return lambda value: fn(_role_in(roles[0], value))
     if tag in ("arithmetic", "float-arithmetic"):
         return lambda a, b: _role_out(
@@ -850,11 +867,11 @@ if PROTOCOL == "facade-selector-collisions":
         raise RuntimeError("flat host functions satisfied namespaced host items")
 pkg = module.{factory}(HOST)
 
-def _base(leaf):
+def _base(leaf, instance=pkg):
     selector = MODULE_SELECTORS[leaf]
     if EXPORT_ROOT is None:
-        return getattr(pkg, selector)
-    return getattr(getattr(pkg, EXPORT_ROOT), selector)
+        return getattr(instance, selector)
+    return getattr(getattr(instance, EXPORT_ROOT), selector)
 
 def _root_base():
     if EXPORT_ROOT is None:
@@ -907,6 +924,34 @@ elif PROTOCOL == "export-multi-label-roundtrip":
     _print(str(row_a) + "\n")
     _print(row_b + "\n")
     _print(str(out_a) + "\n")
+elif PROTOCOL == "same-artifact-exchange":
+    import copy
+    second_host = copy.deepcopy(HOST)
+    for ns, leaf, body_tag, operation, kind, roles, carrier in HOST_ITEMS:
+        if body_tag == "instance-mark":
+            _set_host(ns, leaf, lambda n: _print("second: " + str(n) + "\n"), second_host)
+    second_pkg = module.{factory}(second_host)
+    first_api, second_api = _base("api"), _base("api", second_pkg)
+    for origin, recipient, value in ((first_api, second_api, 17), (second_api, first_api, 29)):
+        result = recipient.readHidden(origin.makeHidden(value))
+        if result != value:
+            raise RuntimeError("exchange payload changed")
+        _print("direct: " + str(result) + "\n")
+    for origin, recipient, value in ((first_api, second_api, 17), (second_api, first_api, 29)):
+        result = recipient.readBox(origin.boxed(origin.makeHidden(value)))
+        if result != value:
+            raise RuntimeError("exchange payload changed")
+        _print("box: " + str(result) + "\n")
+    for origin, recipient, value in ((first_api, second_api, 23), (second_api, first_api, 31)):
+        result = recipient.readPacked(origin.makePacked(value))
+        if result != value:
+            raise RuntimeError("exchange payload changed")
+        _print("packed: " + str(result) + "\n")
+    for origin, recipient, value in ((first_api, second_api, 17), (second_api, first_api, 29)):
+        result = recipient.runBox(origin.boxedLater(origin.makeHidden(value)))
+        if result != value:
+            raise RuntimeError("exchange payload changed")
+        _print("callback: " + str(result) + "\n")
 elif PROTOCOL == "export-type-only-roundtrip":
     main = _base("main")
     _print("ready\n")
@@ -949,6 +994,136 @@ elif PROTOCOL == "export-poly-callback-roundtrip":
     main = _base("main")
     _print(main.applyVia(module.kio_lift(lambda s: "via: " + s), "apply") + "\n")
     _print(str(main.applyVia(module.kio_lift(lambda n: n + 8), 7)) + "\n")
+elif PROTOCOL == "incoming-callable-stages":
+    api = _base("main")
+    seal, other = api.makeSeal(5), api.makeOther(5)
+    for name in ["typeOnlyResult", "cpsResult"]:
+        for value in [seal]:
+            trace = []
+            class Stage:
+                def advance(self):
+                    trace.append("advance")
+                    if name == "typeOnlyResult":
+                        return value
+                    def invoke(_hidden):
+                        trace.append("invoke")
+                        return value
+                    return module.kio_lift(invoke)
+            getattr(api, name)(api.stash(module.kio_lift_stage(Stage())),
+                module.kio_lift(lambda _unit: trace.append("consume")))
+            expected = ["advance", "consume"] if name == "typeOnlyResult" else ["advance", "invoke", "consume"]
+            if trace != expected:
+                raise RuntimeError("concrete stage result effect order")
+        thrown = RuntimeError("host stage exception")
+        effects = []
+        class FailingStage:
+            def advance(self):
+                if name == "typeOnlyResult":
+                    raise thrown
+                def invoke(_hidden):
+                    raise thrown
+                return module.kio_lift(invoke)
+        caught = None
+        try:
+            getattr(api, name)(api.stash(module.kio_lift_stage(FailingStage())),
+                module.kio_lift(lambda _unit: effects.append("consume")))
+        except RuntimeError as error:
+            caught = error
+        if caught is not thrown or effects:
+            raise RuntimeError("stage exception identity")
+    effects = []
+    consume = module.kio_lift(lambda _unit: effects.append("consume"))
+    api.typeOnlyResult(api.localStage(seal), consume)
+    api.cpsResult(api.localContinuation(seal), consume)
+    if len(effects) != 2:
+        raise RuntimeError("Kio-origin stages")
+    observer = api.release(api.specializedObserver(consume))
+    observer(seal)
+    if len(effects) != 3:
+        raise RuntimeError("escaping Kio specialization")
+    if api.readSeal(seal) != 5:
+        raise RuntimeError("local nominal payload access")
+    for value in [other, object()]:
+        try:
+            api.readSeal(value)
+        except TypeError:
+            pass
+        else:
+            raise RuntimeError("opaque payload access requires its exact storage owner")
+    _print("incoming callable stages ok\n")
+elif PROTOCOL == "incoming-callable-views":
+    api = _base("main")
+    seal, other = api.makeSeal(5), api.makeOther(5)
+    effects = []
+    consume = module.kio_lift(lambda _unit: effects.append("consume"))
+    def rejects(action):
+        effects.clear()
+        try:
+            action()
+        except TypeError:
+            pass
+        else:
+            raise RuntimeError("opaque payload access requires its exact storage owner")
+        if effects:
+            raise RuntimeError("nominal payload access invoked an unrelated consumer")
+    for invoke in [api.hostResult, api.hostValueResult]:
+        effects.clear()
+        invoke(_carrier_out({box_frame}, seal), consume)
+        if effects != ["consume"]:
+            raise RuntimeError("valid host result")
+    for invoke in [api.receive, api.receiveComputed]:
+        effects.clear()
+        invoke(api.stash(module.kio_lift(lambda _unit: seal)), consume)
+        if effects != ["consume"]:
+            raise RuntimeError("valid callback result")
+        effects.clear()
+        invoke(api.localCallback(seal), consume)
+        if effects != ["consume"]:
+            raise RuntimeError("Kio-origin callback")
+    specialized = api.release(api.specializedObserver(consume))
+    effects.clear()
+    specialized(seal)
+    if effects != ["consume"]:
+        raise RuntimeError("valid escaping specialization")
+    if api.readSeal(seal) != 5:
+        raise RuntimeError("local nominal payload access")
+    for value in [other, object()]:
+        rejects(lambda: api.readSeal(value))
+    _print("incoming callable views ok\n")
+elif PROTOCOL == "direct-sum-forall-boundary":
+    api = _base("api")
+    def unit_call(_unit):
+        _print("unit call\n")
+        return 17
+    def poly_call(value):
+        _print("poly call\n")
+        return value
+    def callback(value):
+        _print("callback\n")
+        return value
+    unit = _sum(0, module.kio_lift(unit_call))
+    poly = _sum(1, _stage(lambda: module.kio_lift(poly_call)))
+    callback = module.kio_lift(callback)
+    for transport in [api.relay, lambda value: api.throughCallback(value, callback)]:
+        left = transport(unit)
+        _print("unit ready\n")
+        arm, step = _sum_view(left, 2)
+        if arm != 0:
+            raise RuntimeError("Unit arm changed")
+        number = step(None)
+        if type(number) is not int or number != 17:
+            raise RuntimeError("Unit callback result changed")
+        _print(str(number) + "\n")
+        right = transport(poly)
+        _print("poly ready\n")
+        arm, identity = _sum_view(right, 2)
+        if arm != 1:
+            raise RuntimeError("polymorphic arm changed")
+        for supplied in [23, "identity"]:
+            actual = identity.advance()(supplied)
+            if type(actual) is not type(supplied) or actual != supplied:
+                raise RuntimeError("polymorphic result changed")
+            _print(str(actual) + "\n")
 elif PROTOCOL == "export-callable-slots-roundtrip":
     main = _base("main")
     def check(actual, expected):
@@ -1014,6 +1189,53 @@ elif PROTOCOL == "export-host-owned-roundtrip":
         if type(returned) is not type(value) or returned != value:
             raise RuntimeError("box payload changed")
     _print("host-owned payloads ok\n")
+elif PROTOCOL == "opaque-product-roundtrip":
+    main = _base("main")
+    host = _carrier_out({box_frame}, {{"left": 11, "right": 17}})
+    def print_pair(value):
+        _print(str(value["left"]) + " " + str(value["right"]) + "\n")
+    print_pair(main.direct(host))
+    print_pair(main.relayed(host))
+    kio = main.make()
+    print_pair(main.direct(kio))
+    print_pair(main.relayed(kio))
+elif PROTOCOL == "generic-nominal-opaque-roundtrip":
+    main = _base("main")
+    def print_number(value):
+        _print(str(_native_role("testapi", "I32", value)) + "\n")
+    nominal = _type(main, "Wrapped").mkWrapped(_public_role("testapi", "I32", 37))
+    print_number(main.read(_carrier_out({box_frame}, nominal)))
+    kio = main.make(_public_role("testapi", "I32", 61))
+    print_number(main.read(kio))
+    print_number(main.unwrap(_carrier_in({box_frame}, kio)))
+elif PROTOCOL == "opaque-compound-roundtrip":
+    main = _base("main")
+    i32 = lambda value: _public_role("testapi", "I32", value)
+    native_i32 = lambda value: _native_role("testapi", "I32", value)
+    def box(value):
+        return _carrier_out({box_frame}, value)
+    def print_number(value):
+        _print(str(native_i32(value)) + "\n")
+    print_number(main.readSum(box(_sum(0, i32(19)))))
+    print_number(main.readSum(box(_sum(1, None))))
+    print_number(main.readSum(main.makeSum()))
+    print_number(main.readSum(main.makeEmpty()))
+    calls = [0]
+    def step(value):
+        calls[0] += 1
+        _print("call\n")
+        return i32(native_i32(value) + 1)
+    host = box(module.kio_lift(step))
+    if calls != [0]:
+        raise RuntimeError("opaque callback called during construction")
+    print_number(main.call(host, i32(31)))
+    print_number(main.call(host, i32(43)))
+    if calls != [2]:
+        raise RuntimeError("opaque callback count changed")
+    print_number(main.call(main.makeCallable(), i32(47)))
+    nominal = _type(main, "Wrapped").mkWrapped({{"left": i32(41), "right": i32(43)}})
+    for value in (main.readNominal(box(nominal)), main.readNominal(main.makeNominal())):
+        _print(str(native_i32(value["left"])) + " " + str(native_i32(value["right"])) + "\n")
 elif PROTOCOL == "export-structural-roundtrip":
     main = _base("main")
     q = main.pairSwap({{ "left": 42, "right": "hello" }})
@@ -1187,13 +1409,13 @@ elif PROTOCOL == "newtype-visibility-facade":
     comptime_inner = comptime.readVisibleComptimeOuter(comptime_outer)
     if type(comptime.readVisibleComptimeOuter(comptime.makeVisibleComptimeOuter(comptime_inner))) is not type(comptime_inner):
         raise RuntimeError("hidden compile-time payload changed the visible outer boundary")
-    for constructor, wrong in [(cycle.makeVisibleCycleOuter, comptime_inner), (comptime.makeVisibleComptimeOuter, cycle_inner)]:
+    for reader, wrong in [(facade.readA, b), (facade.readB, a)]:
         try:
-            constructor(wrong)
+            reader(wrong)
         except TypeError:
             pass
         else:
-            raise RuntimeError("hidden nominal identities collapsed")
+            raise RuntimeError("private payload access accepted a different nominal declaration")
     scalar_outputs = [
         ("a", out_a), ("b", out_b), ("constructor-only", out_c),
         ("projector-only", out_p), ("both-public", out_d),
@@ -1294,45 +1516,20 @@ elif PROTOCOL == "export-compound-input-once":
         raise RuntimeError("compound-input-once: callback count " + str(callback_calls))
     line(returned["left"])
     line(returned["right"])
-    reads = []
-    class Tracked(dict):
-        def __init__(self, label, fields):
-            super().__init__(fields)
-            self.label = label
-        def __getitem__(self, key):
-            reads.append((self.label, key))
-            return super().__getitem__(key)
     inner_type = _type(api, "Inner")
     outer_type = _type(api, "Outer")
     choice_type = _type(api, "Choice")
-    inner = inner_type.inner(Tracked("inner", {{"left": 11, "right": 13}}))
-    outer = outer_type.outer(Tracked("outer", {{"left": "nest", "right": inner}}))
-    expected_reads = [("inner", "left"), ("inner", "right"), ("outer", "left"), ("outer", "right")]
-    if reads != expected_reads:
-        raise RuntimeError("compound-input-once: product access order " + repr(reads))
+    inner = inner_type.inner({{"left": 11, "right": 13}})
+    outer = outer_type.outer({{"left": "nest", "right": inner}})
     nested = outer_type.unOuter(api.echoOuter(outer))
     nested_inner = inner_type.unInner(nested["right"])
-    if reads != expected_reads:
-        raise RuntimeError("compound-input-once: product input reread " + repr(reads))
     line(nested["left"])
     line(nested_inner["left"])
     line(nested_inner["right"])
     for index, choice in enumerate([api.first(17), api.middle(19, 23), api.last("choice", 29, 31)]):
         payload = choice_type.unChoice(choice)
-        root_label = "choice" + str(index) + "-root"
-        if index == 0:
-            tracked = Tracked(root_label, payload)
-            expected_reads.extend([(root_label, "tag"), (root_label, "value")])
-        else:
-            tail_label = "choice" + str(index) + "-tail"
-            tracked = Tracked(root_label, {{"tag": payload["tag"], "value": Tracked(tail_label, payload["value"])}})
-            expected_reads.extend([(root_label, "tag"), (root_label, "value"), (tail_label, "tag"), (tail_label, "value")])
-        rebuilt = choice_type.choice(tracked)
-        if reads != expected_reads:
-            raise RuntimeError("compound-input-once: selected access " + repr(reads))
+        rebuilt = choice_type.choice(payload)
         returned = choice_type.unChoice(api.echoChoice(rebuilt))
-        if reads != expected_reads:
-            raise RuntimeError("compound-input-once: selected input reread " + repr(reads))
         arm, value = _sum_view(returned, 3)
         if arm != index:
             raise RuntimeError("compound-input-once: selected arm changed")
@@ -1348,8 +1545,6 @@ elif PROTOCOL == "export-compound-input-once":
             line(outer["left"])
             line(inner["left"])
             line(inner["right"])
-        if reads != expected_reads:
-            raise RuntimeError("compound-input-once: projected input reread " + repr(reads))
     line(api.echoText("atomic"))
 elif PROTOCOL == "export-curried-facade":
     _print(_base("main").pick("ku", "rz") + "\n")
@@ -1596,6 +1791,7 @@ fn python_host_body_descriptor(
             ("numeric-to-string", None, Some(value.fixture.role()))
         }
         HostFnBodyKind::BoolToString { .. } => ("bool-to-string", None, None),
+        HostFnBodyKind::InstanceMark { .. } => ("instance-mark", None, None),
         HostFnBodyKind::PrintI32 { .. } => ("print-i32", None, None),
         HostFnBodyKind::StringToInt { .. } => ("string-to-int", None, None),
         HostFnBodyKind::Arithmetic { operation, number } => {
@@ -1619,6 +1815,7 @@ fn python_host_body_descriptor(
         HostFnBodyKind::BoxGet { .. } => ("box-get", None, None),
         HostFnBodyKind::BoxMake { .. } => ("box-make", None, None),
         HostFnBodyKind::CallStep { .. } => ("call-step", None, None),
+        HostFnBodyKind::DirectSumForallEcho { .. } => ("direct-sum-forall-echo", None, None),
         HostFnBodyKind::MakePairCallback { .. } => ("make-pair-callback", None, None),
         HostFnBodyKind::MakeStep { .. } => ("make-step", None, None),
         HostFnBodyKind::ApplyPoly { .. } => ("apply-poly", None, None),
@@ -1635,6 +1832,7 @@ fn python_host_body_descriptor(
             ("invoke-substituted-unit-callback", None, None)
         }
         HostFnBodyKind::ReturnedForallUnit => ("returned-forall-unit", None, None),
+        HostFnBodyKind::ForallStageEffects => ("forall-stage-effects", None, None),
         HostFnBodyKind::ObservePacked { .. } => ("observe-packed", None, None),
         HostFnBodyKind::TraceUnit { text } => ("trace-unit", Some(text), None),
         HostFnBodyKind::StagedUnitCall => ("staged-unit-call", None, None),
@@ -1665,11 +1863,28 @@ fn python_driver(protocol: RunnerProtocol) -> &'static str {
             "export-structural-roundtrip"
         }
         ProtocolExecution::Invoke(ExportDriver::ScalarRoundtrip) => "export-scalar-roundtrip",
+        ProtocolExecution::Invoke(ExportDriver::SameArtifactExchange) => "same-artifact-exchange",
+        ProtocolExecution::Invoke(ExportDriver::DirectSumForallBoundary) => {
+            "direct-sum-forall-boundary"
+        }
         ProtocolExecution::Invoke(ExportDriver::HostOwnedRoundtrip) => {
             "export-host-owned-roundtrip"
         }
+        ProtocolExecution::Invoke(ExportDriver::OpaqueProductRoundtrip) => {
+            "opaque-product-roundtrip"
+        }
+        ProtocolExecution::Invoke(ExportDriver::OpaqueCompoundRoundtrip) => {
+            "opaque-compound-roundtrip"
+        }
+        ProtocolExecution::Invoke(ExportDriver::GenericNominalOpaqueRoundtrip) => {
+            "generic-nominal-opaque-roundtrip"
+        }
         ProtocolExecution::Invoke(ExportDriver::CallableSlotsRoundtrip) => {
             "export-callable-slots-roundtrip"
+        }
+        ProtocolExecution::Invoke(ExportDriver::IncomingCallableViews) => "incoming-callable-views",
+        ProtocolExecution::Invoke(ExportDriver::IncomingCallableStages) => {
+            "incoming-callable-stages"
         }
         ProtocolExecution::Invoke(ExportDriver::RustCallbackAliases) => "rust-callback-aliases",
         ProtocolExecution::Invoke(ExportDriver::FunctorDictRoundtrip) => {

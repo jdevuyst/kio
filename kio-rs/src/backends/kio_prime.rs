@@ -1,7 +1,7 @@
 //! Kio' backend — emits one `*.kio` file per source module by formatting the
 //! checked pipeline's canonical `Module<Prime>` as Kio' source text. The
-//! `Prime` marker guarantees Kio' AST shape; the calling pipeline supplies
-//! standalone validation before emission.
+//! `Prime` marker guarantees Kio' AST shape; the owner-issued module view
+//! additionally carries completed standalone validation into emission.
 //!
 //! `Prime` is a strict subset of `Surface` at the AST level — every
 //! Prime variant has a same-name `Surface` counterpart, and every
@@ -29,6 +29,7 @@ use crate::ast::{
     PathSegment, Prime, Signature, SignatureParam, Surface, Type, convert_meta,
 };
 use crate::pretty;
+use crate::prime::typer::{ValidatedPrimeModule, ValidatedPrimePackageFile};
 use crate::span::Span;
 use std::collections::{BTreeSet, HashSet};
 
@@ -37,7 +38,16 @@ use std::collections::{BTreeSet, HashSet};
 /// operator chains are admissible in Kio' (parse-time sugar that
 /// folds to the same binary AST), so the regular pretty-printer's
 /// canonical chain shape is also Kio'-shaped.
-pub fn emit_module(m: &Module<Prime>) -> String {
+pub fn emit_module(m: ValidatedPrimeModule<'_>) -> String {
+    render_module(m.module())
+}
+
+#[cfg(all(test, feature = "surface", feature = "prime"))]
+pub(crate) fn emit_module_for_test(m: &Module<Prime>) -> String {
+    render_module(m)
+}
+
+fn render_module(m: &Module<Prime>) -> String {
     let mut canonical = m.clone();
     crate::prime::canonical::canonicalize_module(&mut canonical);
     let mut surface = embed_module(&canonical);
@@ -50,8 +60,8 @@ pub fn emit_module(m: &Module<Prime>) -> String {
 /// block) isn't part of the Kio' grammar; it's reused verbatim across
 /// backends. The build block threads through every phase on the AST,
 /// so the re-emitted file carries it without a separate copy.
-pub fn emit_package_file(e: &PackageFile<Prime>) -> String {
-    let surface = embed_package_file(e);
+pub fn emit_package_file(e: ValidatedPrimePackageFile<'_>) -> String {
+    let surface = embed_package_file(e.package_file());
     pretty::pretty_package_file(&surface)
 }
 
@@ -562,6 +572,7 @@ fn strip_prime_let_annotations(e: Expr<Surface>) -> Expr<Surface> {
             meta,
         },
         Expr::Call {
+            source_trivia: _,
             occurrence: _,
             diagnostic: _,
             callee,
@@ -569,6 +580,7 @@ fn strip_prime_let_annotations(e: Expr<Surface>) -> Expr<Surface> {
             meta,
             ext,
         } => Expr::Call {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             diagnostic: Default::default(),
             callee: Box::new(strip_prime_let_annotations(*callee)),
@@ -634,11 +646,11 @@ mod tests {
             .check_in_body_resolution()
             .expect("check_in_body_resolution");
         let prime = check_package(&package).expect("check_package");
-        let module = &prime.module("x/main").expect("module").module;
+        let module = prime.module("x/main").expect("module");
         emit_module(module)
     }
 
-    fn compile_sources(sources: &[&str]) -> crate::pass::resolve::Package<crate::ast::Prime> {
+    fn compile_sources(sources: &[&str]) -> crate::prime::typer::ValidatedPrimePackage {
         let parsed = sources
             .iter()
             .map(|source| {
@@ -878,7 +890,7 @@ mod tests {
             .check_in_body_resolution()
             .expect("check_in_body_resolution");
         let prime = check_package(&package).expect("check_package");
-        let module = &prime.module("main").expect("module").module;
+        let module = prime.module("main").expect("module");
         let out = emit_module(module);
         assert!(
             out.contains("__if_then_else__"),
@@ -914,7 +926,7 @@ mod tests {
             .check_in_body_resolution()
             .expect("check_in_body_resolution");
         let prime = check_package(&package).expect("check_package");
-        let module = &prime.module("main").expect("module").module;
+        let module = prime.module("main").expect("module");
         let out = emit_module(module);
         // The explicit `String` type-arg survives.
         assert!(
@@ -949,7 +961,7 @@ mod tests {
             .check_in_body_resolution()
             .expect("check_in_body_resolution");
         let prime = check_package(&package).expect("check_package");
-        let module = &prime.module("main").expect("module").module;
+        let module = prime.module("main").expect("module");
         let out = emit_module(module);
         // The literal annotation is preserved when no sibling type-arg
         // pins the type (the kio-prime backend's standard literal-
@@ -1231,7 +1243,7 @@ mod tests {
         let reparsed = unchecked_prime
             .into_iter()
             .map(|(path, module)| {
-                let source = emit_module(&module);
+                let source = render_module(&module);
                 if path == Path::new("main.kio") {
                     emitted_main = Some(source.clone());
                 }
@@ -1306,7 +1318,7 @@ mod tests {
                pub projector un_shared; \
              };";
 
-        fn compile(noise: &str) -> Package<Prime> {
+        fn compile(noise: &str) -> crate::prime::typer::ValidatedPrimePackage {
             let parsed = [OWNER, CONSUMER, noise]
                 .into_iter()
                 .map(|source| {
@@ -1332,13 +1344,13 @@ mod tests {
         }
 
         fn emit_and_recheck(
-            package: &Package<Prime>,
+            package: &crate::prime::typer::ValidatedPrimePackage,
         ) -> std::collections::BTreeMap<String, String> {
             let mut emitted = std::collections::BTreeMap::new();
             let reparsed = package
                 .modules()
                 .map(|(module_path, entry)| {
-                    let source = emit_module(&entry.module);
+                    let source = emit_module(entry);
                     emitted.insert(module_path.to_owned(), source.clone());
                     (
                         PathBuf::from(format!("{module_path}.kio")),
@@ -1370,8 +1382,8 @@ mod tests {
         let baseline = compile(NOISE_BASELINE);
         let grown_noise = format!("{NOISE_BASELINE} {UNRELATED_DECLARATION}");
         let grown = compile(&grown_noise);
-        let baseline_main = &baseline.module("main").expect("baseline main").module;
-        let grown_main = &grown.module("main").expect("grown main").module;
+        let baseline_main = baseline.module("main").expect("baseline main").module();
+        let grown_main = grown.module("main").expect("grown main").module();
         let owner_alias = baseline_main
             .imports
             .iter()

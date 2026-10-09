@@ -493,12 +493,16 @@ fn resolve_local_module_fn(
     context: &ImplValidationContext<'_>,
     name: &str,
 ) -> Option<ResolvedImplTarget> {
-    if let Some(d) = context.visible_items.iter().find_map(|item| match item {
-        Item::FnDef(d) if d.name == name => Some(d),
-        Item::RecGroup(group, _) => group.members.iter().find(|d| d.name == name),
+    if let Some(vis) = context.visible_items.iter().find_map(|item| match item {
+        Item::FnDef(d) if d.name == name => Some(&d.vis),
+        Item::RecGroup(group, _) => group
+            .members
+            .iter()
+            .find(|d| d.name == name)
+            .map(|d| &d.vis),
         _ => None,
     }) {
-        return Some(resolved_fn_target(&d.vis, &context.module.path, name));
+        return Some(resolved_fn_target(vis, &context.module.path, name));
     }
     if context
         .visible_items
@@ -1944,7 +1948,10 @@ fn fold_item(item: &mut Item<Surface>, scope: &OpScope) -> Result<(), Error> {
     }
 }
 
-fn fold_fn_def(d: &mut FnDef<Surface>, scope: &OpScope) -> Result<(), Error> {
+fn fold_fn_def<PurityField>(
+    d: &mut FnDef<Surface, PurityField>,
+    scope: &OpScope,
+) -> Result<(), Error> {
     fold_signature(&mut d.sig, scope)?;
     fold_type(&mut d.ret, scope)?;
     fold_expr(&mut d.body, scope)
@@ -2153,6 +2160,7 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
 
 fn placeholder_unit() -> Expr<Surface> {
     Expr::Unit {
+        source_trivia: Default::default(),
         occurrence: Default::default(),
         meta: Meta::new(Span::new(0, 0)),
     }
@@ -2208,6 +2216,7 @@ fn resolve_op_chain(expr: Expr<Surface>, scope: &OpScope) -> Result<Expr<Surface
             #[cfg(feature = "lsp")]
             scope.record_use(meta.span, binding.origin);
             Ok(Expr::Call {
+                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 diagnostic: Default::default(),
                 callee: Box::new(callee),
@@ -2311,6 +2320,7 @@ fn callable_spec_to_call(
     let callee = path_to_expr(&spec.path, span);
     let call_args: Vec<CallArg<Surface>> = args.into_iter().map(CallArg::Value).collect();
     Expr::Call {
+        source_trivia: Default::default(),
         occurrence: Default::default(),
         diagnostic: Default::default(),
         callee: Box::new(callee),

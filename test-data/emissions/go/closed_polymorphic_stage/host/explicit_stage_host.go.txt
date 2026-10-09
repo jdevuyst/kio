@@ -1,0 +1,8 @@
+package main
+
+import p "driver/out/go"
+
+func explicitStageHost(pkg *p.Package[int, string]) {
+	closed := p.CallExp_Api__outer(pkg.Api, p.PrepareAtom("unused"))
+	_ = p.Exp_Api__outer_ret[int, bool, p.AtomIndex[string]](closed)
+}
