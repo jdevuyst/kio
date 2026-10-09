@@ -11,7 +11,7 @@ func (host) KioHostIn_api_Str(value string) string { return value }
 func (host) KioHostOut_api_Str(value string) string { return value }
 
 // oldHost is the unchanged pre-removal structural host: its extra methods use
-// the frozen source aliases, while the current AppHost interface requires only
+// the frozen source aliases, while the current Host interface requires only
 // the live method and adapters embedded from host.
 type oldHost struct{ host }
 
@@ -25,11 +25,11 @@ func (oldHost) Api__archived(
 }
 
 func main() {
-	pkg := app.CreateApp[string](host{})
+	pkg := app.New[string](host{})
 	if pkg.Api.Echo("live") != "live" {
 		panic("live export returned the wrong value")
 	}
-	oldPkg := app.CreateApp[string](oldHost{})
+	oldPkg := app.New[string](oldHost{})
 	if oldPkg.Api.Echo("old host") != "old host" {
 		panic("live export returned the wrong value for the unchanged host")
 	}

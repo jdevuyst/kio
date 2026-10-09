@@ -1,0 +1,37 @@
+module api;
+
+host type A role(i32);
+
+host type B role(str);
+
+host type C role(bool);
+
+pub type Pair = A & B;
+
+host fn import_split(left: A, right: B) -> B;
+
+host fn import_grouped(pair: Pair) -> B;
+
+host fn import_callback(step: Pair -> B, pair: Pair) -> B;
+
+host fn note(text: B) -> .;
+
+pub fn first(left: A, right: B) -> B { import_split(left, right) }
+
+pub fn second(pair: Pair) -> B { import_grouped(pair) }
+
+pub fn mixed(left: A, tail: B & C) -> B { let .(text, _flag) = tail; import_split(left, text) }
+
+pub fn curried(left: A)(right: B) -> B { import_split(left, right) }
+
+pub fn returned(left: A) -> B -> B { note("returned"); .(right: B) { import_split(left, right) } }
+
+pub fn callback(step: Pair -> B, pair: Pair) -> B { import_callback(step, pair) }
+
+pub fn echo_callback(step: Pair -> B) -> Pair -> B { step }
+
+pub fn direct_unit(value: .) -> . { value }
+
+pub fn generic[T](value: T) -> T { value }
+
+pub fn generic_callback[T](step: T -> T, value: T) -> T { step(value) }

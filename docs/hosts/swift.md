@@ -46,7 +46,7 @@ out/swift/
 ├── host.swift         // the GreeterHost protocol the host conforms to
 ├── shapes.swift       // a Swift type per structural shape that crosses the FFI
 ├── ffi.swift          // stable per-slot typealiases
-└── kio_runtime.swift  // internal: the canonical KioUnit
+└── kio_runtime.swift  // fixed support and public Product/Sum/Unit types
 ```
 
 The module's **name is the package's namespace**, and every top-level name
@@ -221,22 +221,18 @@ also word-case their source components; their fixed role delimiters stay fixed.
 ## Structural values at the boundary
 
 When a host fn or an exported fn takes or returns a structural value, that
-value crosses as a **named Swift type** in `shapes.swift`, not an opaque
-handle.
+value crosses as a **typed Swift value**, not an opaque handle.
 
-- A **product** `(A & B)` uses a generic `struct` shell. The common anonymous
-  pair is `Product<A, B>`; shells with named or wider semantic slots use an
-  injective `KioFacade_V1_Product_...<...>` name. Payload types are generic
-  arguments, not part of the shell name. You build the value with its public
-  memberwise initializer and read its fields directly. Field names come from
-  the prepared semantic keys: a bare newtype name, an exact module-qualified
-  name when needed, or the positional `_<i>` fallback.
+- A **product** `(A & B)` is `Product<A, B>`. Construct it with
+  `Product(_0: first, _1: second)` and read its `_0` and `_1` fields.
+  Wider products nest to the right: `(A & B & C)` is
+  `Product<A, Product<B, C>>`. The same representation is used when a
+  generic argument becomes a product.
 
-- A **sum** `(A | B)` is a generic native `enum`. The common anonymous choice
-  is `Sum<A, B>`; named or wider semantic arms use an injective
-  `KioFacade_V1_Sum_...<...>` name. Each case carries its generic payload as an
-  associated value. Exact nominal carriers cut recursive graphs, so no erased
-  public fallback is needed.
+- A **sum** `(A | B)` is the native `enum` `Sum<A, B>`. Wider sums nest to
+  the right: `(A | B | C)` is `Sum<A, Sum<B, C>>`. Each case carries its
+  payload as an associated value. Exact nominal carriers keep recursive
+  declarations finite.
   You construct an arm by writing the case directly and distinguish the
   inhabited arm with an exhaustive `switch`:
 
@@ -256,8 +252,9 @@ Stable spellings live in `ffi.swift`, which gives every boundary slot a
 `typealias` — for example `Env_greeter__makePair_ret<H>` for a host fn's
 exact-nullary-host-dependent return type, with `Env_..._arg0` /
 `Env_..._arg1` for parameters. Use the alias at a host method boundary; the
-generic shell name depends only on its semantic slot keys and is unaffected by
-unrelated declarations or concrete payload types.
+binary structural types do not change their shape when unrelated declarations
+are added. Generic values also keep that representation inside host-owned
+containers; the package does not inspect or rearrange a host container's storage.
 
 ## Atomic types
 
@@ -286,11 +283,12 @@ A parameterized declaration such as `host type Box[A]` cannot be a Swift
 associated type constructor. Its exact public type is instead
 `KioHostType_<module-and-name><A>`, with a matching
 `KioHostTypeMk_<module-and-name>` marker for the constructor head. The
-carrier's generic initializer stores any native host value, and
+name aliases the corresponding ordered `KioApply1` application. Its generic
+initializer stores any native host value, and
 `value(as:)` retrieves it at the host-selected storage type. A fully applied
 host method therefore stays generic and exact without exposing `Any` in its
-signature. Abstract applications use opaque `KioApplyN` carriers instead of
-exposing their storage directly.
+signature. Those construction/access methods apply only to that exact host
+declaration, not an arbitrary application or a Kio newtype.
 
 For a native constructor, use its marker's `.constructor` witness to transfer
 storage: `witness.lift(value)` creates an application, and
@@ -320,13 +318,10 @@ bridges that gap transparently.
   for its constructor head. Same-leaf declarations in different modules
   remain distinct types, and the nominal carrier cuts recursive graphs.
 
-  To pass a nominal value through an abstract application, use the package
-  handle's `KioNewtypeApplication_<module-and-name>_lift` method. Use its
-  matching `_project` method to recover the nominal carrier afterward. These
-  methods transfer an existing value; they neither reveal its payload nor
-  allow you to construct a value whose constructor is private. This works
-  for all member-visibility combinations and for existential payloads.
-  The application retains the host conformance and every ordered type argument.
+  A parameterized nominal value already has the corresponding application
+  type: `KioNewtype_...<H, A>` aliases `KioApply1<KioNewtypeMk_...<H>, A>`.
+  No conversion is needed. The application retains the host conformance and
+  every ordered type argument, including when its payload hides another type.
   Flat `KioApply2<F, A, B>` and grouped `KioApply1<KioApply1<F, A>, B>` spellings
   are the same type. A nominal application has no raw initializer or storage
   accessor, and wrapping its marker in `KioNative` creates a different type,
@@ -335,17 +330,37 @@ bridges that gap transparently.
   Public method binders are Swift generic parameters. An existential
   projector returns an exact rank-N callable carrier instead of its payload;
   call that carrier with a continuation carrier implementing the stable
-  `ffi.swift` `..._cbarg0Implementation` alias. Canonical Unit contributes no
-  continuation value argument; every other payload contributes one. This lets
+  `ffi.swift` `..._typeRet_cbarg0Implementation` alias after selecting the
+  projector's result type. A continuation receives one
+  argument, including `KioUnit` for a Unit payload. This lets
   the host use the hidden value while preserving its exact scoped type.
 
-- A monomorphic **function value** crosses as a Swift closure whose compound
-  legs are converted at the boundary as needed. A rank-N function uses an
-  exact `KioForall_<site-and-use>` carrier with a generic `call` method. To
-  supply one, conform a value to the carrier's companion `...Implementation`
-  protocol and pass it to the carrier initializer. `call` has optional
-  metatype witnesses for a quantified type that appears only in the result or
-  is otherwise not inferable from value arguments.
+- A monomorphic **function value** is a Swift closure with one argument:
+  its whole input type. A function from `A & B` receives `Product<A, B>`;
+  a function from Unit receives `KioUnit`. Named host and exported methods
+  still preserve their written parameter groups. Function-valued arguments
+  are `@escaping`, also in higher-order closure types, so a received callback
+  can be retained in another returned value.
+
+- A polymorphic value uses a generated carrier. Call
+  `value.specialize(asKioType: Int32.self)` to select one type argument and
+  receive the next carrier or ordinary closure. A return-type annotation can
+  infer the selection, allowing `value.specialize()` instead. Selecting a type
+  is an actual stage: effects at that stage happen then, before a later
+  specialization or closure invocation.
+  To supply such a value, conform to its stable `...Implementation` alias and
+  implement `specialize<T>(_: T.Type)`, returning the next typed value. Pass
+  that implementation to the carrier initializer. The returned value can
+  capture state from the selection without exposing `Any` to the host.
+  Its residual type is available as the stable `<slot>_typeRet` alias; each
+  later specialization extends that alias path once more.
+
+- A named method retains every declared type binder. If a binder is absent
+  from its native arguments and result, select it with the trailing
+  `asKioType<i>: T.self` parameter, using its zero-based head-binder index.
+  A host protocol implementation declares the matching `T.Type` parameter.
+  This is native generic selection, not an extra Kio value or representation
+  witness; the written value-parameter groups stay unchanged.
 
 ## Worked example
 

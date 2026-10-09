@@ -34,7 +34,7 @@
 //!   canonicalisation would layer it here.
 //! - **The enriched-slot acceptance gate**
 //!   ([`ReconProfile::accept_direct_enriched_slot`]) — when a projection
-//!   targets a literal tuple/record, whether to keep the slot's
+//!   targets a literal tuple, whether to keep the slot's
 //!   reconstructed type. Haskell keeps it unconditionally; a member that
 //!   stores fn-typed slots specially would gate on the slot being a
 //!   function.
@@ -61,6 +61,311 @@ use std::collections::HashMap;
 
 use crate::ast::{Expr, Routed, Signature, SignatureParam, Type};
 use crate::span::Span;
+
+/// Recover omitted closure annotations from an enclosing checked type. The
+/// signature supplies only body binding partitions; its public domain and
+/// ordered stages have already been checked against `expected`.
+pub(crate) fn signature_from_expected(
+    signature: &Signature<Routed>,
+    expected: &Type<Routed>,
+) -> Option<(Signature<Routed>, Type<Routed>)> {
+    let mut current = expected.clone();
+    let mut parameters = Vec::with_capacity(signature.params.len());
+    let groups = signature.canonical_groups();
+    if groups.is_empty() {
+        let Type::Function { ret, .. } = current else {
+            return None;
+        };
+        return Some((signature.clone(), *ret));
+    }
+    for group in groups {
+        match group {
+            crate::ast::SignatureGroupRef::Type(params) => {
+                for source in params {
+                    let SignatureParam::Type(source) = source else {
+                        unreachable!("a type group contains type parameters")
+                    };
+                    let Type::Forall { param, body, .. } = current else {
+                        return None;
+                    };
+                    current = apply_subst(
+                        &body,
+                        &HashMap::from([(
+                            param.name,
+                            Type::synth_path(vec![source.name.clone()], Vec::new(), source.span),
+                        )]),
+                    );
+                    parameters.push(SignatureParam::Type(source.clone()));
+                }
+            }
+            crate::ast::SignatureGroupRef::Value(params) => {
+                let Type::Function { param, ret, .. } = current else {
+                    return None;
+                };
+                let slots = Type::right_spine_take(&param, params.len());
+                if slots.len() != params.len() {
+                    return None;
+                }
+                for (source, ty) in params.iter().zip(slots) {
+                    let SignatureParam::Value(source) = source else {
+                        unreachable!("a value group contains value parameters")
+                    };
+                    let mut source = source.clone();
+                    source.ty = Some(ty.clone());
+                    parameters.push(SignatureParam::Value(source));
+                }
+                current = *ret;
+            }
+        }
+    }
+    Some((
+        Signature::from_parts(parameters, signature.groups.clone()),
+        current,
+    ))
+}
+
+pub(crate) fn module_function_scheme(
+    package: &crate::pass::resolve::Package<Routed>,
+    module_key: &str,
+    name: &str,
+    span: Span,
+) -> Option<Type<Routed>> {
+    let entry = package.module(module_key)?;
+    let id = entry.scope.lookup(name)?;
+    let definition = crate::pass::resolve::declaration_by_id(&entry.module, id)?.fn_def()?;
+    let (sig, ret) = crate::pass::resolve::exported_routed_contract_fn_signature_and_ret(
+        &definition.sig,
+        &definition.ret,
+        entry,
+    );
+    Some(sig.signature_ty(ret, span))
+}
+
+pub(crate) fn newtype_member_scheme(
+    package: &crate::pass::resolve::Package<Routed>,
+    module_path: &str,
+    declaration: &crate::ast::Newtype<Routed>,
+    member: &str,
+) -> Result<Type<Routed>, String> {
+    let entry = package
+        .module(module_path)
+        .ok_or_else(|| format!("missing declaring module `{module_path}`"))?;
+    let span = declaration.meta.span;
+    let mut segments = module_path
+        .split('/')
+        .map(|segment| crate::ast::PathSegment::synth(segment, span))
+        .collect::<Vec<_>>();
+    segments.push(crate::ast::PathSegment::synth(
+        declaration.name.clone(),
+        span,
+    ));
+    crate::pass::typecheck_core::newtype_member_scheme_in_routed_module(
+        declaration,
+        member,
+        &segments,
+        &entry.module,
+        Some(package),
+        span,
+    )
+    .map(|scheme| scheme.ty.as_type().clone())
+    .map_err(|error| format!("cannot synthesize `{module_path}.{member}`: {error:?}"))
+}
+
+pub(crate) fn newtype_member_result(
+    package: &crate::pass::resolve::Package<Routed>,
+    module_path: &str,
+    declaration: &crate::ast::Newtype<Routed>,
+    member: &str,
+    type_arguments: &[Type<Routed>],
+) -> Option<Type<Routed>> {
+    let scheme = newtype_member_scheme(package, module_path, declaration, member).ok()?;
+    let Type::Function { ret, .. } = instantiate_type_stages(&scheme, type_arguments)? else {
+        return None;
+    };
+    Some(*ret)
+}
+
+/// Declaration and lexical facts already owned by the Routed artifact. This
+/// context supplies the existing structural reconstruction driver; it performs
+/// no inference, validation, or search through unrelated module declarations.
+pub(crate) struct RoutedBodyTypes<'a> {
+    pub(crate) package: &'a crate::pass::resolve::Package<Routed>,
+    pub(crate) module: &'a crate::ast::Module<Routed>,
+    pub(crate) type_params: &'a [crate::ast::TypeParam],
+    pub(crate) values: &'a HashMap<String, Type<Routed>>,
+}
+
+impl RoutedBodyTypes<'_> {
+    pub(crate) fn value_type(&self, expr: &Expr<Routed>) -> Option<Type<Routed>> {
+        self.value_type_with_locals(expr, &mut HashMap::new())
+    }
+
+    pub(crate) fn canonical(&self, ty: &Type<Routed>) -> Type<Routed> {
+        super::boundary_facade::canonical_routed_type(
+            self.package,
+            self.module,
+            self.type_params,
+            ty,
+        )
+    }
+
+    pub(crate) fn nominal(
+        &self,
+        ty: &Type<Routed>,
+    ) -> Option<super::boundary_facade::QualifiedTypeName> {
+        let Type::Path { segments, .. } = self.canonical(ty) else {
+            return None;
+        };
+        let (name, module) = segments.split_last()?;
+        super::boundary_facade::QualifiedTypeName::new(
+            module.iter().map(|part| part.name.clone()).collect(),
+            name.name.clone(),
+        )
+    }
+
+    fn nominal_payload(&self, ty: &Type<Routed>) -> Option<Type<Routed>> {
+        let canonical = self.canonical(ty);
+        let Type::Path { args, .. } = &canonical else {
+            return None;
+        };
+        let name = self.nominal(&canonical)?;
+        let super::value_plan::ValueNominalDeclaration::Newtype(declaration) =
+            super::value_plan::nominal_declaration(self.package, &name)?
+        else {
+            return None;
+        };
+        if !declaration.existential_params.is_empty() {
+            return None;
+        }
+        let owner = &self
+            .package
+            .module(&name.module_segments().join("/"))?
+            .module;
+        let payload = super::boundary_facade::canonical_routed_type(
+            self.package,
+            owner,
+            &declaration.type_params,
+            &declaration.payload,
+        );
+        let subst = declaration
+            .type_params
+            .iter()
+            .zip(args)
+            .map(|(param, arg)| (param.name.clone(), arg.clone()))
+            .collect();
+        Some(apply_subst(&payload, &subst))
+    }
+
+    fn member_result(
+        &self,
+        module: Option<&str>,
+        newtype: &str,
+        member: &str,
+        args: &[Type<Routed>],
+        span: Span,
+    ) -> Option<Type<Routed>> {
+        let mut segments = module
+            .map(|module| module.split('/').map(str::to_owned).collect::<Vec<_>>())
+            .unwrap_or_default();
+        segments.push(newtype.to_owned());
+        let name = self.nominal(&Type::synth_path(segments, Vec::new(), span))?;
+        let super::value_plan::ValueNominalDeclaration::Newtype(declaration) =
+            super::value_plan::nominal_declaration(self.package, &name)?
+        else {
+            return None;
+        };
+        let args = args
+            .iter()
+            .map(|arg| self.canonical(arg))
+            .collect::<Vec<_>>();
+        newtype_member_result(
+            self.package,
+            &name.module_segments().join("/"),
+            declaration,
+            member,
+            &args,
+        )
+    }
+}
+
+impl ReconProfile for RoutedBodyTypes<'_> {
+    fn bound_param_ty(&self, name: &str) -> Option<Type<Routed>> {
+        self.values.get(name).cloned()
+    }
+    fn resolved_call_return_type(
+        &self,
+        sig: &Signature<Routed>,
+        type_args: &[Type<Routed>],
+        _args: &[Expr<Routed>],
+        ret: &Type<Routed>,
+    ) -> Type<Routed> {
+        apply_subst(ret, &build_typearg_subst_from_sig(sig, type_args))
+    }
+    fn accept_direct_enriched_slot(&self, _ty: &Type<Routed>) -> bool {
+        true
+    }
+    fn normalize_target_ty(&self, ty: &Type<Routed>) -> Type<Routed> {
+        self.canonical(ty)
+    }
+    fn enriched_field_payload_type(&self, ty: &Type<Routed>) -> Option<Type<Routed>> {
+        self.nominal_payload(ty)
+    }
+    fn module_fn_value_type(
+        &self,
+        name: &str,
+        _sig: &Signature<Routed>,
+        span: Span,
+    ) -> Option<Type<Routed>> {
+        let target = self.module.imports.iter().find_map(|import| match &import.kind {
+            crate::ast::ImportKind::Selective { items, from } if items.iter().any(|item| matches!(item, crate::ast::ImportItem::Name { name: imported, .. } if imported == name)) => Some(from),
+            _ => None,
+        }).unwrap_or(&self.module.path);
+        let key = target
+            .segments
+            .iter()
+            .map(|part| part.name.as_str())
+            .collect::<Vec<_>>()
+            .join("/");
+        module_function_scheme(self.package, &key, name, span)
+    }
+    fn reconstruct_other(
+        &self,
+        expr: &Expr<Routed>,
+        _locals: &mut HashMap<String, Type<Routed>>,
+    ) -> Option<Type<Routed>> {
+        match expr {
+            Expr::LowNewtypeCtor {
+                newtype,
+                member,
+                type_args,
+                meta,
+                ..
+            }
+            | Expr::LowNewtypeProj {
+                newtype,
+                member,
+                type_args,
+                meta,
+                ..
+            } => self.member_result(None, newtype, member, type_args, meta.span),
+            Expr::LowQualifiedNewtypeMember {
+                module_path,
+                newtype,
+                member,
+                type_args,
+                meta,
+                ..
+            } => self.member_result(Some(module_path), newtype, member, type_args, meta.span),
+            Expr::LowCpsProjectorApply {
+                continuation_ty, ..
+            } => match continuation_ty.peel_leading_foralls().1 {
+                Type::Function { ret, .. } => Some((**ret).clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
 
 /// Per-backend variation points of body-type reconstruction.
 ///
@@ -93,7 +398,7 @@ pub trait ReconProfile {
     ) -> Type<Routed>;
 
     /// Whether a projection / field-get whose target is a literal
-    /// tuple/record should keep the slot's directly-reconstructed type.
+    /// tuple should keep the slot's directly-reconstructed type.
     /// Haskell keeps it unconditionally; a member that stores fn-typed
     /// slots specially would keep it only for a function slot.
     fn accept_direct_enriched_slot(&self, slot_ty: &Type<Routed>) -> bool;
@@ -241,9 +546,9 @@ pub fn value_type_with_locals<P: ReconProfile>(
             body_ty
         }
         Expr::Seq { body, .. } => profile.value_type_with_locals(body, locals),
-        Expr::EnrichedTuple { synth_ty, .. }
-        | Expr::EnrichedRecord { synth_ty, .. }
-        | Expr::EnrichedInject { synth_ty, .. } => Some(synth_ty.clone()),
+        Expr::EnrichedTuple { synth_ty, .. } | Expr::EnrichedInject { synth_ty, .. } => {
+            Some(synth_ty.clone())
+        }
         Expr::EnrichedMatch { result_ty, .. } | Expr::EnrichedConditional { result_ty, .. } => {
             Some(result_ty.clone())
         }
@@ -277,14 +582,9 @@ pub fn value_type_with_locals<P: ReconProfile>(
                 direct_enriched_slot_source_type(profile, target, *index, *arity, locals)
                 && profile.accept_direct_enriched_slot(&source_ty)
             {
-                return if matches!(target.as_ref(), Expr::EnrichedRecord { .. }) {
-                    // Enriched records store their field payloads unwrapped.
-                    Some(source_ty)
-                } else {
-                    // An enriched tuple stores the label/newtype carrier, so
-                    // field access still includes the newtype projection.
-                    profile.enriched_field_payload_type(&source_ty)
-                };
+                // An enriched tuple stores the label/newtype carrier, so
+                // field access still includes the newtype projection.
+                return profile.enriched_field_payload_type(&source_ty);
             }
             let actual_target_ty = profile
                 .value_type_with_locals(target, locals)
@@ -340,7 +640,7 @@ fn function_return_after_call(
 }
 
 /// The reconstructed type of a projection / field-get whose target is a
-/// **literal** tuple or record built right at the projection site: the
+/// **literal** tuple built right at the projection site: the
 /// slot's own value type, recovered by recursing into the literal's
 /// `index`-th item. `None` when the target is not such a literal of the
 /// matching arity.
@@ -354,9 +654,6 @@ fn direct_enriched_slot_source_type<P: ReconProfile>(
     match target {
         Expr::EnrichedTuple { items, .. } if items.len() == arity && index < arity => {
             profile.value_type_with_locals(&items[index], locals)
-        }
-        Expr::EnrichedRecord { fields, .. } if fields.len() == arity && index < arity => {
-            profile.value_type_with_locals(&fields[index].value, locals)
         }
         _ => None,
     }
@@ -460,6 +757,23 @@ pub fn apply_subst(ty: &Type<Routed>, subst: &HashMap<String, Type<Routed>>) -> 
     crate::pass::typecheck_core::subst_type(ty, subst)
 }
 
+/// Instantiate only explicit adjacent leading type stages. Unlike optional
+/// reconstruction, planning cannot skip an unapplied forall or cross a value
+/// boundary. The caller retains the original callee alongside this result.
+pub(crate) fn instantiate_type_stages(
+    callee: &Type<Routed>,
+    arguments: &[Type<Routed>],
+) -> Option<Type<Routed>> {
+    let mut current = callee.clone();
+    for argument in arguments {
+        let Type::Forall { param, body, .. } = current else {
+            return None;
+        };
+        current = apply_subst(&body, &HashMap::from([(param.name, argument.clone())]));
+    }
+    Some(current)
+}
+
 /// The `index`-th slot type of a right-nested product viewed as `arity`
 /// slots: a terminal slot is the whole remaining type, a non-terminal is
 /// that level's left operand. `None` if the spine is not a product where
@@ -542,6 +856,42 @@ mod tests {
     use crate::ast::Meta;
 
     #[test]
+    fn enclosing_scheme_supplies_omitted_closure_types_and_lexical_binder_names() {
+        let span = Span::new(0, 0);
+        let param = |name: &str| crate::ast::TypeParam {
+            name: name.to_owned(),
+            kind: None,
+            span,
+        };
+        let path = |name: &str| Type::synth_path(vec![name.to_owned()], Vec::new(), span);
+        let signature = Signature::new(vec![
+            SignatureParam::Type(param("Local")),
+            SignatureParam::Value(crate::ast::Param {
+                name: "value".to_owned(),
+                ty: None,
+                pattern: (),
+                meta: Meta::new(span),
+            }),
+        ]);
+        let expected = Type::Forall {
+            param: param("Public"),
+            body: Box::new(Type::synth_function(
+                vec![path("Public")],
+                path("Public"),
+                span,
+            )),
+            meta: Meta::new(span),
+        };
+        let (filled, result) = signature_from_expected(&signature, &expected).unwrap();
+        assert_eq!(
+            filled.value_params().next().unwrap().ty,
+            Some(path("Local"))
+        );
+        assert_eq!(result, path("Local"));
+        assert_eq!(filled.groups, signature.groups);
+    }
+
+    #[test]
     fn apply_subst_avoids_capturing_free_type_argument() {
         let span = Span::new(10, 20);
         let free_a = Type::synth_path(vec!["A".to_owned()], Vec::new(), span);
@@ -600,9 +950,6 @@ mod tests {
                     Vec::new(),
                     Span::new(0, 0),
                 )),
-                "payload" => Some(Type::Unit {
-                    meta: Meta::new(Span::new(0, 0)),
-                }),
                 _ => None,
             }
         }
@@ -691,7 +1038,7 @@ mod tests {
         (FieldProfile { row_ty }, expr)
     }
 
-    fn direct_field_get(record: bool) -> (FieldProfile, Expr<Routed>) {
+    fn direct_field_get() -> (FieldProfile, Expr<Routed>) {
         let span = Span::new(0, 0);
         let field_ty = Type::synth_path(vec!["Field".to_owned()], Vec::new(), span);
         let unit_ty = Type::Unit {
@@ -708,37 +1055,16 @@ mod tests {
         };
         let selected = Expr::LowBoundRef {
             occurrence: Default::default(),
-            name: if record { "payload" } else { "carrier" }.to_owned(),
+            name: "carrier".to_owned(),
             meta: Meta::new(span),
             ext: (),
         };
-        let target = if record {
-            Expr::EnrichedRecord {
-                occurrence: Default::default(),
-                fields: vec![
-                    crate::ast::RecordField {
-                        name: "first".to_owned(),
-                        value: first,
-                        meta: Meta::new(span),
-                    },
-                    crate::ast::RecordField {
-                        name: "field".to_owned(),
-                        value: selected,
-                        meta: Meta::new(span),
-                    },
-                ],
-                synth_ty: row_ty.clone(),
-                meta: Meta::new(span),
-                ext: (),
-            }
-        } else {
-            Expr::EnrichedTuple {
-                occurrence: Default::default(),
-                items: vec![first, selected],
-                synth_ty: row_ty.clone(),
-                meta: Meta::new(span),
-                ext: (),
-            }
+        let target = Expr::EnrichedTuple {
+            occurrence: Default::default(),
+            items: vec![first, selected],
+            synth_ty: row_ty.clone(),
+            meta: Meta::new(span),
+            ext: (),
         };
         (
             FieldProfile {
@@ -1051,17 +1377,7 @@ mod tests {
 
     #[test]
     fn field_get_projects_a_direct_tuple_carrier() {
-        let (profile, expr) = direct_field_get(false);
-
-        assert!(matches!(
-            value_type_with_locals(&profile, &expr, &mut HashMap::new()),
-            Some(Type::Unit { .. })
-        ));
-    }
-
-    #[test]
-    fn field_get_keeps_a_direct_record_payload() {
-        let (profile, expr) = direct_field_get(true);
+        let (profile, expr) = direct_field_get();
 
         assert!(matches!(
             value_type_with_locals(&profile, &expr, &mut HashMap::new()),

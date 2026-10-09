@@ -281,51 +281,67 @@ selects the declaration but cannot change the role, and a roleless declaration
 has no matching literal. Java then receives the value through the same
 declaration-keyed adapter pair; no separate literal representation is exposed.
 
-Structural products and sums use payload-generic nominal shells in
-`Shapes.java`. Products through 254 fields are records; wider products have
-typed accessors and a typed builder so they do not exceed the JVM constructor
-slot limit. Sums are sealed interfaces with typed record variants and
-`KioMatch`; above 254 arms, the method takes one exact product companion whose
-typed members are the case handlers. Function values use generic `FnN` /
-`ProcN` functional interfaces, so a lambda supplies the flat prepared value
-arguments through 254 reference slots. A wider function takes one exact
-prepared product shell; exported and host instance methods use the same cutoff
-and the whole-head shell's typed builder.
-An unsaturated nominal type constructor has an exact category-specific
+Products use `Shapes.Product<A, B>` records with `left()` and `right()`.
+A three-part product is nested on the right; left nesting remains left
+nesting. Sums use the sealed `Shapes.Sum<A, B>` interface with
+`Shapes.Left<A, B>` and `Shapes.Right<A, B>` records. Both variants keep
+both type arguments, even when only one payload is present.
+
+Function values use `Shapes.Fn1<A, R>`: a lambda receives one domain value
+and returns one result. For a Unit domain or result, use `Shapes.Unit`.
+Named methods preserve the source's parameter groups instead:
+`first(x: A, y: B)` has two Java parameters, while
+`second(pair: A & B)` has one product parameter. A named Unit parameter
+is omitted and a named Unit return is `void`; a generic parameter selected
+as Unit still takes a value. A named method wider than 254 reference
+parameters uses one prepared argument container with typed accessors and a
+builder.
+
+An unsaturated nominal constructor has an exact
 `KioNewtypeMk_<declaration>` or `KioHostTypeMk_<declaration>` marker.
-`ApplyN` is a typed public carrier. The package handle's exact
-`KioNewtypeApplication_<declaration>_lift` / `_project` and
-`KioHostTypeApplication_<declaration>_lift` / `_project` methods are the typed
-bridge between a saturated declaration carrier and that application; its
-public API never asks host code to cast through `Object`.
+Applying it uses `Shapes.Apply1<F, A>`; additional arguments nest another
+`Apply1` around that index. Concrete and generic uses have the same type,
+so passing a product, sum or callable through your opaque host container
+does not require a payload conversion. A host declaration's own
+`KioHostType_<declaration>.fromNative` and `toNative` helpers store and
+retrieve host-owned storage at that exact index. There is no general
+`Apply1` payload operation.
 
-A public newtype in a bridged module always has an exact declaration-keyed
-carrier and a per-type handle under its module namespace, even if that handle
-has no methods:
+A public newtype always has its per-type handle under the module namespace.
+Nullary declarations have an exact declaration-owned Java class;
+parameterized declarations use their marker's nested `Apply1` index.
+Visibility controls the operations available in either form:
 
-- With neither constructor nor projector public, values use an opaque Java
-  class.
-- With only the constructor public, the host can create values but cannot
-  inspect them.
-- With only the projector public, the host can inspect values received from
-  the package but cannot create them.
-- With both public and no existential, the carrier is a record with its typed
-  prepared payload, including recursive nominal references.
+- With neither member public, values are opaque.
+- With only the constructor public, you can create values but not inspect
+  their payloads.
+- With only the projector public, you can inspect values received from Kio
+  but cannot create them.
+- With both public and no existential, the ordinary members expose the
+  prepared payload. A nullary class also has a typed payload constructor and
+  `value()` accessor, including for recursive payloads.
 
-The opaque and one-member forms keep their storage out of the public facade;
-only the selected package methods, if any, provide public construction or
-inspection. A callable-head type stage becomes a Java method type parameter.
-A first-class callable that quantifies its own type uses an exact generated
-functional interface whose generic `apply` method carries that type parameter
-and the callable's value stages. Java lambdas cannot implement a generic
-abstract method, so supply such a value with an anonymous class; its public
-signature contains no `Object`. An
-existential projector takes a continuation so its hidden type cannot escape.
-Canonical Unit contributes no continuation argument; every other payload
-contributes one.
-Same-named newtypes in different modules remain different Java types, and an
-opaque or one-member newtype stays a single value when nested in another
-boundary shape. A unit return is `void`.
+A first-class callable with its own type binder implements a generated
+interface with one generic `advance()` method. Select the binder with
+Java's ordinary method type-argument syntax, then use the returned value;
+another binder requires another advance. A host implements such an interface
+with an anonymous class, since Java lambdas cannot implement generic methods.
+Advancing a type stage and calling a returned function are distinct
+operations, so keep each stage's host effects at the operation that owns them.
+
+For a polymorphic identity `[A] A -> A`, the interface is
+`Shapes.KioForall_Type_Fn_T0_T0`. Its anonymous class overrides
+`public <A> Shapes.Fn1<A, A> advance()` and returns `value -> value`.
+Calling `identity.<String>advance().apply("hello")` selects the binder and
+then invokes that returned function. The readable shape name is independent
+of the declaration supplying the value; captured types become ordinary
+interface type arguments. The [item-naming reference](../../specs/backends/java.md#item-naming)
+explains nested binders, captured types and the bounded spelling for large shapes.
+
+An existential projector returns the declared type stages and continuation
+stage after accepting its receiver. Its continuation receives the hidden
+payload without exposing the hidden type to the caller. That callable uses
+the same one-domain rule, including an explicit `Shapes.Unit`.
 
 See [`specs/backends/java.md`](../../specs/backends/java.md) for the full
 boundary contract and [`specs/backends/README.md`](../../specs/backends/README.md)

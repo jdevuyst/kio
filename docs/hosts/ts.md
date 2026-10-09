@@ -113,8 +113,10 @@ const host: GreeterHost = {
 
 TypeScript checks the supplied record at compile time, including generic and
 rank-N parameter and return relations. A `host type` needs no runtime property
-— types remain erased from the JavaScript value — and a `role(...)` annotation
-fixes the TypeScript primitive for an atomic type (here `String` → `string`).
+— types remain erased from the JavaScript value. A `role(...)` annotation admits
+the corresponding Kio literal syntax; the TypeScript backend represents host
+types carrying these roles with the primitives listed below (here `String` →
+`string`).
 Function-valued properties preserve strict parameter variance under
 `--strictFunctionTypes`.
 
@@ -227,17 +229,22 @@ backend's, so the declarations describe exactly the plain-object / primitive
 shapes the `.js` produces while preserving Kio's type relations.
 
 - **Atomic role types** map to TypeScript primitives: `str` → `string`, `bool` → `boolean`, the `i8`…`i32` / `u8`…`u32` / float roles → `number`, and the wide-integer roles `i64` / `i128` / `u64` / `u128` → `bigint` (the `.js` carries those as `BigInt`).
-- **Products** `(A & B)` are objects keyed by the right-spine slot: `{ _0: shape(A); _1: shape(B) }` (or by newtype name where the slot resolves to one).
+- **Products** `(A & B)` are binary objects `{ _0: shape(A); _1: shape(B) }`. Each child keeps its complete shape, including nested products and newtype wrappers.
 - **Sums** `(A | B)` are discriminated unions `{ _0: shape(A) } | { _1: shape(B) }`, exactly one property set — TypeScript narrows each branch by which property is present.
 - **Newtypes** follow the visible/nominal rule above. Generic parameters remain
   visible in either representation. Existentials and uncut payload-visible
   recursive cycles stay nominal; recursion through an atomic hidden carrier
   can leave an enclosing public wrapper structural.
-- **Unit** is `null`, **bottom** is `never`, and **function values** are
-  TypeScript function types.
+- **Unit** is `null` and **bottom** is `never`. First-class functions use
+  `GreeterCallable<A, R>`: one complete `A` argument, including `null` for
+  Unit. `liftGreeterCallable(body)` constructs a host-supplied callable.
 - **Ordinary Kio type variables** are TypeScript generics. A public
   `pub fn id[T](x: T) -> T` is `<T>(p0: T) => T`, and callbacks, returns, and
-  nested `forall`s retain their own generic function layers.
+  nested polymorphic values instead use `GreeterPoly` with one generic
+  `.advance<T>()` per type parameter. For example, an identity value is
+  invoked as `identity.advance<string>()("hello")`. Construct one with
+  `liftGreeterPoly({advance<T>() { ... }})`, returning the next callable or
+  polymorphic layer at each step.
 - **Roleless host types** use the selected `B["<module>"]["<name>"]` entry.
   Applications of positive-arity host types and higher-kinded binders use
   `GreeterApply`; non-saturating prefixes use `GreeterBind`.
@@ -247,17 +254,23 @@ and have no arity cap. Independently authored witnesses and partial
 applications work across generated packages. The protocol diagnoses a bare
 base witness, wrong arity, and `any` / `unknown` / `never` results instead of
 leaking a universal type. Runtime type arguments remain erased: these exact
-relations add no JavaScript arguments, wrappers, or casts.
+relations add no JavaScript type arguments. The callable helpers preserve
+the same value and type-stage boundaries when values cross the host boundary.
 
 `GreeterTypes<B>` provides a readable declaration-keyed catalogue of selected
 host types, fixed role types, and reachable public Kio newtype constructors for
 generic host-side composition.
 
 Catalog and type-selection paths word-case each module component while
-retaining `/`, and word-case the type leaf. Named product/sum object keys also
-word-case source components, retaining `/` and `.` for qualified keys
-(`"dataApi/model.NativeToken"`); positional keys such as `_0` stay unchanged.
+retaining `/`, and word-case the type leaf. Newtype wrapper keys use the
+word-cased type name; binary product/sum keys remain `_0` and `_1`.
 The nominal type brand's opaque identity is not derived from these display keys.
+
+Concrete structural inputs and outputs are snapshots. Generic `T`, opaque
+host-constructor values, and roleless host references pass through without
+being inspected or copied. Extracting a value through a concrete advertised
+type restores the copying required by that type; the package does not walk
+inside an unknown host container.
 
 See [`specs/backends/ts.md` § FFI surface](../../specs/backends/ts.md#ffi-surface) for the full mapping.
 

@@ -838,21 +838,6 @@ pub(crate) fn erase_signature_value_groups(
     groups
 }
 
-pub(crate) fn erase_signature_ret(
-    sig: &crate::ast::Signature<Routed>,
-    ret: &Type<Routed>,
-) -> Type<Routed> {
-    let scope: BTreeSet<String> = sig
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            crate::ast::SignatureParam::Type(param) => Some(param.name.clone()),
-            crate::ast::SignatureParam::Value(_) => None,
-        })
-        .collect();
-    erase_scoped_type_vars(ret, &scope)
-}
-
 pub(crate) fn qualify_newtype_declaration_payload(
     declaration: &Newtype<Routed>,
     module_path: &str,
@@ -874,28 +859,6 @@ pub(crate) fn qualify_newtype_declaration_payload(
     )
 }
 
-/// Instantiate a newtype payload and make its nominal heads self-contained
-/// for a package-global boundary walk. Unfilled declaration parameters stay
-/// local, so a same-named module declaration cannot capture them.
-pub(crate) fn qualify_boundary_newtype_payload(
-    declaration: &Newtype<Routed>,
-    nominal: &Type<Routed>,
-    module_path: &str,
-    package: &Package<Routed>,
-) -> Type<Routed> {
-    let payload = instantiate_boundary_newtype_payload(declaration, nominal);
-    let Some(entry) = package.module(module_path) else {
-        return payload;
-    };
-    let locals = declaration
-        .type_params
-        .iter()
-        .chain(&declaration.existential_params)
-        .map(|param| (param.name.clone(), param.effective_kind()))
-        .collect();
-    crate::pass::resolve::qualify_routed_contract_type_in_module(&payload, &entry.module, &locals)
-}
-
 /// The erased-static host boundary of one declared newtype member, retaining
 /// the member scheme's real universal/existential structure.
 pub(crate) struct ErasedNewtypeMemberBoundary {
@@ -913,30 +876,11 @@ pub(crate) fn erased_newtype_member_boundary(
     declaration: &Newtype<Routed>,
     member: &str,
 ) -> Result<ErasedNewtypeMemberBoundary, String> {
-    let Some(entry) = package.module(module_path) else {
-        return Err(format!("missing declaring module `{module_path}`"));
-    };
-    let span = declaration.meta.span;
-    let mut nominal_segments: Vec<crate::ast::PathSegment> = module_path
-        .split('/')
-        .map(|segment| crate::ast::PathSegment::synth(segment, span))
-        .collect();
-    nominal_segments.push(crate::ast::PathSegment::synth(
-        declaration.name.clone(),
-        span,
-    ));
-    let scheme = crate::pass::typecheck_core::newtype_member_scheme_in_module(
-        declaration,
-        member,
-        &nominal_segments,
-        &entry.module,
-        Some(package),
-        span,
-    )
-    .map_err(|error| format!("cannot synthesize `{module_path}.{member}`: {error:?}"))?;
+    let scheme =
+        super::reconstruct::newtype_member_scheme(package, module_path, declaration, member)?;
 
     let mut scope = BTreeSet::new();
-    let mut outer = scheme.ty.as_type();
+    let mut outer = &scheme;
     while let Type::Forall { param, body, .. } = outer {
         scope.insert(param.name.clone());
         outer = body;
@@ -1034,62 +978,6 @@ pub(crate) fn existential_projector_continuation_arity(
     Ok(*abi_arity)
 }
 
-/// Resolve a `Type::Path` reference to the newtype it names, plus the
-/// declaring module's slash-path. `None` for anything else (type
-/// variable, host type, unresolvable).
-pub(crate) fn resolve_newtype<'p>(
-    t: &Type<Routed>,
-    package: &'p Package<Routed>,
-) -> Option<(&'p Newtype<Routed>, String)> {
-    let segments = match t {
-        Type::Path { segments, .. } => segments,
-        _ => return None,
-    };
-    if segments.is_empty() {
-        return None;
-    }
-    if segments.len() == 1 {
-        let name = segments[0].as_str();
-        // Value-shaped single-segment paths cannot name newtypes.
-        if crate::naming::is_value_name(name) {
-            return None;
-        }
-        for (module_path_str, entry) in package.modules() {
-            for item in &entry.module.items {
-                let mut found = None;
-                crate::pass::resolve::for_each_item_declaration(item, |declaration| {
-                    if let Some(newtype) = declaration.newtype()
-                        && newtype.name == name
-                    {
-                        found = Some(newtype);
-                    }
-                });
-                if let Some(newtype) = found {
-                    return Some((newtype, module_path_str.to_owned()));
-                }
-            }
-        }
-        return None;
-    }
-    let last = segments.last().unwrap();
-    let module_path = segments[..segments.len() - 1].join("/");
-    let entry = package.module(&module_path)?;
-    for item in &entry.module.items {
-        let mut found = None;
-        crate::pass::resolve::for_each_item_declaration(item, |declaration| {
-            if let Some(newtype) = declaration.newtype()
-                && newtype.name == *last
-            {
-                found = Some(newtype);
-            }
-        });
-        if let Some(newtype) = found {
-            return Some((newtype, module_path));
-        }
-    }
-    None
-}
-
 /// `true` if `name` is a compile-time / intrinsic type name: an `__…__`
 /// intrinsic (`__Type__`, `__Checked_term__`, `__Comptime__`,
 /// `__Diagnostic_text__`, …) or one of the `Comptime_*` reflected
@@ -1164,45 +1052,6 @@ pub(crate) fn instantiate_newtype_payload(
         .map(|(param, arg)| (param.name.clone(), arg.clone()))
         .collect();
     crate::pass::typecheck_core::subst_type(&d.payload, &subst)
-}
-
-/// Instantiate a newtype payload for a typed host boundary without letting
-/// declaration or nested binders become package-resolvable nominal leaves.
-/// Filled universal parameters use the typer's capture-avoiding substitution;
-/// unfilled universals, existentials, and nested `forall` binders erase to the
-/// boundary's opaque carrier before any skin classification or conversion.
-pub(crate) fn instantiate_boundary_newtype_payload(
-    d: &Newtype<Routed>,
-    reference: &Type<Routed>,
-) -> Type<Routed> {
-    let args: &[Type<Routed>] = match reference {
-        Type::Path { args, .. } => args,
-        _ => &[],
-    };
-    let filled = args.len().min(d.type_params.len());
-    let declaration_scope: BTreeSet<String> = d
-        .type_params
-        .iter()
-        .skip(filled)
-        .chain(&d.existential_params)
-        .map(|param| param.name.clone())
-        .collect();
-
-    // Erase declaration-local names before inserting actual arguments. This
-    // preserves a nominal argument whose leaf happens to match an unfilled
-    // binder. `subst_type` then alpha-renames nested foralls around replacement
-    // names, and the final empty-scope walk erases binders introduced by an
-    // argument itself.
-    let payload = erase_scoped_type_vars(&d.payload, &declaration_scope);
-    let subst = d
-        .type_params
-        .iter()
-        .take(filled)
-        .zip(args.iter())
-        .map(|(param, arg)| (param.name.clone(), arg.clone()))
-        .collect();
-    let payload = crate::pass::typecheck_core::subst_type(&payload, &subst);
-    erase_scoped_type_vars(&payload, &BTreeSet::new())
 }
 
 /// Substitute free type-variable references in `ty` per `subst`.
@@ -1560,10 +1409,66 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
-    fn rendered_swift_shapes(package: &Package<Routed>) -> String {
-        crate::backends::swift::emit::lower_package(package, "Scopecheck")
-            .expect("prepare Swift facade shapes")
-            .shapes_swift
+    fn main_payload_plans(
+        package: &Package<Routed>,
+    ) -> BTreeMap<String, crate::backends::value_plan::ValuePlan> {
+        let entry = package.module("main").expect("main module");
+        let mut plans = BTreeMap::new();
+        for item in &entry.module.items {
+            crate::pass::resolve::for_each_item_declaration(item, |declaration| {
+                if let Some(declaration) = declaration.newtype() {
+                    let parameters = declaration
+                        .type_params
+                        .iter()
+                        .chain(&declaration.existential_params)
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    let plan = crate::backends::value_plan::ValuePlan::from_routed_type(
+                        package,
+                        &entry.module,
+                        &parameters,
+                        &declaration.payload,
+                    )
+                    .expect("prepare exact declaration-owned payload");
+                    plans.insert(declaration.name.clone(), plan);
+                }
+            });
+        }
+        plans
+    }
+
+    #[cfg(feature = "surface")]
+    fn assert_swift_facade_unchanged(
+        base: &Package<Routed>,
+        extended: &Package<Routed>,
+        added_internal_carriers: &[&str],
+    ) {
+        use crate::backends::boundary_facade::PreparedBoundaryCallableSites;
+
+        assert_eq!(
+            PreparedBoundaryCallableSites::collect_live(base).expect("base facade"),
+            PreparedBoundaryCallableSites::collect_live(extended).expect("extended facade"),
+        );
+        assert_eq!(main_payload_plans(base), main_payload_plans(extended));
+        let base = crate::backends::swift::emit::lower_package(base, "Scopecheck")
+            .expect("emit base Swift facade");
+        let extended = crate::backends::swift::emit::lower_package(extended, "Scopecheck")
+            .expect("emit extended Swift facade");
+        assert_eq!(base.host_swift, extended.host_swift);
+        assert_eq!(base.ffi_swift, extended.ffi_swift);
+
+        // Body-owned newtypes add internal carriers; no existing declaration,
+        // storage field, witness, or public access may change with them.
+        let mut shapes = extended.shapes_swift;
+        for name in added_internal_carriers {
+            let carrier = format!("KioNewtype_{name}");
+            let added = format!(
+                "struct {carrier}<H: ScopecheckHost>: __KioNominalValue {{\n    let __kioValue: Any\n    init(_ value: Any) {{ self.__kioValue = value }}\n}}\nprivate struct __KioWitness_{carrier}<H: ScopecheckHost>: __KioNominalWitness {{\n    typealias Native = {carrier}<H>\n    func construct(_ payload: Any) -> Any {{ Native(payload) }}\n}}\nfunc __kioWitness_{carrier}<H: ScopecheckHost>(_: H.Type) -> any __KioTypeWitness {{ __KioWitness_{carrier}<H>() }}\n"
+            );
+            assert_eq!(shapes.matches(&added).count(), 1, "{shapes}");
+            shapes = shapes.replacen(&added, "", 1);
+        }
+        assert_eq!(base.shapes_swift, shapes);
     }
 
     #[cfg(feature = "surface")]
@@ -1584,10 +1489,7 @@ mod tests {
              };",
         ]);
 
-        assert_eq!(
-            rendered_swift_shapes(&base),
-            rendered_swift_shapes(&with_unbridged),
-        );
+        assert_swift_facade_unchanged(&base, &with_unbridged, &["extra__Noise"]);
     }
 
     #[cfg(feature = "surface")]
@@ -1628,10 +1530,28 @@ mod tests {
              newtype V : Exact { constructor make_v; projector read_v; };",
         ]);
 
-        assert_eq!(
-            rendered_swift_shapes(&base),
-            rendered_swift_shapes(&with_same_leaf),
+        assert_swift_facade_unchanged(&base, &with_same_leaf, &["extra__U", "extra__V"]);
+        use crate::backends::value_plan::ValueUse;
+        let plans = main_payload_plans(&with_same_leaf);
+        for name in ["Existential", "Hidden", "Inner"] {
+            let plan = &plans[name];
+            assert!(matches!(plan.use_at(plan.root()), ValueUse::Bound(_)));
+        }
+        let rank_n = &plans["Rank_n"];
+        let ValueUse::Forall { binder, result } = rank_n.use_at(rank_n.root()) else {
+            panic!("rank-N payload lost its binder");
+        };
+        assert_eq!(rank_n.use_at(*result), &ValueUse::Bound(*binder));
+        let nested = &plans["Nested"];
+        let ValueUse::Apply { constructor, args } = nested.use_at(nested.root()) else {
+            panic!("nested payload lost its exact constructor application");
+        };
+        assert!(
+            matches!(nested.use_at(*constructor), ValueUse::Nominal(name)
+            if name.module_segments() == ["main"] && name.name() == "Inner")
         );
+        assert_eq!(args.len(), 1);
+        assert!(matches!(nested.use_at(args[0]), ValueUse::Bound(_)));
     }
 
     #[cfg(feature = "surface")]
@@ -1652,10 +1572,16 @@ mod tests {
             main,
         ]);
 
-        assert_eq!(
-            rendered_swift_shapes(&base),
-            rendered_swift_shapes(&with_same_leaf),
-        );
+        assert_swift_facade_unchanged(&base, &with_same_leaf, &["aaa__Chain"]);
+        use crate::backends::value_plan::ValueUse;
+        let plans = main_payload_plans(&with_same_leaf);
+        let chain = &plans["Chain"];
+        let ValueUse::Sum { left, right } = chain.use_at(chain.root()) else {
+            panic!("recursive payload lost its sum");
+        };
+        assert_eq!(chain.use_at(*left), &ValueUse::Unit);
+        assert!(matches!(chain.use_at(*right), ValueUse::Nominal(name)
+            if name.module_segments() == ["main"] && name.name() == "Chain"));
     }
     /// A profile that records every hook the driver invokes, so the
     /// tests can pin the driver's dispatch (which arm, which slots,
@@ -1945,13 +1871,23 @@ mod tests {
                 })
             })
             .expect("Capture host parameter");
-        let (capture_decl, _) = resolve_newtype(capture_ty, &package).expect("Capture declaration");
+        let Type::Path { segments, .. } = capture_ty else {
+            panic!("Capture nominal")
+        };
+        let (name, module) = segments.split_last().expect("qualified Capture name");
+        let name = crate::backends::boundary_facade::QualifiedTypeName::new(
+            module.iter().map(|segment| segment.name.clone()).collect(),
+            name.name.clone(),
+        )
+        .expect("qualified Capture identity");
+        let Some(crate::backends::value_plan::ValueNominalDeclaration::Newtype(capture_decl)) =
+            crate::backends::value_plan::nominal_declaration(&package, &name)
+        else {
+            panic!("Capture declaration")
+        };
         assert_eq!(
-            canonical_type_string(&instantiate_boundary_newtype_payload(
-                capture_decl,
-                capture_ty
-            )),
-            "forall T. fn1(main.T) -> $"
+            canonical_type_string(&instantiate_newtype_payload(capture_decl, capture_ty)),
+            "forall T. fn1(main.T) -> T"
         );
 
         let swift = crate::backends::swift::emit::lower_package(&package, "Scopecheck")
@@ -1965,7 +1901,7 @@ mod tests {
         );
         assert!(
             swift.host_swift.contains(
-                "main__nested(_ arg0: KioForall_main__HostFn_unested_U3<Self>) -> Self.main__Str"
+                "main__nested(_ arg0: KioForall_56313b65303b712a6662303b62303b<Self>) -> Self.main__Str"
             ),
             "{}",
             swift.host_swift
@@ -1999,7 +1935,7 @@ mod tests {
         assert!(
             swift
                 .host_swift
-                .contains("main__capture(_ arg0: KioNewtype_main__Capture<Self, KioNewtype_main__T<Self>>) -> KioNewtype_main__Capture<Self, KioNewtype_main__T<Self>>"),
+                .contains("main__capture(_ arg0: KioApply1<KioNewtypeMk_main__Capture<Self>, KioNewtype_main__T<Self>>) -> KioApply1<KioNewtypeMk_main__Capture<Self>, KioNewtype_main__T<Self>>"),
             "{}",
             swift.host_swift
         );
@@ -2027,7 +1963,7 @@ mod tests {
         );
         assert!(
             haskell.pkg_hs.contains(
-                "host__main__packed :: (KioExistential_H6d61696e005061636b__main_Pack h m) -> m (KioExistential_H6d61696e005061636b__main_Pack h m)"
+                "host__main__packed :: (KioExists_main__Pack h m) -> m (KioExists_main__Pack h m)"
             ),
             "{}",
             haskell.pkg_hs
@@ -2041,7 +1977,7 @@ mod tests {
         );
         assert!(
             haskell.pkg_hs.contains(
-                "host__main__capture :: (KioCarrier_H6d61696e0043617074757265__main_Capture h m (HostType__main__Str h)) -> m (KioCarrier_H6d61696e0043617074757265__main_Capture h m (HostType__main__Str h))"
+                "host__main__capture :: (KioType_main__Capture h m (HostType__main__Str h)) -> m (KioType_main__Capture h m (HostType__main__Str h))"
             ),
             "{}",
             haskell.pkg_hs

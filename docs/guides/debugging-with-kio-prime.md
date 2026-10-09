@@ -73,3 +73,16 @@ backend emission or host integration.
 For reusable compile-time claims, move the reduced expression pair into
 [Testing with `equiv`](equiv.md). For name lookup and type
 inspection, use [`kio repl`](repl.md) before dropping to Kio'.
+
+## Testing Prime-written code
+
+Use the full `kio test` command to test functions written in Kio'. Add ordinary
+[`equiv` claims](equiv.md) alongside them or in an importing test module, with
+the usual visibility rules. The functions need no rewriting, but the tree
+containing those surface test declarations is not a Kio' artifact.
+
+The reduced compiler's `kio-prime check` validates a Prime-only source tree;
+it does not run claims. Selecting one module does not exclude sibling test
+modules from that check, so validate the Prime-only source or emitted artifact
+separately from the test-containing tree. To exercise host/runtime behavior,
+build the package and invoke it from its host; `equiv` leaves host calls opaque.

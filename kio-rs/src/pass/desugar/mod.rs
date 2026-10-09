@@ -1094,7 +1094,6 @@ fn expr_uses_rec_mode(expr: &Expr<Surface>, mode: RecCallMode) -> bool {
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. }
         | Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }
@@ -1306,7 +1305,6 @@ fn collect_surface_expr_type_names(
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. }
         | Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }
@@ -5159,7 +5157,6 @@ impl DesugarVisitor {
             | Expr::EnrichedInject { ext, .. }
             | Expr::EnrichedMatch { ext, .. }
             | Expr::EnrichedConditional { ext, .. }
-            | Expr::EnrichedRecord { ext, .. }
             | Expr::EnrichedFieldGet { ext, .. }
             | Expr::LowHostCall { ext, .. }
             | Expr::LowModuleCall { ext, .. }
@@ -6778,7 +6775,6 @@ fn expr_contains_rec_call(expr: &Expr<Surface>) -> bool {
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. }
         | Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }
@@ -6947,7 +6943,6 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
             | Expr::EnrichedInject { ext, .. }
             | Expr::EnrichedMatch { ext, .. }
             | Expr::EnrichedConditional { ext, .. }
-            | Expr::EnrichedRecord { ext, .. }
             | Expr::EnrichedFieldGet { ext, .. }
             | Expr::LowHostCall { ext, .. }
             | Expr::LowModuleCall { ext, .. }
@@ -7074,7 +7069,6 @@ fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. } => match *ext {},
         Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }
@@ -7485,7 +7479,6 @@ mod tests {
             | Expr::EnrichedInject { ext, .. }
             | Expr::EnrichedMatch { ext, .. }
             | Expr::EnrichedConditional { ext, .. }
-            | Expr::EnrichedRecord { ext, .. }
             | Expr::EnrichedFieldGet { ext, .. }
             | Expr::LowHostCall { ext, .. }
             | Expr::LowModuleCall { ext, .. }

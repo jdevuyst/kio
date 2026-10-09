@@ -78,7 +78,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ast::{
     CallArg, Enriched, EnrichedArm, Expr, FnDef, Import, ImportItem, ImportKind, Item, Meta,
-    Module, PackageFile, Param, PathSegment, RecordField, Routed, Signature, SignatureGroupKind,
+    Module, PackageFile, Param, PathSegment, Routed, Signature, SignatureGroupKind,
     SignatureGroupRef, SignatureParam, Type, convert_meta, convert_newtype, convert_type,
     convert_type_alias,
 };
@@ -1608,46 +1608,6 @@ impl<'a> Lowerer<'a> {
                         true,
                     )),
                     result_ty,
-                    meta: convert_meta(meta),
-                    ext: (),
-                }
-            }
-            Expr::EnrichedRecord {
-                occurrence: _,
-                fields,
-                synth_ty,
-                meta,
-                ext: (),
-            } => {
-                let synth_ty = self.routed_type(synth_ty);
-                let lowered_fields = match expected_value_arg_tys(&synth_ty, fields.len()) {
-                    Some(slot_tys) => fields
-                        .iter()
-                        .zip(slot_tys)
-                        .map(|(f, slot_ty)| RecordField {
-                            name: f.name.clone(),
-                            value: self.lower_value_arg_as_value(
-                                f.value.clone(),
-                                slot_ty,
-                                f.meta.span,
-                                true,
-                            ),
-                            meta: convert_meta(&f.meta),
-                        })
-                        .collect(),
-                    None => fields
-                        .iter()
-                        .map(|f| RecordField {
-                            name: f.name.clone(),
-                            value: self.lower_expr(&f.value),
-                            meta: convert_meta(&f.meta),
-                        })
-                        .collect(),
-                };
-                Expr::EnrichedRecord {
-                    occurrence: Default::default(),
-                    fields: lowered_fields,
-                    synth_ty,
                     meta: convert_meta(meta),
                     ext: (),
                 }
@@ -3293,9 +3253,9 @@ impl<'a> Lowerer<'a> {
             } => Some(canonicalize_function_abi_type(instantiate_signature_type(
                 sig, type_args, ret_ty,
             ))),
-            Expr::EnrichedTuple { synth_ty, .. }
-            | Expr::EnrichedInject { synth_ty, .. }
-            | Expr::EnrichedRecord { synth_ty, .. } => Some(synth_ty.clone()),
+            Expr::EnrichedTuple { synth_ty, .. } | Expr::EnrichedInject { synth_ty, .. } => {
+                Some(synth_ty.clone())
+            }
             Expr::EnrichedMatch { result_ty, .. } | Expr::EnrichedConditional { result_ty, .. } => {
                 Some(result_ty.clone())
             }
@@ -3795,12 +3755,6 @@ impl<'a> Lowerer<'a> {
                 items, synth_ty, ..
             } if grouped_items_match_target_slots(&synth_ty, items.len(), target_slots) => {
                 out.args.extend(items);
-                return out;
-            }
-            Expr::EnrichedRecord {
-                fields, synth_ty, ..
-            } if grouped_items_match_target_slots(&synth_ty, fields.len(), target_slots) => {
-                out.args.extend(fields.into_iter().map(|field| field.value));
                 return out;
             }
             other => other,
@@ -4407,52 +4361,6 @@ impl<'a> Lowerer<'a> {
                     }
                 }
             }
-            Expr::EnrichedRecord {
-                fields,
-                meta,
-                ext: (),
-                ..
-            } if fields.len() == arity => {
-                let mut changed = false;
-                let fields = fields
-                    .into_iter()
-                    .zip(actual_slots.into_iter().zip(expected_slots))
-                    .map(|(field, (actual_slot, expected_slot))| {
-                        let value = field.value;
-                        let adapted = self.adapt_routed_value_to_expected(
-                            value.clone(),
-                            Some(actual_slot.clone()),
-                            expected_slot,
-                            span,
-                        );
-                        if adapted != value {
-                            changed = true;
-                        }
-                        RecordField {
-                            name: field.name,
-                            value: adapted,
-                            meta: field.meta,
-                        }
-                    })
-                    .collect();
-                if changed {
-                    Expr::EnrichedRecord {
-                        occurrence: Default::default(),
-                        fields,
-                        synth_ty: expected_ty.clone(),
-                        meta,
-                        ext: (),
-                    }
-                } else {
-                    Expr::EnrichedRecord {
-                        occurrence: Default::default(),
-                        fields,
-                        synth_ty: actual_ty,
-                        meta,
-                        ext: (),
-                    }
-                }
-            }
             other => {
                 let temp = "__kio_ret_abi__".to_owned();
                 let target = low_bound_ref(&temp, span);
@@ -4708,9 +4616,9 @@ impl<'a> Lowerer<'a> {
                     &self.unfold_env(),
                 ))
             }
-            Expr::EnrichedTuple { synth_ty, .. }
-            | Expr::EnrichedInject { synth_ty, .. }
-            | Expr::EnrichedRecord { synth_ty, .. } => Some(self.routed_type(synth_ty)),
+            Expr::EnrichedTuple { synth_ty, .. } | Expr::EnrichedInject { synth_ty, .. } => {
+                Some(self.routed_type(synth_ty))
+            }
             Expr::EnrichedMatch { result_ty, .. } | Expr::EnrichedConditional { result_ty, .. } => {
                 Some(self.routed_type(result_ty))
             }
@@ -4838,9 +4746,9 @@ impl<'a> Lowerer<'a> {
             unfold_type_alias_type(&convert_type::<Enriched, Routed>(ty), &self.unfold_env())
         };
         match expr {
-            Expr::EnrichedTuple { synth_ty, .. }
-            | Expr::EnrichedInject { synth_ty, .. }
-            | Expr::EnrichedRecord { synth_ty, .. } => Some(source_ty(synth_ty)),
+            Expr::EnrichedTuple { synth_ty, .. } | Expr::EnrichedInject { synth_ty, .. } => {
+                Some(source_ty(synth_ty))
+            }
             Expr::EnrichedMatch { result_ty, .. } | Expr::EnrichedConditional { result_ty, .. } => {
                 Some(source_ty(result_ty))
             }
@@ -5014,9 +4922,6 @@ fn is_inlineable_abi_group_value(expr: &Expr<Routed>) -> bool {
         | Expr::FloatLit { .. }
         | Expr::BoolLit { .. } => true,
         Expr::EnrichedTuple { items, .. } => items.iter().all(is_inlineable_abi_group_value),
-        Expr::EnrichedRecord { fields, .. } => fields
-            .iter()
-            .all(|field| is_inlineable_abi_group_value(&field.value)),
         _ => false,
     }
 }
@@ -5866,33 +5771,6 @@ fn inline_rebuilt_abi_projections(
                         span,
                         needs_whole_value,
                     )
-                })
-                .collect(),
-            synth_ty,
-            meta,
-            ext,
-        },
-        Expr::EnrichedRecord {
-            occurrence: _,
-            fields,
-            synth_ty,
-            meta,
-            ext,
-        } => Expr::EnrichedRecord {
-            occurrence: Default::default(),
-            fields: fields
-                .into_iter()
-                .map(|field| RecordField {
-                    name: field.name,
-                    value: inline_rebuilt_abi_projections(
-                        field.value,
-                        name,
-                        ty,
-                        slot_names,
-                        span,
-                        needs_whole_value,
-                    ),
-                    meta: field.meta,
                 })
                 .collect(),
             synth_ty,

@@ -1,0 +1,15 @@
+module api;
+
+host type Box[T];
+
+host type Number role(i32);
+
+host type Flag role(bool);
+
+host fn unbox[T](boxed: Box(T)) -> T;
+
+fn relay[T](boxed: Box(T)) -> T { unbox(boxed) }
+
+pub fn direct(boxed: Box(Number & Flag)) -> Number & Flag { unbox(boxed) }
+
+pub fn through_relay(boxed: Box(Number & Flag)) -> Number & Flag { relay(boxed) }

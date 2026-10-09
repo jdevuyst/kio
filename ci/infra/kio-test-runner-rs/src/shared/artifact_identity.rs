@@ -329,13 +329,7 @@ fn resolve(
         }
         "rust" => keyword_escape(package_name, RUST_KEYWORDS),
         "go" => {
-            if GO_KEYWORDS.contains(&package_name)
-                || matches!(package_name, "internal" | "main")
-                || matches!(
-                    source_brand(package_name, false).as_str(),
-                    "KioSum" | "Product" | "Sum" | "Unit"
-                )
-            {
+            if GO_KEYWORDS.contains(&package_name) || matches!(package_name, "internal" | "main") {
                 escape_default(package_name)
             } else {
                 package_name.to_owned()
@@ -430,11 +424,7 @@ fn validate_explicit_namespace(backend: &str, value: &str) -> Result<(), String>
             grammar_ok
                 && !GO_KEYWORDS.contains(&value)
                 && !matches!(value, "internal" | "main")
-                && !value.trim_matches('_').is_empty()
-                && !matches!(
-                    pascal_case(value).as_str(),
-                    "KioSum" | "Product" | "Sum" | "Unit"
-                )
+                && value != "_"
         }
         "swift" => {
             let mut chars = value.chars();
@@ -602,7 +592,10 @@ mod tests {
             ("rust", "match", "__kio_pkg_match"),
             ("go", "select", "__kio_pkg_select"),
             ("go", "main", "__kio_pkg_main"),
-            ("go", "unit", "__kio_pkg_unit"),
+            ("go", "unit", "unit"),
+            ("go", "product", "product"),
+            ("go", "sum", "sum"),
+            ("go", "kio_sum", "kio_sum"),
             ("swift", "csv_reconcile", "CsvReconcile"),
             ("swift", "foundation", "KioPkg_Foundation"),
             ("haskell", "csv_reconcile", "CsvReconcile"),
@@ -725,6 +718,11 @@ mod tests {
             ("java", "com.acme.pkg"),
             ("rust", "acme-pkg"),
             ("go", "acme_pkg"),
+            ("go", "unit"),
+            ("go", "product"),
+            ("go", "sum"),
+            ("go", "kio_sum"),
+            ("go", "____"),
             ("swift", "AcmePkg"),
             ("haskell", "Com.Acme.Pkg"),
         ] {
@@ -737,6 +735,7 @@ mod tests {
             ("java", "com.class.pkg"),
             ("rust", "match"),
             ("go", "main"),
+            ("go", "_"),
             ("swift", "Foundation"),
             ("haskell", "Main"),
         ] {

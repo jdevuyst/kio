@@ -100,7 +100,7 @@
 // trailing `.map(â¦)` to resolve `ParallelIterator` at the call site,
 // so the prelude is imported here under `parallel`; with the feature
 // off the sequential arm needs no import and rayon is absent.
-use crate::ast::{CallArg, Enriched, Expr, FnDef, Item, Module, PackageFile, RecordField, Type};
+use crate::ast::{CallArg, Enriched, Expr, FnDef, Item, Module, PackageFile, Type};
 use crate::pass::resolve::{ModuleEntry, Package, PackageFileEntry};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -550,26 +550,6 @@ fn recurse(ctx: &OptimizerCtx, e: Expr<Enriched>, mode: CatalogMode) -> Expr<Enr
             meta,
             ext,
         },
-        Expr::EnrichedRecord {
-            occurrence: _,
-            fields,
-            synth_ty,
-            meta,
-            ext,
-        } => Expr::EnrichedRecord {
-            occurrence: Default::default(),
-            fields: fields
-                .into_iter()
-                .map(|f| RecordField {
-                    name: f.name,
-                    value: optimize_expr_in_mode(ctx, f.value, mode),
-                    meta: f.meta,
-                })
-                .collect(),
-            synth_ty,
-            meta,
-            ext,
-        },
         Expr::EnrichedFieldGet {
             occurrence: _,
             target,
@@ -700,10 +680,6 @@ fn project_after_tuple(e: Expr<Enriched>, changed: &mut bool) -> Expr<Enriched> 
             Expr::EnrichedTuple { items, .. } if items.len() == arity && index < arity => {
                 *changed = true;
                 pick_with_effects(items, index)
-            }
-            Expr::EnrichedRecord { fields, .. } if fields.len() == arity && index < arity => {
-                *changed = true;
-                pick_with_effects(fields.into_iter().map(|f| f.value).collect(), index)
             }
             other => Expr::EnrichedProject {
                 occurrence: Default::default(),
@@ -1439,14 +1415,6 @@ fn walk_count_free(e: &Expr<Enriched>, name: &str, count: &mut usize) {
                 }
             }
         }
-        Expr::EnrichedRecord { fields, .. } => {
-            for f in fields {
-                walk_count_free(&f.value, name, count);
-                if *count >= 2 {
-                    return;
-                }
-            }
-        }
         Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
             walk_count_free(target, name, count);
         }
@@ -1728,26 +1696,6 @@ fn subst_free(e: Expr<Enriched>, name: &str, replacement: &Expr<Enriched>) -> Ex
             then_branch: Box::new(subst_free(*then_branch, name, replacement)),
             else_branch: Box::new(subst_free(*else_branch, name, replacement)),
             result_ty,
-            meta,
-            ext,
-        },
-        Expr::EnrichedRecord {
-            occurrence: _,
-            fields,
-            synth_ty,
-            meta,
-            ext,
-        } => Expr::EnrichedRecord {
-            occurrence: Default::default(),
-            fields: fields
-                .into_iter()
-                .map(|f| RecordField {
-                    name: f.name,
-                    value: subst_free(f.value, name, replacement),
-                    meta: f.meta,
-                })
-                .collect(),
-            synth_ty,
             meta,
             ext,
         },
@@ -2042,11 +1990,6 @@ fn collect_free_vars(
                 collect_free_vars(i, bound, out);
             }
         }
-        Expr::EnrichedRecord { fields, .. } => {
-            for f in fields {
-                collect_free_vars(&f.value, bound, out);
-            }
-        }
         Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
             collect_free_vars(target, bound, out);
         }
@@ -2158,11 +2101,6 @@ fn collect_binders<'a>(e: &'a Expr<Enriched>, out: &mut std::collections::HashSe
         Expr::EnrichedTuple { items, .. } => {
             for i in items {
                 collect_binders(i, out);
-            }
-        }
-        Expr::EnrichedRecord { fields, .. } => {
-            for f in fields {
-                collect_binders(&f.value, out);
             }
         }
         Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
@@ -2735,9 +2673,6 @@ fn search_use_before_effects(expression: &Expr<Enriched>, name: &str) -> UseBefo
             search_use_before_effects_in_order([value.as_ref(), body.as_ref()], name)
         }
         Expr::EnrichedTuple { items, .. } => search_use_before_effects_in_order(items.iter(), name),
-        Expr::EnrichedRecord { fields, .. } => {
-            search_use_before_effects_in_order(fields.iter().map(|field| &field.value), name)
-        }
         Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
             search_use_before_effects(target, name)
         }
@@ -2812,7 +2747,6 @@ fn ir_node_count(e: &Expr<Enriched>) -> usize {
             ir_node_count(value) + ir_node_count(body)
         }
         Expr::EnrichedTuple { items, .. } => items.iter().map(ir_node_count).sum(),
-        Expr::EnrichedRecord { fields, .. } => fields.iter().map(|f| ir_node_count(&f.value)).sum(),
         Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
             ir_node_count(target)
         }
@@ -3070,7 +3004,6 @@ mod tests {
                 contains(value, pred) || contains(body, pred)
             }
             Expr::EnrichedTuple { items, .. } => items.iter().any(|i| contains(i, pred)),
-            Expr::EnrichedRecord { fields, .. } => fields.iter().any(|f| contains(&f.value, pred)),
             Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
                 contains(target, pred)
             }

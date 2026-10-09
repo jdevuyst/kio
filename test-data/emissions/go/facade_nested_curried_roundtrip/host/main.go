@@ -26,7 +26,7 @@ func join(left string) func(string) string {
 }
 
 func main() {
-	pkg := artifact.CreateFacadeNestedCurriedRoundtrip[string](host{})
+	pkg := artifact.New[string](host{})
 
 	viaHost := pkg.Api.ViaHost(join)
 	fmt.Println("via host:", viaHost("env-left")("env-right"))

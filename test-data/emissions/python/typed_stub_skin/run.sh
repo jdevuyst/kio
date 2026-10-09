@@ -27,7 +27,7 @@ rm -rf "$scratch/workdir/out"
   fi
   negative_error_count=$(grep -c ' - error: ' pyright-negative.log || true)
   if [ "$negative_error_count" -ne 1 ] ||
-     ! grep -Eq 'consumer_negative\.py:58:[0-9]+ - error:' pyright-negative.log ||
+     ! grep -Eq 'consumer_negative\.py:57:[0-9]+ - error:' pyright-negative.log ||
      ! grep -qF 'NoReturn' pyright-negative.log ||
      ! grep -qF 'assert_never' pyright-negative.log; then
     printf 'consumer_negative.py failed for an unexpected reason\n' >&2
@@ -53,10 +53,10 @@ errors = [
     if diagnostic["severity"] == "error"
 ]
 expected = {
-    37: ("Count", "required"),
-    38: ("str", "int"),
-    39: ("dict[str, int]", "echoChoice"),
-    40: ("dict[str, int]", "echoChoice"),
+    38: ('"right"', "required"),
+    39: ("Count", "not assignable"),
+    40: ("echoChoice", "KioShape"),
+    41: ("echoChoice", "KioShape"),
 }
 lines = [diagnostic["range"]["start"]["line"] + 1 for diagnostic in errors]
 if len(errors) != len(expected):

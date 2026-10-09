@@ -52,7 +52,7 @@ __if_then_else__(A, .f(B), t, e)   →  e(())     (ι-IfFalse)
 
 The two ι rules fire **only** when the condition slot is the parser-recognized bool literal `.t` or `.f` (carrying its mandatory `(B)` role(bool) annotation per [`prime.md`](prime.md) § 2.2). An `__if_then_else__` whose condition is a stuck host call (or any other residual) is itself a residual — no implementation knowledge of "what the host returns" is allowed to leak in.
 
-This rule is the one place the language has built-in awareness of the `role(bool)` boundary. It works because `.t` / `.f` are specific literal AST nodes, not host-supplied values: the partial evaluator can recognize them syntactically without consulting any `role(bool)` host type.
+These reduction rules recognize Boolean literal syntax. They work because `.t` / `.f` are specific literal AST nodes, not host-supplied values: the partial evaluator can recognize them syntactically without consulting any `role(bool)` host type.
 
 ### 2.3. `__absurd__`
 
@@ -206,7 +206,7 @@ The relation rejects the following:
 - Different sequence skeletons: `Stuck(f, []) ; Stuck(g, []) ≄ Stuck(g, [])` (extra stuck action).
 - Different injected branches: `__left__(v) ≄ __right__(w)`; `__left__(v) ≄ __left__(w)` when `v ≄ w`.
 - Different newtype heads: `N.c(v) ≄ M.c(v)` when `N ≠ M`; `N.c(v) ≄ N.d(w)` when `c ≠ d`.
-- Literals that disagree: `.t ≄ .f`; `42^i32 ≄ 7^i32`; `42^i32 ≄ 42^i64` (same digits, different role).
+- Literals that disagree: `.t ≄ .f`; `42(I32) ≄ 7(I32)`; `42(I32) ≄ 42(I64)` (same digits, distinct exact host-type annotations).
 
 ### 4.6. Symbolic case-split equivalence
 

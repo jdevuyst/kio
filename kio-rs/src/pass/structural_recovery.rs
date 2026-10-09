@@ -86,7 +86,7 @@ use std::collections::BTreeMap;
 
 use crate::ast::{
     CallArg, Enriched, EnrichedArm, Expr, FnDef, Item, Meta, Module, PackageFile, PathSegment,
-    Prime, RecordField, Type, convert_host_fn, convert_host_type, convert_meta, convert_newtype,
+    Prime, Type, convert_host_fn, convert_host_type, convert_meta, convert_newtype,
     convert_signature, convert_type, convert_type_alias,
 };
 use crate::pass::resolve::{ModuleEntry, Package, PackageFileEntry};
@@ -187,13 +187,6 @@ pub fn recover_package_file(export: &PackageFile<Prime>) -> PackageFile<Enriched
     Recoverer::new(&ctx).recover_package_file(export)
 }
 
-/// One slot of an in-progress `__pair__` chain flatten. Newtype
-/// constructor calls retain their wrappers as ordinary slot values.
-struct TupleSlot {
-    name: Option<String>,
-    value: Expr<Enriched>,
-}
-
 /// One non-immediate value argument lifted out of a recovered
 /// structural dispatch. The enclosing `let` spine preserves the
 /// original intrinsic call's eager, left-to-right argument evaluation;
@@ -212,7 +205,7 @@ struct StagedValue {
 struct NewtypeFieldInfo {
     /// The newtype's FFI key (see
     /// [`crate::ast::Newtype::ffi_key`]) — the field name on the
-    /// recovered `EnrichedRecord` / `EnrichedFieldGet`.
+    /// recovered `EnrichedFieldGet`.
     field_name: String,
     /// The projector's member name.
     projector_name: String,
@@ -556,7 +549,6 @@ impl<'a> Recoverer<'a> {
             | Expr::EnrichedInject { ext, .. }
             | Expr::EnrichedMatch { ext, .. }
             | Expr::EnrichedConditional { ext, .. }
-            | Expr::EnrichedRecord { ext, .. }
             | Expr::EnrichedFieldGet { ext, .. } => match *ext {},
             Expr::LowHostCall { ext, .. }
             | Expr::LowModuleCall { ext, .. }
@@ -587,26 +579,9 @@ impl<'a> Recoverer<'a> {
         let call = classify_intrinsic("__pair__", call_args(e)?)?;
         let synth_ty = synth_ty_from_pair(&call, SpineKind::Product, span)?;
         let slots = self.flatten_mk_pair_chain(e)?;
-        if slots.iter().all(|s| s.name.is_some()) {
-            let fields = slots
-                .into_iter()
-                .map(|s| RecordField {
-                    name: s.name.expect("checked all-named above"),
-                    value: s.value,
-                    meta: Meta::new(span),
-                })
-                .collect();
-            return Some(Expr::EnrichedRecord {
-                occurrence: Default::default(),
-                fields,
-                synth_ty,
-                meta: Meta::new(span),
-                ext: (),
-            });
-        }
         Some(Expr::EnrichedTuple {
             occurrence: Default::default(),
-            items: slots.into_iter().map(|s| s.value).collect(),
+            items: slots,
             synth_ty,
             meta: Meta::new(span),
             ext: (),
@@ -614,13 +589,13 @@ impl<'a> Recoverer<'a> {
     }
 
     /// Walk a right-leaning `__pair__` chain rooted at `e`,
-    /// returning one [`TupleSlot`] per component in order. Each slot
-    /// carries the recovered value. Returns `None` when `e` is not a
+    /// returning one recovered value per component in order, retaining
+    /// newtype constructor wrappers. Returns `None` when `e` is not a
     /// canonical `__pair__` call — the recursive case stops when
     /// `rest` is anything else (a host call, a value, a `__left__`,
     /// etc.), and that last component is pushed as a single slot by
     /// the caller.
-    fn flatten_mk_pair_chain(&mut self, e: &Expr<Prime>) -> Option<Vec<TupleSlot>> {
+    fn flatten_mk_pair_chain(&mut self, e: &Expr<Prime>) -> Option<Vec<Expr<Enriched>>> {
         // `classify_intrinsic` matches arg-list shapes only — it
         // doesn't verify the callee name — so an explicit check is
         // required here. Otherwise any 2-arg `Call` (e.g.
@@ -637,38 +612,23 @@ impl<'a> Recoverer<'a> {
         // `canonical_walk`. A non-`__pair__` interior breaks the
         // chain: the broken-off subtree becomes the final slot and
         // recovers on its own.
-        let mut slots: Vec<TupleSlot> = Vec::new();
+        let mut slots = Vec::new();
         let mut cur = e;
         loop {
             let is_mk_pair = call_callee(cur)
                 .and_then(single_segment_callee)
                 .is_some_and(|n| n == "__pair__");
             if !is_mk_pair {
-                slots.push(self.recover_slot(cur));
+                slots.push(self.recover_expr(cur));
                 break;
             }
             let values = classify_intrinsic("__pair__", call_args(cur)?)?.value_part;
             let a = value_arg(values, 0)?;
             let rest = value_arg(values, 1)?;
-            slots.push(self.recover_slot(a));
+            slots.push(self.recover_expr(a));
             cur = rest;
         }
         Some(slots)
-    }
-
-    /// Recover one item of a product chain into a [`TupleSlot`].
-    fn recover_slot(&mut self, e: &Expr<Prime>) -> TupleSlot {
-        // Keep a newtype constructor call (`Foo.mk(payload)`) as a
-        // plain item so every backend emits it through its own
-        // newtype-constructor path. Lifting it here — stripping the
-        // wrap and naming the slot — would force the Rust backend to
-        // restore the wrap (its newtype struct is a real type, not
-        // runtime-erased like JS), and a lifted slot cannot be
-        // distinguished from a bare value of the newtype's type.
-        TupleSlot {
-            name: None,
-            value: self.recover_expr(e),
-        }
     }
 
     /// If `e` is a projector application on an ordinary newtype
@@ -1669,9 +1629,6 @@ fn has_free_value_ref(e: &Expr<Enriched>, name: &str, shadowed: bool) -> bool {
                 || has_free_value_ref(then_branch, name, shadowed)
                 || has_free_value_ref(else_branch, name, shadowed)
         }
-        Expr::EnrichedRecord { fields, .. } => fields
-            .iter()
-            .any(|field| has_free_value_ref(&field.value, name, shadowed)),
         Expr::Unit { .. }
         | Expr::StrLit { .. }
         | Expr::IntLit { .. }
@@ -2250,9 +2207,6 @@ mod tests {
                 count(value, pred) + count(body, pred)
             }
             Expr::EnrichedTuple { items, .. } => items.iter().map(|i| count(i, pred)).sum(),
-            Expr::EnrichedRecord { fields, .. } => {
-                fields.iter().map(|f| count(&f.value, pred)).sum()
-            }
             Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
                 count(target, pred)
             }
@@ -3353,12 +3307,8 @@ mod tests {
         );
     }
 
-    /// A surface tuple with **mixed** named / unnamed components
-    /// (`({hed = 7}, 42)`) does *not* promote to a record — recovery
-    /// falls back to [`Expr::EnrichedTuple`], dropping the partial
-    /// name (the IR's positional form has no per-slot name slot at
-    /// this first cut). Label-derived names are an all-or-nothing
-    /// signal.
+    /// Mixed named and unnamed components retain the nominal constructor
+    /// only on the named slot of the recovered tuple.
     #[test]
     fn mixed_named_tuple_stays_enriched_tuple() {
         let m = recover_one(
@@ -3384,11 +3334,6 @@ mod tests {
             "named slot retains its constructor payload: {payload:?}"
         );
         assert!(matches!(&items[1], Expr::Unit { .. }), "unnamed unit slot");
-        assert_eq!(
-            count(body, &|e| matches!(e, Expr::EnrichedRecord { .. })),
-            0,
-            "the unnamed slot blocks record promotion throughout the body"
-        );
     }
 
     /// A 5-component tuple recovers as one flat n-ary `EnrichedTuple`

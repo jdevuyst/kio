@@ -7720,7 +7720,6 @@ impl<'m> OrdinaryValueCursor<'m> {
             | crate::ast::Expr::EnrichedInject { ext, .. }
             | crate::ast::Expr::EnrichedMatch { ext, .. }
             | crate::ast::Expr::EnrichedConditional { ext, .. }
-            | crate::ast::Expr::EnrichedRecord { ext, .. }
             | crate::ast::Expr::EnrichedFieldGet { ext, .. }
             | crate::ast::Expr::LowHostCall { ext, .. }
             | crate::ast::Expr::LowModuleCall { ext, .. }
@@ -15590,7 +15589,6 @@ impl<'m> OrdinaryValueCursor<'m> {
             | crate::ast::Expr::EnrichedInject { ext, .. }
             | crate::ast::Expr::EnrichedMatch { ext, .. }
             | crate::ast::Expr::EnrichedConditional { ext, .. }
-            | crate::ast::Expr::EnrichedRecord { ext, .. }
             | crate::ast::Expr::EnrichedFieldGet { ext, .. }
             | crate::ast::Expr::LowHostCall { ext, .. }
             | crate::ast::Expr::LowModuleCall { ext, .. }

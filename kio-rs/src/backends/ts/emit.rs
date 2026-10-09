@@ -48,18 +48,18 @@
 
 use crate::ast::{Kind, Role, Routed};
 use crate::backends::boundary_facade::{
-    BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadeExecutionUse,
-    BoundaryFacadePlan, BoundaryFacadeSiteOwner, BoundaryHostBinding, BoundaryHostBindingOrigin,
+    BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadePlan,
+    BoundaryFacadeSiteOwner, BoundaryHostBinding, BoundaryHostBindingOrigin,
     BoundaryHostTypeBinding, BoundaryNewtypePayloadPlan, BoundaryNominalDeclaration,
     BoundaryNominalDependencies, BoundaryPublicNewtypeInventoryEntry, CallableExecutionStage,
-    CallablePresentationLayout, CallableSourceParamAdapter, CallableValueStageLayout,
-    FacadeBinderId, FacadeUse, FacadeUseId, PreparedBoundaryCallableSite,
-    PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
+    CallablePresentationLayout, CallableValueStageLayout, FacadeBinderId, FacadeUse, FacadeUseId,
+    PreparedBoundaryCallableSite, PreparedBoundaryCallableSites, QualifiedTypeName,
 };
 use crate::backends::js::emit as js;
 use crate::backends::public_names::{
     FacadeSelector, host_module_key, host_name_core, module_facade_path,
 };
+use crate::backends::value_plan::{ValueDomainStep, ValuePlan, ValueUse, ValueUseId};
 use crate::pass::resolve::Package;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -139,6 +139,8 @@ impl OpaqueTsTypes {
 
 struct TsNames {
     handle: String,
+    callable: String,
+    poly: String,
     host_types: String,
     type_lambda: String,
     partial_type_lambda: String,
@@ -152,6 +154,8 @@ impl TsNames {
     fn from_brand(brand: &js::Brand) -> Self {
         Self {
             handle: brand.handle.clone(),
+            callable: format!("{}Callable", brand.handle),
+            poly: format!("{}Poly", brand.handle),
             host_types: format!("{}HostTypes", brand.handle),
             type_lambda: format!("{}TypeLambda", brand.handle),
             partial_type_lambda: format!("{}PartialTypeLambda", brand.handle),
@@ -233,6 +237,7 @@ pub fn lower_package_to_dts_with_signature(
     let nominal_presentations = index_nominal_presentations(&prepared);
 
     render_type_lambda_protocol(&brand, &names, &mut out);
+    render_callable_protocol(&brand, &names, &mut out);
     render_host_types(package, &source_stable_host_types, &brand, &names, &mut out);
     render_host_interface(
         package,
@@ -271,6 +276,15 @@ pub fn lower_package_to_dts_with_signature(
     render_create_package(&prepared, &brand, &names, &mut out);
 
     Ok(out)
+}
+
+fn render_callable_protocol(brand: &js::Brand, names: &TsNames, out: &mut String) {
+    out.push_str(&format!(
+        "\nexport type {callable}<A, R> = ((value: A) => R) & {{\n  adapt(before: (value: A) => A, after: (value: R) => R): {callable}<A, R>;\n}};\n\nexport interface {poly}<Advance extends () => unknown> {{\n  advance: Advance;\n  adapt(after: <T>(value: T) => T): {poly}<Advance>;\n}}\n\nexport function lift{handle}Callable<A, R>(body: (value: A) => R): {callable}<A, R>;\nexport function lift{handle}Poly<Advance extends () => unknown>(body: {{ advance: Advance }}): {poly}<Advance>;\n",
+        callable = names.callable,
+        poly = names.poly,
+        handle = brand.handle,
+    ));
 }
 
 fn render_type_lambda_protocol(brand: &js::Brand, names: &TsNames, out: &mut String) {
@@ -416,7 +430,7 @@ type {private}DropPrefix<
   Remaining extends readonly unknown[],
   Prefix extends readonly unknown[],
 > = Prefix extends readonly []
-  ? Remaining
+  ? readonly [...Remaining]
   : Prefix extends readonly [infer PrefixHead, ...infer PrefixTail]
     ? Remaining extends readonly [infer RemainingHead, ...infer RemainingTail]
       ? {private}ArgumentSatisfies<RemainingHead, PrefixHead> extends true
@@ -978,12 +992,13 @@ fn render_catalog_newtype(
     }
     let carrier = opaque_ts_type_name(&name.module_segments().join("/"), name.name());
     let dependency = nominal_presentations.get(name).copied();
-    let recursive = dependency.is_some_and(|dependency| match dependency.declaration {
-        BoundaryNominalDeclaration::Newtype {
-            transparent_payload: Some(payload),
-            ..
-        } => transparent_payload_is_recursive(name, payload, dependency.dependencies),
-        _ => false,
+    let recursive = dependency.is_some_and(|dependency| {
+        dependency
+            .declaration
+            .public_structural_payload()
+            .is_some_and(|payload| {
+                transparent_payload_is_recursive(name, payload, dependency.dependencies)
+            })
     });
     if inventory.surface().uses_nominal_carrier()
         || !inventory.existential_params().is_empty()
@@ -1032,6 +1047,7 @@ fn render_catalog_newtype(
     let scope = TsFacadeScope::default();
     let context = TsFacadeRenderContext {
         plan: payload.facade(),
+        values: payload.value_plan(),
         execution: payload_presentation,
         execution_layout: presentation_layout,
         nominals: dependencies,
@@ -1727,7 +1743,10 @@ v(2) {
         );
         let dts = lower_package_to_dts(&pkg, "facade").expect("render returned forall");
 
-        assert!(dts.contains("readonly produce: () => <A>() => A;"), "{dts}");
+        assert!(
+            dts.contains("readonly produce: () => FacadePoly<<A>() => A>;"),
+            "{dts}"
+        );
     }
 
     #[test]
@@ -1946,7 +1965,7 @@ v(2) {
         let dts = lower_package_to_dts(&pkg, "facade").expect("render");
 
         assert!(
-            dts.contains("make: () => (p0: { _0: number; _1: number }) => number;"),
+            dts.contains("make: () => FacadeCallable<{ _0: number; _1: number }, number>;"),
             "{dts}"
         );
         assert!(
@@ -1978,7 +1997,8 @@ v(2) {
         let unrelated = opaque_ts_type_name("aaa", "Nested");
 
         assert!(
-            js.contains("return { Outer: { Nested: __body__ } };"),
+            js.contains("__kioBodyContext.nominals.get(\"V1_M1_C3_zedN5_Outer\").wrap")
+                && js.contains("__kioBodyContext.nominals.get(\"V1_M1_C3_zedN6_Nested\").wrap"),
             "{js}"
         );
         assert!(
@@ -2007,7 +2027,9 @@ v(2) {
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
 
         assert!(
-            dts.contains("readonly applyPoly: (p0: <T>(p0: T) => T) => string;"),
+            dts.contains(
+                "readonly applyPoly: (p0: GreeterPoly<<T>() => GreeterCallable<T, T>>) => string;"
+            ),
             "{dts}"
         );
         // The first value group sees the module newtype T; the later binder
@@ -2021,18 +2043,46 @@ v(2) {
         // while the nested forall receives its own collision-free TS binder.
         assert!(
             dts.contains(
-                "makeShadow: <T>(p0: { _0: T; _1: <TN2>(p0: TN2) => TN2 }) => { Shadow: { _0: T; _1: <TN2>(p0: TN2) => TN2 } };"
+                "makeShadow: <T>(p0: { _0: T; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> }) => { Shadow: { _0: T; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> } };"
             ),
             "{dts}"
         );
         assert!(
             dts.contains(
-                "readonly roundShadow: (p0: { Shadow: { _0: { Box: string }; _1: <TN2>(p0: TN2) => TN2 } }) => { Shadow: { _0: { Box: string }; _1: <TN2>(p0: TN2) => TN2 } };"
+                "readonly roundShadow: (p0: { Shadow: { _0: { Box: string }; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> } }) => { Shadow: { _0: { Box: string }; _1: GreeterPoly<<TN2>() => GreeterCallable<TN2, TN2>> } };"
             ),
             "{dts}"
         );
         assert!(
             dts.contains("readonly roundPack: (p0: __KioOpaque_H6d61696e005061636b<B>) => __KioOpaque_H6d61696e005061636b<B>;"),
+            "{dts}"
+        );
+    }
+
+    #[test]
+    fn first_class_callable_protocols_keep_stages_and_unit_domain() {
+        let pkg = build_package(
+            &["module main; \
+               pub fn relay(value: [A] A -> A) -> [A] A -> A { value } \
+               pub fn unit(value: . -> .) -> . -> . { value }"],
+            "bridge { main; }",
+        );
+        let dts = lower_package_to_dts(&pkg, "facade").expect("render");
+        assert!(
+            dts.contains("FacadePoly<<A>() => FacadeCallable<A, A>>"),
+            "{dts}"
+        );
+        assert!(dts.contains("FacadeCallable<null, null>"), "{dts}");
+        assert!(
+            dts.contains("export function liftFacadeCallable<A, R>"),
+            "{dts}"
+        );
+        assert!(
+            dts.contains("export function liftFacadePoly<Advance extends () => unknown>"),
+            "{dts}"
+        );
+        assert!(
+            dts.contains("adapt(after: <T>(value: T) => T): FacadePoly<Advance>"),
             "{dts}"
         );
     }
@@ -2078,7 +2128,7 @@ v(2) {
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
         assert!(
             dts.contains(
-                "split: (p0: { _0: number; _1: string }) => { _0: number } | { _1: string };"
+                "split: (p0: { _0: number; _1: string }) => ({ _0: number } | { _1: string });"
             ),
             "{dts}"
         );
@@ -2195,7 +2245,7 @@ v(2) {
 
         assert!(
             dts.contains(
-                "makeNested: (p0: { _0: number; _1: { _0: number } | { _1: number } }) => { Nested: { _0: number; _1: { _0: number } | { _1: number } } };"
+                "makeNested: (p0: { _0: number; _1: ({ _0: number } | { _1: number }) }) => { Nested: { _0: number; _1: ({ _0: number } | { _1: number }) } };"
             ),
             "{dts}"
         );
@@ -2208,7 +2258,7 @@ v(2) {
         );
         assert!(
             dts.contains(&format!(
-                "readPacked: (p0: {packed}) => <__r__>(p0: <A>(p0: A) => __r__) => __r__;"
+                "readPacked: (p0: {packed}) => FacadePoly<<__r__>() => FacadeCallable<FacadePoly<<A>() => FacadeCallable<A, __r__>>, __r__>>;"
             )),
             "{dts}"
         );
@@ -2223,13 +2273,13 @@ v(2) {
         let recursive = "__KioOpaque_H73686170657300526563757273697665<B>";
         assert!(
             dts.contains(&format!(
-                "makeRecursive: (p0: {{ _0: null }} | {{ _1: {{ _0: number; Recursive: {recursive} }} }}) => {recursive};"
+                "makeRecursive: (p0: ({{ _0: null }} | {{ _1: {{ _0: number; _1: {recursive} }} }})) => {recursive};"
             )),
             "{dts}"
         );
         assert!(
             dts.contains(&format!(
-                "readRecursive: (p0: {recursive}) => {{ _0: null }} | {{ _1: {{ _0: number; Recursive: {recursive} }} }};"
+                "readRecursive: (p0: {recursive}) => ({{ _0: null }} | {{ _1: {{ _0: number; _1: {recursive} }} }});"
             )),
             "{dts}"
         );
@@ -2266,7 +2316,7 @@ v(2) {
         );
         assert!(
             dts.contains(&format!(
-                "echoPair: (p0: {{ Token: {left}<B>; _1: null }}) => {{ Token: {left}<B>; _1: null }};"
+                "echoPair: (p0: {{ _0: {left}<B>; _1: null }}) => {{ _0: {left}<B>; _1: null }};"
             )),
             "{dts}"
         );
@@ -2578,6 +2628,7 @@ fn render_recursive_structural_interfaces(
         let scope = TsFacadeScope::default();
         let context = TsFacadeRenderContext {
             plan: payload.facade(),
+            values: payload.value_plan(),
             execution: payload_presentation,
             execution_layout: presentation_layout,
             nominals: dependencies,
@@ -2729,6 +2780,7 @@ impl TsFacadeScope {
 #[derive(Clone, Copy)]
 struct TsFacadeRenderContext<'a> {
     plan: &'a BoundaryFacadePlan,
+    values: &'a ValuePlan,
     execution: &'a BoundaryFacadeExecutionPlan,
     execution_layout: &'a CallablePresentationLayout,
     nominals: &'a BoundaryNominalDependencies,
@@ -2743,6 +2795,7 @@ impl<'a> TsFacadeRenderContext<'a> {
     {
         TsFacadeRenderContext {
             plan: self.plan,
+            values: self.values,
             execution: self.execution,
             execution_layout: self.execution_layout,
             nominals: self.nominals,
@@ -2791,6 +2844,7 @@ fn render_prepared_callable_inner(
             (BoundaryCallableHeadStage::Value { slots }, CallableExecutionStage::Value(layout)) => {
                 let context = TsFacadeRenderContext {
                     plan: plan.facade(),
+                    values: plan.value_plan(),
                     execution: presentation.root_uses(),
                     execution_layout: presentation,
                     nominals: site.nominals(),
@@ -2813,6 +2867,7 @@ fn render_prepared_callable_inner(
     }
     let context = TsFacadeRenderContext {
         plan: plan.facade(),
+        values: plan.value_plan(),
         execution: presentation.root_uses(),
         execution_layout: presentation,
         nominals: site.nominals(),
@@ -2841,48 +2896,18 @@ fn render_callable_value_params(
 ) -> Result<Vec<String>, EmitError> {
     let mut params = Vec::with_capacity(layout.source_param_count());
     for source in layout.source_params() {
-        let range = source.facade_slots();
-        if range.end > slots.len() {
-            return Err(internal_type_error(
-                "prepared TypeScript source parameter exceeds its semantic slots",
-            ));
+        if let Some(ty) =
+            context
+                .values
+                .native_parameter_domain(source, slots, |step| match step {
+                    ValueDomainStep::Value(id) => render_value_use(context, id, opaque_types),
+                    ValueDomainStep::Product(left, right) => {
+                        Ok(format!("{{ _0: {left}; _1: {right} }}"))
+                    }
+                })?
+        {
+            params.push(ty);
         }
-        let ty = match source.adapter() {
-            CallableSourceParamAdapter::UnitValue => continue,
-            CallableSourceParamAdapter::Identity => {
-                let [use_id] = &slots[range] else {
-                    return Err(internal_type_error(
-                        "identity TypeScript source parameter does not own one semantic slot",
-                    ));
-                };
-                render_facade_use(context, *use_id, opaque_types)?
-            }
-            CallableSourceParamAdapter::RightNest => {
-                let shell = source.product_shell().ok_or_else(|| {
-                    internal_type_error("right-nested TypeScript source parameter has no shell")
-                })?;
-                let uses = &slots[range];
-                if shell.ordered_keys().len() != uses.len() {
-                    return Err(internal_type_error(
-                        "right-nested TypeScript source parameter shell has the wrong width",
-                    ));
-                }
-                let fields = shell
-                    .ordered_keys()
-                    .iter()
-                    .zip(uses)
-                    .map(|(key, use_id)| {
-                        Ok(format!(
-                            "{}: {}",
-                            ts_property_key(&render_semantic_key(key)),
-                            render_facade_slot(context, *use_id, opaque_types)?
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, EmitError>>()?;
-                format!("{{ {} }}", fields.join("; "))
-            }
-        };
-        params.push(ty);
     }
     Ok(params)
 }
@@ -2892,119 +2917,128 @@ fn render_facade_use(
     use_id: FacadeUseId,
     opaque_types: &mut OpaqueTsTypes,
 ) -> Result<String, EmitError> {
-    match context.plan.use_at(use_id) {
-        FacadeUse::Unit { .. } => Ok("null".to_owned()),
-        FacadeUse::Bottom { .. } => Ok("never".to_owned()),
-        FacadeUse::Bound { binder, .. } => Ok(context.scope.lookup(*binder)?.to_owned()),
-        FacadeUse::Nominal { name, .. } => {
-            render_facade_nominal(context, name, &[], opaque_types, false)
-        }
-        FacadeUse::Apply {
-            constructor, args, ..
-        } => {
-            if let FacadeUse::Nominal { name, .. } = context.plan.use_at(*constructor) {
-                return render_facade_nominal(context, name, args, opaque_types, false);
+    render_value_use(context, context.values.source(use_id), opaque_types)
+}
+
+fn render_value_use(
+    context: TsFacadeRenderContext<'_>,
+    root: ValueUseId,
+    opaque_types: &mut OpaqueTsTypes,
+) -> Result<String, EmitError> {
+    enum Task {
+        Enter(ValueUseId),
+        Binary(bool),
+        Function,
+        Apply {
+            constructor: ValueUseId,
+            len: usize,
+            nominal: bool,
+        },
+        Forall {
+            binder: String,
+            prior: TsFacadeScope,
+        },
+    }
+    let mut scope = context.scope.clone();
+    let mut tasks = vec![Task::Enter(root)];
+    let mut rendered = Vec::new();
+    while let Some(task) = tasks.pop() {
+        match task {
+            Task::Enter(id) => match context.values.use_at(id) {
+                ValueUse::Unit => rendered.push("null".to_owned()),
+                ValueUse::Bottom => rendered.push("never".to_owned()),
+                ValueUse::Bound(binder) => rendered.push(scope.lookup(*binder)?.to_owned()),
+                ValueUse::Nominal(name) => rendered.push(render_facade_nominal(
+                    context.with_scope(&scope),
+                    name,
+                    Vec::new(),
+                    opaque_types,
+                )?),
+                ValueUse::Apply { constructor, args } => {
+                    let nominal =
+                        matches!(context.values.use_at(*constructor), ValueUse::Nominal(_));
+                    tasks.push(Task::Apply {
+                        constructor: *constructor,
+                        len: args.len(),
+                        nominal,
+                    });
+                    tasks.extend(args.iter().rev().copied().map(Task::Enter));
+                    if !nominal {
+                        tasks.push(Task::Enter(*constructor));
+                    }
+                }
+                ValueUse::Product { left, right } | ValueUse::Sum { left, right } => {
+                    tasks.push(Task::Binary(matches!(
+                        context.values.use_at(id),
+                        ValueUse::Sum { .. }
+                    )));
+                    tasks.push(Task::Enter(*right));
+                    tasks.push(Task::Enter(*left));
+                }
+                ValueUse::Function { domain, result, .. } => {
+                    tasks.push(Task::Function);
+                    tasks.push(Task::Enter(*result));
+                    tasks.push(Task::Enter(*domain));
+                }
+                ValueUse::Forall { binder, result } => {
+                    let metadata = context.values.binder(*binder);
+                    let prior = scope.clone();
+                    let binder = scope.bind(*binder, &metadata.name, &metadata.kind, context.names);
+                    tasks.push(Task::Forall { binder, prior });
+                    tasks.push(Task::Enter(*result));
+                }
+            },
+            Task::Binary(sum) => {
+                let right = rendered.pop().expect("binary value has a right child");
+                let left = rendered.pop().expect("binary value has a left child");
+                rendered.push(if sum {
+                    format!("({{ _0: {left} }} | {{ _1: {right} }})")
+                } else {
+                    format!("{{ _0: {left}; _1: {right} }}")
+                });
             }
-            let head = render_facade_use(context, *constructor, opaque_types)?;
-            let args = render_facade_args(context, args, opaque_types)?;
-            Ok(format!(
-                "{}<{head}, readonly [{}]>",
-                context.names.apply,
-                args.join(", ")
-            ))
+            Task::Function => {
+                let result = rendered.pop().expect("function value has a result");
+                let domain = rendered.pop().expect("function value has a domain");
+                rendered.push(format!("{}<{domain}, {result}>", context.names.callable));
+            }
+            Task::Forall { binder, prior } => {
+                let result = rendered.pop().expect("forall value has a result");
+                rendered.push(format!("{}<<{binder}>() => {result}>", context.names.poly));
+                scope = prior;
+            }
+            Task::Apply {
+                constructor,
+                len,
+                nominal,
+            } => {
+                let args = rendered.split_off(rendered.len() - len);
+                let result = if nominal {
+                    let ValueUse::Nominal(name) = context.values.use_at(constructor) else {
+                        unreachable!()
+                    };
+                    render_facade_nominal(context.with_scope(&scope), name, args, opaque_types)?
+                } else {
+                    let head = rendered.pop().expect("application has a constructor");
+                    let kind = context.values.kind(constructor, |name| {
+                        context
+                            .nominals
+                            .declaration(name)
+                            .map(BoundaryNominalDeclaration::kind)
+                            .ok_or_else(|| {
+                                internal_type_error(
+                                    "prepared constructor has its exact nominal declaration",
+                                )
+                            })
+                    })?;
+                    render_facade_application(&head, kind.arity(), &args, context.names)?
+                };
+                rendered.push(result);
+            }
         }
-        FacadeUse::Product { shell, args, .. } => {
-            let fields = shell
-                .ordered_keys()
-                .iter()
-                .zip(args)
-                .map(|(key, value)| {
-                    Ok(format!(
-                        "{}: {}",
-                        ts_property_key(&render_semantic_key(key)),
-                        render_facade_slot(context, *value, opaque_types)?
-                    ))
-                })
-                .collect::<Result<Vec<_>, EmitError>>()?;
-            Ok(format!("{{ {} }}", fields.join("; ")))
-        }
-        FacadeUse::Sum { shell, args, .. } => {
-            let arms = shell
-                .ordered_keys()
-                .iter()
-                .zip(args)
-                .map(|(key, value)| {
-                    Ok(format!(
-                        "{{ {}: {} }}",
-                        ts_property_key(&render_semantic_key(key)),
-                        render_facade_slot(context, *value, opaque_types)?
-                    ))
-                })
-                .collect::<Result<Vec<_>, EmitError>>()?;
-            Ok(arms.join(" | "))
-        }
-        FacadeUse::Function { slots, result, .. } => {
-            let BoundaryFacadeExecutionUse::Function(layout) = context.execution.use_at(use_id)
-            else {
-                return Err(internal_type_error(
-                    "prepared TypeScript function has no presentation layout",
-                ));
-            };
-            let params = render_callable_value_params(context, slots, layout, opaque_types)?
-                .into_iter()
-                .enumerate()
-                .map(|(index, ty)| format!("p{index}: {ty}"))
-                .collect::<Vec<_>>();
-            Ok(format!(
-                "({}) => {}",
-                params.join(", "),
-                render_facade_use(context, *result, opaque_types)?
-            ))
-        }
-        FacadeUse::Forall { .. } => render_facade_forall(context, use_id, opaque_types),
     }
-}
-
-fn render_facade_forall(
-    context: TsFacadeRenderContext<'_>,
-    root: FacadeUseId,
-    opaque_types: &mut OpaqueTsTypes,
-) -> Result<String, EmitError> {
-    let mut nested = context.scope.clone();
-    let mut binders = Vec::new();
-    let mut current = root;
-    while let FacadeUse::Forall { binder, result, .. } = context.plan.use_at(current) {
-        let metadata = context.plan.binder(*binder);
-        binders.push(nested.bind(*binder, &metadata.name, &metadata.kind, context.names));
-        current = *result;
-    }
-    let rendered = render_facade_use(context.with_scope(&nested), current, opaque_types)?;
-    if matches!(context.plan.use_at(current), FacadeUse::Function { .. }) {
-        Ok(format!("<{}>{rendered}", binders.join(", ")))
-    } else {
-        Ok(format!("<{}>() => {rendered}", binders.join(", ")))
-    }
-}
-
-fn render_facade_slot(
-    context: TsFacadeRenderContext<'_>,
-    use_id: FacadeUseId,
-    opaque_types: &mut OpaqueTsTypes,
-) -> Result<String, EmitError> {
-    match context.plan.use_at(use_id) {
-        FacadeUse::Nominal { name, .. } => {
-            render_facade_nominal(context, name, &[], opaque_types, true)
-        }
-        FacadeUse::Apply {
-            constructor, args, ..
-        } if matches!(context.plan.use_at(*constructor), FacadeUse::Nominal { .. }) => {
-            let FacadeUse::Nominal { name, .. } = context.plan.use_at(*constructor) else {
-                unreachable!()
-            };
-            render_facade_nominal(context, name, args, opaque_types, true)
-        }
-        _ => render_facade_use(context, use_id, opaque_types),
-    }
+    assert_eq!(rendered.len(), 1, "a rendered value has one root");
+    Ok(rendered.pop().unwrap())
 }
 
 #[derive(Clone)]
@@ -3071,11 +3105,11 @@ fn transparent_shape_reaches(
             if !active.insert(name.clone()) {
                 return false;
             }
-            let reaches = match nominals.declaration(name) {
-                Some(BoundaryNominalDeclaration::Newtype {
-                    transparent_payload: Some(payload),
-                    ..
-                }) if payload.declaration_binders().len() == args.len() => {
+            let reaches = match nominals
+                .declaration(name)
+                .and_then(BoundaryNominalDeclaration::public_structural_payload)
+            {
+                Some(payload) if payload.declaration_binders().len() == args.len() => {
                     let substitutions = payload
                         .declaration_binders()
                         .iter()
@@ -3116,9 +3150,8 @@ fn transparent_payload_is_recursive(
 fn render_facade_nominal(
     context: TsFacadeRenderContext<'_>,
     name: &QualifiedTypeName,
-    args: &[FacadeUseId],
+    rendered_args: Vec<String>,
     opaque_types: &mut OpaqueTsTypes,
-    absorb_transparent_wrapper: bool,
 ) -> Result<String, EmitError> {
     let declaration = context.nominals.declaration(name).ok_or_else(|| {
         internal_type_error(&format!(
@@ -3131,52 +3164,38 @@ fn render_facade_nominal(
         BoundaryNominalDeclaration::HostType {
             type_params,
             binding,
-        } => {
-            let rendered_args = render_facade_args(context, args, opaque_types)?;
-            match binding {
-                BoundaryHostTypeBinding::Role(role) => {
-                    if !args.is_empty() || !type_params.is_empty() {
-                        return Err(internal_type_error(
-                            "a role-bearing host type reached TypeScript at positive arity",
-                        ));
-                    }
-                    Ok(role_to_ts_type(*role).to_owned())
+        } => match binding {
+            BoundaryHostTypeBinding::Role(role) => {
+                if !rendered_args.is_empty() || !type_params.is_empty() {
+                    return Err(internal_type_error(
+                        "a role-bearing host type reached TypeScript at positive arity",
+                    ));
                 }
-                BoundaryHostTypeBinding::Roleless => {
-                    let module = name.module_segments().join("/");
-                    let head = if matches!(
-                        opaque_types.host_binding_origins.get(name),
-                        Some(BoundaryHostBindingOrigin::Retained { .. })
-                    ) {
-                        format!(
-                            "__{}RetainedHostBinding<B, {}, {}>",
-                            context.names.handle,
-                            ts_string_literal(&ts_host_module_path(&module)),
-                            ts_string_literal(&host_name_core(name.name()))
-                        )
-                    } else {
-                        format!(
-                            "B[{}][{}]",
-                            ts_string_literal(&ts_host_module_path(&module)),
-                            ts_string_literal(&host_name_core(name.name()))
-                        )
-                    };
-                    render_facade_application(
-                        &head,
-                        type_params.len(),
-                        &rendered_args,
-                        context.names,
-                    )
-                }
+                Ok(role_to_ts_type(*role).to_owned())
             }
-        }
-        BoundaryNominalDeclaration::Newtype {
-            type_params,
-            existential_params,
-            transparent_payload,
-            surface,
-        } => {
-            let rendered_args = render_facade_args(context, args, opaque_types)?;
+            BoundaryHostTypeBinding::Roleless => {
+                let module = name.module_segments().join("/");
+                let head = if matches!(
+                    opaque_types.host_binding_origins.get(name),
+                    Some(BoundaryHostBindingOrigin::Retained { .. })
+                ) {
+                    format!(
+                        "__{}RetainedHostBinding<B, {}, {}>",
+                        context.names.handle,
+                        ts_string_literal(&ts_host_module_path(&module)),
+                        ts_string_literal(&host_name_core(name.name()))
+                    )
+                } else {
+                    format!(
+                        "B[{}][{}]",
+                        ts_string_literal(&ts_host_module_path(&module)),
+                        ts_string_literal(&host_name_core(name.name()))
+                    )
+                };
+                render_facade_application(&head, type_params.len(), &rendered_args, context.names)
+            }
+        },
+        BoundaryNominalDeclaration::Newtype { type_params, .. } => {
             if rendered_args.len() > type_params.len() {
                 return Err(internal_type_error(
                     "newtype application exceeds its declared arity",
@@ -3191,10 +3210,9 @@ fn render_facade_nominal(
                     context.names,
                 );
             }
-            let nominal = !existential_params.is_empty()
-                || surface.uses_nominal_carrier()
-                || transparent_payload.is_none()
-                || transparent_payload.as_ref().is_some_and(|payload| {
+            let transparent_payload = declaration.public_structural_payload();
+            let nominal = transparent_payload.is_none()
+                || transparent_payload.is_some_and(|payload| {
                     transparent_payload_is_recursive(name, payload, context.nominals)
                 });
             let carrier = opaque_ts_type_name(&name.module_segments().join("/"), name.name());
@@ -3221,9 +3239,8 @@ fn render_facade_nominal(
                     all.join(", ")
                 ));
             }
-            let payload = transparent_payload
-                .as_ref()
-                .expect("a transparent declaration owns a prepared payload");
+            let payload =
+                transparent_payload.expect("a transparent declaration owns a prepared payload");
             let payload_presentation =
                 context
                     .execution_layout
@@ -3244,14 +3261,10 @@ fn render_facade_nominal(
             let popped = opaque_types.structural_stack.pop();
             debug_assert_eq!(popped.as_deref(), Some(carrier.as_str()));
             let rendered_payload = rendered_payload?;
-            if absorb_transparent_wrapper {
-                Ok(rendered_payload)
-            } else {
-                Ok(format!(
-                    "{{ {}: {rendered_payload} }}",
-                    ts_property_key(&host_name_core(name.name()))
-                ))
-            }
+            Ok(format!(
+                "{{ {}: {rendered_payload} }}",
+                ts_property_key(&host_name_core(name.name()))
+            ))
         }
     }
 }
@@ -3275,6 +3288,7 @@ fn render_newtype_payload(
     }
     let payload_context = TsFacadeRenderContext {
         plan: payload.facade(),
+        values: payload.value_plan(),
         execution: payload_execution,
         execution_layout: context.execution_layout,
         nominals: context.nominals,
@@ -3283,16 +3297,6 @@ fn render_newtype_payload(
     }
     .with_scope(&nested);
     render_facade_use(payload_context, payload.payload_root(), opaque_types)
-}
-
-fn render_facade_args(
-    context: TsFacadeRenderContext<'_>,
-    args: &[FacadeUseId],
-    opaque_types: &mut OpaqueTsTypes,
-) -> Result<Vec<String>, EmitError> {
-    args.iter()
-        .map(|arg| render_facade_use(context, *arg, opaque_types))
-        .collect()
 }
 
 fn render_facade_application(
@@ -3326,25 +3330,6 @@ fn newtype_witness_name(names: &TsNames, name: &QualifiedTypeName) -> String {
         names.handle,
         js::encoded_newtype_identity(&name.module_segments().join("/"), name.name())
     )
-}
-
-fn render_semantic_key(key: &SemanticKey) -> String {
-    match key {
-        SemanticKey::Bare { name } => host_name_core(name),
-        SemanticKey::Qualified {
-            module_segments,
-            name,
-        } => format!(
-            "{}.{}",
-            module_segments
-                .iter()
-                .map(|part| host_name_core(part))
-                .collect::<Vec<_>>()
-                .join("/"),
-            host_name_core(name)
-        ),
-        SemanticKey::Positional { index } => format!("_{index}"),
-    }
 }
 
 // =========================================================================

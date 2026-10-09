@@ -1,0 +1,13 @@
+package substitution;
+
+build {
+  cache ();
+
+  target go {
+    out "out/go/"
+  }
+}
+
+bridge {
+  api
+}

@@ -43,10 +43,18 @@ target output directory:
 out/python/greeter.py
 out/python/greeter/__init__.pyi
 out/python/greeter/_kio_stub_0000.pyi
+out/python/kio_static_v1/core.pyi
 ```
 
 `__init__.pyi` is the public typed entry point. The `_kio_stub_*` files are
 private supporting shards; host code imports `greeter`, never a shard.
+The generated `kio_static_v1/` directory holds shared type definitions, with
+additional files as the package needs them. Keep the complete output tree when
+distributing typing support. Each build supplies everything its stubs need;
+there is no extra package to install and no shared runtime to load. A dynamic
+host can distribute just `greeter.py`. Names matching `kio_static_v[0-9]+`
+(with one or more ASCII digits) belong to this generated support and cannot
+be an explicit Python target namespace.
 
 The emitted module targets Python 3.10+ and uses only the standard library.
 
@@ -244,6 +252,8 @@ A host that runs pyright or mypy checks its embedding against it: the factory,
 the exported surface, and the host contract are all typed. Importing the module
 with `out/python` on the path gives type checkers the stub package's view and
 Python the sibling `greeter.py` runtime, with no extra setup.
+Independently generated packages reuse compatible static definitions, so typed
+callbacks can pass between them through their ordinary package imports.
 
 The stub exposes `create_greeter`, the generic package handle type `Greeter`,
 and the generic host protocol `GreeterHost`. A host selects one Python type for
@@ -298,31 +308,77 @@ annotation with the current live type. See the Python contract's
 Each nullary host type is an exact generic binding selected by the host. A
 role-bearing binding adapts to a private runtime `str`, `bool`, `int`, or
 `float`; the public value can be that primitive or a declaration-specific host
-class. A parameterized declaration such as `Box[T]` uses the emitted exact
-`KioHostType_<frame>[T]` carrier, with explicit `from_native` and `to_native`
-integration methods. Ordinary callable signatures preserve the exact carrier
-application rather than using `object`. For example,
-`KioHostType_<frame>[int].from_native(value)` constructs the runtime carrier;
-the type argument is checked statically and erases when the module runs.
+class. For `Box[T]` declared in module `api`, import
+`KioHostType_api__Box` to store and recover your native value:
+`KioHostType_api__Box[int].from_native(value)` constructs it, and
+`KioHostType_api__Box[int].to_native(box)` reads it back. The generated type
+`KioApply1[KioHostMk_api__Box, int]` preserves that exact application in
+callable signatures; its type argument adds no runtime call argument.
+
+The readable names are aliases of the exact declaration, so they add no
+conversion or new class. Newtype annotations can similarly use
+`KioNewtype_api__Wrapper` and its `KioNewtypeMk_api__Wrapper` constructor
+index. Construct or inspect those values only through the package's public
+newtype members. The [type-view reference](../../specs/backends/python.md#readable-type-views)
+gives the parameter order and the escaping rule for affixed names.
 
 When a package needs no runtime host but exposes a roleless exact type, select
 that type through the expected handle annotation, for example
 `pkg: Library[Token] = create_library()`. The annotation supplies the static
 choice; it adds no runtime argument.
 
-Unit is `None`, function and rank-N values retain typed callable protocols,
-and structural products and sums are dictionaries. An explicit `newtype` with
-both its constructor and projector public crosses as the single-key dictionary
-`{"<word-cased TypeName>": payload}` (`Native_token` uses `NativeToken`).
-Named product/sum keys follow the same word casing, retaining `/` and `.`
-for qualified keys (`"dataApi/model.NativeToken"`); positional `_0` stays fixed.
-If either member is private, the newtype instead
-crosses as a declaration-specific nominal value with no public payload
-representation. A constructor-only namespace can create that value, a
+Unit is `None`. A product is `{"left": a, "right": b}`, and a sum is
+`{"tag": "left", "value": a}` or `{"tag": "right", "value": b}`.
+Longer products and sums nest on the right. These shapes stay the same when
+you pass a value through a generic function or keep it inside a host-owned
+container; Kio does not inspect that container.
+
+When a generic result has an index absent from its arguments, select that
+index with an expected type using the generated public types. For example,
+after importing the generated sum arms as `Left` and `Right` and the host
+constructor marker as `BoxMarker`, annotate a `putLeft(73)` result as
+`KioApply1[BoxMarker, Left[int] | Right[str]]`. You can then assign that value
+to an equivalent host-defined `TypedDict` union under the same `KioApply1`.
+Using the independently defined union directly as the call's expected type
+may not give Pyright enough information to infer the absent index.
+
+Every explicit newtype is a sealed value with no public payload field. Use its
+public constructor and projector methods instead of building a dictionary.
+A constructor-only namespace can create that value, a
 projector-only namespace can inspect a value received from Kio, and a namespace
 with neither member public is empty. In every case, values from the public
 member wrappers pass directly to ordinary exported functions that name the
 same newtype.
+
+For a newly written callback, use the generated module's `kio_lift` helper.
+The callback receives one argument: `None` for Unit, or one product dictionary
+for a product domain. A callback returned by Kio already has this interface;
+pass it on directly. Named package methods and host-record methods keep their
+source parameter lists, so a named Unit-only method remains a no-argument call.
+
+A generic function value has one `advance()` for each type parameter. Advancing
+selects that parameter and returns the next stage; it does not call the value
+function. An untyped host supplies an ordinary class with an `advance` method
+and wraps its instance with `kio_lift_stage`; no generated superclass is needed.
+A typed host subclasses the readable source view for that argument, such as
+`KioViewHost_api__applyPoly_Arg0Source` for `api.apply_poly`'s first argument.
+Its `advance` returns the selected `KioFn[T, T]` (for an identity callback).
+Python 3.10-compatible generic return annotations can require the narrow
+`# pyright: ignore[reportInvalidTypeVarUse]` on that method; the returned
+callable's input and result still retain the selected type.
+Both helpers
+produce values that support validation when passed between packages without
+forcing a stage or calling your callback early. The
+[callable contract](../../specs/backends/python.md#ffi-surface) describes the
+`adapt` protocol for hosts implementing their own callable objects.
+
+For a structural annotation, use the readable argument/result view instead of
+an encoded shape name: for example,
+`KioViewCtor_api__Shadow__makeShadow_Arg0[BoxString]` describes the input to
+`pkg.api.KioType_Shadow.makeShadow`. Returned or nested generic callbacks have local
+`_StageNSource` views. The [type-view naming rule](../../specs/backends/python.md#readable-type-views)
+explains the exact names and parameter order. These annotations are optional;
+they do not add arguments to calls or change dynamic hosting.
 
 See [`specs/backends/python.md`](../../specs/backends/python.md) for the full
 boundary contract and [`specs/backends/README.md`](../../specs/backends/README.md)

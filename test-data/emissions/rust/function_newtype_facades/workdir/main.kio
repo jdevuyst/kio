@@ -2,6 +2,24 @@ module main;
 
 host type I32 role(i32);
 
+host type Box[T];
+
+host fn echo_box[T](value: Box(T)) -> Box(T);
+
+pub fn whole_box[T](value: Box(T)) -> Box(T) { echo_box(value) }
+
+pub fn product_box[A][T](value: Box(A & T)) -> Box(A & T) { echo_box(value) }
+
+pub fn sum_box[A][T](value: Box(A | T)) -> Box(A | T) { echo_box(value) }
+
+pub fn concrete_product_box(value: Box(I32 & I32 & I32)) -> Box(I32 & I32 & I32) {
+  product_box(I32, I32 & I32, value)
+}
+
+pub fn concrete_sum_box(value: Box(I32 | I32 | I32)) -> Box(I32 | I32 | I32) {
+  sum_box(I32, I32 | I32, value)
+}
+
 pub newtype Identity[A] : A { pub constructor make_identity; pub projector read_identity }
 
 pub rec newtype List[A] : . | (A & List(A)) { pub constructor make_list; pub projector read_list }

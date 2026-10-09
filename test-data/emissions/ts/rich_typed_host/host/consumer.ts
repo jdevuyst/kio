@@ -1,10 +1,19 @@
 import {
   createRichTypedHost,
+  liftRichTypedHostCallable,
+  liftRichTypedHostPoly,
   type RichTypedHostApply,
   type RichTypedHostHost,
   type RichTypedHostTypeLambda,
 } from "../workdir/out/ts/rich_typed_host.js";
 
+type NativeCallable<A, R> = ((value: A) => R) & {
+  adapt(before: (value: A) => A, after: (value: R) => R): NativeCallable<A, R>;
+};
+interface NativePoly<Advance extends () => unknown> {
+  advance: Advance;
+  adapt(after: <T>(value: T) => T): NativePoly<Advance>;
+}
 type NativeBox<A> = { readonly Box: A };
 interface NativeBoxLambda extends RichTypedHostTypeLambda<readonly [unknown]> {
   readonly type: NativeBox<this["arguments"][0]>;
@@ -12,13 +21,13 @@ interface NativeBoxLambda extends RichTypedHostTypeLambda<readonly [unknown]> {
 type NativeShadow<A> = {
   readonly Shadow: {
     readonly _0: A;
-    readonly _1: <T>(value: T) => T;
+    readonly _1: NativePoly<<T>() => NativeCallable<T, T>>;
   };
 };
 
 interface NativeHost {
   readonly api: {
-    readonly applyPoly: (f: <T>(value: T) => T) => string;
+    readonly applyPoly: (f: NativePoly<<T>() => NativeCallable<T, T>>) => string;
     readonly roundHkt: <F extends RichTypedHostTypeLambda<readonly [unknown]>>(
       value: RichTypedHostApply<F, readonly [string]>,
     ) => RichTypedHostApply<F, readonly [string]>;
@@ -30,7 +39,7 @@ interface NativeHost {
 
 const nativeHost: NativeHost = {
   api: {
-    applyPoly: f => f("rank-N"),
+    applyPoly: f => f.advance<string>()("rank-N"),
     roundHkt: value => value,
     roundShadow: value => value,
   },
@@ -52,28 +61,34 @@ if (pkg.api.KioType_Box.readBox(hktRoundTrip) !== "hkt") {
 }
 const shadow = pkg.api.KioType_Shadow.makeShadow({
   _0: boxed,
-  _1: <T>(value: T): T => value,
+  _1: liftRichTypedHostPoly({
+    advance: <T>() => liftRichTypedHostCallable((value: T): T => value),
+  }),
 });
 const shadowPayload = pkg.api.KioType_Shadow.readShadow(pkg.api.shadow(shadow));
 if (pkg.api.KioType_Box.readBox(shadowPayload._0) !== "hkt") {
   throw new Error("nested generic application lost its payload");
 }
-if (shadowPayload._1(37) !== 37) {
+if (shadowPayload._1.advance<number>()(37) !== 37) {
   throw new Error("nested rank-N payload lost its relation");
 }
 
 const packed = pkg.api.pack({ witness: "existential" });
-const opened = pkg.api.KioType_Pack.openPack(packed)(value =>
-  typeof value === "object" && value !== null ? "opened" : "wrong payload",
+const opened = pkg.api.KioType_Pack.openPack(packed).advance<string>()(
+  liftRichTypedHostPoly({
+    advance: <T>() => liftRichTypedHostCallable((value: T): string =>
+      typeof value === "object" && value !== null ? "opened" : "wrong payload",
+    ),
+  }),
 );
 if (opened !== "opened") {
   throw new Error("existential CPS projector lost its payload");
 }
 
 const recursiveBase = pkg.api.KioType_Recursive.makeRecursive({ _0: null });
-const recursive = pkg.api.KioType_Recursive.makeRecursive({ Recursive: recursiveBase });
+const recursive = pkg.api.KioType_Recursive.makeRecursive({ _1: recursiveBase });
 const recursiveView = pkg.api.KioType_Recursive.readRecursive(recursive);
-if (!("Recursive" in recursiveView)) {
+if (!("_1" in recursiveView)) {
   throw new Error("recursive nominal value lost its recursive arm");
 }
 

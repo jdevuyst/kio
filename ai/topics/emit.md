@@ -101,6 +101,18 @@ host-authored call sites against the actual public facade. The owning audit is
 [`audit-backend-family-conformance`](../skills/audit-backend-family-conformance/SKILL.md)
 § Human-usable host facade.
 
+Exploit expressive host capabilities to simplify the public API. Where native
+higher-kinded parameters, polymorphic functions, algebraic types, or module
+systems express the required relationship directly, prefer those idioms over
+making the host author reproduce an encoding. Judge the resulting call sites,
+not a language's reputation for expressive power: retain necessary ownership,
+effect and staging guarantees, and justify remaining wrappers from those
+requirements. Successful type-checking alone does not justify public ceremony.
+A compact, stable hash suffix can disambiguate a readable public name; a full
+hexadecimal serialization of its identity is not a short hash. Keep naming
+disambiguators short and handle collisions explicitly without silently merging
+distinct identities or renaming existing declarations when unrelated ones appear.
+
 Roles govern whether a literal is admitted and which literal capability it
 uses; they never substitute a production host type. Runner fixtures may map an
 exact host-type descriptor to a private representation key, but that key is
@@ -109,6 +121,39 @@ leaf name, or the final segment of a qualified identity. Backend evidence must
 keep same-leaf declarations from different modules distinct and exercise a
 non-default exact host binding where the backend supports one; an enforced
 backend default instead cites the comparable-language override evidence.
+
+### Optional static typing and runtime erasure
+
+Support an optional host type system by default, through its ordinary
+annotations, generated stubs, or typed companion, without requiring host
+authors to adopt a fully typed style. User experience comes first: use good
+judgment about the host's idioms and development culture, including where
+dynamic typing is an ordinary choice. Judge actual dynamically written and
+statically checked host code: ordinary calls, generic callbacks, and composition
+of independently generated packages. Keep generated typing plumbing automatic
+and expose readable public names; do not make ordinary host authors manage
+encoded schemas or elaborate scaffolding merely to satisfy the checker.
+
+Implementation difficulty alone never justifies a weaker or less usable host
+interface. Prefer more backend work when it produces a cleaner, safer host API;
+distinguish generated implementation complexity from user burden. Where the
+host cannot express a relationship cleanly, a narrow, justified cast, erasure,
+or diagnostic suppression can be preferable to elaborate host-side ceremony.
+Assess that trade-off from concrete host examples, correctness and cost, not
+emitter convenience. Explain what the checker proves and what the host or
+generated implementation must uphold; test both valid and invalid uses, and do
+not advertise unchecked relationships as checked. Existing contract guarantees
+still apply: present any conflict and its alternatives rather than silently
+weakening them.
+
+For a type-erased dynamic runtime, verify
+[type erasure at the FFI](../../specs/backends/README.md#2-type-erasure-at-the-ffi)
+by tracing emitted direct and escaped/computed generic calls: generic actual
+types are not passed as runtime values or inferred from opaque payloads to
+satisfy the static skin. Nullary computation stages still preserve effects.
+Compiler-prepared shape/protection descriptors and nominal seals are not
+generic-argument reification; retained type syntax alone does not prove a
+violation. Inspect what the runtime consumes, not just what the artifact stores.
 
 ### Backend evidence boundary
 
@@ -297,6 +342,34 @@ The skin's **backend-neutral structural conventions** have one code home each. P
   explicit backend FFI policy: the Kio role itself still admits syntax and
   never semantically chooses or infers the host representation.
 
+#### Semantic slots and native parameter grouping
+
+Keep normalized Kio type equality, semantic slot planning, and native callable
+presentation separate. `host fn first(x: A, y: B) -> C` and
+`host fn second(pair: A & B) -> C` have the same normalized Kio function type;
+their native interfaces nevertheless preserve two parameters versus one
+product parameter. Consume the prepared source-parameter partitions rather
+than choosing the native argument list from a flattened semantic slot count.
+The normative rule and host-specific realizations live in
+[`specs/backends/README.md` § Function-type FFI canonicalization](../../specs/backends/README.md#function-type-ffi-canonicalization).
+
+Reuse the existing paired presentation/execution layouts for signatures,
+aliases, and both conversion directions. Check direct calls, function values,
+callbacks, newtype members, and retained declarations separately. Declaration-
+head groups may be compacted by the authorized facade, but a returned callable
+retains its own application stage and effect timing. Preserve the distinction
+between a direct canonical Unit domain and a generic value parameter later
+instantiated with Unit. Source grouping governs native presentation only; it
+does not change Kio call inference, type equality, or the dynamic loader's
+canonical descriptor protocol.
+
+Prove native grouping with independently authored host calls and actual values,
+not just equal normalized signatures or emitter/runner agreement. Include
+split-versus-product parameters, nested products, substituted Unit, and a
+callback or returned-callable control. A host-specific shell required by a
+native arity limit needs its own documented realization; a family label alone
+does not justify flattening a product parameter.
+
 #### Facade topology and execution provenance decision record
 
 The authority is the pre-existing public contract in
@@ -420,6 +493,12 @@ complete owner's established digest spelling. Rust uses it for private body
 shapes; Java uses it for exact public structural shells and forall interfaces.
 The helper does not choose identity bytes or merge collision policies: Rust's
 private claim schedule and Java's public collision rejection stay separate.
+Java's ordinary first-class stage heads use the shared ValuePlan readable
+presentation of the same factored identity (`KioForall_Type_Fn_T0_T0` for a
+polymorphic identity). The exact identity and readable spelling share one
+iterative scope/kind traversal; full identities still drive the existing
+over-budget digest and collision checks. Python and Swift keep their exact
+internal stage symbols behind their ordinary host-facing views.
 Go and Swift's public shells use the reversible codec directly, Haskell uses
 its documented primary identities, and JS, TypeScript, and Python do not share
 this readable-first budget. Adding unrelated declarations cannot select a
@@ -437,32 +516,34 @@ facade tests cover that renderer's boundary obligations without fabricating a
 source-level fallback witness. This is Haskell's body-selection mechanism, not
 a change to another backend's native or interpreted execution strategy.
 
-Haskell has three deliberately separate naming surfaces. Exact host-type
-families, host fields, and exports use readable `__`-separated source
-components only when every component contains no `__` and neither starts nor
-ends with `_`; that boundary-safe grammar is reversible. Other identities use
-role-specific deterministic fallbacks: host fields and exports use the
-versioned typed codec, while exact host-type families use the raw
-`module\0leaf` hexadecimal form. The structural namespace escape applies when
-an exact host-type fallback overlaps a fixed facade claim.
-`KioCarrier_H…` and `KioExistential_H…` remain declaration-local nominal names;
-fixed facade names derive from the package namespace; and
-[`haskell/naming.rs`](../../kio-rs/src/backends/haskell/naming.rs) owns the
-primary-name grammar, the distinct exact-host fallback, and the versioned typed
-codec for internal members, boundaries, patterns, selectors, and rank helpers.
-The independent Haskell runner codec in
+Haskell boundary aliases, patterns, selectors, exact host-type families and
+nominal heads use role-tagged readable paths. Shared
+`public_names::readable_public_identity` word-cases and escapes each source
+component before joining paths; `haskell/naming.rs` adds the existing typed
+owner, position, step and key roles. `KioType_…` and `KioExists_…` name actual
+nominal heads, not unsaturated synonyms. Fixed facade conflicts use the full
+namespace, role and preferred name in a reversible escape, without occupancy
+allocation or a digest. Host fields and entry wrappers retain their readable
+primary routes and exact typed-codec fallback for unsafe source boundaries.
+Private body and rank-N helper identifiers retain their separate codec.
+The independent Haskell runner in
 [`haskell/abi.rs`](../../ci/infra/kio-test-runner-rs/src/haskell/abi.rs)
-reconstructs only that public semantic identity from source declarations and
-fixed test vectors. Neither side parses the bounded readable suffix. The
-normative byte framing and namespace prefixes live in
+reconstructs public names from source declarations and fixed test vectors,
+without importing compiler output or naming code. The exact role grammar,
+escaping and namespace claims live in
 [`specs/backends/haskell.md` § Item naming](../../specs/backends/haskell.md#item-naming).
 
 The body targets one **universal erased value model**, the conformant floor every emitter reproduces:
 
 - `atomic` (host-primitive passthrough) · `closure` (n-ary) · `sum` (tag + payload) · `product` (slot vector) · `unit` · `host-ref` · `erased-poly` (an erased reference type, e.g. `Rc<dyn Any>`).
 
-Type representations and type-directed dispatch drop in the body: a
-well-typed Kio' body is parametric, so it runs uniformly over these shapes.
+Kio type-directed dispatch drops in the body: a well-typed Kio' body is
+parametric. An erased execution interface may still carry compiler-derived
+private representation witnesses where exact native construction requires
+them. Those witnesses follow the declared type arguments and lexical binders;
+they neither add public term-level type arguments nor infer types from runtime
+payloads or inspect opaque host constructors. This representation plumbing
+must not introduce a Kio typecase or change the computation's meaning.
 The **application tree does not drop**. Each canonical `Forall` binder is one
 semantic abstraction/application boundary, and Routed records each
 elimination either in a direct call's ordered `type_args` or as one nested
@@ -473,9 +554,10 @@ callable stages, erased wrappers, and compaction are occurrence-specific
 realizations; family membership and body erasure never select among them.
 Computation stays at the exact boundary that exposes it and cannot cross a
 later type or value application. The facade follows the current shared and
-per-backend contracts. **JS** realizes the erased value floor directly — sums
-`[tag, payload]`, products `[x, y]`, unit `null`, newtypes share their payload's
-shape, lift / peel are runtime identities (see the
+per-backend contracts. **JS** uses canonical binary product/sum objects,
+unit `null`, and complete nominal carriers in both body and public positions.
+Nominal construction and projection preserve the declared visibility; they
+are not erased to payload identities (see the
 [`js/emit.rs`](../../kio-rs/src/backends/js/emit.rs) header). Erasure applies
 only to the body representation, **never** to the skin or evaluation order.
 
@@ -518,7 +600,16 @@ Go's erased body is statement-oriented. `go/emit.rs` lowers into a `GoBlock` plu
 
 ## Package namespace
 
-Every name an emitted artifact contributes to a host program — the package handle, the factory, the host type, structural facade symbols, the runtime-support items — is either the per-package namespace itself or is scoped beneath it; **no emitter contributes an unscoped package-independent identity**. Fixed member spellings inside a package / module / crate remain compatible with this rule because the namespace qualifies them. The contract is [`specs/backends/README.md`](../../specs/backends/README.md) § The package facade; the implementation has one home per concern:
+Package-owned names and runtime-support items remain beneath the per-package
+namespace. Immutable, package-independent type declarations may share a
+static-only support namespace under
+[`specs/backends/README.md` § Shared static type declarations](../../specs/backends/README.md#shared-static-type-declarations).
+Do not introduce adapter or identity machinery merely to duplicate those
+declarations inside each package. Sharing must preserve independently generated
+complete outputs, schema identity/version separation, collision-safe resolution,
+and distinct nominal owners; it never implies a common executable runtime or
+registry. Fixed member spellings inside a package / module / crate remain
+qualified by that namespace. The implementation has one home per concern:
 
 - A public facade path preserves its semantic identity before target-language
   rendering: exact source module components and their boundaries, plus whether
@@ -532,7 +623,16 @@ Every name an emitted artifact contributes to a host program — the package han
   `(module path, leaf)` identity until the backend renders the published host
   key; neither emitters nor runners recover ownership by splitting a flattened
   string.
-- [`kio-rs/src/backends/namespace.rs`](../../kio-rs/src/backends/namespace.rs) owns each backend's `default_<lang>_namespace` / `validate_<lang>_namespace` pair, the reserved-word tables, and the **unimportable-name** mangles — names that are legal identifiers but unloadable in the host (Go's `main` / `internal`, Haskell's `Main` / `Prelude`, Swift's `Swift` / `Foundation`); a new backend asks the same question for its language. `pascal_case` derives the brand: handle = PascalCase of the namespace's final segment, host contract = `<Handle>Host`, factory = `create_<handle>` in the language's casing.
+- [`kio-rs/src/backends/namespace.rs`](../../kio-rs/src/backends/namespace.rs)
+  owns each backend's `default_<lang>_namespace` / `validate_<lang>_namespace`
+  pair, reserved-word tables, and **unimportable-name** mangles — names legal
+  as identifiers but unloadable in the host (Go's `main` / `internal`,
+  Haskell's `Main` / `Prelude`, Swift's `Swift` / `Foundation`). A new backend
+  asks the same question for its language. Public facade names follow the
+  shared spec's § Branded naming: some derive a brand from that namespace;
+  Go uses package-qualified `Package`, `Host` and `New`. Keep namespace
+  validation tied to actual host restrictions and collisions, not obsolete
+  member-name derivations.
 - The `namespace` build-block key is recognized by every backend arm in [`kio-rs/src/cmd/build.rs`](../../kio-rs/src/cmd/build.rs) (duplicate check, the backend's validation, default from the package name — the go arm is the template a new backend copies).
 - Runtime-support content is a function of emitter version, documented
   representation-affecting target options, and namespace binding: the support

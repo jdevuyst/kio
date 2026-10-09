@@ -54,7 +54,7 @@ reject_client() {
   fi
 }
 
-reject_client raw_partial "error: 'KioApply1<F, T0>' initializer is inaccessible"
-reject_client payload_read "has no member 'value'"
+reject_client raw_partial "error: initializer 'init(_:)' requires the types 'KioApply1<KioNewtypeMk_api__Opaque<One>, Int>' and 'KioNative<KioHostTypeIdentity_api__Box>' be equivalent"
+reject_client payload_read "error: instance method 'value(as:)' requires the types 'KioApply1<KioNewtypeMk_api__Opaque<One>, Int>' and 'KioApply1<KioNative<KioHostTypeIdentity_api__Native>, Int>' be equivalent"
 reject_client witness_forge "error: 'KioNativeConstructor<F>' initializer is inaccessible"
 reject_client host_rebrand "arguments to generic parameter 'H' ('One' and 'Two') are expected to be equal"

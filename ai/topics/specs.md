@@ -48,7 +48,7 @@ Each `specs/backends/<lang>.md` is a contract for a single backend — how a hos
    together.
 3. **Output layout.** What files `kio build <id>` writes under the target's `out` directory: which is the entry point, which are internal supporting blobs. Internal files are described by role, not by internal shape.
 4. **Loading protocol.** The steps a host performs to bring the package online — install host bindings, evaluate / link / load emitted artifacts, etc.
-5. **Package API.** What's reachable on the value the host receives after loading: the `pub` items the bridged modules expose (under their module namespace), and the generic intrinsic API the package exposes for constructing and inspecting opaque structural values. Document the methods, not the underlying value shapes.
+5. **Package API.** What's reachable on the value the host receives after loading: the `pub` items the bridged modules expose (under their module namespace), and the documented construction and inspection interfaces for structural and nominal values. Document the host-visible types and methods.
 6. **Host record contract.** How current `host fn` declarations map to
    host-supplied callables. Current-host completeness includes live
    requirements only — no implicit per-role operations, ambient runtime, or
@@ -63,9 +63,9 @@ Each `specs/backends/<lang>.md` is a contract for a single backend — how a hos
    when incompatible declaration epochs force the shared planner to omit a
    retained root or type closure.
 7. **FFI surface.** How values cross the FFI boundary, in three categories:
-   - **Atomic types** (`role`-tagged host types): the JS-native shape per role. Hosts construct and consume these directly.
-   - **Structural and nominal types** (built from `&`, `|`, `newtype`, `labels`): opaque package values, constructed and inspected via the package API. The page documents the API methods, not the underlying shape.
-   - **Carve-outs** (unit, function values): these flow as JS-native (e.g. `null`, JS functions for the JS backend) for ergonomic reasons; the page lists them explicitly so hosts know how to construct them.
+   - **Host types**: exact declaration bindings and the backend's representation policy. Roles admit literal syntax; the page documents how hosts construct and consume values at each binding.
+   - **Structural and nominal types** (built from `&`, `|`, `newtype`, `labels`): the host-specific representation and visibility, with documented typed construction and inspection interfaces.
+   - **Unit and function values**: the backend's boundary representations and calling interfaces (e.g. `null` and JS functions for the JS backend), listed explicitly so hosts know how to construct and use them.
 8. **Item naming.** Whether the backend imposes name mangling visible at the FFI surface (e.g. reserved-word collisions, illegal characters). State the rule, or state explicitly that no mangling is needed.
 9. **Worked example.** A minimal end-to-end snippet exercising the above.
 

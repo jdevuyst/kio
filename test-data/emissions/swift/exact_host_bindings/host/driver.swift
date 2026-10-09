@@ -120,6 +120,23 @@ struct ExactHost: FfiSwiftExactHostBindingsHost {
 }
 
 let package = createFfiSwiftExactHostBindings(host: ExactHost())
+let atomInput: Env_main__echoToken_arg0<ExactHost> = Token(raw: 9)
+let atomOutput: Env_main__echoToken_ret<ExactHost> = ExactHost().main__echoToken(atomInput)
+let exportedAtomInput: Exp_main__keepToken_arg0<ExactHost> = atomOutput
+let exportedAtomOutput: Exp_main__keepToken_ret<ExactHost> = package.main.keepToken(exportedAtomInput)
+precondition(exportedAtomOutput == Token(raw: 9))
+let unitResult: Exp_main__discard_ret = package.main.discard(exportedAtomOutput)
+_ = unitResult
+let aliasCallback: Exp_main__applyText_arg0<ExactHost> = {
+    (value: Exp_main__applyText_arg0_cbarg0<ExactHost>) -> Exp_main__applyText_arg0_cbret<ExactHost> in
+    TextValue(raw: value.raw + " aliased")
+}
+let callbackResult: Exp_main__applyText_ret<ExactHost> = package.main.applyText(aliasCallback, "callback")
+precondition(callbackResult.raw == "callback aliased")
+let collisionPair = package.main.pair("alias", Token(raw: 10))
+let memberOne: Exp_main____KioType_AB__KioItem_c_ret<ExactHost> = package.main.KioType_AB.c(collisionPair)
+let memberTwo: Exp_main____KioType_A__KioItem_bC_ret<ExactHost> = package.main.KioType_A.bC(collisionPair)
+_ = (memberOne, memberTwo)
 requireExactHostContract(ExactHost.self, flag: false, unused: false, token: Token(raw: 0))
 
 precondition(package.left.keep(41).raw == 41)

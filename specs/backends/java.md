@@ -177,24 +177,30 @@ the contract.
   | neither | a declaration-specific opaque `Shapes.KioNewtype_<exact-declaration>` class |
   | constructor only | that class, constructible only through the method |
   | projector only | that class, inspectable only through the method |
-  | both, no existential | a declaration-specific public record whose `value` has the prepared payload type |
+  | both, no existential | a declaration-specific class with a typed payload constructor and `value()` accessor |
   | projector with an existential | the opaque class plus a CPS-shaped projector |
+
+  This table describes nullary declarations. A parameterized declaration uses
+  the exact nested `Apply1` index described below with the same member visibility.
 
   The opaque and one-member classes keep their storage and raw
   construction package-internal, outside the public host facade. Each
   selected member retains its exact declared Kio scheme after the Java
-  boundary mapping. An existential projector is CPS-shaped: it takes the
-  carrier and a continuation and returns the continuation's result.
-- A both-member recursive newtype keeps its nominal record and refers to that
+  boundary mapping. An existential projector is CPS-shaped: its receiver method returns
+  the declared type stages and continuation stage, whose invocation produces
+  the continuation's result.
+- A both-member recursive newtype keeps its nominal class and refers to that
   same carrier from the prepared payload type. An opaque or one-member carrier
   is a finite nominal leaf, so its hidden payload is not traversed while
   deriving an enclosing boundary shape.
 
 Carrier identity is the exact declaring module plus newtype name, encoded as
 `KioNewtype_<exact-module>__<exact-name>`. The handle, host interface,
-namespace nodes, structural shells, callbacks, and newtype carriers all carry
-the same package-root host-type parameters in the same declaration-keyed
-order. Same-leaf declarations in different modules therefore remain distinct,
+namespace nodes, and declaration-owned newtype carriers and markers carry
+the package-root host-type parameters in declaration-keyed order. Canonical
+products, sums, and functions carry only their constituent type indices;
+first-class type-stage interfaces carry their independent captured indices.
+Same-leaf declarations in different modules therefore remain distinct,
 and adding an unrelated declaration cannot rename or rebind an existing
 carrier.
 
@@ -227,15 +233,20 @@ parameter named from its exact qualified declaration. `<Handle>`,
 and every boundary occurrence use that same parameter. `<Handle>Host` also
 declares the exact-QTN adapter pair
 `KioHostBinding_<declaration>_fromBody` / `_toBody`; the host implements these
-to translate between its selected reference type and the interpreter's private
-canonical role value. Two declarations with the same role remain two type
+to translate between its selected reference type and the canonical role value
+used by literal construction and condition inspection. Ordinary calls transport
+that selected reference unchanged, including through an abstract type or an
+opaque host container. Two declarations with the same role remain two type
 parameters and two adapter pairs even when the host selects the same Java type
 for both. This is Java's exact-frame realization of the shared
 [declaration-keyed conversion-adapter capability](README.md#declaration-keyed-conversion-adapters);
 Go and Python use that capability's readable-primary naming strategy instead.
-A parameterized host declaration instead contributes a generated
-declaration-owned `Shapes.KioHostType_<declaration><...>` carrier and generic
-adapter pair, because Java has no higher-kinded type-parameter syntax.
+A parameterized host declaration uses the canonical nested `Shapes.Apply1`
+index rooted at its exact `Shapes.KioHostTypeMk_<declaration>` marker and
+contributes a generic adapter pair. Its declaration-owned
+`Shapes.KioHostType_<declaration>` helper supplies typed `fromNative(Object)`
+and `toNative(...)` storage operations. These helpers apply only to that host
+declaration, not to a newtype or an arbitrary application.
 
 The binding lookup is exact qualified identity, never role, leaf spelling,
 declaration order, or another declaration's selected Java type. Adding an
@@ -355,112 +366,98 @@ existing role-shaped private body type and exact adapter pair.
 
 ### Structural and nominal types
 
-Compound boundary shapes are nominal Java types declared in
-`Shapes.java`:
+Compound values use these canonical types in `Shapes.java`, in package bodies
+as well as at the public boundary:
 
-- A **product** uses one payload-generic shell selected by its ordered semantic
-  keys. Through 254 reference components the shell is a `public record`; above
-  the JVM constructor-slot limit it is a `public final class` with typed
-  accessors and a typed `builder()`. Both forms stay flat at the public
-  boundary. Member names follow the shared bare / qualified / positional key
-  rule, and component order is right-spine order. Bare names use word casing;
-  qualified names use `KioQualified_<exact-module>__<exact-type>`, word-casing
-  each source component before exact escaping. Positional roles stay fixed.
-- A **sum** is one payload-generic `public sealed interface` plus one generic
-  `public record` variant per semantic arm. Its `KioMatch` method accepts one
-  typed case per arm through 254 reference slots. Above that JVM limit it
-  accepts one exact prepared product companion whose typed members are those
-  case handlers; each variant invokes its matching member. A pattern switch
-  over the sealed variants is also exhaustive.
-- An **explicit newtype** uses the exact declaration-keyed
-  `KioNewtype_<module>__<name>` carrier. A non-existential both-member carrier
-  is a record with the prepared payload type. Opaque, one-member, and
-  existential carriers are final classes with package-private `Object`
-  storage; only the selected package-handle methods expose construction or
-  inspection.
-- A **function value** uses the reusable generic `Shapes.FnN<..., R>` or
-  `Shapes.ProcN<...>` functional interface for its prepared flat value arity;
-  hosts pass lambdas. A function stage wider than 254 reference slots takes
-  its one exact prepared product shell instead, keeping the SAM within the JVM
-  instance-method descriptor limit. Higher-kinded host applications use exact
-  `Shapes.KioNewtypeMk_<declaration>` or
-  `Shapes.KioHostTypeMk_<declaration>` markers and a typed
-  `Shapes.ApplyN<F, ...>` carrier. Bound type stages do not become value
-  parameters, and the wrapper adapts the private staged callable to the
-  prepared public callable topology.
-- The canonical **unit** is `Shapes.Unit` (an empty record) in slot
-  positions and `void` at a top-level return.
-- A callable-head type stage becomes a Java method type parameter. A
-  first-class `forall` becomes an exact prepared functional interface whose
-  one abstract `apply` method declares the quantified Java type parameters;
-  consecutive leading binders share that method, and an immediately following
-  function contributes its prepared flat parameters and result. Because a
-  Java lambda cannot implement a generic abstract method, hosts construct such
-  values with an anonymous class. Quantified types remain explicit throughout
-  the public signature; only the package-private adapter instantiates those
-  binders as `Object` when it crosses the erased interpreter body. Bottom is
-  `Void`.
-- A **type-alias-named slot** crosses as its expansion's shape: the alias
-  is unfolded before the slot's Java type is planned, so it crosses exactly
-  as its right-hand side would — a product / sum / newtype / function
-  alias, or a nested alias use, all cross structurally — in both
-  directions and for host-fn and exported-fn boundaries alike.
+- A **product** `A & B` is `Shapes.Product<A, B>`, a record with `left()`
+  and `right()` accessors. A longer right-associated product uses nested
+  binary products; an explicitly left-nested product retains that nesting.
+- A **sum** `A | B` is `Shapes.Sum<A, B>`, a sealed interface implemented by
+  `Shapes.Left<A, B>` and `Shapes.Right<A, B>`. Both variants retain both
+  type indices and expose their selected payload through `value()`. Longer
+  sums retain the same binary nesting as their Kio type.
+- A **function value** `A -> R` is `Shapes.Fn1<A, R>`, whose `apply`
+  method takes exactly one domain value. Unit is explicit at this stage:
+  `. -> .` is `Fn1<Shapes.Unit, Shapes.Unit>`.
+- The canonical **unit** is the empty record `Shapes.Unit`. A named
+  declaration returning Unit uses Java `void`; that method view does not
+  alter first-class function values.
+- A **first-class forall** has one generic `advance()` method for exactly
+  one binder. Its result is the precise remaining callable or value type.
+  Consecutive binders therefore require consecutive advances. Java lambdas
+  cannot implement generic abstract methods; a host supplies an anonymous
+  class or another implementation of the generated interface. A type-stage
+  effect runs when that advance occurs, not when a later function is called.
+  Named declaration-head binders remain Java method type parameters.
+- A nullary **newtype** uses its exact
+  `KioNewtype_<module>__<name>` class. With both members public and no
+  existential it has a typed public payload constructor and `value()`
+  accessor. Opaque, one-member and existential classes hide their payload
+  and raw constructor; only the selected package methods expose their
+  authorized construction or inspection. Parameterized newtypes use the
+  canonical application index below with the same privacy.
+- **Bottom** is `Void`. A **type alias** uses its expansion without adding a
+  carrier or changing its surrounding source-parameter group.
 
-Product and sum shell names use the shared exact public facade codec. The
-identity contains only structural kind plus the ordered semantic keys; payload
-types are generic arguments at each use. Equal semantic shells therefore
-share one declaration without equating their payloads, and a declaration's
-name never depends on which other shapes were encountered. A readable encoded
-name through 64 characters is used directly; above that fixed Java mint budget
-the name is `KioFacade_V1_<kind>_H<hex>`, where `<hex>` is the 16-lowercase-
-digit FNV-1a hash of the shell's complete exact encoded identity. Distinct
-prepared identities are checked for a bounded-name collision and never share
-a declaration. The anonymous binary shells retain the short names
-`Shapes.Product` and `Shapes.Sum`. A wider all-positional shell uses
-`KioFacade_V1_<kind>_Positional_K<arity>`; this remains exact because its
-ordered positional sequence is determined completely by kind and arity, while
-keeping the nested class filename within the host filesystem's component
-limit.
+These types satisfy the shared
+[generic substitution and opaque-constructor law](README.md#generic-substitution-and-opaque-constructors).
+A concrete occurrence and its generic substitution use the same native index
+and value realization; an opaque host container does not need to expose,
+traverse or convert its payload.
 
-Callable parameters are the prepared flat semantic slots. An exported or host
-instance method through 254 reference slots exposes them directly; a wider
-method takes the one exact prepared whole-head product shell, built with that
-shell's typed builder. The Java wrapper uses the paired execution layout to
-repack either form into the private right-nested interpreter representation
-and to flatten results back out. The cutoff changes only the JVM realization:
-semantic keys, record fields, sum arms, and the retained source contract still
-come from the same prepared plan.
+Only a named method whose source groups exceed the JVM reference-parameter
+limit uses a flat prepared argument shell. Its typed accessors and builder
+retain the prepared semantic keys; it is an argument-container convention,
+not a second representation of a first-class product. Such shell names use
+the shared facade codec, with the existing bounded Java mint and collision
+check; wider all-positional shells use the exact
+`KioFacade_V1_Product_Positional_K<arity>` spelling.
+
+Callable parameters follow the shared [source-parameter grouping
+contract](README.md#function-type-ffi-canonicalization): each declared value parameter is
+one Java parameter, with leading declaration groups compacted into the method.
+Thus `first(x: A, y: B)` takes two arguments while `second(pair: A & B)` takes
+one product value, even though their Kio types are equal. Type aliases expand
+inside their existing parameter. A returned function stays a returned callable;
+its domain is not appended to the declaration's method parameters. A declared
+Unit parameter is omitted in this named-method view; a generic parameter later
+instantiated with Unit still takes a `Shapes.Unit` value. First-class function
+values always take their one domain value, including Unit.
+
+An exported or host instance method through 254 native reference parameters
+exposes those groups directly. A wider method takes the exact prepared
+whole-head product shell, built with its typed builder. The Java wrapper uses
+the paired execution layout to bridge semantic slots to the private
+interpreter arguments independently of the public grouping. This cutoff
+changes only the JVM realization: semantic keys, record fields, sum arms, and
+retained source grouping still come from the same prepared plan.
 
 ## Higher-kinded types
 
-Type-erased, per the family strategy
-([`README.md` § Higher-kinded types](README.md#higher-kinded-types)): a
-kind-`*→*` carrier `F(A)` is an ordinary erased `Object` in the body,
-exactly like a scalar. The public skin names an unsaturated nominal with the
-exact category-specific `KioNewtypeMk_<declaration>` or
-`KioHostTypeMk_<declaration>` marker and an application with
-`ApplyN<F, ...>`; a fully saturated declaration uses its exact
-`KioNewtype_<declaration><...>` or `KioHostType_<declaration><...>` carrier.
-Newtype markers carry the package-root host selections threaded through their
-saturated carrier; host-type markers need no such package-root arguments.
-`ApplyN` privately boxes the already-erased body value. Its raw constructor and
-projection stay package-private. The package handle exposes declaration-keyed
-`KioNewtypeApplication_<declaration>_lift` / `_project` and
-`KioHostTypeApplication_<declaration>_lift` / `_project` methods relating a
-saturated carrier to its constructor application; those methods alone invoke
-the declaration's ordinary newtype or host-binding adapters. No public
-application type exposes `Object`, and the private body is neither walked nor
-re-keyed.
+The public index of every application is unary:
+`F(A)` is `Shapes.Apply1<F, A>`, and `F(A, B)` is
+`Shapes.Apply1<Shapes.Apply1<F, A>, B>`. A partial and a saturated nominal
+application use this same rule. The exact constructor marker is
+`KioNewtypeMk_<declaration>` or `KioHostTypeMk_<declaration>`.
+Newtype markers carry the package-root host selections used by their
+declaration; host-type markers need no such arguments.
 
-A polymorphic newtype payload uses the same erased value representation but
-retains one hidden callable stage per binder. A work-free stage returns the
-next callable; a stage with computation performs it first. A direct statically
-known call may compact adjacent leading type applications, but the stored
-first-class value may not. Body construction and projection add no HKT-specific
-conversion and remain identities around the complete callable; a public
-wrapper performs the ordinary value-only function adaptation. None of these
-internal stages adds a value parameter to the public Java facade
-([`README.md` § Polymorphic newtype payloads](README.md#polymorphic-newtype-payloads)).
+`Apply1` exposes no general raw constructor or payload accessor. Ordinary
+newtype members provide precisely the operations their visibility permits.
+A host declaration's own `KioHostType_<declaration>` helper can store and
+retrieve host-owned storage at its exact application index; it cannot rebrand
+another declaration or project a newtype. Passing a value through abstract
+`T` or `F(A)` preserves that value without structural traversal.
+
+First-class polymorphic values retain one `advance()` per binder even under
+an opaque constructor. Generated interfaces factor the binder-dependent
+shape from independent captured type arguments, so specializing a captured
+type does not change the interface's nominal identity. The private erased
+body stores instances of these same interfaces. It does not substitute a
+different callable representation when constructing or projecting a newtype.
+No public host call receives runtime type arguments or representation
+witnesses. See the shared
+[polymorphic-newtype payload contract](README.md#polymorphic-newtype-payloads).
 
 ## Item naming
 
@@ -482,16 +479,27 @@ An unsaturated nominal constructor uses
 `KioHostTypeMk_<exact-module>__<exact-name>` according to its declaration
 category.
 
-A first-class `forall` interface uses
-`KioForall_<exact-owner>_Binders_K<n>_B<i>_A<a>...`: `<exact-owner>` is the
-callable site or transparent-newtype declaration identity, `K<n>` frames the
-consecutive leading binder count, and each `B<i>_A<a>` is that plan's stable
-scoped binder identity plus kind arity. The component is therefore independent
-of arena-use numbering and of other declarations. Through 64 characters this
-reversible spelling is used directly; a longer identity uses
-`KioForall_H<hex>` with the same complete-identity FNV-1a fallback and
-collision check as structural shells. The long-name hash uses the raw
-source-component identity frame, not its word-cased readable spelling.
+A first-class `forall` interface uses a readable `KioForall_` shape name.
+For example, `[A] A -> A` uses `KioForall_Type_Fn_T0_T0`, whose generic
+`advance()` returns `Fn1<A, A>`. Independent captured subtrees are interface
+type arguments, one per prepared occurrence. The name does not contain a
+callable's source site or depend on other declarations in the package.
+
+The suffix is an underscore-separated prefix encoding: `Type` or binary
+`Arrow` encodes a binder kind; `Tn` is its zero-based lexical depth, with the
+innermost binder at zero. `Fn`, `Pair`, and `Sum` each precede two children;
+`Unit` and `Never` are leaves; `ApplyN` precedes its constructor and N type
+arguments. The leading binder's kind comes first; a nested binder uses
+`Forall`, its kind, then its result. When captures exist, `CapturesN` and
+their N kinds precede the leading binder's kind. Thus `[A][B] A -> B` has
+name `KioForall_Type_Forall_Type_Fn_T1_T0`. Captures retain occurrence order
+and kinds even when substitution makes two of their selected types equal.
+
+Through 64 UTF-8 bytes the reversible spelling is used directly; longer names use
+`KioForall_H<hex>` with the existing complete-identity FNV-1a fallback and
+collision check. The digest is computed from the full shared shape identity,
+not from a truncated spelling; distinct full identities or declarations under
+one native name are rejected rather than identified with each other.
 
 ## Worked example
 

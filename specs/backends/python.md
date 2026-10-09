@@ -44,11 +44,23 @@ build {
 - `<ns>/_kio_stub_<index>.pyi` — deterministic private declaration shards
   re-exported by `__init__.pyi`. Hosts import only `<ns>`; the shard modules
   are supporting artifacts rather than a second public API.
+- `kio_static_v1/*.pyi` — immutable shared callable and application type
+  definitions. Each output contains its complete required definition closure;
+  hosts import these types through `<ns>`, not through this support namespace.
 
 The stub package contains declarations only. With the output directory on the
 import path, type checkers select `<ns>/__init__.pyi` as `<ns>`'s typed view,
 while Python selects the sibling `<ns>.py` runtime module. Every build emits
-the runtime and complete stub package together.
+the runtime and complete typing support together. The shared directory has no
+`__init__.pyi`: independently generated output roots contribute compatible
+namespace portions, including disjoint callable types. Definitions with the
+same semantic identity have identical contents. Bounded support filenames are
+locators only; imports retain exact definition identities and a locator
+collision fails rather than identifying distinct types. Incompatible support
+schemas use distinct support namespaces. These files contain no runtime code,
+hold no shared state, and require no separate installation. Copy the complete
+output tree to retain type checking; the runtime `.py` alone remains usable
+by an untyped host.
 
 The file stem `<ns>` is the package's **namespace**: the kio package name by
 default (a collision with a Python keyword that a stem could not be imported
@@ -57,7 +69,13 @@ where source `_` is escaped as `_u`, so the default is
 always importable), overridden by the `namespace` build-block key
 ([`specs/package.md` § Per-target keys](../package.md#per-target-keys)). An
 explicit value must be a Python identifier matching `[A-Za-z_][A-Za-z0-9_]*`
-and not a keyword; anything else is a build error. The package's public
+and not a keyword or a name matching `kio_static_v[0-9]+` (one or more ASCII
+digits); anything else is a build error. The shared support naming class is
+escaped by the same rule when it is the default package name. Names such as
+`kio_static_v` or `kio_static_v2_extra` are outside this reserved class.
+This reservation governs newly emitted package names; it does not rename
+previously generated artifacts that used a support name.
+The package's public
 factory is `create_<value-brand>`, keeping the fixed `create_` prefix.
 An ordinary source-shaped namespace uses word casing with a lowercase
 initial (`hello` → `create_hello`, `my_pkg` → `create_myPkg`). The handle
@@ -173,9 +191,8 @@ payload in its FFI shape. These are the same conversions used by `pub fn` and
 `host fn` boundaries, so a value from a public constructor can be passed
 directly to any function accepting that newtype. A private member is absent.
 
-A public newtype whose constructor and projector are both public has the
-structural dictionary shape in § FFI surface. Every other public newtype uses
-a declaration-specific nominal carrier with no public payload representation.
+A public newtype uses a declaration-specific sealed carrier with no public
+payload representation, including when both members are public.
 A constructor-only namespace exposes only a constructor that produces that
 carrier; a projector-only namespace exposes only a projector that consumes it;
 a namespace with neither member public is empty. Hosts can carry such a value
@@ -228,14 +245,16 @@ identity functions. A host may instead select a declaration-specific class,
 including selecting different classes for two declarations with the same
 role, without changing the runtime's primitive role operations.
 
-A parameterized declaration such as `host type Box[T];` contributes the
-module-level carrier `KioHostType_<frame>[T]`. `from_native(object)` creates
-that exact carrier application and `to_native() -> object` recovers the
-host-owned native value. These are the only deliberately opaque endpoints;
-callable signatures keep the exact applied carrier rather than widening it to
-`object`. Runtime subscription is erased — `KioHostType_<frame>[T]` evaluates
-to the declaration's carrier class — while the typed stub preserves `T` for the
-type checker.
+A parameterized declaration such as `host type Box[T];` in module `api`
+contributes the exact module-level storage helper `KioHostType_api__Box[T]`.
+`KioHostType_api__Box[T].from_native(object)` creates its canonical application
+value; `KioHostType_api__Box[T].to_native(value)` recovers the host-owned native
+value and rejects a carrier from another declaration. These are deliberately
+opaque endpoints: callable signatures retain the exact applied index
+`KioApply1[KioHostMk_api__Box, T]`, not `object`. Runtime subscription erases
+the type argument while the stub preserves it for the type checker. General
+`KioApply1` has no construction or storage access methods; it cannot bypass a
+newtype's public-member visibility.
 
 `create_<value-brand>` validates that every declared `host fn` and every live role
 conversion exists. A missing function raises
@@ -318,49 +337,71 @@ selected type to and from the following private runtime representation:
 | `role(u8)` … `role(u128)` | non-negative `int` |
 | `role(f32)`, `role(f64)` | `float` |
 
-Ensuring an adapter result belongs to the declared role's range is the host's
-responsibility. The package does not defensively coerce out-of-range or
+Ensuring an adapter result satisfies this backend's range requirements for the
+declared role is the host's responsibility. The package does not defensively coerce out-of-range or
 wrong-shaped private role values. A roleless nullary declaration uses its
 exact selected Python type unchanged.
 
-A parameterized host declaration `F[A, ...]` uses
-`KioHostType_<frame>[A, ...]`. The exact declaration and every applied type
-argument remain visible in the stub. The carrier's private native value is not
-part of the typed callable surface; explicit `from_native` / `to_native`
-operations are the host integration boundary.
+A parameterized host declaration `api.F[A, B]` uses the exact nested index
+`KioApply1[KioApply1[KioHostMk_api__F, A], B]`. The declaration and every
+argument remain visible in the stub. Its private native value is accessible
+only through that declaration's `KioHostType_api__F` storage helper.
 
-Structural products cross as dictionaries keyed by right-spine slot names.
-The key preference is the bare newtype name, then the canonical
-fully-qualified spelling, then the positional fallback `"_<index>"`.
-Named keys word-case each source component, retaining `/` and `.` as route
-delimiters (`data_api/model.Native_token` → `"dataApi/model.NativeToken"`);
-positional keys remain unchanged.
-Structural sums cross as a one-key dictionary whose key is the selected
-variant's slot key. An explicit newtype whose constructor and projector are
-both public crosses as `{ "<word-cased TypeName>": payload }` at every host-facing
-boundary, including exported functions, host functions, and its public
-members. The host builds and inspects this dictionary directly. If either
-member is private, the newtype instead crosses as a declaration-specific
-nominal carrier: no payload dictionary, field, or alias is public, and only a
-value carrying that exact newtype identity is accepted on the way back into
-the package. The namespace exposes whichever constructor or projector member
-is public; those wrappers perform the same boundary conversion as an ordinary
-public function.
+Structural products use binary dictionaries `{"left": a, "right": b}`.
+`A & B & C` nests the right field: `{"left": a, "right": {"left": b,
+"right": c}}`. Structural sums use `{"tag": "left", "value": a}` or
+`{"tag": "right", "value": b}`; a right-associated sum nests its right
+alternative in the same way. A newtype in either position remains a complete
+nominal value; structural dictionaries never absorb its payload or name.
+These representations obey
+[generic substitution and opaque constructors](README.md#generic-substitution-and-opaque-constructors).
+
+Every explicit newtype crosses as a declaration-specific sealed value. No
+payload dictionary or field is public, and only its exact nominal identity
+is accepted on re-entry. The namespace exposes whichever constructor and
+projector members are public. Their arguments and results use the same
+boundary validation as ordinary public functions, including validation deferred
+to returned callable stages. Concrete structural shells may be materialized
+while installing that validation; abstract type variables and opaque host
+applications are passed through without inspecting their contents.
 
 The carve-outs are:
 
 - Unit (`.`) crosses as `None`.
-- Function values cross as Python callables.
+- A function value uses `KioFn[Domain, Result]`, called with one domain value.
+  Its Unit domain takes `None`; a product domain takes one binary product.
+  Named declaration calls retain their source parameter grouping, with a
+  directly written Unit parameter omitted.
 - Bottom (`!`) has no value; an attempted absurd elimination raises a
   Python exception.
+
+Hosts turn a newly authored Python function into a first-class Kio callable
+with `kio_lift(function)`. The result supports `adapt(before, after)`, which
+returns a new callable without changing the original or invoking it. An
+adapted call executes input transformations outside-in, invokes the original
+once, then executes result transformations inside-out. Existing Kio callable
+values are forwarded directly, not lifted again. Independently implemented
+callables must implement the same composition protocol without nesting a
+Python call frame for each accumulated layer.
+
+Each first-class type binder is one argument-free `advance()` on its generated
+`KioForall_<shape>` protocol. The result retains the type selected at that
+stage; advancing does not also invoke the next value stage. A dynamic host
+passes an ordinary object with an `advance` method to `kio_lift_stage`. A
+statically checked host subclasses the corresponding readable `Source` view
+(below). The resulting stage's `adapt(after)` composes
+result validation without advancing early. Ordinary named generic functions
+still receive no runtime type arguments.
 
 ## Typed stub
 
 Beside the runtime `<ns>.py`, `kio build python` emits a `<ns>/` typed-stub
 package — the Python analogue of the TypeScript backend's `.d.ts`. Its public
-`__init__.pyi` re-exports declarations from private `.pyi` shards; every
-declaration has one defining shard, so cross-shard references retain one exact
-type identity. The package contains no runtime code and types exactly the
+`__init__.pyi` re-exports declarations from private `.pyi` shards. Callable and
+application definitions are re-exported from the shared immutable support
+closure, so independently generated packages retain the same static structural
+indices. Package handles, exact nominal declarations and their privacy remain
+package-owned. The package contains no runtime code and types exactly the
 public surface `create_<value-brand>` exposes, so a host that runs a static type checker
 (pyright or mypy) checks the embedding at author time. The generated stubs carry
 only targeted Pyright suppressions: `reportInvalidTypeVarUse` where Pyright
@@ -370,12 +411,12 @@ deliberately private shard module or support declaration between sibling
 shards. Pyright and mypy still check the transported type and the rest of the
 surface. Type checkers resolve the stub package as the module's typed view;
 a dynamic host that runs no checker selects and executes the sibling `.py`.
-The stub is truthful to the runtime: every declaration matches a live value the `.py`
-actually produces. Exact declaration bindings, generic applications, callable
+The stub is truthful to the runtime: exposed operations match values the `.py`
+actually produces; checker-only type aliases describe those values. Exact declaration bindings, generic applications, callable
 stages, and constructor relationships remain typed even though the evaluator
 body is dynamic.
 
-Every name is branded off the namespace `<ns>` (§ Output layout): `<Handle>`
+Package entry names are branded off the namespace `<ns>` (§ Output layout): `<Handle>`
 is its public title brand, `<Handle>Host` the host contract, `create_<value-brand>` the
 factory.
 
@@ -404,17 +445,61 @@ factory.
   host's own concrete class structurally matches it.
 
 Each boundary value is typed at its § FFI surface Python shape: an exact
-nullary host declaration at its `KioHost_<frame>` type parameter; a saturated
-parameterized host declaration at `KioHostType_<frame>[...]`; a site type
-binder at its exact `typing.TypeVar`; unit as `None`; a function or rank-N
-value as an exact `typing.Protocol` callable; a structural product as a
-`typing.TypedDict` keyed by its right-spine slots; a structural sum as the
-union of its one-key `TypedDict` arms; and an explicit newtype with both
-members public as a one-key generic `TypedDict`. Every other public newtype is
-a declaration-specific nominal generic class with no payload member. A
+nullary host declaration at its `KioHost_<frame>` type parameter; a parameterized
+declaration at nested `KioApply1` indices; a site type binder at its exact
+`typing.TypeVar`; unit as `None`; a function or polymorphic stage as its exact
+protocol; a binary product as a two-field `typing.TypedDict`; and a binary
+sum as the union of its two tagged `TypedDict` arms. Newtypes have exact nominal
+indices and no public payload member. A
 newtype namespace's constructor and projector use those same exact payload and
 newtype types (§ Package API); an existential projector retains its generic
 CPS callable relationship.
+
+### Readable type views
+
+Declaration-owned views also name exact classes and constructor indices:
+`KioHostType_<path>__<name>`, `KioHostMk_<path>__<name>`,
+`KioNewtype_<path>__<name>`, and `KioNewtypeMk_<path>__<name>`.
+Word-case and escape each source component's remaining `_` as `_u` before
+joining module components and the declaration leaf with `__`.
+Thus `a/b.Box` and `a_b.Box` remain `a__b__Box` and `aB__Box` respectively.
+These runtime-importable aliases point to the existing exact classes, not new
+nominal identities or storage capabilities. A newtype view takes the package's
+nullary host bindings followed by its declaration parameters; a constructor
+marker takes the package bindings alone. Host storage helpers take their
+declaration parameters, and host constructor markers have no parameters.
+Only authorized newtype members construct or project a value.
+
+Prepared callable parameters and results have declaration-owned aliases:
+`KioViewHost_<module>__<name>_Arg0`,
+`KioViewExport_<module>__<name>_Result`, and
+`KioViewCtor_<module>__<newtype>__<member>_Arg0` (or `KioViewProj` for a
+projector). `ArgN` counts Python parameters after named Unit omission, retaining
+each source parameter's product grouping. Components use the item-name word
+casing below, then encode `_` as `_u` and `/` as `_s`; `__` separates components.
+Roles remain distinct. Adding an unrelated declaration never changes a view.
+A slot consisting of a bare type parameter has no alias; use that parameter
+directly. Other aliases preserve their existing exact type; their free parameters
+occur in first-use order in the alias's displayed right-hand side.
+
+When the slot itself is a generic stage, its `Source` and `Check` suffixes name
+the corresponding implementation and adaptation views. For example,
+`KioViewHost_api__applyPoly_Arg0Source` implements the callback argument of
+`api.apply_poly`. Nested generic templates also have `_StageN`,
+`_StageNSource`, and `_StageNCheck` views. Numbering is local to the slot:
+follow generated annotation references left to right, then their structural
+fields and stage results, retaining each distinct stage template on first use.
+Nominal payloads are not expanded. A template's capture parameters follow
+left-to-right occurrence order of maximal subtrees with no free reference to a
+binder introduced within the template (including a partially applied
+constructor prefix). Equal capture
+occurrences remain separate parameters. The unsuffixed slot alias keeps the
+slot's actual selections.
+
+Slot aliases are checker-only. Stage template and `Source`/`Check` aliases are
+also runtime-importable aliases of the existing package-local classes; they
+preserve generic subscription and introduce no wrapper or stage execution.
+Hosts need not import or derive encoded structural identity names.
 
 `object` occurs only at an explicit parameterized-host-carrier native endpoint
 and at the `__getattr__` escape for a Python hard keyword. A spellable exact
@@ -433,21 +518,15 @@ identity therefore has no separate Python value representation. The
 `typed-dynamic` family keeps that dynamic body while its natural-exact static
 skin preserves the constructor relationship described in
 [`README.md` § Higher-kinded types](README.md#higher-kinded-types).
-The typed stub nevertheless preserves the exact type relation. A saturated
-known declaration is applied directly — for example
-`KioHostType_<frame>[A]` or `KioNewtype_<frame>[A]`. Only an unsaturated
-higher-kinded occurrence uses a declaration-owned `KioHostMk_<frame>` or
-`KioNewtypeMk_<frame>` witness and `KioApplyN[Constructor, ...]`; ordinary
-first-order applications do not pass through that witness machinery.
-Lift/project operations are identity at the erased body level, and
-polymorphic newtype payloads store and project the complete staged callable.
-The bound types have no Python value representation, but every binder of the
-stored first-class value remains one hidden callable stage. A work-free stage
-returns the next callable, while a stage with computation performs it first.
-A direct known call may compact adjacent leading type applications. The body's
-constructor and projector are identities around the complete callable, and a
-public boundary wrapper performs the ordinary function adaptation. Only value
-arguments appear at the facade, as required by
+The typed stub preserves the exact type relation with declaration-owned
+markers such as `KioHostMk_api__Box` and `KioNewtypeMk_api__Wrapper`, and unary
+`KioApply1[Constructor, Argument]`. Known, partial, and abstract constructor
+applications use the same nested indices. A generated `KioNewtype_api__Wrapper`
+alias names the corresponding exact applied newtype; it grants no payload
+access. Constructor markers are static identities, not runtime type arguments.
+Polymorphic newtype payloads retain their complete staged callable, including
+computation performed at each `advance()`. Only value arguments appear in
+ordinary named calls, as required by
 [`README.md` § 2](README.md#2-type-erasure-at-the-ffi).
 
 ## Item naming
@@ -472,8 +551,9 @@ module components; each component is word-cased before its UTF-8 byte length
 is calculated. For example, `data_api.Native_count` is
 `V1_M1_C7_dataApiN11_NativeCount`, and `testapi.Count` is
 `V1_M1_C7_testapiN5_Count`. The frame appears in `KioHost_<frame>`,
-`KioHostType_<frame>`, fallback role-adapter names, and public newtype carrier
-names. It depends only on the exact declaration identity, not
+underlying declaration-class names, and fallback role-adapter names. The
+readable declaration views above alias those exact classes. Each spelling
+depends only on the exact declaration identity, not
 on source encounter order or which other declarations occupy the module.
 The readable frame conversion does not rewrite raw nominal identity or
 opaque structural identity encodings.

@@ -47,12 +47,18 @@ public final class RetainedHost {
         String head, Shapes.Sum<String, String> value) {
       throw new AssertionError("removed archived method dispatched");
     }
+
+    @Override
+    public String api__archivedGrouped(Shapes.Product<String, String> pair) {
+      throw new AssertionError("removed grouped method dispatched");
+    }
   }
 
   @SuppressWarnings("deprecation")
   private static Shapes.Sum<Shapes.Sum<String, String>, String> retainedSourceMustCompile(AppHost<String> host) {
     host.api__log("old");
-    return host.api__archived("head", new Shapes.Sum__0<String, String>("left"));
+    host.api__archivedGrouped(new Shapes.Product<>("left", "right"));
+    return host.api__archived("head", new Shapes.Left<String, String>("left"));
   }
 
   private static void assertDeprecated(String methodName) {
@@ -75,6 +81,7 @@ public final class RetainedHost {
   public static void main(String[] args) {
     assertDeprecated("api__log");
     assertDeprecated("api__archived");
+    assertDeprecated("api__archivedGrouped");
     assertLiveExport(new LiveHost(), "live");
     assertLiveExport(new OldHost(), "old host");
   }

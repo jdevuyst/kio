@@ -1,14 +1,14 @@
 //! Java realization of the backend-neutral prepared boundary inventory.
 //!
 //! Exact host declarations remain independent package-root bindings, while
-//! products and sums reuse the planner's payload-generic semantic shells.
+//! canonical value shapes come from the shared value plan.
 
 use std::collections::BTreeMap;
 
 use crate::ast::{Role, Routed};
 use crate::backends::boundary_facade::{
     BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSupportOrigin,
-    BoundaryHostBindingOrigin, BoundaryHostTypeBinding, BoundaryNominalDeclaration, FacadeShellId,
+    BoundaryHostBindingOrigin, BoundaryHostTypeBinding, BoundaryNominalDeclaration,
     PreparedBoundaryCallableOriginRef, PreparedBoundaryCallableSites, QualifiedTypeName,
     SemanticKey,
 };
@@ -94,7 +94,6 @@ pub(crate) struct JavaShapes<'p> {
     has_live_host_binding: bool,
     live_root_type_parameters: Vec<String>,
     newtype_payload_owners: JavaNewtypePayloadOwners,
-    facade_shells: BTreeMap<FacadeShellId, BoundaryFacadeSupportOrigin>,
 }
 
 struct JavaNewtypePayloadOwners {
@@ -241,26 +240,12 @@ impl<'p> JavaShapes<'p> {
             #[cfg(all(test, feature = "surface"))]
             index_construction_visits: newtype_payload_index_construction_visits.get(),
         };
-        let mut facade_shells = prepared
-            .shell_origins()
-            .map(|(shell, origin)| (shell.clone(), origin))
-            .collect::<BTreeMap<_, _>>();
-        facade_shells.extend(
-            prepared
-                .shell_origins()
-                .filter(|(shell, _)| {
-                    shell.kind() == crate::backends::boundary_facade::FacadeKind::Sum
-                        && shell.ordered_keys().len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT
-                })
-                .map(|(shell, origin)| (shell.product_companion(), origin)),
-        );
         Self {
             package,
             host_bindings,
             has_live_host_binding,
             live_root_type_parameters,
             newtype_payload_owners,
-            facade_shells,
         }
     }
 
@@ -285,13 +270,6 @@ impl<'p> JavaShapes<'p> {
         name: &QualifiedTypeName,
     ) -> Option<&JavaNewtypePayloadOwner> {
         self.newtype_payload_owners.by_name.get(name)
-    }
-
-    pub(crate) fn newtype_payload_owners(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = (&QualifiedTypeName, &JavaNewtypePayloadOwner)>
-    + ExactSizeIterator {
-        self.newtype_payload_owners.by_name.iter()
     }
 
     pub(crate) fn newtype_payload_plan_owner(
@@ -371,18 +349,6 @@ impl<'p> JavaShapes<'p> {
             legacy_candidate_visits,
             identity_parity_checks,
         }
-    }
-
-    pub(crate) fn facade_shells(&self) -> impl Iterator<Item = &FacadeShellId> {
-        self.facade_shells.keys()
-    }
-
-    pub(crate) fn facade_shell_origins(
-        &self,
-    ) -> impl Iterator<Item = (&FacadeShellId, BoundaryFacadeSupportOrigin)> {
-        self.facade_shells
-            .iter()
-            .map(|(shell, origin)| (shell, *origin))
     }
 
     pub(crate) fn host_binding(&self, name: &QualifiedTypeName) -> Option<&JavaHostBinding> {

@@ -250,8 +250,7 @@ terminating the process; it cannot manufacture a normal return value.
 
 ## Structural values at the boundary
 
-A structural Kio type crosses as ordinary Haskell pairs or `Either`, named by
-a stable alias for the particular host-function or exported-function slot:
+A structural Kio type crosses as ordinary Haskell pairs or `Either`:
 
 - A product `(A & B & C)` has the underlying shape `(a, (b, c))`.
 - A sum `(A | B | C)` has the underlying shape
@@ -259,41 +258,41 @@ a stable alias for the particular host-function or exported-function slot:
 - Unit and singleton folds stay natural: an empty product is `()`, an empty
   sum is `Data.Void.Void`, and a one-slot fold is that slot itself.
 
-When a product is the value domain of a public callable stage, call the
-Haskell function with the product's canonical slots as separate curried
-arguments. The same rule applies to a product-domain callback. A direct Unit
-domain is called with no term argument; an existing generic slot instantiated
-with Unit is still passed as `()`. Generated adapters rebuild the package
-body's original tuple/domain representation. Product patterns remain the
-right interface for a product that crosses as one value, such as a returned
-product or a product nested inside another boundary shape.
+Each written parameter becomes one Haskell argument: `f(x: A, y: B)` takes
+two curried arguments, while `f(pair: A & B)` takes one pair. A callback of
+type `(A & B) -> C` likewise takes one pair. A direct Unit domain is called
+with no term argument; an existing generic slot instantiated with Unit or a
+product still takes one argument. Product patterns also work for returned
+products and products nested inside other boundary shapes.
 
-The package exports `<Handle>Product` and `<Handle>Sum` type families that
-perform those folds. More commonly, use the generated `Env_H…` alias for a
-host-function slot or `Exp_H…` alias for an exported-function slot. The alias
-keeps exact host types, functions, and generic parameters in their original
-positions, including repeated parameters. Substituting a product or sum for a
-generic parameter therefore gives the same Haskell type as writing the
-expanded Kio type directly.
+Use these native types directly in ordinary host code. For example, a host
+function exchanging a product for a sum can have type
+`forall a b. (a, b) -> IO (Either b a)` and return `pure (Left b)` from
+its second component. A generic identity on a container of pairs can have type
+`forall f a b. f (a, b) -> IO (f (a, b))` and simply use `pure`.
+No generated alias is needed for either function.
 
-Those are the normal spellings. If an explicitly chosen target namespace
-would make a structural family, alias, or pattern reuse another generated
-Haskell name, the package gives the structural declaration a stable
-`KioStructT_H…`, `KioStructC_H…`, or `kioStructV_H…` spelling instead. The
-choice is determined by the target namespace and the declaration's identity,
-so unrelated Kio declarations cannot rename it. As with the exact host-family
-and public-item names, copy an escaped spelling from the generated module
-rather than constructing it by hand.
+Optional readable aliases name particular boundary positions:
+`Host_api__exchange_Result`, `Export_api__keep_Arg0`, or
+`Member_api__Pair__unPair_Result`. They preserve the same exact types and
+generic parameters. The package also exports `<Handle>Product` and
+`<Handle>Sum` for the general folds above.
 
-You do not need to write the nested pairs and `Either`s. Each product alias
-exports a flat record-style `EnvP_H…` or `ExpP_H…` pattern, with separately
-exported `envSel_H…` or `expSel_H…` selectors. A slot that resolves to any
-newtype uses its 3-step-fallback key; a slot that does not resolve to a newtype
-uses a positional key. Each sum alias exports one `EnvS_H…` or `ExpS_H…`
-pattern per arm, using the same key rule. Copy these names from the emitted
-module. The patterns are bidirectional, so the same spelling works when
-constructing or matching a value, and their `COMPLETE` declarations make
-exhaustiveness checking understand the whole shape.
+When flat construction/matching is useful, or a higher-rank field needs a
+typed pattern, use the bidirectional product pattern with the same name as
+its alias. Sum patterns append the arm and key, such as
+`Host_api__exchange_Result_Case0_Position0`. Selectors start lowercase,
+such as `member_api__Pair__unPair_Result_Field0_Position0`. A nominal field
+uses its bare or qualified type key instead of `PositionN`. These patterns
+retain their `COMPLETE` declarations for exhaustiveness checking.
+
+Source components keep readable word casing; remaining affix underscores
+are escaped before path components are joined. An explicitly chosen package
+namespace that collides with a generated name selects a reversible
+`KioStructT_N…`, `KioStructC_N…`, or `kioStructV_N…` spelling. This depends
+only on that namespace and exact declaration, never unrelated declarations.
+The [item-naming rules](../../specs/backends/haskell.md#item-naming) describe
+nested callback/application views, field keys and those uncommon escapes.
 
 ## Host types and literals
 
@@ -330,7 +329,8 @@ three cases.
 With both members public, the established representation remains in place. A
 nullary, non-recursive, non-existential newtype is transparent, so its wrappers
 use the payload type directly. A parametric or recursive newtype instead has
-one deterministic, abstract `KioCarrier_H…` Haskell type constructor. That
+one declaration-owned, abstract Haskell type constructor such as
+`KioType_origin__Box`. That
 remains the same type constructor whether it is partially or fully applied.
 The carrier scheme includes dictionary-shaped and plain function-payload
 newtypes.
@@ -342,10 +342,9 @@ payload has the form `forall hidden. m (payload -> m r)`; canonical Unit has
 no runtime argument and uses `forall hidden. m (m r)`. Bind the result of the
 visible type application before using the payload stage. More hidden types
 repeat that `forall hidden. m (...)` shape. This lets the host inspect the
-payload without letting a hidden type escape. A product payload supplies its
-canonical slots as separate continuation arguments, just like any other
-function-value domain. The carrier has a deterministic
-`KioExistential_H…` name in the emitted package module and is exported
+payload without letting a hidden type escape. A product payload supplies one
+tuple argument to the continuation. The carrier has a deterministic
+name such as `KioExists_api__Pack` in the emitted package module and is exported
 abstractly; hosts construct and inspect it only through the exported Kio
 member wrappers. When an existential carrier appears inside a product or
 sum, it remains an abstract leaf of the pair / `Either` fold. Universal
@@ -357,9 +356,9 @@ identity includes the exact declaring module and type, so same-named
 newtypes in different modules remain distinct. An enclosing boundary shape
 treats an abstract carrier as one value and never exposes its hidden payload.
 
-A **function value** crosses as a native curried Haskell function `a -> … ->
-m ret`; its product domain is exposed as separate canonical arguments and a
-direct Unit domain is nullary. Its compound legs are converted across the
+A **function value** crosses as a native Haskell function returning `m ret`;
+a product domain takes one tuple argument and a direct Unit domain is nullary.
+Its compound legs are converted across the
 boundary, but the function itself is a real Haskell function you can call or
 store. Generic host functions quantify their type parameters with native
 Haskell `forall`, including higher-kinded parameters; this adds no term-level

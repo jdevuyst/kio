@@ -157,6 +157,21 @@ impl TestRunner for JsRunner {
                 .catch(&ctx)
                 .map_err(|e| format!("reading `{factory_name}` export: {}", format_caught(&e)))?;
 
+            // Host callbacks use the package's documented lift operations.
+            for (suffix, binding) in [
+                ("Callable", "__kio_lift_callable__"),
+                ("Poly", "__kio_lift_poly__"),
+            ] {
+                let name = format!("lift{}{suffix}", pascal_case(&self.identity.namespace));
+                let lift: Function = evaluated
+                    .get(name.as_str())
+                    .catch(&ctx)
+                    .map_err(|e| format!("reading `{name}` export: {}", format_caught(&e)))?;
+                ctx.globals()
+                    .set(binding, lift)
+                    .map_err(|e| format!("installing public callable lift: {e}"))?;
+            }
+
             // Build the runner's default host record by evaluating
             // the record-expression against the prepared context,
             // then call the factory to instantiate the package.
@@ -480,8 +495,8 @@ fn run_export_type_only_roundtrip_js<'js>(
   print("phantom-unit-called");
   const poly = main.poly();
   print("poly-returned");
-  printResult(poly("poly-string"), "poly-string");
-  printResult(poly(73), 73);
+  printResult(poly.advance()("poly-string"), "poly-string");
+  printResult(poly.advance()(73), 73);
 }})()
 "#
     );
@@ -612,20 +627,22 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
     types.makeProjectorGenericValue(86)));
 
   const packed = types[{packed_function}].makePackedFunction(
-    value => value._0 + value._1);
+    __kio_lift_callable__(value => value._0 + value._1));
   const unpacked = types[{packed_function}].readPackedFunction(packed);
   print(unpacked(constructorPairOut));
 
   print(types[{existential_unit}].readExistentialUnit(
-    types.makeExistentialUnitValue())(_value => 89));
+    types.makeExistentialUnitValue()).advance()(
+      __kio_lift_poly__({{ advance: () => __kio_lift_callable__(_value => 89) }})));
 
   print(types[{existential_empty}].readExistentialEmpty(
-    types.makeExistentialEmptyValue())((...args) => {{
-      if (args.length !== 0) {{
-        throw new Error("unit existential continuation received value arguments");
+    types.makeExistentialEmptyValue()).advance()(__kio_lift_poly__({{
+    advance: () => __kio_lift_callable__((...args) => {{
+      if (args.length !== 1 || args[0] !== null) {{
+        throw new Error("unit existential continuation lost its null domain");
       }}
       return 90;
-    }}));
+    }}) }})));
 
   const recursiveBoth = types[{recursive_both}].makeRecursiveBoth(
     types.recursiveBothBasePayload());
@@ -642,20 +659,25 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
       types.makeRecursiveProjectorBase())));
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("visibility callable changed"); }};
   const constructorInputs = [];
-  const constructed = types[{constructor_spread}].makeConstructorSpread(value => {{
+  const constructed = types[{constructor_spread}].makeConstructorSpread(__kio_lift_poly__({{
+    advance: () => __kio_lift_callable__(value => {{
     constructorInputs.push(value._0); return value._0 + 3;
-  }});
+  }}) }}));
   check(types.invokeConstructorSpreadI32(constructed, 101), 104);
   check(types.invokeConstructorSpreadUnit(constructed, 102), 105);
   check(JSON.stringify(constructorInputs), "[101,102]");
   const projected = types[{projector_spread}].readProjectorSpread(types.makeProjectorSpreadValue());
-  check(projected({{_0: 111, _1: 1}}), 111);
-  check(projected({{_0: 112, _1: null}}), 112);
+  check(projected.advance()({{_0: 111, _1: 1}}), 111);
+  check(projected.advance()({{_0: 112, _1: null}}), 112);
   let spreadOpens = 0, recursiveOpens = 0;
-  const openSpread = value => {{ check(typeof value, "function"); spreadOpens++; return 91; }};
-  const openRecursive = value => {{ check(typeof value, "function"); recursiveOpens++; return 92; }};
-  check(types[{existential_spread}].readExistentialSpread(types.makeExistentialSpreadValue())(openSpread), 91);
-  check(types[{recursive_existential_function}].readRecursiveExistentialFunction(types.makeRecursiveExistentialFunctionValue())(openRecursive), 92);
+  const openSpread = __kio_lift_poly__({{ advance: () => __kio_lift_callable__(value => {{
+    check(typeof value.advance, "function"); spreadOpens++; return 91;
+  }}) }});
+  const openRecursive = __kio_lift_poly__({{ advance: () => __kio_lift_callable__(value => {{
+    check(typeof value, "function"); recursiveOpens++; return 92;
+  }}) }});
+  check(types[{existential_spread}].readExistentialSpread(types.makeExistentialSpreadValue()).advance()(openSpread), 91);
+  check(types[{recursive_existential_function}].readRecursiveExistentialFunction(types.makeRecursiveExistentialFunctionValue()).advance()(openRecursive), 92);
   check(spreadOpens, 1);
   check(recursiveOpens, 1);
 }})
@@ -725,7 +747,7 @@ fn run_export_callback_roundtrip_js<'js>(
     throw new Error("export-callback-roundtrip: missing exported fn makeStep");
   }}
 
-  __kio_host_print__(String(main.applyTwice((n) => n + 3, 10)) + "\n");
+  __kio_host_print__(String(main.applyTwice(__kio_lift_callable__((n) => n + 3), 10)) + "\n");
   const step = main.makeStep(4);
   if (typeof step !== "function") {{
     throw new Error("export-callback-roundtrip: makeStep returned non-function");
@@ -752,7 +774,7 @@ fn run_nested_curried_roundtrip_js<'js>(
         r#"
 (() => {{
   const api = {api};
-  const join = left => right => left + "/" + right;
+  const join = __kio_lift_callable__(left => __kio_lift_callable__(right => left + "/" + right));
   const viaHost = api.viaHost(join);
   if (typeof viaHost !== "function") {{
     throw new Error("nested-curried-roundtrip: viaHost returned non-function");
@@ -793,7 +815,10 @@ fn run_host_substituted_unit_callback_js<'js>(
         r#"
 (() => {{
   const api = {api};
-  __kio_host_print__(api.viaHost((_unit) => "callback") + "\n");
+  __kio_host_print__(api.viaHost(__kio_lift_callable__((unit) => {{
+    if (unit !== null) throw new Error("substituted Unit lost its semantic slot");
+    return "callback";
+  }})) + "\n");
 }})()
 "#
     );
@@ -921,12 +946,12 @@ fn run_public_word_names_js<'js>(ctx: &Ctx<'js>, pkg_obj: &Object<'js>) -> Resul
   if (boxed._WordBox__ !== 55 || Object.keys(boxed).join() !== "_WordBox__")
     throw new Error("incorrect public transparent wrapper key");
   const pair = api.keepPair({
-    _WordBox__: 77,
-    "wordApi/otherNodes._WordBox__": 88
+    _0: { _WordBox__: 77 },
+    _1: { _WordBox__: 88 }
   });
   const values = [api.readWord(), api._readWord(), api.readWord_(),
     api._readWord_(), api.readWord__(), box.unwrapWord({_WordBox__: 55}),
-    nodes.keepWord(66), pair._WordBox__, pair["wordApi/otherNodes._WordBox__"]];
+    nodes.keepWord(66), pair._0._WordBox__, pair._1._WordBox__];
   for (const value of values) __kio_host_print__(String(value) + "\n");
 })()
 "#;
@@ -1036,10 +1061,10 @@ fn render_export_multilabel_roundtrip_js(base: &str) -> String {
     throw new Error("export-multi-label-roundtrip: missing exported fn say");
   }}
 
-  main_ns.say({{ A: 42, B: "shown\n" }});
-  const row = main_ns.echoPair({{ A: 88, B: "99" }});
-  __kio_host_print__(String(row.A) + "\n");
-  __kio_host_print__(String(row.B) + "\n");
+  main_ns.say({{ _0: {{ A: 42 }}, _1: {{ B: "shown\n" }} }});
+  const row = main_ns.echoPair({{ _0: {{ A: 88 }}, _1: {{ B: "99" }} }});
+  __kio_host_print__(String(row._0.A) + "\n");
+  __kio_host_print__(String(row._1.B) + "\n");
   __kio_host_print__(String(main_ns[{a}].get(main_ns.echoA(main_ns[{a}].mk(111)))) + "\n");
 }})()
 "#
@@ -1095,10 +1120,11 @@ fn run_host_existential_roundtrip_js<'js>(
   let observations = 0, openings = 0;
   globalThis.__kio_existential_observe__ = value => {{
     observations++;
-    return {types}[{packed}].readPacked(value)(payload => {{
+    return {types}[{packed}].readPacked(value).advance()(__kio_lift_poly__({{
+      advance: () => __kio_lift_callable__(payload => {{
       openings++;
       return payload._1(payload._0);
-    }});
+    }}) }}));
   }};
   const result = {main}.exercise();
   if (result._0 !== 37 || result._1 !== 83 || observations !== 2 || openings !== 2)
@@ -1129,8 +1155,8 @@ fn run_export_functor_dict_roundtrip_js<'js>(
   const box = {types}[{box_type}];
   const functor = {types}[{functor_type}];
   const integers = [], texts = [];
-  const toText = value => {{ integers.push(value); return "v:" + value; }};
-  const toInteger = value => {{ texts.push(value); return value.length; }};
+  const toText = __kio_lift_callable__(value => {{ integers.push(value); return "v:" + value; }});
+  const toInteger = __kio_lift_callable__(value => {{ texts.push(value); return value.length; }});
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("functor payload changed"); }};
   const wrap = value => box.mkBox({{_0: value, _1: null}});
   const unwrap = value => {{ const row = box.unBox(value); check(row._1, null); return row._0; }};
@@ -1138,8 +1164,8 @@ fn run_export_functor_dict_roundtrip_js<'js>(
   check(unwrap(main.applyFunctor(dict, toText, wrap(42))), "v:42");
   check(unwrap(main.applyFunctor(dict, toInteger, wrap("apple"))), 5);
   const map = functor.fmap(dict);
-  check(unwrap(map({{_0: toText, _1: wrap(7)}})), "v:7");
-  check(unwrap(map({{_0: toInteger, _1: wrap("pear")}})), 4);
+  check(unwrap(map.advance().advance()({{_0: toText, _1: wrap(7)}})), "v:7");
+  check(unwrap(map.advance().advance()({{_0: toInteger, _1: wrap("pear")}})), 4);
   check(JSON.stringify(integers), "[42,7]");
   check(JSON.stringify(texts), '["apple","pear"]');
   __kio_host_print__("functor dictionary ok\n");
@@ -1171,7 +1197,7 @@ fn run_export_callable_slots_roundtrip_js<'js>(
     if (actual !== expected) throw new Error("callable slot payload changed");
   }};
   let productCalls = 0;
-  const productStep = value => {{ productCalls++; return value + 5; }};
+  const productStep = __kio_lift_callable__(value => {{ productCalls++; return value + 5; }});
   check(main.applyProduct({{_0: productStep, _1: 11}}), 16);
   const echoedProduct = main.echoProduct({{_0: productStep, _1: 17}});
   check(echoedProduct._1, 17);
@@ -1180,7 +1206,7 @@ fn run_export_callable_slots_roundtrip_js<'js>(
   check(madeProduct._1, 23);
   check(madeProduct._0(29), 29);
   let sumCalls = 0;
-  const sumStep = value => {{ sumCalls++; return value + 7; }};
+  const sumStep = __kio_lift_callable__(value => {{ sumCalls++; return value + 7; }});
   check(main.applySum({{_0: sumStep}}, 31), 38);
   const echoedSum = main.echoSum({{_0: sumStep}});
   check(Object.keys(echoedSum).join(), "_0");
@@ -1293,11 +1319,20 @@ fn run_export_structural_roundtrip_js<'js>(
   __kio_host_print__(String(q._0) + " " + String(q._1) + "\n");
   __kio_host_print__(String(main_ns.dispatchLeft({{ _0: 7 }})) + "\n");
   __kio_host_print__(String(main_ns.dispatchLeft({{ _1: "from-sum" }})) + "\n");
-  const wide = main_ns.rotate({{ _0: 1, _1: 2, _2: 3, _3: 4, _4: 5, _5: 6, _6: 7, _7: 8, _8: 9, _9: 10, _10: 11, _11: 12 }});
-  __kio_host_print__(String(wide._0) + " " + String(wide._1) + " " + String(wide._11) + "\n");
+  const values = Array.from({{ length: 12 }}, (_value, index) => index + 1);
+  const product = values.slice(0, -1).reduceRight((tail, head) => ({{ _0: head, _1: tail }}), values[11]);
+  const wide = main_ns.rotate(product);
+  let last = wide;
+  for (let index = 0; index < 11; index++) last = last._1;
+  __kio_host_print__(String(wide._0) + " " + String(wide._1._0) + " " + String(last) + "\n");
+  const inject = (arm, value) => {{
+    let result = arm === 9 ? value : {{ _0: value }};
+    for (let index = 0; index < arm; index++) result = {{ _1: result }};
+    return result;
+  }};
   __kio_host_print__(String(main_ns.classify({{ _0: 1 }})) + "\n");
-  __kio_host_print__(String(main_ns.classify({{ _4: 5 }})) + "\n");
-  __kio_host_print__(String(main_ns.classify({{ _9: "ten" }})) + "\n");
+  __kio_host_print__(String(main_ns.classify(inject(4, 5))) + "\n");
+  __kio_host_print__(String(main_ns.classify(inject(9, "ten"))) + "\n");
   __kio_host_print__(String(main_ns.classify(main_ns.chooseFirst())) + "\n");
   __kio_host_print__(String(main_ns.classify(main_ns.chooseMiddle())) + "\n");
   __kio_host_print__(String(main_ns.classify(main_ns.chooseLast())) + "\n");
@@ -1307,12 +1342,24 @@ fn run_export_structural_roundtrip_js<'js>(
     [8, false], [8, true], [9, "sum-value"],
   ];
   for (const [arm, value] of samples) {{
-    const key = "_" + arm;
-    const returned = main_ns.echoSum({{ [key]: value }});
-    if (Object.keys(returned).length !== 1 || !Object.hasOwn(returned, key) || returned[key] !== value) {{
+    const returned = main_ns.echoSum(inject(arm, value));
+    let payload = returned;
+    for (let index = 0; index < arm; index++) {{
+      if (Object.keys(payload).length !== 1 || !Object.hasOwn(payload, "_1")) {{
+        throw new Error("export-structural-roundtrip: sum path changed at arm " + arm);
+      }}
+      payload = payload._1;
+    }}
+    if (arm !== 9) {{
+      if (Object.keys(payload).length !== 1 || !Object.hasOwn(payload, "_0")) {{
+        throw new Error("export-structural-roundtrip: sum path changed at arm " + arm);
+      }}
+      payload = payload._0;
+    }}
+    if (payload !== value) {{
       throw new Error("export-structural-roundtrip: sum payload changed at arm " + arm);
     }}
-    __kio_host_print__(String(main_ns.classify(returned)) + " " + String(returned[key]) + "\n");
+    __kio_host_print__(String(main_ns.classify(returned)) + " " + String(payload) + "\n");
   }}
 }})()
 "#
@@ -1489,17 +1536,17 @@ fn run_export_wide_callable_js<'js>(
   const values = Array.from({{ length: {WIDE_CALLABLE_SLOT_COUNT} }}, (_value, index) => index);
   const out = main_ns.select(...values);
   __kio_host_print__(String(out._0) + "\n");
-  __kio_host_print__(String(out._1) + "\n");
-  __kio_host_print__(String(out._2) + "\n");
+  __kio_host_print__(String(out._1._0) + "\n");
+  __kio_host_print__(String(out._1._1) + "\n");
   const callback = main_ns.makeSelect();
   if (typeof callback !== "function") {{
     throw new Error("export-wide-callable: makeSelect returned a non-callable value");
   }}
-  const callback_args = Object.fromEntries(values.map((value, index) => ["_" + index, value]));
+  const callback_args = values.slice(0, -1).reduceRight((tail, head) => ({{ _0: head, _1: tail }}), values[values.length - 1]);
   const callback_out = callback(callback_args);
   __kio_host_print__(String(callback_out._0) + "\n");
-  __kio_host_print__(String(callback_out._1) + "\n");
-  __kio_host_print__(String(callback_out._2) + "\n");
+  __kio_host_print__(String(callback_out._1._0) + "\n");
+  __kio_host_print__(String(callback_out._1._1) + "\n");
 }})()
 "#
     );
@@ -1528,8 +1575,8 @@ fn run_export_poly_callback_roundtrip_js<'js>(
     throw new Error("export-poly-callback-roundtrip: missing exported fn applyVia");
   }}
 
-  __kio_host_print__(main_ns.applyVia((s) => "via: " + s, "apply") + "\n");
-  __kio_host_print__(String(main_ns.applyVia((n) => n + 8, 7)) + "\n");
+  __kio_host_print__(main_ns.applyVia(__kio_lift_callable__((s) => "via: " + s), "apply") + "\n");
+  __kio_host_print__(String(main_ns.applyVia(__kio_lift_callable__((n) => n + 8), 7)) + "\n");
 }})()
 "#
     );
@@ -1564,7 +1611,9 @@ fn run_compound_input_once_js<'js>(
   }};
   const direct = api.direct();
   print(direct._0); print(direct._1);
-  const callback = api.callback(() => {{ print("callback"); return {{ _0: 9, _1: "callback-value" }}; }});
+  const callback = api.callback(__kio_lift_callable__(unit => {{
+    equal(unit, null); print("callback"); return {{ _0: 9, _1: "callback-value" }};
+  }}));
   print(callback._0); print(callback._1);
 
   let reads = [];
@@ -1572,40 +1621,46 @@ fn run_compound_input_once_js<'js>(
     enumerable: true, get() {{ reads.push(label); return value; }}
   }});
   const inner = (left, right) => field(field({{}}, "_0", "left", left), "_1", "right", right);
-  const outer = (text, left, right) => field(field({{}}, "_0", "text", text), "Inner", "Inner", inner(left, right));
+  const outer = (text, left, right) => field(field({{}}, "_0", "text", text), "_1", "inner-slot",
+    field({{}}, "Inner", "Inner", inner(left, right)));
   const input = field({{}}, "Outer", "Outer", outer("nest", 11, 13));
   const nested = api.echoOuter(input).Outer;
-  equal(reads, ["Outer", "text", "Inner", "left", "right"]);
-  print(nested._0); print(nested.Inner._0); print(nested.Inner._1);
-  equal(api.echoOuter(api.makeOuter("nest", 11, 13)), {{ Outer: {{ _0: "nest", Inner: {{ _0: 11, _1: 13 }} }} }});
+  equal(reads, ["Outer", "text", "inner-slot", "Inner", "left", "right"]);
+  print(nested._0); print(nested._1.Inner._0); print(nested._1.Inner._1);
+  equal(api.echoOuter(api.makeOuter("nest", 11, 13)), {{ Outer: {{ _0: "nest", _1: {{ Inner: {{ _0: 11, _1: 13 }} }} }} }});
 
-  for (const [key, payload, expectedReads, expected] of [
-    ["_0", 17, ["Choice", "selected"], {{ Choice: {{ _0: 17 }} }}],
-    ["Inner", inner(19, 23), ["Choice", "selected", "left", "right"], {{ Choice: {{ Inner: {{ _0: 19, _1: 23 }} }} }}],
-    ["Outer", outer("choice", 29, 31), ["Choice", "selected", "text", "Inner", "left", "right"], {{ Choice: {{ Outer: {{ _0: "choice", Inner: {{ _0: 29, _1: 31 }} }} }} }}],
+  for (const [arm, payload, expectedReads, expected] of [
+    [0, 17, ["Choice", "selected"], {{ Choice: {{ _0: 17 }} }}],
+    [1, field({{}}, "Inner", "Inner", inner(19, 23)),
+      ["Choice", "tail", "selected", "Inner", "left", "right"],
+      {{ Choice: {{ _1: {{ _0: {{ Inner: {{ _0: 19, _1: 23 }} }} }} }} }}],
+    [2, field({{}}, "Outer", "Outer", outer("choice", 29, 31)),
+      ["Choice", "tail", "selected", "Outer", "text", "inner-slot", "Inner", "left", "right"],
+      {{ Choice: {{ _1: {{ _1: {{ Outer: {{ _0: "choice", _1: {{ Inner: {{ _0: 29, _1: 31 }} }} }} }} }} }} }}],
   ]) {{
     reads = [];
-    const target = field({{}}, key, "selected", payload);
-    equal(Object.keys(target), [key]);
-    // The sum has exactly one key. Membership stays truthful; only an actual
-    // read of an absent alternative fails, independently of discriminator probes.
-    const oneKey = new Proxy(target, {{ get(object, name, receiver) {{
-      if (["_0", "Inner", "Outer"].includes(name) && !Reflect.has(object, name)) {{
-        throw new Error("compound-input-once: read unselected " + name);
-      }}
-      return Reflect.get(object, name, receiver);
-    }} }});
+    const branch = (key, label, value) => {{
+      const target = field({{}}, key, label, value);
+      equal(Object.keys(target), [key]);
+      return new Proxy(target, {{ get(object, name, receiver) {{
+        if (["_0", "_1"].includes(name) && !Reflect.has(object, name)) {{
+          throw new Error("compound-input-once: read unselected " + name);
+        }}
+        return Reflect.get(object, name, receiver);
+      }} }});
+    }};
+    const oneKey = arm === 0 ? branch("_0", "selected", payload)
+      : branch("_1", "tail", branch(arm === 1 ? "_0" : "_1", "selected", payload));
     const out = api.echoChoice(field({{}}, "Choice", "Choice", oneKey));
     equal(reads, expectedReads);
     equal(out, expected);
-    const value = out.Choice[key];
-    if (key === "_0") print(value);
-    else if (key === "Inner") {{ print(value._0); print(value._1); }}
-    else {{ print(value._0); print(value.Inner._0); print(value.Inner._1); }}
+    if (arm === 0) print(out.Choice._0);
+    else if (arm === 1) {{ const value = out.Choice._1._0.Inner; print(value._0); print(value._1); }}
+    else {{ const value = out.Choice._1._1.Outer; print(value._0); print(value._1.Inner._0); print(value._1.Inner._1); }}
   }}
   equal(api.echoChoice(api.first(17)), {{ Choice: {{ _0: 17 }} }});
-  equal(api.echoChoice(api.middle(19, 23)), {{ Choice: {{ Inner: {{ _0: 19, _1: 23 }} }} }});
-  equal(api.echoChoice(api.last("choice", 29, 31)), {{ Choice: {{ Outer: {{ _0: "choice", Inner: {{ _0: 29, _1: 31 }} }} }} }});
+  equal(api.echoChoice(api.middle(19, 23)), {{ Choice: {{ _1: {{ _0: {{ Inner: {{ _0: 19, _1: 23 }} }} }} }} }});
+  equal(api.echoChoice(api.last("choice", 29, 31)), {{ Choice: {{ _1: {{ _1: {{ Outer: {{ _0: "choice", _1: {{ Inner: {{ _0: 29, _1: 31 }} }} }} }} }} }} }});
   print(api.echoText("atomic"));
 }})()
 "#
@@ -1642,8 +1697,8 @@ fn run_export_nested_product_roundtrip_js<'js>(
 
   const out = main_ns.make("nest", 7, 9);
   __kio_host_print__(String(out.Outer._0) + "\n");
-  __kio_host_print__(String(out.Outer.Inner._0) + "\n");
-  __kio_host_print__(String(out.Outer.Inner._1) + "\n");
+  __kio_host_print__(String(out.Outer._1.Inner._0) + "\n");
+  __kio_host_print__(String(out.Outer._1.Inner._1) + "\n");
 }})()
 "#
     );
@@ -1875,17 +1930,17 @@ fn push_js_host_fn_entry(
 fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
     match binding.body {
         HostFnBodyKind::CallStep { .. } => {
-            "(step, seed) => step({ _0: seed, _1: 'compound-callback', _2: true })".to_owned()
+            "(step, seed) => step({ _0: seed, _1: { _0: 'compound-callback', _1: true } })".to_owned()
         }
         HostFnBodyKind::MakePairCallback { .. } => {
             "(build, seed) => build(seed)._0".to_owned()
         }
         HostFnBodyKind::MakeStep { .. } => {
-            "(delta) => (n) => Number(BigInt.asIntN(32, BigInt(n) + BigInt(delta)))".to_owned()
+            "(delta) => __kio_lift_callable__((n) => Number(BigInt.asIntN(32, BigInt(n) + BigInt(delta))))".to_owned()
         }
         HostFnBodyKind::BoxMake { .. } => "(v) => ({ value: v })".to_owned(),
         HostFnBodyKind::BoxGet { .. } => "(box) => box.value".to_owned(),
-        HostFnBodyKind::ApplyPoly { .. } => "(f) => f('rank-n\\n')".to_owned(),
+        HostFnBodyKind::ApplyPoly { .. } => "(f) => f.advance()('rank-n\\n')".to_owned(),
         HostFnBodyKind::MakePairStructural { .. } => {
             "(n, s) => ({ _0: n, _1: s })".to_owned()
         }
@@ -1905,15 +1960,15 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
         HostFnBodyKind::ObservePacked { .. } => "value => globalThis.__kio_existential_observe__(value)".to_owned(),
         HostFnBodyKind::RoundPolyThunk => {
             "(thunk) => { const payload = thunk.PolyThunk; \
-             if (typeof payload !== 'function' || payload.length !== 0) \
-             throw new Error('round_poly_thunk: expected Poly_thunk payload callable arity 0'); \
+             if (typeof payload.advance !== 'function' || typeof payload.adapt !== 'function') \
+             throw new Error('round_poly_thunk: expected an unentered polymorphic stage'); \
              return thunk; }"
                 .to_owned()
         }
         HostFnBodyKind::RoundPolyUnitSlot => {
             "(step) => { const payload = step.UnitSlot; \
-             if (typeof payload !== 'function' || payload.length !== 1) \
-             throw new Error('round_unit_slot: expected Unit_slot payload callable arity 1'); \
+             if (typeof payload.advance !== 'function' || typeof payload.adapt !== 'function') \
+             throw new Error('round_unit_slot: expected an unentered polymorphic stage'); \
              return step; }"
                 .to_owned()
         }
@@ -1925,7 +1980,7 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
             "(callback) => 'host/' + callback(null)".to_owned()
         }
         HostFnBodyKind::ReturnedForallUnit => {
-            "(() => { let produced = false; return () => { if (produced) { __kio_host_print__('throw\\n'); throw new Error('produce failed'); } produced = true; __kio_host_print__('produce\\n'); return null; }; })()".to_owned()
+            "(() => { let produced = false; return () => { if (produced) { __kio_host_print__('throw\\n'); throw new Error('produce failed'); } produced = true; __kio_host_print__('produce\\n'); return __kio_lift_poly__({ advance: () => null }); }; })()".to_owned()
         }
         HostFnBodyKind::TraceUnit { text } => format!(
             "() => {{ __kio_host_print__({} + '\\n'); }}",
@@ -2432,7 +2487,8 @@ mod tests {
         let dir = ScratchDir::new("non-object-factory");
         fs::write(
             dir.path().join("pkg.js"),
-            "export function createPkg(_host) { return 42; }\n",
+            "export const liftPkgCallable = f => f; export const liftPkgPoly = p => p;\n\
+             export function createPkg(_host) { return 42; }\n",
         )
         .expect("write package");
         let protocol = RunnerProtocol::Empty;
@@ -2453,7 +2509,8 @@ mod tests {
         let dir = ScratchDir::new("exact-main-module");
         fs::write(
             dir.path().join("pkg.js"),
-            "export function createPkg(_host) { return { main: { main() {} } }; }\n",
+            "export const liftPkgCallable = f => f; export const liftPkgPoly = p => p;\n\
+             export function createPkg(_host) { return { main: { main() {} } }; }\n",
         )
         .expect("write package");
         let protocol = RunnerProtocol::EmptyApiMain;
@@ -2632,7 +2689,7 @@ mod tests {
         let host = host_api::dynamic_host_api(protocol.contract());
         let s = build_host_record_expression(&host, protocol);
         assert!(s.contains(
-            "\"callStep\": (step, seed) => step({ _0: seed, _1: 'compound-callback', _2: true })"
+            "\"callStep\": (step, seed) => step({ _0: seed, _1: { _0: 'compound-callback', _1: true } })"
         ));
         assert!(s.contains("\"makePair\": (build, seed) => build(seed)._0"));
         assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
@@ -2643,7 +2700,9 @@ mod tests {
         let protocol = RunnerProtocol::HostCallbackReturnRoundtrip;
         let host = host_api::dynamic_host_api(protocol.contract());
         let s = build_host_record_expression(&host, protocol);
-        assert!(s.contains("\"makeStep\": (delta) => (n) => Number(BigInt.asIntN(32"));
+        assert!(s.contains(
+            "\"makeStep\": (delta) => __kio_lift_callable__((n) => Number(BigInt.asIntN(32"
+        ));
         assert!(s.contains("\"print\": (s) => __kio_host_print__(s)"));
     }
 

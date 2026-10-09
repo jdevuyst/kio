@@ -5,7 +5,7 @@ build {
 
   target haskell {
     out "out/haskell/";
-    namespace "KioCarrier_H6170690050726f64756374__api_"
+    namespace "KioType_api__"
   }
 }
 

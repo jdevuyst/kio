@@ -2116,7 +2116,6 @@ fn doc_expr(e: &Expr) -> Doc {
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. } => match *ext {},
         Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }

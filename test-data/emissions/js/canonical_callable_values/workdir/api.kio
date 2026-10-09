@@ -1,0 +1,45 @@
+module api;
+
+host type Number role(i32);
+
+host type Flag role(bool);
+
+host type Atom;
+
+host type Box[T];
+
+host fn pack[T](value: T) -> Box(T);
+
+host fn host_hold[T](value: T) -> . -> T;
+
+host fn mark(code: Number) -> .;
+
+host fn argument() -> Number;
+
+pub newtype Seal : Number { constructor make; projector read }
+
+pub fn make_seal(value: Number) -> Seal { Seal.make(value) }
+
+fn observe_seal(value: Seal) -> Seal { mark(7); value }
+
+pub fn boxed_observer() -> Box(Seal -> Seal) { pack(observe_seal) }
+
+pub fn hold[T](value: T) -> . -> T { .() { value } }
+
+pub fn pair_hold(value: Number & Flag) -> . -> Number & Flag { hold(value) }
+
+pub fn boxed_hold(value: Number & Flag) -> Box(. -> Number & Flag) { pack(hold(value)) }
+
+pub fn pair_host_hold(value: Number & Flag) -> . -> Number & Flag { host_hold(value) }
+
+pub fn atom_hold(value: Atom) -> . -> Atom { hold(value) }
+
+pub fn relay[T](value: T) -> T { value }
+
+pub fn keep_thunk(value: . -> Number & Flag) -> . -> Number & Flag { value }
+
+pub fn staged[A] -> Number -> Number { mark(1); .(value: Number) { mark(2); value } }
+
+pub fn computed() -> [A] Number -> Number { mark(0); staged }
+
+pub fn invoke() -> Number { computed()(Number, argument()) }

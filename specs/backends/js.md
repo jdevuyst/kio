@@ -217,8 +217,7 @@ entry; an extra property left on the host object remains host-owned data that
 the package never reads. One package-complete preparation fixes every live
 `host fn`, exported function, and public-newtype member together with its
 source-parameter execution layout. JS keeps one public object argument for a
-source parameter whose direct type is a product, then reconstructs that one
-internal argument from the object's prepared right-spine keys; declaration
+source parameter whose direct type is a product; declaration
 value groups are still flattened into one public call. A directly written
 canonical Unit domain is nullary. When substitution changes an existing
 non-Unit source slot to Unit, that slot instead remains one explicit `null`
@@ -244,9 +243,10 @@ lexically-scoped module closures.
 lowers to the `run(cfg)` method under its role-framed module namespace; a
 `host fn` declared with a rank-N
 parameter type (`f: [T] T -> T`) receives only the value
-argument; a Kio function value of polymorphic type, when passed
-to a host callback, is a JS function the host calls with value
-arguments only.
+argument. A first-class polymorphic value exposes one nullary `.advance()`
+per quantified binder. Advancing performs that stage's computation and returns
+the next value; transporting or adapting the value does not enter any stage.
+No runtime type argument is passed.
 
 **Exception propagation.** A `host fn` that throws propagates its
 exception unchanged: it unwinds through the Kio call stack and
@@ -258,29 +258,28 @@ the host call stack the same way. Hosts that need to isolate package
 failures wrap their `pkg.x()` calls in `try`/`catch` themselves.
 
 **Value identity and lifetime.** FFI-shape values produced by package
-calls (the JS objects whose keys carry the right-spine slots — see §
+calls (the binary structural objects — see §
 FFI surface > Structural and nominal types) have no specified
 reference identity: two calls that happen to produce
 structurally-equal values may return distinct JS objects. Hosts may compare them
 with deep-equal helpers (`lodash.isEqual` / JSON-shape comparison)
 since the JS shape is a public contract; identity equality (`===`,
-`Object.is`) is **not** preserved across calls. The package retains no
-implicit references to ordinary structural values the host passes into
-package calls — once the call returns, the package holds nothing live
-on the host's behalf. There are two exceptions: the frozen host record
-captured at construction, and the private payload associated with a
-live nominal handle. Nominal-handle storage is weakly keyed, so the
+`Object.is`) is **not** preserved across calls. A concrete structural boundary
+copies the known structural shells, including when the value escapes the call.
+Atomic referenced children remain references: an erased type variable or opaque
+host-constructor application instead retains its reference, as do roleless
+host values. The frozen host record is captured at construction; closures and
+nominal handles may retain their values. Nominal-handle storage is weakly keyed, so the
 storage does not keep the handle alive and its payload becomes
 collectible with the handle.
 
 ## FFI surface
 
 How values cross the JS boundary, in three categories. Atomic
-role-typed values flow as JS-native primitives. Structural values and
-newtypes whose constructor and projector are both public flow as
-**plain JS objects** keyed by the right-spine slot; a public newtype that
-hides either member flows as a declaration-specific nominal handle (see
-§ Structural and nominal types below). A small set of carve-outs
+role-typed values flow as JS-native primitives. Structural values flow as
+**plain JS objects** with binary structural keys. Newtypes use explicit nominal
+wrappers or declaration-specific handles under the visibility, existential,
+and recursion rules in § Structural and nominal types below. A small set of carve-outs
 (unit, function values, bottom) flow as JS-native by design.
 
 ### Atomic types (governed by `role`)
@@ -288,13 +287,15 @@ hides either member flows as a declaration-specific nominal handle (see
 A `role(...)` annotation on a `host type` makes that type a receiver for
 source-level literal tokens whose shape its role admits (see
 [`specs/language.md` § Literals](../language.md#literals)). At the JS
-boundary, the JS backend binds each role to this value shape:
+boundary, the JS backend represents host types carrying these roles with the
+following value shapes. The width and range requirements in this section are
+JS backend FFI policy, not additional source-language literal-typing rules.
 
 | Role                       | JS shape                                        |
 | -------------------------- | ----------------------------------------------- |
 | `role(str)`                | JS `string`                                     |
 | `role(bool)`               | JS `boolean` (`true` / `false`)                 |
-| `role(i8)` … `role(i32)`   | JS `Number` (integer, in the role's range)      |
+| `role(i8)` … `role(i32)`   | JS `Number` (integer, in this backend's range) |
 | `role(u8)` … `role(u32)`   | JS `Number` (non-negative integer)              |
 | `role(i64)`, `role(i128)`  | JS `BigInt` (signed, two's-complement at width) |
 | `role(u64)`, `role(u128)`  | JS `BigInt` (non-negative)                      |
@@ -305,10 +306,10 @@ throws `TypeError` — so a `host fn` that takes a `role(i64)` argument
 must accept a `BigInt` literal (`42n`), not a plain `Number` (`42`).
 
 **Out-of-range and non-integer inputs.** A host that hands a value
-outside the role's range — e.g., `1.5` for a `role(i32)` slot, `2n ** 64n`
-for `role(u64)`, or `NaN` for `role(f64)` — gets implementation-defined
+outside this backend's range for the declared role — e.g., `1.5` for a
+`role(i32)` slot, `2n ** 64n` for `role(u64)`, or `NaN` for `role(f64)` — gets implementation-defined
 package behavior. The Kio package performs no defensive coercion or
-validation; ensuring a value belongs to its role is the host's
+validation; ensuring a value satisfies this backend's requirements is the host's
 responsibility.
 
 **String surface.** A `role(str)` JS string may contain any code point,
@@ -351,34 +352,36 @@ package.
 ### Structural and nominal types
 
 Values of structural type (built from `&`, `|`) cross the FFI as **plain JS
-objects**. A `newtype` uses that same structural representation exactly when
-both its constructor and projector are public. If either member is hidden, a
+objects**. A nonexistential `newtype` uses a structural wrapper when
+both its constructor and projector are public and its payload-visible graph
+has no uncut recursive cycle. If either member is hidden, a
 structural payload object would expose the missing operation implicitly: a
 host could construct the nominal by passing the object in, or project it by
 reading the object on the way out. Such a newtype therefore uses an opaque
-nominal handle instead. This rule is derived only from the lowered newtype's
-member visibility; `labels` sugar and an equivalent explicit `newtype` are not
+nominal handle instead. These rules use the lowered declaration and its exact
+payload dependencies; `labels` sugar and an equivalent explicit `newtype` are not
 distinguished.
 
-The shape of a structural value is determined by its source-level
-type, walked over the right spine of `&` and `|`:
+The shape is compositional over the resolved type. Each binary constructor
+retains the complete representations of its children, including an abstract
+child that later becomes a product, sum, nominal, or callable:
 
 - `()` (unit) — JS `null`.
 - `!` (bottom) — has no inhabitants; never crosses the boundary.
 - A `role(...)` type — its JS-native shape per the role table
   above.
-- A function type — a JS function (see § Carve-outs).
+- A function type — a callable value with one domain argument (see § Carve-outs).
 - A type variable (`[A]`-quantified) — passes through whatever the
-  host hands in; type erasure at the boundary makes the polymorphism
-  invisible.
-- A `newtype` with payload `X` and both members public — a JS object
+  host hands in, without inspecting, copying, or reindexing it.
+- A nonexistential `newtype` with payload `X`, both members public, and no
+  uncut payload-visible cycle — a JS object
   `{ [k]: shape(X) }` where `[k]` is the newtype's FFI key (its type name)
   per § FFI keys for newtype slots below. A newtype minted by
   `labels { f : X };` and an explicit
   `newtype F : X { pub constructor mk_f; pub projector f; };` therefore
-  have the same shape. A recursive newtype is the one exception
-  (**Recursive newtypes** below).
-- A public `newtype` with fewer than two public members — a frozen,
+  have the same shape.
+- A public `newtype` with fewer than two public members, an existential, or an
+  uncut payload-visible cycle — a frozen,
   null-prototype nominal handle with no payload property. The package factory
   keeps the payload in private weak storage keyed by the exact declaring
   `(module, type name)` identity. A handle is accepted only by the package
@@ -387,49 +390,37 @@ type, walked over the right spine of `&` and `|`:
   cannot inspect its payload. This is an atomic leaf when nested in a product,
   sum, function, or another payload: enclosing conversion never descends into
   the hidden payload.
-- A product type `(A & B)` — a JS object whose keys come from the
-  right-spine walk: each spine slot contributes one key, populated
-  by the slot's payload value.
-- A sum type `(A | B)` — a JS object with **exactly one** key set,
-  identified by the right-spine slot the value inhabits.
+- A product type `(A & B)` — `{_0: shape(A), _1: shape(B)}`.
+- A sum type `(A | B)` — `{_0: shape(A)}` or `{_1: shape(B)}`, with
+  **exactly one** key set.
 
-The right-spine walk algorithm is shared across backends — see
-[`README.md` § The right-spine walk](README.md#the-right-spine-walk)
-for the rule. JS-specific examples: `((A & B) & C)` flows as
+The shared [semantic right-spine walk](README.md#the-right-spine-walk) does
+not flatten this value representation. `((A & B) & C)` flows as
 `{_0: shape(A & B), _1: shape(C)}` (left-nested, two slots);
-`(A & (B & C))` flows as `{_0: shape(A), _1: shape(B), _2: shape(C)}`
-(right-nested, three slots, flattened).
+`(A & (B & C))` flows as `{_0: shape(A), _1: {_0: shape(B), _1: shape(C)}}`.
+The same representation is used when the value is admitted to or extracted
+from an opaque host container through a generic parameter; no traversal of
+the container is implied.
 
 **Recursive payload-visible newtypes.** A newtype whose constructor and
 projector are both public and whose payload transitively reaches
-itself — directly (`List : . | (I32 & List)`) or through a chain of
-mutually recursive newtypes — has no finite structural shape. Such a
-value crosses the boundary as the package's **type-erased internal
-rep**, *not* a `{ [k]: shape(X) }` object: the host receives an opaque
+itself without crossing an atomic carrier — directly (`List : . | (I32 & List)`)
+or through a chain of payload-visible newtypes — has no finite structural shape. Such a
+value crosses the boundary as a declaration-specific nominal handle,
+*not* a `{ [k]: shape(X) }` object: the host receives an opaque
 carrier it round-trips through the package's own constructors /
 projectors and must not introspect. A member-hidden newtype already uses its
-nominal handle regardless of recursion. Only a non-recursive newtype with both
-members public surfaces structurally. This is the JS analogue of the erased-carrier
-rule `specs/backends/rust.md` states for a recursive newtype; both
-follow from the value's Kio' shape alone.
+nominal handle regardless of recursion and cuts traversal of the payload-visible
+graph. For example, a both-public nonexistential `Root : Hidden(Root)` remains
+a structural wrapper when `Hidden` has a hidden member: its child is an atomic
+handle, so the cycle does not expand structurally.
 
 #### FFI keys for newtype slots
 
-Per-slot key naming follows the [3-step fallback in
-`README.md`](README.md#3-step-key-fallback): unqualified newtype
-name → canonical fully-qualified `<modulepath>.<TypeName>` →
-positional `_<n>`.
-JS-specific instantiation:
-
-- Step 1 (unqualified) names word-case the source type component
-  (`Native_token` → `NativeToken`). Step 3 keeps its positional `_<n>`.
-  Both are legal JS
-  identifier or property keys; rendered as dotted access (`v.F`,
-  `v._0`).
-- Step 2 (qualified) word-cases each source module/type component, retaining
-  `/` and `.` as route delimiters. JS accepts the resulting string as an
-  object key; hosts use bracket access (`v["dataApi/model.NativeToken"]`
-  for `data_api/model.Native_token`).
+A visible newtype wrapper uses its word-cased type component
+(`Native_token` → `NativeToken`). A nested newtype retains that whole wrapper;
+it never replaces its enclosing product or sum's `_0`/`_1` selector. Display
+keys do not grant access to a hidden payload or replace nominal identity.
 
 Worked examples (assume `labels { t1 : I32, t2 : Str, t3 : I32 };`
 declares generated types `T1`, `T2`, `T3`;
@@ -438,25 +429,23 @@ declares generated types `T1`, `T2`, `T3`;
 | Kio type                                   | FFI shape                          |
 | ------------------------------------------ | ---------------------------------- |
 | `T1`                                       | `{T1: <i32>}`                      |
-| `T1 & T2`                                  | `{T1: <i32>, T2: <str>}`           |
+| `T1 & T2`                                  | `{_0: {T1: <i32>}, _1: {T2: <str>}}` |
 | `(I32 & Str)` (no labels)                  | `{_0: <i32>, _1: <str>}`           |
-| `(T1 & Str)`                               | `{T1: <i32>, _1: <str>}`           |
-| `(T1 \| T2)`                               | `{T1: <i32>}` or `{T2: <str>}`     |
+| `(T1 & Str)`                               | `{_0: {T1: <i32>}, _1: <str>}`      |
+| `(T1 \| T2)`                               | `{_0: {T1: <i32>}}` or `{_1: {T2: <str>}}` |
 | `(I32 \| Str)`                             | `{_0: <i32>}` or `{_1: <str>}`     |
-| `F(I32) & F(Str)` (parametric same label)  | `{F: <i32>, "m1.F": <str>}`        |
+| `F(I32) & F(Str)` (parametric same label)  | `{_0: {F: <i32>}, _1: {F: <str>}}` |
 
 The host dispatches a sum value by checking which key is present:
-`if ('T1' in v) … else if ('T2' in v) …`.
+`if ('_0' in v) … else if ('_1' in v) …`.
 
 #### Conversion semantics
 
-The package and the host agree on the JS-shape contract above.
-Internally, the package may use any rep it likes (today's emitter
-uses nested binary arrays); the per-signature wrapper at every package
-fn boundary converts between internal-rep and JS-shape on the way
-in and out. Hosts must not introspect a value of structural type
-across kio versions assuming a particular *internal* shape — only the
-JS-shape above is the public contract.
+The package and host agree on the compositional shapes above. The
+[generic substitution law](README.md#generic-substitution-and-opaque-constructors)
+applies in both directions, including callbacks, returned values, and opaque
+host-container storage. Concrete protection never guesses a shape from an
+erased `T` or inspects an opaque `F(A)`.
 
 **Equality.** Hosts may compare two FFI-shape values using a
 deep-equality helper (`lodash.isEqual`, JSON-shape comparison,
@@ -465,21 +454,24 @@ structural equality is well-defined. Identity equality (`===`) is
 *not* preserved across calls: two calls returning structurally-equal
 values may return distinct JS objects.
 
-**Mutation and aliasing.** Conversion materializes fresh JS objects on
-both sides. A host that mutates a passed object after the call does
-not affect the package's internal state, and a JS object the package
-returned is owned by the host. Atomic role-typed values are
-immutable in JS so the question is moot for them; host-typed values
-without a `role` annotation pass through by reference (the host's
-concern, not Kio's).
+**Mutation and aliasing.** A known concrete product, sum, or visible nominal
+payload is copied on entry and return. Mutating a concrete input afterward
+cannot change retained package structure; each concretely advertised result
+is a fresh snapshot, including results of an escaping specialized generic
+closure. Copying preserves roleless references, abstract `T`, opaque host
+applications, and sealed nominal handles as atomic leaves. A host-origin
+generic `hold[T]` therefore preserves an argument reference even when the host
+selects a structural `T`; a concrete `hold_pair` copies its advertised pair.
+Concrete extraction from opaque storage restores the concrete protection
+without traversing or modifying the container itself.
 
 ### Carve-outs
 
-Three kinds of value flow as JS-native — not as a structural-shape
-JS object — because they have to:
+The following value interfaces are distinct from binary structural objects:
 
 - **Unit `()`** is JS `null`. Construct and match as JS `null` directly; there's no construction wrapper because there's nothing to construct.
-- **Function values** (`(A & B & ...) -> R`) are JS functions, called positionally and synchronously. Arguments and return values follow whichever rule applies (atomic, structural, unit, function) to their respective types.
+- **Function values** (`A -> R`) are synchronously callable with exactly one complete domain value. Direct Unit therefore uses `callable(null)`, unlike a named direct-Unit declaration's nullary native view. They expose `adapt(before, after)`, returning a new callable with type-preserving input and output operations. Existing protections remain in force. The carrier keeps its underlying callable and adapter layers private, composes layers iteratively, and allocates invocation-local state, preserving reentrancy and thrown exception identity. This bounds adapter-generated stack use, not arbitrary host recursion.
+- **Polymorphic values** expose `advance()` and `adapt(after)`. Each advance enters exactly one type stage; adaptation never advances, caches, or repeats a stage. `lift<Handle>Callable(body)` and `lift<Handle>Poly({advance() { ... }})` construct host values satisfying these protocols. Plain host functions supplied as named host-record entries retain their ordinary native calling interface.
 - **Bottom `!`** has no JS value. A `fn` declared `-> !` is contractually obliged not to return normally — typically by throwing, calling `process.exit`, or looping indefinitely. A normal return from a `-> !` host fn is undefined behavior at the boundary: Kio code may have eliminated the value via the inline `__absurd__` lowering (which throws a runtime guard) or omitted handling for it entirely. A `!`-typed *return from package code* is unreachable in well-typed programs.
 
 These carve-outs are stable across implementations.
@@ -526,9 +518,8 @@ parameters. Given a `pub fn id[T](x: T) -> T { id_impl(T, x) }` in module
 pkg.m.id("hello");        // <t> is not passed; only the value argument
 ```
 
-The same rule applies to rank-N value parameters and to function values
-flowing in either direction (see § Boundary semantics — type erasure at
-the boundary).
+First-class polymorphic arguments and results instead retain their explicit
+`advance()` protocol, without runtime type arguments (see § Boundary semantics).
 
 **Type exports.** A `pub` type `Bar` in a bridged module `m` whose target is a
 `newtype` exports the newtype's pub members atomically: members are
@@ -578,16 +569,23 @@ projector-only namespace can inspect package-produced handles but cannot mint
 them. If neither member is public, the namespace is empty and handles can only
 be obtained from and shuttled through other public functions. This preserves
 the declaration's operation visibility at the host boundary; a structural
-payload object is used only when both operations are public.
+payload object also requires a nonexistential declaration without an uncut
+payload-visible cycle.
 
 ## Higher-kinded types
 
-JS is type-erased; the host runtime carries no type-system information at run-time, so Kio's HKT machinery has no representation overhead at the JS backend. The cross-cutting scheme is documented at [`backends/README.md` § Higher-kinded types](README.md#higher-kinded-types); the per-backend realization reduces to:
+JS public calls carry no runtime type arguments. Private protection plans and
+staged callable carriers preserve the value contract without exposing type
+evidence to the host. The cross-cutting scheme is documented at
+[`backends/README.md` § Higher-kinded types](README.md#higher-kinded-types);
+the per-backend realization is:
 
-- A type-constructor application — `F(A)` for a kind-`*→*` binder, `Either(String)` for a partially-applied multi-arity newtype — is the same JS value as its carrier. No wrapper, no per-newtype marker; multi-arity type constructors render as ordinary nested applications.
-- Lift/project are identity at every call site: a concrete type constructor's `mk_<ctor>` / `un_<proj>` and an abstract type constructor's threaded-instance `pure` / `extract` reduce to pass-through.
+- A type-constructor application — `F(A)` for a kind-`*→*` binder, `Either(String)` for a partially-applied multi-arity newtype — retains its canonical value carrier. Applying a type does not add a runtime type object or inspect an opaque host value.
+- An opaque host constructor is transported without inspection. Concrete Kio
+  newtypes retain their declared wrapper or nominal handle; their constructors
+  and projectors preserve that representation and operation visibility.
 
-**Polymorphic newtype payloads.** The dictionary pattern (`pub newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B)`) needs no HKT-specific payload representation on JS. Its bound types erase, while the stored callable retains the application stages required by the cross-cutting contract in [`backends/README.md` § Polymorphic newtype payloads](README.md#polymorphic-newtype-payloads). Every binder of the stored first-class value is one hidden callable stage; a work-free stage returns the next callable, while a stage with computation performs it first. A direct known call may separately compact adjacent leading type applications. With both members public it uses the ordinary structural newtype boundary; hiding either member selects the same nominal handle rule as for every other newtype. Inside the body, construction and projection are identities around the complete staged callable; a public boundary wrapper performs the ordinary value-only function adaptation.
+**Polymorphic newtype payloads.** The dictionary pattern (`pub newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B)`) stores the same first-class staged value used elsewhere. Each binder is one explicit `advance()`; computation at that stage runs before the next stage is returned. With both members public it uses the ordinary visible wrapper; hiding either member selects the nominal handle rule. Construction, storage, and projection do not enter or compact its payload's stages. See the shared [polymorphic payload contract](README.md#polymorphic-newtype-payloads).
 
 ## Item naming
 
@@ -656,7 +654,7 @@ pkg.hello.KioModule_main.main();
 
 A package that exposes a fn whose argument and return type are
 structural products lets the host build and unpack values directly as
-JS objects keyed by the right-spine slot:
+binary JS objects:
 
 ```kio
 // pair_swap.pkg.kio
@@ -697,10 +695,9 @@ const q = pkg.pairSwap.KioModule_main.pairSwap(p); // (String & I32)
 console.log(q._0, q._1);                         // "hello" 42
 ```
 
-The host constructs and inspects values via the same key shape on
-both sides of the boundary; the package's per-signature wrapper
-converts between this JS shape and whatever internal rep codegen
-chose, transparently.
+The host constructs and inspects values via the same binary shape on
+both sides of the boundary. The concrete pair input and result are independent
+snapshots, while their primitive leaves retain their native values.
 
 A package with named labels surfaces them in the FFI shape too. Given the
 following in a bridged module `hello/main`:

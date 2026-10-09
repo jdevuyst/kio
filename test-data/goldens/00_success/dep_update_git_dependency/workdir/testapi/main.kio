@@ -15,4 +15,4 @@ pub fn greeting() -> String {
   marker("locked to old commit\n"(String), "advanced to new commit\n"(String))
 }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }

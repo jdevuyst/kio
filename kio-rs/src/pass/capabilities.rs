@@ -234,11 +234,6 @@ fn annotate_walk(e: &mut Expr<Routed>, outer: &[String]) {
                 annotate_walk(it, outer);
             }
         }
-        Expr::EnrichedRecord { fields, .. } => {
-            for f in fields {
-                annotate_walk(&mut f.value, outer);
-            }
-        }
         Expr::EnrichedInject { payload, .. } => {
             annotate_walk(payload, outer);
         }
@@ -410,11 +405,6 @@ fn walk<'a>(
         Expr::EnrichedTuple { items, .. } => {
             for it in items {
                 walk(it, outer, blocked, found, seen);
-            }
-        }
-        Expr::EnrichedRecord { fields, .. } => {
-            for f in fields {
-                walk(&f.value, outer, blocked, found, seen);
             }
         }
         Expr::EnrichedInject { payload, .. } => {
@@ -647,11 +637,6 @@ fn lifetime_walk_expr(e: &mut Expr<Routed>) {
                 lifetime_walk_expr(it);
             }
         }
-        Expr::EnrichedRecord { fields, .. } => {
-            for f in fields {
-                lifetime_walk_expr(&mut f.value);
-            }
-        }
         Expr::EnrichedInject { payload, .. } => {
             lifetime_walk_expr(payload);
         }
@@ -837,11 +822,6 @@ fn walk_param_escapes(name: &str, e: &Expr<Routed>, bound: &mut Vec<String>, esc
         Expr::EnrichedTuple { items, .. } => {
             for it in items {
                 walk_param_escapes(name, it, bound, escapes);
-            }
-        }
-        Expr::EnrichedRecord { fields, .. } => {
-            for f in fields {
-                walk_param_escapes(name, &f.value, bound, escapes);
             }
         }
         Expr::EnrichedInject { payload, .. } => {

@@ -50,12 +50,12 @@ def field_type(owner, field):
     match = re.search(r"(?m)^\s*" + re.escape(field) + r"\s+([A-Za-z0-9_]+)", doc(owner))
     assert match, (owner, field)
     return match.group(1)
-testapi = field_type("NativeDocs", "Testapi")
+testapi = field_type("Package", "Testapi")
 for field, marker, other in (("KioModule_main", "FIRST-SAME-DOC", "SECOND-SAME-DOC"),
                             ("KioModule_other", "SECOND-SAME-DOC", "FIRST-SAME-DOC")):
     selected = doc(field_type(testapi, field) + ".Same")
     assert marker in selected and other not in selected, (field, selected)
-assert "HOST-FN-DOC" in doc("NativeDocsHost.Testapi_io__print")
+assert "HOST-FN-DOC" in doc("Host.Testapi_io__print")
 PY
 
 cp -R . "$scratch/plain"

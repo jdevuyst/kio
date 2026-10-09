@@ -35,10 +35,10 @@ expect_public_rejection() {
 for host in Wrong PrivatePack PrivateTree PackConstructor TreeConstructor; do
   case "$host" in
     Wrong) identity=__api__Pair__mkPair ;;
-    PrivatePack) identity=__privatePack_Pack ;;
-    PrivateTree) identity=__privateTree_Tree ;;
-    PackConstructor) identity=KioExistential_H617069005061636b__api_Pack ;;
-    TreeConstructor) identity=KioCarrier_H747265650054726565__tree_Tree ;;
+    PrivatePack) identity=KioExists_privatePack__Pack ;;
+    PrivateTree) identity=KioType_privateTree__Tree ;;
+    PackConstructor) identity=KioExists_api__Pack ;;
+    TreeConstructor) identity=KioType_tree__Tree ;;
   esac
   expect_public_rejection "$host" "$identity"
 done

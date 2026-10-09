@@ -2070,7 +2070,6 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
         | EnrichedInject { ext, .. }
         | EnrichedMatch { ext, .. }
         | EnrichedConditional { ext, .. }
-        | EnrichedRecord { ext, .. }
         | EnrichedFieldGet { ext, .. } => match *ext {},
         LowHostCall { ext, .. }
         | LowModuleCall { ext, .. }

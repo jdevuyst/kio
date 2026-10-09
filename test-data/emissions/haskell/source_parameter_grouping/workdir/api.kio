@@ -1,0 +1,46 @@
+module api;
+
+host type Text role(str);
+
+host type Box[A];
+
+host fn box_echo(value: Box((Text & Text) -> Text)) -> Box((Text & Text) -> Text);
+
+host fn first[A][B](left: A, right: B) -> A & B;
+
+host fn second[A][B](pair: A & B) -> A & B;
+
+host fn mark(note: Text) -> .;
+
+pub fn split[A][B](left: A, right: B) -> A & B { first(left, right) }
+
+pub fn packed[A][B](pair: A & B) -> A & B { second(pair) }
+
+pub fn mixed[A][B][C](left: A, pair: B & C) -> A & B & C { (left, pair) }
+
+pub fn left_packed[A][B][C](pair: A & B, last: C) -> (A & B) & C { (pair, last) }
+
+pub fn generic[A](value: A) -> A { value }
+
+pub fn direct_unit() { mark("unit") }
+
+pub fn invoke(callback: (Text & Text) -> Text, left: Text, right: Text) -> Text {
+  callback(left, right)
+}
+
+pub fn first_value() -> (Text & Text) -> Text & Text { first(Text, Text) }
+
+pub fn boxed_callback(value: Box((Text & Text) -> Text)) -> Box((Text & Text) -> Text) {
+  box_echo(value)
+}
+
+pub fn boxed_generic[A](value: Box((A & A) -> A)) -> Box((A & A) -> A) { value }
+
+pub fn applied_generic[*F][A](value: F((A & A) -> A)) -> F((A & A) -> A) { value }
+
+pub fn returned(first: Text) -> Text -> Text & Text {
+  mark("head");
+  .(last: Text) { mark("tail"); (first, last) }
+}
+
+pub newtype Pair[A] : A & A { pub constructor pair; pub projector un_pair }

@@ -38,14 +38,16 @@ use crate::backends::boundary_facade::{
     PreparedBoundaryCallableSites,
 };
 use crate::backends::skin::{FfiDir, HostRoleTable, exact_host_role, host_role_table};
-use crate::backends::structural::{ProductRebuildPlan, bound_product_rebuild_plan};
+use crate::backends::structural::{
+    NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
+};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
 
 use super::facade::{
     GoFacadeCatalog, GoFacadeScope, GoFacadeUseRef, GoFacadeUseView, GoLiveCallableEntry,
     GoLiveExistentialProjectorEntry, GoLiveFacadeUseRef, GoLiveHeadStage, GoLiveNewtypeMemberEntry,
-    GoLiveValueHeadStage, GoLiveValueSourceGroupView,
+    GoLiveValueHeadStage, GoLiveValueSourceGroupView, GoPublicParameter,
 };
 use super::facade_skin::{self, GoFreshNames, GoStatementSink};
 use super::naming::GoIdentifier;
@@ -214,6 +216,55 @@ mod facade_consumer_tests {
     }
 
     #[test]
+    fn native_parameters_preserve_source_groups_and_function_value_domains() {
+        let package = package(
+            "module api; host type I32 role(i32); \
+             host fn split(left: I32, right: I32) -> I32; \
+             host fn packed(pair: I32 & I32) -> I32; \
+             host fn mixed(left: I32, pair: I32 & I32) -> I32; \
+             host fn callback(step: (I32 & I32) -> I32) -> I32; \
+             pub fn first(left: I32, _right: I32) -> I32 { left } \
+             pub fn second((left: I32, _right: I32)) -> I32 { left } \
+             pub fn staged(left: I32)(_right: I32) -> I32 { left } \
+             pub fn returned(left: I32) -> I32 -> I32 { .(_right) { left } }",
+        );
+        let emitted = lower_package(&package, "product").expect("emit grouped Go boundaries");
+        let pair = format!("Product[{I32_HOST}, {I32_HOST}]");
+        for signature in [
+            format!("Api__split(arg0 {I32_HOST}, arg1 {I32_HOST}) {I32_HOST}"),
+            format!("Api__packed(arg0 {pair}) {I32_HOST}"),
+            format!("Api__mixed(arg0 {I32_HOST}, arg1 {pair}) {I32_HOST}"),
+            format!("Api__callback(arg0 func({pair}) {I32_HOST}) {I32_HOST}"),
+        ] {
+            assert!(
+                emitted.host_go.contains(&signature),
+                "{signature}\n{}",
+                emitted.host_go
+            );
+        }
+        for signature in [
+            format!("First(arg0 {I32_HOST}, arg1 {I32_HOST}) {I32_HOST}"),
+            format!("Second(arg0 {pair}) {I32_HOST}"),
+            format!("Staged(arg0 {I32_HOST}, arg1 {I32_HOST}) {I32_HOST}"),
+            format!("Returned(arg0 {I32_HOST}) func({I32_HOST}) {I32_HOST}"),
+        ] {
+            assert!(
+                emitted.pkg_go.contains(&signature),
+                "{signature}\n{}",
+                emitted.pkg_go
+            );
+        }
+        assert!(emitted.pkg_go.contains("package product"));
+        assert!(emitted.pkg_go.contains("type Package["));
+        assert!(emitted.host_go.contains("type Host["));
+        assert!(emitted.pkg_go.contains("func New["));
+        assert!(!emitted.pkg_go.contains("CreateProduct"));
+        assert!(emitted.shapes_go.contains("type Product["));
+        assert!(emitted.ffi_go.contains("Env_Api__mixed_arg1"));
+        assert!(emitted.ffi_go.contains("Env_Api__callback_arg0_cbarg0"));
+    }
+
+    #[test]
     fn host_unit_return_has_no_clause_and_unit_parameter_is_publicly_nullary() {
         let package = package(
             "module api; \
@@ -264,7 +315,7 @@ mod facade_consumer_tests {
         assert!(
             emitted
                 .host_go
-                .contains(&format!("type PkgHost[{binding} any] interface {{")),
+                .contains(&format!("type Host[{binding} any] interface {{")),
             "{}",
             emitted.host_go
         );
@@ -278,13 +329,13 @@ mod facade_consumer_tests {
         assert!(
             emitted
                 .pkg_go
-                .contains(&format!("type Pkg[{binding} any] struct {{")),
+                .contains(&format!("type Package[{binding} any] struct {{")),
             "{}",
             emitted.pkg_go
         );
         assert!(
             emitted.pkg_go.contains(&format!(
-                "func CreatePkg[{binding} any](host PkgHost[{binding}]) *Pkg[{binding}]"
+                "func New[{binding} any](host Host[{binding}]) *Package[{binding}]"
             )),
             "{}",
             emitted.pkg_go
@@ -314,7 +365,7 @@ mod facade_consumer_tests {
         let convert_out = "KioHostOut_api_Count";
 
         for required in [
-            format!("type PkgHost[{binding} any] interface {{"),
+            format!("type Host[{binding} any] interface {{"),
             format!("{convert_in}(value {binding}) int32"),
             format!("{convert_out}(value int32) {binding}"),
             format!("Api__round(arg0 {binding}) {binding}"),
@@ -328,7 +379,7 @@ mod facade_consumer_tests {
         assert!(
             emitted
                 .pkg_go
-                .contains(&format!("pkg.host.{convert_in}(arg0)"))
+                .contains(&format!("pkg.host.{convert_in}(__kio_value_argument"))
         );
         assert!(emitted.pkg_go.contains(&format!("pkg.host.{convert_out}(")));
     }
@@ -343,7 +394,7 @@ mod facade_consumer_tests {
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go host carrier");
         let atom = "KioHost_V1_M1_C3_apiN3_I32";
-        let carrier = "KioHostType_V1_M1_C3_apiN3_Box";
+        let carrier = "KioHostType_api__Box";
 
         assert!(
             emitted.host_go.contains(&format!(
@@ -527,10 +578,11 @@ mod facade_consumer_tests {
         let emitted = lower_package(&package, "pkg").expect("emit nested aliases");
 
         for fragment in [
-            format!("type Env_Api__nested_arg1[{I32_HOST} any] = Sum["),
-            format!("type Env_Api__nested_arg1_0[{I32_HOST} any] = "),
-            format!("type Env_Api__nested_arg1_1[{I32_HOST} any] = "),
-            format!("func NewEnv_Api__nested_arg1_0[{I32_HOST} any]("),
+            format!("type Env_Api__nested_arg0[{I32_HOST} any] = Product["),
+            format!("type Env_Api__nested_arg0_field1[{I32_HOST} any] = Sum["),
+            format!("type Env_Api__nested_arg0_field1_0[{I32_HOST} any] = "),
+            format!("type Env_Api__nested_arg0_field1_1[{I32_HOST} any] = "),
+            format!("func NewEnv_Api__nested_arg0_field1_0[{I32_HOST} any]("),
             format!("type Env_Api__nested_ret[{I32_HOST} any] = Sum["),
             format!("type Env_Api__nested_ret_0_value[{I32_HOST} any] = Sum["),
             format!("func NewEnv_Api__nested_ret_0_value_0[{I32_HOST} any]("),
@@ -542,7 +594,7 @@ mod facade_consumer_tests {
                 emitted.ffi_go
             );
         }
-        assert!(!emitted.ffi_go.contains("Env_Api__nested_arg0"));
+        assert!(!emitted.ffi_go.contains("Env_Api__nested_arg1"));
     }
 
     #[test]
@@ -581,9 +633,10 @@ v(2) {
         );
         assert!(!emitted.pkg_go.contains("Api__old("), "{}", emitted.pkg_go);
         for fragment in [
-            "type Env_Api__old_arg0 = Unit",
-            "type Env_Api__old_arg1 = Sum[",
-            "func NewEnv_Api__old_arg1_0(",
+            "type Env_Api__old_arg0 = Product[",
+            "type Env_Api__old_arg0_field0 = Unit",
+            "type Env_Api__old_arg0_field1 = Sum[",
+            "func NewEnv_Api__old_arg0_field1_0(",
             "type Env_Api__old_ret_0_value = Sum[",
             "type Env_Api__old_ret_1_value = Product[",
             "func NewEnv_Api__old_ret_0_value_1(",
@@ -645,7 +698,7 @@ v(2) {
         assert!(
             emitted
                 .host_go
-                .contains(&format!("type PkgHost[{live} any] interface {{")),
+                .contains(&format!("type Host[{live} any] interface {{")),
             "{}",
             emitted.host_go
         );
@@ -658,7 +711,7 @@ v(2) {
         );
         assert!(
             emitted.pkg_go.contains(&format!(
-                "func CreatePkg[{live} any](host PkgHost[{live}]) *Pkg[{live}]"
+                "func New[{live} any](host Host[{live}]) *Package[{live}]"
             )),
             "{}",
             emitted.pkg_go
@@ -745,7 +798,7 @@ v(2) {
         let emitted = lower_package(&package, "pkg").expect("emit regrouped direct host call");
         assert!(
             emitted.host_go.contains(&format!(
-                "Api__direct(arg0 Unit, arg1 {I32_HOST}, arg2 {I32_HOST}) {I32_HOST}"
+                "Api__direct(arg0 Unit, arg1 Product[{I32_HOST}, {I32_HOST}]) {I32_HOST}"
             )),
             "{}",
             emitted.host_go
@@ -798,7 +851,7 @@ v(2) {
         let emitted = lower_package(&package, "pkg").expect("emit interleaved host value");
         assert!(
             emitted.host_go.contains(&format!(
-                "Api__staged(arg0 {I32_HOST}, arg1 {I32_HOST}, arg2 {I32_HOST}) {I32_HOST}"
+                "Api__staged(arg0 {I32_HOST}, arg1 Product[{I32_HOST}, {I32_HOST}]) {I32_HOST}"
             )),
             "{}",
             emitted.host_go
@@ -817,7 +870,7 @@ v(2) {
     }
 
     #[test]
-    fn exported_interleaved_heads_replay_in_order_from_flat_public_slots() {
+    fn exported_interleaved_heads_replay_in_order_from_source_groups() {
         let package = package(
             "module api; \
              host type I32 role(i32); \
@@ -826,7 +879,7 @@ v(2) {
         let emitted = lower_package(&package, "pkg").expect("emit interleaved export");
         assert!(
             emitted.pkg_go.contains(&format!(
-                "Staged(arg0 {I32_HOST}, arg1 {I32_HOST}, arg2 {I32_HOST}) {I32_HOST}"
+                "Staged(arg0 {I32_HOST}, arg1 Product[{I32_HOST}, {I32_HOST}]) {I32_HOST}"
             )),
             "{}",
             emitted.pkg_go
@@ -876,7 +929,7 @@ v(2) {
     }
 
     #[test]
-    fn existential_projectors_share_one_flat_signature_alias_and_invocation_cut() {
+    fn existential_projectors_share_one_grouped_signature_alias_and_invocation_cut() {
         let package = package(
             "module api; \
              pub newtype Single <Hidden> : Hidden { \
@@ -914,7 +967,9 @@ v(2) {
         let packed_header = packed.lines().next().expect("Packed projector header");
         assert!(
             packed_header.contains("ReadPacked(arg0 ")
-                && packed_header.contains(", arg1 func(any, any, any) any) any"),
+                && packed_header.contains(
+                    ", arg1 func(KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]) any) any"
+                ),
             "{packed_header}"
         );
         assert_eq!(packed.matches("= arg1\n").count(), 1, "{packed}");
@@ -931,11 +986,12 @@ v(2) {
             expanded < slot0 && slot0 < slot1 && slot1 < slot2 && slot2 < host_call_at,
             "{packed}"
         );
-        assert_eq!(
-            call_arguments(host_call).split(", ").count(),
-            3,
-            "{host_call}\n{packed}"
+        let host_arguments = call_arguments(host_call);
+        assert!(
+            host_arguments.starts_with("KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]{"),
+            "{host_call}"
         );
+        assert!(host_arguments.ends_with('}'), "{host_call}");
         assert!(
             packed.contains(".(func(any) any)(__kio_member_arg0)"),
             "{packed}"
@@ -954,10 +1010,11 @@ v(2) {
             "type Exp_Api__Single_readSingle_arg1_cbret = any",
             "type Exp_Api__Single_readSingle_ret = any",
             "type Exp_Api__Packed_readPacked_arg0 = ",
-            "type Exp_Api__Packed_readPacked_arg1 = func(any, any, any) any",
-            "type Exp_Api__Packed_readPacked_arg1_cbarg0 = any",
-            "type Exp_Api__Packed_readPacked_arg1_cbarg1 = any",
-            "type Exp_Api__Packed_readPacked_arg1_cbarg2 = any",
+            "type Exp_Api__Packed_readPacked_arg1 = func(KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]) any",
+            "type Exp_Api__Packed_readPacked_arg1_cbarg0 = KioFacade_V1_Product_K3_P0_P1_P2_[any, any, any]",
+            "type Exp_Api__Packed_readPacked_arg1_cbarg0_field0 = any",
+            "type Exp_Api__Packed_readPacked_arg1_cbarg0_field1 = any",
+            "type Exp_Api__Packed_readPacked_arg1_cbarg0_field2 = any",
             "type Exp_Api__Packed_readPacked_arg1_cbret = any",
             "type Exp_Api__Packed_readPacked_ret = any",
         ] {
@@ -1018,10 +1075,10 @@ impl std::fmt::Display for EmitError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoPackage {
     /// `pkg.go` — the package's invocable surface: the package-handle
-    /// struct, the `Create<Handle>` factory, and every module fn as a
+    /// struct, the `New` factory, and every module fn as a
     /// method.
     pub pkg_go: String,
-    /// `host.go` — the `<Handle>Host` interface (one method per
+    /// `host.go` — the `Host` interface (one method per
     /// `host fn`).
     pub host_go: String,
     /// `shapes.go` — facade-owned generic product/sum declarations and
@@ -1037,12 +1094,7 @@ pub struct GoPackage {
     pub runtime_go: String,
 }
 
-/// The branded facade names for one emitted package, all derived from
-/// the effective namespace: the `package` clause (`ns`), the PascalCase
-/// package handle, the `<Handle>Host` contract, and the
-/// `Create<Handle>` factory. One derivation root means a consumer can
-/// reconstruct the whole surface from the artifact's `package` clause
-/// alone.
+/// Fixed facade roles qualified by the emitted package's namespace.
 pub(crate) struct GoNames {
     pub ns: String,
     pub handle: String,
@@ -1052,12 +1104,11 @@ pub(crate) struct GoNames {
 
 impl GoNames {
     pub(crate) fn derive(ns: &str) -> GoNames {
-        let handle = crate::backends::namespace::pascal_case(ns);
         GoNames {
             ns: ns.to_owned(),
-            host_ty: format!("{handle}Host"),
-            factory: format!("Create{handle}"),
-            handle,
+            host_ty: "Host".to_owned(),
+            factory: "New".to_owned(),
+            handle: "Package".to_owned(),
         }
     }
 
@@ -1305,10 +1356,13 @@ fn render_ffi_go(facades: &GoFacadeCatalog<'_>, names: &GoNames) -> Result<FfiAl
                     let Some(value) = stage.value_stage() else {
                         continue;
                     };
-                    for slot in value.slots() {
-                        emit_ffi_alias_tree(
+                    for parameter in value
+                        .public_parameters()
+                        .unwrap_or_else(go_facade_invariant)
+                    {
+                        emit_ffi_parameter_alias(
                             &format!("{prefix}_arg{argument}"),
-                            slot,
+                            &parameter,
                             &root_parameters,
                             &mut out,
                             &mut package_names,
@@ -1339,10 +1393,15 @@ fn render_ffi_go(facades: &GoFacadeCatalog<'_>, names: &GoNames) -> Result<FfiAl
                 let member = live
                     .newtype_member_entry()
                     .unwrap_or_else(go_facade_invariant);
-                for (argument, cursor) in member.public_parameters().iter().enumerate() {
-                    emit_ffi_alias_tree(
+                for (argument, parameter) in member
+                    .public_parameters()
+                    .unwrap_or_else(go_facade_invariant)
+                    .iter()
+                    .enumerate()
+                {
+                    emit_ffi_parameter_alias(
                         &format!("{prefix}_arg{argument}"),
-                        cursor.semantic(),
+                        parameter,
                         &root_parameters,
                         &mut out,
                         &mut package_names,
@@ -1382,6 +1441,54 @@ fn ffi_site_prefix(site: &BoundaryFacadeSiteId) -> String {
             "Exp_{}",
             qualified_boundary_member_name(&module, Some(newtype), member)
         ),
+    }
+}
+
+fn emit_ffi_parameter_alias(
+    spelling: &str,
+    parameter: &GoPublicParameter<'_, '_>,
+    root_parameters: &GoFfiAliasRootParameters,
+    out: &mut String,
+    package_names: &mut Vec<String>,
+    visited: &mut BTreeMap<String, String>,
+    removed_at_version: Option<u32>,
+) -> Result<(), EmitError> {
+    match parameter {
+        GoPublicParameter::Value(cursor) => emit_ffi_alias_tree(
+            spelling,
+            cursor,
+            root_parameters,
+            out,
+            package_names,
+            visited,
+            removed_at_version,
+        ),
+        GoPublicParameter::Product(product) => {
+            out.push('\n');
+            if let Some(version) = removed_at_version {
+                out.push_str(&format!(
+                    "// Deprecated: retained only for source compatibility with host declarations removed at signature v{version}.\n"
+                ));
+            }
+            out.push_str(&format!(
+                "type {spelling}{} = {}\n",
+                root_parameters.declaration,
+                product.boundary_type()
+            ));
+            package_names.push(spelling.to_owned());
+            for (index, field) in product.fields().iter().enumerate() {
+                emit_ffi_alias_tree(
+                    &format!("{spelling}_field{index}"),
+                    field.payload(),
+                    root_parameters,
+                    out,
+                    package_names,
+                    visited,
+                    removed_at_version,
+                )?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -1492,10 +1599,15 @@ fn emit_ffi_alias_tree(
             package_names.push(alias.as_str().to_owned());
             match view {
                 GoFacadeUseView::Function(function) => {
-                    for (index, slot) in function.slots().iter().enumerate() {
-                        emit_ffi_alias_tree(
+                    for (index, parameter) in function
+                        .public_parameters()
+                        .unwrap_or_else(go_facade_invariant)
+                        .iter()
+                        .enumerate()
+                    {
+                        emit_ffi_parameter_alias(
                             &format!("{alias}_cbarg{index}"),
-                            slot,
+                            parameter,
                             root_parameters,
                             out,
                             package_names,
@@ -1574,7 +1686,10 @@ fn render_host_interface(
             let Some(value) = stage.value_stage() else {
                 continue;
             };
-            for slot in value.slots() {
+            for slot in value
+                .public_parameters()
+                .unwrap_or_else(go_facade_invariant)
+            {
                 let index = params.len();
                 params.push(format!(
                     "arg{index} {}",
@@ -2057,18 +2172,24 @@ enum GoLiveExportEntry<'site, 'source> {
 }
 
 impl<'site, 'source> GoLiveExportEntry<'site, 'source> {
-    fn public_parameters<'entry>(&'entry self) -> Vec<&'entry GoLiveFacadeUseRef<'site, 'source>> {
+    fn public_parameters(&self) -> Vec<GoPublicParameter<'site, 'source>> {
         match self {
             Self::Function(entry) => {
                 let mut parameters = Vec::new();
                 for stage in entry.stages() {
                     if let Some(value) = stage.value_stage() {
-                        parameters.extend(value.slots());
+                        parameters.extend(
+                            value
+                                .public_parameters()
+                                .unwrap_or_else(go_facade_invariant),
+                        );
                     }
                 }
                 parameters
             }
-            Self::Newtype(member) => member.public_parameters(),
+            Self::Newtype(member) => member
+                .public_parameters()
+                .unwrap_or_else(go_facade_invariant),
         }
     }
 
@@ -2138,7 +2259,7 @@ fn render_facade_export_method(
                 if let Some(stage) = stage.type_stage() {
                     callee = facade_skin::invoke_type_stage(stage, &callee, &mut body, &mut fresh);
                 } else if let Some(stage) = stage.value_stage() {
-                    let end = argument_offset + stage.slots().len();
+                    let end = argument_offset + stage.public_parameter_count();
                     let stage_arguments =
                         arguments.get(argument_offset..end).unwrap_or_else(|| {
                             unreachable!(
@@ -2250,12 +2371,12 @@ fn invoke_newtype_member(
     deepest.line(format!("return {result}"));
     let mut callee = render_curried_closure(&groups, deepest);
     let mut argument_offset = 0usize;
-    let declaration_argument_count = value_stage.slots().len();
+    let declaration_argument_count = value_stage.public_parameter_count();
     for stage in entry.stages() {
         if let Some(type_stage) = stage.type_stage() {
             callee = facade_skin::invoke_type_stage(type_stage, &callee, body, fresh);
         } else if let Some(value_stage) = stage.value_stage() {
-            let end = argument_offset + value_stage.slots().len();
+            let end = argument_offset + value_stage.public_parameter_count();
             let stage_arguments = arguments.get(argument_offset..end).unwrap_or_else(|| {
                 unreachable!(
                     "the prepared Go newtype stage partitions its declaration argument inventory"
@@ -3146,15 +3267,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Expr::EnrichedMatch {
                 scrutinee, arms, ..
             } => self.emit_match(scrutinee, arms, destination, out)?,
-            // A record is a product with named fields; the body rep is the
-            // same positional nested-binary `[]any` as a tuple (the field
-            // names re-appear only at the prepared typed facade). Field access is
-            // the same positional peel as a projection.
-            Expr::EnrichedRecord { fields, .. } => {
-                let items: Vec<&Expr<Routed>> = fields.iter().map(|f| &f.value).collect();
-                let value = self.emit_tuple_refs(&items, out)?;
-                destination.write(out, value);
-            }
             Expr::EnrichedFieldGet {
                 target,
                 index,
@@ -3388,7 +3500,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             .stages()
             .iter()
             .filter_map(GoLiveHeadStage::value_stage)
-            .flat_map(GoLiveValueHeadStage::slots)
+            .flat_map(|stage| {
+                stage
+                    .public_parameters()
+                    .unwrap_or_else(go_facade_invariant)
+            })
             .collect::<Vec<_>>();
         let returned_type = entry
             .returned()
@@ -3497,7 +3613,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 }
             }
         }
-        Ok(public)
+        Ok(facade_skin::group_public_arguments(
+            &stage
+                .public_parameters()
+                .unwrap_or_else(go_facade_invariant),
+            &public,
+        )
+        .unwrap_or_else(go_skin_invariant))
     }
 
     /// `LowModuleFnValueRef { mangled, sig }` → a Go closure forwarding to
@@ -3933,7 +4055,9 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         }
         let slots = Type::right_spine_product(synth_ty);
         let item_refs: Vec<&Expr<Routed>> = items.iter().collect();
-        if let Some(plan) = bound_product_rebuild_plan(&item_refs) {
+        if let Some(plan) =
+            bound_product_rebuild_plan(&item_refs, NominalValueRepresentation::Erased)
+        {
             return self.emit_tuple_with_cached_slots(&item_refs, Some(&slots), &plan, out);
         }
         let mut rendered = Vec::with_capacity(n);
@@ -3959,25 +4083,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             }
             _ => Ok(v),
         }
-    }
-
-    fn emit_tuple_refs(
-        &mut self,
-        items: &[&Expr<Routed>],
-        out: &mut GoBlock,
-    ) -> Result<String, EmitError> {
-        let n = items.len();
-        if n == 0 {
-            return Ok("(Unit{})".to_owned());
-        }
-        if let Some(plan) = bound_product_rebuild_plan(items) {
-            return self.emit_tuple_with_cached_slots(items, None, &plan, out);
-        }
-        let mut rendered = Vec::with_capacity(n);
-        for item in items {
-            rendered.push(self.emit_value(item, out)?);
-        }
-        Ok(Self::emit_tuple_from_rendered(&rendered))
     }
 
     fn emit_tuple_from_rendered(rendered: &[String]) -> String {
@@ -4091,7 +4196,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     }
 
     /// `LowHostCall` → `pkg.host.<module>__<member>(<args>)`. The opaque
-    /// prepared value heads map source ABI arguments to flat public slots;
+    /// prepared value heads map source ABI arguments through semantic slots;
     /// each source is evaluated once, then Unit/identity/right-nest groups
     /// expand through facade conversion in order. Raw expression `sig` and
     /// `ret_ty` remain irrelevant to public grouping and conversion. A
@@ -4120,7 +4225,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             .stages()
             .iter()
             .filter_map(GoLiveHeadStage::value_stage)
-            .flat_map(GoLiveValueHeadStage::slots)
+            .flat_map(|stage| {
+                stage
+                    .public_parameters()
+                    .unwrap_or_else(go_facade_invariant)
+            })
             .collect::<Vec<_>>();
         let mut expected_source_arguments = 0usize;
         for stage in entry.stages() {

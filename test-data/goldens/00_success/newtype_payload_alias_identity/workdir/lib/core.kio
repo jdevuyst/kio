@@ -1,0 +1,3 @@
+module lib/core;
+
+pub newtype Token : . { pub constructor make; pub projector read }

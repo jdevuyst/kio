@@ -1,0 +1,3 @@
+module library/core;
+
+pub newtype Box[A] : A { pub constructor make; pub projector read }

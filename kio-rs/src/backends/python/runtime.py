@@ -1,6 +1,86 @@
 import types
 
 
+class _KioTypeStage:
+    __slots__ = ()
+
+    @classmethod
+    def __class_getitem__(cls, _arguments):
+        return cls
+
+    def advance(self):
+        raise NotImplementedError("a polymorphic host value implements advance")
+
+    @staticmethod
+    def lift(source):
+        return _KioPoly(source.advance)
+
+    def adapt(self, after):
+        return self.lift(self).adapt(after)
+
+
+class KioFn:
+    __slots__ = ()
+
+    @classmethod
+    def __class_getitem__(cls, _arguments):
+        return cls
+
+    @staticmethod
+    def lift(body):
+        return _KioFunction(1, lambda args: body(args[0]), "host callable")
+
+    def __call__(self, domain):
+        raise NotImplementedError("a host callable implements __call__")
+
+    def adapt(self, before, after):
+        return self.lift(self).adapt(before, after)
+
+
+class _KioTypeIndex:
+    @classmethod
+    def __class_getitem__(cls, _arguments):
+        return cls
+
+
+class KioApply1(_KioTypeIndex):
+    def __new__(cls, *_arguments):
+        raise TypeError("application values use their exact declaration operations")
+
+
+class _KioLayer:
+    __slots__ = ("before", "after", "inner")
+
+    def __init__(self, before, after, inner):
+        self.before = before
+        self.after = after
+        self.inner = inner
+
+
+def kio_lift(body):
+    return KioFn.lift(body)
+
+
+def kio_lift_stage(source):
+    return _KioTypeStage.lift(source)
+
+
+def _identity(value):
+    return value
+
+
+def _run_layers(leaf, layers, value):
+    pending = []
+    while layers is not None:
+        value = layers.before(value)
+        pending.append(layers.after)
+        layers = layers.inner
+    value = leaf(value)
+    while pending:
+        value = pending.pop()(value)
+    return value
+
+
 def _variant_name(value):
     if isinstance(value, str):
         return value
@@ -84,7 +164,7 @@ def _product_from_slots(slots):
         return None
     cur = slots[-1]
     for value in reversed(slots[:-1]):
-        cur = [value, cur]
+        cur = {"left": value, "right": cur}
     return cur
 
 
@@ -95,8 +175,8 @@ def _product_slots(value, arity):
         if index + 1 == arity:
             slots.append(cur)
         else:
-            slots.append(cur[0])
-            cur = cur[1]
+            slots.append(cur["left"])
+            cur = cur["right"]
     return slots
 
 
@@ -111,9 +191,9 @@ def _sum_inject(payload, variant, variants):
         raise IndexError("sum variant out of bounds")
     cur = payload
     if variant + 1 < variants:
-        cur = [0, cur]
+        cur = {"tag": "left", "value": cur}
     for _ in range(variant):
-        cur = [1, cur]
+        cur = {"tag": "right", "value": cur}
     return cur
 
 
@@ -124,116 +204,89 @@ def _sum_payload(value, variants):
     for index in range(variants):
         if index + 1 == variants:
             return index, cur
-        if cur[0] == 0:
-            return index, cur[1]
-        cur = cur[1]
+        if cur["tag"] == "left":
+            return index, cur["value"]
+        cur = cur["value"]
     raise IndexError("sum payload out of bounds")
 
 
-def _looks_like_product(value):
-    return isinstance(value, list) and len(value) == 2
+class _KioFunction(KioFn):
+    __slots__ = ("__leaf", "__layers")
+
+    def __init__(self, arity, invoke, label):
+        del label
+        self.__leaf = lambda domain: invoke(_product_slots(domain, arity))
+        self.__layers = None
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name):
+            raise AttributeError("callable carriers are immutable")
+        object.__setattr__(self, name, value)
+
+    def __call__(self, domain):
+        return _run_layers(self.__leaf, self.__layers, domain)
+
+    def adapt(self, before, after):
+        value = object.__new__(_KioFunction)
+        value.__leaf = self.__leaf
+        value.__layers = _KioLayer(before, after, self.__layers)
+        return value
 
 
-def _boundary_argument(plan, binder, bindings):
-    for scope_plan, arguments in reversed(bindings):
-        if scope_plan is plan:
-            return next((argument for key, argument in arguments if key == binder), None)
-    return None
+class _KioPoly(_KioTypeStage):
+    __slots__ = ("__leaf", "__layers")
+
+    def __init__(self, invoke):
+        self.__leaf = lambda _unit: invoke()
+        self.__layers = None
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name):
+            raise AttributeError("type-stage carriers are immutable")
+        object.__setattr__(self, name, value)
+
+    def advance(self):
+        return _run_layers(self.__leaf, self.__layers, None)
+
+    def adapt(self, after):
+        value = object.__new__(_KioPoly)
+        value.__leaf = self.__leaf
+        value.__layers = _KioLayer(_identity, after, self.__layers)
+        return value
 
 
-def _boundary_nominal_application(plan, use_id, execution, bindings):
-    use = plan["uses"][use_id]
-    if use["kind"] == "nominal":
-        return use["name"], ()
-    if use["kind"] == "bound":
-        argument = _boundary_argument(plan, use["binder"], bindings)
-        return _boundary_nominal_application(*argument) if argument is not None else None
-    if use["kind"] == "apply":
-        head = _boundary_nominal_application(plan, use["constructor"], execution, bindings)
-        if head is not None:
-            name, args = head
-            return name, args + tuple(
-                (plan, child, execution, bindings) for child in use["args"]
-            )
-    return None
-
-
-class _KioFunction:
+class _KioNamedFunction:
     def __init__(self, arity, invoke, label):
         self.arity = arity
         self._invoke = invoke
         self.label = label
 
     def __call__(self, *args):
-        args = list(args)
-        if len(args) == self.arity:
-            return self._invoke(args)
-        # Exact application is the norm: recover_to_low gives every value
-        # group and every curried layer its own single-layer call node, so a
-        # well-typed call arrives with exactly `arity` arguments. The one
-        # exception is a positional-arity function value — a host-fn value or
-        # a lambda whose value group has several parameters — reached through
-        # a product-domain arrow slot, which passes the whole domain as one
-        # product value (specs/backends/README.md § Function-type FFI
-        # canonicalization). Spread that product across the parameter slots;
-        # this is the runtime counterpart of the compiled backends' static
-        # function-value slot adaptation.
-        if self.arity > 1 and len(args) == 1 and _looks_like_product(args[0]):
-            return self._invoke(_product_slots(args[0], self.arity))
-        raise TypeError(f"{self.label} expected {self.arity} args, got {len(args)}")
+        if len(args) != self.arity:
+            raise TypeError(f"{self.label} expected {self.arity} args, got {len(args)}")
+        return self._invoke(list(args))
 
 
 def _call_value(fn, *args):
-    if isinstance(fn, _KioFunction):
-        return fn(*args)
-    return fn(*args)
+    return fn(_product_from_slots(args))
 
 
 # Type values erase, but their application boundaries do not: each type
-# binder is one nullary runtime stage, while each value group stays one call.
+# binder is one explicit advance, while each value group stays one unary call.
 def _signature_runtime_groups(sig):
-    params = sig.get("params", [])
-    groups = sig.get("groups", [])
-    out = []
-    offset = 0
-    if groups:
-        for group in groups:
-            tag, data = _tag(group)
-            length = data["len"]
-            chunk = params[offset : offset + length]
-            offset += length
-            if tag == "Type":
-                out.extend((True, []) for _ in range(length))
-            elif tag == "Value":
-                out.append((False, [_tag(param)[1]["name"] for param in chunk]))
-    else:
-        names = []
-        for param in params:
-            tag, data = _tag(param)
-            if tag == "Type":
-                if names:
-                    out.append((False, names))
-                    names = []
-                out.append((True, []))
-            elif tag == "Value":
-                names.append(data["name"])
-        if names:
-            out.append((False, names))
-    if not out:
-        out.append((False, []))
-    return out
+    return [
+        (stage["kind"] == "type", stage.get("params", []))
+        for stage in sig["stages"]
+    ]
 
 
 def _signature_has_value_group(sig):
-    for group in sig["groups"]:
-        if _tag(group)[0] == "Value":
-            return True
-    return False
+    return any(stage["kind"] == "value" for stage in sig["stages"])
 
 
 def _apply_type_stages(fn, type_args):
     for _ in type_args:
-        fn = _call_value(fn)
+        fn = fn.advance()
     return fn
 
 
@@ -242,6 +295,10 @@ def _make_nominal_carrier(label):
 
     class Carrier:
         __slots__ = ("__payload",)
+
+        @classmethod
+        def __class_getitem__(cls, _arguments):
+            return cls
 
         def __new__(cls, permit, payload):
             if permit is not seal:
@@ -290,10 +347,11 @@ def _make_host_type_carrier(label):
         def from_native(cls, value):
             return cls(seal, value)
 
-        def to_native(self):
-            if type(self) is not Carrier:
+        @staticmethod
+        def to_native(value):
+            if type(value) is not Carrier:
                 raise TypeError(f"expected {label}")
-            return self.__native
+            return value.__native
 
         def __repr__(self):
             return f"<{label}>"
@@ -316,6 +374,25 @@ def _qname_key(name):
     return (tuple(name["module"]), name["name"])
 
 
+def _value_application(plan, use_id, bindings):
+    chunks = []
+    while True:
+        application = plan["uses"][use_id]["application"]
+        chunks.append([
+            (plan, argument, bindings) for argument in application["args"]
+        ])
+        head = application["head"]
+        if head["kind"] == "nominal":
+            arguments = []
+            while chunks:
+                arguments.extend(chunks.pop())
+            return head["name"], arguments
+        reference = bindings.get(head["binder"]) if bindings else None
+        if reference is None:
+            return None
+        plan, use_id, bindings = reference
+
+
 class _CompiledPackage:
     def __init__(self, ir):
         self.ir = ir
@@ -323,35 +400,56 @@ class _CompiledPackage:
         self.boundary = ir["boundary"]
         self.sites = {}
         for site in self.boundary["sites"]:
+            site["callable"]["facade"]["_values"] = site["callable"]["values"]
             site["_nominals"] = {
                 nominal["name"]["frame"]: nominal
                 for nominal in site["nominals"]
             }
+            for nominal in site["nominals"]:
+                payload = nominal["declaration"].get("transparent_payload")
+                if payload is not None:
+                    payload["facade"]["_values"] = payload["values"]
             self.sites[_site_key(site["module"], site["owner"])] = site
         self.public_newtypes = {
             _qname_key(entry["name"]): entry
             for entry in self.boundary["public_newtypes"]
         }
         self.nominal_newtypes = {}
+        self.nominal_declarations = {}
+        for module in self.modules.values():
+            for item in module.get("items", []):
+                tag, declaration = _tag(item)
+                if tag == "HostType":
+                    self.nominal_declarations[declaration["nominal"]["frame"]] = {
+                        "kind": "host_type"
+                    }
+                    continue
+                if tag != "Newtype":
+                    continue
+                name = declaration["nominal"]
+                frame = name["frame"]
+                self.nominal_declarations[frame] = {
+                    "kind": "newtype", "surface": {"kind": "opaque"},
+                    "existential_params": [], "transparent_payload": None,
+                }
+                self.nominal_newtypes[frame] = _make_nominal_carrier(
+                    ".".join(name["module"] + [name["name"]])
+                )
         for site in self.boundary["sites"]:
             for nominal in site["nominals"]:
                 declaration = nominal["declaration"]
+                self.nominal_declarations[nominal["name"]["frame"]] = declaration
                 if declaration["kind"] != "newtype":
                     continue
-                surface = declaration["surface"]["kind"]
-                nominal_shape = (
-                    surface != "both"
-                    or declaration["existential_params"]
-                    or declaration.get("transparent_payload") is None
-                )
-                if nominal_shape:
-                    frame = nominal["name"]["frame"]
-                    self.nominal_newtypes.setdefault(
-                        frame,
-                        _make_nominal_carrier(
-                            ".".join(nominal["name"]["module"] + [nominal["name"]["name"]])
-                        ),
-                    )
+                frame = nominal["name"]["frame"]
+                if frame not in self.nominal_newtypes:
+                    raise RuntimeError("a live boundary names an absent newtype declaration")
+        # Internal declarations grant exact identity checks only. Payload access
+        # above comes solely from the prepared public boundary descriptors.
+        self.value_site = {"_nominals": {
+            frame: {"declaration": declaration}
+            for frame, declaration in self.nominal_declarations.items()
+        }}
         self.host_type_carriers = {}
         for binding in self.boundary["host_bindings"]:
             if binding["type_params"]:
@@ -360,6 +458,16 @@ class _CompiledPackage:
 
     def install_declarations(self, namespace):
         namespace.update(self.host_type_carriers)
+        for binding in self.boundary["host_bindings"]:
+            if binding["type_params"]:
+                marker = "KioHostMk_" + binding["name"]["frame"]
+                namespace[marker] = type(marker, (_KioTypeIndex,), {})
+        for declaration in self.boundary["public_newtypes"]:
+            frame = declaration["name"]["frame"]
+            namespace["KioNewtype_" + frame] = self.nominal_newtypes[frame][0]
+            if declaration["type_params"]:
+                marker = "KioNewtypeMk_" + frame
+                namespace[marker] = type(marker, (_KioTypeIndex,), {})
 
     def create(self, host=None):
         return _PackageRuntime(self, host).exports()
@@ -465,7 +573,7 @@ class _PackageRuntime:
             ):
                 if execution["kind"] == "type":
                     if owner["kind"] == "exported_function":
-                        result = _call_value(result)
+                        result = result.advance()
                     continue
                 count = self._layout_public_arity(execution["layout"])
                 source_args = self._public_to_source(
@@ -482,12 +590,17 @@ class _PackageRuntime:
                 else:
                     values.extend(source_args)
             if owner["kind"] == "newtype_constructor":
-                result = values[0] if values else None
+                name = self.compiled.public_newtypes[
+                    (tuple(site["module"]), owner["newtype"])
+                ]["name"]
+                result = self._nominal_wrap(name, values[0] if values else None)
             elif owner["kind"] == "newtype_projector":
-                payload = values[0] if values else None
                 inventory = self.compiled.public_newtypes[
                     (tuple(site["module"]), owner["newtype"])
                 ]
+                payload = self._nominal_unwrap(
+                    inventory["name"], values[0] if values else None
+                )
                 if inventory["existential_params"]:
                     result = self._existential_projector_result(
                         site, site["callable"]["returned"], payload
@@ -503,7 +616,7 @@ class _PackageRuntime:
                 site["execution"]["root_uses"],
             )
 
-        return _KioFunction(expected, invoke, "public boundary")
+        return _KioNamedFunction(expected, invoke, "public boundary")
 
     def _existential_projector_result(self, site, use_id, payload):
         use = site["callable"]["facade"]["uses"][use_id]
@@ -515,12 +628,10 @@ class _PackageRuntime:
                 )
             if action != "invoke_forall":
                 raise RuntimeError("prepared forall has no execution action")
-            return _KioFunction(
-                0,
-                lambda _args: self._existential_projector_result(
+            return _KioPoly(
+                lambda: self._existential_projector_result(
                     site, use["result"], payload
                 ),
-                "newtype projector type stage",
             )
         if use["kind"] == "function":
             layout = site["execution"]["root_uses"][use_id]["layout"]
@@ -544,7 +655,7 @@ class _PackageRuntime:
         while use["kind"] == "forall":
             action = execution_uses[use_id]["kind"]
             if action == "invoke_forall":
-                continuation = _call_value(continuation)
+                continuation = continuation.advance()
             elif action != "declaration_binder":
                 raise RuntimeError("prepared forall has no execution action")
             use_id = use["result"]
@@ -587,10 +698,11 @@ class _PackageRuntime:
                     return layer(index + 1, local)
                 return self.eval(module_key, fn_def["body"], local)
 
-            arity = 0 if is_type else len(names)
-            return _KioFunction(arity, invoke, f"{module_key}.{fn_def['name']}")
+            if is_type:
+                return _KioPoly(lambda: invoke([]))
+            return _KioFunction(len(names), invoke, f"{module_key}.{fn_def['name']}")
 
-        return layer(0, dict(base_env))
+        return self._protect_applied_value(layer(0, dict(base_env)), fn_def["value_plan"])
 
     def eval(self, module_key, expr, env):
         tag, data = _tag(expr)
@@ -607,23 +719,24 @@ class _PackageRuntime:
         if tag == "FnExpr":
             return self._make_lambda(module_key, data, env)
         if tag == "StrLit":
-            return data["value"]
+            return self._literal(data, data["value"])
         if tag == "IntLit":
-            return int(data["digits"].replace("_", ""))
+            return self._literal(data, int(data["digits"].replace("_", "")))
         if tag == "FloatLit":
-            return float(data["digits"].replace("_", ""))
+            return self._literal(data, float(data["digits"].replace("_", "")))
         if tag == "BoolLit":
-            return data["value"]
+            return self._literal(data, data["value"])
         if tag == "EnrichedTuple":
             return _product_from_slots([self.eval(module_key, item, env) for item in data["items"]])
-        if tag == "EnrichedRecord":
-            return _product_from_slots(
-                [self.eval(module_key, field["value"], env) for field in data["fields"]]
-            )
-        if tag in ("EnrichedProject", "EnrichedFieldGet"):
+        if tag == "EnrichedProject":
             return _product_slot(
                 self.eval(module_key, data["target"], env), data["index"], data["arity"]
             )
+        if tag == "EnrichedFieldGet":
+            carrier = _product_slot(
+                self.eval(module_key, data["target"], env), data["index"], data["arity"]
+            )
+            return self._nominal_unwrap(data["nominal"], carrier)
         if tag == "EnrichedInject":
             return _sum_inject(
                 self.eval(module_key, data["payload"], env), data["variant"], data["variants"]
@@ -637,7 +750,9 @@ class _PackageRuntime:
             local[arm["param"]] = payload
             return self.eval(module_key, arm["body"], local)
         if tag == "EnrichedConditional":
-            branch = data["then_branch"] if self.eval(module_key, data["cond"], env) else data["else_branch"]
+            condition = self.eval(module_key, data["cond"], env)
+            native = self._role_adapter(_role_adapter_identity(data["host_type"]), "in", condition)
+            branch = data["then_branch"] if native else data["else_branch"]
             return self.eval(module_key, branch, env)
         if tag == "LowBoundRef":
             return env[data["name"]]
@@ -649,12 +764,12 @@ class _PackageRuntime:
             fn = self._host_fn_value(
                 data["name"], data["module_path"], data["sig"], data["ret_ty"]
             )
-            fn = _apply_type_stages(fn, data.get("type_args", []))
+            fn = self._apply_planned_type_stages(fn, data)
             args = [self.eval(module_key, arg, env) for arg in data["args"]]
             return _call_value(fn, *args)
         if tag == "LowModuleCall":
             fn = self.fn(data["module_path"], data["mangled"])
-            fn = _apply_type_stages(fn, data["type_args"])
+            fn = self._apply_planned_type_stages(fn, data)
             if data["type_args"] and not _signature_has_value_group(data["sig"]):
                 assert not data["args"], "a routed type-only head has no value arguments"
                 return fn
@@ -662,7 +777,7 @@ class _PackageRuntime:
             return _call_value(fn, *args)
         if tag == "LowQualifiedModuleCall":
             fn = self.fn(data["module_path"], data["mangled"])
-            fn = _apply_type_stages(fn, data["type_args"])
+            fn = self._apply_planned_type_stages(fn, data)
             if data["type_args"] and not _signature_has_value_group(data["sig"]):
                 assert not data["args"], "a routed type-only head has no value arguments"
                 return fn
@@ -670,24 +785,32 @@ class _PackageRuntime:
             return _call_value(fn, *args)
         if tag in ("LowQualifiedNewtypeMember", "LowNewtypeCtor", "LowNewtypeProj"):
             payload = data.get("payload", data.get("target"))
-            return self.eval(module_key, payload, env)
+            value = self.eval(module_key, payload, env)
+            constructor = tag == "LowNewtypeCtor" or (
+                tag == "LowQualifiedNewtypeMember" and data["constructor"]
+            )
+            operation = self._nominal_wrap if constructor else self._nominal_unwrap
+            return operation(data["nominal"], value)
         if tag == "LowClosureCall":
-            callee = _apply_type_stages(env[data["name"]], data.get("type_args", []))
+            callee = self._apply_planned_type_stages(env[data["name"]], data)
             args = [self.eval(module_key, arg, env) for arg in data["args"]]
             return _call_value(callee, *args)
         if tag == "LowIndirectCall":
             callee = self.eval(module_key, data["callee"], env)
-            callee = _apply_type_stages(callee, data.get("type_args", []))
+            callee = self._apply_planned_type_stages(callee, data)
             args = [self.eval(module_key, arg, env) for arg in data["args"]]
             return _call_value(callee, *args)
         if tag == "LowTypeApplication":
-            return _call_value(self.eval(module_key, data["callee"], env))
+            value = self.eval(module_key, data["callee"], env).advance()
+            return self._protect_applied_value(value, data["applied_plan"])
         if tag == "LowAbsurdCall":
             self.eval(module_key, data["value_arg"], env)
             raise RuntimeError("Kio: __absurd__ on bottom value")
         if tag == "LowCpsProjectorApply":
             receiver = self.eval(module_key, data["receiver"], env)
+            payload = self._nominal_unwrap(data["nominal"], receiver)
             continuation = self.eval(module_key, data["continuation"], env)
+            continuation = self._protect_applied_value(continuation, data["continuation_plan"])
             continuation = _apply_type_stages(
                 continuation,
                 range(data["continuation_type_stages"]),
@@ -696,15 +819,46 @@ class _PackageRuntime:
             if continuation_arity == 0:
                 return _call_value(continuation)
             if continuation_arity == 1:
-                return _call_value(continuation, receiver)
+                return _call_value(continuation, payload)
             raise RuntimeError(
                 "CPS projector continuation must have zero or one ABI argument, "
                 f"got {continuation_arity}"
             )
         raise RuntimeError(f"python target cannot evaluate routed expression {tag}")
 
+    def _apply_planned_type_stages(self, value, data):
+        arguments = data.get("type_args", [])
+        value = _apply_type_stages(value, arguments)
+        if not arguments:
+            return value
+        return self._protect_applied_value(value, data["applied_plan"])
+
+    def _protect_applied_value(self, value, plan_id):
+        plan = self.compiled.ir["value_plans"][plan_id]
+        return self._adapt_value(
+            self.compiled.value_site, plan, plan["root"], value, "out"
+        )
+
+    def _literal(self, data, value):
+        return self._role_adapter(_role_adapter_identity(data["host_type"]), "out", value)
+
+    def _nominal_wrap(self, name, payload):
+        declaration = self.compiled.nominal_declarations[name["frame"]]
+        if declaration["kind"] != "newtype":
+            raise RuntimeError("a routed newtype operation named a host type")
+        return self.compiled.nominal_newtypes[name["frame"]][1](payload)
+
+    def _nominal_unwrap(self, name, value):
+        declaration = self.compiled.nominal_declarations[name["frame"]]
+        if declaration["kind"] != "newtype":
+            raise RuntimeError("a routed newtype operation named a host type")
+        return self.compiled.nominal_newtypes[name["frame"]][2](value)
+
     def _make_lambda(self, module_key, data, env):
-        fn_def = {"name": "<lambda>", "sig": data["sig"], "body": data["body"]}
+        fn_def = {
+            "name": "<lambda>", "sig": data["sig"], "body": data["body"],
+            "value_plan": data["value_plan"],
+        }
         return self._make_fn(module_key, fn_def, env)
 
     def _host_fn_value(self, name, module_path, sig, ret_ty):
@@ -726,10 +880,12 @@ class _PackageRuntime:
                     return layer(index + 1, next_stages)
                 return self._call_prepared_host(site, next_stages)
 
-            arity = 0 if execution["kind"] == "type" else execution["layout"]["body_abi_arity"]
-            return _KioFunction(arity, invoke, f"host.{module_path}.{name}")
+            if execution["kind"] == "type":
+                return _KioPoly(lambda: invoke([]))
+            return _KioFunction(execution["layout"]["body_abi_arity"], invoke, f"host.{module_path}.{name}")
 
-        return layer(0, [])
+        plan = site["callable"]["values"]
+        return self._adapt_value(site, plan, plan["root"], layer(0, []), "out")
 
     def _call_prepared_host(self, site, stages):
         owner = site["owner"]
@@ -790,19 +946,18 @@ class _PackageRuntime:
             elif adapter == "right_nest":
                 value = public_args[public_index]
                 public_index += 1
-                shell = source["product_shell"]
+                original = _product_slots(value, end - start)
                 values = [
                     self._convert_use(
                         site,
                         plan,
                         use_id,
-                        value[key],
+                        slot_value,
                         "in",
                         execution_uses,
-                        absorb_transparent=True,
                         bindings=bindings,
                     )
-                    for key, use_id in zip(shell["keys"], slots[start:end])
+                    for slot_value, use_id in zip(original, slots[start:end])
                 ]
                 source_args.append(_product_from_slots(values))
             else:
@@ -837,268 +992,191 @@ class _PackageRuntime:
                 )
                 continue
             if adapter == "right_nest":
-                shell = source["product_shell"]
                 values = _product_slots(value, end - start)
-                public_args.append(
-                    {
-                        key: self._convert_use(
+                adapted = [self._convert_use(
                             site,
                             plan,
                             use_id,
                             slot_value,
                             "out",
                             execution_uses,
-                            absorb_transparent=True,
                             bindings=bindings,
                         )
-                        for key, use_id, slot_value in zip(
-                            shell["keys"], slots[start:end], values
+                        for use_id, slot_value in zip(
+                            slots[start:end], values
                         )
-                    }
+                ]
+                public_args.append(
+                    value if all(left is right for left, right in zip(values, adapted))
+                    else _product_from_slots(adapted)
                 )
                 continue
             raise RuntimeError(f"unknown prepared source adapter: {adapter}")
         return public_args
 
     def _convert_use(
-        self,
-        site,
-        plan,
-        use_id,
-        value,
-        direction,
-        execution_uses,
-        absorb_transparent=False,
-        bindings=(),
+        self, site, plan, use_id, value, direction, execution_uses, bindings=()
     ):
-        use = plan["uses"][use_id]
-        kind = use["kind"]
-        if kind in ("unit", "bottom"):
-            return value
-        if kind == "bound":
-            argument = _boundary_argument(plan, use["binder"], bindings)
-            if argument is None:
-                return value
-            argument_plan, argument_id, argument_execution, argument_bindings = argument
-            return self._convert_use(
-                site, argument_plan, argument_id, value, direction,
-                argument_execution, bindings=argument_bindings,
-            )
-        if kind in ("nominal", "apply"):
-            application = _boundary_nominal_application(plan, use_id, execution_uses, bindings)
-            if application is not None:
-                name, args = application
-                original_head = use
-                while original_head["kind"] == "apply":
-                    original_head = plan["uses"][original_head["constructor"]]
-                return self._convert_nominal(
-                    site, name, value, direction,
-                    absorb_transparent and original_head["kind"] == "nominal",
-                    args,
-                )
-            return value
-        if kind == "product":
-            keys = use["shell"]["keys"]
-            if direction == "out":
-                values = _product_slots(value, len(use["args"]))
-                return {
-                    key: self._convert_use(
-                        site,
-                        plan,
-                        child,
-                        child_value,
-                        "out",
-                        execution_uses,
-                        absorb_transparent=True,
-                        bindings=bindings,
-                    )
-                    for key, child, child_value in zip(keys, use["args"], values)
-                }
-            return _product_from_slots(
-                [
-                    self._convert_use(
-                        site,
-                        plan,
-                        child,
-                        value[key],
-                        "in",
-                        execution_uses,
-                        absorb_transparent=True,
-                        bindings=bindings,
-                    )
-                    for key, child in zip(keys, use["args"])
-                ]
-            )
-        if kind == "sum":
-            keys = use["shell"]["keys"]
-            if direction == "out":
-                index, payload = _sum_payload(value, len(use["args"]))
-                return {
-                    keys[index]: self._convert_use(
-                        site,
-                        plan,
-                        use["args"][index],
-                        payload,
-                        "out",
-                        execution_uses,
-                        absorb_transparent=True,
-                        bindings=bindings,
-                    )
-                }
-            for index, (key, child) in enumerate(zip(keys, use["args"])):
-                if key in value:
-                    payload = self._convert_use(
-                        site,
-                        plan,
-                        child,
-                        value[key],
-                        "in",
-                        execution_uses,
-                        absorb_transparent=True,
-                        bindings=bindings,
-                    )
-                    return _sum_inject(payload, index, len(use["args"]))
-            raise RuntimeError("sum value has no recognized variant key")
-        if kind == "function":
-            execution = execution_uses[use_id]
-            if execution["kind"] != "function":
-                raise RuntimeError("prepared function has no execution layout")
-            layout = execution["layout"]
-            if direction == "out":
-                arity = self._layout_public_arity(layout)
+        del execution_uses
+        values = plan["_values"]
+        return self._adapt_value(
+            site, values, values["source_uses"][use_id], value, direction, bindings
+        )
 
-                def invoke(public_args):
-                    source_args = self._public_to_source(
-                        site,
-                        plan,
-                        use["slots"],
-                        layout,
-                        public_args,
-                        execution_uses,
-                        bindings,
-                    )
-                    result = _call_value(value, *source_args)
-                    return self._convert_use(
-                        site,
-                        plan,
-                        use["result"],
-                        result,
-                        "out",
-                        execution_uses,
-                        bindings=bindings,
-                    )
+    def _nominal_payload_reference(self, declaration, arguments):
+        payload = declaration["transparent_payload"]
+        binders = payload["declaration_binders"]
+        if len(arguments) != len(binders):
+            raise RuntimeError("a value-level nominal application is not saturated")
+        captured = dict(zip(binders, arguments))
+        plan = payload["values"]
+        return plan, plan["source_uses"][payload["payload_root"]], captured
 
-                return _KioFunction(arity, invoke, "ffi function")
-
-            def invoke(source_args):
-                public_args = self._source_to_public(
-                    site,
-                    plan,
-                    use["slots"],
-                    layout,
-                    source_args,
-                    execution_uses,
-                    bindings,
-                )
-                result = value(*public_args)
-                return self._convert_use(
-                    site,
-                    plan,
-                    use["result"],
-                    result,
-                    "in",
-                    execution_uses,
-                    bindings=bindings,
-                )
-
-            return _KioFunction(layout["body_abi_arity"], invoke, "ffi function")
-        if kind == "forall":
-            action = execution_uses[use_id]["kind"]
-            if action == "declaration_binder":
-                return self._convert_use(
-                    site,
-                    plan,
-                    use["result"],
-                    value,
-                    direction,
-                    execution_uses,
-                    bindings=bindings,
-                )
-            if action != "invoke_forall":
-                raise RuntimeError("prepared forall has no execution action")
-            if direction == "out":
-                value = _call_value(value)
-                return self._convert_use(
-                    site,
-                    plan,
-                    use["result"],
-                    value,
-                    "out",
-                    execution_uses,
-                    bindings=bindings,
-                )
-            return _KioFunction(
-                0,
-                lambda _args: self._convert_use(
-                    site,
-                    plan,
-                    use["result"],
-                    value,
-                    "in",
-                    execution_uses,
-                    bindings=bindings,
-                ),
-                "ffi type stage",
-            )
-        raise RuntimeError(f"unknown prepared facade use: {kind}")
-
-    def _convert_nominal(
-        self, site, name, value, direction, absorb_transparent=False, args=()
-    ):
+    def _value_nominal(self, site, reference):
+        application = _value_application(*reference)
+        if application is None:
+            return None
+        name, arguments = application
         nominal = site["_nominals"].get(name["frame"])
         if nominal is None:
-            raise RuntimeError(
-                "prepared boundary omitted nominal dependency "
-                + ".".join(name["module"] + [name["name"]])
-            )
-        declaration = nominal["declaration"]
-        if declaration["kind"] == "host_type":
-            if declaration["role"] is not None:
-                return self._role_adapter(_role_adapter_identity(name), direction, value)
+            raise RuntimeError("prepared boundary omitted an exact nominal dependency")
+        return name, nominal["declaration"], arguments
+
+    def _needs_protection(self, site, reference, direction):
+        # The shared projection supplies the policy. This pass reads descriptors,
+        # not host values, and recursive nominal dependencies conservatively act.
+        pending = [("enter", reference, direction)]
+        active = set()
+        while pending:
+            task = pending.pop()
+            if task[0] == "leave":
+                active.remove(task[1])
+                continue
+            _, current, flow = task
+            plan, index, environment = current
+            node = plan["protection"][index]
+            kind = node["kind"]
+
+            def child(use_id, direction=flow):
+                return ("enter", (plan, use_id, environment), direction)
+
+            if kind == "identity":
+                continue
+            if kind == "bound":
+                bound = environment.get(node["binder"]) if environment else None
+                if bound is not None:
+                    pending.append(("enter", bound, flow))
+            elif kind in ("product", "sum"):
+                if node["snapshot"]:
+                    raise RuntimeError("Python uses validation, not snapshot protection")
+                pending.extend((child(node["right"]), child(node["left"])))
+            elif kind == "function":
+                opposite = "out" if flow == "in" else "in"
+                pending.extend((child(node["result"]), child(node["domain"], opposite)))
+            elif kind == "forall":
+                pending.append(child(node["result"]))
+            elif kind == "application":
+                application = self._value_nominal(site, current)
+                if application is None:
+                    continue
+                name, declaration, arguments = application
+                if declaration["kind"] == "host_type":
+                    continue
+                # Every Python newtype is sealed, including both-public values.
+                if flow == "in":
+                    return True
+                if declaration["surface"]["kind"] != "both" or declaration["existential_params"]:
+                    continue
+                key = (name["frame"], flow)
+                if key in active:
+                    return True
+                active.add(key)
+                pending.append(("leave", key))
+                pending.append(("enter", self._nominal_payload_reference(declaration, arguments), flow))
+            else:
+                raise RuntimeError("unknown prepared protection operation: " + kind)
+        return False
+
+    def _adapt_value(self, site, plan, use_id, value, direction, bindings=()):
+        reference = (plan, use_id, bindings)
+        if not self._needs_protection(site, reference, direction):
             return value
-        payload = declaration.get("transparent_payload")
-        nominal_shape = (
-            declaration["surface"]["kind"] != "both"
-            or declaration["existential_params"]
-            or payload is None
-        )
-        if nominal_shape:
-            _, wrap, unwrap = self.compiled.nominal_newtypes[name["frame"]]
-            return wrap(value) if direction == "out" else unwrap(value)
-        execution = site["execution"]["transparent_payloads"][name["frame"]]
-        if len(args) != len(declaration["type_params"]):
-            raise RuntimeError("prepared nominal application is not saturated")
-        # Argument references retain their caller scopes. Escaping callable
-        # adapters capture this immutable frame instead of a mutable binder stack.
-        bindings = ((payload["facade"], tuple(zip(payload["declaration_binders"], args))),)
-        if direction == "out":
-            converted = self._convert_use(
-                site,
-                payload["facade"],
-                payload["payload_root"],
-                value,
-                "out",
-                execution,
-                bindings=bindings,
-            )
-            return converted if absorb_transparent else {_host_name_core(name["name"]): converted}
-        public_value = value if absorb_transparent else value[_host_name_core(name["name"])]
-        return self._convert_use(
-            site,
-            payload["facade"],
-            payload["payload_root"],
-            public_value,
-            "in",
-            execution,
-            bindings=bindings,
-        )
+        # One applicability pass precedes one value pass. Once protection is
+        # needed, materialize concrete shells once; opaque leaves stay atomic.
+        result = [None]
+        pending = [("enter", reference, value, result, 0)]
+        while pending:
+            task = pending.pop()
+            if task[0] == "nominal":
+                _, original, carrier, payload, adapted, target, key = task
+                target[key] = original if adapted[0] is payload else carrier[1](adapted[0])
+                continue
+            action, current, item, target, key = task
+            if action == "read":
+                item = item[0][item[1]]
+            source, index, environment = current
+            node = source["protection"][index]
+            kind = node["kind"]
+
+            def read(child, original, source_key, destination, destination_key):
+                return ("read", (source, child, environment),
+                        (original, source_key), destination, destination_key)
+
+            if kind == "identity":
+                target[key] = item
+            elif kind == "bound":
+                argument = environment.get(node["binder"]) if environment else None
+                if argument is None:
+                    target[key] = item
+                else:
+                    pending.append(("enter", argument, item, target, key))
+            elif kind == "application":
+                application = self._value_nominal(site, current)
+                if application is None:
+                    target[key] = item
+                    continue
+                name, declaration, arguments = application
+                if declaration["kind"] == "host_type":
+                    target[key] = item
+                    continue
+                carrier = self.compiled.nominal_newtypes[name["frame"]]
+                if direction == "in" and type(item) is not carrier[0]:
+                    raise TypeError("expected " + ".".join(name["module"] + [name["name"]]))
+                if declaration["surface"]["kind"] != "both" or declaration["existential_params"]:
+                    target[key] = item
+                    continue
+                contents = carrier[2](item)
+                adapted = [None]
+                pending.append(("nominal", item, carrier, contents, adapted, target, key))
+                pending.append(("enter", self._nominal_payload_reference(declaration, arguments),
+                                contents, adapted, 0))
+            elif kind == "product":
+                copy = {}
+                target[key] = copy
+                pending.append(read(node["right"], item, "right", copy, "right"))
+                pending.append(read(node["left"], item, "left", copy, "left"))
+            elif kind == "sum":
+                tag = item["tag"]
+                if tag not in ("left", "right"):
+                    raise TypeError("a canonical sum tag is left or right")
+                copy = {"tag": tag}
+                target[key] = copy
+                pending.append(read(node[tag], item, "value", copy, "value"))
+            elif kind == "function":
+                opposite = "in" if direction == "out" else "out"
+
+                def before(argument, p=source, child=node["domain"], flow=opposite, env=environment):
+                    return self._adapt_value(site, p, child, argument, flow, env)
+
+                def after(output, p=source, child=node["result"], flow=direction, env=environment):
+                    return self._adapt_value(site, p, child, output, flow, env)
+
+                target[key] = item.adapt(before, after)
+            elif kind == "forall":
+                def after_stage(output, p=source, child=node["result"], flow=direction, env=environment):
+                    return self._adapt_value(site, p, child, output, flow, env)
+
+                target[key] = item.adapt(after_stage)
+            else:
+                raise RuntimeError("unknown prepared protection operation: " + kind)
+        return result[0]

@@ -1,0 +1,27 @@
+module model;
+
+import testapi/io as io;
+
+pub newtype Phantom[A] : . { constructor make; projector read }
+
+pub fn source[A] -> Phantom(A) { io.print("create\n"); Phantom.make(()) }
+
+pub fn consume[A](value: Phantom(A)) { value.>Phantom.read }
+
+newtype Hidden[*F][A][B] : . { constructor make; projector read }
+
+fn hidden[A][B] -> Hidden(Phantom, A, B) { io.print("hidden\n"); Hidden.make(()) }
+
+pub fn private_case() {
+  let delayed = hidden(.);
+  io.print("partial\n");
+  let value = delayed(.);
+  value.>Hidden.read;
+  io.print("private\n")
+}
+
+newtype Local : . { constructor make; projector read }
+
+fn local() -> Local { Local.make(()) }
+
+pub fn nullary_case() { local().>Local.read; io.print("nullary\n") }

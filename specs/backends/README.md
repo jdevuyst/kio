@@ -24,7 +24,7 @@ limitation.
 - [`java.md`](java.md) — Java backend. Family `erased-static`. A statically-typed host with a typed FFI skin over an *erased* body (`Object`, the host's universal object); HKT is carried dynamically in that erased rep. The body is a serialized-IR interpreter rather than per-function compiled code — the page carries the family-divergence note.
 - [`rust.md`](rust.md) — Rust backend. Family `erased-static`. A statically-typed host with a typed FFI skin over an *erased* body (an opaque reference-counted `Any` token: `Rc` by default, `Arc + Send + Sync` under the thread-safe option); HKT is carried dynamically in that erased rep. Reference-counted, not GC.
 - [`go.md`](go.md) — Go backend. Family `erased-static`. A statically-typed host with a generic typed FFI facade over an *erased* body (`interface{}` / `[]any`); products use generic record shells and concrete sums use row-anchored `KioSum` values. HKT is carried dynamically in the erased rep.
-- [`swift.md`](swift.md) — Swift backend. Family `erased-static`. A statically-typed host with a typed FFI skin over an *erased* body (`Any` / `[Any]`); HKT is carried dynamically in that erased rep. The skin uses native `enum`-with-payload sums — the family's native-sum member.
+- [`swift.md`](swift.md) — Swift backend. Family `erased-static`. A statically-typed host with an exact typed FFI skin over canonical native values stored as `Any`. Private lexical type witnesses construct the same typed products, sums, and constructor applications used at the public boundary. Sums use native enums with payloads.
 - [`haskell.md`](haskell.md) — Haskell backend. Family `native-HKT`. A statically-typed host whose own kind system carries HKT directly (`F(A)` → `f a`); exact host types selected through a package-qualified marker class; products and sums as transparent pair / `Either` folds with flat boundary patterns; monad-polymorphic exports over a value host-function record. The first native-HKT member; its per-backend concern is forcing Kio's strict evaluation in a lazy host.
 
 ## Host API stability
@@ -107,7 +107,7 @@ it with `any`, `Any`, `Object`, or an unchecked cast. The current combinations
 are:
 
 - **native-HKT** — the host's own type system has higher-kinded types, so Kio maps a kind-`*→*` type constructor directly to a host type constructor (`F(A)` → `f a`); no wrapper, no boundary erasure. **Haskell is the first member** (`RankNTypes` carries rank-N payloads; closed type families and patterns present structural values); the other static hosts whose type systems admit HKT and rank-N polymorphism (PureScript, Scala, Idris) would carry this same strategy. A native-HKT host that is *lazy* (Haskell) additionally forces Kio's strict evaluation in its body — the per-backend runtime concern, not an HKT one.
-- **type-erased body** — a host whose universal value carries HKT with no private representation distinct from its carrier, so body lift / peel are identity. A dynamic host (JS) is type-erased throughout. A *static* host with a genuine dynamic universal carrier can erase the body to that carrier (Java's `Object`, Go's `interface{}` / `[]any`, Swift's `Any`, Rust's opaque reference-counted `Any` token). That private fact removes any HKT-specific body walk; it does not prove that an arbitrary native facade application has the same type as the erased value, or eliminate the typed conversion at the facade boundary. The erased-static FFI restores every host-nameable exact constructor/application relation with the host's ordinary generic, marker, witness, or declaration-owned carrier mechanisms.
+- **type-erased body** — a host whose universal value carries higher-kinded values. A dynamic host (JS) is type-erased throughout. A *static* host with a genuine dynamic universal carrier can erase the body to that carrier (Java's `Object`, Go's `interface{}` / `[]any`, Swift's `Any`, Rust's opaque reference-counted `Any` token). Type application does not itself traverse or rewrap an opaque value; ordinary nominal construction and projection still follow the backend's representation contract. Erasure does not prove that an arbitrary native facade application has the same type as the erased value, or eliminate the typed conversion at the facade boundary. The erased-static FFI restores every host-nameable exact constructor/application relation with the host's ordinary generic, marker, witness, or declaration-owned carrier mechanisms.
 - **natural-exact skin** — the runtime remains type-erased, but a paired static
   declaration skin preserves each higher-kinded binder and application as an
   exact host type relation. TypeScript represents constructor witnesses with
@@ -118,10 +118,12 @@ are:
   type-erased dynamic module representation.
 
 Native kinds, native rank-N payloads, static declaration skins, and body
-erasure are independent axes: a type-erased runtime needs no private
-per-host-kind machinery, an exact skin preserves the public type relation
-without changing that runtime, and a native-HKT backend threads Kio's explicit
-dictionary values directly (Kio has no typeclasses — see
+erasure are independent axes. Erasure does not add public term-level type
+arguments; it does not prescribe whether generated private adapters need
+representation evidence to construct exact native values. Such evidence
+provides no Kio typecase and cannot be recovered by inspecting opaque host
+values. An exact skin preserves the public type relation, while a native-HKT
+backend threads Kio's explicit dictionary values directly (Kio has no typeclasses — see
 [§ Higher-kinded types](#higher-kinded-types)). See that section and
 [§ Polymorphic newtype payloads](#polymorphic-newtype-payloads) for the
 per-strategy detail.
@@ -427,12 +429,13 @@ for the contract-surface and type-closure rules.
 
 ### The package namespace
 
-Every top-level symbol an artifact contributes to a host program — the
-package-handle type, the factory, the host type, structural facade symbols,
-and the runtime-support items — lives under one per-package namespace,
-expressed in the host language's own namespacing construct (crate,
-module, package declaration, or file-module). No backend places a
-fixed-name symbol at the host language's global scope.
+Package-owned symbols — the package-handle type, factory, host type, nominal
+types, and runtime-support items — live under one per-package namespace,
+expressed in the host language's own namespacing construct (crate, module,
+package declaration, or file-module). Structural facade declarations also live
+there unless they use the shared static-declaration mechanism below. No backend
+places a fixed-name executable or package-owned symbol at the host language's
+global scope.
 
 The namespace defaults to a per-backend derivation of the kio package
 name — documented in each page's § Output layout — and every backend
@@ -450,6 +453,28 @@ grammar. The derivation preserves distinct valid source names and does not
 consult other declarations. An explicit namespace is host configuration, not
 a Kio source identifier; it follows its target's validation and the branding
 rules below. Two packages with the same source name disambiguate with this key.
+
+### Shared static type declarations
+
+**Applies when:** generated type declarations are consumed only by the host's
+static checker, without being imported or linked by executable code.
+
+Package-independent structural type declarations may live in a shared,
+versioned support namespace. Separately generated packages can refer to the
+same declarations without requiring distinct copies of a generic type to be
+interchangeable under the host checker's rules. This shares type descriptions,
+not executable code, package state, or nominal identities.
+
+Each artifact includes the complete support closure it needs. Generation and
+ordinary host imports require no other generated package, external support
+installation, or registry. Matching declaration identities have identical
+definitions; incompatible schemas use distinct support namespaces. Resolution
+must preserve both overlapping and disjoint declarations in either package
+search order, and must not silently substitute a conflicting definition.
+Support namespaces cannot collide with configurable package namespaces.
+Package-owned nominal types remain distinct, including when used as parameters
+of shared structural types. Public package interfaces re-export the needed
+types so host authors do not manage the shared support layout.
 
 ### Source-derived public names
 
@@ -483,12 +508,11 @@ are added by the word-casing rule.
 
 ### Branded naming
 
-The facade's public names derive from the effective namespace — its final
-segment, for a dotted namespace — which itself defaults to the kio package
-name, so one knob roots every emitted name and a consumer can derive the
-whole surface from the artifact alone. Here, a source-shaped component means
+The facade's public paths are rooted in the effective namespace, which defaults
+to the Kio package name. Where a public name carries a brand, it derives from
+that namespace's final segment. Here, a source-shaped component means
 a valid user-declarable Kio value-name spelling, not a type-name spelling or an
-arbitrary host identifier. On JS, TS, Python, Java, Rust, and Go,
+arbitrary host identifier. On JS, TS, Python, Java, and Rust,
 an ordinary source-shaped namespace component uses title word casing for its
 brand (`my_pkg` → `MyPkg`). A source-shaped component with leading or trailing
 underscores uses `KioPkg_` plus the title-word-cased component with remaining
@@ -513,13 +537,15 @@ Swift/Haskell):
 
 | Surface | Canonical name | Rendering |
 | --- | --- | --- |
-| Package handle type | Public namespace brand described above | `Greeter` |
-| Host contract type | the handle name + `Host` | `GreeterHost` |
-| Factory | Fixed host-language factory frame + public brand | `create_greeter` (Rust, Python), `createGreeter` (JS, TS, Haskell), `CreateGreeter` (Go), `createGreeter(host:)` (Swift); where the factory is a static member of the handle type (Java), it is `create` |
+| Package handle type | Public namespace brand described above; fixed `Package` in Go | `Greeter`; `greeter.Package` in Go |
+| Host contract type | The handle name + `Host`; fixed `Host` in Go | `GreeterHost`; `greeter.Host` in Go |
+| Factory | Fixed host-language factory frame + public brand, or a namespace-qualified member | `create_greeter` (Rust, Python), `createGreeter` (JS, TS, Haskell), `greeter.New` (Go), `createGreeter(host:)` (Swift); where the factory is a static member of the handle type (Java), it is `create` |
 
-Branding is what makes multi-package hosting ergonomic: two packages'
-types and factories (`AlphaHost` / `BetaHost`, `createAlpha` /
-`createBeta`) carry recognizable package brands. Namespace qualification
+Branding distinguishes selectively imported types and factories such as
+`AlphaHost` / `BetaHost` and `createAlpha` / `createBeta`. Go instead uses
+ordinary package qualification (`alpha.Host`, `beta.Host`, `alpha.New`) with
+fixed role names; the package name need not be repeated in each member.
+Namespace qualification
 separates packages even when two dotted namespaces share a final segment and
 therefore a brand. Overriding `namespace` on same-named packages separates
 their namespace identities; changing the brand-bearing component also
@@ -530,20 +556,21 @@ handle or host type; its factory carries the brand.
 
 Two packages whose namespaces differ load into one host program without
 symbol conflict — including artifacts emitted by different kio versions.
-The guarantee follows from the namespace rule's totality: every artifact
-symbol is either the namespace itself or is scoped beneath it. A backend may
-therefore use fixed member names for canonical support types without creating
-an unqualified host-program collision; the distinct package / module / crate
-identity still separates them. Two packages with the same name disambiguate
-with the `namespace` key. Instance-*state* isolation is § 4's separate
-guarantee; this one is symbol-level.
+Package-owned symbols remain namespace-qualified; shared static declarations
+obey the identity, versioning, and resolution rules above. Fixed member names
+for package-local support types therefore remain separate, while shared static
+definitions deliberately agree across packages. Neither arrangement merges
+package-owned nominal identities or runtime state. Two packages with the same
+name disambiguate with the `namespace` key. Instance-*state* isolation is § 4's
+separate guarantee; this one is symbol-level.
 
 ### What this fixes and what stays free
 
 Fixed here: the typed-access floor, the package-namespace rule and the
-`namespace` key, the branded names, and coexistence. Still per-backend:
+`namespace` key, the public facade names above, and coexistence. Still per-backend:
 how the namespace construct is spelled, the rung choice for host record
-and export surface, file layout inside the namespace, the host-record
+and export surface, file layout within the applicable package or static-support
+namespace, the host-record
 construction idiom, atomic-type tables, and the encoding of sums,
 products, and newtype values.
 
@@ -592,6 +619,27 @@ backend exposes keyed fields, cases, patterns, or presentation helpers; a
 canonical positional carrier such as Rust's binary `Product` / `Sum` has no
 keyed presentation to name.
 
+### Generic substitution and opaque constructors
+
+**Applies when:** a type parameter occurs in a host import, package export,
+callback, returned function, or public nominal member.
+
+Instantiating a generic boundary must preserve the same typed value relation as
+the corresponding concrete boundary, including products, sums, nominal values
+and callable stages nested under type constructors. A value supplied through
+one path must remain usable through the other using the documented host
+interface; separately usable but incompatible public and private shapes do not
+satisfy this rule.
+
+A host-selected constructor `F` is opaque unless its declared contract supplies
+an operation. For example, substituting `T = Int` in `F(T & Bool)` cannot require
+the backend to inspect or map `F` to convert its payload into `F(Int & Bool)`.
+The same rule applies when the host constructs the payload and Kio later
+receives it through a generic operation. Representations and typed adapters
+must preserve this relation without assuming container operations, guessing
+types from values, or changing the backend's ownership rules. Adapters also
+preserve each computation's [application stage](#2-type-erasure-at-the-ffi).
+
 ### Facade topology and execution provenance
 
 **Applies when:** a backend renders a live `host fn`, exported function, or
@@ -617,6 +665,9 @@ case remains a per-backend realization.
 
 ### Function-type FFI canonicalization
 
+**Applies when:** a function crosses a package/host boundary, including host
+functions, exports, callbacks, and public newtype members.
+
 Internally Kio uses a strict System F arrow: a function's
 `Type::Function` has one `param` and one `ret`. A declaration
 signature with multiple value parameters right-folds its parameter
@@ -627,19 +678,26 @@ continues into `R`, and the terminal contributes the final slot. The paired
 **execution layout** freezes which slots came from each source value parameter
 so the adapter can reconstruct the original runtime argument exactly once.
 
-A directly written canonical Unit domain has no semantic slots and is
-nullary. Substitution does not erase an existing value parameter: if `A -> R`
-is instantiated with `A = .`, that parameter remains one explicit Unit value.
-This semantic distinction is recorded before a backend chooses host syntax.
+A directly written canonical Unit domain has no flattened semantic slots.
+Its native declaration view is nullary; a uniform first-class callable
+representation may instead require an explicit Unit value for that function
+layer, as specified by the backend. Substitution does not erase an existing
+value parameter: if `A -> R` is instantiated with `A = .`, that parameter
+remains one explicit Unit value. The semantic domain, source parameter groups
+and native calling interface remain separate facts.
 
-A positional backend may expose one host argument per semantic slot. A backend
-whose natural public shell groups a product instead exposes one object for that
-source parameter, with the same right-spine semantic keys. Consequently
-`fn f(x: Int, y: Int) -> R` and `fn f(x: Int & Int) -> R` have the same
-right-spine semantic slots but distinct source-parameter partitions; a backend
-may render those partitions differently without recomputing their topology.
-In both realizations the execution adapter rebuilds the exact internal product
-and applies the source body once.
+The native argument list preserves those source-parameter partitions. Thus
+`fn first(x: Int, y: Int) -> R` takes two native arguments, whereas
+`fn second(pair: Int & Int) -> R` takes one native product argument, despite
+their equal normalized Kio function types and semantic slot plans. A callback
+whose written domain is one product likewise receives that product as one
+argument. Structural fields inside the product follow the backend's documented
+representation; they are not extra native call arguments. Where a native
+arity limit requires a containing shell, the backend page specifies that
+realization. The adapter reconstructs the exact internal product and applies
+each source stage exactly once. This host presentation does not change Kio
+call inference, semantic signature equality, or the dynamic loader's canonical
+descriptor groups.
 
 An exported fn's host surface additionally compacts **across declaration-head
 value groups** into one facade call. The boundary wrapper applies the internal
@@ -668,7 +726,7 @@ extends the spine with `A` at the current index and continues
 into the right child; otherwise the spine ends with the right
 child as its last slot. The same rule applies to sums.
 The walk yields one ordered semantic slot plan for a right-associative chain;
-an applicable keyed presentation may expose that plan as one flat n-keyed
+an applicable spine-keyed presentation may expose that plan as one flat n-keyed
 shape, while the backend's signature carrier may remain recursively binary.
 Left-associative chains preserve their nesting in either realization:
 
@@ -678,16 +736,17 @@ Left-associative chains preserve their nesting in either realization:
   first slot is itself a 2-slot product.
 - `(A | B | C)` = `(A | (B | C))` — 3-slot sum, slots `[A, B, C]`.
 
-When the backend exposes a keyed presentation, each spine slot contributes one
+When the backend exposes a spine-keyed presentation, each spine slot contributes one
 key — populated for products (every key set), single-key for sums (exactly one
-key set, identifying which slot the value inhabits). A positional-only carrier
-still consumes the ordered slot plan but has no semantic key to expose.
+key set, identifying which slot the value inhabits). Other carriers preserve the
+same type grouping without exposing spine-slot keys; a recursively binary
+record's fixed child keys are not semantic spine-slot keys.
 
 The walk is **shared between FFI canonicalization and the
 spine-based elaborator palette** (a user-defined coercion library;
 see [`../../docs/poc/elab.md`](../../docs/poc/elab.md) § The spine
 palette). The
-FFI side derives its slot plan from the walk and, for keyed presentations,
+FFI side derives its slot plan from the walk and, for spine-keyed presentations,
 derives the per-backend keys there; the spine palette
 matches source and target slot-by-slot under the same walk, with
 no algebraic normalization. The two sides reason about a value's
@@ -695,6 +754,8 @@ shape with one mental model: the user-written grouping (left- vs
 right-associative) survives end to end.
 
 ### 3-step key fallback
+
+**Applies when:** a host presentation exposes structural spine slots as keys.
 
 Each spine slot's key comes from the first non-colliding
 candidate of:
@@ -1014,7 +1075,7 @@ and
 Kio expresses higher-kinded types through kind-annotated binders and direct type application (`F(A)`, `Either(String)`; see [`prime.md` § Higher-kinded types](../prime.md#higher-kinded-types)). How a backend carries the kind-`*→…→*` identity through to host code follows from its family's **HKT strategy** (§ Language families):
 
 - **native-HKT** backends map a kind-`*→*` type constructor straight onto a host type constructor (`F(A)` → `f a`). No value wrapper, no boundary erasure: the host's own kind system carries the identity.
-- **type-erased** backends leave the private body representation unchanged across higher-kinded application; `F(A)` adds no HKT-specific body representation to the universal value (`Object` / `interface{}` / `Any` / Rust's opaque reference-counted token). Lift / peel are identities inside that erased body. This says neither that an arbitrary native facade type can be recovered by equality from the universal value nor that the typed boundary needs no conversion. It also says nothing about flattening the callable that carries a polymorphic operation: its application stages follow § Polymorphic newtype payloads below. The dictionary that underwrites a `Functor` / `Monad` instance is an ordinary erased value the body builds and applies; a static backend's FFI surface re-imposes the exact marker, application carrier, and conversion relation its host can name.
+- **type-erased** backends carry values through the universal execution interface (`Object` / `interface{}` / `Any` / Rust's opaque reference-counted token). Type application `F(A)` introduces no implicit traversal or rewrapping of an opaque value. Nominal constructors and projectors retain their backend-defined carriers and operations; erasure does not make all such operations runtime identities. Nor does it imply native facade equality or eliminate typed boundary conversion. The callable that carries a polymorphic operation retains its application stages (§ Polymorphic newtype payloads below). The dictionary that underwrites a `Functor` / `Monad` instance is an ordinary value the body builds and applies; a static backend's FFI surface preserves the exact marker, application carrier, and conversion relation its host can name.
 
 **Erasure handles the private HKT body with no HKT-specific walk.** A
 type-erased backend — including a static host that erases its body to a dynamic
@@ -1029,13 +1090,13 @@ What every backend keeps, regardless of strategy, is **explicit dictionary threa
 
 Each backend page documents its own realization under a § Higher-kinded types section:
 
-- **JS** ([`js.md`](js.md)) — type-erased; a type-constructor application carries no runtime representation distinct from its carrier, and lift / peel are identity at every call site. Multi-arity type constructors render as ordinary nested applications with no extra machinery.
+- **JS** ([`js.md`](js.md)) — type-erased; type application does not rewrap values. Nominal construction and projection preserve the complete nominal carrier, including when it is transported through an opaque host constructor; callable payloads retain their stages.
 - **TypeScript** ([`ts.md`](ts.md#higher-kinded-types)) — natural-exact skin over a type-erased runtime; the runtime body is the JS backend's `.js` verbatim, so `F(A)` carries no additional runtime representation, while the `.d.ts` preserves the exact constructor/application relation through its structural `TypeLambda`, `Apply`, and `Bind` protocol.
-- **Python** ([`python.md`](python.md#higher-kinded-types)) — natural-exact skin over a type-erased runtime; a type-constructor application has no separate Python value representation, while the typed-stub package preserves its declaration-owned constructor and application relation. Lift / project remain identity in the erased body, and a polymorphic newtype payload retains its staged callable shape.
+- **Python** ([`python.md`](python.md#higher-kinded-types)) — natural-exact skin over a type-erased runtime; type application does not rewrap values, while the typed-stub package preserves its declaration-owned constructor and application relation. Nominal construction and projection follow the declared carrier and visibility contract, and a polymorphic newtype payload retains its staged callable shape.
 - **Java** ([`java.md`](java.md#higher-kinded-types)) — the private body uses `Object`; the exact public skin names each declaration with a constructor marker, records `F(A)` through its typed application witness, and owns the conversion to that carrier. Private body identity does not replace the public witness relation.
 - **Rust** ([`rust.md`](rust.md#higher-kinded-types)) — the body is type-erased; the exact public skin represents every saturated value type with a `KioType` marker and `Facade`, represents an abstract constructor application with `KioAppliedN<F, ...>` / `KioApplyN<F, ...>`, and converts explicitly through the opaque stored representation. Rust does not require or claim native `F::Apply` equality.
 - **Go** ([`go.md`](go.md)) — a free function-local type binder erases to `any`; exact parameterized declarations instead use their declaration-owned generic carrier and adapter at the public boundary. Go therefore does not assert a native generic-constructor equality.
-- **Swift** ([`swift.md`](swift.md)) — the private body uses uniform `Any`; the exact public skin uses declaration-owned constructor markers, `KioApplyN` carriers, and their typed conversion seam.
+- **Swift** ([`swift.md`](swift.md)) — the private body stores canonical native values as `Any`; the exact public skin uses declaration-owned constructor markers and unary application carriers. Private lexical type witnesses construct those same native types; opaque host-owned payloads are neither traversed nor reindexed.
 - **Haskell** ([`haskell.md`](haskell.md#body-model)) — native-HKT; `F(A)` maps to `f a`. Direct known declarations may use consecutive native `forall`s, while escaped polymorphic values have one internal monadic stage per binder.
 
 ## Polymorphic newtype payloads

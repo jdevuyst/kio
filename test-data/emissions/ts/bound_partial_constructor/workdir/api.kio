@@ -1,0 +1,7 @@
+module api;
+
+pub newtype Wrap[*G] : G(.) { pub constructor wrap; pub projector unwrap }
+
+pub fn keep[**F][A](value: Wrap(F(A))) -> Wrap(F(A)) { value }
+
+pub fn saturated[**F][A][B](value: F(A, B)) -> F(A, B) { value }

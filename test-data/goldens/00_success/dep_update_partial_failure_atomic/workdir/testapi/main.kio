@@ -15,4 +15,4 @@ pub fn greeting() -> String {
   keep(first("git dependencies work\n"(String), "x"(String)), "y"(String))
 }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }

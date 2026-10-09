@@ -1,0 +1,29 @@
+module api;
+
+host type Count role(i32);
+
+host fn split(left: Count, right: Count) -> Count;
+
+host fn packed(pair: Count & Count) -> Count;
+
+host fn seed() -> Count;
+
+pub fn first(left: Count, _right: Count) -> Count { left }
+
+pub fn second((left: Count, _right: Count)) -> Count { left }
+
+pub fn staged(left: Count)(_right: Count) -> Count { left }
+
+pub fn returned(left: Count) -> Count -> Count { .(_right) { left } }
+
+pub fn direct() -> Count { packed((seed(), seed())) }
+
+pub fn through_value(pair: Count & Count) -> Count { let call = split; call(pair) }
+
+pub fn callback(step: (Count & Count) -> Count, pair: Count & Count) -> Count { step(pair) }
+
+pub newtype Pair : Count & Count { pub constructor make; pub projector read }
+
+pub type Callback[A] = A -> Count;
+
+pub fn substituted(step: Callback(Count & Count), pair: Count & Count) -> Count { step(pair) }

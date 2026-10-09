@@ -122,7 +122,6 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
             | Expr::EnrichedInject { ext, .. }
             | Expr::EnrichedMatch { ext, .. }
             | Expr::EnrichedConditional { ext, .. }
-            | Expr::EnrichedRecord { ext, .. }
             | Expr::EnrichedFieldGet { ext, .. }
             | Expr::LowHostCall { ext, .. }
             | Expr::LowModuleCall { ext, .. }

@@ -212,11 +212,11 @@ struct StructuralNames {
 }
 
 #[derive(Clone, Copy)]
-enum StructuralIdentity<'a> {
+enum StructuralIdentity {
     ProductFamily,
     SumFamily,
-    Abi(&'a Name),
-    HostType(&'a ModuleItemId),
+    Abi,
+    HostType,
 }
 
 impl StructuralNames {
@@ -270,20 +270,11 @@ impl StructuralNames {
 
     fn host_assoc_name(&self, module: &str, leaf: &str) -> String {
         let item = ModuleItemId::new(module, leaf);
-        if let Some(preferred) = primary_module_item_name("HostType", &item)
-            && !self.type_claims.contains(&preferred)
-        {
+        let preferred = format!("HostType__{}", public_item(&item));
+        if !self.type_claims.contains(&preferred) {
             return preferred;
         }
-        let fallback = fallback_host_assoc_name(module, leaf);
-        if !self.type_claims.contains(&fallback) {
-            return fallback;
-        }
-        let escaped = self.escape(
-            Namespace::Type,
-            &fallback,
-            StructuralIdentity::HostType(&item),
-        );
+        let escaped = self.escape(Namespace::Type, &preferred, StructuralIdentity::HostType);
         assert!(
             !self.is_claimed_or_generated(Namespace::Type, &escaped),
             "escaped exact host type overlaps an existing name class: `{escaped}`"
@@ -293,14 +284,14 @@ impl StructuralNames {
 
     fn render(&self, name: &Name) -> String {
         let preferred = name.render();
-        self.resolve(name.namespace(), &preferred, StructuralIdentity::Abi(name))
+        self.resolve(name.namespace(), &preferred, StructuralIdentity::Abi)
     }
 
     fn resolve(
         &self,
         namespace: Namespace,
         preferred: &str,
-        identity: StructuralIdentity<'_>,
+        identity: StructuralIdentity,
     ) -> String {
         if !self.is_claimed_or_generated(namespace, preferred) {
             return preferred.to_owned();
@@ -331,32 +322,21 @@ impl StructuralNames {
         &self,
         namespace: Namespace,
         preferred: &str,
-        identity: StructuralIdentity<'_>,
+        identity: StructuralIdentity,
     ) -> String {
-        let mut bytes = vec![0x01];
-        encode_string(&self.target_namespace, &mut bytes);
-        match identity {
-            StructuralIdentity::ProductFamily => bytes.push(0x01),
-            StructuralIdentity::SumFamily => bytes.push(0x02),
-            StructuralIdentity::Abi(name) => {
-                bytes.push(0x03);
-                name.encode(&mut bytes);
-            }
-            StructuralIdentity::HostType(item) => {
-                bytes.push(0x04);
-                encode_module_item(item, &mut bytes);
-            }
-        }
+        let role = match identity {
+            StructuralIdentity::ProductFamily => "ProductFamily",
+            StructuralIdentity::SumFamily => "SumFamily",
+            StructuralIdentity::Abi => "View",
+            StructuralIdentity::HostType => "HostType",
+        };
         let prefix = match namespace {
             Namespace::Type => "KioStructT",
             Namespace::Constructor => "KioStructC",
             Namespace::Value => "kioStructV",
         };
-        format!(
-            "{prefix}_H{}__{}",
-            lowercase_hex(&bytes),
-            bounded_readable(preferred)
-        )
+        let owner = self.target_namespace.replace('_', "_u").replace('.', "_s");
+        format!("{prefix}_N{}_{}_{}_{preferred}", owner.len(), owner, role)
     }
 }
 
@@ -431,6 +411,31 @@ impl Name {
 
     fn render(&self) -> String {
         match self {
+            Self::BoundaryAlias(boundary) | Self::ProductPattern(boundary) => {
+                return public_boundary(boundary);
+            }
+            Self::SumPattern(pattern) => {
+                return format!(
+                    "{}_Case{}_{}",
+                    public_boundary(&pattern.boundary),
+                    pattern.index,
+                    public_key(&pattern.key)
+                );
+            }
+            #[cfg(test)]
+            Self::ProductSelector {
+                boundary,
+                key,
+                index,
+            } => {
+                let owner = public_boundary(boundary);
+                return format!(
+                    "{}{}_Field{index}_{}",
+                    owner[..1].to_ascii_lowercase(),
+                    &owner[1..],
+                    public_key(key)
+                );
+            }
             Self::HostField(item) => {
                 if let Some(primary) = primary_module_item_name("host", item) {
                     return primary;
@@ -441,7 +446,12 @@ impl Name {
                     return primary;
                 }
             }
-            _ => {}
+            #[cfg(test)]
+            Self::ModuleFn(_)
+            | Self::RankNViewType(_)
+            | Self::RankNViewConstructor(_)
+            | Self::RankNNoMatch(_)
+            | Self::RankNViewFunction(_) => {}
         }
         self.render_fallback()
     }
@@ -812,27 +822,77 @@ fn primary_components_are_safe(components: &[&str]) -> bool {
         })
 }
 
-fn fallback_host_assoc_name(module: &str, leaf: &str) -> String {
-    let exact = format!("{module}\0{leaf}");
-    let module = module
-        .split('/')
-        .map(crate::host_api::host_name_core)
+fn public_path<'a>(components: impl IntoIterator<Item = &'a str>) -> String {
+    components
+        .into_iter()
+        .map(|part| crate::host_api::host_name_core(part).replace('_', "_u"))
         .collect::<Vec<_>>()
-        .join("/");
-    let leaf = crate::host_api::host_name_core(leaf);
-    let readable_module = module
-        .replace('/', "__")
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let readable_leaf = leaf
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    format!(
-        "HostType_H{}__{readable_module}__{readable_leaf}",
-        lowercase_hex(exact.as_bytes())
+        .join("__")
+}
+
+fn public_item(item: &ModuleItemId) -> String {
+    public_path(
+        item.module
+            .0
+            .iter()
+            .map(String::as_str)
+            .chain([item.item.as_str()]),
     )
+}
+
+fn public_boundary(boundary: &BoundaryId) -> String {
+    let mut name = match &boundary.owner {
+        BoundaryOwner::Env(item) => format!("Host_{}", public_item(item)),
+        BoundaryOwner::Exp(ItemId::Item(item)) => format!("Export_{}", public_item(item)),
+        BoundaryOwner::Exp(ItemId::NewtypeMember {
+            module,
+            newtype,
+            member,
+        }) => format!(
+            "Member_{}",
+            public_path(
+                module
+                    .0
+                    .iter()
+                    .map(String::as_str)
+                    .chain([newtype.as_str(), member.as_str()])
+            )
+        ),
+    };
+    name.push_str(&match boundary.root {
+        BoundaryRoot::Arg(index) => format!("_Arg{index}"),
+        BoundaryRoot::Ret => "_Result".to_owned(),
+    });
+    for step in &boundary.tail {
+        name.push_str(&match step {
+            #[cfg(test)]
+            BoundaryStep::App(index) => format!("_App{index}"),
+            #[cfg(test)]
+            BoundaryStep::Slot(index) => format!("_Slot{index}"),
+            #[cfg(test)]
+            BoundaryStep::CallbackArg(index) => format!("_CallbackArg{index}"),
+            BoundaryStep::CallbackRet => "_CallbackResult".to_owned(),
+        });
+    }
+    name
+}
+
+fn public_key(key: &StructuralKey) -> String {
+    match key {
+        StructuralKey::BareNewtype(name) => format!("Type_{}", public_path([name.as_str()])),
+        #[cfg(test)]
+        StructuralKey::QualifiedNewtype { module, newtype } => format!(
+            "TypeAt_{}",
+            public_path(
+                module
+                    .0
+                    .iter()
+                    .map(String::as_str)
+                    .chain([newtype.as_str()])
+            )
+        ),
+        StructuralKey::Positional(index) => format!("Position{index}"),
+    }
 }
 
 fn boundary_readable(boundary: &BoundaryId) -> String {
@@ -912,94 +972,11 @@ fn bounded_readable(value: &str) -> String {
 }
 
 fn is_existing_generated_type_name(name: &str) -> bool {
-    is_exact_nominal_name(name, "KioCarrier")
-        || is_exact_nominal_name(name, "KioExistential")
-        || is_primary_host_type_name(name)
-        || is_exact_host_type_name(name)
-}
-
-fn is_primary_host_type_name(name: &str) -> bool {
-    let Some(components) = name.strip_prefix("HostType__") else {
-        return false;
-    };
-    let components = components.split("__").collect::<Vec<_>>();
-    primary_components_are_safe(&components)
+    is_existing_generated_constructor_name(name) || name.starts_with("HostType__")
 }
 
 fn is_existing_generated_constructor_name(name: &str) -> bool {
-    is_exact_nominal_name(name, "KioCarrier") || is_exact_nominal_name(name, "KioExistential")
-}
-
-fn is_exact_nominal_name(name: &str, prefix: &str) -> bool {
-    let Some((module, leaf)) = decoded_generated_identity(name, &format!("{prefix}_H")) else {
-        return false;
-    };
-    let readable_module = module
-        .split('/')
-        .map(crate::host_api::host_name_core)
-        .collect::<Vec<_>>()
-        .join("/");
-    let readable_leaf = crate::host_api::host_name_core(&leaf);
-    let readable = format!("{readable_module}_{readable_leaf}")
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let exact = format!("{module}\0{leaf}");
-    name == format!("{prefix}_H{}__{readable}", lowercase_hex(exact.as_bytes()))
-}
-
-fn is_exact_host_type_name(name: &str) -> bool {
-    let Some((module, leaf)) = decoded_generated_identity(name, "HostType_H") else {
-        return false;
-    };
-    let readable_module = module
-        .split('/')
-        .map(crate::host_api::host_name_core)
-        .collect::<Vec<_>>()
-        .join("/")
-        .replace('/', "__")
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let readable_leaf = crate::host_api::host_name_core(&leaf)
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let exact = format!("{module}\0{leaf}");
-    name == format!(
-        "HostType_H{}__{readable_module}__{readable_leaf}",
-        lowercase_hex(exact.as_bytes())
-    )
-}
-
-fn decoded_generated_identity(name: &str, prefix: &str) -> Option<(String, String)> {
-    let encoded_and_readable = name.strip_prefix(prefix)?;
-    let (encoded, _) = encoded_and_readable.split_once("__")?;
-    if encoded.is_empty() || encoded.len() % 2 != 0 {
-        return None;
-    }
-    let bytes = encoded
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| {
-            let digits = std::str::from_utf8(pair).ok()?;
-            u8::from_str_radix(digits, 16).ok()
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let identity = String::from_utf8(bytes).ok()?;
-    let (module, leaf) = identity.split_once('\0')?;
-    if leaf.contains('\0') {
-        return None;
-    }
-    Some((module.to_owned(), leaf.to_owned()))
-}
-
-fn sanitize_generated_name_char(ch: char) -> char {
-    if ch.is_ascii_alphanumeric() || ch == '_' {
-        ch
-    } else {
-        '_'
-    }
+    name.starts_with("KioType_") || name.starts_with("KioExists_")
 }
 
 #[cfg(test)]
@@ -1070,35 +1047,35 @@ mod tests {
         );
         assert_eq!(
             host_assoc("Greeter", "a_/b", "Edge"),
-            "HostType_H615f2f620045646765__a___b__Edge"
+            "HostType__a_u__b__Edge"
         );
         assert_eq!(
             host_assoc("Greeter", "a/_b", "Edge"),
-            "HostType_H612f5f620045646765__a___b__Edge"
+            "HostType__a___ub__Edge"
         );
         assert_eq!(
             host_assoc("HostType__a__b__Thing", "a/b", "Thing"),
-            "HostType_H612f62005468696e67__a__b__Thing"
+            "KioStructT_N27_HostType_u_ua_u_ub_u_uThing_HostType_HostType__a__b__Thing"
         );
         assert_eq!(
-            host_assoc("HostType_H615f5f62005468696e67__aB__Thing", "a__b", "Thing",),
-            "KioStructT_H0100000029486f7374547970655f4836313566356636323030353436383639366536375f5f61425f5f5468696e67040000000100000004615f5f62000000055468696e67__HostType_H615f5f62005468696e67__aB__Thing"
+            host_assoc("HostType__aB__Thing", "a_b", "Thing"),
+            "KioStructT_N23_HostType_u_uaB_u_uThing_HostType_HostType__aB__Thing"
         );
 
         let nested = BoundaryId::exp(ItemId::item("a", "f"), BoundaryRoot::Arg(0))
             .nested(BoundaryStep::Slot(0));
         assert_eq!(
             product_pattern("Greeter", &nested),
-            "ExpP_H0120020100000001000000016100000001660100000000000000010200000000__a__f_arg0_slot0_P"
+            "Export_a__f_Arg0_Slot0"
         );
         let outer = BoundaryId::exp(ItemId::item("a", "f"), BoundaryRoot::Arg(0));
         assert_eq!(
             sum_pattern("Greeter", &outer, StructuralKey::qualified("slot0", "P"), 0,),
-            "ExpS_H012102010000000100000001610000000166010000000000000000020000000100000005736c6f7430000000015000000000__a__f_arg0_S_slot0_P_0"
+            "Export_a__f_Arg0_Case0_TypeAt_slot0__P"
         );
         assert_eq!(
             product_selector("Greeter", &outer, StructuralKey::qualified("slot0", "Y"), 2,),
-            "expSel_H012202010000000100000001610000000166010000000000000000020000000100000005736c6f7430000000015900000002__a__f_arg0_Sel_slot0_Y_2"
+            "export_a__f_Arg0_Field2_TypeAt_slot0__Y"
         );
 
         let env = BoundaryId::env("m", "h", BoundaryRoot::Ret)
@@ -1107,11 +1084,11 @@ mod tests {
             .nested(BoundaryStep::CallbackRet);
         assert_eq!(
             boundary_alias("Greeter", &env),
-            "Env_H01100100000001000000016d000000016802000000030100000002030000000304__m__h_ret_app2_cbarg3_cbret"
+            "Host_m__h_Result_App2_CallbackArg3_CallbackResult"
         );
         assert_eq!(
             sum_pattern("Greeter", &env, StructuralKey::positional(7), 7),
-            "EnvS_H01210100000001000000016d000000016802000000030100000002030000000304030000000700000007__m__h_ret_app2_cbarg3_cbret_S_pos7_7"
+            "Host_m__h_Result_App2_CallbackArg3_CallbackResult_Case7_Position7"
         );
         assert_eq!(
             Name::RankNViewType(PatternId::Product(env)).render(),
@@ -1144,14 +1121,14 @@ mod tests {
 
     #[test]
     fn structural_family_fixed_vector_escapes_a_nominal_name_class() {
-        let names = StructuralNames::new("KioCarrier_H6170690050726f64756374__api_");
+        let names = StructuralNames::new("KioType_api__");
         assert_eq!(
             names.product_family(),
-            "KioStructT_H01000000284b696f436172726965725f48363137303639303035303732366636343735363337345f5f6170695f01__KioCarrier_H6170690050726f64756374__api_Product"
+            "KioStructT_N16_KioType_uapi_u_u_ProductFamily_KioType_api__Product"
         );
         assert_eq!(
             names.sum_family(),
-            "KioCarrier_H6170690050726f64756374__api_Sum"
+            "KioStructT_N16_KioType_uapi_u_u_SumFamily_KioType_api__Sum"
         );
     }
 
@@ -1162,14 +1139,14 @@ mod tests {
         let preferred_alias = alias.render();
         let escaped_alias = StructuralNames::new(&preferred_alias).render(&alias);
         assert_ne!(escaped_alias, preferred_alias);
-        assert!(escaped_alias.starts_with("KioStructT_H"), "{escaped_alias}");
+        assert!(escaped_alias.starts_with("KioStructT_N"), "{escaped_alias}");
 
         let pattern = Name::ProductPattern(boundary);
         let preferred_pattern = pattern.render();
         let escaped_pattern = StructuralNames::new(&preferred_pattern).render(&pattern);
         assert_ne!(escaped_pattern, preferred_pattern);
         assert!(
-            escaped_pattern.starts_with("KioStructC_H"),
+            escaped_pattern.starts_with("KioStructC_N"),
             "{escaped_pattern}"
         );
     }

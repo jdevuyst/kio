@@ -1,5 +1,5 @@
 #!/bin/sh
-# SUBJECT: Haskell's public facade remains importable when its configured namespace is Type.
+# SUBJECT: Haskell's public facade remains importable when its configured namespace is Type or an exact nominal head.
 # CONTRACT: specs/backends/haskell.md, Output layout and Loading protocol.
 set -eu
 
@@ -16,4 +16,6 @@ ghc -v0 -fforce-recomp -fno-code \
   -odir "$scratch/ghc" \
   -hidir "$scratch/ghc" \
   -iout/haskell \
+  -inominal/out/haskell \
+  "$scratch/host/NominalHost.hs" \
   "$scratch/host/Host.hs"

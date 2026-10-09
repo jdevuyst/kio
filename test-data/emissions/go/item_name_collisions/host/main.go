@@ -17,7 +17,7 @@ func (host) KioItem_a_u__c() {
 }
 
 func main() {
-	pkg := artifact.CreateGoItemNameCollisions(host{})
+	pkg := artifact.New(host{})
 	pkg.A.CallHost()
 	pkg.KioItem_a_u.CallHost()
 	pkg.A.BC()

@@ -43,6 +43,23 @@ pub(crate) fn encode_host_identity(source: &str) -> String {
     )
 }
 
+/// Join source components for a public declaration or prepared boundary site.
+///
+/// Word casing is reversible for validated Kio identifiers. Escape each
+/// component before inserting `__`, so source affixes cannot become path
+/// separators. The caller supplies a fixed role and knows how many trailing
+/// components belong to its declaration (for example, a type and member).
+/// Neither unrelated declarations nor a registration order affect the result.
+pub(crate) fn readable_public_identity<'a>(
+    components: impl IntoIterator<Item = &'a str>,
+) -> String {
+    components
+        .into_iter()
+        .map(encode_host_identity)
+        .collect::<Vec<_>>()
+        .join("__")
+}
+
 /// One namespace edge in a generated package facade.
 ///
 /// Kio keeps module, type, and value names in distinct namespaces. Host
@@ -158,6 +175,33 @@ pub(crate) fn has_readable_snake_components(source: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readable_public_components_preserve_paths_affixes_and_word_boundaries() {
+        assert_eq!(
+            readable_public_identity(["api", "Pair", "un_pair"]),
+            "api__Pair__unPair"
+        );
+        let examples = [
+            vec!["a", "b", "Thing"],
+            vec!["a_b", "Thing"],
+            vec!["a_", "b", "Thing"],
+            vec!["a", "_b", "Thing"],
+            vec!["a", "b_", "Thing"],
+            vec!["a", "b", "_Thing"],
+            vec!["a", "b", "Thing_"],
+        ];
+        let names = examples
+            .iter()
+            .map(|components| readable_public_identity(components.iter().copied()))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(names.len(), examples.len());
+        assert_eq!(
+            readable_public_identity(["_api", "Box__"]),
+            "_uapi__Box_u_u"
+        );
+        assert!(names.iter().all(|name| !name.contains("_Result")));
+    }
 
     #[test]
     fn public_word_casing_retains_affixes_and_has_a_unique_inverse() {

@@ -1,0 +1,11 @@
+module testapi/main;
+
+import model as model;
+import testapi/io as io;
+
+pub fn main() {
+  model.consume(model.source(.));
+  io.print("unbridged\n");
+  model.private_case();
+  model.nullary_case()
+}

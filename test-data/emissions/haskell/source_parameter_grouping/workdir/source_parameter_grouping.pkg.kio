@@ -1,0 +1,14 @@
+package source_parameter_grouping;
+
+build {
+  cache ();
+
+  target haskell {
+    out "out/haskell/";
+    namespace "SourceParameters"
+  }
+}
+
+bridge {
+  api
+}

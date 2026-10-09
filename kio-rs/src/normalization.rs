@@ -5547,7 +5547,6 @@ fn compile_eval_expr(
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. } => match *ext {},
         Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }
@@ -5955,7 +5954,6 @@ fn collect_capture_slots(
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. } => match *ext {},
         Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }
@@ -11434,7 +11432,6 @@ fn render_eval_expr(expr: &EvalAstExpr) -> String {
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. }
         | Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }

@@ -54,6 +54,15 @@ values through ordinary host-language tools and idioms, using
 `specs/backends/<lang>.md` and `docs/hosts/<lang>.md` rather than reverse-
 engineering generated source.
 
+Check that available native type and module capabilities actually simplify
+host authoring. Where they directly express the boundary relationship, report
+avoidable public encodings or scaffolding even if they type-check. Require a
+semantic justification for remaining ceremony, distinguishing necessary
+ownership/effect/staging behavior from emitter implementation convenience.
+Distinguish readable names with compact stable hash suffixes from full encoded
+identities; check explicit collision handling rather than assuming short
+hashes are unique.
+
 Prefer a fixed independent runner protocol and cross-implementation golden:
 the runner uses the documented public interface and ordinary host tooling, so
 an incompatible or unusable facade fails without golden-owned source scraping.
@@ -65,6 +74,23 @@ independently demonstrate. An `ARTIFACT_SHAPE` emission corroborates only a
 durable spec- or measurement-backed filesystem fact, not facade usability.
 An emission duplicating a runner-proven contract is misplaced; emissions never
 satisfy a backend-completeness runtime cell.
+
+For hosts with optional static typing, apply
+[Optional static typing and runtime erasure](../../topics/emit.md#optional-static-typing-and-runtime-erasure).
+Check the default support decision against actual ordinary/typed generic and
+cross-package host examples and the host's development culture, including
+idiomatic dynamic authoring. Assess narrow casts, erasure, or suppressions by
+their stated trust boundary and valid/invalid evidence, not a blanket ban or a
+claim that they make the backend easier to implement. Report decisions that
+weaken host guarantees or usability solely for emitter convenience.
+Encoded names as ordinary host spellings, or checker-driven scaffolding without
+a host-usability justification, remain usability findings. Exceptional
+collision-proof fallback names retain the rule below. For erased dynamic
+runtimes, trace emitted generic argument positions and their consumers
+separately from static declarations.
+Do not mistake nullary effect-preserving stages, known-shape guards, or nominal
+seals for runtime generic arguments, or accept reification merely to make the
+static skin type-check.
 
 Cover enough of the boundary matrix to expose each naming and organization
 policy: module-qualified host functions and types, duplicate leaves in
@@ -85,14 +111,56 @@ check whether a capability in that floor's GA/final stable surface, available
 through stable defaults or an ordinary stable source pragma, manifest/edition
 declaration, or language mode named by the floor, can state the relationship
 across the generated package/module boundary in every runtime/toolchain class
-the backend contract admits. When it can, erasing the relationship or
-requiring public casts is a finding even if an older host release could not
-express it or the backend stores values in a private universal carrier.
+the backend contract admits. When it can express the relationship with a
+usable host interface, erasing it or requiring public casts is a finding even
+if an older host release could not express it or the backend stores values
+in a private universal carrier. Apply the host-usability and trust-boundary
+judgment above when exact expression requires disproportionate host-side
+ceremony; this does not waive any existing authorized static guarantee.
 Preview, experimental, release-candidate, nightly-only, unstable
 feature-gated, or experiment-only opt-in capabilities do not establish
 applicability. A suspected better host mechanism is evidence, not authority for
 a new public contract; report an unresolved contract decision when the
 effective authorized behavior does not settle the change.
+
+Audit native parameter grouping separately from normalized Kio type equality.
+Use [`ai/topics/emit.md`](../../topics/emit.md) § Semantic slots and native
+parameter grouping: compile independent split-versus-product host calls and
+check callback, returned-stage, and substituted-Unit controls in both adapter
+directions. Equal semantic signatures do not prove equal native function types;
+nor does family membership justify flattening a written product parameter.
+Any host-specific arity-limit shell must realize the same semantic stages and
+effect timing. Require evidence for the actual native surface, not only a
+runner that adapts both sides to the emitter's current argument list.
+
+Check [generic substitution under opaque constructors](../../../specs/backends/README.md#generic-substitution-and-opaque-constructors)
+with values originating on both sides of the boundary. A round trip of an
+unchanged Kio-origin payload does not prove that a host-created public product,
+sum, nominal value or callable works when returned through a generic operation.
+Exercise actual construction and consumption through the documented interface,
+including compound type arguments and retained/returned callable stages.
+Adapters must not inspect an opaque constructor or assume it can map its
+contents. For statically checked host interfaces, verify the full generic
+relationship as well as runtime behavior: selecting a callable's type argument fixes subsequent
+uses, and both sum indices remain intact under an invariant container. An erased
+success or two separately compilable concrete examples cannot establish that
+relationship. Use the backend's documented ownership rules, not another
+backend's copying policy.
+
+For generated names, check the host's actual identifier and artifact-path
+limits, including wide products, sums and polymorphic interfaces where
+applicable. Follow the shared bounded-mint guidance in
+[`ai/topics/emit.md`](../../topics/emit.md); do not impose Rust's private or
+Java's public budget on unlike codecs. Require native artifact evidence for
+the specified limit and independent collision checks for distinct identities.
+
+For static-only support declarations, apply
+[`specs/backends/README.md` § Shared static type declarations](../../../specs/backends/README.md#shared-static-type-declarations).
+Check independent complete outputs, overlapping and disjoint definitions in
+either package search order, schema separation, and distinct nominal owners.
+Report unnecessary adapter or identity machinery introduced solely to keep
+common static declarations package-local; do not mistake necessary runtime
+staging, ownership, or stack-safety machinery for a consequence of that layout.
 
 Report a finding when, despite compiling correctly, the facade:
 
@@ -145,6 +213,11 @@ added or changed in the audited range. For each candidate:
    implemented current behavior. An applicable row closes only with
    conformance and complete-workflow evidence; a non-applicable row needs a
    predicate proof.
+   Trace actual consumers of the shared semantic plan: parallel per-backend
+   implementations of the same substitution, shape or call-stage policy are
+   not reuse merely because their outputs agree. Host capabilities and
+   ownership differences must be explicit inputs or justified local
+   realizations, not a reason to duplicate otherwise common decisions.
 
 A missing row, a family conclusion without member evidence, a reusable law
 left only in one emitter/page, a shared rule copied across per-backend pages,

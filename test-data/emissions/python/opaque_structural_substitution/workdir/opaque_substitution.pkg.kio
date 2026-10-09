@@ -1,0 +1,13 @@
+package opaque_substitution;
+
+build {
+  cache ();
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  api
+}

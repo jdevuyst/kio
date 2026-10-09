@@ -12,8 +12,7 @@
 //! driver, generic over the native-HKT family; this module supplies the
 //! Haskell-specific [`ReconProfile`] hooks (Haskell is the family's sole
 //! member today). Haskell's native-eligible packages carry no erased
-//! `comptime` type aliases (Kio newtypes resolve through
-//! [`super::skin`]'s `resolve_newtype`), so its projection normalisation
+//! `comptime` type aliases, so its projection normalisation
 //! is identity and its resolved-call return type is the plain type-arg
 //! substitution — it needs none of the returned-fn source recovery the
 //! hook leaves room for. Haskell-specific newtype-member results and the

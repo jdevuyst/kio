@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	pkg := artifact.CreateGoFacadeComponentCollisions(struct{}{})
+	pkg := artifact.New(struct{}{})
 	pkg.Api.Child()
 	fmt.Println("api.child function")
 	pkg.Api.KioModule_child.Value()

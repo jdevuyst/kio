@@ -1,5 +1,5 @@
 #!/bin/sh
-# SUBJECT: The TypeScript declaration skin exposes exact flat labels products and three-arm sums to strict hosts.
+# SUBJECT: The TypeScript declaration skin preserves labels inside binary products and three-arm sums for strict hosts.
 set -eu
 
 scratch=$(mktemp -d "${TMPDIR:?}/emissions.ts.XXXXXX")

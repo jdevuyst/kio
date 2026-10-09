@@ -174,6 +174,23 @@ Establish host capabilities before choosing a mechanism or treating a family
 label as an explanation. Record three independent classifications; none may be
 derived from another merely because existing backends often correlate them:
 
+Use native expressiveness to simplify host-authored code: demonstrate ordinary
+calls and generic callbacks using the host's own type and module mechanisms.
+Do not expose a type encoding merely because it type-checks; justify remaining
+host-side wrappers and ceremony by semantic requirements, not emitter ease.
+Keep public naming disambiguators compact: a short stable hash suffix with
+explicit collision handling is not a full serialized identity in hexadecimal.
+
+When the host has an optional type system, include support for it by default
+without forcing fully typed host authoring. Prioritize the host user's idioms
+and development culture; backend implementation difficulty alone never
+justifies weakening the interface or shifting complexity onto its users.
+Apply [Optional static typing and runtime erasure](../../topics/emit.md#optional-static-typing-and-runtime-erasure):
+compare ordinary and typed host-author examples, keep typing plumbing
+automatic, and verify that the static skin does not reify generic arguments
+in an otherwise erased dynamic runtime. Passing the checker alone does not
+establish an acceptable user experience.
+
 Apply [`ai/topics/emit.md`](../../topics/emit.md) § Stable host release and
 capability floor before selecting a mechanism. This workflow is a backend
 admission, so the stable-release gate and floor evidence are mandatory; apply
@@ -245,11 +262,11 @@ as a per-backend limitation.
 These are the two zones every emitter splits into
 ([`ai/topics/emit.md`](../../topics/emit.md) § Runtime model). Know the line
 between them before writing either: the **internal body** is the computation
-no host ever reads, calls into the middle of, or sees the types of —
-erasure applies here and nowhere else; the **FFI skin** is the host's typed
-contract (host record, structural boundary representations, exported
-signatures, the per-signature boundary wrappers) and stays fully typed and
-idiomatic.
+no host ever reads, calls into the middle of, or sees the types of. The
+**FFI skin** is the host's public contract (host record, structural boundary
+representations, exported signatures, the per-signature boundary wrappers).
+Body erasure does not weaken that contract's static guarantees or excuse an
+unidiomatic interface.
 
 **The body** is built per the Step-1 strategy. The shared, backend-agnostic
 prep already happened upstream — an emitter consumes `Module<Routed>`,
@@ -270,28 +287,36 @@ ABI arity, or another producer-side side channel.
 **language-level commitments**, uniform across backends — the per-backend page
 *shows* how the host realizes each, it cannot weaken one:
 
-- **The package facade** (§ The package facade) — every emitted symbol
-  (package handle, factory, host type, structural boundary types, the
-  runtime-support items) is either the per-package **namespace** itself or
-  lives beneath it. The namespace is derived
+- **The package facade** (§ The package facade) — package-owned symbols
+  (package handle, factory, host type, nominal types, and runtime-support
+  items) live beneath the per-package **namespace**. Package-independent,
+  static-only structural declarations may share a support namespace under
+  § Shared static type declarations; verify complete independent outputs,
+  both package search orders, schema separation, and nominal distinctions.
+  Do not add host-facing adapters merely to retain duplicate static definitions.
+  The package namespace is derived
   from the package name in
   [`kio-rs/src/backends/namespace.rs`](../../../kio-rs/src/backends/namespace.rs)
   (which owns each backend's default derivation, explicit-value validation,
   and the keyword / unimportable-name mangles — a new backend adds its
   `default_*_namespace` / `validate_*_namespace` pair there), overridden by
-  the uniform `namespace` target key. The facade is **branded**: handle =
-  PascalCase of the namespace's final segment, host contract =
-  `<Handle>Host`, factory = `create_<handle>` in the host language's
-  casing (§ Branded naming has the table). Every path below that facade
+  the uniform `namespace` target key. Follow § Branded naming's host-specific
+  facade names: brands distinguish selectively imported names, while Go's
+  package-qualified `Package`, `Host` and `New` avoid repeating the qualifier.
+  Fixed role names still require a declaration-local collision argument.
+  Every path below that facade
   preserves exact source module components and their boundaries plus selector
   role (nested module, type, or value) until target-language rendering. A flat
   host namespace that discards those distinctions, or an occupancy suffix
   whose spelling changes when an unrelated declaration is added, is
   non-conformant. The renderer must be deterministic and injective under the
   host's escaping and name-equivalence rules, while remaining reasonable for
-  a human host author to navigate. String-keyed lookup, untyped
-  universal-value handles, and host-side casts are non-conformant wherever
-  the host language has static types.
+  a human host author to navigate. Do not replace a usable typed facade with
+  string-keyed lookup, untyped universal-value handles, or host-side casts
+  merely for emitter convenience. Where exact static expression imposes
+  disproportionate host-side ceremony, apply the host-usability and
+  trust-boundary judgment in § Optional static typing and runtime erasure of
+  [`ai/topics/emit.md`](../../topics/emit.md), retaining all authorized guarantees.
 - **Host record / host-trait descriptor** (§ 8) — one item per `host fn`,
   one declaration-keyed descriptor entry per `host type`,
   **module-qualified, never flattened to leaf names** (a `host fn print` in
@@ -328,13 +353,15 @@ ABI arity, or another producer-side side channel.
   implies extra host functions or ambient runtime.
 - **Function-type FFI canonicalization** (§ Function-type FFI
   canonicalization) — Kio's strict System F arrow right-folds multi-param
-  signatures to `Function(Product(A, Product(B, C)), R)`; the boundary walks
-  the right spine of `param` for **positional arity** (one host-side
-  argument per spine slot; a canonical unit-domain layer has no slots, while
-  substituting Unit into an already-planned slot does not erase it). **Curried
-  multi-layer functions stay curried** — each `Function(Pᵢ, Rᵢ)` layer maps
-  to one call. Nested products at a fn FFI slot follow the same right-spine
-  arity (this is lesson territory — see § Hard-won lessons).
+  signatures to `Function(Product(A, Product(B, C)), R)`. Semantic
+  right-spine slots are not the native argument list: preserve the prepared
+  source-parameter partitions, so two parameters and one product parameter
+  remain distinct native interfaces despite equal normalized Kio types.
+  Preserve the declaration-head cut, returned callable stages, and direct
+  versus substituted Unit distinction. Use the existing paired layouts and
+  evidence checklist in [`ai/topics/emit.md`](../../topics/emit.md)
+  § Semantic slots and native parameter grouping; a host-specific arity-limit
+  shell is a documented realization, not permission to change Kio typing.
 - **Polymorphic-newtype payloads** (§ Polymorphic newtype payloads) — a
   `newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B)` payload is
   the unary chain `Forall(A, Forall(B, Function(…)))`. Preserve its semantic
@@ -370,8 +397,9 @@ The plug-in points, in the order a new backend fills them:
    `ReconProfile`, but copy only the plug-in points justified by the new
    backend's independently classified regions.
 2. **`kio-rs/src/backends/<lang>/emit.rs`** — the BODY: `lower_package`, a
-   `BodyEmitter` (term lowering / expression emission), `role_to_<lang>_type`,
-   and the exported-surface walk. Keep independently justified regions in
+   `BodyEmitter` (term lowering / expression emission), exact host-type binding
+   and literal emission appropriate to the target, and the exported-surface
+   walk. Keep independently justified regions in
    dedicated files: Go separates `emit` / `facade` / `facade_skin`, Swift
    separates `emit` / `runtime` / `skin`, and Haskell separates `emit` /
    `skin` / `reconstruct`; JS and Rust keep their current monolithic banner
@@ -1116,11 +1144,13 @@ Bake these in — each is a real bug a shipped pilot hit:
   modules' same-named newtypes collided. Two `host fn print`s in different
   modules are distinct entries; a naive-flat rendering that collides is
   forbidden.
-- **Nested-product handling at fn FFI slots (right-spine arity).** A function
-  parameter that is itself a nested product flattens by the **right-spine**
-  walk for positional arity, exactly as a top-level signature does
-  (§ Function-type FFI canonicalization). Don't special-case the top level
-  and mishandle a product nested at a callback slot.
+- **Nested products do not determine native callable arity.** Apply the shared
+  semantic walk without discarding source-parameter partitions. Check the
+  public callable type and both adapter directions for callbacks as well as
+  declaration boundaries; an internally flattened product must still cross
+  as one native argument when it is one written parameter. Follow
+  [`ai/topics/emit.md`](../../topics/emit.md) § Semantic slots and native
+  parameter grouping.
 - **Genuine runtime coverage, not build-only** — the `run.sh` / `$KIO_TARGET`
   false-coverage trap. A golden that builds for the backend but is driven
   construct-only or `kio check`-only never runs the artifact; the shape is
@@ -1143,10 +1173,12 @@ Bake these in — each is a real bug a shipped pilot hit:
   even when a particular execution path never calls it. The runner must
   synthesize a loud body for every required item so host construction itself
   is faithful.
-- **Multi-group currying — closures AND module-fn-values.** Curried
-  multi-layer functions stay curried at the boundary (each `Function(Pᵢ, Rᵢ)`
-  = one call). This holds for **both** a closure value and a module-fn value
-  carrying multiple parameter groups; cover both, in both directions.
+- **Declaration heads and returned callables are different cuts.** The
+  specified export facade may compact declaration-head groups; it must not
+  absorb a returned callable's application stage or move effects across it.
+  Cover closure and module-function values in both directions under their
+  applicable public contracts, rather than deriving one arity from the full
+  normalized arrow chain.
 - **Representation is not application-boundary authority.** A representation
   is wrong when it loses semantic `Forall` / `Function` order required by the
   current applicable contract.
@@ -1192,7 +1224,10 @@ The backend is accepted only when **all** of the following hold:
    audit is also clean against representative independently authored
    `HOST_INTERFACE` call sites. Any `ARTIFACT_SHAPE` case pins only a durable
    spec- or recorded-measurement-backed fact, and emissions were not counted as
-   runtime cells.
+   runtime cells. For long generated identifiers or filenames, discharge the
+   target's actual limits with native artifact evidence; reuse the existing
+   bounded-mint mechanism where applicable rather than imposing one host's
+   limit on every backend (see the bounded-mint guidance in `ai/topics/emit.md`).
 5. The runner's protocol host-body completeness gate passes.
 6. Every native compiler route uses shared `CompilerAdmission` at the actual
    command boundary; cache hits and same-key waiters consume no permit.

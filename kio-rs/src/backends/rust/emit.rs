@@ -55,7 +55,8 @@ use crate::backends::public_names::{encode_host_identity, encode_source_identity
 use crate::backends::reconstruct::{ReconProfile, apply_subst, build_typearg_subst_from_sig};
 use crate::backends::skin::FunctionBoundaryAdapterPlan;
 use crate::backends::structural::{
-    ProductRebuildPlan, bound_product_rebuild_plan, render_cached_product_rebuild,
+    NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
+    render_cached_product_rebuild,
 };
 use crate::backends::{boundary_docs, doc};
 use crate::host_descriptor::{self, BoundRequirement, HostDescriptor, HostTypeDecl};
@@ -1331,26 +1332,6 @@ where
             then_branch: go_box(then_branch),
             else_branch: go_box(else_branch),
             result_ty: go_t(result_ty),
-            meta: meta.clone(),
-            ext: *ext,
-        },
-        Expr::EnrichedRecord {
-            occurrence: _,
-            fields,
-            synth_ty,
-            meta,
-            ext,
-        } => Expr::EnrichedRecord {
-            occurrence: Default::default(),
-            fields: fields
-                .iter()
-                .map(|f| crate::ast::RecordField {
-                    name: f.name.clone(),
-                    value: go_e(&f.value),
-                    meta: f.meta.clone(),
-                })
-                .collect(),
-            synth_ty: go_t(synth_ty),
             meta: meta.clone(),
             ext: *ext,
         },
@@ -5035,7 +5016,7 @@ fn register_body_shapes(
     tparams: &std::collections::HashSet<&str>,
     ctx: &BodyShapeContext<'_>,
 ) -> Result<(), EmitError> {
-    use crate::ast::{EnrichedArm, RecordField};
+    use crate::ast::EnrichedArm;
     // Body-internal compounds register only the crate-private binary shape.
     // Prepared host/export conversions traverse the erased value directly and
     // never consult this registry for the public binary marker/facade algebra.
@@ -5047,15 +5028,6 @@ fn register_body_shapes(
             shapes.register_with_tparams(&synth_ty, tparams)?;
             for it in items {
                 register_body_shapes(it, shapes, tparams, ctx)?;
-            }
-        }
-        Expr::EnrichedRecord {
-            fields, synth_ty, ..
-        } => {
-            let synth_ty = shapes.normalize_type_for_tparams_in_current_scope(synth_ty, tparams);
-            shapes.register_with_tparams(&synth_ty, tparams)?;
-            for RecordField { value, .. } in fields {
-                register_body_shapes(value, shapes, tparams, ctx)?;
             }
         }
         Expr::EnrichedInject {
@@ -7632,14 +7604,6 @@ impl<'a> BodyEmitter<'a> {
                 let refs: Vec<&Expr<Routed>> = items.iter().collect();
                 self.emit_product_typed(&refs, synth_ty)
             }
-            Expr::EnrichedRecord { fields, .. } => {
-                // A record's slots are label-derived newtypes wrapping their
-                // payloads, not bare function types, so no per-slot fn-value
-                // grouping adaptation applies (mirrors the Go backend, whose
-                // record path is the untyped `emit_tuple_refs`).
-                let refs: Vec<&Expr<Routed>> = fields.iter().map(|f| &f.value).collect();
-                self.emit_product(&refs)
-            }
             Expr::EnrichedProject {
                 target,
                 index,
@@ -8068,24 +8032,6 @@ impl<'a> BodyEmitter<'a> {
         )
     }
 
-    /// A product `(A & B & C)` → the nested-binary erased value
-    /// `as_any((a, as_any((b, c))))`. `.0` is the head slot, `.1` the
-    /// nested remainder; matches [`Self::emit_project`]'s peel.
-    fn emit_product(&mut self, items: &[&Expr<Routed>]) -> Result<String, EmitError> {
-        let n = items.len();
-        if n == 0 {
-            return Ok(self.box_any("()"));
-        }
-        if let Some(plan) = bound_product_rebuild_plan(items) {
-            return self.emit_product_with_cached_slots(items, None, &plan);
-        }
-        let mut rendered = Vec::with_capacity(n);
-        for item in items {
-            rendered.push(self.emit_expr(item)?);
-        }
-        Ok(self.emit_product_from_rendered(&rendered))
-    }
-
     /// Build a product, adapting each **fn-valued** slot to that slot's
     /// function-type grouping from the product's `synth_ty`.
     ///
@@ -8110,7 +8056,7 @@ impl<'a> BodyEmitter<'a> {
             return Ok(self.box_any("()"));
         }
         let slots = Type::right_spine_product(synth_ty);
-        if let Some(plan) = bound_product_rebuild_plan(items) {
+        if let Some(plan) = bound_product_rebuild_plan(items, NominalValueRepresentation::Erased) {
             return self.emit_product_with_cached_slots(items, Some(&slots), &plan);
         }
         let emit_item = |this: &mut Self, i: usize| -> Result<String, EmitError> {

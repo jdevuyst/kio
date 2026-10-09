@@ -210,7 +210,7 @@ def _host(prefix):
 
 def _pair(pkg, label):
     q = getattr(pkg.greeter, {main_selector}).pair()
-    sys.stdout.write(label + " pair: " + str(q["_0"]) + " " + str(q["_1"]) + "\n")
+    sys.stdout.write(label + " pair: " + str(q["left"]) + " " + str(q["right"]) + "\n")
 
 _ma = _load({path_a}, {lit_a})
 _mb = _load({path_b}, {lit_b})
@@ -365,6 +365,14 @@ fn build_driver_script_with_host(
     };
     let type_selectors = [
         "A",
+        "B",
+        "Wrap",
+        "Const",
+        "Outer",
+        "Inner",
+        "Choice",
+        "Visible_cycle_outer",
+        "Visible_comptime_outer",
         "Pair",
         "Box",
         "Functor",
@@ -417,6 +425,37 @@ MAIN_MODULE_SELECTORS = {main_module_selectors}
 TYPE_SELECTORS = {type_selectors}
 HOST_ITEMS = {host_items}
 HOST_TYPES = {host_types}
+
+def _product(values):
+    tail = values[-1]
+    for value in reversed(values[:-1]):
+        tail = {{"left": value, "right": tail}}
+    return tail
+
+def _product_field(value, index, arity):
+    for _ in range(index):
+        value = value["right"]
+    return value if index == arity - 1 else value["left"]
+
+def _sum(arm, value, arity=2):
+    result = value if arm == arity - 1 else {{"tag": "left", "value": value}}
+    for _ in range(arm):
+        result = {{"tag": "right", "value": result}}
+    return result
+
+def _sum_view(value, arity):
+    for arm in range(arity - 1):
+        if type(value) is not dict or set(value) != {{"tag", "value"}}:
+            raise RuntimeError("sum has invalid public fields")
+        if value["tag"] == "left":
+            return arm, value["value"]
+        if value["tag"] != "right":
+            raise RuntimeError("sum has invalid public tag")
+        value = value["value"]
+    return arity - 1, value
+
+def _stage(advance):
+    return module.kio_lift_stage(types.SimpleNamespace(advance=advance))
 
 def _load_package(path):
     spec = importlib.util.spec_from_file_location("kio_emitted_package", path)
@@ -519,33 +558,33 @@ def _host_fn(tag, operation, kind, carrier):
                 raise RuntimeError("produce failed")
             produced = True
             _print("produce\n")
-            return None
+            return _stage(lambda: None)
         return returned_forall_unit
     if tag == "trace-unit":
         return lambda: _print(operation + "\n")
     if tag == "staged-unit-call":
         return lambda _value: _print("staged Unit host call\n")
     if tag == "call-step":
-        return lambda step, seed: step({{ "_0": seed, "_1": "compound-callback", "_2": True }})
+        return lambda step, seed: step(_product([seed, "compound-callback", True]))
     if tag == "make-pair-callback":
-        return lambda build, seed: build(seed)["_0"]
+        return lambda build, seed: build(seed)["left"]
     if tag == "make-step":
-        return lambda delta: (lambda n: _wrap_int(int(n) + int(delta), 32, True))
+        return lambda delta: module.kio_lift(lambda n: _wrap_int(int(n) + int(delta), 32, True))
     if tag == "box-make":
         return lambda v: _carrier_out(carrier, v)
     if tag == "box-get":
         return lambda box: _carrier_in(carrier, box)
     if tag == "apply-poly":
-        return lambda f: f("rank-n\n")
+        return lambda f: f.advance()("rank-n\n")
     if tag == "make-pair-structural":
-        return lambda n, s: {{ "_0": n, "_1": s }}
+        return lambda n, s: {{ "left": n, "right": s }}
     if tag == "produce-pair":
         def produce_pair():
             _print("direct\n")
-            return {{"_0": 7, "_1": "direct-value"}}
+            return {{"left": 7, "right": "direct-value"}}
         return produce_pair
     if tag == "sum-to-string":
-        return lambda v: str(v["_0"] if "_0" in v else v["_1"])
+        return lambda v: str(_sum_view(v, 2)[1])
     if tag == "make-token":
         return lambda n: {{ "value": n }}
     if tag == "token-value":
@@ -572,29 +611,22 @@ def _host_fn(tag, operation, kind, carrier):
         def read_line():
             line = sys.stdin.readline()
             if line == "":
-                return {{ "_1": None }}
+                return _sum(1, None)
             line = line.rstrip("\n").rstrip("\r")
             if not line.isascii():
                 print("read_ascii_line: non-ASCII input", file=sys.stderr)
                 sys.exit(1)
-            return {{ "_0": line }}
+            return _sum(0, line)
         return read_line
     if tag == "loop":
         def loop(step, state):
             while True:
                 out = step(state)
-                if isinstance(out, dict):
-                    if "_0" in out:
-                        state = out["_0"]
-                        continue
-                    if "_1" in out:
-                        return out["_1"]
-                if isinstance(out, list):
-                    if out[0] == 0:
-                        state = out[1]
-                        continue
-                    return out[1]
-                raise RuntimeError("loop: step returned invalid sum")
+                arm, value = _sum_view(out, 2)
+                if arm == 0:
+                    state = value
+                    continue
+                return value
         return loop
     if tag == "numeric-to-string":
         if kind in ("f32", "f64"):
@@ -607,11 +639,11 @@ def _host_fn(tag, operation, kind, carrier):
     if tag == "string-to-int":
         def string_to_int(s):
             if not re.match(r"^[+-]?\d+$", s):
-                return {{ "_1": None }}
+                return _sum(1, None)
             n = int(s)
             if n < -2147483648 or n > 2147483647:
-                return {{ "_1": None }}
-            return {{ "_0": n }}
+                return _sum(1, None)
+            return _sum(0, n)
         return string_to_int
     if tag == "string-concat":
         return lambda a, b: a + b
@@ -626,7 +658,7 @@ def _host_fn(tag, operation, kind, carrier):
             return s[start:end]
         return string_slice
     if tag == "string-code-at":
-        return lambda s, index: {{ "_1": None }} if index < 0 or index >= len(s) else {{ "_0": ord(s[index]) }}
+        return lambda s, index: _sum(1, None) if index < 0 or index >= len(s) else _sum(0, ord(s[index]))
     if tag == "array":
         if operation == "make-empty":
             return lambda: _carrier_out(carrier, [])
@@ -658,7 +690,7 @@ def _host_fn(tag, operation, kind, carrier):
         if operation == "pop-back":
             def array_pop_back(a):
                 a = _carrier_in(carrier, a)
-                return {{ "_1": None }} if len(a) == 0 else {{ "_0": a.pop() }}
+                return _sum(1, None) if len(a) == 0 else _sum(0, a.pop())
             return array_pop_back
         if operation == "swap":
             def array_swap(a, i, j):
@@ -686,7 +718,7 @@ def _host_fn(tag, operation, kind, carrier):
     if tag == "scalar-of":
         return lambda value: {{ "k": kind, "v": value }}
     if tag == "scalar-as":
-        return lambda scalar: {{ "_1": scalar["v"] }} if scalar["k"] == kind else {{ "_0": None }}
+        return lambda scalar: _sum(1, scalar["v"]) if scalar["k"] == kind else _sum(0, None)
     if tag == "scalar-is-true":
         return lambda scalar: scalar["v"] is True
     if tag in ("arithmetic", "float-arithmetic"):
@@ -766,7 +798,7 @@ def _carrier_in(frame, value):
     expected = getattr(module, "KioHostType_" + frame)[object]
     if type(value) is not expected:
         raise TypeError("expected exact host carrier " + frame)
-    return value.to_native()
+    return expected.to_native(value)
 
 def _carrier_out(frame, value):
     return getattr(module, "KioHostType_" + frame)[object].from_native(value)
@@ -854,7 +886,7 @@ elif PROTOCOL == "export-namespace-roundtrip":
     _print(str(utils_ns.echo("namespace-utils")) + "\n")
 elif PROTOCOL == "export-callback-roundtrip":
     main = _base("main")
-    _print(str(main.applyTwice(lambda n: n + 3, 10)) + "\n")
+    _print(str(main.applyTwice(module.kio_lift(lambda n: n + 3), 10)) + "\n")
     _print(str(main.makeStep(4)(5)) + "\n")
 elif PROTOCOL == "export-module-roundtrip":
     api = _base("api")
@@ -863,14 +895,17 @@ elif PROTOCOL == "export-module-roundtrip":
     _print(str(api.echo("module-echo")) + "\n")
 elif PROTOCOL == "export-multi-label-roundtrip":
     main = _base("main")
-    main.say({{ "A": 42, "B": "shown\n" }})
-    row = main.echoPair({{ "A": 88, "B": "99" }})
     a = getattr(main, TYPE_SELECTORS["A"])
+    b = _type(main, "B")
+    main.say({{"left": a.mk(42), "right": b.mk("shown\n")}})
+    row = main.echoPair({{"left": a.mk(88), "right": b.mk("99")}})
+    row_a = a.get(row["left"])
+    row_b = b.get(row["right"])
     out_a = a.get(main.echoA(a.mk(111)))
-    if type(row["A"]) is not int or type(row["B"]) is not str or type(out_a) is not int:
+    if type(row_a) is not int or type(row_b) is not str or type(out_a) is not int:
         raise RuntimeError("labels facade did not preserve the selected host representations")
-    _print(str(row["A"]) + "\n")
-    _print(row["B"] + "\n")
+    _print(str(row_a) + "\n")
+    _print(row_b + "\n")
     _print(str(out_a) + "\n")
 elif PROTOCOL == "export-type-only-roundtrip":
     main = _base("main")
@@ -897,11 +932,11 @@ elif PROTOCOL == "export-type-only-roundtrip":
     _print("phantom-unit-called\n")
     poly = main.poly()
     _print("poly-returned\n")
-    value = poly("poly-string")
+    value = poly.advance()("poly-string")
     if type(value) is not str:
         raise RuntimeError("returned polymorphic identity did not retain its string result")
     _print(value + "\n")
-    value = poly(73)
+    value = poly.advance()(73)
     if type(value) is not int:
         raise RuntimeError("returned polymorphic identity did not retain its integer result")
     _print(str(value) + "\n")
@@ -912,8 +947,8 @@ elif PROTOCOL == "export-poly-roundtrip":
     _print(str(root.keepLeft("left", 99)) + "\n")
 elif PROTOCOL == "export-poly-callback-roundtrip":
     main = _base("main")
-    _print(main.applyVia(lambda s: "via: " + s, "apply") + "\n")
-    _print(str(main.applyVia(lambda n: n + 8, 7)) + "\n")
+    _print(main.applyVia(module.kio_lift(lambda s: "via: " + s), "apply") + "\n")
+    _print(str(main.applyVia(module.kio_lift(lambda n: n + 8), 7)) + "\n")
 elif PROTOCOL == "export-callable-slots-roundtrip":
     main = _base("main")
     def check(actual, expected):
@@ -926,27 +961,33 @@ elif PROTOCOL == "export-callable-slots-roundtrip":
     def sum_step(value):
         calls[1] += 1
         return value + 7
-    check(main.applyProduct({{"_0": product_step, "_1": 11}}), 16)
-    echoed_product = main.echoProduct({{"_0": product_step, "_1": 17}})
-    check(echoed_product["_1"], 17)
-    check(echoed_product["_0"](echoed_product["_1"]), 22)
+    product_step = module.kio_lift(product_step)
+    sum_step = module.kio_lift(sum_step)
+    check(main.applyProduct({{"left": product_step, "right": 11}}), 16)
+    echoed_product = main.echoProduct({{"left": product_step, "right": 17}})
+    check(echoed_product["right"], 17)
+    check(echoed_product["left"](echoed_product["right"]), 22)
     made_product = main.makeProduct(23)
-    check(made_product["_1"], 23)
-    check(made_product["_0"](29), 29)
-    check(main.applySum({{"_0": sum_step}}, 31), 38)
-    echoed_sum = main.echoSum({{"_0": sum_step}})
-    check(list(echoed_sum), ["_0"])
-    check(echoed_sum["_0"](37), 44)
+    check(made_product["right"], 23)
+    check(made_product["left"](29), 29)
+    check(main.applySum(_sum(0, sum_step), 31), 38)
+    echoed_sum = main.echoSum(_sum(0, sum_step))
+    arm, step = _sum_view(echoed_sum, 2)
+    check(arm, 0)
+    check(step(37), 44)
     made_sum = main.makeCallableSum()
-    check(list(made_sum), ["_0"])
-    check(made_sum["_0"](41), 41)
+    arm, step = _sum_view(made_sum, 2)
+    check(arm, 0)
+    check(step(41), 41)
     scalar = main.makeScalarSum(97)
-    check(list(scalar), ["_1"])
-    check(scalar["_1"], 97)
+    arm, value = _sum_view(scalar, 2)
+    check(arm, 1)
+    check(value, 97)
     check(main.applySum(scalar, 43), 97)
     echoed_scalar = main.echoSum(scalar)
-    check(list(echoed_scalar), ["_1"])
-    check(echoed_scalar["_1"], 97)
+    arm, value = _sum_view(echoed_scalar, 2)
+    check(arm, 1)
+    check(value, 97)
     check(calls, [2, 2])
     _print("callable slots ok\n")
 elif PROTOCOL == "export-scalar-roundtrip":
@@ -975,15 +1016,15 @@ elif PROTOCOL == "export-host-owned-roundtrip":
     _print("host-owned payloads ok\n")
 elif PROTOCOL == "export-structural-roundtrip":
     main = _base("main")
-    q = main.pairSwap({{ "_0": 42, "_1": "hello" }})
-    _print(str(q["_0"]) + " " + str(q["_1"]) + "\n")
-    _print(str(main.dispatchLeft({{ "_0": 7 }})) + "\n")
-    _print(str(main.dispatchLeft({{ "_1": "from-sum" }})) + "\n")
-    wide = main.rotate({{ "_0": 1, "_1": 2, "_2": 3, "_3": 4, "_4": 5, "_5": 6, "_6": 7, "_7": 8, "_8": 9, "_9": 10, "_10": 11, "_11": 12 }})
-    _print(str(wide["_0"]) + " " + str(wide["_1"]) + " " + str(wide["_11"]) + "\n")
-    _print(str(main.classify({{ "_0": 1 }})) + "\n")
-    _print(str(main.classify({{ "_4": 5 }})) + "\n")
-    _print(str(main.classify({{ "_9": "ten" }})) + "\n")
+    q = main.pairSwap({{ "left": 42, "right": "hello" }})
+    _print(str(q["left"]) + " " + str(q["right"]) + "\n")
+    _print(str(main.dispatchLeft(_sum(0, 7))) + "\n")
+    _print(str(main.dispatchLeft(_sum(1, "from-sum"))) + "\n")
+    wide = main.rotate(_product(list(range(1, 13))))
+    _print(str(_product_field(wide, 0, 12)) + " " + str(_product_field(wide, 1, 12)) + " " + str(_product_field(wide, 11, 12)) + "\n")
+    _print(str(main.classify(_sum(0, 1, 10))) + "\n")
+    _print(str(main.classify(_sum(4, 5, 10))) + "\n")
+    _print(str(main.classify(_sum(9, "ten", 10))) + "\n")
     _print(str(main.classify(main.chooseFirst())) + "\n")
     _print(str(main.classify(main.chooseMiddle())) + "\n")
     _print(str(main.classify(main.chooseLast())) + "\n")
@@ -993,25 +1034,26 @@ elif PROTOCOL == "export-structural-roundtrip":
         (8, False), (8, True), (9, "sum-value"),
     ]
     for arm, value in samples:
-        key = "_" + str(arm)
-        returned = main.echoSum({{key: value}})
-        if list(returned) != [key] or type(returned[key]) is not type(value) or returned[key] != value:
+        returned = main.echoSum(_sum(arm, value, 10))
+        returned_arm, returned_value = _sum_view(returned, 10)
+        if returned_arm != arm or type(returned_value) is not type(value) or returned_value != value:
             raise RuntimeError("export-structural-roundtrip: sum payload changed at arm " + str(arm))
-        payload = str(returned[key]).lower() if type(value) is bool else str(returned[key])
+        payload = str(returned_value).lower() if type(value) is bool else str(returned_value)
         _print(str(main.classify(returned)) + " " + payload + "\n")
 elif PROTOCOL == "export-positional-product-roundtrip":
     q = _base("main").makePair(7, "hello")
-    _print(str(q["_0"]) + " " + str(q["_1"]) + "\n")
+    _print(str(q["left"]) + " " + str(q["right"]) + "\n")
 elif PROTOCOL == "host-existential-roundtrip":
     counts = [0, 0]
     def observe_packed(value):
         counts[0] += 1
         def open_payload(payload):
             counts[1] += 1
-            return payload["_1"](payload["_0"])
-        return _type(_base("types"), "Packed").readPacked(value)(open_payload)
+            return payload["right"](payload["left"])
+        return _type(_base("types"), "Packed").readPacked(value).advance()(
+            _stage(lambda: module.kio_lift(open_payload)))
     result = _base("main").exercise()
-    if type(result["_0"]) is not int or type(result["_1"]) is not int or result["_0"] != 37 or result["_1"] != 83 or counts != [2, 2]:
+    if type(result["left"]) is not int or type(result["right"]) is not int or result["left"] != 37 or result["right"] != 83 or counts != [2, 2]:
         raise RuntimeError("existential host observations changed")
     _print("existential host opening ok\n")
 elif PROTOCOL == "export-functor-dict-roundtrip":
@@ -1025,13 +1067,15 @@ elif PROTOCOL == "export-functor-dict-roundtrip":
     def to_integer(value):
         texts.append(value)
         return len(value)
+    to_text = module.kio_lift(to_text)
+    to_integer = module.kio_lift(to_integer)
     def wrap(value):
-        return box.mkBox({{"_0": value, "_1": None}})
+        return box.mkBox({{"left": value, "right": None}})
     def unwrap(value):
         row = box.unBox(value)
-        if row["_1"] is not None:
+        if row["right"] is not None:
             raise RuntimeError("functor box Unit changed")
-        return row["_0"]
+        return row["left"]
     def check(actual, expected):
         if type(actual) is not type(expected) or actual != expected:
             raise RuntimeError("functor payload changed")
@@ -1039,22 +1083,24 @@ elif PROTOCOL == "export-functor-dict-roundtrip":
     check(unwrap(main.applyFunctor(dictionary, to_text, wrap(42))), "v:42")
     check(unwrap(main.applyFunctor(dictionary, to_integer, wrap("apple"))), 5)
     mapping = functor.fmap(dictionary)
-    check(unwrap(mapping({{"_0": to_text, "_1": wrap(7)}})), "v:7")
-    check(unwrap(mapping({{"_0": to_integer, "_1": wrap("pear")}})), 4)
+    check(unwrap(mapping.advance().advance()({{"left": to_text, "right": wrap(7)}})), "v:7")
+    check(unwrap(mapping.advance().advance()({{"left": to_integer, "right": wrap("pear")}})), 4)
     check(integers, [42, 7])
     check(texts, ["apple", "pear"])
     _print("functor dictionary ok\n")
 elif PROTOCOL == "export-type-roundtrip":
     pair = _type(_base("types"), "Pair")
-    payload = pair.unPair(pair.mkPair({{ "_0": "export-type-left", "_1": "export-type-right" }}))
-    _print(str(payload["_0"]) + "\n")
-    _print(str(payload["_1"]) + "\n")
+    payload = pair.unPair(pair.mkPair({{ "left": "export-type-left", "right": "export-type-right" }}))
+    _print(str(payload["left"]) + "\n")
+    _print(str(payload["right"]) + "\n")
 elif PROTOCOL == "export-newtype-sum-roundtrip":
     main = _base("main")
     _print(str(main.firstOr(0, main.pack(7, "hi"))) + "\n")
 elif PROTOCOL == "export-newtype-scalar-roundtrip":
-    out = _base("main").bump({{ "Wrap": 7 }})
-    _print(str(out["Wrap"]) + "\n")
+    main = _base("main")
+    wrap = _type(main, "Wrap")
+    out = main.bump(wrap.mkWrap(7))
+    _print(str(wrap.unWrap(out)) + "\n")
 elif PROTOCOL == "newtype-visibility-facade":
     facade = _base("types")
     left = _base("left")
@@ -1076,7 +1122,7 @@ elif PROTOCOL == "newtype-visibility-facade":
     out_l = _type(left, "Shared").readShared(_type(left, "Shared").makeShared(left.read(l)))
     out_r = _type(right, "Shared").readShared(_type(right, "Shared").makeShared(right.read(r)))
     constructor_pair = _type(facade, "Constructor_pair").makeConstructorPair(
-        {{ "_0": i32(81), "_1": i32(82) }})
+        {{ "left": i32(81), "right": i32(82) }})
     constructor_pair_out = facade.readConstructorPairValue(constructor_pair)
     projector_pair = facade.makeProjectorPairValue(constructor_pair_out)
     projector_pair_out = _type(facade, "Projector_pair").readProjectorPair(projector_pair)
@@ -1084,14 +1130,14 @@ elif PROTOCOL == "newtype-visibility-facade":
         _type(facade, "Constructor_generic").makeConstructorGeneric(i32(85)))
     projector_generic_out = _type(facade, "Projector_generic").readProjectorGeneric(
         facade.makeProjectorGenericValue(i32(86)))
-    packed = _type(facade, "Packed_function").makePackedFunction(
-        lambda value: i32(native_i32(value["_0"]) + native_i32(value["_1"])))
+    packed = _type(facade, "Packed_function").makePackedFunction(module.kio_lift(
+        lambda value: i32(native_i32(value["left"]) + native_i32(value["right"]))))
     unpacked = _type(facade, "Packed_function").readPackedFunction(packed)
     packed_out = unpacked(constructor_pair_out)
     existential_out = _type(facade, "Existential_unit").readExistentialUnit(
-        facade.makeExistentialUnitValue())(lambda _value: i32(89))
+        facade.makeExistentialUnitValue()).advance()(_stage(lambda: module.kio_lift(lambda _value: i32(89))))
     existential_empty_out = _type(facade, "Existential_empty").readExistentialEmpty(
-        facade.makeExistentialEmptyValue())(lambda: i32(90))
+        facade.makeExistentialEmptyValue()).advance()(_stage(lambda: module.kio_lift(lambda _unit: i32(90))))
     recursive_both = _type(facade, "Recursive_both").makeRecursiveBoth(
         facade.recursiveBothBasePayload())
     recursive_both_out = facade.recursiveBothPayloadIsBase(
@@ -1105,19 +1151,20 @@ elif PROTOCOL == "newtype-visibility-facade":
             facade.makeRecursiveProjectorBase()))
     constructor_inputs = []
     def constructor_step(value):
-        seed = native_i32(value["_0"])
+        seed = native_i32(value["left"])
         constructor_inputs.append(seed)
         return i32(seed + 3)
-    constructed = _type(facade, "Constructor_spread").makeConstructorSpread(constructor_step)
+    constructor_step = module.kio_lift(constructor_step)
+    constructed = _type(facade, "Constructor_spread").makeConstructorSpread(_stage(lambda: constructor_step))
     if native_i32(facade.invokeConstructorSpreadI32(constructed, i32(101))) != 104 or native_i32(facade.invokeConstructorSpreadUnit(constructed, i32(102))) != 105 or constructor_inputs != [101, 102]:
         raise RuntimeError("constructor-only polymorphic callback changed")
     projected = _type(facade, "Projector_spread").readProjectorSpread(facade.makeProjectorSpreadValue())
-    if native_i32(projected({{"_0": i32(111), "_1": i32(1)}})) != 111 or native_i32(projected({{"_0": i32(112), "_1": None}})) != 112:
+    if native_i32(projected.advance()({{"left": i32(111), "right": i32(1)}})) != 111 or native_i32(projected.advance()({{"left": i32(112), "right": None}})) != 112:
         raise RuntimeError("projector-only polymorphic callback changed")
     spread_payloads = []
     recursive_payloads = []
     def open_spread(value):
-        if not callable(value):
+        if not callable(getattr(value, "advance", None)):
             raise RuntimeError("existential payload is not callable")
         spread_payloads.append(value)
         return i32(91)
@@ -1126,16 +1173,27 @@ elif PROTOCOL == "newtype-visibility-facade":
             raise RuntimeError("existential payload is not callable")
         recursive_payloads.append(value)
         return i32(92)
-    opened_spread = _type(facade, "Existential_spread").readExistentialSpread(facade.makeExistentialSpreadValue())(open_spread)
-    opened_recursive = _type(facade, "Recursive_existential_function").readRecursiveExistentialFunction(facade.makeRecursiveExistentialFunctionValue())(open_recursive)
+    opened_spread = _type(facade, "Existential_spread").readExistentialSpread(facade.makeExistentialSpreadValue()).advance()(_stage(lambda: module.kio_lift(open_spread)))
+    opened_recursive = _type(facade, "Recursive_existential_function").readRecursiveExistentialFunction(facade.makeRecursiveExistentialFunctionValue()).advance()(_stage(lambda: module.kio_lift(open_recursive)))
     if native_i32(opened_spread) != 91 or native_i32(opened_recursive) != 92 or len(spread_payloads) != 1 or len(recursive_payloads) != 1:
         raise RuntimeError("existential continuation count changed")
     cycle_outer = facade.makeVisibleCycleOuterBase()
-    if type(cycle_outer) is not dict or "VisibleCycleOuter" not in cycle_outer:
+    cycle = _type(facade, "Visible_cycle_outer")
+    cycle_inner = cycle.readVisibleCycleOuter(cycle_outer)
+    if type(cycle.readVisibleCycleOuter(cycle.makeVisibleCycleOuter(cycle_inner))) is not type(cycle_inner):
         raise RuntimeError("hidden carrier did not cut the visible outer recursion")
     comptime_outer = facade.makeVisibleComptimeOuterBase()
-    if type(comptime_outer) is not dict or "VisibleComptimeOuter" not in comptime_outer:
+    comptime = _type(facade, "Visible_comptime_outer")
+    comptime_inner = comptime.readVisibleComptimeOuter(comptime_outer)
+    if type(comptime.readVisibleComptimeOuter(comptime.makeVisibleComptimeOuter(comptime_inner))) is not type(comptime_inner):
         raise RuntimeError("hidden compile-time payload changed the visible outer boundary")
+    for constructor, wrong in [(cycle.makeVisibleCycleOuter, comptime_inner), (comptime.makeVisibleComptimeOuter, cycle_inner)]:
+        try:
+            constructor(wrong)
+        except TypeError:
+            pass
+        else:
+            raise RuntimeError("hidden nominal identities collapsed")
     scalar_outputs = [
         ("a", out_a), ("b", out_b), ("constructor-only", out_c),
         ("projector-only", out_p), ("both-public", out_d),
@@ -1166,8 +1224,8 @@ elif PROTOCOL == "newtype-visibility-facade":
     pair_outputs = [constructor_pair_out, projector_pair_out]
     if any(
         type(value) is not dict
-        or type(native_i32(value.get("_0"))) is not int
-        or type(native_i32(value.get("_1"))) is not int
+        or type(native_i32(value.get("left"))) is not int
+        or type(native_i32(value.get("right"))) is not int
         for value in pair_outputs
     ):
         raise RuntimeError("facade did not preserve the compound product representation")
@@ -1178,8 +1236,8 @@ elif PROTOCOL == "newtype-visibility-facade":
     _print(str(native_i32(out_d)) + "\n")
     _print(str(native_i32(out_l)) + "\n")
     _print(str(native_i32(out_r)) + "\n")
-    _print(str(native_i32(constructor_pair_out["_0"])) + " " + str(native_i32(constructor_pair_out["_1"])) + "\n")
-    _print(str(native_i32(projector_pair_out["_0"])) + " " + str(native_i32(projector_pair_out["_1"])) + "\n")
+    _print(str(native_i32(constructor_pair_out["left"])) + " " + str(native_i32(constructor_pair_out["right"])) + "\n")
+    _print(str(native_i32(projector_pair_out["left"])) + " " + str(native_i32(projector_pair_out["right"])) + "\n")
     _print(str(native_i32(constructor_generic_out)) + "\n")
     _print(str(native_i32(projector_generic_out)) + "\n")
     _print(str(native_i32(packed_out)) + "\n")
@@ -1189,10 +1247,12 @@ elif PROTOCOL == "newtype-visibility-facade":
     _print(str(native_i32(recursive_constructor_out)) + "\n")
     _print(str(native_i32(recursive_projector_out)) + "\n")
 elif PROTOCOL == "export-nested-product-roundtrip":
-    out = _base("main").make("nest", 7, 9)
-    _print(str(out["Outer"]["_0"]) + "\n")
-    _print(str(out["Outer"]["Inner"]["_0"]) + "\n")
-    _print(str(out["Outer"]["Inner"]["_1"]) + "\n")
+    main = _base("main")
+    out = _type(main, "Outer").get(main.make("nest", 7, 9))
+    inner = _type(main, "Inner").get(out["right"])
+    _print(str(out["left"]) + "\n")
+    _print(str(inner["left"]) + "\n")
+    _print(str(inner["right"]) + "\n")
 elif PROTOCOL == "public-word-names":
     word_api = _root_base().wordApi
     _print(str(word_api.readWord()) + "\n")
@@ -1202,68 +1262,107 @@ elif PROTOCOL == "public-word-names":
     _print(str(word_api.readWord__()) + "\n")
     word_nodes = word_api.KioModule_wordNodes
     boxed = word_nodes.KioType__uWordBox_u_u.wrapWord(55)
-    if boxed != {{"_WordBox__": 55}}:
-        raise RuntimeError("incorrect public transparent wrapper key")
-    _print(str(word_nodes.KioType__uWordBox_u_u.unwrapWord({{"_WordBox__": 55}})) + "\n")
+    if word_nodes.KioType__uWordBox_u_u.unwrapWord(boxed) != 55:
+        raise RuntimeError("incorrect public nominal wrapper payload")
+    _print(str(word_nodes.KioType__uWordBox_u_u.unwrapWord(boxed)) + "\n")
     _print(str(word_nodes.keepWord(66)) + "\n")
-    pair = word_api.keepPair({{"_WordBox__": 77, "wordApi/otherNodes._WordBox__": 88}})
-    _print(str(pair["_WordBox__"]) + "\n")
-    _print(str(pair["wordApi/otherNodes._WordBox__"]) + "\n")
+    other_nodes = word_api.KioModule_otherNodes
+    pair = word_api.keepPair({{"left": word_nodes.KioType__uWordBox_u_u.wrapWord(77), "right": other_nodes.KioType__uWordBox_u_u.wrapWord(88)}})
+    _print(str(word_nodes.KioType__uWordBox_u_u.unwrapWord(pair["left"])) + "\n")
+    _print(str(other_nodes.KioType__uWordBox_u_u.unwrapWord(pair["right"])) + "\n")
+    try:
+        other_nodes.KioType__uWordBox_u_u.unwrapWord(pair["left"])
+    except TypeError:
+        pass
+    else:
+        raise RuntimeError("public same-leaf nominal identities collapsed")
 elif PROTOCOL == "export-compound-input-once":
     api = _base("main")
     def line(value):
         _print(str(value) + "\n")
     direct = api.direct()
-    line(direct["_0"])
-    line(direct["_1"])
-    def callback():
+    line(direct["left"])
+    line(direct["right"])
+    callback_calls = 0
+    def callback(_unit):
+        global callback_calls
+        callback_calls += 1
         line("callback")
-        return {{"_0": 9, "_1": "callback-value"}}
-    returned = api.callback(callback)
-    line(returned["_0"])
-    line(returned["_1"])
+        return {{"left": 9, "right": "callback-value"}}
+    returned = api.callback(module.kio_lift(callback))
+    if callback_calls != 1:
+        raise RuntimeError("compound-input-once: callback count " + str(callback_calls))
+    line(returned["left"])
+    line(returned["right"])
     reads = []
     class Tracked(dict):
+        def __init__(self, label, fields):
+            super().__init__(fields)
+            self.label = label
         def __getitem__(self, key):
-            reads.append(key)
+            reads.append((self.label, key))
             return super().__getitem__(key)
-    nested_input = {{"Outer": Tracked({{"_0": "nest", "Inner": Tracked({{"_0": 11, "_1": 13}})}})}}
-    nested = api.echoOuter(nested_input)["Outer"]
-    if reads != ["_0", "Inner", "_0", "_1"]:
+    inner_type = _type(api, "Inner")
+    outer_type = _type(api, "Outer")
+    choice_type = _type(api, "Choice")
+    inner = inner_type.inner(Tracked("inner", {{"left": 11, "right": 13}}))
+    outer = outer_type.outer(Tracked("outer", {{"left": "nest", "right": inner}}))
+    expected_reads = [("inner", "left"), ("inner", "right"), ("outer", "left"), ("outer", "right")]
+    if reads != expected_reads:
         raise RuntimeError("compound-input-once: product access order " + repr(reads))
-    line(nested["_0"])
-    line(nested["Inner"]["_0"])
-    line(nested["Inner"]["_1"])
-    for choice in [api.first(17), api.middle(19, 23), api.last("choice", 29, 31)]:
-        payload = choice["Choice"]
-        key, = payload
-        reads.clear()
-        returned = api.echoChoice({{"Choice": Tracked(payload)}})["Choice"]
-        if reads != [key]:
-            raise RuntimeError("compound-input-once: selected access " + repr(reads))
-        value = returned[key]
-        if key == "_0":
-            line(value)
-        elif key == "Inner":
-            line(value["_0"])
-            line(value["_1"])
+    nested = outer_type.unOuter(api.echoOuter(outer))
+    nested_inner = inner_type.unInner(nested["right"])
+    if reads != expected_reads:
+        raise RuntimeError("compound-input-once: product input reread " + repr(reads))
+    line(nested["left"])
+    line(nested_inner["left"])
+    line(nested_inner["right"])
+    for index, choice in enumerate([api.first(17), api.middle(19, 23), api.last("choice", 29, 31)]):
+        payload = choice_type.unChoice(choice)
+        root_label = "choice" + str(index) + "-root"
+        if index == 0:
+            tracked = Tracked(root_label, payload)
+            expected_reads.extend([(root_label, "tag"), (root_label, "value")])
         else:
-            line(value["_0"])
-            line(value["Inner"]["_0"])
-            line(value["Inner"]["_1"])
+            tail_label = "choice" + str(index) + "-tail"
+            tracked = Tracked(root_label, {{"tag": payload["tag"], "value": Tracked(tail_label, payload["value"])}})
+            expected_reads.extend([(root_label, "tag"), (root_label, "value"), (tail_label, "tag"), (tail_label, "value")])
+        rebuilt = choice_type.choice(tracked)
+        if reads != expected_reads:
+            raise RuntimeError("compound-input-once: selected access " + repr(reads))
+        returned = choice_type.unChoice(api.echoChoice(rebuilt))
+        if reads != expected_reads:
+            raise RuntimeError("compound-input-once: selected input reread " + repr(reads))
+        arm, value = _sum_view(returned, 3)
+        if arm != index:
+            raise RuntimeError("compound-input-once: selected arm changed")
+        if arm == 0:
+            line(value)
+        elif arm == 1:
+            inner = inner_type.unInner(value)
+            line(inner["left"])
+            line(inner["right"])
+        else:
+            outer = outer_type.unOuter(value)
+            inner = inner_type.unInner(outer["right"])
+            line(outer["left"])
+            line(inner["left"])
+            line(inner["right"])
+        if reads != expected_reads:
+            raise RuntimeError("compound-input-once: projected input reread " + repr(reads))
     line(api.echoText("atomic"))
 elif PROTOCOL == "export-curried-facade":
     _print(_base("main").pick("ku", "rz") + "\n")
     _print(str(_base("main").last(1, 2, 3)) + "\n")
 elif PROTOCOL == "nested-curried-roundtrip":
     api = _base("api")
-    join = lambda left: lambda right: left + "/" + right
+    join = module.kio_lift(lambda left: module.kio_lift(lambda right: left + "/" + right))
     via_host = api.viaHost(join)
     _print("via host: " + via_host("env-left")("env-right") + "\n")
     round_export = api.roundExport(join)
     _print("round export: " + round_export("export-left")("export-right") + "\n")
 elif PROTOCOL == "host-substituted-unit-callback":
-    _print(_base("api").viaHost(lambda _unit: "callback") + "\n")
+    _print(_base("api").viaHost(module.kio_lift(lambda _unit: "callback")) + "\n")
 elif PROTOCOL == "returned-forall-call-by-value":
     run = _base("main").main
     run()
@@ -1278,8 +1377,16 @@ elif PROTOCOL == "returned-forall-call-by-value":
 elif PROTOCOL == "export-newtype-ignored-argument-roundtrip":
     main = _base("main")
     wrapped = main.fromI32(7)
-    if wrapped != {{ "Wrap": {{ "Const": 7 }} }}:
+    constant = _type(main, "Wrap").unWrap(wrapped)
+    scalar = _type(main, "Const").unConst(constant)
+    if type(scalar) is not int or scalar != 7:
         raise RuntimeError("ignored type argument changed the public newtype carrier")
+    try:
+        _type(main, "Wrap").unWrap({{"Wrap": {{"Const": 7}}}})
+    except TypeError:
+        pass
+    else:
+        raise RuntimeError("raw dictionary forged an opaque newtype")
     _print(str(main.toI32(wrapped)) + "\n")
 elif PROTOCOL == "recursive-newtype-boundary":
     main = _base("main")
@@ -1316,14 +1423,14 @@ elif PROTOCOL == "export-wide-callable":
     main = _base("main")
     values = range({wide_callable_slot_count})
     out = main.select(*values)
-    _print(str(out["_0"]) + "\n")
-    _print(str(out["_1"]) + "\n")
-    _print(str(out["_2"]) + "\n")
-    callback_args = {{f"_{{index}}": value for index, value in enumerate(values)}}
+    _print(str(out["left"]) + "\n")
+    _print(str(out["right"]["left"]) + "\n")
+    _print(str(out["right"]["right"]) + "\n")
+    callback_args = _product(list(values))
     callback_out = main.makeSelect()(callback_args)
-    _print(str(callback_out["_0"]) + "\n")
-    _print(str(callback_out["_1"]) + "\n")
-    _print(str(callback_out["_2"]) + "\n")
+    _print(str(callback_out["left"]) + "\n")
+    _print(str(callback_out["right"]["left"]) + "\n")
+    _print(str(callback_out["right"]["right"]) + "\n")
 else:
     raise RuntimeError("unhandled protocol " + PROTOCOL)
 "#,
@@ -1720,10 +1827,15 @@ mod tests {
             "word_api.readWord_()",
             "word_api._readWord_()",
             "word_api.readWord__()",
+            "word_nodes = word_api.KioModule_wordNodes",
             "word_nodes.KioType__uWordBox_u_u.wrapWord(55)",
-            "word_nodes.KioType__uWordBox_u_u.unwrapWord({\"_WordBox__\": 55})",
+            "word_nodes.KioType__uWordBox_u_u.unwrapWord(boxed)",
             "word_nodes.keepWord(66)",
-            "pair = word_api.keepPair({\"_WordBox__\": 77, \"wordApi/otherNodes._WordBox__\": 88})",
+            "other_nodes = word_api.KioModule_otherNodes",
+            "pair = word_api.keepPair({\"left\": word_nodes.KioType__uWordBox_u_u.wrapWord(77), \"right\": other_nodes.KioType__uWordBox_u_u.wrapWord(88)})",
+            "word_nodes.KioType__uWordBox_u_u.unwrapWord(pair[\"left\"])",
+            "other_nodes.KioType__uWordBox_u_u.unwrapWord(pair[\"right\"])",
+            "try:\n        other_nodes.KioType__uWordBox_u_u.unwrapWord(pair[\"left\"])\n    except TypeError:\n        pass\n    else:\n        raise RuntimeError(\"public same-leaf nominal identities collapsed\")",
         ] {
             assert!(script.contains(literal), "{script}");
         }
@@ -1916,7 +2028,8 @@ class Carrier:
     def __class_getitem__(cls, _args): return cls
     @classmethod
     def from_native(cls, value): return cls(value)
-    def to_native(self): return self.value
+    @classmethod
+    def to_native(cls, value): return value.value
 KioHostType_{box_frame} = Carrier
 def create_fixture(host):
     def main():

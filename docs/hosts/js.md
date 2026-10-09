@@ -88,17 +88,22 @@ const host = {
 };
 ```
 
-`host type` declarations need no runtime property; types are erased. A `role(...)` annotation chooses the JS value shape for literals and atomic FFI values.
+`host type` declarations need no runtime property; types are erased. A `role(...)` annotation admits the corresponding Kio literal syntax. The JavaScript backend represents host types carrying these roles with the JS value shapes listed below.
 
-Callable arguments follow their Kio source parameters. In particular, a
-parameter written with product type such as `cfg: Left & Right` is one JS
-object argument with the documented structural keys; the generated adapter
-rebuilds the package's internal product from that object. Separate parameter
-groups on an exported function are flattened into one JS call. A callable
-with no source parameter takes no argument, while an existing parameter whose
-type is Unit—whether written that way or produced by substitution—is passed
-explicitly as `null`. These conventions apply equally to exported and host
-functions, callback values, and public newtype members.
+Named exported functions, host functions, and public newtype members follow
+their Kio source parameters. A parameter `cfg: Left & Right` is one JS object
+argument; separate parameter groups are combined into one native call. A
+direct Unit domain is nullary, while a retained generic parameter specialized
+to Unit remains an explicit `null` argument.
+
+Callbacks and returned functions instead take one complete domain value. A
+callback of type `A & B -> R` receives `{_0: a, _1: b}`, and a callback of type
+`. -> R` is called as `callback(null)`. Use `liftGreeterCallable(body)` to turn
+a host function into such a value. Polymorphic values expose one `.advance()`
+step per type parameter; for example, an identity value of type `[A] A -> A`
+is used as `identity.advance()(value)`. `liftGreeterPoly({advance() { ... }})`
+constructs a host-supplied polymorphic value. These helpers are named after
+the package namespace, just like `createGreeter`.
 
 ### 3. Instantiate and invoke
 
@@ -117,19 +122,29 @@ Leading and trailing underscores are preserved by word casing. An export `main` 
 therefore reached as `pkg.greeter.KioModule_main.main`.
 
 A public `newtype` adds a namespace containing only its public constructor
-and projector. When both are public, those methods and public functions use
-the same `{TypeName: payload}` boundary object. If either operation is private,
+and projector. When both are public, the newtype is nonexistential, and its
+payload-visible graph has no uncut cycle, those methods and public functions use
+the same `{TypeName: payload}` boundary object. Otherwise,
 the value is instead an opaque, package-produced handle: it can be retained
 and passed back, but has no payload property and cannot be forged. A
 constructor-only namespace can mint handles; a projector-only namespace can
 inspect handles produced by the package. If neither member is public, the
 namespace is empty and values can only be obtained from and shuttled through
-other public functions.
+other public functions. An opaque child cuts payload traversal, so a visible
+wrapper can contain that child even when its hidden payload refers back to the
+wrapper's type.
 
-Named object keys use word casing too: `Native_token` gives `NativeToken`.
-A qualified slot retains route delimiters, for example
-`value["dataApi/model.NativeToken"]` for `data_api/model.Native_token`.
-Positional keys such as `_0` stay unchanged.
+Newtype wrapper keys use word casing: `Native_token` gives `NativeToken`.
+Products and sums always use binary `_0`/`_1` keys, retaining each child as a
+complete value. Thus `A & (B & C)` is `{_0: a, _1: {_0: b, _1: c}}`; a newtype
+child retains its own wrapper rather than becoming a product field name.
+
+Concrete structural inputs and outputs are copied at their known type
+boundaries. Mutating a returned pair's structural shells does not change the
+corresponding shells retained by the package. Atomic referenced children are
+not copied. Generic `T` and opaque host-constructor values pass through by
+reference instead: the package does not inspect an unknown value to guess
+its structure. Roleless host references likewise remain host-owned.
 
 ## Worked example
 

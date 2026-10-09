@@ -1,6 +1,6 @@
 //! Swift backend — the typed FFI skin.
 //!
-//! Swift's body is erased (`Any` / `[Any]`), but the host's contract is
+//! Swift's execution interfaces are erased (`Any`), but the host's contract is
 //! **typed**: a product crosses the boundary as a generic Swift `struct`, a
 //! sum as a generic native `enum` with associated values, an exact nullary
 //! host type as its host-selected associated type, and every other public
@@ -11,18 +11,11 @@
 //!
 //! ## Body representation (shared with the body emit)
 //!
-//! The body's `[Any]` rep is the JS dynamic body's shape, in Swift:
-//!
-//! - **product** `(A & B & C)` → right-nested `[a, [b, c]]`; slot `i` is
-//!   reached by `i` nested `[1]` peels then `[0]` (unless the last slot).
-//! - **sum** `(A | B | C)` → tagged `[tag, payload]` with tag `0` = left
-//!   arm, `1` = right-remainder; arm `k` is reached by peeling `[1]` `k`
-//!   times.
-//! - **unit** → `Unit()`; **atomic / function / type-var** flow through
-//!   unchanged.
-//!
-//! The skin's job is the typed↔erased bridge at the boundary; the body
-//! itself never re-keys (an erased `[Any]` carries everything).
+//! Canonical native nodes flow unchanged inside `Any`. Products and sums
+//! right-nest binary generic nodes; nominal applications use the same unary
+//! application identity for saturated and partial uses. Lexical private type
+//! witnesses construct those exact nodes. Boundary adapters recover a known
+//! native type without traversing host-owned payloads.
 //!
 //! ## Native sums
 //!
@@ -37,10 +30,8 @@ use std::sync::Mutex;
 use crate::ast::{Role, Routed, Type};
 use crate::backends::boundary_docs;
 use crate::backends::boundary_facade::{
-    BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, BoundaryFacadeSupportOrigin,
-    BoundaryHostBindingOrigin, BoundaryHostTypeBinding, BoundaryNewtypeSurface, FacadeKind,
-    FacadeShellId, FacadeUse, FacadeUseId, PreparedBoundaryCallableSites, QualifiedTypeName,
-    SemanticKey,
+    BoundaryFacadeSupportOrigin, BoundaryHostBindingOrigin, BoundaryHostTypeBinding,
+    BoundaryNewtypeSurface, FacadeUse, PreparedBoundaryCallableSites, QualifiedTypeName,
 };
 use crate::backends::public_names::encode_host_identity;
 use crate::backends::skin::ExactHostTypeTable;
@@ -58,12 +49,12 @@ pub(crate) struct PreparedSwiftHostBinding {
 /// Swift's package-complete public-shape realization of one prepared facade
 /// transaction. The erased body still uses `Any`, but every public nominal,
 /// product, sum, and application has a declaration-owned exact carrier.
-pub(crate) struct PreparedSwiftShapes {
+pub(crate) struct PreparedSwiftShapes<'p> {
+    package: &'p Package<Routed>,
     host_protocol: String,
     host_bindings: BTreeMap<QualifiedTypeName, PreparedSwiftHostBinding>,
-    facade_shells: BTreeMap<FacadeShellId, BoundaryFacadeSupportOrigin>,
     application_arities: BTreeMap<usize, BoundaryFacadeSupportOrigin>,
-    forall_carriers: Mutex<BTreeMap<String, String>>,
+    forall_carriers: Mutex<BTreeMap<String, (String, BoundaryFacadeSupportOrigin)>>,
     #[cfg(all(test, feature = "surface"))]
     reached_nominal_index_construction_visits: usize,
     #[cfg(all(test, feature = "surface"))]
@@ -99,8 +90,12 @@ fn reached_nominal_index_contains(
     reached_nominals.contains(name)
 }
 
-impl PreparedSwiftShapes {
-    pub(crate) fn new(prepared: &PreparedBoundaryCallableSites, host_protocol: &str) -> Self {
+impl<'p> PreparedSwiftShapes<'p> {
+    pub(crate) fn new(
+        prepared: &PreparedBoundaryCallableSites,
+        host_protocol: &str,
+        package: &'p Package<Routed>,
+    ) -> Self {
         // Collapse Swift-owned support provenance once. Rendering then walks
         // canonical maps directly instead of rescanning every retained site
         // for each declaration class.
@@ -156,10 +151,6 @@ impl PreparedSwiftShapes {
                     },
                 )
             })
-            .collect();
-        let facade_shells = prepared
-            .shell_origins()
-            .map(|(shell, origin)| (shell.clone(), origin))
             .collect();
         let mut application_arities = BTreeMap::new();
         for site in prepared.sites() {
@@ -220,9 +211,9 @@ impl PreparedSwiftShapes {
             merge_support_origin(&mut application_arities, 1, origin);
         }
         Self {
+            package,
             host_protocol: host_protocol.to_owned(),
             host_bindings,
-            facade_shells,
             application_arities,
             forall_carriers: Mutex::new(BTreeMap::new()),
             #[cfg(all(test, feature = "surface"))]
@@ -237,6 +228,10 @@ impl PreparedSwiftShapes {
         &self.host_protocol
     }
 
+    pub(crate) fn package(&self) -> &'p Package<Routed> {
+        self.package
+    }
+
     pub(crate) fn live_host_bindings(&self) -> impl Iterator<Item = &PreparedSwiftHostBinding> {
         self.host_bindings
             .values()
@@ -247,13 +242,6 @@ impl PreparedSwiftShapes {
         self.host_bindings
             .values()
             .filter(|binding| matches!(binding.origin, BoundaryHostBindingOrigin::Retained { .. }))
-    }
-
-    pub(crate) fn host_binding(
-        &self,
-        name: &QualifiedTypeName,
-    ) -> Option<&PreparedSwiftHostBinding> {
-        self.host_bindings.get(name)
     }
 
     #[cfg(all(test, feature = "surface"))]
@@ -319,18 +307,34 @@ impl PreparedSwiftShapes {
         }
     }
 
-    pub(crate) fn register_forall(&self, name: String, declaration: String) {
-        let previous = self
+    pub(crate) fn register_forall(
+        &self,
+        name: String,
+        declaration: String,
+        origin: BoundaryFacadeSupportOrigin,
+    ) {
+        let mut carriers = self
             .forall_carriers
             .lock()
-            .expect("Swift forall-carrier registry mutex is not poisoned")
-            .insert(name.clone(), declaration.clone());
-        if let Some(previous) = previous {
+            .expect("Swift forall-carrier registry mutex is not poisoned");
+        if let Some((previous, previous_origin)) = carriers.get_mut(&name) {
             assert_eq!(
-                previous, declaration,
+                *previous, declaration,
                 "one exact Swift forall carrier received two declarations: {name}"
             );
+            *previous_origin = join_support_origin(*previous_origin, origin);
+        } else {
+            carriers.insert(name, (declaration, origin));
         }
+    }
+
+    pub(crate) fn has_forall(&self, name: &str, origin: BoundaryFacadeSupportOrigin) -> bool {
+        self.forall_carriers
+            .lock()
+            .expect("Swift forall-carrier registry mutex is not poisoned")
+            .get(name)
+            // A stronger origin must also reach the residual's nested carriers.
+            .is_some_and(|(_, previous)| join_support_origin(*previous, origin) == *previous)
     }
 
     pub(crate) fn render_shapes(
@@ -339,27 +343,6 @@ impl PreparedSwiftShapes {
         prepared: &PreparedBoundaryCallableSites,
     ) -> String {
         let mut out = String::from("// Generated by kio — do not edit by hand.\n");
-        if let Some(origin) = self.application_arities.get(&1) {
-            let deprecation = origin.removed_at_version().map(|version| {
-                format!("Kio native application support is retained only for removed host declarations from contract v{version}")
-            });
-            let deprecated = swift_optional_deprecated_attribute(deprecation.as_deref(), "");
-            let member = swift_optional_deprecated_attribute(deprecation.as_deref(), "\t");
-            out.push_str(&format!(
-                "\n{deprecated}public enum KioNative<Root> {{\n\
-                 {member}\tpublic static var constructor: KioNativeConstructor<KioNative<Root>> {{ .init() }}\n\
-                 }}\n\n\
-                 {deprecated}public struct KioNativeConstructor<F> {{\n\
-                 \tfileprivate init() {{}}\n\
-                 {member}\tpublic func applying<A>(_: A.Type) -> KioNativeConstructor<KioApply1<F, A>> {{ .init() }}\n\
-                 {member}\tpublic func lift<A, Storage>(_ value: Storage) -> KioApply1<F, A> {{ .init(value) }}\n\
-                 {member}\tpublic func project<A, Storage>(_ value: KioApply1<F, A>, as _: Storage.Type = Storage.self) -> Storage {{ value.__kioValue as! Storage }}\n\
-                 }}\n"
-            ));
-        }
-        for (shell, origin) in &self.facade_shells {
-            render_prepared_shell(shell, *origin, &mut out);
-        }
         for binding in self
             .host_bindings
             .values()
@@ -393,39 +376,53 @@ impl PreparedSwiftShapes {
                 &mut out,
             );
         }
-        for declaration in self
+        let public_names = prepared
+            .public_newtypes()
+            .chain(prepared.retained_public_newtypes())
+            .map(|entry| entry.name().clone())
+            .collect::<BTreeSet<_>>();
+        for (module, entry) in package.modules() {
+            for item in &entry.module.items {
+                crate::pass::resolve::for_each_item_declaration(item, |declaration| {
+                    if let Some(declaration) = declaration.newtype() {
+                        let name = QualifiedTypeName::new(
+                            module.split('/').map(str::to_owned).collect(),
+                            declaration.name.clone(),
+                        )
+                        .expect("a routed newtype has an exact qualified identity");
+                        if !public_names.contains(&name) {
+                            render_newtype_representation(
+                                &name,
+                                declaration.type_params.len(),
+                                &self.host_protocol,
+                                false,
+                                "",
+                                &mut out,
+                            );
+                        }
+                    }
+                });
+            }
+        }
+        for (name, (declaration, origin)) in self
             .forall_carriers
             .lock()
             .expect("Swift forall-carrier registry mutex is not poisoned")
-            .values()
+            .iter()
         {
-            out.push_str(declaration);
+            if let Some(version) = origin.removed_at_version() {
+                let message = format!(
+                    "Kio callable carrier `{name}` is retained only for removed host declarations from contract v{version}"
+                );
+                render_deprecated_callable(declaration, &message, &mut out);
+            } else {
+                out.push_str(declaration);
+            }
         }
         for (arity, origin) in &self.application_arities {
             render_application_carrier(*arity, *origin, &mut out);
         }
         out
-    }
-}
-
-pub(crate) fn swift_facade_shell_name(shell: &FacadeShellId) -> String {
-    shell.encode_public()
-}
-
-pub(crate) fn swift_semantic_member(key: &SemanticKey) -> String {
-    match key {
-        SemanticKey::Bare { name } => {
-            swift_field_name(&crate::backends::public_names::host_name_core(name))
-        }
-        SemanticKey::Qualified {
-            module_segments,
-            name,
-        } => format!(
-            "KioQualified_{}__{}",
-            encode_host_identity(&module_segments.join("/")),
-            encode_host_identity(name)
-        ),
-        SemanticKey::Positional { index } => format!("_{index}"),
     }
 }
 
@@ -457,43 +454,6 @@ pub(crate) fn swift_apply_carrier_name(arity: usize) -> String {
     format!("KioApply{arity}")
 }
 
-pub(crate) fn swift_forall_carrier_name(
-    site: &BoundaryFacadeSiteId,
-    use_id: FacadeUseId,
-) -> String {
-    format!(
-        "KioForall_{}__{}_U{}",
-        encode_host_identity(&site.module_segments().join("/")),
-        swift_forall_owner_name(site.owner()),
-        use_id.index()
-    )
-}
-
-fn swift_forall_owner_name(owner: &BoundaryFacadeSiteOwner) -> String {
-    match owner {
-        BoundaryFacadeSiteOwner::HostFunction { name } => {
-            format!("HostFn_u{}", encode_host_identity(name))
-        }
-        BoundaryFacadeSiteOwner::ExportedFunction { name } => {
-            format!("ExportFn_u{}", encode_host_identity(name))
-        }
-        BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member } => {
-            format!(
-                "NewtypeCtor_u{}__{}",
-                encode_host_identity(newtype),
-                encode_host_identity(member)
-            )
-        }
-        BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
-            format!(
-                "NewtypeProj_u{}__{}",
-                encode_host_identity(newtype),
-                encode_host_identity(member)
-            )
-        }
-    }
-}
-
 fn swift_generic_declaration(parameters: &[String]) -> String {
     if parameters.is_empty() {
         String::new()
@@ -504,57 +464,6 @@ fn swift_generic_declaration(parameters: &[String]) -> String {
 
 pub(crate) fn swift_generic_use(parameters: &[String]) -> String {
     swift_generic_declaration(parameters)
-}
-
-fn render_prepared_shell(
-    shell: &FacadeShellId,
-    origin: BoundaryFacadeSupportOrigin,
-    out: &mut String,
-) {
-    let name = swift_facade_shell_name(shell);
-    let parameters = (0..shell.ordered_keys().len())
-        .map(|index| format!("T{index}"))
-        .collect::<Vec<_>>();
-    let declaration = swift_generic_declaration(&parameters);
-    let deprecation = origin.removed_at_version().map(|version| {
-        format!(
-            "Kio facade shell `{name}` is retained only for removed host declarations from contract v{version}"
-        )
-    });
-    out.push('\n');
-    match shell.kind() {
-        FacadeKind::Product => {
-            let fields = shell
-                .ordered_keys()
-                .iter()
-                .enumerate()
-                .map(|(index, key)| (swift_semantic_member(key), format!("T{index}")))
-                .collect::<Vec<_>>();
-            out.push_str(&super::emit::render_swift_struct(
-                &format!("{name}{declaration}"),
-                &fields,
-                deprecation.as_deref(),
-            ));
-        }
-        FacadeKind::Sum => {
-            out.push_str(&swift_optional_deprecated_attribute(
-                deprecation.as_deref(),
-                "",
-            ));
-            out.push_str(&format!("public enum {name}{declaration} {{\n"));
-            for (index, key) in shell.ordered_keys().iter().enumerate() {
-                out.push_str(&swift_optional_deprecated_attribute(
-                    deprecation.as_deref(),
-                    "\t",
-                ));
-                out.push_str(&format!(
-                    "\tcase {}(T{index})\n",
-                    swift_semantic_member(key)
-                ));
-            }
-            out.push_str("}\n");
-        }
-    }
 }
 
 fn render_parameterized_host_carrier(
@@ -586,8 +495,16 @@ fn render_parameterized_host_carrier(
         "\n{deprecated}public enum {native_identity} {{}}\n{deprecated}public typealias {marker} = KioNative<{native_identity}>\n\n"
     ));
     super::emit::push_doc(out, comment, "");
+    let mut prefix = marker.clone();
+    for parameter in parameters.iter().take(parameters.len() - 1) {
+        prefix = format!("KioApply1<{prefix}, {parameter}>");
+    }
+    let applied = format!("KioApply1<{prefix}, {}>", parameters.last().unwrap());
+    let mut method_params = parameters[..parameters.len() - 1].to_vec();
+    method_params.push("Storage".to_owned());
+    let method_generic = swift_generic_declaration(&method_params);
     out.push_str(&format!(
-        "{deprecated}public struct {name}{declaration} {{\n\tlet __kioValue: Any\n{member_deprecated}\tpublic init<Storage>(_ value: Storage) {{ self.__kioValue = value }}\n{member_deprecated}\tpublic func value<Storage>(as _: Storage.Type = Storage.self) -> Storage {{ self.__kioValue as! Storage }}\n}}\n"
+        "{deprecated}public typealias {name}{declaration} = {applied}\n\nextension KioApply1 {{\n{member_deprecated}\tpublic init{method_generic}(_ value: Storage) where F == {prefix} {{ self.__kioValue = value }}\n{member_deprecated}\tpublic func value{method_generic}(as _: Storage.Type = Storage.self) -> Storage where F == {prefix} {{ __kioChecked(self.__kioValue, as: Storage.self) }}\n}}\n"
     ));
 }
 
@@ -598,11 +515,6 @@ fn render_prepared_newtype_carrier(
     comment: Option<&crate::ast::DocComment>,
     out: &mut String,
 ) {
-    let name = swift_newtype_carrier_name(entry.name());
-    let marker = swift_newtype_constructor_name(entry.name());
-    let mut parameters = vec![format!("H: {host_protocol}")];
-    parameters.extend((0..entry.type_params().len()).map(|index| format!("T{index}")));
-    let declaration = swift_generic_declaration(&parameters);
     let deprecated = retained_at_version
         .map(|version| {
             swift_deprecated_attribute(&format!(
@@ -612,11 +524,6 @@ fn render_prepared_newtype_carrier(
             ))
         })
         .unwrap_or_default();
-    if !entry.type_params().is_empty() {
-        out.push_str(&format!(
-            "\n{deprecated}public enum {marker}<H: {host_protocol}> {{}}\n"
-        ));
-    }
     let surface = match entry.surface() {
         BoundaryNewtypeSurface::Unexposed => "unexposed",
         BoundaryNewtypeSurface::Opaque => "opaque",
@@ -634,10 +541,48 @@ fn render_prepared_newtype_carrier(
         "//"
     };
     out.push_str(&format!(
-        "{prefix} Exact {surface} carrier for Kio newtype `{}.{}`.\n{deprecated}public struct {name}{declaration} {{\n\tlet __kioValue: Any\n\tinit(_ value: Any) {{ self.__kioValue = value }}\n}}\n",
+        "{prefix} Exact {surface} carrier for Kio newtype `{}.{}`.\n",
         entry.name().module_segments().join("."),
         entry.name().name()
     ));
+    render_newtype_representation(
+        entry.name(),
+        entry.type_params().len(),
+        host_protocol,
+        true,
+        &deprecated,
+        out,
+    );
+}
+
+fn render_newtype_representation(
+    name: &QualifiedTypeName,
+    arity: usize,
+    host_protocol: &str,
+    public: bool,
+    deprecated: &str,
+    out: &mut String,
+) {
+    let access = if public { "public " } else { "" };
+    let carrier = swift_newtype_carrier_name(name);
+    let marker = swift_newtype_constructor_name(name);
+    if arity == 0 {
+        out.push_str(&format!("{deprecated}{access}struct {carrier}<H: {host_protocol}>: __KioNominalValue {{\n    let __kioValue: Any\n    init(_ value: Any) {{ self.__kioValue = value }}\n}}\nprivate struct __KioWitness_{carrier}<H: {host_protocol}>: __KioNominalWitness {{\n    typealias Native = {carrier}<H>\n    func construct(_ payload: Any) -> Any {{ Native(payload) }}\n}}\nfunc __kioWitness_{carrier}<H: {host_protocol}>(_: H.Type) -> any __KioTypeWitness {{ __KioWitness_{carrier}<H>() }}\n"));
+    } else {
+        out.push_str(&format!(
+            "{deprecated}{access}enum {marker}<H: {host_protocol}> {{}}\n"
+        ));
+        let mut parameters = vec![format!("H: {host_protocol}")];
+        let mut applied = format!("{marker}<H>");
+        for index in 0..arity {
+            parameters.push(format!("T{index}"));
+            applied = format!("KioApply1<{applied}, T{index}>");
+        }
+        out.push_str(&format!(
+            "{deprecated}{access}typealias {carrier}<{}> = {applied}\n",
+            parameters.join(", ")
+        ));
+    }
 }
 
 pub(crate) fn swift_deprecated_attribute(message: &str) -> String {
@@ -657,24 +602,46 @@ fn merge_support_origin(
 ) {
     origins
         .entry(key)
-        .and_modify(|existing| {
-            *existing = match (*existing, incoming) {
-                (BoundaryFacadeSupportOrigin::Live, _) | (_, BoundaryFacadeSupportOrigin::Live) => {
-                    BoundaryFacadeSupportOrigin::Live
-                }
-                (
-                    BoundaryFacadeSupportOrigin::Retained {
-                        removed_at_version: left,
-                    },
-                    BoundaryFacadeSupportOrigin::Retained {
-                        removed_at_version: right,
-                    },
-                ) => BoundaryFacadeSupportOrigin::Retained {
-                    removed_at_version: left.min(right),
-                },
-            };
-        })
+        .and_modify(|existing| *existing = join_support_origin(*existing, incoming))
         .or_insert(incoming);
+}
+
+fn join_support_origin(
+    existing: BoundaryFacadeSupportOrigin,
+    incoming: BoundaryFacadeSupportOrigin,
+) -> BoundaryFacadeSupportOrigin {
+    match (existing, incoming) {
+        (BoundaryFacadeSupportOrigin::Live, _) | (_, BoundaryFacadeSupportOrigin::Live) => {
+            BoundaryFacadeSupportOrigin::Live
+        }
+        (
+            BoundaryFacadeSupportOrigin::Retained {
+                removed_at_version: left,
+            },
+            BoundaryFacadeSupportOrigin::Retained {
+                removed_at_version: right,
+            },
+        ) => BoundaryFacadeSupportOrigin::Retained {
+            removed_at_version: left.min(right),
+        },
+    }
+}
+
+fn render_deprecated_callable(declaration: &str, message: &str, out: &mut String) {
+    for line in declaration.lines() {
+        let member = line.trim_start();
+        if member.starts_with("public ")
+            || member.starts_with("associatedtype ")
+            || member.starts_with("func specialize<")
+        {
+            out.push_str(&swift_optional_deprecated_attribute(
+                Some(message),
+                &line[..line.len() - member.len()],
+            ));
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
 }
 
 fn collect_application_origins(
@@ -690,6 +657,9 @@ fn collect_application_origins(
 }
 
 fn render_application_carrier(arity: usize, origin: BoundaryFacadeSupportOrigin, out: &mut String) {
+    if arity == 1 {
+        return;
+    }
     let name = swift_apply_carrier_name(arity);
     let mut parameters = vec!["F".to_owned()];
     parameters.extend((0..arity).map(|index| format!("T{index}")));
@@ -700,19 +670,13 @@ fn render_application_carrier(arity: usize, origin: BoundaryFacadeSupportOrigin,
         )
     });
     let deprecated = swift_optional_deprecated_attribute(deprecation.as_deref(), "");
-    if arity == 1 {
-        out.push_str(&format!(
-            "\n{deprecated}public struct {name}{declaration} {{\n\tlet __kioValue: Any\n\tinit(_ value: Any) {{ self.__kioValue = value }}\n}}\n"
-        ));
-    } else {
-        let mut applied = "F".to_owned();
-        for index in 0..arity {
-            applied = format!("KioApply1<{applied}, T{index}>");
-        }
-        out.push_str(&format!(
-            "\n{deprecated}public typealias {name}{declaration} = {applied}\n"
-        ));
+    let mut applied = "F".to_owned();
+    for index in 0..arity {
+        applied = format!("KioApply1<{applied}, T{index}>");
     }
+    out.push_str(&format!(
+        "\n{deprecated}public typealias {name}{declaration} = {applied}\n"
+    ));
 }
 
 /// Minimal semantic context used by expression-literal emission. Public FFI
@@ -751,22 +715,6 @@ impl<'p> SwiftLiteralContext<'p> {
             .exact_host_types
             .get(&(module.clone(), name.to_owned()))?;
         Some((module, name.to_owned(), role))
-    }
-}
-
-fn swift_field_name(s: &str) -> String {
-    if s.is_empty()
-        || !s
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-    {
-        return format!("f_{s}");
-    }
-    if is_swift_keyword(s) {
-        format!("`{s}`")
-    } else {
-        s.to_owned()
     }
 }
 
@@ -832,35 +780,43 @@ pub(crate) fn is_swift_keyword(s: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+mod support_tests {
     use super::*;
 
     #[test]
-    fn forall_owner_names_case_components_before_role_framing() {
-        let constructor = |newtype: &str, member: &str| {
-            swift_forall_owner_name(&BoundaryFacadeSiteOwner::NewtypeConstructor {
-                newtype: newtype.to_owned(),
-                member: member.to_owned(),
-            })
+    fn live_support_dominates_history_in_either_visit_order() {
+        let early = BoundaryFacadeSupportOrigin::Retained {
+            removed_at_version: 2,
         };
-        assert_eq!(constructor("A_b", "c"), "NewtypeCtor_uAB__c");
-        assert_eq!(constructor("A", "b_c"), "NewtypeCtor_uA__bC");
-        assert_eq!(constructor("A_", "_b"), "NewtypeCtor_uA_u___ub");
-        assert_ne!(constructor("A_", "b"), constructor("A", "_b"));
-        assert_eq!(
-            swift_forall_owner_name(&BoundaryFacadeSiteOwner::HostFunction {
-                name: "read_word".to_owned(),
-            }),
-            "HostFn_ureadWord"
-        );
+        let late = BoundaryFacadeSupportOrigin::Retained {
+            removed_at_version: 7,
+        };
+        assert_eq!(join_support_origin(early, late), early);
+        assert_eq!(join_support_origin(late, early), early);
+        for retained in [early, late] {
+            assert_eq!(
+                join_support_origin(retained, BoundaryFacadeSupportOrigin::Live),
+                BoundaryFacadeSupportOrigin::Live
+            );
+            assert_eq!(
+                join_support_origin(BoundaryFacadeSupportOrigin::Live, retained),
+                BoundaryFacadeSupportOrigin::Live
+            );
+        }
     }
 
     #[test]
-    fn swift_field_name_keeps_natural_case_and_escapes_keywords() {
-        assert_eq!(swift_field_name("foo"), "foo");
-        assert_eq!(swift_field_name("foo_bar"), "foo_bar");
-        assert_eq!(swift_field_name("Box"), "Box");
-        assert_eq!(swift_field_name("case"), "`case`");
-        assert_eq!(swift_field_name("_0"), "_0");
+    fn retained_callable_marks_public_members_without_marking_private_witnesses() {
+        let declaration = "public protocol CarrierImplementation {\n    associatedtype H\n    func specialize<T>(_: T.Type) -> T\n}\npublic struct Carrier {\n    public init() {}\n    func __kioAdvance() {}\n}\nprivate struct Witness {}\n";
+        let mut out = String::new();
+        render_deprecated_callable(declaration, "retained", &mut out);
+        assert_eq!(out.matches("@available(*, deprecated").count(), 5);
+        assert!(
+            out.contains(
+                "    @available(*, deprecated, message: \"retained\")\n    func specialize"
+            )
+        );
+        assert!(out.contains("    public init() {}\n    func __kioAdvance() {}"));
+        assert!(out.ends_with("}\nprivate struct Witness {}\n"));
     }
 }

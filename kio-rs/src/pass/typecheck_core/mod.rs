@@ -216,7 +216,7 @@ pub(crate) mod apply;
 pub use apply::{apply_mono, check_call_against, synth_call, synth_ufcs};
 
 mod synth;
-pub(crate) use synth::newtype_member_scheme_in_module;
+pub(crate) use synth::newtype_member_scheme_in_routed_module;
 #[cfg(feature = "surface")]
 pub(crate) use synth::synth_value_arg_interned;
 #[cfg(feature = "surface")]
@@ -231,7 +231,8 @@ pub use synth::{
 pub(crate) use synth::{check_prime_fn_against, synth_closed_fn_with_source_plan};
 #[cfg(all(feature = "surface", feature = "lsp"))]
 pub(crate) use synth::{
-    intrinsic_scheme_resolved, synth_env_fn_def_in_module, synth_top_fn_def_in_module,
+    intrinsic_scheme_resolved, newtype_member_scheme_in_module, synth_env_fn_def_in_module,
+    synth_top_fn_def_in_module,
 };
 
 // =========================================================================

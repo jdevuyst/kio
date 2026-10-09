@@ -1,13 +1,12 @@
 # A Python host reading the emitted typed stub at its true runtime shape.
 # `create_...` returns the branded handle. `Pair` crosses as the exact
-# TypedDict `{ "Name": str, "Count": int }`; the three-arm `Choice`
-# crosses as the discriminated union `{ "Left": int } |
-# { "Middle": str } | { "Right": int }`. The host constructs every
-# shape, reads every product field, and narrows every sum arm using
-# ordinary keyed-dict operations. If the `.pyi` loses that precision,
+# TypedDict `{ "left": Name, "right": Count }`; the three-arm `Choice`
+# crosses as nested discriminated `tag`/`value` unions carrying sealed
+# Left, Middle, and Right values. The host constructs every shape through
+# the public newtype methods and narrows every sum arm. If the `.pyi` loses that precision,
 # strict Pyright rejects this independently-authored consumer.
 import sys
-from typing import NoReturn, TypedDict
+from typing import NoReturn
 
 from build_python_typed_stub_skin import (
     BuildPythonTypedStubSkinHost,
@@ -37,18 +36,6 @@ class Host:
         return value
 
 
-class LeftChoice(TypedDict):
-    Left: int
-
-
-class MiddleChoice(TypedDict):
-    Middle: str
-
-
-class RightChoice(TypedDict):
-    Right: int
-
-
 def assert_never(value: NoReturn) -> NoReturn:
     raise AssertionError(f"unreachable value: {value!r}")
 
@@ -58,46 +45,58 @@ def check(host: BuildPythonTypedStubSkinHost[int, str]) -> None:
 
     # A host-backed export: the package calls back into `api.print`.
     pkg.api.KioModule_main.greet("hello from kio\n")
+    labels = pkg.api.KioModule_labels
 
     # Product values are precisely typed in both directions.
     pair = pkg.api.KioModule_main.make("kio", 3)
-    name: str = pair["Name"]
-    count: int = pair["Count"]
-    echoed_pair = pkg.api.KioModule_main.echoPair({"Name": "host", "Count": 7})
-    echoed_name: str = echoed_pair["Name"]
-    echoed_count: int = echoed_pair["Count"]
+    name: str = labels.KioType_Name.get(pair["left"])
+    count: int = labels.KioType_Count.get(pair["right"])
+    echoed_pair = pkg.api.KioModule_main.echoPair({
+        "left": labels.KioType_Name.mk("host"),
+        "right": labels.KioType_Count.mk(7),
+    })
+    echoed_name: str = labels.KioType_Name.get(echoed_pair["left"])
+    echoed_count: int = labels.KioType_Count.get(echoed_pair["right"])
 
-    # Each one-key Choice arm can be constructed as an ordinary dict.
-    # Required-key presence narrows the emitted TypedDict union, and the
+    # Each Choice arm is built with exact nested tagged dictionaries.
+    # Literal tags narrow the emitted TypedDict union, and the
     # final NoReturn assertion proves that all three arms were handled.
-    left_choice: LeftChoice = {"Left": 11}
-    middle_choice: MiddleChoice = {"Middle": "middle"}
-    right_choice: RightChoice = {"Right": 29}
     choices = (
-        pkg.api.KioModule_main.echoChoice(left_choice),
-        pkg.api.KioModule_main.echoChoice(middle_choice),
-        pkg.api.KioModule_main.echoChoice(right_choice),
+        pkg.api.KioModule_main.echoChoice({
+            "tag": "left", "value": labels.KioType_Left.mk(11),
+        }),
+        pkg.api.KioModule_main.echoChoice({
+            "tag": "right", "value": {
+                "tag": "left", "value": labels.KioType_Middle.mk("middle"),
+            },
+        }),
+        pkg.api.KioModule_main.echoChoice({
+            "tag": "right", "value": {
+                "tag": "right", "value": labels.KioType_Right.mk(29),
+            },
+        }),
     )
     rendered: list[str] = []
     for choice in choices:
-        if "Left" in choice:
-            left: int = choice["Left"]
+        if choice["tag"] == "left":
+            left: int = labels.KioType_Left.get(choice["value"])
             rendered.append(f"left:{left}")
             continue
-        if "Middle" in choice:
-            middle: str = choice["Middle"]
+        inner = choice["value"]
+        if inner["tag"] == "left":
+            middle: str = labels.KioType_Middle.get(inner["value"])
             rendered.append(f"middle:{middle}")
             continue
-        if "Right" in choice:
-            right: int = choice["Right"]
+        if inner["tag"] == "right":
+            right: int = labels.KioType_Right.get(inner["value"])
             rendered.append(f"right:{right}")
             continue
-        assert_never(choice)
+        assert_never(inner)
 
     # A labels-generated newtype namespace: constructor / projector. The
     # internal rep is opaque (`object`); the payload is its role type.
-    wrapped = pkg.api.KioModule_labels.KioType_Name.mk(name)
-    unwrapped: str = pkg.api.KioModule_labels.KioType_Name.get(wrapped)
+    wrapped = labels.KioType_Name.mk(name)
+    unwrapped: str = labels.KioType_Name.get(wrapped)
 
     # A Python-keyword export is reached with `getattr`, typed `object`.
     reserved = getattr(pkg.api.KioModule_main, "return")

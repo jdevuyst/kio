@@ -809,9 +809,13 @@ fn swift_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trai
         | HostFnBodyKind::RoundPicker
         | HostFnBodyKind::RoundPolyThunk
         | HostFnBodyKind::RoundPolyUnitSlot => method(vec![alias("arg0")], alias("ret")),
-        HostFnBodyKind::StagedSecond { string } => {
-            method(vec![role(string), role(string)], role(string))
-        }
+        HostFnBodyKind::StagedSecond { string } => TraitMethod {
+            name: member,
+            type_params: vec!["A".to_owned(), "B".to_owned()],
+            arg_types: vec![role(string), role(string)],
+            ret_type: role(string),
+            where_clause: String::new(),
+        },
         HostFnBodyKind::MakePairStructural { i32, string } => {
             method(vec![role(i32), role(string)], alias("ret"))
         }
@@ -972,11 +976,15 @@ fn export_newtype_member_alias(module: &str, newtype: &str, member: &str, slot: 
 
 fn render_export_driver_support(contract: protocol::ProtocolContract) -> String {
     if contract.execution == ProtocolExecution::Invoke(ExportDriver::HostExistentialRoundtrip) {
-        let continuation =
-            export_newtype_member_alias("testapi/types", "Packed", "read_packed", "ret_cbarg0");
+        let continuation = export_newtype_member_alias(
+            "testapi/types",
+            "Packed",
+            "read_packed",
+            "ret_typeRet_cbarg0",
+        );
         let payload = env_alias("testapi/arith", "observe", "arg0");
         return format!(
-            "final class KioRunnerExistentialState {{\n  var observe: (({payload}) -> Int32)?\n  var observations = 0\n  var openings = 0\n}}\nstruct KioRunnerOpenPacked: {continuation}Implementation {{\n  typealias H = StubHost\n  typealias KioOuterType_0 = Int32\n  let state: KioRunnerExistentialState\n  func call<U>(_ type: U.Type, _ payload: {continuation}_cbarg0<StubHost, U>) -> Int32 {{ state.openings += 1; return payload._1(payload._0) }}\n}}\n"
+            "final class KioRunnerExistentialState {{\n  var observe: (({payload}) -> Int32)?\n  var observations = 0\n  var openings = 0\n}}\nstruct KioRunnerOpenPacked: {continuation}Implementation {{\n  typealias H = StubHost\n  typealias Outer0 = Int32\n  typealias Outer1 = Int32\n  let state: KioRunnerExistentialState\n  func specialize<U>(_: U.Type) -> {continuation}_typeRet<StubHost, Int32, U> {{\n    return {{ payload in state.openings += 1; return payload._1(payload._0) }}\n  }}\n}}\n"
         );
     }
     if contract
@@ -986,7 +994,7 @@ fn render_export_driver_support(contract: protocol::ProtocolContract) -> String 
     {
         return "struct KioRunnerReturnedForall: Env_testapi_main__produce_retImplementation {\n\
                 \ttypealias H = StubHost\n\
-                \tfunc call<KioType_0>(_ type: KioType_0.Type) -> KioType_0 {\n\
+                \tfunc specialize<KioType_0>(_ type: KioType_0.Type) -> KioType_0 {\n\
                 \t\t_ = type\n\
                 \t\treturn (KioUnit() as Any) as! KioType_0\n\
                 \t}\n\
@@ -1008,13 +1016,13 @@ fn render_export_driver_support(contract: protocol::ProtocolContract) -> String 
         "testapi/types",
         "Existential_unit",
         "read_existential_unit",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
     );
     let empty = export_newtype_member_alias(
         "testapi/types",
         "Existential_empty",
         "read_existential_empty",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
     );
     let constructor = export_newtype_member_alias(
         "testapi/types",
@@ -1026,49 +1034,55 @@ fn render_export_driver_support(contract: protocol::ProtocolContract) -> String 
         "testapi/types",
         "Existential_spread",
         "read_existential_spread",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
     );
     let recursive = export_newtype_member_alias(
         "testapi/types",
         "Recursive_existential_function",
         "read_recursive_existential_function",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
+    );
+    let recursive_value = export_newtype_member_alias(
+        "testapi/types",
+        "Recursive_existential_function",
+        "read_recursive_existential_function",
+        "arg0",
     );
     format!(
         "struct KioRunnerExistentialUnitContinuation: {unit}Implementation {{\n\
          \ttypealias H = StubHost\n\
-         \ttypealias KioOuterType_0 = {selected}\n\
-         \tfunc call<KioType_1>(_ type: KioType_1.Type, _ arg0: KioType_1) -> {selected} {{\n\
-         \t\t_ = type\n\
-         \t\t_ = arg0\n\
-         \t\treturn {selected}(89)\n\
+         \ttypealias Outer0 = {selected}\n\
+         \tfunc specialize<U>(_: U.Type) -> {unit}_typeRet<{selected}, U> {{\n\
+         \t\treturn {{ _ in {selected}(89) }}\n\
          \t}}\n\
          }}\n\n\
          struct KioRunnerExistentialEmptyContinuation: {empty}Implementation {{\n\
          \ttypealias H = StubHost\n\
-         \ttypealias KioOuterType_0 = {selected}\n\
-         \tfunc call<KioType_1>(_ type: KioType_1.Type) -> {selected} {{\n\
-         \t\t_ = type\n\
-         \t\treturn {selected}(90)\n\
+         \ttypealias Outer0 = (KioUnit) -> {selected}\n\
+         \tfunc specialize<U>(_: U.Type) -> {empty}_typeRet<{selected}> {{\n\
+         \t\treturn {{ _ in {selected}(90) }}\n\
          \t}}\n\
          }}\n\n\
          final class KioRunnerVisibilityCounts {{ var inputs: [Int32] = []; var spreadOpens = 0; var recursiveOpens = 0 }}\n\
          struct KioRunnerConstructorSpread: {constructor}Implementation {{\n\
            typealias H = StubHost\n\
+           typealias Outer0 = {selected}\n\
+           typealias Outer1 = {selected}\n\
            let counts: KioRunnerVisibilityCounts\n\
-           func call<A>(_ type: A.Type, _ value: Product<{selected}, A>) -> {selected} {{ counts.inputs.append(value._0.value); return {selected}(value._0.value + 3) }}\n\
+           func specialize<A>(_: A.Type) -> {constructor}_typeRet<StubHost, A> {{ return {{ value in counts.inputs.append(value._0.value); return {selected}(value._0.value + 3) }} }}\n\
          }}\n\
          struct KioRunnerOpenSpread: {spread}Implementation {{\n\
            typealias H = StubHost\n\
-           typealias KioOuterType_0 = {selected}\n\
+           typealias Outer0 = {selected}\n\
            let counts: KioRunnerVisibilityCounts\n\
-           func call<U>(_ type: U.Type, _ payload: {spread}_cbarg0<StubHost, {selected}, U>) -> {selected} {{ counts.spreadOpens += 1; return {selected}(91) }}\n\
+           func specialize<U>(_: U.Type) -> {spread}_typeRet<StubHost, {selected}, U> {{ return {{ _ in counts.spreadOpens += 1; return {selected}(91) }} }}\n\
          }}\n\
          struct KioRunnerOpenRecursive: {recursive}Implementation {{\n\
            typealias H = StubHost\n\
-           typealias KioOuterType_0 = {selected}\n\
+           typealias Outer0 = {recursive_value}<StubHost>\n\
+           typealias Outer1 = {selected}\n\
            let counts: KioRunnerVisibilityCounts\n\
-           func call<U>(_ type: U.Type, _ payload: {recursive}_cbarg0<StubHost, U>) -> {selected} {{ counts.recursiveOpens += 1; return {selected}(92) }}\n\
+           func specialize<U>(_: U.Type) -> {recursive}_typeRet<StubHost, {selected}, U> {{ return {{ _ in counts.recursiveOpens += 1; return {selected}(92) }} }}\n\
          }}\n\n"
     )
 }
@@ -1263,13 +1277,13 @@ fn render_export_driver(
         "testapi/types",
         "Existential_spread",
         "read_existential_spread",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
     );
     let recursive_existential_continuation = export_newtype_member_alias(
         "testapi/types",
         "Recursive_existential_function",
         "read_recursive_existential_function",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
     );
     let pair = facade_type_selector("Pair");
     let root = facade_type_selector("Root");
@@ -1287,13 +1301,13 @@ fn render_export_driver(
         "testapi/types",
         "Existential_unit",
         "read_existential_unit",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
     );
     let existential_empty_continuation = export_newtype_member_alias(
         "testapi/types",
         "Existential_empty",
         "read_existential_empty",
-        "ret_cbarg0",
+        "ret_typeRet_cbarg0",
     );
 
     let body = match driver {
@@ -1324,19 +1338,23 @@ fn render_export_driver(
             format!("let q = {main_ns}.makePair(7, \"hello\")\nprint(q._0, q._1)\n")
         }
         ExportDriver::MultilabelRoundtrip => format!(
-            "let payload = Exp_testapi_main__say_arg0<StubHost>(A: {main_ns}.{a}.mk(42), B: {main_ns}.{b}.mk(\"shown\\n\"))\n\
+            "let payload = Exp_testapi_main__say_arg0<StubHost>(_0: {main_ns}.{a}.mk(42), _1: {main_ns}.{b}.mk(\"shown\\n\"))\n\
              {main_ns}.say(payload)\n\
-             let row = {main_ns}.echoPair(Exp_testapi_main__echoPair_arg0<StubHost>(A: {main_ns}.{a}.mk(88), B: {main_ns}.{b}.mk(\"99\")))\n\
-             print({main_ns}.{a}.get(row.A))\n\
-             print({main_ns}.{b}.get(row.B))\n\
+             let row = {main_ns}.echoPair(Exp_testapi_main__echoPair_arg0<StubHost>(_0: {main_ns}.{a}.mk(88), _1: {main_ns}.{b}.mk(\"99\")))\n\
+             print({main_ns}.{a}.get(row._0))\n\
+             print({main_ns}.{b}.get(row._1))\n\
              print({main_ns}.{a}.get({main_ns}.echoA({main_ns}.{a}.mk(111))))\n"
         ),
         ExportDriver::HostExistentialRoundtrip => {
             let packed = facade_type_selector("Packed");
-            let continuation =
-                export_newtype_member_alias("testapi/types", "Packed", "read_packed", "ret_cbarg0");
+            let continuation = export_newtype_member_alias(
+                "testapi/types",
+                "Packed",
+                "read_packed",
+                "ret_typeRet_cbarg0",
+            );
             format!(
-                "state.observe = {{ value in {types_ns}.{packed}.readPacked(value).call({continuation}<StubHost, Int32>(KioRunnerOpenPacked(state: state))) }}\nlet result = {main_ns}.exercise()\nprecondition(result._0 == 37 && result._1 == 83 && state.observations == 2 && state.openings == 2)\nprint(\"existential host opening ok\")\n"
+                "state.observe = {{ value in {types_ns}.{packed}.readPacked(value).specialize(asKioType: Int32.self)({continuation}<StubHost, Int32>(KioRunnerOpenPacked(state: state))) }}\nlet result = {main_ns}.exercise()\nprecondition(result._0 == 37 && result._1 == 83 && state.observations == 2 && state.openings == 2)\nprint(\"existential host opening ok\")\n"
             )
         }
         ExportDriver::FunctorDictRoundtrip => {
@@ -1353,13 +1371,13 @@ precondition({box_type}.unBox(first)._0 == "v:42")
 let second = {main_ns}.applyFunctor(dict, toInteger, {box_type}.mkBox(Product(_0: "apple", _1: KioUnit())))
 precondition({box_type}.unBox(second)._0 == 5)
 let mapping = {functor}.fmap(dict)
-let integerInput = pkg.KioNewtypeApplication_testapi_stypes__Box_lift({box_type}.mkBox(Product(_0: Int32(7), _1: KioUnit())))
-let third = mapping.call(Product(_0: toText, _1: integerInput))
-let thirdBox = pkg.KioNewtypeApplication_testapi_stypes__Box_project(third)
+let integerInput = {box_type}.mkBox(Product(_0: Int32(7), _1: KioUnit()))
+let third = mapping.specialize(asKioType: Int32.self).specialize(asKioType: String.self)(Product(_0: toText, _1: integerInput))
+let thirdBox = third
 precondition({box_type}.unBox(thirdBox)._0 == "v:7")
-let textInput = pkg.KioNewtypeApplication_testapi_stypes__Box_lift({box_type}.mkBox(Product(_0: "pear", _1: KioUnit())))
-let fourth = mapping.call(Product(_0: toInteger, _1: textInput))
-let fourthBox = pkg.KioNewtypeApplication_testapi_stypes__Box_project(fourth)
+let textInput = {box_type}.mkBox(Product(_0: "pear", _1: KioUnit()))
+let fourth = mapping.specialize(asKioType: String.self).specialize(asKioType: Int32.self)(Product(_0: toInteger, _1: textInput))
+let fourthBox = fourth
 precondition({box_type}.unBox(fourthBox)._0 == 4)
 precondition(integers == [42, 7] && texts == ["apple", "pear"])
 print("functor dictionary ok")
@@ -1416,12 +1434,12 @@ print("functor dictionary ok")
              print(q._0, q._1)\n\
              print({main_ns}.dispatchLeft(Exp_testapi_main__dispatchLeft_arg0<StubHost>._0(7)))\n\
              print({main_ns}.dispatchLeft(Exp_testapi_main__dispatchLeft_arg0<StubHost>._1(\"from-sum\")))\n\
-             let wide = Exp_testapi_main__rotate_arg0<StubHost>(_0: 1, _1: 2, _2: 3, _3: 4, _4: 5, _5: 6, _6: 7, _7: 8, _8: 9, _9: 10, _10: 11, _11: 12)\n\
+             let wide: Exp_testapi_main__rotate_arg0<StubHost> = Product(_0: 1, _1: Product(_0: 2, _1: Product(_0: 3, _1: Product(_0: 4, _1: Product(_0: 5, _1: Product(_0: 6, _1: Product(_0: 7, _1: Product(_0: 8, _1: Product(_0: 9, _1: Product(_0: 10, _1: Product(_0: 11, _1: 12)))))))))))\n\
              let rotated = {main_ns}.rotate(wide)\n\
-             print(rotated._0, rotated._1, rotated._11)\n\
+             print(rotated._0, rotated._1._0, rotated._1._1._1._1._1._1._1._1._1._1._1)\n\
              print({main_ns}.classify(Exp_testapi_main__classify_arg0<StubHost>._0(1)))\n\
-             print({main_ns}.classify(Exp_testapi_main__classify_arg0<StubHost>._4(5)))\n\
-             print({main_ns}.classify(Exp_testapi_main__classify_arg0<StubHost>._9(\"ten\")))\n\
+             print({main_ns}.classify(._1(._1(._1(._1(._0(5)))))))\n\
+             print({main_ns}.classify(._1(._1(._1(._1(._1(._1(._1(._1(._1(\"ten\")))))))))))\n\
              let first = {main_ns}.chooseFirst()\n\
              print({main_ns}.classify(first))\n\
              let middle = {main_ns}.chooseMiddle()\n\
@@ -1429,24 +1447,24 @@ print("functor dictionary ok")
              let last = {main_ns}.chooseLast()\n\
              print({main_ns}.classify(last))\n\
              let samples: [Exp_testapi_main__echoSum_arg0<StubHost>] = [\n\
-                 ._0(-101), ._1(-12345), ._2(-123456789), ._3(-9007199254740993),\n\
-                 ._4(201), ._5(54321), ._6(3456789012), ._7(18014398509481987),\n\
-                 ._8(false), ._8(true), ._9(\"sum-value\")\n\
+                 ._0(-101), ._1(._0(-12345)), ._1(._1(._0(-123456789))), ._1(._1(._1(._0(-9007199254740993)))),\n\
+                 ._1(._1(._1(._1(._0(201))))), ._1(._1(._1(._1(._1(._0(54321)))))), ._1(._1(._1(._1(._1(._1(._0(3456789012))))))), ._1(._1(._1(._1(._1(._1(._1(._0(18014398509481987)))))))),\n\
+                 ._1(._1(._1(._1(._1(._1(._1(._1(._0(false))))))))), ._1(._1(._1(._1(._1(._1(._1(._1(._0(true))))))))), ._1(._1(._1(._1(._1(._1(._1(._1(._1(\"sum-value\")))))))))\n\
              ]\n\
              for sample in samples {{\n\
                  let returned = {main_ns}.echoSum(sample)\n\
                  let payload: String\n\
                  switch returned {{\n\
                  case ._0(let value): payload = String(value)\n\
-                 case ._1(let value): payload = String(value)\n\
-                 case ._2(let value): payload = String(value)\n\
-                 case ._3(let value): payload = String(value)\n\
-                 case ._4(let value): payload = String(value)\n\
-                 case ._5(let value): payload = String(value)\n\
-                 case ._6(let value): payload = String(value)\n\
-                 case ._7(let value): payload = String(value)\n\
-                 case ._8(let value): payload = String(value)\n\
-                 case ._9(let value): payload = value\n\
+                 case ._1(._0(let value)): payload = String(value)\n\
+                 case ._1(._1(._0(let value))): payload = String(value)\n\
+                 case ._1(._1(._1(._0(let value)))): payload = String(value)\n\
+                 case ._1(._1(._1(._1(._0(let value))))): payload = String(value)\n\
+                 case ._1(._1(._1(._1(._1(._0(let value)))))): payload = String(value)\n\
+                 case ._1(._1(._1(._1(._1(._1(._0(let value))))))): payload = String(value)\n\
+                 case ._1(._1(._1(._1(._1(._1(._1(._0(let value)))))))): payload = String(value)\n\
+                 case ._1(._1(._1(._1(._1(._1(._1(._1(._0(let value))))))))): payload = String(value)\n\
+                 case ._1(._1(._1(._1(._1(._1(._1(._1(._1(let value))))))))): payload = value\n\
                  }}\n\
                  print({main_ns}.classify(returned), payload)\n\
              }}\n"
@@ -1517,11 +1535,11 @@ print("functor dictionary ok")
              print(unpacked(constructorPairOut).value)\n\
              let existential = {types_ns}.makeExistentialUnitValue()\n\
              let existentialUnitContinuation = {existential_unit_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerExistentialUnitContinuation())\n\
-             let existentialOut = {types_ns}.{existential_unit}.readExistentialUnit(existential).call(existentialUnitContinuation)\n\
+             let existentialOut = {types_ns}.{existential_unit}.readExistentialUnit(existential).specialize(asKioType: KioRunnerSelectedI32.self)(existentialUnitContinuation)\n\
              print(existentialOut.value)\n\
              let existentialEmpty = {types_ns}.makeExistentialEmptyValue()\n\
              let existentialEmptyContinuation = {existential_empty_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerExistentialEmptyContinuation())\n\
-             let existentialEmptyOut = {types_ns}.{existential_empty}.readExistentialEmpty(existentialEmpty).call(existentialEmptyContinuation)\n\
+             let existentialEmptyOut = {types_ns}.{existential_empty}.readExistentialEmpty(existentialEmpty).specialize(asKioType: KioRunnerSelectedI32.self)(existentialEmptyContinuation)\n\
              print(existentialEmptyOut.value)\n\
              let recursiveBoth = {types_ns}.{recursive_both}.makeRecursiveBoth({types_ns}.recursiveBothBasePayload())\n\
              print({types_ns}.recursiveBothPayloadIsBase({types_ns}.{recursive_both}.readRecursiveBoth(recursiveBoth)).value)\n\
@@ -1536,12 +1554,12 @@ print("functor dictionary ok")
              precondition({types_ns}.invokeConstructorSpreadUnit(constructed, KioRunnerSelectedI32(102)).value == 105)\n\
              precondition(counts.inputs == [101, 102])\n\
              let projected = {types_ns}.{projector_spread}.readProjectorSpread({types_ns}.makeProjectorSpreadValue())\n\
-             precondition(projected.call(Product(_0: KioRunnerSelectedI32(111), _1: KioRunnerSelectedI32(1))).value == 111)\n\
-             precondition(projected.call(Product(_0: KioRunnerSelectedI32(112), _1: KioUnit())).value == 112)\n\
+             precondition(projected.specialize(asKioType: KioRunnerSelectedI32.self)(Product(_0: KioRunnerSelectedI32(111), _1: KioRunnerSelectedI32(1))).value == 111)\n\
+             precondition(projected.specialize(asKioType: KioUnit.self)(Product(_0: KioRunnerSelectedI32(112), _1: KioUnit())).value == 112)\n\
              let openSpread = {existential_spread_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerOpenSpread(counts: counts))\n\
              let openRecursive = {recursive_existential_continuation}<StubHost, KioRunnerSelectedI32>(KioRunnerOpenRecursive(counts: counts))\n\
-             precondition({types_ns}.{existential_spread}.readExistentialSpread({types_ns}.makeExistentialSpreadValue()).call(openSpread).value == 91)\n\
-             precondition({types_ns}.{recursive_existential_function}.readRecursiveExistentialFunction({types_ns}.makeRecursiveExistentialFunctionValue()).call(openRecursive).value == 92)\n\
+             precondition({types_ns}.{existential_spread}.readExistentialSpread({types_ns}.makeExistentialSpreadValue()).specialize(asKioType: KioRunnerSelectedI32.self)(openSpread).value == 91)\n\
+             precondition({types_ns}.{recursive_existential_function}.readRecursiveExistentialFunction({types_ns}.makeRecursiveExistentialFunctionValue()).specialize(asKioType: KioRunnerSelectedI32.self)(openRecursive).value == 92)\n\
              precondition(counts.spreadOpens == 1 && counts.recursiveOpens == 1)\n"
         ),
         // `make(String, I32, I32) -> Outer` retains exact `Outer` and `Inner`
@@ -1551,14 +1569,14 @@ print("functor dictionary ok")
             r#"let direct = {main_ns}.direct()
 print(direct._0)
 print(direct._1)
-let callback = {main_ns}.callback({{
+let callback = {main_ns}.callback({{ (_: KioUnit) in
     print("callback")
     return Exp_testapi_main__callback_arg0_cbret<StubHost>(_0: 9, _1: "callback-value")
 }})
 print(callback._0)
 print(callback._1)
 let outer = {main_ns}.KioType_Outer.unOuter({main_ns}.echoOuter({main_ns}.makeOuter("nest", 11, 13)))
-let inner = {main_ns}.KioType_Inner.unInner(outer.Inner)
+let inner = {main_ns}.KioType_Inner.unInner(outer._1)
 print(outer._0)
 print(inner._0)
 print(inner._1)
@@ -1566,13 +1584,13 @@ for choice in [{main_ns}.first(17), {main_ns}.middle(19, 23), {main_ns}.last("ch
     switch {main_ns}.KioType_Choice.unChoice({main_ns}.echoChoice(choice)) {{
     case ._0(let value):
         print(value)
-    case .Inner(let value):
+    case ._1(._0(let value)):
         let inner = {main_ns}.KioType_Inner.unInner(value)
         print(inner._0)
         print(inner._1)
-    case .Outer(let value):
+    case ._1(._1(let value)):
         let outer = {main_ns}.KioType_Outer.unOuter(value)
-        let inner = {main_ns}.KioType_Inner.unInner(outer.Inner)
+        let inner = {main_ns}.KioType_Inner.unInner(outer._1)
         print(outer._0)
         print(inner._0)
         print(inner._1)
@@ -1584,7 +1602,7 @@ print({main_ns}.echoText("atomic"))
         ExportDriver::NestedProductRoundtrip => format!(
             "let o = {main_ns}.make(\"nest\", 7, 9)\n\
              let outer = {main_ns}.KioType_Outer.get(o)\n\
-             let inner = {main_ns}.KioType_Inner.get(outer.Inner)\n\
+             let inner = {main_ns}.KioType_Inner.get(outer._1)\n\
              print(outer._0)\n\
              print(inner._0)\n\
              print(inner._1)\n"
@@ -1614,14 +1632,14 @@ let delayed: (String) -> String = {main_ns}.delayed()
 print("unit-called")
 print(delayed("unit-string"))
 print({main_ns}.ordinary("ordinary-string"))
-{main_ns}.phantom()
+{main_ns}.phantom(asKioType0: String.self)
 print("phantom-called")
-{main_ns}.phantomUnit()
+{main_ns}.phantomUnit(asKioType0: String.self)
 print("phantom-unit-called")
-let poly: Exp_testapi_main__poly_ret<StubHost, String> = {main_ns}.poly()
+let poly: Exp_testapi_main__poly_ret<StubHost> = {main_ns}.poly(asKioType0: String.self)
 print("poly-returned")
-print(poly.call("poly-string"))
-print(poly.call(Int32(73)))
+print(poly.specialize(asKioType: String.self)("poly-string"))
+print(poly.specialize(asKioType: Int32.self)(Int32(73)))
 "#
         ),
         ExportDriver::HostSubstitutedUnitCallback => {
@@ -1646,9 +1664,9 @@ print(poly.call(Int32(73)))
              print(wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed))\n\
              print(wordNodes.keepWord(66))\n\
              let otherNodes = wordApi.KioModule_otherNodes\n\
-             let pair = wordApi.keepPair(Exp_KioItem_wordApi__keepPair_arg0<StubHost>(_WordBox__: wordNodes.KioType__uWordBox_u_u.wrapWord(Int32(77)), KioQualified_wordApi_sotherNodes___uWordBox_u_u: otherNodes.KioType__uWordBox_u_u.wrapWord(Int32(88))))\n\
-             print(wordNodes.KioType__uWordBox_u_u.unwrapWord(pair._WordBox__))\n\
-             print(otherNodes.KioType__uWordBox_u_u.unwrapWord(pair.KioQualified_wordApi_sotherNodes___uWordBox_u_u))\n"
+             let pair = wordApi.keepPair(Exp_KioItem_wordApi__keepPair_arg0<StubHost>(_0: wordNodes.KioType__uWordBox_u_u.wrapWord(Int32(77)), _1: otherNodes.KioType__uWordBox_u_u.wrapWord(Int32(88))))\n\
+             print(wordNodes.KioType__uWordBox_u_u.unwrapWord(pair._0))\n\
+             print(otherNodes.KioType__uWordBox_u_u.unwrapWord(pair._1))\n"
         ),
         ExportDriver::FacadeSelectorCollisions => {
             let api = module("api");
@@ -1687,12 +1705,17 @@ print(poly.call(Int32(73)))
                 .map(|index| format!("Int32({index})"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let callback_fields = (0..WIDE_CALLABLE_SLOT_COUNT)
-                .map(|index| format!("_{index}: Int32({index})"))
-                .collect::<Vec<_>>()
-                .join(", ");
+            let callback_values = (0..WIDE_CALLABLE_SLOT_COUNT)
+                .map(|index| format!("Int32({index})"))
+                .collect::<Vec<_>>();
+            let callback_fields = callback_values[..callback_values.len() - 1]
+                .iter()
+                .rev()
+                .fold(callback_values.last().unwrap().clone(), |tail, head| {
+                    format!("Product(_0: {head}, _1: {tail})")
+                });
             format!(
-                "let out = {main_ns}.select({arguments})\nprint(out._0)\nprint(out._1)\nprint(out._2)\nlet callbackArgs = Exp_testapi_main__makeSelect_ret_cbarg0<StubHost>({callback_fields})\nlet callbackOut = {main_ns}.makeSelect()(callbackArgs)\nprint(callbackOut._0)\nprint(callbackOut._1)\nprint(callbackOut._2)\n"
+                "let out = {main_ns}.select({arguments})\nprint(out._0)\nprint(out._1._0)\nprint(out._1._1)\nlet callbackArgs: Exp_testapi_main__makeSelect_ret_cbarg0<StubHost> = {callback_fields}\nlet callbackOut = {main_ns}.makeSelect()(callbackArgs)\nprint(callbackOut._0)\nprint(callbackOut._1._0)\nprint(callbackOut._1._1)\n"
             )
         }
         // `apply_via[K][R](f: K -> R, x: K) -> R` remains a Swift generic
@@ -1849,7 +1872,7 @@ fn render_swift_body_for_binding(
     match binding.body {
         HostFnBodyKind::CallStep { .. } => {
             let payload = swift_param_type_name(&m.arg_types[0]).unwrap_or_default();
-            format!("return arg0({payload}(_0: arg1, _1: \"compound-callback\", _2: true))")
+            format!("return arg0({payload}(_0: arg1, _1: Product(_0: \"compound-callback\", _1: true)))")
         }
         HostFnBodyKind::MakePairCallback { .. } => "return arg0(arg1)._0".to_owned(),
         HostFnBodyKind::MakeStep { .. } => {
@@ -1888,7 +1911,7 @@ fn render_swift_body_for_binding(
             "print(\"staged Unit host call\")".to_owned()
         }
         HostFnBodyKind::ApplyPoly { .. } => {
-            "return arg0.call(\"rank-n\\n\")".to_owned()
+            "return arg0.specialize(asKioType: String.self)(\"rank-n\\n\")".to_owned()
         }
         HostFnBodyKind::MakePairStructural { .. } => {
             let ret = swift_param_type_name(&m.ret_type).unwrap_or_default();
@@ -2022,6 +2045,19 @@ fn render_method_sig(m: &TraitMethod) -> String {
             rendered
         };
         params.push(format!("_ arg{i}: {rendered}"));
+    }
+    for (index, parameter) in m.type_params.iter().enumerate() {
+        let mentioned = m
+            .arg_types
+            .iter()
+            .chain(std::iter::once(&m.ret_type))
+            .any(|ty| {
+                ty.split(|character: char| !character.is_alphanumeric() && character != '_')
+                    .any(|identifier| identifier == parameter)
+            });
+        if !mentioned {
+            params.push(format!("asKioType{index} _: {parameter}.Type"));
+        }
     }
     let ret = &m.ret_type;
     let ret_clause = if ret == "()" {
@@ -2340,8 +2376,8 @@ mod tests {
             "wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed)",
             "wordNodes.keepWord(66)",
             "wordApi.keepPair(Exp_KioItem_wordApi__keepPair_arg0<StubHost>(",
-            "unwrapWord(pair._WordBox__)",
-            "unwrapWord(pair.KioQualified_wordApi_sotherNodes___uWordBox_u_u)",
+            "unwrapWord(pair._0)",
+            "unwrapWord(pair._1)",
         ] {
             assert!(body.contains(literal), "{body}");
         }
@@ -2354,22 +2390,22 @@ mod tests {
 
         assert!(
             body.contains(
-                "A: pkg.testapi.KioModule_main.KioType_A.mk(42), B: pkg.testapi.KioModule_main.KioType_B.mk(\"shown\\n\")"
+                "_0: pkg.testapi.KioModule_main.KioType_A.mk(42), _1: pkg.testapi.KioModule_main.KioType_B.mk(\"shown\\n\")"
             ),
             "{body}"
         );
         assert!(
             body.contains(
-                "A: pkg.testapi.KioModule_main.KioType_A.mk(88), B: pkg.testapi.KioModule_main.KioType_B.mk(\"99\")"
+                "_0: pkg.testapi.KioModule_main.KioType_A.mk(88), _1: pkg.testapi.KioModule_main.KioType_B.mk(\"99\")"
             ),
             "{body}"
         );
-        assert!(body.contains("KioType_A.get(row.A)"), "{body}");
-        assert!(body.contains("KioType_B.get(row.B)"), "{body}");
-        assert!(!body.contains("A: 42"), "{body}");
-        assert!(!body.contains("B: \"shown\\n\""), "{body}");
-        assert!(!body.contains("print(row.A)"), "{body}");
-        assert!(!body.contains("print(row.B)"), "{body}");
+        assert!(body.contains("KioType_A.get(row._0)"), "{body}");
+        assert!(body.contains("KioType_B.get(row._1)"), "{body}");
+        assert!(!body.contains("_0: 42"), "{body}");
+        assert!(!body.contains("_1: \"shown\\n\""), "{body}");
+        assert!(!body.contains("print(row._0)"), "{body}");
+        assert!(!body.contains("print(row._1)"), "{body}");
     }
 
     #[test]
@@ -2378,7 +2414,9 @@ mod tests {
             .expect("wide callable driver");
 
         assert!(
-            body.contains("let callbackArgs = Exp_testapi_main__makeSelect_ret_cbarg0<StubHost>("),
+            body.contains(
+                "let callbackArgs: Exp_testapi_main__makeSelect_ret_cbarg0<StubHost> = Product("
+            ),
             "{body}"
         );
         assert!(
@@ -2519,13 +2557,13 @@ mod tests {
             "testapi/types",
             "Existential_unit",
             "read_existential_unit",
-            "ret_cbarg0",
+            "ret_typeRet_cbarg0",
         );
         let empty = export_newtype_member_alias(
             "testapi/types",
             "Existential_empty",
             "read_existential_empty",
-            "ret_cbarg0",
+            "ret_typeRet_cbarg0",
         );
 
         assert!(
@@ -2540,9 +2578,10 @@ mod tests {
             )),
             "{driver}"
         );
-        assert!(driver.contains("readExistentialUnit(existential).call("));
-        assert!(driver.contains("readExistentialEmpty(existentialEmpty).call("));
+        assert!(driver.contains("readExistentialUnit(existential).specialize("));
+        assert!(driver.contains("readExistentialEmpty(existentialEmpty).specialize("));
         assert!(!driver.contains("readExistentialUnit(existential, "));
+        assert!(driver.contains("typealias Outer0 = Exp_testapi_types____KioType_RecursiveExistentialFunction__KioItem_readRecursiveExistentialFunction_arg0<StubHost>"));
     }
 
     #[test]
@@ -2566,7 +2605,7 @@ mod tests {
             "{driver}"
         );
         assert!(
-            driver.contains("func call<KioType_0>(_ type: KioType_0.Type) -> KioType_0"),
+            driver.contains("func specialize<KioType_0>(_ type: KioType_0.Type) -> KioType_0"),
             "{driver}"
         );
         assert!(
@@ -2578,7 +2617,7 @@ mod tests {
     }
 
     #[test]
-    fn interleaved_stage_host_method_omits_phantom_generic_slots() {
+    fn interleaved_stage_host_method_selects_phantom_generic_slots() {
         let protocol = RunnerProtocol::HostInterleavedStageRoundtrip;
         let contract = protocol.contract();
         let binding = contract
@@ -2588,21 +2627,21 @@ mod tests {
             .expect("interleaved-stage host binding");
         let method = swift_method(binding, contract.host_types);
 
-        assert!(method.type_params.is_empty());
+        assert_eq!(method.type_params, ["A", "B"]);
         assert_eq!(method.arg_types, ["String", "String"]);
         assert_eq!(method.ret_type, "String");
         assert_eq!(
             render_method_sig(&method),
-            "testapi_arith__staged(_ arg0: String, _ arg1: String) -> String"
+            "testapi_arith__staged<A, B>(_ arg0: String, _ arg1: String, asKioType0 _: A.Type, asKioType1 _: B.Type) -> String"
         );
 
         let driver = build_driver("Demo", &swift_host_api_for_protocol(protocol), protocol);
         assert!(
-            driver.contains("func testapi_arith__staged(_ arg0: String, _ arg1: String) -> String"),
+            driver.contains("func testapi_arith__staged<A, B>(_ arg0: String, _ arg1: String, asKioType0 _: A.Type, asKioType1 _: B.Type) -> String"),
             "{driver}"
         );
         assert!(
-            !driver.contains("func testapi_arith__staged<a, b>"),
+            !driver.contains("func testapi_arith__staged(_ arg0: String, _ arg1: String)"),
             "{driver}"
         );
     }

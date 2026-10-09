@@ -111,8 +111,8 @@
 //!   dynamic body's shape on a statically-typed host — higher-kinded
 //!   values ride the uniform `[]any` rep) plus a
 //!   typed FFI facade (generic row-anchored sums, generic struct products),
-//!   emitted as a multi-file Go package exposing a branded
-//!   `Create<Handle>` factory under the package's namespace.
+//!   emitted as a multi-file Go package exposing `Package`, `Host` and
+//!   `New` under the package's namespace.
 //! - [`java`] — Java. An erased body over `Object` (a serialized-IR
 //!   interpreter) plus a generated typed facade, emitted as four source
 //!   files under the package-namespace directory.
@@ -150,6 +150,8 @@ pub mod skin;
 pub mod structural;
 pub mod swift;
 pub mod ts;
+pub(crate) mod value_plan;
+pub(crate) mod value_protection;
 
 /// Map each selectively imported module function to its declaring module.
 ///
@@ -217,10 +219,6 @@ pub(crate) fn selective_module_fn_import_owners(
 pub struct Profile {
     /// `true` when the host language can express records with named fields
     /// natively (Rust `struct`, JS object, Python dataclass, …).
-    /// Lowerings without native records render
-    /// [`crate::ast::Expr::EnrichedRecord`] positionally — same as
-    /// [`crate::ast::Expr::EnrichedTuple`] — and surface the names at
-    /// the FFI wrapper instead.
     pub native_records: bool,
 
     /// `true` when the host language can express sums-with-payload natively

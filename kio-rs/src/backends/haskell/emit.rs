@@ -242,7 +242,7 @@ fn render_pkg_hs(
     // boundary slot (and a per-arm `pattern` synonym for a sum slot), so a
     // host implementation — and the per-backend test runner, which reads no
     // emitted file — can name each family application through the stable
-    // semantic-name ABI (`Env_H…` / `Exp_H…`). Flat product and
+    // semantic-name ABI (`Host_…` / `Export_…` / `Member_…`). Flat product and
     // keyed sum patterns hide the right-nested pair / `Either` representation.
     let ffi = render_ffi_aliases(facade, shapes)?;
     for name in &ffi.exported_names {
@@ -897,42 +897,40 @@ v(2) {
         }
     }
 
-    fn inject_unproduced_record(package: &mut Package<Routed>) {
+    fn inject_unknown_newtype_constructor(package: &mut Package<Routed>) {
         for entry in package.modules_mut() {
             for item in &mut entry.module.items {
                 let Item::FnDef(function) = item else {
                     continue;
                 };
-                if function.name != "force_universal" {
+                if function.name != "native_error" {
                     continue;
                 }
                 let value = function.body.clone();
                 let meta = value.meta().clone();
-                function.body = crate::ast::Expr::EnrichedRecord {
+                function.body = crate::ast::Expr::LowNewtypeCtor {
                     occurrence: Default::default(),
-                    fields: vec![crate::ast::RecordField {
-                        name: "forced".to_owned(),
-                        value,
-                        meta: meta.clone(),
-                    }],
-                    synth_ty: function.ret.clone(),
+                    newtype: "MissingNativeErrorType".to_owned(),
+                    member: "make".to_owned(),
+                    type_args: Vec::new(),
+                    payload: Box::new(value),
                     meta,
                     ext: (),
                 };
                 return;
             }
         }
-        panic!("native-error fixture has a private `force_universal` function");
+        panic!("native-error fixture has a private `native_error` function");
     }
 
     #[test]
     fn native_emitter_errors_do_not_select_the_universal_body() {
-        let mut package = routed_package("module api; fn force_universal() -> . { () }");
-        inject_unproduced_record(&mut package);
+        let mut package = routed_package("module api; fn native_error() -> . { () }");
+        inject_unknown_newtype_constructor(&mut package);
         let error = render_package(&package).expect_err("native emitter errors propagate");
         assert_eq!(
             error.message,
-            "Haskell native body: pure expr node falls outside the native path scope: EnrichedRecord"
+            "Haskell native body: newtype ctor `MissingNativeErrorType` is neither carrier nor existential"
         );
     }
 
@@ -1309,7 +1307,7 @@ v(2) {
     }
 
     #[test]
-    fn public_host_fields_use_canonical_facade_slots() {
+    fn public_host_fields_preserve_source_parameters() {
         let package = routed_package_files_with_bridge(
             &[(
                 "api.kio",
@@ -1334,7 +1332,7 @@ v(2) {
         let split = field("split");
         assert!(
             product.contains(&standard_hs(
-                ":: forall (t_a :: %KIND%.Type) (t_b :: %KIND%.Type). t_a -> t_b -> m ()"
+                ":: forall (t_a :: %KIND%.Type) (t_b :: %KIND%.Type). (t_a, t_b) -> m ()"
             )),
             "{product}"
         );
@@ -1357,7 +1355,7 @@ v(2) {
     }
 
     #[test]
-    fn universal_function_adapter_uses_canonical_product_and_unit_slots() {
+    fn universal_function_adapter_preserves_product_and_unit_parameters() {
         let package = routed_package("module api;");
         let names = HaskellNames::derive("FallbackProbe");
         let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
@@ -1385,7 +1383,7 @@ v(2) {
         let product = skin
             .convert(&function(product, 1), "internal", FfiDir::Out)
             .expect("convert packed product-domain function");
-        assert!(product.contains("\\__fp0 __fp1 ->"), "{product}");
+        assert!(product.contains("\\(__fp0, __fp1) ->"), "{product}");
         assert!(
             product.contains(&format!(
                 "{} (internal) (({} [",
@@ -2886,18 +2884,18 @@ v(2) {
                 "pub newtype Output : . { constructor mk_output; pub projector un_output; };",
             ),
         ] {
-            // Recovery does not produce EnrichedRecord. Inject it after
-            // routing to pin emitter-error ownership, not source eligibility.
+            // An invalid routed owner pins emitter-error ownership, not
+            // source eligibility for the alternative renderer.
             let source = format!(
                 "module api; {declaration} \
-                 fn force_universal() -> . {{ () }}"
+                 fn native_error() -> . {{ () }}"
             );
             let mut package = routed_package_files_with_bridge(&[("api.kio", &source)], "**;");
-            inject_unproduced_record(&mut package);
+            inject_unknown_newtype_constructor(&mut package);
             let error = render_package(&package).expect_err("native emitter errors propagate");
             assert_eq!(
                 error.message,
-                "Haskell native body: pure expr node falls outside the native path scope: EnrichedRecord",
+                "Haskell native body: newtype ctor `MissingNativeErrorType` is neither carrier nor existential",
                 "{surface}"
             );
         }
@@ -3153,7 +3151,7 @@ v(2) {
     }
 
     #[test]
-    fn polymorphic_function_newtype_members_use_canonical_callable_slots() {
+    fn polymorphic_function_newtype_members_preserve_product_parameters() {
         let output = render(
             "module api; \
              pub newtype Pick_first : [A] (A & A) -> A { \
@@ -3161,7 +3159,7 @@ v(2) {
              };",
         )
         .expect("render polymorphic function newtype members");
-        let canonical = standard_hs("forall (t_a :: %KIND%.Type). m (t_a -> t_a -> m t_a)");
+        let grouped = standard_hs("forall (t_a :: %KIND%.Type). m ((t_a, t_a) -> m t_a)");
 
         for wrapper in [
             newtype_export_wrapper("api", "Pick_first", "mk_pick_first"),
@@ -3171,11 +3169,7 @@ v(2) {
                 .lines()
                 .find(|line| line.starts_with(&format!("{wrapper} ::")))
                 .unwrap_or_else(|| panic!("missing `{wrapper}` signature"));
-            assert_eq!(signature.matches(&canonical).count(), 2, "{signature}");
-            assert!(
-                !signature.contains("m ((t_a, t_a) -> m t_a)"),
-                "{signature}"
-            );
+            assert_eq!(signature.matches(&grouped).count(), 2, "{signature}");
         }
     }
 }
@@ -3222,6 +3216,7 @@ fn render_host_record(
                 HaskellCallableHeadStage::Value { slots, .. } => {
                     for slot in slots {
                         arg_tys.push(shapes.boundary_alias_haskell_type_in(
+                            facade,
                             slot.boundary(),
                             slot.ty(),
                             &scope,
@@ -3232,6 +3227,7 @@ fn render_host_record(
             }
         }
         let ret_ty = shapes.boundary_alias_haskell_type_in(
+            facade,
             entry.returned().boundary(),
             entry.returned().ty(),
             &scope,
@@ -3249,7 +3245,7 @@ fn render_host_record(
             );
             ty.push_str(". ");
         }
-        for a in &arg_tys {
+        for a in &entry.source_parameters(&arg_tys) {
             ty.push_str(&fn_arg_paren(a));
             ty.push_str(" -> ");
         }
@@ -3724,8 +3720,8 @@ struct FfiAliases {
 /// Emit the stable-named boundary aliases for every host-fn and export
 /// boundary slot. Mirrors Go's `render_ffi_go` / Swift's `render_ffi_swift`:
 ///
-/// - host fns get typed `Env_H…` argument / return aliases;
-/// - exports get typed `Exp_H…` argument / return aliases;
+/// - host fns get typed `Host_…` argument / return aliases;
+/// - exports and newtype members get typed `Export_…` / `Member_…` aliases;
 /// - a function-typed slot recurses into its compound legs as
 ///   `<base>_cbarg<j>` / `<base>_cbret`;
 /// - a product / sum slot emits `type <alias> ... = <Family> '[...]`; a
@@ -3858,7 +3854,7 @@ fn emit_ffi_slot_aliases(
                     crate::backends::boundary_facade::FacadeKind::Product,
                 )
                 .expect("a prepared Haskell product carries its exact occurrence");
-            emit_compound_type_alias(boundary, ty, occurrence, scope, module, shapes, acc)?;
+            emit_compound_type_alias(boundary, ty, occurrence, scope, module, shapes, facade, acc)?;
             for slot in occurrence.slots() {
                 emit_ffi_slot_aliases(
                     slot.boundary(),
@@ -3933,7 +3929,7 @@ fn emit_ffi_slot_aliases(
             let occurrence = facade
                 .structural_occurrence(boundary, crate::backends::boundary_facade::FacadeKind::Sum)
                 .expect("a prepared Haskell sum carries its exact occurrence");
-            emit_compound_type_alias(boundary, ty, occurrence, scope, module, shapes, acc)?;
+            emit_compound_type_alias(boundary, ty, occurrence, scope, module, shapes, facade, acc)?;
             for slot in occurrence.slots() {
                 emit_ffi_slot_aliases(
                     slot.boundary(),
@@ -4044,6 +4040,7 @@ fn emit_ffi_slot_aliases(
 
 /// Emit the stable alias for a compound slot, deduped by alias name, and add
 /// the bare alias name to the export list.
+#[allow(clippy::too_many_arguments)]
 fn emit_compound_type_alias(
     boundary: &BoundaryId,
     ty: &Type<Routed>,
@@ -4051,6 +4048,7 @@ fn emit_compound_type_alias(
     scope: &[crate::ast::TypeParam],
     module: Option<&str>,
     shapes: &super::skin::HaskellShapes<'_>,
+    facade: &HaskellFacadeCatalog,
     acc: &mut AliasAcc,
 ) -> Result<(), EmitError> {
     let name = HaskellName::BoundaryAlias(boundary.clone());
@@ -4076,7 +4074,7 @@ fn emit_compound_type_alias(
         .iter()
         .map(|slot| {
             shapes
-                .boundary_alias_haskell_type_in(slot.boundary(), slot.ty(), scope, module)
+                .boundary_alias_haskell_type_in(facade, slot.boundary(), slot.ty(), scope, module)
                 .map(|ty| ty_arg_paren(&ty))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -4755,6 +4753,7 @@ fn render_export_wrapper(
         let mut param_tys = Vec::with_capacity(slots.len());
         for slot in slots {
             param_tys.push(shapes.boundary_alias_haskell_type_in(
+                facade,
                 slot.boundary(),
                 slot.ty(),
                 &scope,
@@ -4779,6 +4778,7 @@ fn render_export_wrapper(
             }
         };
         let ret_ty = shapes.boundary_alias_haskell_type_in(
+            facade,
             entry.returned().boundary(),
             entry.returned().ty(),
             &scope,
@@ -4789,12 +4789,13 @@ fn render_export_wrapper(
             "{name} :: forall (h :: {kind}.Type) (m :: {kind}.Type -> {kind}.Type). ({} h, Monad m) => {handle} h m",
             names.host_types_ty,
         );
-        for param_ty in &param_tys {
+        for param_ty in &entry.source_parameters(&param_tys) {
             sig.push_str(" -> ");
             sig.push_str(&fn_arg_paren(param_ty));
         }
         sig.push_str(&format!(" -> m {}", ty_arg_paren(&ret_ty)));
-        let params = arg_names
+        let params = entry
+            .source_parameters(&arg_names)
             .iter()
             .map(|arg| format!(" {arg}"))
             .collect::<String>();
@@ -4838,6 +4839,7 @@ fn render_export_wrapper(
             let pname = format!("arg{public_offset}");
             public_offset += 1;
             param_sig_tys.push(shapes.boundary_alias_haskell_type_in(
+                facade,
                 slot.boundary(),
                 slot.ty(),
                 &scope,
@@ -4950,11 +4952,12 @@ fn render_export_wrapper(
         forall.join(" "),
         names.host_types_ty
     );
-    for pty in &param_sig_tys {
+    for pty in &entry.source_parameters(&param_sig_tys) {
         sig.push_str(" -> ");
         sig.push_str(&fn_arg_paren(pty));
     }
     let ret_bty = shapes.boundary_alias_haskell_type_in(
+        facade,
         entry.returned().boundary(),
         entry.returned().ty(),
         &scope,
@@ -4962,6 +4965,7 @@ fn render_export_wrapper(
     )?;
     sig.push_str(&format!(" -> m {}", ty_arg_paren(&ret_bty)));
 
+    let param_decls = entry.source_parameters(&param_decls);
     let params_str = if param_decls.is_empty() {
         String::new()
     } else {
@@ -5109,10 +5113,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             } => self.emit_low_host_call(name, module_path, args, sig, ret_ty),
 
             Expr::EnrichedTuple { items, .. } => self.emit_tuple(items),
-            Expr::EnrichedRecord { fields, .. } => {
-                let items: Vec<&Expr<Routed>> = fields.iter().map(|f| &f.value).collect();
-                self.emit_tuple_refs(&items)
-            }
             Expr::EnrichedProject {
                 target,
                 index,

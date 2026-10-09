@@ -47,13 +47,12 @@ assert "OPAQUE-DOC" in opaque and "GENERIC-DOC" not in opaque
 for carrier, marker in (("KioHostType_testapi__Box", "HOST-GENERIC-DOC"),
                         ("KioHostTypeMk_testapi__Box", "HOST-GENERIC-DOC"),
                         ("KioNewtype_testapi__Token", "NEWTYPE-DOC"),
-                        ("KioNewtype_testapi__Wrapper", "GENERIC-DOC"),
                         ("KioNewtypeMk_testapi__Wrapper", "GENERIC-DOC"),
                         ("KioNewtype_testapi__Packed", "EXISTENTIAL-DOC")):
     page = (scratch / "docs/native_docs" / ("Shapes." + carrier + ".html")).read_text()
     selected = re.search(r'<section class="class-description" id="class-description">(.*?)</section>', page, re.S)
     assert selected and marker in selected.group(1), carrier
-for carrier, note in (("KioHostType_testapi_sretired__Gone", "Exact declaration-owned carrier for `testapi.retired.Gone`."),
+for carrier, note in (("KioHostType_testapi_sretired__Gone", "Storage operations for this exact host declaration."),
                       ("KioHostTypeMk_testapi_sretired__Gone", "Exact constructor marker for `testapi/retired.Gone` (arity 1; kinds: *).")):
     page = (scratch / "docs/native_docs" / ("Shapes." + carrier + ".html")).read_text()
     selected = re.search(r'<section class="class-description" id="class-description">(.*?)</section>', page, re.S)

@@ -8,6 +8,50 @@ pub newtype Using[*F] : [A] F(A) -> F(A) { pub constructor make; pub projector r
 
 host type Native[A][B];
 
+host type Box[T];
+
+pub type Atom = Native(., .);
+
+fn product_roundtrip[*F][A][T](pack: (A & T) -> F(A & T), read: F(A & T) -> A & T, value: A & T) ->
+  A & T
+   { read(pack(value)) }
+
+fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> A | T, value: A | T) ->
+  A | T
+   { read(pack(value)) }
+
+pub fn concrete_product_roundtrip(
+  , pack: (Atom & Atom & Atom) -> Box(Atom & Atom & Atom)
+  , read: Box(Atom & Atom & Atom) -> Atom & Atom & Atom
+  , value: Atom & Atom & Atom
+  ) -> Atom & Atom & Atom { product_roundtrip(Box, Atom, Atom & Atom, pack, read, value) }
+
+pub fn concrete_sum_roundtrip(
+  , pack: (Atom | Atom | Atom) -> Box(Atom | Atom | Atom)
+  , read: Box(Atom | Atom | Atom) -> Atom | Atom | Atom
+  , value: Atom | Atom | Atom
+  ) -> Atom | Atom | Atom { sum_roundtrip(Box, Atom, Atom | Atom, pack, read, value) }
+
+pub fn whole_box[T](value: Box(T)) -> Box(T) { value }
+
+pub fn product_box[A][T](value: Box(A & T)) -> Box(A & T) { value }
+
+pub fn sum_box[A][T](value: Box(A | T)) -> Box(A | T) { value }
+
+pub fn concrete_product_box(value: Box(Atom & Atom & Atom)) -> Box(Atom & Atom & Atom) {
+  product_box(Atom, Atom & Atom, value)
+}
+
+pub fn concrete_sum_box(value: Box(Atom | Atom | Atom)) -> Box(Atom | Atom | Atom) {
+  sum_box(Atom, Atom | Atom, value)
+}
+
+pub fn product_value(a: Atom, b: Atom, c: Atom) -> Atom & Atom & Atom { (a, b, c) }
+
+pub fn sum_value(value: Atom | Atom | Atom) -> Atom | Atom | Atom { value }
+
+pub fn abstract_box[*F][T](value: F(T)) -> F(T) { value }
+
 pub fn opaque[A][B](a: A, b: B) -> Opaque(A, B) { Opaque.make((a, b)) }
 
 pub fn partial() -> Using(Both(.)) { Using.make(.[A](x) { x }) }

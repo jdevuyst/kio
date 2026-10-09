@@ -26,8 +26,8 @@ func (host) KioHostIn_api_Text(value string) string { return value }
 func (host) KioHostOut_api_Text(value string) string { return value }
 
 func main() {
-	alphaPackage := alpha.CreateShellAlpha[bool, int32, int64, string](host{})
-	betaPackage := beta.CreateShellBeta[bool, int32, int64, string](host{})
+	alphaPackage := alpha.New[bool, int32, int64, string](host{})
+	betaPackage := beta.New[bool, int32, int64, string](host{})
 
 	pairA := alpha.Product[int32, string]{F0: 7, F1: "seven"}
 	var pairAOut alpha.Product[int32, string] = alphaPackage.Api.PairA(pairA.F0, pairA.F1)

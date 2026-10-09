@@ -1089,8 +1089,8 @@ fn ts_backend(
 /// Go backend. Validates target keys, creates the output directory, and
 /// emits a self-contained multi-file Go package (`pkg.go`, `host.go`,
 /// `shapes.go`, `ffi.go`, `kio_runtime.go`, all declaring the package's
-/// namespace as their `package` clause) exposing a branded
-/// `Create<Handle>(host)` factory. The namespace defaults to the kio
+/// namespace as their `package` clause) exposing `New(host)`.
+/// The namespace defaults to the kio
 /// package name; the `namespace` key overrides it. Every emitted file
 /// lives flat at the top of the output directory (a Go package is one
 /// directory). See `specs/backends/go.md` § Output layout.
@@ -1321,22 +1321,12 @@ fn python_backend(
     let recovered_routed = routed.get();
 
     let emit_start = Instant::now();
-    let py = backends::python::lower_package_to_module(recovered_routed, &ns).map_err(|e| {
+    let (py, stub) = backends::python::lower_package(recovered_routed, &ns).map_err(|e| {
         BackendError::Build(format!(
-            "cannot emit Python module for package `{pkg_name}`: {}",
+            "cannot emit Python artifacts for package `{pkg_name}`: {}",
             e.message
         ))
     })?;
-    // The typed-stub package declares the same public surface for pyright /
-    // mypy hosts (`specs/backends/python.md` § Typed stub). Declarations
-    // only; the sibling `.py` remains the runtime.
-    let stub =
-        backends::python::lower_package_to_stub_package(recovered_routed, &ns).map_err(|e| {
-            BackendError::Build(format!(
-                "cannot emit typed-stub package for package `{pkg_name}`: {}",
-                e.message
-            ))
-        })?;
     let emit_ms = build_timing::elapsed_ms(emit_start);
 
     let write_start = Instant::now();
@@ -1352,6 +1342,18 @@ fn python_backend(
         let stub_file = stub_dir.join(relative);
         fs::write(&stub_file, content).map_err(|e| {
             BackendError::Build(format!("cannot write `{}`: {e}", DisplayPath(&stub_file)))
+        })?;
+    }
+    for (relative, content) in stub.companion_files() {
+        let file = target_dir.join(relative);
+        let parent = file
+            .parent()
+            .expect("a static companion has its support directory");
+        fs::create_dir_all(parent).map_err(|e| {
+            BackendError::Build(format!("cannot create `{}`: {e}", DisplayPath(parent)))
+        })?;
+        fs::write(&file, content).map_err(|e| {
+            BackendError::Build(format!("cannot write `{}`: {e}", DisplayPath(&file)))
         })?;
     }
     let write_ms = build_timing::elapsed_ms(write_start);
@@ -3206,8 +3208,27 @@ v(2) {
         assert_eq!(without_signature.1, with_retained.1);
         assert_ne!(without_signature.2, with_retained.2);
         assert_ne!(without_signature.3, with_retained.3);
-        assert!(with_retained.3.contains("public struct KioHostType_"));
-        assert!(with_retained.3.contains("public struct KioNewtype_"));
+        assert!(with_retained.3.contains(
+            "public typealias KioHostType_api__Box<T0> = KioApply1<KioHostTypeMk_api__Box, T0>"
+        ));
+        assert!(with_retained.3.contains(
+            "public typealias KioHostTypeMk_api__Box = KioNative<KioHostTypeIdentity_api__Box>"
+        ));
+        assert!(with_retained.3.contains(
+            "public typealias KioNewtype_api__Token<H: AppHost, T0> = KioApply1<KioNewtypeMk_api__Token<H>, T0>"
+        ));
+        for (kind, name, declaration) in [
+            ("host type", "Box", "typealias KioHostType_api__Box<T0>"),
+            (
+                "newtype",
+                "Token",
+                "typealias KioNewtype_api__Token<H: AppHost, T0>",
+            ),
+        ] {
+            assert!(with_retained.3.contains(&format!(
+                "@available(*, deprecated, message: \"Kio {kind} `api.{name}` is retained only for removed host declarations from contract v2\")\npublic {declaration}"
+            )));
+        }
         assert!(!with_retained.3.contains("Unused"));
         let old_message = "Kio host fn `api.old` was removed at contract v2";
         let old_attribute = format!("@available(*, deprecated, message: \"{old_message}\")");

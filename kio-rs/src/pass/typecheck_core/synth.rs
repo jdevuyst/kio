@@ -903,32 +903,10 @@ where
     newtype_member_scheme_with_payload(d, member, nominal_segments, payload, span)
 }
 
-/// [`newtype_member_scheme`] for a newtype whose declaration lives in
-/// *another* module: qualify the member payload's nominal heads against
-/// the **declaring** module before building the scheme.
-///
-/// [`newtype_member_scheme`] leaves the raw AST payload, which works for
-/// a same-module newtype because the identity-exact canonicalizer in
-/// [`crate::pass::typecheck_core::aliases`] later re-qualifies bare
-/// nominal heads in the *checking* module — and for a same-module
-/// newtype the checking module *is* the declaring one. A cross-module
-/// newtype breaks that assumption: a bare `String` in a dependency's
-/// `pub newtype Token : String` payload would canonicalize in the
-/// **caller**, conflating two distinct same-named newtypes. Qualifying
-/// the payload here in the declaring module gives every nominal head its
-/// `(module, name)` form up front; the later canonicalization is then
-/// idempotent (qualifying an already-qualified multi-segment head is a
-/// no-op).
-///
-/// This mirrors what the Rust emitter and the `sig` recorder already do:
-/// both qualify a newtype's payload in the newtype's own module entry
-/// (`exported_contract_type(&newtype.payload, module_entry, …)`), so the
-/// typer now reaches the same identity-exact payload they do.
-///
-/// Open-world: the qualification resolves names through the **declaring**
-/// module's own imports and local declarations — never the caller's, so
-/// the same safety property as [`crate::pass::resolve::exported_contract_type`]
-/// applied to that module's own exports.
+/// Build a member scheme from a payload whose paths are still written in its
+/// declaring module. Resolve through that module's imports, never the caller's.
+/// Already-resolved Routed payloads use [`newtype_member_scheme_in_routed_module`]
+/// so a canonical module prefix cannot be mistaken for a written import alias.
 pub fn newtype_member_scheme_in_module<P>(
     d: &crate::ast::Newtype<P>,
     member: &str,
@@ -940,6 +918,52 @@ pub fn newtype_member_scheme_in_module<P>(
 where
     P: crate::pass::resolve::ExportContractPhase + Clone,
 {
+    newtype_member_scheme_in_module_with(
+        d,
+        member,
+        nominal_segments,
+        declaring_module,
+        package,
+        span,
+        crate::pass::resolve::qualify_contract_type_in_module,
+    )
+}
+
+pub(crate) fn newtype_member_scheme_in_routed_module(
+    d: &crate::ast::Newtype<crate::ast::Routed>,
+    member: &str,
+    nominal_segments: &[crate::ast::PathSegment],
+    declaring_module: &crate::ast::Module<crate::ast::Routed>,
+    package: Option<&crate::pass::resolve::Package<crate::ast::Routed>>,
+    span: Span,
+) -> Result<Synth<crate::ast::Routed>, Error> {
+    newtype_member_scheme_in_module_with(
+        d,
+        member,
+        nominal_segments,
+        declaring_module,
+        package,
+        span,
+        crate::pass::resolve::qualify_routed_contract_type_in_module,
+    )
+}
+
+fn newtype_member_scheme_in_module_with<P>(
+    d: &crate::ast::Newtype<P>,
+    member: &str,
+    nominal_segments: &[crate::ast::PathSegment],
+    declaring_module: &crate::ast::Module<P>,
+    package: Option<&crate::pass::resolve::Package<P>>,
+    span: Span,
+    qualify: impl Fn(
+        &crate::ast::Type<P>,
+        &crate::ast::Module<P>,
+        &std::collections::HashMap<String, crate::ast::Kind>,
+    ) -> crate::ast::Type<P>,
+) -> Result<Synth<P>, Error>
+where
+    P: crate::pass::resolve::ExportContractPhase + Clone,
+{
     // The newtype's universal + existential binders are in scope inside
     // its payload, so they must not be mistaken for nominal heads during
     // qualification.
@@ -947,7 +971,7 @@ where
     for tp in d.type_params.iter().chain(d.existential_params.iter()) {
         locals.insert(tp.name.clone(), tp.effective_kind());
     }
-    let payload = crate::pass::resolve::qualify_contract_type_in_module(
+    let payload = qualify(
         &clone_with_span(&d.payload, span),
         declaring_module,
         &locals,

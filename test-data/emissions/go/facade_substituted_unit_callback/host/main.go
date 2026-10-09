@@ -19,7 +19,7 @@ func (host) Api__invoke(
 }
 
 func main() {
-	pkg := artifact.CreateFacadeSubstitutedUnitCallback[string](host{})
+	pkg := artifact.New[string](host{})
 	result := pkg.Api.ViaHost(func(_ artifact.Unit) string {
 		return "callback"
 	})

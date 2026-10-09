@@ -2,6 +2,48 @@ module api;
 
 host type String role(str);
 
+host type Crate[T];
+
+pub fn abstract_crate[*F][T](value: F(T)) -> F(T) { value }
+
+fn product_roundtrip[*F][A][T](pack: (A & T) -> F(A & T), read: F(A & T) -> A & T, value: A & T) ->
+  A & T
+   { read(pack(value)) }
+
+fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> A | T, value: A | T) ->
+  A | T
+   { read(pack(value)) }
+
+pub fn concrete_product_roundtrip(
+  , pack: (String & String & String) -> Crate(String & String & String)
+  , read: Crate(String & String & String) -> String & String & String
+  , value: String & String & String
+  ) -> String & String & String {
+  product_roundtrip(Crate, String, String & String, pack, read, value)
+}
+
+pub fn concrete_sum_roundtrip(
+  , pack: (String | String | String) -> Crate(String | String | String)
+  , read: Crate(String | String | String) -> String | String | String
+  , value: String | String | String
+  ) -> String | String | String { sum_roundtrip(Crate, String, String | String, pack, read, value) }
+
+pub fn whole_crate[T](value: Crate(T)) -> Crate(T) { value }
+
+pub fn product_crate[A][T](value: Crate(A & T)) -> Crate(A & T) { value }
+
+pub fn sum_crate[A][T](value: Crate(A | T)) -> Crate(A | T) { value }
+
+pub fn concrete_product_crate(value: Crate(String & String & String)) -> Crate(& String
+& String
+& String) {
+  product_crate(String, String & String, abstract_crate(Crate, String & String & String, value))
+}
+
+pub fn concrete_sum_crate(value: Crate(String | String | String)) -> Crate(String | String | String) {
+  sum_crate(String, String | String, value)
+}
+
 pub newtype Box[A] : A { pub constructor make_box; pub projector read_box }
 
 pub newtype Functor[*F] : F(String) { pub constructor make_functor; pub projector read_functor }

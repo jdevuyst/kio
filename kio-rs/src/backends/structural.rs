@@ -13,6 +13,12 @@ pub struct ProductRebuildPlan {
     pub slots: Vec<Option<usize>>,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum NominalValueRepresentation {
+    Erased,
+    Retained,
+}
+
 pub fn render_cached_product_rebuild<E>(
     plan: &ProductRebuildPlan,
     mut cached_slot: impl FnMut(usize) -> String,
@@ -32,12 +38,15 @@ pub fn render_cached_product_rebuild<E>(
     Ok(wrap(&plan.source, plan.source_arity, product))
 }
 
-pub fn bound_product_rebuild_plan(items: &[&Expr<Routed>]) -> Option<ProductRebuildPlan> {
+pub fn bound_product_rebuild_plan(
+    items: &[&Expr<Routed>],
+    nominals: NominalValueRepresentation,
+) -> Option<ProductRebuildPlan> {
     let mut source: Option<(&str, usize)> = None;
     let mut projection_count = 0usize;
     let mut slots = Vec::with_capacity(items.len());
     for item in items {
-        if let Some((name, index, arity)) = bound_product_projection(item) {
+        if let Some((name, index, arity)) = bound_product_projection(item, nominals) {
             match source {
                 None => source = Some((name, arity)),
                 Some((source_name, source_arity))
@@ -61,7 +70,15 @@ pub fn bound_product_rebuild_plan(items: &[&Expr<Routed>]) -> Option<ProductRebu
     })
 }
 
-fn bound_product_projection(item: &Expr<Routed>) -> Option<(&str, usize, usize)> {
+fn bound_product_projection(
+    item: &Expr<Routed>,
+    nominals: NominalValueRepresentation,
+) -> Option<(&str, usize, usize)> {
+    if matches!(item, Expr::EnrichedFieldGet { .. })
+        && nominals == NominalValueRepresentation::Retained
+    {
+        return None;
+    }
     match item {
         Expr::EnrichedProject {
             target,
@@ -141,13 +158,21 @@ mod tests {
 
     fn plan_for(items: &[Expr<Routed>]) -> Option<ProductRebuildPlan> {
         let refs: Vec<&Expr<Routed>> = items.iter().collect();
-        bound_product_rebuild_plan(&refs)
+        bound_product_rebuild_plan(&refs, NominalValueRepresentation::Erased)
     }
 
     #[test]
     fn rebuild_plan_requires_at_least_two_projected_slots() {
         let items = vec![project("r", 0, 3), unit_expr()];
         assert_eq!(plan_for(&items), None);
+    }
+
+    #[test]
+    fn retained_nominal_field_projection_is_not_an_identity_slot() {
+        let items = [project("r", 0, 4), field_get("r", 1, 4), project("r", 3, 4)];
+        let refs = items.iter().collect::<Vec<_>>();
+        let plan = bound_product_rebuild_plan(&refs, NominalValueRepresentation::Retained).unwrap();
+        assert_eq!(plan.slots, vec![Some(0), None, Some(3)]);
     }
 
     #[test]

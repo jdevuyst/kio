@@ -13,19 +13,11 @@
 //! `create<Handle>(host:)` factory, `<Handle>` being the namespace's
 //! PascalCase.
 //!
-//! Swift's body is **erased** — every value flows as `Any` / `[Any]`,
-//! the JS dynamic body's shape on a statically-typed host. `Any` is a
-//! genuine dynamic universal carrier: scalar polymorphism (rank-N /
-//! existential) and higher-kinded carriers alike erase to it, so
-//! `Maybe(String)` and the dictionary-internal `Maybe(Any)` share one
-//! uniform `[Any]` rep and a higher-kinded re-key needs **no
-//! carrier-walk** (the JS dynamic body's story, in Swift). Go, Rust, and
-//! Swift all erase their bodies to a dynamic universal carrier this way;
-//! a carrier-walk is load-bearing only for a **native-HKT** host
-//! (Haskell) that threads a typed carrier — the erased body is
-//! host-invisible, so erasure costs nothing the host sees
-//! (`ai/topics/emit.md` § Runtime model). The hard part of this target is
-//! the **typed FFI skin**, not the body.
+//! Swift's execution interfaces are **erased**: canonical native values flow
+//! inside `Any`. Private witnesses retain the types selected at each lexical
+//! type stage and construct exact product, sum, function, and nominal nodes.
+//! Generic substitution therefore preserves the representation even beneath
+//! opaque host applications; there is no payload-driven type reconstruction.
 //!
 //! Swift's skin is the **native-sum** end of the erased-static family:
 //! sums become a native `enum` with associated values, matched by an
@@ -37,6 +29,7 @@ use super::{FieldAccessStyle, Profile, RuntimeSupport};
 pub mod emit;
 pub mod runtime;
 pub mod skin;
+mod value;
 
 pub use emit::{EmitError, SwiftPackage, lower_package, lower_package_with_signature};
 pub use runtime::{RUNTIME_SUPPORT_FILE_CONTENT, RUNTIME_SUPPORT_FILE_PATH};
@@ -47,15 +40,13 @@ pub use runtime::{RUNTIME_SUPPORT_FILE_CONTENT, RUNTIME_SUPPORT_FILE_PATH};
 /// (`enum` with associated values, matched by an exhaustive `switch`) —
 /// the native-sum end of the erased-static family. Field access is named
 /// (`s.f0`). Swift requires explicit type declarations (the emitter
-/// generates one Swift type per Kio structural shape the FFI surfaces and
-/// per `newtype`). Swift manages memory with ARC — automatic from the
+/// generates binary generic structural carriers and declaration-owned nominal
+/// carriers). Swift manages memory with ARC — automatic from the
 /// body's perspective, so the body threads no ownership annotations
 /// (`gc: true`).
 ///
-/// `runtime_support: EmbeddedFile` — the erased body needs no carrier
-/// helpers, but the canonical `Unit` and the erased value plumbing are
-/// worth naming once in `kio_runtime.swift` rather than re-declaring per
-/// package, mirroring Rust's `src/__kio_runtime.rs`.
+/// `runtime_support: EmbeddedFile` shares the canonical carriers, witness
+/// construction, and structural projection helpers in `kio_runtime.swift`.
 pub fn profile() -> Profile {
     Profile {
         native_records: true,

@@ -20,9 +20,8 @@ module. This page describes the surface a Swift host calls against.
 
 Swift is the **`erased-static`** family's **native-sum** member: a
 statically-typed host with a typed FFI skin over an **erased body**.
-Swift's `Any` is a genuine dynamic universal carrier, so the package's
-internal computation flows entirely as `Any` / `[Any]` (the JS dynamic
-body's shape, in Swift). The host-facing **skin** is exact: bound types are
+Swift's body uses `Any`-valued execution interfaces while preserving the
+native type of each carried value. The host-facing **skin** is exact: bound types are
 Swift generic parameters, higher-kinded applications have generic nominal
 carriers, and `Any` appears only in internal storage and adapter bodies, never
 in a generated public type spelling (see [`README.md` § Higher-kinded
@@ -35,7 +34,8 @@ exhaustive `switch`, for every sum on the typed host surface.
 Emitted code targets **Swift 6.0+**.
 
 All other constructs are standard Swift: `struct`s, `enum`s with associated
-values, `switch`, closures, protocols with associated types, generics, and the
+values, `switch`, closures, protocols with associated types, implicitly opened
+existentials, generics, and the
 standard library only. The body is erased to `Any`; the host-facing package
 handle and every boundary type that contains an exact nullary host type are
 generic over the host conformance. Boundary type variables remain Swift
@@ -67,18 +67,17 @@ directory under `out` (compiled as one module — the host `import`s it):
   current exact nullary `host type`, one method per current `host fn`, plus
   the optional deprecated removal facade in § Deprecated host items). The
   host conforms to it. **Part of the surface.**
-- `shapes.swift` — the generic semantic shells and exact nominal carriers the
-  FFI surfaces: a `struct` per product shell, a native `enum` (with associated
-  values) per sum shell, declaration-owned host/newtype carriers, application
-  carriers, and callable carriers for rank-N values. **Part of the surface**
+- `shapes.swift` — declaration-owned host/newtype carriers and callable
+  carriers for rank-N values. **Part of the surface**
   (host code constructs, calls, and `switch`es over these).
 - `ffi.swift` — stable per-slot `typealias`es naming the Swift type at every
   host-fn / export-fn boundary slot. An alias containing an exact nullary host
   type takes the host conformance as a generic argument. A host reaches a
   boundary type by its stable alias rather than reconstructing its generic
   shell or carrier spelling. **Part of the surface.**
-- `kio_runtime.swift` — the fixed runtime-support file (today: the
-  canonical `KioUnit`). **Internal**; rewritten on every build, not
+- `kio_runtime.swift` — fixed support, including the public `KioUnit`,
+  `Product`, `Sum`, and application carrier types. Its private helpers are
+  **internal**; the file is rewritten on every build, not
   user-modifiable. Its content is **byte-identical across every emitted
   package** — a Swift source carries no module declaration, so nothing
   here binds the namespace (contrast Go's per-file `package <ns>` line).
@@ -213,10 +212,8 @@ the internal curried layers group by group
 
 An exported method's signature is the host's typed contract: each value
 parameter is its boundary shape (§ FFI surface), and the return is its
-boundary shape (`KioUnit` for a `()` return). The method converts each
-typed argument into the internal representation, runs the package
-function, and converts the result back to the typed shape — the host
-never sees the internal `[Any]` rep.
+boundary shape (`KioUnit` for a `()` return). The method runs the package
+function with those native values; its public interface never exposes `Any`.
 
 Every exported **`pub newtype`** contributes a **per-type handle** under
 its module namespace, even when it exports no members. A type handle uses
@@ -237,24 +234,19 @@ Every public newtype uses a public nominal
 Its available members have the exact declared Kio member schemes after the
 Swift boundary mapping; generic positions retain their mapped types. An
 existential projector returns the exact rank-N callable carrier for its CPS
-result, and the host supplies the continuation through that carrier's `call`
-method rather than receiving the hidden type. Canonical Unit contributes zero
-continuation value arguments, and every other payload contributes one. A
+result, and the host supplies the continuation after selecting that carrier's
+result-type stage rather than receiving the hidden type. A continuation
+consumes one semantic domain, including `KioUnit` for a Unit payload. A
 parameterized newtype also publishes a
 declaration-owned `KioNewtypeMk_<exact-module-and-name><H>` constructor marker so
 partial kind application retains the nominal head rather than collapsing to a
 role or representation type.
 
-For each parameterized public newtype, the package handle exposes
-`KioNewtypeApplication_<exact-module-and-name>_lift` and the matching `_project`.
-Their generic parameters are the declaration's ordered type arguments. `lift`
-maps its exact `KioNewtype_...<H, ...>` carrier to
-`KioApplyN<KioNewtypeMk_...<H>, ...>`; `project` maps that application back.
-Both preserve the existing value, including existential payloads, without
-constructing or exposing its payload. They are available regardless of member
-visibility and grant neither a constructor nor a projector. The exact
-declaration, host conformance and every type argument remain part of both
-types; values cannot be rebranded across those identities.
+The parameterized `KioNewtype_...<H, ...>` spelling is an alias of
+`KioApplyN<KioNewtypeMk_...<H>, ...>`. Passing a value through an abstract
+application needs no conversion. The exact declaration, host conformance and
+every ordered type argument remain part of its type; assignment cannot
+rebrand those identities or expose its payload.
 
 Carrier identity is the exact declaring module plus newtype name. Two
 same-leaf declarations in different modules remain different Swift types. A
@@ -303,11 +295,14 @@ marker `KioHostTypeMk_<exact-module-and-name>`. This marker is an alias of
 `KioNative<KioHostTypeIdentity_<exact-module-and-name>>`. A fully applied occurrence uses
 the carrier. A partial or abstract application uses the marker as its exact
 head and `KioApplyN<F, T0, ...>` as the generic application carrier. The fully
-applied `KioHostType_...` carrier's public generic initializer and `value(as:)` accessor let a host
+applied `KioHostType_...` is an alias of that same ordered application. Its
+public generic initializer and `value(as:)` accessor let a host
 choose its native storage without exposing `Any` in the public signature.
 
-Abstract application carriers are opaque: `KioApply1<F, A>` has no public
-initializer or storage accessor. `KioApplyN<F, A, ...>` is an alias of the
+Abstract application carriers are opaque: an unconstrained `KioApply1<F, A>`
+has no public initializer or storage accessor. The host-declaration overloads
+apply only to that exact fully applied host constructor.
+`KioApplyN<F, A, ...>` is an alias of the
 ordered nested unary applications, so flat and grouped application spellings
 retain the same complete identity, including a partially applied nominal's H.
 
@@ -353,7 +348,12 @@ surface): an exact nullary host atom as `Self.<associatedtype>`, a parameterized
 host atom as its declaration-owned carrier, a structural compound as its
 generic semantic shell, and `()` as `KioUnit`. Callable type stages become
 Swift method generic parameters; value parameters follow the prepared source
-layout exactly.
+layout exactly. A head generic absent from all native value parameters and
+the result is selected with a trailing labeled metatype parameter
+`asKioType<i>: T.Type`, where `i` is its zero-based head-binder index. Host
+protocol requirements include this parameter; exported methods default it to
+`T.self`. This selects the declared native generic, not a representation
+codec, and does not add a Kio value parameter.
 
 ## Deprecated host items
 
@@ -431,11 +431,15 @@ the Swift instantiations:
   storage and adapter bodies. A boundary binder becomes a Swift generic type
   parameter, a higher-kinded application uses an exact generic carrier, and a
   rank-N value uses an exact callable carrier. Internal polymorphic callables
-  retain the ordered stages specified by [`README.md` § 2](README.md#2-type-erasure-at-the-ffi):
-  every binder of an escaped value is one hidden callable stage, while a
-  direct known call may compact adjacent leading type applications. The skin
-  realizes the same order through Swift generic methods and typed value
-  parameters.
+  retain the ordered stages specified by [`README.md` § 2](README.md#2-type-erasure-at-the-ffi).
+  A polymorphic value exposes one `specialize` method per binder, returning
+  the exact residual value. Named declarations retain their prepared native
+  parameter grouping.
+- **Generic substitution and opaque constructors**
+  ([`README.md`](README.md#generic-substitution-and-opaque-constructors)) —
+  structural nodes, function domains, nominal applications and callable
+  carriers keep the same native representation under substitution. Host-owned
+  constructor storage is not traversed or reindexed.
 - **Facade topology and execution provenance** ([`README.md`](README.md#facade-topology-and-execution-provenance))
   — the package execution plan and package facade contain current callable
   sites only. A removed host function may leave a deprecated,
@@ -444,10 +448,11 @@ the Swift instantiations:
   loader requirement, or executable package route.
 - **Open-world property** ([`README.md`](README.md)) — adding a declaration
   to a module body never changes the meaning of existing emitted code. A
-  shell name is a pure encoding of its structural kind and ordered semantic
-  keys; each nominal carrier or member is a pure encoding of its exact
-  qualified declaration; and each callable carrier is a pure encoding of its
-  exact prepared site and use. Types, slots, and conversions consume those
+  structural node uses the fixed binary `Product` or `Sum`; each nominal
+  carrier or member is a pure encoding of its exact qualified declaration;
+  and each callable carrier reversibly encodes its binder-dependent type
+  structure, with independent subtrees supplied as generic arguments.
+  Types, slots, and adapters consume those
   identities and the live prepared catalog directly. They do not depend on
   discovery order, a collision registry, or unrelated declarations.
 - **Package isolation**, **exception propagation**, **well-foundedness
@@ -478,37 +483,32 @@ The skin consumes the shared prepared boundary transaction
 ([`README.md` § Structural FFI shape conventions](README.md)). A compound
 type's Swift realization is:
 
-- **Product** `(A & B & C)` → a generic `struct` shell with one field per
-  semantic slot. The common anonymous binary product is
-  `Product<T0, T1>`; every other shell has an injective
-  `KioFacade_V1_Product_...<T0, ...>` name derived from its ordered semantic
-  keys. Each concrete payload type is a generic argument, never part of the
-  shell name. Field names use the shared semantic key: bare newtype name,
-  exact module-qualified name when needed, or positional `_<i>`.
-- **Sum** `(A | B | C)` → a generic native `enum` shell. The common anonymous
-  binary sum is `Sum<T0, T1>`; every other shell has an injective
-  `KioFacade_V1_Sum_...<T0, ...>` name from its ordered semantic keys. Each
-  case uses the corresponding semantic key and carries that arm's generic
-  payload as an associated value. The host distinguishes the inhabited arm
-  with an exhaustive `switch`. This is the idiomatic native encoding — Swift
-  is the `erased-static` family's native-sum member, realizing the family's
-  *first-class enums/sealed types* trait natively (see [`README.md` § Language
-  families](README.md#language-families)).
+- **Product** `(A & B & C)` → `Product<A, Product<B, C>>`. The binary struct
+  has public fields `_0`, `_1` and `init(_0:_1:)`. A generic tail remains
+  one tail value when instantiated with another product.
+- **Sum** `(A | B | C)` → `Sum<A, Sum<B, C>>`. The binary native enum has
+  cases `._0(A)` and `._1(B)`; an exhaustive `switch` distinguishes each
+  branch. A generic tail remains one tail value under substitution.
 - **Newtype** → the exact
   `KioNewtype_<module-and-name><H, T0, ...>` carrier. Visibility controls which
   namespace methods can construct or project it; it never changes the
   carrier's identity. The carrier cuts recursive nominal graphs at the public
   boundary.
-- **Function value** → a Swift closure `(...) -> ...` whose compound legs are
-  converted across the boundary. Its parameters use the exact prepared source
-  layout, while the erased body adapter uses the exact execution layout.
+- **Function value** → a Swift closure `(Domain) -> Result` with one semantic
+  domain, including `KioUnit`. This is distinct from the source-grouped
+  parameters of a named host or exported method. A function-valued domain is
+  `@escaping`, including inside nested closure types, matching the convention
+  when a generic domain is instantiated with that function type.
 - **Type variable / abstract application** → the corresponding Swift generic
   type parameter, or `KioApplyN<F, ...>` when applying an abstract head.
-- **Rank-N value** → an exact `KioForall_<site-and-use><H, ...>` carrier with a
-  public generic `call` method. Its companion `...Implementation` protocol
-  lets a host construct a polymorphic value without an erased public
-  signature. Optional metatype witnesses on `call` select quantified types
-  that do not occur in value arguments.
+- **Rank-N value** → an exact `KioForall_<type-shape><H, ...>` carrier.
+  `specialize<T>(asKioType: T.Type = T.self)` advances exactly one binder and
+  returns its native residual type. The optional metatype selects `T` when
+  result context does not infer it. The companion `...Implementation`
+  protocol has a generic `specialize<T>(_: T.Type)` requirement returning
+  that same residual. Its implementation can perform effects at that stage,
+  retain state in the returned carrier or closure, and advance another binder
+  only when requested. No witness argument is added to a host-function method.
 
 The `ffi.swift` `typealias`es name each boundary slot's Swift type stably
 (`Env_<member>_arg<i>`, `Env_<member>_ret`, `Exp_<member>_…`, a function
@@ -519,7 +519,8 @@ for example `Env_app__makePair_ret<H: GreetHost>`. A public newtype member's
 it never pre-concatenates source identifiers. A nested rank-N callable also
 publishes `<slot>Implementation` as a stable alias for its companion protocol,
 so host code can construct the callable without reconstructing its encoded
-site/use name.
+type-shape name. Each selected binder publishes its exact residual as
+`<slot>_typeRet`; subsequent binder and function aliases extend that path.
 
 ### Carve-outs
 
@@ -561,18 +562,13 @@ Swift uses [shared source-component word casing](README.md#source-derived-public
   use word casing and exact escaping, without changing nominal identity.
   Abstract applications use
   `KioApply<arity>`.
-- **Structural shells** — anonymous binary shells are `Product` and `Sum`.
-  Every other shell uses the reversible
-  `KioFacade_V1_<Product-or-Sum>_...` codec over its kind, arity, and ordered
-  bare / qualified / positional semantic keys. Payload types are generic
-  arguments and cannot rename the shell. Fields and cases use the same
-  semantic keys. Public source-named fields and cases apply word casing;
-  the opaque shell identity codec retains the raw semantic keys.
-- **Rank-N carriers** — `KioForall_<exact-site-and-use>`; the companion
-  protocol appends `Implementation`. Source components in the site frame
-  word-case before exact escaping; fixed role and use indices remain fixed.
-  The exact prepared site owner and facade
-  use determine the name without a package-wide collision allocator.
+- **Structural nodes** — fixed `Product` and `Sum`, with `_0` and `_1`
+  fields/cases. Payload types are generic arguments.
+- **Rank-N carriers** — `KioForall_<type-shape>`; the companion protocol
+  appends `Implementation`. The suffix is a reversible encoding of the
+  binder-dependent structure; binder-independent subtrees become generic
+  arguments in occurrence order. Equivalent substitutions share the same
+  native type, independently of source site and unrelated declarations.
 - **`ffi.swift` aliases** — `Env_<member>_<slot>` / `Exp_<member>_<slot>`.
   An `Env_` member uses the corresponding host-protocol method spelling;
   an ordinary-function `Exp_` member uses the exported module-and-function

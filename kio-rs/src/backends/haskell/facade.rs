@@ -14,13 +14,45 @@ use crate::backends::boundary_facade::{
     BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadeExecutionUse,
     BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, BoundaryNewtypePayloadPlan,
     BoundaryNewtypeSurface, BoundaryNominalDeclaration, BoundaryNominalDependencies,
-    CallableExecutionLayout, CallableExecutionStage, CallableValueStageLayout, FacadeBinderId,
-    FacadeKind, FacadeUse, FacadeUseId, PreparedBoundaryCallableSite,
-    PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
+    CallableExecutionLayout, CallableExecutionStage, CallableSourceParamAdapter,
+    CallableValueStageLayout, FacadeBinderId, FacadeKind, FacadeUse, FacadeUseId,
+    PreparedBoundaryCallableSite, PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
 };
 
 use super::naming::{BoundaryId, BoundaryRoot, BoundaryStep, ItemId, ModuleId, StructuralKey};
 use super::skin::HaskellShapes;
+
+/// Render native parameter types, patterns, or arguments from the same frozen
+/// source partition. Semantic slots and their boundary identities stay intact;
+/// only a written product parameter becomes one right-nested Haskell tuple.
+pub(crate) fn source_parameters(
+    layout: &CallableValueStageLayout,
+    slots: &[String],
+) -> Vec<String> {
+    assert_eq!(layout.facade_slot_count(), slots.len());
+    layout
+        .source_params()
+        .iter()
+        .filter_map(|source| {
+            let values = &slots[source.facade_slots()];
+            match source.adapter() {
+                CallableSourceParamAdapter::UnitValue => {
+                    assert!(values.is_empty());
+                    None
+                }
+                CallableSourceParamAdapter::Identity => {
+                    let [value] = values else {
+                        unreachable!("an identity source parameter has exactly one slot")
+                    };
+                    Some(value.clone())
+                }
+                CallableSourceParamAdapter::RightNest => {
+                    Some(super::native::nest_tuple_value(values))
+                }
+            }
+        })
+        .collect()
+}
 
 /// One semantic declaration-head stage rendered for Haskell.
 #[derive(Clone, Debug)]
@@ -90,6 +122,27 @@ impl HaskellCallableEntry {
 
     pub(crate) fn is_live(&self) -> bool {
         self.live
+    }
+
+    pub(crate) fn source_parameters(&self, slots: &[String]) -> Vec<String> {
+        let mut offset = 0;
+        let mut parameters = Vec::new();
+        for stage in &self.stages {
+            if let HaskellCallableHeadStage::Value {
+                execution,
+                slots: stage_slots,
+            } = stage
+            {
+                let layout = execution
+                    .as_ref()
+                    .expect("a live Haskell entry has its source layout");
+                let end = offset + stage_slots.len();
+                parameters.extend(source_parameters(layout, &slots[offset..end]));
+                offset = end;
+            }
+        }
+        assert_eq!(offset, slots.len());
+        parameters
     }
 }
 

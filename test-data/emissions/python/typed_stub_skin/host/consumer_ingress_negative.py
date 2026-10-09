@@ -33,11 +33,12 @@ class Host:
 
 def check(host: BuildPythonTypedStubSkinHost[int, str]) -> None:
     pkg = create_buildPythonTypedStubSkin(host)
+    labels = pkg.api.KioModule_labels
 
-    pkg.api.KioModule_main.echoPair({"Name": "missing Count"})
-    pkg.api.KioModule_main.echoPair({"Name": "wrong Count", "Count": "seven"})
-    pkg.api.KioModule_main.echoChoice({"Unknown": 1})
-    pkg.api.KioModule_main.echoChoice({"Middle": 2})
+    pkg.api.KioModule_main.echoPair({"left": labels.KioType_Name.mk("missing Count")})
+    pkg.api.KioModule_main.echoPair({"left": labels.KioType_Name.mk("wrong Count"), "right": "seven"})
+    pkg.api.KioModule_main.echoChoice({"tag": "unknown", "value": labels.KioType_Left.mk(1)})
+    pkg.api.KioModule_main.echoChoice({"tag": "right", "value": {"tag": "left", "value": 2}})
 
 
 check(Host())

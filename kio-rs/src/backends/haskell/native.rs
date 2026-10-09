@@ -218,6 +218,7 @@ impl<'p> NativeTypes<'p> {
         prepared: &crate::backends::boundary_facade::PreparedBoundaryCallableSites,
         runtime_names: &super::naming::RuntimeNames,
         standard_names: &super::naming::StandardNames,
+        structural_names: &super::naming::StructuralNames,
     ) -> Self {
         let mut carriers = BTreeMap::new();
         let mut existentials = BTreeMap::new();
@@ -260,6 +261,7 @@ impl<'p> NativeTypes<'p> {
                                 module_key,
                                 host_surface,
                                 continuation_arity,
+                                structural_names,
                             ),
                         );
                     } else if super::skin::newtype_is_recursive_with_atomic_newtypes(
@@ -277,7 +279,13 @@ impl<'p> NativeTypes<'p> {
                     ) {
                         carriers.insert(
                             key,
-                            carrier_from_decl(declaration, module_key, true, host_surface),
+                            carrier_from_decl(
+                                declaration,
+                                module_key,
+                                true,
+                                host_surface,
+                                structural_names,
+                            ),
                         );
                     } else {
                         let opaque = !declaration.type_params.is_empty()
@@ -285,7 +293,13 @@ impl<'p> NativeTypes<'p> {
                                 .is_some_and(|(_, requires_nominal)| *requires_nominal);
                         carriers.insert(
                             key,
-                            carrier_from_decl(declaration, module_key, opaque, host_surface),
+                            carrier_from_decl(
+                                declaration,
+                                module_key,
+                                opaque,
+                                host_surface,
+                                structural_names,
+                            ),
                         );
                     }
                 });
@@ -589,6 +603,7 @@ impl<'a> NativeCtx<'a> {
             prepared,
             &names.runtime_names,
             &names.standard_names,
+            &names.structural_names,
         );
 
         let mut ctx = NativeCtx {
@@ -1018,6 +1033,7 @@ impl<'a> NativeCtx<'a> {
                     HaskellCallableHeadStage::Value { slots, .. } => {
                         for slot in slots {
                             rendered_params.push(self.shapes.boundary_alias_haskell_type_in(
+                                &self.facade,
                                 slot.boundary(),
                                 slot.ty(),
                                 &scope,
@@ -1028,6 +1044,7 @@ impl<'a> NativeCtx<'a> {
                 }
             }
             let ret = self.shapes.boundary_alias_haskell_type_in(
+                &self.facade,
                 entry.returned().boundary(),
                 entry.returned().ty(),
                 &scope,
@@ -1048,7 +1065,7 @@ impl<'a> NativeCtx<'a> {
                 );
                 ty.push_str(". ");
             }
-            for param in rendered_params {
+            for param in entry.source_parameters(&rendered_params) {
                 ty.push_str(&paren_ty(&param));
                 ty.push_str(" -> ");
             }
@@ -1761,6 +1778,7 @@ impl<'a> NativeCtx<'a> {
         let mut param_tys: Vec<String> = Vec::new();
         for slot in &public_slots {
             param_tys.push(self.shapes.boundary_alias_haskell_type_in(
+                &self.facade,
                 slot.boundary(),
                 slot.ty(),
                 &type_params,
@@ -1769,6 +1787,7 @@ impl<'a> NativeCtx<'a> {
         }
         let arg_names: Vec<String> = (0..param_tys.len()).map(|i| format!("arg{i}")).collect();
         let ret_boundary = self.shapes.boundary_alias_haskell_type_in(
+            &self.facade,
             entry.returned().boundary(),
             entry.returned().ty(),
             &type_params,
@@ -1788,8 +1807,8 @@ impl<'a> NativeCtx<'a> {
         };
         // Rebuild each native source parameter from the exact facade-slot
         // range paired with it by shared preparation. This is where a direct
-        // Unit source parameter becomes no public argument and a product
-        // domain becomes multiple public arguments.
+        // Unit source parameter becomes no public argument. Product patterns
+        // bind the original semantic slots within one public tuple argument.
         let mut natives = Vec::new();
         let mut public_offset = 0usize;
         let mut source_groups = param_groups.iter();
@@ -1889,11 +1908,16 @@ impl<'a> NativeCtx<'a> {
         }
         debug_assert_eq!(offset, natives.len());
 
-        let params_sig: String = param_tys
+        let params_sig: String = entry
+            .source_parameters(&param_tys)
             .iter()
             .map(|p| format!(" -> {}", paren_ty(p)))
             .collect();
-        let params_bind: String = arg_names.iter().map(|a| format!(" {a}")).collect();
+        let params_bind: String = entry
+            .source_parameters(&arg_names)
+            .iter()
+            .map(|a| format!(" {a}"))
+            .collect();
         let mut out = String::new();
         let handle = self.handle;
         let context = self.context_for(Some(&mangled));
@@ -1959,7 +1983,7 @@ impl<'a> NativeCtx<'a> {
 
     /// Render and consume the sole source parameter of a newtype member's
     /// prepared value stage. Newtype members have one source-level domain,
-    /// but their public Haskell facade may have zero, one, or several slots.
+    /// with direct Unit omitted and a product kept as one tuple parameter.
     fn render_newtype_source_facade(
         &self,
         entry: &HaskellCallableEntry,
@@ -1988,6 +2012,7 @@ impl<'a> NativeCtx<'a> {
         let mut param_tys = Vec::with_capacity(slots.len());
         for slot in slots {
             param_tys.push(self.shapes.boundary_alias_haskell_type_in(
+                &self.facade,
                 slot.boundary(),
                 slot.ty(),
                 scope,
@@ -2031,7 +2056,11 @@ impl<'a> NativeCtx<'a> {
                 nest_tuple_value(&converted)
             }
         };
-        Ok((param_tys, arg_names, native))
+        Ok((
+            entry.source_parameters(&param_tys),
+            entry.source_parameters(&arg_names),
+            native,
+        ))
     }
 
     fn render_newtype_member_export(
@@ -2152,6 +2181,7 @@ impl<'a> NativeCtx<'a> {
                 assert_eq!(payload_slots, 0..payload_layout.facade_slot_count());
 
                 let mut public_leaf = String::new();
+                let mut public_types = Vec::with_capacity(payload_slots.len());
                 let mut public_slot_types = Vec::with_capacity(payload_slots.len());
                 for index in payload_slots.clone() {
                     let boundary = continuation_boundary.nested(BoundaryStep::CallbackArg(
@@ -2164,13 +2194,17 @@ impl<'a> NativeCtx<'a> {
                         .boundary_type(&boundary)
                         .expect("a prepared existential payload slot has an exact type");
                     let rendered = self.shapes.boundary_alias_haskell_type_in(
+                        &self.facade,
                         &boundary,
                         ty,
                         &all_params,
                         module,
                     )?;
-                    public_leaf.push_str(&format!("{} -> ", paren_ty(&rendered)));
+                    public_types.push(rendered);
                     public_slot_types.push((boundary, ty));
+                }
+                for rendered in super::facade::source_parameters(payload_layout, &public_types) {
+                    public_leaf.push_str(&format!("{} -> ", paren_ty(&rendered)));
                 }
                 public_leaf.push_str("m r");
                 let public_cont = render_staged_foralls(
@@ -2250,11 +2284,12 @@ impl<'a> NativeCtx<'a> {
                     &|continuation| match &leaf_adapter {
                         None => format!("({continuation})"),
                         Some(arguments) => {
-                            let arguments = arguments
-                                .iter()
-                                .map(|argument| paren_expr(argument))
-                                .collect::<Vec<_>>()
-                                .join(" ");
+                            let arguments =
+                                super::facade::source_parameters(payload_layout, arguments)
+                                    .iter()
+                                    .map(|argument| paren_expr(argument))
+                                    .collect::<Vec<_>>()
+                                    .join(" ");
                             if arguments.is_empty() {
                                 format!("(\\__payload -> ({continuation}))")
                             } else {
@@ -2325,6 +2360,7 @@ impl<'a> NativeCtx<'a> {
 
             if member.name == d.projector.name {
                 let payload = self.shapes.boundary_alias_haskell_type_in(
+                    &self.facade,
                     entry.returned().boundary(),
                     entry.returned().ty(),
                     &scope,
@@ -2373,6 +2409,7 @@ impl<'a> NativeCtx<'a> {
         let (param_tys, arg_names, native_payload) =
             self.render_newtype_source_facade(entry, &d.payload, &converter, &scope, module)?;
         let ret = self.shapes.boundary_alias_haskell_type_in(
+            &self.facade,
             entry.returned().boundary(),
             entry.returned().ty(),
             &scope,
@@ -3387,6 +3424,7 @@ impl NativeExprEmitter<'_> {
         }
         assert!(source_groups.next().is_none());
         assert_eq!(source_arg_index, args.len());
+        let call_args = entry.source_parameters(&call_args);
         let args_str = if call_args.is_empty() {
             String::new()
         } else {
@@ -3553,6 +3591,7 @@ impl NativeExprEmitter<'_> {
                                 if let (Some(boundary), Some(public_body)) = (boundary, public_body)
                                 {
                                     self.ctx.shapes.boundary_alias_haskell_type_in(
+                                        &self.ctx.facade,
                                         boundary,
                                         public_body,
                                         &nested,
@@ -3583,6 +3622,7 @@ impl NativeExprEmitter<'_> {
                     FfiDir::In => {
                         if let (Some(boundary), Some(public_ty)) = (boundary, public_ty) {
                             self.ctx.shapes.boundary_alias_haskell_type_in(
+                                &self.ctx.facade,
                                 boundary,
                                 public_ty,
                                 context.scheme_scope,
@@ -3627,6 +3667,7 @@ impl NativeExprEmitter<'_> {
                                 "an exact Haskell conversion owns its prepared public type",
                             );
                             self.ctx.shapes.boundary_alias_haskell_type_in(
+                                &self.ctx.facade,
                                 boundary,
                                 public_ty,
                                 context.scheme_scope,
@@ -3719,10 +3760,13 @@ impl NativeExprEmitter<'_> {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(nest_either_type(&slots))
             }
-            _ => self
-                .ctx
-                .shapes
-                .boundary_alias_haskell_type_in(boundary, ty, scope, module),
+            _ => self.ctx.shapes.boundary_alias_haskell_type_in(
+                &self.ctx.facade,
+                boundary,
+                ty,
+                scope,
+                module,
+            ),
         }
     }
 
@@ -4042,6 +4086,7 @@ impl NativeExprEmitter<'_> {
                         }
                     }
                 }
+                let facade_values = super::facade::source_parameters(layout, &facade_values);
                 let applied = if facade_values.is_empty() {
                     format!("({expr})")
                 } else {
@@ -4096,6 +4141,7 @@ impl NativeExprEmitter<'_> {
             )?;
             format!("{action} >>= \\{retbind} -> {lifted}")
         };
+        let public_args = super::facade::source_parameters(layout, &public_args);
         if public_args.is_empty() {
             Ok(body)
         } else {
@@ -4408,8 +4454,8 @@ impl NativeExprEmitter<'_> {
 
     /// A host-fn-value reference rendered as nested native lambdas. Each
     /// Kio value group is one tuple parameter; earlier groups return the
-    /// next lambda through `m`, and the final group invokes the flattened
-    /// host-record field with the same conversions as a direct host call.
+    /// next lambda through `m`, and the final group invokes the compact
+    /// host-record field with the same source grouping as a direct host call.
     fn emit_host_fn_value_ref(
         &mut self,
         name: &str,
@@ -4490,6 +4536,7 @@ impl NativeExprEmitter<'_> {
         assert_eq!(value_stage_index, groups.len());
 
         let member = host_field_name(module_path, name);
+        let call_args = entry.source_parameters(&call_args);
         let suffix = if call_args.is_empty() {
             String::new()
         } else {
@@ -5111,10 +5158,11 @@ fn carrier_from_decl(
     module_path: &str,
     opaque: bool,
     host_surface: Option<HaskellNewtypeHostSurface>,
+    structural_names: &super::naming::StructuralNames,
 ) -> Carrier {
     Carrier {
         kio_name: d.name.clone(),
-        hs_name: carrier_hs_name(module_path, &d.name),
+        hs_name: structural_names.nominal_name(&carrier_hs_name(module_path, &d.name)),
         type_params: d.type_params.clone(),
         payload: d.payload.clone(),
         opaque,
@@ -5132,10 +5180,11 @@ fn existential_from_decl(
     module_path: &str,
     host_surface: Option<HaskellNewtypeHostSurface>,
     continuation_arity: usize,
+    structural_names: &super::naming::StructuralNames,
 ) -> ExistentialCarrier {
     ExistentialCarrier {
         kio_name: d.name.clone(),
-        hs_name: existential_hs_name(module_path, &d.name),
+        hs_name: structural_names.nominal_name(&existential_hs_name(module_path, &d.name)),
         host_surface,
         type_params: d.type_params.clone(),
         existential_params: d.existential_params.clone(),
@@ -5288,7 +5337,6 @@ fn routed_expr_children(expr: &Expr<Routed>, include_closure_body: bool) -> Vec<
         }
         Expr::FnExpr { body, .. } if include_closure_body => vec![body.as_ref()],
         Expr::EnrichedTuple { items, .. } => items.iter().collect(),
-        Expr::EnrichedRecord { fields, .. } => fields.iter().map(|field| &field.value).collect(),
         Expr::EnrichedProject { target, .. }
         | Expr::EnrichedFieldGet { target, .. }
         | Expr::EnrichedInject {
@@ -6184,7 +6232,6 @@ fn expr_kind(expr: &Expr<Routed>) -> &'static str {
         Expr::LowModuleFnValueRef { .. } => "LowModuleFnValueRef",
         Expr::FnExpr { .. } => "FnExpr",
         Expr::EnrichedTuple { .. } => "EnrichedTuple",
-        Expr::EnrichedRecord { .. } => "EnrichedRecord",
         Expr::EnrichedProject { .. } => "EnrichedProject",
         Expr::EnrichedFieldGet { .. } => "EnrichedFieldGet",
         Expr::EnrichedInject { .. } => "EnrichedInject",
@@ -6202,6 +6249,8 @@ mod public_type_name_tests {
     fn carrier_name_is_injective_and_declaration_local() {
         let slash = carrier_hs_name("a/b", "Tree");
         let underscore = carrier_hs_name("a_b", "Tree");
+        assert_eq!(slash, "KioType_a__b__Tree");
+        assert_eq!(underscore, "KioType_aB__Tree");
         assert_ne!(slash, underscore);
         assert_eq!(slash, carrier_hs_name("a/b", "Tree"));
     }
@@ -6210,6 +6259,8 @@ mod public_type_name_tests {
     fn existential_name_is_injective_and_declaration_local() {
         let slash = existential_hs_name("a/b", "Pack");
         let underscore = existential_hs_name("a_b", "Pack");
+        assert_eq!(slash, "KioExists_a__b__Pack");
+        assert_eq!(underscore, "KioExists_aB__Pack");
         assert_ne!(slash, underscore);
         assert_eq!(slash, existential_hs_name("a/b", "Pack"));
     }

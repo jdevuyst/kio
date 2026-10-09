@@ -177,9 +177,6 @@ fn analyze<'a, P: Phase>(
         Expr::EnrichedTuple { items, .. } => items
             .iter()
             .all(|value| analyze(value, proof, declared_pure, locals)),
-        Expr::EnrichedRecord { fields, .. } => fields
-            .iter()
-            .all(|field| analyze(&field.value, proof, declared_pure, locals)),
         Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
             analyze(target, proof, declared_pure, locals)
         }

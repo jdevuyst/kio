@@ -6826,7 +6826,6 @@ impl<'m> Resolver<'m> {
             | crate::ast::Expr::EnrichedInject { ext, .. }
             | crate::ast::Expr::EnrichedMatch { ext, .. }
             | crate::ast::Expr::EnrichedConditional { ext, .. }
-            | crate::ast::Expr::EnrichedRecord { ext, .. }
             | crate::ast::Expr::EnrichedFieldGet { ext, .. } => match *ext {},
             crate::ast::Expr::LowHostCall { ext, .. }
             | crate::ast::Expr::LowModuleCall { ext, .. }

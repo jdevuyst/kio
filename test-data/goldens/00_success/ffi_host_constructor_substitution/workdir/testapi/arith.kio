@@ -1,0 +1,7 @@
+module testapi/arith;
+
+import testapi as api;
+
+host fn box_make[T](value: T) -> api.Box(T);
+
+host fn box_get[T](boxed: api.Box(T)) -> T;

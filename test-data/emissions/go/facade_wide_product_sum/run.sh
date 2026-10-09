@@ -84,7 +84,7 @@ cp "$package_dir"/out/go/*.go "$stage/artifact/"
   printf '\t}\n'
   printf '}\n\n'
   printf 'func main() {\n'
-  printf '\tpkg := artifact.CreateWideLarge[int32](host{})\n'
+  printf '\tpkg := artifact.New[int32](host{})\n'
   printf '\tproduct := pkg.Api.Product()\n'
   field=0
   while [ "$field" -lt "$product_arity" ]; do

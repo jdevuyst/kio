@@ -1,0 +1,53 @@
+module api;
+
+host type I32 role(i32);
+
+host type Box[T];
+
+pub fn abstract_keep[*F][T](value: F(T)) -> F(T) { value }
+
+host fn echo[T](value: Box(T)) -> Box(T);
+
+fn product_roundtrip[*F][A][T](pack: (A & T) -> F(A & T), read: F(A & T) -> A & T, value: A & T) ->
+  A & T
+   { read(pack(value)) }
+
+fn sum_roundtrip[*F][A][T](pack: (A | T) -> F(A | T), read: F(A | T) -> A | T, value: A | T) ->
+  A | T
+   { read(pack(value)) }
+
+pub fn concrete_product_roundtrip(
+  , pack: (I32 & I32 & I32) -> Box(I32 & I32 & I32)
+  , read: Box(I32 & I32 & I32) -> I32 & I32 & I32
+  , value: I32 & I32 & I32
+  ) -> I32 & I32 & I32 { product_roundtrip(Box, I32, I32 & I32, pack, read, value) }
+
+pub fn concrete_sum_roundtrip(
+  , pack: (I32 | I32 | I32) -> Box(I32 | I32 | I32)
+  , read: Box(I32 | I32 | I32) -> I32 | I32 | I32
+  , value: I32 | I32 | I32
+  ) -> I32 | I32 | I32 { sum_roundtrip(Box, I32, I32 | I32, pack, read, value) }
+
+pub fn whole[T](value: Box(T)) -> Box(T) { echo(value) }
+
+pub fn product[A][T](value: Box(A & T)) -> Box(A & T) { echo(value) }
+
+pub fn sum[A][T](value: Box(A | T)) -> Box(A | T) { echo(value) }
+
+pub fn concrete_product(value: Box(I32 & I32 & I32)) -> Box(I32 & I32 & I32) {
+  product(I32, I32 & I32, abstract_keep(Box, I32 & I32 & I32, value))
+}
+
+pub fn concrete_sum(value: Box(I32 | I32 | I32)) -> Box(I32 | I32 | I32) {
+  sum(I32, I32 | I32, value)
+}
+
+pub fn product_value() -> I32 & I32 & I32 { (11, 22, 33) }
+
+pub fn sum_value(value: I32 | I32 | I32) -> I32 | I32 | I32 { value }
+
+pub fn callback[A][T](step: Box(A & T) -> Box(A & T), value: Box(A & T)) -> Box(A & T) {
+  step(value)
+}
+
+pub fn returned[A][T](value: Box(A & T)) -> . -> Box(A & T) { .() { value } }

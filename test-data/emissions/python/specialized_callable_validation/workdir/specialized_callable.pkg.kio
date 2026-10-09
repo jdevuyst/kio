@@ -1,0 +1,14 @@
+package specialized_callable;
+
+build {
+  cache ();
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  api;
+  other
+}

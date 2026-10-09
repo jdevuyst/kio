@@ -286,7 +286,7 @@ fn run_coexist(
     // equal structural facades coexist without coupling artifact identity.
     let main = facade_module_selector("main", false);
     driver.push_str(&format!(
-        "    pa.greeter.{main}.main();\n    pb.greeter.{main}.main();\n    pa.greeter.{main}.main();\n    var qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa._0() + \" \" + qa._1());\n    var qb = pb.greeter.{main}.pair();\n    System.out.println(\"second pair: \" + qb._0() + \" \" + qb._1());\n    qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa._0() + \" \" + qa._1());\n  }}\n}}\n"
+        "    pa.greeter.{main}.main();\n    pb.greeter.{main}.main();\n    pa.greeter.{main}.main();\n    var qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa.left() + \" \" + qa.right());\n    var qb = pb.greeter.{main}.pair();\n    System.out.println(\"second pair: \" + qb.left() + \" \" + qb.right());\n    qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa.left() + \" \" + qa.right());\n  }}\n}}\n"
     ));
     fs::write(build_dir.join("Driver.java"), driver)
         .map_err(|e| format!("writing Java driver in {}: {e}", build_dir.display()))?;
@@ -560,7 +560,18 @@ fn java_host_type_identity(module: &str, leaf: &str) -> String {
     format!("{}__{}", encode(module), encode(leaf))
 }
 
-fn java_host_carrier(binding: &HostTypeBinding) -> String {
+fn java_host_marker(binding: &HostTypeBinding) -> String {
+    format!(
+        "Shapes.KioHostTypeMk_{}",
+        java_host_type_identity(binding.module, binding.leaf)
+    )
+}
+
+fn java_host_application(binding: &HostTypeBinding, argument: &str) -> String {
+    format!("Shapes.Apply1<{}, {argument}>", java_host_marker(binding))
+}
+
+fn java_host_storage(binding: &HostTypeBinding) -> String {
     format!(
         "Shapes.KioHostType_{}",
         java_host_type_identity(binding.module, binding.leaf)
@@ -623,23 +634,27 @@ fn java_newtype_type(
         .filter(|binding| binding.type_arity == 0)
         .collect::<Vec<_>>();
     arguments.sort_by_key(|binding| (binding.module, binding.leaf));
-    let arguments = arguments
+    let roots = arguments
         .into_iter()
         .map(java_nullary_host_selection)
-        .chain(
-            declaration_arguments
-                .iter()
-                .map(|argument| (*argument).to_owned()),
-        )
         .collect::<Vec<_>>();
     let carrier = format!(
         "Shapes.KioNewtype_{}",
         java_host_type_identity(module, leaf)
     );
-    if arguments.is_empty() {
-        carrier
+    if declaration_arguments.is_empty() {
+        if roots.is_empty() {
+            carrier
+        } else {
+            format!("{carrier}<{}>", roots.join(", "))
+        }
     } else {
-        format!("{carrier}<{}>", arguments.join(", "))
+        let marker = java_newtype_constructor_marker(module, leaf, host_types);
+        declaration_arguments
+            .iter()
+            .fold(marker, |index, argument| {
+                format!("Shapes.Apply1<{index}, {argument}>")
+            })
     }
 }
 
@@ -675,31 +690,74 @@ fn java_positional_shell(kind: &str, arity: usize) -> String {
     format!("KioFacade_V1_{kind}_Positional_K{arity}")
 }
 
-#[cfg(test)]
-fn java_bare_shell(kind: &str, keys: &[&str]) -> String {
-    let encoded_keys = keys
-        .iter()
-        .map(|key| {
-            let encoded = key
-                .bytes()
-                .map(|byte| match byte {
-                    b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => char::from(byte).to_string(),
-                    b'_' => "_u".to_owned(),
-                    _ => format!("_x{byte:02x}"),
-                })
-                .collect::<String>();
-            format!("B{}_{encoded}", encoded.len())
-        })
-        .collect::<String>();
-    format!("KioFacade_V1_{kind}_K{}_{encoded_keys}", keys.len())
+fn java_structural_type(kind: &str, types: &[&str]) -> String {
+    assert!(
+        types.len() >= 2,
+        "a structural {kind} needs at least two members"
+    );
+    let mut result = types[types.len() - 1].to_owned();
+    for member in types[..types.len() - 1].iter().rev() {
+        result = format!("Shapes.{kind}<{member}, {result}>");
+    }
+    result
 }
 
-fn java_structural_type(kind: &str, types: &[&str]) -> String {
-    format!(
-        "Shapes.{}<{}>",
-        java_positional_shell(kind, types.len()),
-        types.join(", ")
-    )
+fn java_product_value(values: &[String]) -> String {
+    assert!(values.len() >= 2);
+    let mut value = values.last().expect("nonempty product").clone();
+    for left in values[..values.len() - 1].iter().rev() {
+        value = format!("new Shapes.Product<>({left}, {value})");
+    }
+    value
+}
+
+fn java_product_field(value: &str, index: usize, arity: usize) -> String {
+    assert!(arity >= 2 && index < arity);
+    if index == arity - 1 {
+        format!("{value}{}", ".right()".repeat(index))
+    } else {
+        format!("{value}{}.left()", ".right()".repeat(index))
+    }
+}
+
+fn java_staged_product_values(arity: usize) -> String {
+    assert!(arity >= 2);
+    let mut source = format!("    Integer callbackArg{} = {};\n", arity - 1, arity - 1);
+    for index in (0..arity - 1).rev() {
+        source.push_str(&format!(
+            "    var callbackArg{index} = new Shapes.Product<>({index}, callbackArg{});\n",
+            index + 1
+        ));
+    }
+    source
+}
+
+fn java_sum_value(arity: usize, arm: usize, value: &str) -> String {
+    assert!(arity >= 2 && arm < arity);
+    let mut result = if arm == arity - 1 {
+        value.to_owned()
+    } else {
+        format!("new Shapes.Left<>({value})")
+    };
+    for _ in 0..arm {
+        result = format!("new Shapes.Right<>({result})");
+    }
+    result
+}
+
+fn java_sum_payload_match(value: &str, arity: usize) -> String {
+    assert!(arity >= 2);
+    if arity == 2 {
+        format!(
+            "switch ({value}) {{ case Shapes.Left(var item) -> item.toString(); case Shapes.Right(var item) -> item; }}"
+        )
+    } else {
+        let tail = format!("tail{arity}");
+        format!(
+            "switch ({value}) {{ case Shapes.Left(var item{arity}) -> item{arity}.toString(); case Shapes.Right(var {tail}) -> {}; }}",
+            java_sum_payload_match(&tail, arity - 1)
+        )
+    }
 }
 
 fn java_product_type(types: &[&str]) -> String {
@@ -711,42 +769,53 @@ fn java_sum_type(types: &[&str]) -> String {
 }
 
 fn java_function_type(params: &[&str], ret: &str) -> String {
-    let mut args = params.to_vec();
-    args.push(ret);
-    format!("Shapes.Fn{}<{}>", params.len(), args.join(", "))
+    params.iter().rev().fold(ret.to_owned(), |result, param| {
+        format!("Shapes.Fn1<{param}, {result}>")
+    })
 }
 
-fn java_apply_poly_type(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> String {
-    const INTERFACE: &str = "Shapes.KioForall_Site_M_testapi_sarith__H_applyPoly_Binders_K1_B0_A0";
+fn java_forall_stage(identity: &str) -> String {
+    // Fixed independent protocol schemes, not compiler-emitted declarations.
+    let mut name = match identity {
+        "V1;e0;q*fb0;b0;" => "KioForall_Type_Fn_T0_T0",
+        "V1;e0;q*b0;" => "KioForall_Type_T0",
+        "V1;e2;**q*fpb0;fb0;b2;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Pair_T0_Fn_T0_T2_T1",
+        "V1;e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;" => "KioForall_Captures2_Arrow_Type_Type_Arrow_Type_Type_Type_Forall_Type_Fn_Pair_Fn_T1_T0_Apply1_T3_T1_Apply1_T2_T0",
+        "V1;e3;**>**q*fpfb3;b0;b2;a1;b1;b0;" => "KioForall_Captures3_Type_Type_Arrow_Type_Type_Type_Fn_Pair_Fn_T3_T0_T2_Apply1_T1_T0",
+        "V1;e1;*q*fb0;b1;" => "KioForall_Captures1_Type_Type_Fn_T0_T1",
+        "V1;e1;*q*b1;" => "KioForall_Captures1_Type_Type_T1",
+        "V1;e2;**q*fpb2;b0;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Pair_T2_T0_T1",
+        "V1;e1;*q*fq*fpb1;b0;b1;b1;" => "KioForall_Captures1_Type_Type_Fn_Forall_Type_Fn_Pair_T1_T0_T1_T1",
+        "V1;e2;**q*ffb0;b2;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Fn_T0_T2_T1",
+        _ => panic!("Java runner stage identity is not a declared protocol scheme: {identity}"),
+    }.to_owned();
+    if name.len() > 64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in identity.bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        name = format!("KioForall_H{hash:016x}");
+    }
+    format!("Shapes.{name}")
+}
+
+fn java_apply_poly_type(binding: &HostFnBinding, _host_types: &[HostTypeBinding]) -> String {
     assert_eq!(
         (binding.module, binding.leaf),
         ("testapi/arith", "apply_poly"),
         "the Java rank-N API oracle names its exact protocol site"
     );
-    let mut roots = host_types
-        .iter()
-        .filter(|host_type| host_type.type_arity == 0)
-        .collect::<Vec<_>>();
-    roots.sort_by_key(|host_type| (host_type.module, host_type.leaf));
-    let roots = roots
-        .into_iter()
-        .map(java_nullary_host_selection)
-        .collect::<Vec<_>>();
-    if roots.is_empty() {
-        INTERFACE.to_owned()
-    } else {
-        format!("{INTERFACE}<{}>", roots.join(", "))
-    }
+    java_forall_stage("V1;e0;q*fb0;b0;")
 }
 
 fn java_returned_forall_type(binding: &HostFnBinding) -> String {
-    const INTERFACE: &str = "Shapes.KioForall_Site_M_testapi_smain__H_produce_Binders_K1_B0_A0";
     assert_eq!(
         (binding.module, binding.leaf),
         ("testapi/main", "produce"),
         "the Java returned-forall oracle names its exact protocol site"
     );
-    INTERFACE.to_owned()
+    java_forall_stage("V1;e0;q*b0;")
 }
 
 /// The protocol's exact [`HostApi`], rendered for Java. Member identity,
@@ -795,7 +864,7 @@ fn java_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trait
             let bool_ = role(bool_);
             method(
                 vec![
-                    java_function_type(&[&i32, &string, &bool_], &i32),
+                    java_function_type(&[&java_product_type(&[&i32, &string, &bool_])], &i32),
                     i32.clone(),
                 ],
                 &i32,
@@ -815,10 +884,8 @@ fn java_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trait
             method(vec![i32.clone()], &java_function_type(&[&i32], &i32))
         }
         HostFnBodyKind::BoxMake { box_type } => {
-            let carrier = format!(
-                "{}<KioCallType_0>",
-                java_host_carrier(java_host_binding(box_type, host_types))
-            );
+            let carrier =
+                java_host_application(java_host_binding(box_type, host_types), "KioCallType_0");
             TraitMethod {
                 name: member,
                 type_params: vec!["KioCallType_0".to_owned()],
@@ -828,10 +895,8 @@ fn java_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trait
             }
         }
         HostFnBodyKind::BoxGet { box_type } => {
-            let carrier = format!(
-                "{}<KioCallType_0>",
-                java_host_carrier(java_host_binding(box_type, host_types))
-            );
+            let carrier =
+                java_host_application(java_host_binding(box_type, host_types), "KioCallType_0");
             TraitMethod {
                 name: member,
                 type_params: vec!["KioCallType_0".to_owned()],
@@ -1053,7 +1118,7 @@ fn java_canonical_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]
 }
 
 /// One `array_*` host fn's Java-typed method. The array slots use the exact
-/// declaration-owned `KioHostType_<declaration><T>` carrier and retain the
+/// declaration-owned `Apply1<KioHostTypeMk_<declaration>, T>` index and retain the
 /// element as a method type parameter; only the adapter's private body side
 /// is `Object`.
 fn java_array_method(
@@ -1071,10 +1136,7 @@ fn java_array_method(
         ret_type: ret,
         where_clause: String::new(),
     };
-    let arr = format!(
-        "{}<KioCallType_0>",
-        java_host_carrier(java_host_binding(array, host_types))
-    );
+    let arr = java_host_application(java_host_binding(array, host_types), "KioCallType_0");
     let index = index
         .map(|role| java_role_ref_type(role, host_types).to_owned())
         .unwrap_or_else(|| "Integer".to_owned());
@@ -1171,14 +1233,10 @@ fn build_driver_source(
     }
     for binding in contract.host_types {
         match binding.fixture {
-            HostTypeFixture::Array => out.push_str(&format!(
-                "record KioRunnerArray<T>(java.util.ArrayList<T> value) implements {}<T> {{}}\n",
-                java_host_carrier(binding)
-            )),
-            HostTypeFixture::Box => out.push_str(&format!(
-                "record KioRunnerBox<T>(T value) implements {}<T> {{}}\n",
-                java_host_carrier(binding)
-            )),
+            HostTypeFixture::Array => {
+                out.push_str("record KioRunnerArray<T>(java.util.ArrayList<T> value) {}\n")
+            }
+            HostTypeFixture::Box => out.push_str("record KioRunnerBox<T>(T value) {}\n"),
             _ => {}
         }
     }
@@ -1265,7 +1323,11 @@ fn render_host_binding_adapters(binding: &HostTypeBinding) -> String {
     let public = if parameters.is_empty() {
         java_nullary_host_selection(binding)
     } else {
-        format!("{}<{}>", java_host_carrier(binding), parameters.join(", "))
+        parameters
+            .iter()
+            .fold(java_host_marker(binding), |index, argument| {
+                format!("Shapes.Apply1<{index}, {argument}>")
+            })
     };
     let body = match binding.fixture {
         HostTypeFixture::Role(role) | HostTypeFixture::SelectedRole(role) => java_role_type(role),
@@ -1281,17 +1343,27 @@ fn render_host_binding_adapters(binding: &HostTypeBinding) -> String {
         }
         HostTypeFixture::Token => "(TokenValue) value".to_owned(),
         HostTypeFixture::Scalar => "(java.util.Map<String, Object>) value".to_owned(),
-        HostTypeFixture::Array => {
-            "new KioRunnerArray<>((java.util.ArrayList<T0>) value)".to_owned()
-        }
-        HostTypeFixture::Box => "new KioRunnerBox<>((T0) value)".to_owned(),
+        HostTypeFixture::Array => format!(
+            "{}.fromNative(new KioRunnerArray<>((java.util.ArrayList<T0>) value))",
+            java_host_storage(binding)
+        ),
+        HostTypeFixture::Box => format!(
+            "{}.fromNative(new KioRunnerBox<>((T0) value))",
+            java_host_storage(binding)
+        ),
     };
     let to_expression = match binding.fixture {
         HostTypeFixture::Role(_) => "value".to_owned(),
         HostTypeFixture::SelectedRole(_) => "value.value()".to_owned(),
         HostTypeFixture::Token | HostTypeFixture::Scalar => "value".to_owned(),
-        HostTypeFixture::Array => "((KioRunnerArray<T0>) value).value()".to_owned(),
-        HostTypeFixture::Box => "((KioRunnerBox<T0>) value).value()".to_owned(),
+        HostTypeFixture::Array => format!(
+            "((KioRunnerArray<T0>) {}.toNative(value)).value()",
+            java_host_storage(binding)
+        ),
+        HostTypeFixture::Box => format!(
+            "((KioRunnerBox<T0>) {}.toNative(value)).value()",
+            java_host_storage(binding)
+        ),
     };
     format!(
         "  @Override\n  @SuppressWarnings(\"unchecked\")\n  public {method_generics}{public} {from_body}({body} value) {{\n    return {from_expression};\n  }}\n\n  @Override\n  @SuppressWarnings(\"unchecked\")\n  public {method_generics}{body} {to_body}({public} value) {{\n    return {to_expression};\n  }}\n"
@@ -1407,28 +1479,28 @@ fn render_export_driver(
             "    System.out.println({main_ns}.applyTwice(n -> n + 3, 10));\n    var step = {main_ns}.makeStep(4);\n    System.out.println(step.apply(5));\n"
         ),
         ExportDriver::PositionalProductRoundtrip => format!(
-            "    var q = {main_ns}.makePair(7, \"hello\");\n    System.out.println(q._0() + \" \" + q._1());\n"
+            "    var q = {main_ns}.makePair(7, \"hello\");\n    System.out.println(q.left() + \" \" + q.right());\n"
         ),
         ExportDriver::MultilabelRoundtrip => {
             format!(
-                "    {main_ns}.say({main_ns}.{a}.mk(42), {main_ns}.{b}.mk(\"shown\\n\"));\n\
-                 \x20   var row = {main_ns}.echoPair({main_ns}.{a}.mk(88), {main_ns}.{b}.mk(\"99\"));\n\
-                 \x20   System.out.println({main_ns}.{a}.get(row.A()));\n\
-                 \x20   System.out.println({main_ns}.{b}.get(row.B()));\n\
+                "    {main_ns}.say(new Shapes.Product<>({main_ns}.{a}.mk(42), {main_ns}.{b}.mk(\"shown\\n\")));\n\
+                 \x20   var row = {main_ns}.echoPair(new Shapes.Product<>({main_ns}.{a}.mk(88), {main_ns}.{b}.mk(\"99\")));\n\
+                 \x20   System.out.println({main_ns}.{a}.get(row.left()));\n\
+                 \x20   System.out.println({main_ns}.{b}.get(row.right()));\n\
                  \x20   System.out.println({main_ns}.{a}.get({main_ns}.echoA({main_ns}.{a}.mk(111))));\n"
             )
         }
         ExportDriver::HostExistentialRoundtrip => {
             let packed = facade_type_selector("Packed");
+            let opener = java_forall_stage("V1;e2;**q*fpb0;fb0;b2;b1;");
             format!(r#"    int[] openings = {{0}};
-    host.observePacked = value -> {types_ns}.{packed}.readPacked(value, new Shapes.KioForall_Hbcaace3ea220c8d6<Integer, Integer>() {{
-      @Override public <U> Integer apply(U seed, Shapes.Fn1<U, Integer> step) {{
-        openings[0]++;
-        return step.apply(seed);
+    host.observePacked = value -> {types_ns}.{packed}.readPacked(value).<Integer>advance().apply(new {opener}<Integer, Integer>() {{
+      @Override public <U> Shapes.Fn1<Shapes.Product<U, Shapes.Fn1<U, Integer>>, Integer> advance() {{
+        return pair -> {{ openings[0]++; return pair.right().apply(pair.left()); }};
       }}
     }});
     var result = {main_ns}.exercise();
-    if (result._0() != 37 || result._1() != 83 || host.observations != 2 || openings[0] != 2) throw new AssertionError("existential host observations changed");
+    if (result.left() != 37 || result.right() != 83 || host.observations != 2 || openings[0] != 2) throw new AssertionError("existential host observations changed");
     System.out.println("existential host opening ok");
 "#)
         }
@@ -1436,30 +1508,35 @@ fn render_export_driver(
             let box_handle = format!("{types_ns}.{}", facade_type_selector("Box"));
             let functor_handle = format!("{types_ns}.{}", facade_type_selector("Functor"));
             let box_marker = java_newtype_constructor_marker("testapi/types", "Box", host_types);
-            let constructor_arguments = format!("Integer, String, {box_marker}");
+            let outer_stage = java_forall_stage("V1;e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;");
+            let inner_stage = java_forall_stage("V1;e3;**>**q*fpfb3;b0;b2;a1;b1;b0;");
             format!(
                 r#"    var integers = new java.util.ArrayList<Integer>();
     var texts = new java.util.ArrayList<String>();
     Shapes.Fn1<Integer, String> toText = value -> {{ integers.add(value); return "v:" + value; }};
     Shapes.Fn1<String, Integer> toInteger = value -> {{ texts.add(value); return value.length(); }};
     var dict = {main_ns}.echoFunctor({main_ns}.boxFunctor());
-    var first = {main_ns}.applyFunctor(dict, toText, {box_handle}.mkBox(42, new Shapes.Unit()));
-    if (!{box_handle}.unBox(first)._0().equals("v:42")) throw new AssertionError("functor integer input");
-    var second = {main_ns}.applyFunctor(dict, toInteger, {box_handle}.mkBox("apple", new Shapes.Unit()));
-    if ({box_handle}.unBox(second)._0() != 5) throw new AssertionError("functor text input");
+    var first = {main_ns}.applyFunctor(dict, toText, {box_handle}.mkBox(new Shapes.Product<>(42, new Shapes.Unit())));
+    if (!{box_handle}.unBox(first).left().equals("v:42")) throw new AssertionError("functor integer input");
+    var second = {main_ns}.applyFunctor(dict, toInteger, {box_handle}.mkBox(new Shapes.Product<>("apple", new Shapes.Unit())));
+    if ({box_handle}.unBox(second).left() != 5) throw new AssertionError("functor text input");
     var map = {functor_handle}.fmap(dict);
-    var third = map.<Integer, String>apply(toText, pkg.KioNewtypeApplication_testapi_stypes__Box_lift({box_handle}.mkBox(7, new Shapes.Unit())));
-    if (!{box_handle}.unBox(pkg.KioNewtypeApplication_testapi_stypes__Box_project(third))._0().equals("v:7")) throw new AssertionError("projected functor integer input");
-    var fourth = map.<String, Integer>apply(toInteger, pkg.KioNewtypeApplication_testapi_stypes__Box_lift({box_handle}.mkBox("pear", new Shapes.Unit())));
-    if ({box_handle}.unBox(pkg.KioNewtypeApplication_testapi_stypes__Box_project(fourth))._0() != 4) throw new AssertionError("projected functor text input");
-    var constructorMap = new Shapes.KioForall_H8a282f737720a2df<{constructor_arguments}>() {{
-      @Override public <A, B> Shapes.Apply1<{box_marker}, B> apply(Shapes.Fn1<A, B> step, Shapes.Apply1<{box_marker}, A> value) {{
-        return map.<A, B>apply(step, value);
+    var third = map.<Integer>advance().<String>advance().apply(new Shapes.Product<>(toText, {box_handle}.mkBox(new Shapes.Product<>(7, new Shapes.Unit()))));
+    if (!{box_handle}.unBox(third).left().equals("v:7")) throw new AssertionError("projected functor integer input");
+    var fourth = map.<String>advance().<Integer>advance().apply(new Shapes.Product<>(toInteger, {box_handle}.mkBox(new Shapes.Product<>("pear", new Shapes.Unit()))));
+    if ({box_handle}.unBox(fourth).left() != 4) throw new AssertionError("projected functor text input");
+    var constructorMap = new {outer_stage}<{box_marker}, {box_marker}>() {{
+      @Override public <A> {inner_stage}<A, Shapes.Apply1<{box_marker}, A>, {box_marker}> advance() {{
+        return new {inner_stage}<A, Shapes.Apply1<{box_marker}, A>, {box_marker}>() {{
+          @Override public <B> Shapes.Fn1<Shapes.Product<Shapes.Fn1<A, B>, Shapes.Apply1<{box_marker}, A>>, Shapes.Apply1<{box_marker}, B>> advance() {{
+            return pair -> map.<A>advance().<B>advance().apply(pair);
+          }}
+        }};
       }}
     }};
     var reconstructed = {functor_handle}.mkFunctor(constructorMap);
-    var fifth = {main_ns}.applyFunctor(reconstructed, toText, {box_handle}.mkBox(19, new Shapes.Unit()));
-    if (!{box_handle}.unBox(fifth)._0().equals("v:19")) throw new AssertionError("reconstructed functor integer input");
+    var fifth = {main_ns}.applyFunctor(reconstructed, toText, {box_handle}.mkBox(new Shapes.Product<>(19, new Shapes.Unit())));
+    if (!{box_handle}.unBox(fifth).left().equals("v:19")) throw new AssertionError("reconstructed functor integer input");
     if (!integers.equals(java.util.List.of(42, 7, 19)) || !texts.equals(java.util.List.of("apple", "pear"))) throw new AssertionError("functor callback events");
     System.out.println("functor dictionary ok");
 "#
@@ -1468,22 +1545,22 @@ fn render_export_driver(
         ExportDriver::CallableSlotsRoundtrip => format!(
             "    int[] calls = {{0, 0}};\n\
              \x20   Shapes.Fn1<Integer, Integer> productStep = value -> {{ calls[0]++; return value + 5; }};\n\
-             \x20   if ({main_ns}.applyProduct(productStep, 11) != 16) throw new AssertionError(\"product callback input\");\n\
-             \x20   var echoedProduct = {main_ns}.echoProduct(productStep, 17);\n\
-             \x20   if (echoedProduct._1() != 17 || echoedProduct._0().apply(echoedProduct._1()) != 22) throw new AssertionError(\"product callback roundtrip\");\n\
+             \x20   if ({main_ns}.applyProduct(new Shapes.Product<>(productStep, 11)) != 16) throw new AssertionError(\"product callback input\");\n\
+             \x20   var echoedProduct = {main_ns}.echoProduct(new Shapes.Product<>(productStep, 17));\n\
+             \x20   if (echoedProduct.right() != 17 || echoedProduct.left().apply(echoedProduct.right()) != 22) throw new AssertionError(\"product callback roundtrip\");\n\
              \x20   var madeProduct = {main_ns}.makeProduct(23);\n\
-             \x20   if (madeProduct._1() != 23 || madeProduct._0().apply(29) != 29) throw new AssertionError(\"package product callback\");\n\
+             \x20   if (madeProduct.right() != 23 || madeProduct.left().apply(29) != 29) throw new AssertionError(\"package product callback\");\n\
              \x20   Shapes.Fn1<Integer, Integer> sumStep = value -> {{ calls[1]++; return value + 7; }};\n\
-             \x20   Shapes.Sum<Shapes.Fn1<Integer, Integer>, Integer> sum = new Shapes.Sum__0<>(sumStep);\n\
+             \x20   Shapes.Sum<Shapes.Fn1<Integer, Integer>, Integer> sum = new Shapes.Left<>(sumStep);\n\
              \x20   if ({main_ns}.applySum(sum, 31) != 38) throw new AssertionError(\"sum callback input\");\n\
-             \x20   int echoedResult = {main_ns}.echoSum(sum).KioMatch(step -> step.apply(37), value -> {{ throw new AssertionError(\"callable sum arm changed\"); }});\n\
+             \x20   int echoedResult = switch ({main_ns}.echoSum(sum)) {{ case Shapes.Left(var step) -> step.apply(37); case Shapes.Right(var value) -> throw new AssertionError(\"callable sum arm changed\"); }};\n\
              \x20   if (echoedResult != 44) throw new AssertionError(\"sum callback roundtrip\");\n\
-             \x20   int madeResult = {main_ns}.makeCallableSum().KioMatch(step -> step.apply(41), value -> {{ throw new AssertionError(\"callable sum arm changed\"); }});\n\
+             \x20   int madeResult = switch ({main_ns}.makeCallableSum()) {{ case Shapes.Left(var step) -> step.apply(41); case Shapes.Right(var value) -> throw new AssertionError(\"callable sum arm changed\"); }};\n\
              \x20   if (madeResult != 41) throw new AssertionError(\"package sum callback\");\n\
              \x20   var scalar = {main_ns}.makeScalarSum(97);\n\
-             \x20   int scalarValue = scalar.KioMatch(step -> {{ throw new AssertionError(\"scalar sum arm changed\"); }}, value -> value);\n\
+             \x20   int scalarValue = switch (scalar) {{ case Shapes.Left(var step) -> throw new AssertionError(\"scalar sum arm changed\"); case Shapes.Right(var value) -> value; }};\n\
              \x20   if (scalarValue != 97 || {main_ns}.applySum(scalar, 43) != 97) throw new AssertionError(\"scalar sum input\");\n\
-             \x20   int echoedScalar = {main_ns}.echoSum(scalar).KioMatch(step -> {{ throw new AssertionError(\"scalar sum arm changed\"); }}, value -> value);\n\
+             \x20   int echoedScalar = switch ({main_ns}.echoSum(scalar)) {{ case Shapes.Left(var step) -> throw new AssertionError(\"scalar sum arm changed\"); case Shapes.Right(var value) -> value; }};\n\
              \x20   if (echoedScalar != 97 || calls[0] != 2 || calls[1] != 2) throw new AssertionError(\"callable observations changed\");\n\
              \x20   System.out.println(\"callable slots ok\");\n"
         ),
@@ -1495,18 +1572,28 @@ fn render_export_driver(
              \x20   for (double value : new double[] {{1.0000000000000002, -3.125}}) if ({main_ns}.echoF64(value) != value) throw new AssertionError(\"F64 payload changed\");\n\
              \x20   System.out.println(\"scalar payloads ok\");\n"
         ),
-        ExportDriver::HostOwnedRoundtrip => format!(
-            "    for (int value : new int[] {{7, 19}}) if ({main_ns}.echoToken(new TokenValue(value)).value() != value) throw new AssertionError(\"token payload changed\");\n\
-             \x20   var integer = {main_ns}.<Integer>echoBox(new KioRunnerBox<Integer>(42));\n\
-             \x20   if (((KioRunnerBox<Integer>) integer).value() != 42) throw new AssertionError(\"integer box payload changed\");\n\
-             \x20   var text = {main_ns}.<String>echoBox(new KioRunnerBox<String>(\"box-value\"));\n\
-             \x20   if (!((KioRunnerBox<String>) text).value().equals(\"box-value\")) throw new AssertionError(\"string box payload changed\");\n\
-             \x20   System.out.println(\"host-owned payloads ok\");\n"
-        ),
+        ExportDriver::HostOwnedRoundtrip => {
+            let box_storage = host_types
+                .iter()
+                .find(|binding| binding.module == "testapi" && binding.leaf == "Box")
+                .map(java_host_storage)
+                .expect("host-owned roundtrip requires the exact public Box binding");
+            format!(
+                "    for (int value : new int[] {{7, 19}}) if ({main_ns}.echoToken(new TokenValue(value)).value() != value) throw new AssertionError(\"token payload changed\");\n\
+                 \x20   var integer = {main_ns}.<Integer>echoBox({box_storage}.<Integer>fromNative(new KioRunnerBox<Integer>(42)));\n\
+                 \x20   if (((KioRunnerBox<Integer>) {box_storage}.toNative(integer)).value() != 42) throw new AssertionError(\"integer box payload changed\");\n\
+                 \x20   var text = {main_ns}.<String>echoBox({box_storage}.<String>fromNative(new KioRunnerBox<String>(\"box-value\")));\n\
+                 \x20   if (!((KioRunnerBox<String>) {box_storage}.toNative(text)).value().equals(\"box-value\")) throw new AssertionError(\"string box payload changed\");\n\
+                 \x20   System.out.println(\"host-owned payloads ok\");\n"
+            )
+        }
         ExportDriver::StructuralRoundtrip => {
-            let wide_sum = java_positional_shell("Sum", 10);
-            let sum_type = format!(
-                "Shapes.{wide_sum}<Byte, Short, Integer, Long, Short, Integer, Long, java.math.BigInteger, Boolean, String>"
+            let sum_type = java_structural_type(
+                "Sum",
+                &[
+                    "Byte", "Short", "Integer", "Long", "Short", "Integer", "Long",
+                    "java.math.BigInteger", "Boolean", "String",
+                ],
             );
             let samples = [
                 (0, "(byte) -101"),
@@ -1522,24 +1609,29 @@ fn render_export_driver(
                 (9, "\"sum-value\""),
             ]
             .into_iter()
-            .map(|(arm, value)| format!("new Shapes.{wide_sum}__{arm}<>({value})"))
+            .map(|(arm, value)| java_sum_value(10, arm, value))
             .collect::<Vec<_>>()
             .join(", ");
+            let payload_match = java_sum_payload_match("returned", 10);
             let roundtrip = format!(
                 r#"    for (var sample : java.util.List.<{sum_type}>of({samples})) {{
       var returned = {main_ns}.echoSum(sample);
-      String payload = returned.KioMatch(
-        value -> value.toString(), value -> value.toString(),
-        value -> value.toString(), value -> value.toString(),
-        value -> value.toString(), value -> value.toString(),
-        value -> value.toString(), value -> value.toString(),
-        value -> value.toString(), value -> value);
+      String payload = {payload_match};
       System.out.println({main_ns}.classify(returned) + " " + payload);
     }}
 "#
             );
+            let rotated_arg = java_product_value(
+                &(1..=12).map(|value| value.to_string()).collect::<Vec<_>>(),
+            );
+            let first = java_product_field("rotated", 0, 12);
+            let second = java_product_field("rotated", 1, 12);
+            let last = java_product_field("rotated", 11, 12);
+            let sum_first = java_sum_value(10, 0, "(byte) 1");
+            let sum_middle = java_sum_value(10, 4, "(short) 5");
+            let sum_last = java_sum_value(10, 9, "\"ten\"");
             let script = format!(
-                "    var q = {main_ns}.pairSwap(42, \"hello\");\n    System.out.println(q._0() + \" \" + q._1());\n    System.out.println({main_ns}.dispatchLeft(new Shapes.Sum__0<Integer, String>(7)));\n    System.out.println({main_ns}.dispatchLeft(new Shapes.Sum__1<Integer, String>(\"from-sum\")));\n    var rotated = {main_ns}.rotate(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12);\n    System.out.println(rotated._0() + \" \" + rotated._1() + \" \" + rotated._11());\n    System.out.println({main_ns}.classify(new Shapes.{wide_sum}__0<Byte, Short, Integer, Long, Short, Integer, Long, java.math.BigInteger, Boolean, String>((byte) 1)));\n    System.out.println({main_ns}.classify(new Shapes.{wide_sum}__4<Byte, Short, Integer, Long, Short, Integer, Long, java.math.BigInteger, Boolean, String>((short) 5)));\n    System.out.println({main_ns}.classify(new Shapes.{wide_sum}__9<Byte, Short, Integer, Long, Short, Integer, Long, java.math.BigInteger, Boolean, String>(\"ten\")));\n    System.out.println({main_ns}.classify({main_ns}.chooseFirst()));\n    System.out.println({main_ns}.classify({main_ns}.chooseMiddle()));\n    System.out.println({main_ns}.classify({main_ns}.chooseLast()));\n"
+                "    var q = {main_ns}.pairSwap(new Shapes.Product<>(42, \"hello\"));\n    System.out.println(q.left() + \" \" + q.right());\n    System.out.println({main_ns}.dispatchLeft(new Shapes.Left<Integer, String>(7)));\n    System.out.println({main_ns}.dispatchLeft(new Shapes.Right<Integer, String>(\"from-sum\")));\n    var rotated = {main_ns}.rotate({rotated_arg});\n    System.out.println({first} + \" \" + {second} + \" \" + {last});\n    System.out.println({main_ns}.classify({sum_first}));\n    System.out.println({main_ns}.classify({sum_middle}));\n    System.out.println({main_ns}.classify({sum_last}));\n    System.out.println({main_ns}.classify({main_ns}.chooseFirst()));\n    System.out.println({main_ns}.classify({main_ns}.chooseMiddle()));\n    System.out.println({main_ns}.classify({main_ns}.chooseLast()));\n"
             );
             script + &roundtrip
         }
@@ -1582,9 +1674,9 @@ fn render_export_driver(
     System.out.println("phantom-unit-called");
     var poly = {main_ns}.<String>poly();
     System.out.println("poly-returned");
-    String polyText = poly.<String>apply("poly-string");
+    String polyText = poly.<String>advance().apply("poly-string");
     System.out.println(polyText);
-    Integer polyInteger = poly.<Integer>apply(73);
+    Integer polyInteger = poly.<Integer>advance().apply(73);
     System.out.println(polyInteger);
 "#
         ),
@@ -1632,9 +1724,9 @@ fn render_export_driver(
             let b = module("b");
             format!(
                 "    var aValue = {a}.make();\n\
-                     {a}.consume(aValue._0(), aValue._1());\n\
+                     {a}.consume(aValue);\n\
                      var bValue = {b}.make();\n\
-                     {b}.consume(bValue._0(), bValue._1(), bValue._2());\n"
+                     {b}.consume(bValue);\n"
             )
         }
         ExportDriver::WideCallable => {
@@ -1646,8 +1738,9 @@ fn render_export_driver(
             let setters = (0..WIDE_CALLABLE_SLOT_COUNT)
                 .map(|index| format!("._{index}({index})"))
                 .collect::<String>();
+            let callback_args = java_staged_product_values(WIDE_CALLABLE_SLOT_COUNT);
             format!(
-                "    var wideArgs = Shapes.{shell}.<{types}>builder(){setters}.build();\n    var out = {main_ns}.select(wideArgs);\n    System.out.println(out._0());\n    System.out.println(out._1());\n    System.out.println(out._2());\n    var callbackOut = {main_ns}.makeSelect().apply(wideArgs);\n    System.out.println(callbackOut._0());\n    System.out.println(callbackOut._1());\n    System.out.println(callbackOut._2());\n"
+                "    var wideArgs = Shapes.{shell}.<{types}>builder(){setters}.build();\n    var out = {main_ns}.select(wideArgs);\n    System.out.println(out.left());\n    System.out.println(out.right().left());\n    System.out.println(out.right().right());\n{callback_args}    var callbackOut = {main_ns}.makeSelect().apply(callbackArg0);\n    System.out.println(callbackOut.left());\n    System.out.println(callbackOut.right().left());\n    System.out.println(callbackOut.right().right());\n"
             )
         }
         // `apply_via[K][R](f: K -> R, x: K) -> R` retains `K` and `R` as
@@ -1670,7 +1763,13 @@ fn render_export_driver(
              \x20   var projected = {main_ns}.{root}.readRoot(kept);\n\
              \x20   System.out.println({main_ns}.acceptPayload(projected));\n"
         ),
-        ExportDriver::NewtypeVisibilityFacade => format!(
+        ExportDriver::NewtypeVisibilityFacade => {
+            let unit_opener = java_forall_stage("V1;e1;*q*fb0;b1;");
+            let empty_opener = java_forall_stage("V1;e1;*q*b1;");
+            let spread = java_forall_stage("V1;e2;**q*fpb2;b0;b1;");
+            let spread_opener = java_forall_stage("V1;e1;*q*fq*fpb1;b0;b1;b1;");
+            let recursive_opener = java_forall_stage("V1;e2;**q*ffb0;b2;b1;");
+            format!(
             "    var a = {types_ns}.makeA(new {selected_i32}(11));\n\
              \x20   System.out.println({types_ns}.readA(a).value());\n\
              \x20   var b = {types_ns}.makeB(new {selected_i32}(22));\n\
@@ -1688,30 +1787,30 @@ fn render_export_driver(
              \x20   var rightShared = {right_ns}.make(new {selected_i32}(77));\n\
              \x20   var outR = {right_ns}.{shared}.readShared({right_ns}.{shared}.makeShared({right_ns}.read(rightShared)));\n\
              \x20   System.out.println(outR.value());\n\
-             \x20   var cp = {types_ns}.{constructor_pair}.makeConstructorPair(new {selected_i32}(81), new {selected_i32}(82));\n\
+             \x20   var cp = {types_ns}.{constructor_pair}.makeConstructorPair(new Shapes.Product<>(new {selected_i32}(81), new {selected_i32}(82)));\n\
              \x20   var cpOut = {types_ns}.readConstructorPairValue(cp);\n\
-             \x20   System.out.println(cpOut._0().value() + \" \" + cpOut._1().value());\n\
-             \x20   var pp = {types_ns}.makeProjectorPairValue(cpOut._0(), cpOut._1());\n\
+             \x20   System.out.println(cpOut.left().value() + \" \" + cpOut.right().value());\n\
+             \x20   var pp = {types_ns}.makeProjectorPairValue(cpOut);\n\
              \x20   var ppOut = {types_ns}.{projector_pair}.readProjectorPair(pp);\n\
-             \x20   System.out.println(ppOut._0().value() + \" \" + ppOut._1().value());\n\
+             \x20   System.out.println(ppOut.left().value() + \" \" + ppOut.right().value());\n\
              \x20   var cg = {types_ns}.{constructor_generic}.makeConstructorGeneric(85);\n\
              \x20   System.out.println({types_ns}.readConstructorGenericValue(cg));\n\
              \x20   var pg = {types_ns}.makeProjectorGenericValue(86);\n\
              \x20   System.out.println({types_ns}.{projector_generic}.readProjectorGeneric(pg));\n\
-             \x20   var packed = {types_ns}.{packed_function}.makePackedFunction((left, right) -> new {selected_i32}(left.value() + right.value()));\n\
-             \x20   System.out.println({types_ns}.{packed_function}.readPackedFunction(packed).apply(cpOut._0(), cpOut._1()).value());\n\
+             \x20   var packed = {types_ns}.{packed_function}.makePackedFunction(pair -> new {selected_i32}(pair.left().value() + pair.right().value()));\n\
+             \x20   System.out.println({types_ns}.{packed_function}.readPackedFunction(packed).apply(cpOut).value());\n\
              \x20   var existentialUnit = {types_ns}.makeExistentialUnitValue();\n\
              \x20   // Java lambdas cannot implement these generic SAM methods.\n\
-             \x20   var openUnit = new Shapes.KioForall_H8f1ae0de6f219de2<{selected_i32}, Object>() {{\n\
-             \x20     @Override public <KioPolyType_1> Object apply(KioPolyType_1 value) {{ return 89; }}\n\
+             \x20   var openUnit = new {unit_opener}<Object>() {{\n\
+             \x20     @Override public <U> Shapes.Fn1<U, Object> advance() {{ return value -> 89; }}\n\
              \x20   }};\n\
-             \x20   Object openedUnit = {types_ns}.{existential_unit}.readExistentialUnit(existentialUnit, openUnit);\n\
+             \x20   Object openedUnit = {types_ns}.{existential_unit}.readExistentialUnit(existentialUnit).<Object>advance().apply(openUnit);\n\
              \x20   System.out.println(openedUnit);\n\
              \x20   var existentialEmpty = {types_ns}.makeExistentialEmptyValue();\n\
-             \x20   var openEmpty = new Shapes.KioForall_H8b5e594f5b106bfa<{selected_i32}, Object>() {{\n\
-             \x20     @Override public <KioPolyType_1> Object apply() {{ return 90; }}\n\
+             \x20   var openEmpty = new {empty_opener}<Shapes.Fn1<Shapes.Unit, Object>>() {{\n\
+             \x20     @Override public <U> Shapes.Fn1<Shapes.Unit, Object> advance() {{ return _unit -> 90; }}\n\
              \x20   }};\n\
-             \x20   Object openedEmpty = {types_ns}.{existential_empty}.readExistentialEmpty(existentialEmpty, openEmpty);\n\
+             \x20   Object openedEmpty = {types_ns}.{existential_empty}.readExistentialEmpty(existentialEmpty).<Object>advance().apply(openEmpty);\n\
              \x20   System.out.println(openedEmpty);\n\
              \x20   var rbPayload = {types_ns}.recursiveBothBasePayload();\n\
              \x20   var rb = {types_ns}.{recursive_both}.makeRecursiveBoth(rbPayload);\n\
@@ -1722,29 +1821,30 @@ fn render_export_driver(
              \x20   var rp = {types_ns}.makeRecursiveProjectorBase();\n\
              \x20   System.out.println({types_ns}.recursiveProjectorPayloadIsBase({types_ns}.{recursive_projector}.readRecursiveProjector(rp)).value());\n\
              \x20   var inputs = new java.util.ArrayList<Integer>();\n\
-             \x20   var spread = new Shapes.KioForall_H69959d5bd62d04c2<{selected_i32}>() {{\n\
-             \x20     @Override public <A> {selected_i32} apply({selected_i32} seed, A other) {{ inputs.add(seed.value()); return new {selected_i32}(seed.value() + 3); }}\n\
+             \x20   var spread = new {spread}<{selected_i32}, {selected_i32}>() {{\n\
+             \x20     @Override public <A> Shapes.Fn1<Shapes.Product<{selected_i32}, A>, {selected_i32}> advance() {{ return pair -> {{ inputs.add(pair.left().value()); return new {selected_i32}(pair.left().value() + 3); }}; }}\n\
              \x20   }};\n\
              \x20   var constructed = {types_ns}.{constructor_spread}.makeConstructorSpread(spread);\n\
              \x20   if ({types_ns}.invokeConstructorSpreadI32(constructed, new {selected_i32}(101)).value() != 104 || {types_ns}.invokeConstructorSpreadUnit(constructed, new {selected_i32}(102)).value() != 105 || !inputs.equals(java.util.List.of(101, 102))) throw new AssertionError(\"constructor callback changed\");\n\
              \x20   var projected = {types_ns}.{projector_spread}.readProjectorSpread({types_ns}.makeProjectorSpreadValue());\n\
-             \x20   if (projected.<{selected_i32}>apply(new {selected_i32}(111), new {selected_i32}(1)).value() != 111 || projected.<Shapes.Unit>apply(new {selected_i32}(112), new Shapes.Unit()).value() != 112) throw new AssertionError(\"projector callback changed\");\n\
+             \x20   if (projected.<{selected_i32}>advance().apply(new Shapes.Product<>(new {selected_i32}(111), new {selected_i32}(1))).value() != 111 || projected.<Shapes.Unit>advance().apply(new Shapes.Product<>(new {selected_i32}(112), new Shapes.Unit())).value() != 112) throw new AssertionError(\"projector callback changed\");\n\
              \x20   int[] opens = {{0, 0}};\n\
-             \x20   var openSpread = new Shapes.KioForall_Hd3af5fb1043c9a70<{selected_i32}, Integer>() {{\n\
-             \x20     @Override public <U> Integer apply(Shapes.KioForall_H028c69c9119445cf<{selected_i32}, Integer, U> payload) {{ opens[0]++; return 91; }}\n\
+             \x20   var openSpread = new {spread_opener}<Integer>() {{\n\
+             \x20     @Override public <U> Shapes.Fn1<{spread}<U, U>, Integer> advance() {{ return payload -> {{ opens[0]++; return 91; }}; }}\n\
              \x20   }};\n\
-             \x20   var openRecursive = new Shapes.KioForall_H1ab7eb9ed8bafd42<{selected_i32}, Integer>() {{\n\
-             \x20     @Override public <U> Integer apply(Shapes.Fn1<U, {recursive_existential_type}> payload) {{ opens[1]++; return 92; }}\n\
+             \x20   var openRecursive = new {recursive_opener}<{recursive_existential_type}, Integer>() {{\n\
+             \x20     @Override public <U> Shapes.Fn1<Shapes.Fn1<U, {recursive_existential_type}>, Integer> advance() {{ return payload -> {{ opens[1]++; return 92; }}; }}\n\
              \x20   }};\n\
-             \x20   if ({types_ns}.{existential_spread}.readExistentialSpread({types_ns}.makeExistentialSpreadValue(), openSpread) != 91 || {types_ns}.{recursive_existential_function}.readRecursiveExistentialFunction({types_ns}.makeRecursiveExistentialFunctionValue(), openRecursive) != 92 || opens[0] != 1 || opens[1] != 1) throw new AssertionError(\"existential continuation count changed\");\n"
-        ),
+             \x20   if ({types_ns}.{existential_spread}.readExistentialSpread({types_ns}.makeExistentialSpreadValue()).<Integer>advance().apply(openSpread) != 91 || {types_ns}.{recursive_existential_function}.readRecursiveExistentialFunction({types_ns}.makeRecursiveExistentialFunctionValue()).<Integer>advance().apply(openRecursive) != 92 || opens[0] != 1 || opens[1] != 1) throw new AssertionError(\"existential continuation count changed\");\n"
+            )
+        }
         // `make(String, I32, I32) -> Outer`, where the exact public
         // `Inner` carrier wraps `(I32 & I32)` and the exact `Outer`
         // carrier wraps `(String & Inner)`. Type inference retains both
         // carrier identities while `var` lets the driver read the
         // generated generic structural payload without duplicating it.
         ExportDriver::NestedProductRoundtrip => format!(
-            "    var p = {main_ns}.make(\"nest\", 7, 9).value();\n    System.out.println(p._0());\n    var q = p.Inner().value();\n    System.out.println(q._0());\n    System.out.println(q._1());\n"
+            "    var p = {main_ns}.make(\"nest\", 7, 9).value();\n    System.out.println(p.left());\n    var q = p.right().value();\n    System.out.println(q.left());\n    System.out.println(q.right());\n"
         ),
         ExportDriver::PublicWordNames => format!(
             "    System.out.println({root_ns}.wordApi.readWord());\n\
@@ -1755,41 +1855,48 @@ fn render_export_driver(
              \x20   var boxed = {root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.wrapWord(55);\n\
              \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed));\n\
              \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.keepWord(66));\n\
-             \x20   var pair = {root_ns}.wordApi.keepPair({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.wrapWord(77), {root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.wrapWord(88));\n\
-             \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.unwrapWord(pair._WordBox__()));\n\
-             \x20   System.out.println({root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.unwrapWord(pair.KioQualified_wordApi_sotherNodes___uWordBox_u_u()));\n"
+             \x20   var pair = {root_ns}.wordApi.keepPair(new Shapes.Product<>({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.wrapWord(77), {root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.wrapWord(88)));\n\
+             \x20   System.out.println({root_ns}.wordApi.KioModule_wordNodes.KioType__uWordBox_u_u.unwrapWord(pair.left()));\n\
+             \x20   System.out.println({root_ns}.wordApi.KioModule_otherNodes.KioType__uWordBox_u_u.unwrapWord(pair.right()));\n"
         ),
         ExportDriver::CompoundInputOnce => format!(
             r#"    var direct = {main_ns}.direct();
-    System.out.println(direct._0());
-    System.out.println(direct._1());
-    var callback = {main_ns}.callback(() -> {{
+    System.out.println(direct.left());
+    System.out.println(direct.right());
+    var callback = {main_ns}.callback(_unit -> {{
       System.out.println("callback");
       return new Shapes.Product<>(9, "callback-value");
     }});
-    System.out.println(callback._0());
-    System.out.println(callback._1());
+    System.out.println(callback.left());
+    System.out.println(callback.right());
     var outer = {main_ns}.echoOuter({main_ns}.makeOuter("nest", 11, 13)).value();
-    System.out.println(outer._0());
-    System.out.println(outer.Inner().value()._0());
-    System.out.println(outer.Inner().value()._1());
+    System.out.println(outer.left());
+    System.out.println(outer.right().value().left());
+    System.out.println(outer.right().value().right());
     for (var choice : java.util.List.of({main_ns}.first(17), {main_ns}.middle(19, 23), {main_ns}.last("choice", 29, 31))) {{
-      {main_ns}.echoChoice(choice).value().KioMatch(
-        value -> {{ System.out.println(value); return 0; }},
-        value -> {{ System.out.println(value.value()._0()); System.out.println(value.value()._1()); return 0; }},
-        value -> {{
-          var product = value.value();
-          System.out.println(product._0());
-          System.out.println(product.Inner().value()._0());
-          System.out.println(product.Inner().value()._1());
-          return 0;
-        }});
+      switch ({main_ns}.echoChoice(choice).value()) {{
+        case Shapes.Left(var value) -> System.out.println(value);
+        case Shapes.Right(var remaining) -> {{
+          switch (remaining) {{
+            case Shapes.Left(var value) -> {{
+              System.out.println(value.value().left());
+              System.out.println(value.value().right());
+            }}
+            case Shapes.Right(var value) -> {{
+              var product = value.value();
+              System.out.println(product.left());
+              System.out.println(product.right().value().left());
+              System.out.println(product.right().value().right());
+            }}
+          }}
+        }}
+      }}
     }}
     System.out.println({main_ns}.echoText("atomic"));
 "#
         ),
         ExportDriver::TypeRoundtrip => format!(
-            "    var boxed = {types_ns}.{pair}.mkPair(\"export-type-left\", \"export-type-right\");\n    var outp = {types_ns}.{pair}.unPair(boxed);\n    System.out.println(outp._0());\n    System.out.println(outp._1());\n"
+            "    var boxed = {types_ns}.{pair}.mkPair(new Shapes.Product<>(\"export-type-left\", \"export-type-right\"));\n    var outp = {types_ns}.{pair}.unPair(boxed);\n    System.out.println(outp.left());\n    System.out.println(outp.right());\n"
         ),
         ExportDriver::Main { .. } | ExportDriver::Coexist => return None,
     };
@@ -1908,11 +2015,9 @@ fn render_method_sig(m: &TraitMethod) -> String {
     format!("{generics}{ret} {}({})", m.name, params.join(", "))
 }
 
-/// The two variant records of a generic sum shell: `<shell>__0` /
-/// `<shell>__1` (the positional members `_0` / `_1`).
-fn sum_ctors(shell: &str) -> (String, String) {
-    let base = shell.split_once('<').map_or(shell, |(base, _)| base);
-    (format!("{base}__0"), format!("{base}__1"))
+/// Every binary sum uses the same two canonical arm constructors.
+fn sum_ctors() -> (&'static str, &'static str) {
+    ("Shapes.Left", "Shapes.Right")
 }
 
 /// Render the Java body for `m`, honoring the protocol's bespoke host
@@ -1930,13 +2035,19 @@ fn render_java_body_for_binding(
     }
     match binding.body {
         HostFnBodyKind::CallStep { .. } => {
-            "return p0.apply(p1, \"compound-callback\", true);".to_owned()
+            "return p0.apply(new Shapes.Product<>(p1, new Shapes.Product<>(\"compound-callback\", true)));".to_owned()
         }
-        HostFnBodyKind::MakePairCallback { .. } => "return p0.apply(p1)._0();".to_owned(),
+        HostFnBodyKind::MakePairCallback { .. } => "return p0.apply(p1).left();".to_owned(),
         HostFnBodyKind::MakeStep { .. } => "return n -> n + p0;".to_owned(),
-        HostFnBodyKind::BoxMake { .. } => "return new KioRunnerBox<>(p0);".to_owned(),
-        HostFnBodyKind::BoxGet { .. } => {
-            "return ((KioRunnerBox<KioCallType_0>) p0).value();".to_owned()
+        HostFnBodyKind::BoxMake { box_type } => format!(
+            "return {}.fromNative(new KioRunnerBox<>(p0));",
+            java_host_storage(java_host_binding(box_type, host_types))
+        ),
+        HostFnBodyKind::BoxGet { box_type } => {
+            format!(
+                "return ((KioRunnerBox<KioCallType_0>) {}.toNative(p0)).value();",
+                java_host_storage(java_host_binding(box_type, host_types))
+            )
         }
         HostFnBodyKind::MakeToken { .. } => "return new TokenValue(p0);".to_owned(),
         HostFnBodyKind::TokenValue { .. } => "return p0.value();".to_owned(),
@@ -1954,7 +2065,7 @@ fn render_java_body_for_binding(
         }
         HostFnBodyKind::ReturnedForallUnit => {
             format!(
-                "if (returnedForallProduced) {{\n      System.out.println(\"throw\");\n      throw new IllegalStateException(\"produce failed\");\n    }}\n    returnedForallProduced = true;\n    System.out.println(\"produce\");\n    return new {}() {{\n      @Override\n      public <KioPolyType_0> KioPolyType_0 apply() {{\n        return null;\n      }}\n    }};",
+                "if (returnedForallProduced) {{\n      System.out.println(\"throw\");\n      throw new IllegalStateException(\"produce failed\");\n    }}\n    returnedForallProduced = true;\n    System.out.println(\"produce\");\n    return new {}() {{\n      @Override\n      @SuppressWarnings(\"unchecked\")\n      public <KioPolyType_0> KioPolyType_0 advance() {{\n        return (KioPolyType_0) new Shapes.Unit();\n      }}\n    }};",
                 m.ret_type
             )
         }
@@ -1962,7 +2073,9 @@ fn render_java_body_for_binding(
         HostFnBodyKind::StagedUnitCall => {
             "System.out.println(\"staged Unit host call\");".to_owned()
         }
-        HostFnBodyKind::ApplyPoly { .. } => "return p0.apply(\"rank-n\\n\");".to_owned(),
+        HostFnBodyKind::ApplyPoly { .. } => {
+            "return p0.<String>advance().apply(\"rank-n\\n\");".to_owned()
+        }
         HostFnBodyKind::MakePairStructural { .. } => {
             "return new Shapes.Product<>(p0, p1);".to_owned()
         }
@@ -1970,10 +2083,19 @@ fn render_java_body_for_binding(
             "System.out.println(\"direct\");\n    return new Shapes.Product<>(7, \"direct-value\");".to_owned()
         }
         HostFnBodyKind::SumToString { .. } => {
-            "return p0.KioMatch(String::valueOf, value -> value);".to_owned()
+            "return switch (p0) { case Shapes.Left(var value) -> String.valueOf(value); case Shapes.Right(var value) -> value; };".to_owned()
         }
         HostFnBodyKind::UnreachableI32Print { .. } => {
             "throw new RuntimeException(\"unreachable host function\");".to_owned()
+        }
+        HostFnBodyKind::Array { array, .. } => {
+            let CanonicalKind::Array(op) = kind else {
+                unreachable!("array host body must retain its canonical array operation")
+            };
+            render_array_body(
+                op,
+                &java_host_storage(java_host_binding(array, host_types)),
+            )
         }
         _ => render_java_body(kind, m),
     }
@@ -2072,7 +2194,7 @@ fn render_java_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
                 .to_owned()
         }
         CanonicalKind::ReadAsciiLine => {
-            let (v0, v1) = sum_ctors(&m.ret_type);
+            let (v0, v1) = sum_ctors();
             format!(
                 "String line = Driver.readLine();\n    if (line == null) {{\n      return new {v1}<>(new Shapes.Unit());\n    }}\n    for (int i = 0; i < line.length(); i++) {{\n      if (line.charAt(i) > 0x7f) {{\n        System.err.println(\"read_ascii_line: non-ASCII input\");\n        System.exit(1);\n      }}\n    }}\n    return new {v0}<>(line);"
             )
@@ -2083,7 +2205,7 @@ fn render_java_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
                 .to_owned()
         }
         CanonicalKind::StringCodeAt => {
-            let (v0, v1) = sum_ctors(&m.ret_type);
+            let (v0, v1) = sum_ctors();
             format!(
                 "if (p1 < 0 || p1 >= p0.length()) {{\n      return new {v1}<>(new Shapes.Unit());\n    }}\n    return new {v0}<>((int) p0.charAt(p1));"
             )
@@ -2091,7 +2213,7 @@ fn render_java_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
         CanonicalKind::StringConcat => "return p0 + p1;".to_owned(),
         CanonicalKind::StringEq => "return p0.equals(p1);".to_owned(),
         CanonicalKind::StringToInt => {
-            let (v0, v1) = sum_ctors(&m.ret_type);
+            let (v0, v1) = sum_ctors();
             format!(
                 "if (!p0.matches(\"^[+-]?\\\\d+$\")) {{\n      return new {v1}<>(new Shapes.Unit());\n    }}\n    java.math.BigInteger n = new java.math.BigInteger(p0);\n    if (n.bitLength() > 31) {{\n      return new {v1}<>(new Shapes.Unit());\n    }}\n    return new {v0}<>(n.intValue());"
             )
@@ -2105,7 +2227,7 @@ fn render_java_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
         CanonicalKind::FloatArith { op, .. } => float_arith_body(op),
         CanonicalKind::Cmp { cmp, kind } => cmp_body(cmp, kind),
         CanonicalKind::Loop => render_loop_body(m),
-        CanonicalKind::Array(op) => render_array_body(op, m),
+        CanonicalKind::Array(_) => unreachable!("array bodies need their exact host declaration"),
         CanonicalKind::MakeScalar => {
             "java.util.Map<String, Object> s = new java.util.HashMap<>();\n    switch (p1) {\n      case \"I32\", \"Int\" -> { s.put(\"k\", \"i32\"); s.put(\"v\", Integer.parseInt(p0)); }\n      case \"F64\", \"F32\" -> { s.put(\"k\", \"f64\"); s.put(\"v\", Double.valueOf(p0)); }\n      case \"String\", \"Str\" -> { s.put(\"k\", \"str\"); s.put(\"v\", p0); }\n      case \"Bool\" -> { s.put(\"k\", \"bool\"); s.put(\"v\", p0.equals(\"t\")); }\n      default -> throw new RuntimeException(\"make_scalar: unknown representation key \" + p1);\n    }\n    return s;"
                 .to_owned()
@@ -2114,7 +2236,7 @@ fn render_java_body(kind: &CanonicalKind, m: &TraitMethod) -> String {
             "java.util.Map<String, Object> s = new java.util.HashMap<>();\n    s.put(\"k\", \"{kind}\");\n    s.put(\"v\", p0);\n    return s;"
         ),
         CanonicalKind::ScalarAs { kind } => {
-            let (v0, v1) = sum_ctors(&m.ret_type);
+            let (v0, v1) = sum_ctors();
             let project = match kind.as_str() {
                 "i32" => "((Number) __m.get(\"v\")).intValue()",
                 "f64" => "((Number) __m.get(\"v\")).doubleValue()",
@@ -2248,32 +2370,44 @@ fn render_loop_body(m: &TraitMethod) -> String {
         .unwrap_or(&m.ret_type)
         .to_owned();
     format!(
-        "class LoopState {{\n      s state = p1;\n      r result;\n      boolean done;\n      void accept({cbret} next) {{\n        next.<Shapes.Unit>KioMatch(\n            value -> {{ state = value; return new Shapes.Unit(); }},\n            value -> {{ result = value; done = true; return new Shapes.Unit(); }});\n      }}\n    }}\n    LoopState state = new LoopState();\n    while (!state.done) {{\n      state.accept(p0.apply(state.state));\n    }}\n    return state.result;"
+        "class LoopState {{\n      s state = p1;\n      r result;\n      boolean done;\n      void accept({cbret} next) {{\n        switch (next) {{\n          case Shapes.Left(var value) -> state = value;\n          case Shapes.Right(var value) -> {{ result = value; done = true; }}\n        }}\n      }}\n    }}\n    LoopState state = new LoopState();\n    while (!state.done) {{\n      state.accept(p0.apply(state.state));\n    }}\n    return state.result;"
     )
 }
 
-fn render_array_body(op: &ArrayOp, m: &TraitMethod) -> String {
+fn render_array_body(op: &ArrayOp, storage: &str) -> String {
     // The external host owns the concrete carrier. Its generated exact-QTN
     // marker stays public while this witness unwraps only its own carrier.
-    let recv = "KioRunnerArray<KioCallType_0> carrier = (KioRunnerArray<KioCallType_0>) p0;\n    java.util.ArrayList<KioCallType_0> a = carrier.value();\n    ";
+    let recv = format!(
+        "KioRunnerArray<KioCallType_0> carrier = (KioRunnerArray<KioCallType_0>) {storage}.toNative(p0);\n    java.util.ArrayList<KioCallType_0> a = carrier.value();\n    "
+    );
     match op {
-        ArrayOp::MakeEmpty => {
-            "return new KioRunnerArray<>(new java.util.ArrayList<>());".to_owned()
-        }
-        ArrayOp::MakeFilled => "if (p0 < 0) {\n      throw new RuntimeException(\"array_make_filled: negative size \" + p0);\n    }\n    java.util.ArrayList<KioCallType_0> a = new java.util.ArrayList<>();\n    for (int i = 0; i < p0; i++) {\n      a.add(p1);\n    }\n    return new KioRunnerArray<>(a);".to_owned(),
+        ArrayOp::MakeEmpty => format!(
+            "return {storage}.fromNative(new KioRunnerArray<>(new java.util.ArrayList<>()));"
+        ),
+        ArrayOp::MakeFilled => format!(
+            "if (p0 < 0) {{\n      throw new RuntimeException(\"array_make_filled: negative size \" + p0);\n    }}\n    java.util.ArrayList<KioCallType_0> a = new java.util.ArrayList<>();\n    for (int i = 0; i < p0; i++) {{\n      a.add(p1);\n    }}\n    return {storage}.fromNative(new KioRunnerArray<>(a));"
+        ),
         ArrayOp::Len => format!("{recv}return a.size();"),
-        ArrayOp::Get => format!("{recv}if (p1 < 0 || p1 >= a.size()) {{\n      throw new RuntimeException(\"array_get: index \" + p1 + \" out of bounds (len \" + a.size() + \")\");\n    }}\n    return a.get(p1);"),
-        ArrayOp::Set => format!("{recv}if (p1 < 0 || p1 >= a.size()) {{\n      throw new RuntimeException(\"array_set: index \" + p1 + \" out of bounds (len \" + a.size() + \")\");\n    }}\n    a.set(p1, p2);"),
+        ArrayOp::Get => format!(
+            "{recv}if (p1 < 0 || p1 >= a.size()) {{\n      throw new RuntimeException(\"array_get: index \" + p1 + \" out of bounds (len \" + a.size() + \")\");\n    }}\n    return a.get(p1);"
+        ),
+        ArrayOp::Set => format!(
+            "{recv}if (p1 < 0 || p1 >= a.size()) {{\n      throw new RuntimeException(\"array_set: index \" + p1 + \" out of bounds (len \" + a.size() + \")\");\n    }}\n    a.set(p1, p2);"
+        ),
         ArrayOp::Push => format!("{recv}a.add(p1);"),
         ArrayOp::PopBack => {
-            let (v0, v1) = sum_ctors(&m.ret_type);
-            format!("{recv}if (a.isEmpty()) {{\n      return new {v1}<>(new Shapes.Unit());\n    }}\n    return new {v0}<>(a.remove(a.size() - 1));")
+            let (v0, v1) = sum_ctors();
+            format!(
+                "{recv}if (a.isEmpty()) {{\n      return new {v1}<>(new Shapes.Unit());\n    }}\n    return new {v0}<>(a.remove(a.size() - 1));"
+            )
         }
-        ArrayOp::Swap => format!("{recv}if (p1 < 0 || p1 >= a.size() || p2 < 0 || p2 >= a.size()) {{\n      throw new RuntimeException(\"array_swap: index out of bounds (len \" + a.size() + \")\");\n    }}\n    KioCallType_0 tmp = a.get(p1);\n    a.set(p1, a.get(p2));\n    a.set(p2, tmp);"),
+        ArrayOp::Swap => format!(
+            "{recv}if (p1 < 0 || p1 >= a.size() || p2 < 0 || p2 >= a.size()) {{\n      throw new RuntimeException(\"array_swap: index out of bounds (len \" + a.size() + \")\");\n    }}\n    KioCallType_0 tmp = a.get(p1);\n    a.set(p1, a.get(p2));\n    a.set(p2, tmp);"
+        ),
         ArrayOp::Clear => format!("{recv}a.clear();"),
-        ArrayOp::Clone => {
-            format!("{recv}return new KioRunnerArray<>(new java.util.ArrayList<>(a));")
-        }
+        ArrayOp::Clone => format!(
+            "{recv}return {storage}.fromNative(new KioRunnerArray<>(new java.util.ArrayList<>(a)));"
+        ),
     }
 }
 
@@ -2337,12 +2471,23 @@ mod tests {
             )
         );
         assert_eq!(
-            java_bare_shell("Product", &["A", "B"]),
-            "KioFacade_V1_Product_K2_B1_AB1_B"
+            java_structural_type("Product", &["A", "B", "C"]),
+            "Shapes.Product<A, Shapes.Product<B, C>>"
         );
         assert_eq!(
-            java_positional_shell("Sum", 10),
-            "KioFacade_V1_Sum_Positional_K10"
+            java_sum_value(3, 2, "value"),
+            "new Shapes.Right<>(new Shapes.Right<>(value))"
+        );
+        assert_eq!(
+            java_sum_payload_match("value", 2),
+            "switch (value) { case Shapes.Left(var item) -> item.toString(); case Shapes.Right(var item) -> item; }"
+        );
+        assert_eq!(java_product_field("value", 0, 3), "value.left()");
+        assert_eq!(java_product_field("value", 1, 3), "value.right().left()");
+        assert_eq!(java_product_field("value", 2, 3), "value.right().right()");
+        assert_eq!(
+            java_staged_product_values(3),
+            "    Integer callbackArg2 = 2;\n    var callbackArg1 = new Shapes.Product<>(1, callbackArg2);\n    var callbackArg0 = new Shapes.Product<>(0, callbackArg1);\n"
         );
     }
 
@@ -2360,8 +2505,8 @@ mod tests {
             "KioModule_wordNodes.KioType__uWordBox_u_u.unwrapWord(boxed)",
             "KioModule_wordNodes.keepWord(66)",
             "wordApi.keepPair(",
-            "unwrapWord(pair._WordBox__())",
-            "unwrapWord(pair.KioQualified_wordApi_sotherNodes___uWordBox_u_u())",
+            "unwrapWord(pair.left())",
+            "unwrapWord(pair.right())",
         ] {
             assert!(body.contains(literal), "{body}");
         }
@@ -2377,32 +2522,31 @@ mod tests {
             contract.host_types,
         )
         .expect("newtype visibility driver");
-        let selected_i32 = "KioSelected_testapi__I32";
+        let unit_opener = java_forall_stage("V1;e1;*q*fb0;b1;");
+        let empty_opener = java_forall_stage("V1;e1;*q*b1;");
 
         assert!(
-            body.contains(&format!(
-                "new Shapes.KioForall_H8f1ae0de6f219de2<{selected_i32}, Object>()"
-            )),
+            body.contains(&format!("new {unit_opener}<Object>()")),
             "{body}"
         );
         assert!(
             body.contains(
-                "@Override public <KioPolyType_1> Object apply(KioPolyType_1 value) { return 89; }"
+                "@Override public <U> Shapes.Fn1<U, Object> advance() { return value -> 89; }"
             ),
             "{body}"
         );
         assert!(
             body.contains(&format!(
-                "new Shapes.KioForall_H8b5e594f5b106bfa<{selected_i32}, Object>()"
+                "new {empty_opener}<Shapes.Fn1<Shapes.Unit, Object>>()"
             )),
             "{body}"
         );
         assert!(
-            body.contains("@Override public <KioPolyType_1> Object apply() { return 90; }"),
+            body.contains("@Override public <U> Shapes.Fn1<Shapes.Unit, Object> advance() { return _unit -> 90; }"),
             "{body}"
         );
-        assert!(!body.contains("value -> 89"), "{body}");
-        assert!(!body.contains("() -> 90"), "{body}");
+        assert!(!body.contains("var openUnit = value ->"), "{body}");
+        assert!(!body.contains("var openEmpty = _unit ->"), "{body}");
     }
 
     #[test]
@@ -2431,10 +2575,19 @@ mod tests {
             .find(|binding| matches!(binding.body, HostFnBodyKind::RoundFunctor))
             .expect("round-functor binding");
         let method = java_method(binding, contract.host_types);
-        let expected = "Shapes.KioNewtype_testapi_stypes__Functor<String, Shapes.KioNewtypeMk_testapi_stypes__Box<String>>";
+        let expected = "Shapes.Apply1<Shapes.KioNewtypeMk_testapi_stypes__Functor<String>, Shapes.KioNewtypeMk_testapi_stypes__Box<String>>";
 
         assert_eq!(method.arg_types, [expected]);
         assert_eq!(method.ret_type, expected);
+    }
+
+    #[test]
+    fn forall_stage_names_bound_only_long_full_identities() {
+        assert_eq!(java_forall_stage("V1;e0;q*b0;"), "Shapes.KioForall_Type_T0");
+        assert_eq!(
+            java_forall_stage("V1;e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;"),
+            "Shapes.KioForall_Hd1831f1e4f3eacb4"
+        );
     }
 
     #[test]
@@ -2447,10 +2600,7 @@ mod tests {
             .expect("apply-poly binding");
         let method = java_method(binding, contract.host_types);
 
-        assert_eq!(
-            method.arg_types,
-            ["Shapes.KioForall_Site_M_testapi_sarith__H_applyPoly_Binders_K1_B0_A0<String>"]
-        );
+        assert_eq!(method.arg_types, [java_forall_stage("V1;e0;q*fb0;b0;")]);
         assert_eq!(method.ret_type, "String");
         assert!(!method.arg_types[0].contains("Object"));
     }
@@ -2464,7 +2614,7 @@ mod tests {
             .find(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit))
             .expect("returned-forall binding");
         let method = java_method(binding, contract.host_types);
-        let expected = "Shapes.KioForall_Site_M_testapi_smain__H_produce_Binders_K1_B0_A0";
+        let expected = java_forall_stage("V1;e0;q*b0;");
 
         assert_eq!(method.ret_type, expected);
         let body = render_java_body_for_binding(
@@ -2475,7 +2625,11 @@ mod tests {
         );
         assert!(body.contains(&format!("return new {expected}()")), "{body}");
         assert!(
-            body.contains("public <KioPolyType_0> KioPolyType_0 apply()"),
+            body.contains("public <KioPolyType_0> KioPolyType_0 advance()"),
+            "{body}"
+        );
+        assert!(
+            body.contains("return (KioPolyType_0) new Shapes.Unit();"),
             "{body}"
         );
     }
@@ -2506,7 +2660,7 @@ mod tests {
     }
 
     #[test]
-    fn export_drivers_use_generic_curried_functions_and_flatten_products() {
+    fn export_drivers_use_generic_curried_functions_and_grouped_products() {
         let nested_contract = RunnerProtocol::NestedCurriedRoundtrip.contract();
         let nested = render_export_driver(
             ExportDriver::NestedCurriedRoundtrip,
@@ -2528,14 +2682,8 @@ mod tests {
             alias_contract.host_types,
         )
         .expect("module-alias driver");
-        assert!(
-            alias.contains("consume(aValue._0(), aValue._1())"),
-            "{alias}"
-        );
-        assert!(
-            alias.contains("consume(bValue._0(), bValue._1(), bValue._2())"),
-            "{alias}"
-        );
+        assert!(alias.contains("consume(aValue)"), "{alias}");
+        assert!(alias.contains("consume(bValue)"), "{alias}");
     }
 
     #[test]

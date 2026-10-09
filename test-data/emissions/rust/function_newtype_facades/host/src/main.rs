@@ -6,8 +6,7 @@ use ffi_rust_function_newtype_facades::ffi::exp::main__Polymorphic::{
 };
 use ffi_rust_function_newtype_facades::ffi::exp::main__RecursiveExistentialFunction::readRecursiveExistentialFunction_continuation_impl as ProjectExistential;
 use ffi_rust_function_newtype_facades::ffi::exp::main__RecursivePoly::{
-    makeRecursivePoly_arg0_impl as MakeRecursive,
-    readRecursivePoly_ret_impl as ProjectRecursive,
+    makeRecursivePoly_arg0_impl as MakeRecursive, readRecursivePoly_ret_impl as ProjectRecursive,
 };
 use ffi_rust_function_newtype_facades::host::FfiRustFunctionNewtypeFacadesHost;
 use ffi_rust_function_newtype_facades::shapes::nominal::main::{
@@ -15,9 +14,10 @@ use ffi_rust_function_newtype_facades::shapes::nominal::main::{
     Polymorphic, RecursiveExistentialFunction, RecursivePoly,
 };
 use ffi_rust_function_newtype_facades::shapes::{
-    KioApplied1, KioApply1, KioFn1, KioNative, KioNewtypeConstructor_main__Identity_P0,
-    KioNewtypeConstructor_main__List_P0, KioNewtypeMarker_main__RecursiveExistentialFunction,
-    KioStoredValue, KioType, KioTypeConstructor1, KioUnit, KioValue, Product,
+    KioApplied1, KioApply1, KioFn1, KioHostType_main__Box, KioHostTypeMarker_main__I32, KioNative,
+    KioNewtypeConstructor_main__Identity_P0, KioNewtypeConstructor_main__List_P0,
+    KioNewtypeMarker_main__RecursiveExistentialFunction, KioProduct, KioStoredValue, KioSum,
+    KioType, KioTypeConstructor1, KioUnit, KioValue, Product, Sum,
 };
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -25,8 +25,35 @@ use std::rc::Rc;
 #[derive(Clone)]
 struct Host;
 
+#[derive(Clone)]
+struct BoxStorage(Rc<KioStoredValue>);
+
+impl PartialEq for BoxStorage {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
 impl FfiRustFunctionNewtypeFacadesHost for Host {
     type main__I32 = i32;
+    type main__BoxStorage = BoxStorage;
+
+    fn main__echoBox<T: KioType>(
+        &self,
+        value: KioHostType_main__Box<Self, T>,
+    ) -> KioHostType_main__Box<Self, T> {
+        value
+    }
+}
+
+fn boxed<T: KioType>(value: T::Facade) -> KioHostType_main__Box<Host, T> {
+    KioHostType_main__Box::from_storage(BoxStorage(Rc::new(
+        KioValue::<T>::pack(value).into_stored(),
+    )))
+}
+
+fn unbox<T: KioType>(value: KioHostType_main__Box<Host, T>) -> T::Facade {
+    KioValue::<T>::from_stored(value.storage().0.as_ref().clone()).unpack()
 }
 
 type IdentityConstructor = KioNewtypeConstructor_main__Identity_P0<Host>;
@@ -175,6 +202,41 @@ impl ProjectExistential<Host, KioNative<i32>> for Return42 {
 }
 
 fn main() {
+    let package = ffi_rust_function_newtype_facades::create_ffiRustFunctionNewtypeFacades(Host);
+    type Atom = KioHostTypeMarker_main__I32<Host>;
+    type TailProduct = KioProduct<Atom, Atom>;
+    type WholeProduct = KioProduct<Atom, TailProduct>;
+    let input = boxed::<WholeProduct>(Product {
+        _0: 11,
+        _1: Product { _0: 22, _1: 33 },
+    });
+    let direct = package.main.concreteProductBox(input);
+    let generic: KioHostType_main__Box<Host, WholeProduct> =
+        package.main.productBox::<Atom, TailProduct>(direct);
+    let output = unbox::<WholeProduct>(package.main.wholeBox::<WholeProduct>(generic));
+    assert_eq!((output._0, output._1._0, output._1._1), (11, 22, 33));
+
+    type TailSum = KioSum<Atom, Atom>;
+    type WholeSum = KioSum<Atom, TailSum>;
+    for (arm, value) in [
+        Sum::Left(11),
+        Sum::Right(Sum::Left(22)),
+        Sum::Right(Sum::Right(33)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let input = boxed::<WholeSum>(value);
+        let generic: KioHostType_main__Box<Host, WholeSum> =
+            package.main.sumBox::<Atom, TailSum>(input);
+        let output = unbox::<WholeSum>(package.main.concreteSumBox(generic));
+        let observed = match output {
+            Sum::Left(n) => (0, n),
+            Sum::Right(Sum::Left(n)) => (1, n),
+            Sum::Right(Sum::Right(n)) => (2, n),
+        };
+        assert_eq!(observed, (arm, [11, 22, 33][arm]));
+    }
     let packed = PackedTriple::<Host>::makePackedTriple(
         ffi::exp::main__PackedTriple::makePackedTriple_arg0::<Host>::new(|args| {
             args._0 + args._1._0 + args._1._1
@@ -190,12 +252,11 @@ fn main() {
     );
 
     let higher_parameter = HigherOrderParameter::<Host>::makeHigherOrderParameter(
-        ffi::exp::main__HigherOrderParameter::makeHigherOrderParameter_arg0::<Host>::new(
-            |step| step.call(41),
-        ),
+        ffi::exp::main__HigherOrderParameter::makeHigherOrderParameter_arg0::<Host>::new(|step| {
+            step.call(41)
+        }),
     );
-    let higher_parameter =
-        HigherOrderParameter::<Host>::readHigherOrderParameter(higher_parameter);
+    let higher_parameter = HigherOrderParameter::<Host>::readHigherOrderParameter(higher_parameter);
     assert_eq!(higher_parameter.call(KioFn1::new(|value| value + 1)), 42);
 
     let higher_return = HigherOrderReturn::<Host>::makeHigherOrderReturn(
@@ -269,25 +330,54 @@ fn main() {
     let output = <NativeOption as KioTypeConstructor1>::project::<KioNative<String>>(output);
     assert_eq!(output, Some("42".to_owned()));
 
+    let compound = <NativeOption as KioTypeConstructor1>::lift::<WholeProduct>(Some(Product {
+        _0: 11,
+        _1: Product { _0: 22, _1: 33 },
+    }));
+    let compound = <_ as ProjectPolymorphic<Host, NativeOption>>::apply::<WholeProduct, WholeProduct>(
+        &polymorphic,
+        Product {
+            _0: KioFn1::new(|value| value),
+            _1: compound,
+        },
+    );
+    let compound =
+        <NativeOption as KioTypeConstructor1>::project::<WholeProduct>(compound).unwrap();
+    assert_eq!((compound._0, compound._1._0, compound._1._1), (11, 22, 33));
+    let last =
+        <NativeOption as KioTypeConstructor1>::lift::<WholeSum>(Some(Sum::Right(Sum::Right(33))));
+    let last = <_ as ProjectPolymorphic<Host, NativeOption>>::apply::<WholeSum, WholeSum>(
+        &polymorphic,
+        Product {
+            _0: KioFn1::new(|value| value),
+            _1: last,
+        },
+    );
+    assert!(matches!(
+        <NativeOption as KioTypeConstructor1>::project::<WholeSum>(last),
+        Some(Sum::Right(Sum::Right(33)))
+    ));
+
     let value = KioValue::<KioNative<i32>>::pack(42_i32).into_stored();
     assert_eq!(
         KioValue::<KioNative<i32>>::from_stored(value.clone()).unpack(),
         42_i32,
     );
-    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        KioValue::<KioNative<String>>::from_stored(value).unpack()
-    }))
-    .is_err());
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            KioValue::<KioNative<String>>::from_stored(value).unpack()
+        }))
+        .is_err()
+    );
 
     let recursive_slot = Rc::new(RefCell::new(None));
     let recursive_calls = Rc::new(Cell::new(0));
-    let recursive =
-        Recursive::makeRecursivePoly(ffi::exp::main__RecursivePoly::makeRecursivePoly_arg0::<
-            Host,
-        >::new(RecursiveLoop {
+    let recursive = Recursive::makeRecursivePoly(
+        ffi::exp::main__RecursivePoly::makeRecursivePoly_arg0::<Host>::new(RecursiveLoop {
             value: recursive_slot.clone(),
             calls: recursive_calls.clone(),
-        }));
+        }),
+    );
     recursive_slot.borrow_mut().replace(recursive.clone());
     let recursive = Recursive::readRecursivePoly(recursive);
     let recursive = <_ as ProjectRecursive<Host>>::apply::<KioNative<i32>>(&recursive, 42_i32);
@@ -300,19 +390,18 @@ fn main() {
     let existential_calls = Rc::new(Cell::new(0));
     let slot = existential_slot.clone();
     let calls = existential_calls.clone();
-    let recursive_existential =
-        RecursiveExistential::makeRecursiveExistentialFunction(KioFn1::<
-            KioNative<i32>,
-            KioNewtypeMarker_main__RecursiveExistentialFunction<Host>,
-        >::new(
-            move |_value: i32| {
-                calls.set(calls.get() + 1);
-                slot.borrow()
-                    .as_ref()
-                    .cloned()
-                    .expect("recursive existential value initialized")
-            },
-        ));
+    let recursive_existential = RecursiveExistential::makeRecursiveExistentialFunction(KioFn1::<
+        KioNative<i32>,
+        KioNewtypeMarker_main__RecursiveExistentialFunction<Host>,
+    >::new(
+        move |_value: i32| {
+            calls.set(calls.get() + 1);
+            slot.borrow()
+                .as_ref()
+                .cloned()
+                .expect("recursive existential value initialized")
+        },
+    ));
     existential_slot
         .borrow_mut()
         .replace(recursive_existential.clone());

@@ -7,9 +7,8 @@
 //! multi-file Go package (`pkg.go`, `host.go`, `shapes.go`, `ffi.go`,
 //! `kio_runtime.go`) whose `package` clause is the package's namespace
 //! (default derivation and the `namespace` key:
-//! [`crate::backends::namespace`]) and which exposes a branded
-//! `Create<Handle>(host)` factory, `<Handle>` being the namespace's
-//! PascalCase.
+//! [`crate::backends::namespace`]) and exposes the package-qualified
+//! `New(host)` factory, `Package` handle, and `Host` interface.
 //!
 //! Go's body is **erased** — every value flows as `interface{}` /
 //! `[]any`, the JS dynamic body's shape on a statically-typed host.

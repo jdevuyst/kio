@@ -1,0 +1,13 @@
+package opaque_substitution;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  api
+}

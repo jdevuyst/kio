@@ -7,7 +7,7 @@ Status policy: [`README.md` § Host API stability](README.md#host-api-stability)
 > **Known host-source compatibility caveat.** Removing a nullary bridged
 > `host type` removes its package-root generic argument, so an existing host
 > must drop that type selection from every package-root-generic spelling,
-> including `<Handle>Host[...]`, `<Handle>[...]`, `Create<Handle>[...]`, and
+> including `Host[...]`, `Package[...]`, `New[...]`, and
 > any `Env_` / `Exp_` alias it names. Go has no optional or default type
 > argument. See
 > [§ Host-type removal cannot preserve generic arity](#host-type-removal-cannot-preserve-generic-arity).
@@ -77,26 +77,19 @@ package name — `main`, the program package, or the import-restricted
 so the default is always importable),
 overridden by the `namespace` build-block key
 ([`specs/package.md` § Per-target keys](../package.md#per-target-keys)).
-A default whose branded handle would land on a fixed package type — `Unit`,
-`Product`, `Sum`, or `KioSum` — uses that same exact default namespace
-(`unit` → `__kio_pkg_unit`, handle `KioPkg_Unit`). These names stay reserved even when the current
-boundary does not reach the corresponding shell, so adding an unrelated
-declaration cannot introduce a later handle/type collision. An
-explicit value must match `[a-z_][a-z0-9_]*`, be neither a Go keyword nor one
-of those unimportable names, and derive a non-empty handle outside that exact
-four-name set; anything else is a build error. Near misses such as `united`,
-`product_row`, and `sum_k0_case` remain valid. The facade's branded names all
-derive from the namespace: for `<pkg>` = `greeter`, the handle is `Greeter`
-(the namespace's title word casing), the host contract `GreeterHost`, and
-the factory `CreateGreeter`. Ordinary source-shaped namespaces keep their
-artifact spelling (`my_pkg`) while the public brand joins words (`MyPkg`).
-Affixed source names and reserved defaults use `KioPkg_...`; other explicit
-namespaces use `KioNs_<hex-UTF-8>`, as in [the shared brand encoding](README.md#branded-naming).
+An explicit value must match `[a-z_][a-z0-9_]*` and must not be `_`, a Go
+keyword, or one of those unimportable names. The package-qualified public
+roles are always `Package`, `Host`, and `New`: hosts write
+`greeter.New(host)` and name `greeter.Package` or `greeter.Host`. Import
+qualification supplies the package identity, including when a host chooses
+an import alias. Names such as `unit`, `product`, `sum`, `kio_sum`, and
+`my_pkg` are valid namespaces; package clauses do not compete with exported
+type names in the package block.
 
-- `pkg.go` — the package's invocable surface: the generic `Greeter[...]`
-  handle, the `CreateGreeter[...](host)` factory, the export-namespace tree, and every
+- `pkg.go` — the package's invocable surface: the generic `Package[...]`
+  handle, the `New[...](host)` factory, the export-namespace tree, and every
   module fn as a method. **The entry point.**
-- `host.go` — the generic `GreeterHost[...]` interface (one method per
+- `host.go` — the generic `Host[...]` interface (one method per
   `host fn`, plus declaration-keyed role conversion methods). The host selects
   every exact host-type binding and implements the resulting interface.
   **Part of the surface.**
@@ -120,7 +113,7 @@ namespaces use `KioNs_<hex-UTF-8>`, as in [the shared brand encoding](README.md#
   `_` because the Go toolchain ignores `_`-prefixed source files.
 
 The host authored the package's manifest, so it knows the namespace
-without reading build output; the derivation above makes every branded
+without reading build output; the rules above make every public
 name reconstructible from the `package` clause alone. Fixed filenames and
 support types remain scoped by Go's package/import qualification, so two Kio
 packages with distinct namespaces coexist in one Go build.
@@ -134,9 +127,9 @@ a package `greeter`):
    directive, vendoring, or a local module path; the package qualifies
    as its namespace, `greeter`);
 2. selects one Go type for every exact host-type binding and supplies a value
-   implementing the resulting `GreeterHost[...]` interface (§ Host record
+   implementing the resulting `Host[...]` interface (§ Host record
    contract);
-3. calls `greeter.CreateGreeter[...](host)` to obtain a `*Greeter[...]`;
+3. calls `greeter.New[...](host)` to obtain a `*Package[...]`;
 4. invokes exported items through the package's namespace fields
    (§ Package API).
 
@@ -153,7 +146,7 @@ takes every group's parameters flat in one call — the method applies
 the internal curried layers group by group
 ([`README.md` § Function-type FFI canonicalization](README.md#function-type-ffi-canonicalization)).
 Items are reached: for a package `greeter`, a
-`pub fn` in module `a/b` is reached on the `*Greeter` handle at
+`pub fn` in module `a/b` is reached on the `*Package` handle at
 `pkg.A.KioModule_b.<Fn>()`. A root module segment keeps the natural exported
 component spelling: unmarked names use title word casing, while a leading
 or trailing underscore run uses `KioItem_<encoded-component>`. The encoded
@@ -169,12 +162,19 @@ namespace down to a single segment ([`specs/package.md` § The bridge
 block](../package.md#the-bridge-block)).
 
 An exported method's signature is the host's typed contract: each exposed
-positional slot is its boundary shape (§ FFI surface), and the return is its
+written parameter is its boundary shape (§ FFI surface), and the return is its
 boundary shape (`Unit` for a `()` return). A canonical Unit-domain layer adds
 no parameter; Unit that occupies an already-planned slot maps to `Unit`. The
 method converts each typed argument into the internal representation, runs the
 package function, and converts the result back to the typed shape — the host
 never sees the internal `[]any` rep.
+
+Written parameter grouping is retained: `fn first(x: A, y: B)` has two Go
+parameters, while `fn second(pair: A & B)` has one product parameter.
+Destructuring a single product parameter does not split it. The same rule
+applies to host methods and public newtype members. Only declaration-head
+groups join the method's parameter list; a returned function remains a
+returned function, with its own parameter list.
 
 Every exported **`pub newtype`** contributes a **per-type handle** under
 its module namespace, even when it exports no members: a newtype `T` in
@@ -206,8 +206,8 @@ type. With both members public and no existential
 binders, the constructor (`payload → T`) and projector (`T → payload`)
 remain identities at the boundary and use the payload's boundary shape
 unchanged. An existential projector keeps its CPS signature: canonical Unit
-contributes zero continuation value arguments, a product contributes one per
-flat right-spine slot, and every other payload contributes one. A both-member
+contributes zero continuation value arguments; every other payload, including
+a product, contributes one argument of its boundary type. A both-member
 recursion that is not already cut by an opaque or one-member carrier keeps the
 erased fallback described under § FFI surface.
 
@@ -236,8 +236,7 @@ markup; unresolved references remain inert text.
 ## Host record contract
 
 Each `host fn` declared in a bridged module becomes one method on the
-host-contract **interface** in `host.go` (`GreeterHost` for a package
-`greeter` — the handle name + `Host`). The host supplies an
+host-contract **interface** `Host` in `host.go`. The host supplies an
 implementation; Go interface satisfaction is structural, so any value
 with the right method set satisfies it.
 
@@ -253,15 +252,15 @@ in `KioItem_` keep this fallback disjoint from the readable form. Both forms
 are injective across declaring-module/leaf pairs.
 
 Every live host-type declaration contributes an exact declaration-keyed
-binding. Live nullary bindings are type parameters on `GreeterHost[...]`,
-`Greeter[...]`, every generated namespace and newtype handle that carries
-them, and `CreateGreeter[...]`. Their order is the generated declaration's
+binding. Live nullary bindings are type parameters on `Host[...]`,
+`Package[...]`, every generated namespace and newtype handle that carries
+them, and `New[...]`. Their order is the generated declaration's
 exact qualified-name order. Two live Kio declarations remain two independent
 parameters even when both have the same role or the host selects the same
 underlying Go representation. History-only declarations never add a current
 host type parameter or adapter method.
 
-Each exposed positional slot takes its boundary shape (§ FFI surface): an
+Each written parameter takes its boundary shape (§ FFI surface): an
 exact nullary host binding uses its selected type, a parameterized host type
 uses its declaration-owned carrier application, a structural compound uses
 its `shapes.go` type, and Unit that occupies an already-planned slot uses
@@ -427,12 +426,12 @@ import when a file references `big.`. `()` (unit) is the canonical `Unit`
 (`struct{}` — Go has no built-in unit value).
 
 A parameterized host declaration `F[A, ...]` surfaces as the
-declaration-owned `KioHostType_<exact-QTN>[A, ...]` carrier. Its type arguments
+declaration-owned `KioHostType_<module-path>__<name>[A, ...]` carrier. Its type arguments
 are the exact boundary types at that occurrence; it is never collapsed to
 `any` or merged with another declaration. Go cannot abstract over a
 host-selected type constructor, so the carrier stores the erased runtime value
 privately and exposes the explicitly unsafe host integration pair
-`UnsafeKioHostType_<exact-QTN>FromNative` / `UnsafeNative`. Those operations
+`UnsafeKioHostType_<module-path>__<name>FromNative` / `UnsafeNative`. Those operations
 wrap and unwrap only the private runtime carrier; the public application and
 its declaration identity remain statically exact.
 
@@ -470,7 +469,9 @@ is realized as follows:
   contribute to an enclosing shape.
 - **Function value** → a Go `func(...) ...` whose compound legs are
   converted across the boundary. The host sees that value-only callable;
-  a boundary wrapper handles any internal polymorphic stages. A directly
+  a product domain is one product parameter, so `(A & B) -> R` is
+  `func(Product[A, B]) R`. A boundary wrapper handles any internal
+  polymorphic stages. A directly
   written `. -> R` is `func() R`. Instantiating `A -> R` with `A = .`
   preserves that existing argument slot and produces `func(Unit) R`.
 - A free function-local **type-variable / abstract** position erases to
@@ -531,21 +532,24 @@ Go uses [shared source-component word casing](README.md#source-derived-public-na
 with title casing for exported leaves (`do_work` → `DoWork`).
 
 - **The facade names** — the `package` clause is the namespace
-  (§ Output layout); the handle is its public title brand (`greeter` →
-  `Greeter`), the host contract the handle + `Host` (`GreeterHost`),
-  the factory `Create` + the handle (`CreateGreeter`). One derivation
-  root: every name is reconstructible from the `package` clause.
+  (§ Output layout); the package-qualified roles are `Package`, `Host`, and
+  `New`. They are independent of the namespace's spelling.
 - **Host interface methods** — the readable export-capitalized
   `<module-with-_>__<leaf>` form when the module contains no source `_`;
   otherwise the reserved exact `KioItem_<encoded-module>__<leaf>` form
   (§ Host record contract).
 - **Exact host bindings** — one `KioHost_<frame>` root parameter per nullary
-  declaration, one `KioHostType_<frame>` carrier per parameterized
   declaration. `<frame>` is
   `V1_M<count>_C<len>_<segment>...N<len>_<leaf>`, so it encodes the complete
   qualified declaration identity without package occupancy or leaf lookup.
   Word-case every source component before escaping it and calculating its
   encoded byte length; fixed count, role, and index fields are unchanged.
+- **Parameterized host carriers** — `KioHostType_<module-path>__<name>` and
+  `UnsafeKioHostType_<module-path>__<name>FromNative`. Word-case each source
+  module/type component, escape remaining `_` as `_u`, then join components
+  with `__`. For example, `a/b.Box` gives `KioHostType_a__b__Box`, distinct
+  from `a_b.Box`'s `KioHostType_aB__Box`. The private identity and unsafe
+  storage boundary remain declaration-specific; naming adds no conversion.
 - **Role adapters** — `KioHostIn_<identity>` / `KioHostOut_<identity>`, where
   ASCII-alphanumeric word-cased components are joined by `_`
   (`api.Count` → `api_Count`, `data_api.Native_count` → `dataApi_NativeCount`).
@@ -618,8 +622,8 @@ pub fn main() { print("hello\n"(Str)) }
 ```
 
 `kio build go` writes `out/go/{pkg.go, host.go, shapes.go, ffi.go,
-kio_runtime.go}`, each declaring `package greet`; the handle is `Greet`,
-the host contract `GreetHost`, the factory `CreateGreet`. A Go host —
+kio_runtime.go}`, each declaring `package greet`; the handle is `Package`,
+the host contract `Host`, the factory `New`. A Go host —
 with its `go.mod` mapping the import path onto the emitted directory
 (`require greet v0.0.0` + `replace greet => ./out/go`):
 
@@ -633,7 +637,7 @@ type Stdout struct{}
 func (Stdout) App__print(arg0 string) { print(arg0) }
 
 func main() {
-    pkg := greet.CreateGreet(Stdout{})
+    pkg := greet.New(Stdout{})
     pkg.App.KioModule_main.Main()
 }
 ```

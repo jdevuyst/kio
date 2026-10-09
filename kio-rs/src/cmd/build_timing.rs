@@ -481,12 +481,6 @@ impl BuildShapeStats {
                 self.visit_expr(then_branch, depth + 1);
                 self.visit_expr(else_branch, depth + 1);
             }
-            Expr::EnrichedRecord { fields, .. } => {
-                self.enriched_nodes += 1;
-                for field in fields {
-                    self.visit_expr(&field.value, depth + 1);
-                }
-            }
             Expr::EnrichedFieldGet { target, .. } => {
                 self.enriched_nodes += 1;
                 self.visit_expr(target, depth + 1);

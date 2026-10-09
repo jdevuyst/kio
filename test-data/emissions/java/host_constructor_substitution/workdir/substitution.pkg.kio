@@ -1,0 +1,13 @@
+package substitution;
+
+build {
+  cache ();
+
+  target java {
+    out "out/java/"
+  }
+}
+
+bridge {
+  api
+}

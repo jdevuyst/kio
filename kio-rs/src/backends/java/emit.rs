@@ -10,20 +10,17 @@
 //! (`KioRuntime.java`, the verbatim `runtime.java` wrapped
 //! package-private with a generated bootstrap).
 //!
-//! The interpreter already converts every boundary crossing to its
-//! documented map shapes (`runtime.java`'s `convert`), so the facade's
-//! generated conversions bridge typed Java values to those *boundary*
-//! shapes — keyed maps for products / sums / newtypes, `KioFn` closures
-//! for function values, passthrough scalars — never to the internal
-//! nested-pair rep.
+//! Body and public values share canonical binary structural, nominal and
+//! callable carriers. The facade only selects native declaration parameter
+//! groups and casts the interpreter's erased references to their checked
+//! indices; role adapters run at the exact literal and condition operations.
 
 use std::collections::BTreeMap;
 
 use crate::ast::Routed;
 use crate::backends::boundary_facade::{
-    BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadeExecutionUse,
-    BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, BoundaryFacadeSupportOrigin,
-    BoundaryHostBindingOrigin, BoundaryHostTypeBinding, BoundaryNewtypePayloadPlan,
+    BoundaryCallableHeadStage, BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSiteOwner,
+    BoundaryFacadeSupportOrigin, BoundaryHostBindingOrigin, BoundaryNewtypePayloadPlan,
     BoundaryNewtypeSurface, BoundaryNominalDeclaration, BoundaryNominalDependencies,
     BoundaryNominalTypeParam, CallableExecutionStage, CallableSourceParamAdapter,
     CallableValueStageLayout, FacadeBinderId, FacadeKind, FacadeShellId, FacadeUse, FacadeUseId,
@@ -32,9 +29,10 @@ use crate::backends::boundary_facade::{
 };
 use crate::backends::namespace::pascal_case;
 use crate::backends::public_names::{
-    FacadeSelector, encode_host_identity, encode_source_identity, host_module_key, host_name_core,
+    FacadeSelector, encode_host_identity, host_module_key, host_name_core,
 };
 use crate::backends::skin::{budgeted_mint_name, fnv1a_64_hex};
+use crate::backends::value_plan::{ValueCapture, ValuePlan, ValueStageShape, ValueUse, ValueUseId};
 use crate::pass::resolve::Package;
 
 use super::skin::{
@@ -131,20 +129,19 @@ fn java_host_binding_parameters(binding: &JavaHostBinding) -> Vec<String> {
 }
 
 fn java_host_binding_public_type(binding: &JavaHostBinding, parameters: &[String]) -> String {
-    if binding.retained_at.is_some() {
-        return format!(
-            "Shapes.{}{}",
-            binding.carrier(),
-            java_generic_use(parameters)
+    if binding.type_arity != 0 {
+        let marker = format!(
+            "Shapes.{}",
+            java_nominal_constructor_marker(&binding.name, JavaNominalConstructorKind::HostType)
         );
+        render_java_application(&marker, parameters)
+    } else if binding.retained_at.is_some() {
+        format!("Shapes.{}", binding.carrier())
+    } else {
+        binding
+            .type_parameter()
+            .expect("nullary host binding has a selected native parameter")
     }
-    binding.type_parameter().unwrap_or_else(|| {
-        format!(
-            "Shapes.{}{}",
-            binding.carrier(),
-            java_generic_use(parameters)
-        )
-    })
 }
 
 fn java_host_binding_body_type(binding: &JavaHostBinding) -> String {
@@ -196,21 +193,20 @@ pub fn lower_package(
 ) -> Result<JavaPackage, EmitError> {
     let handle = pascal_case(namespace.rsplit('.').next().unwrap_or(namespace));
 
+    let prepared =
+        PreparedBoundaryCallableSites::collect(package, sig.map(|(_, replayed)| replayed))
+            .map_err(|error| EmitError::internal(error.to_string()))?;
     let ir =
         crate::backends::serialized_runtime_ir::package_ir(package).map_err(EmitError::internal)?;
     let ir_json = serde_json::to_string(&ir)
         .map_err(|e| EmitError::internal(format!("cannot encode Java IR: {e}")))?;
-
-    let prepared =
-        PreparedBoundaryCallableSites::collect(package, sig.map(|(_, replayed)| replayed))
-            .map_err(|error| EmitError::internal(error.to_string()))?;
     let mut shapes = JavaShapes::new(package, &prepared);
 
     let tree = collect_export_tree(&prepared, &mut shapes)?;
 
     let handle_java = render_handle(namespace, &handle, &tree, &prepared, &mut shapes, &ir_json)?;
     let host_java = render_host_interface(namespace, &handle, &prepared, &mut shapes)?;
-    let shapes_java = render_shapes_java(namespace, &shapes, &prepared)?;
+    let shapes_java = render_shapes_java(namespace, &shapes, &prepared, ir.body_value_plans())?;
     let runtime_java = render_runtime(namespace);
 
     Ok(JavaPackage {
@@ -244,14 +240,12 @@ struct ExportFn {
     param_uses: Vec<FacadeUseId>,
     ret_use: FacadeUseId,
     method_type_parameters: Vec<String>,
-    wide_param_shell: Option<FacadeShellId>,
 }
 
 struct ExportNewtypeHandle {
     type_name: String,
     ctor: Option<ExportNewtypeMember>,
     projector: Option<ExportNewtypeMember>,
-    existential: bool,
 }
 
 struct ExportNewtypeMember {
@@ -265,7 +259,161 @@ struct JavaPreparedCallable {
     param_uses: Vec<FacadeUseId>,
     ret_java: String,
     ret_use: FacadeUseId,
-    wide_param_shell: Option<FacadeShellId>,
+}
+
+/// Java's native argument list is a presentation of prepared semantic slots.
+/// The interpreter's argument list is independently selected by execution
+/// provenance; retained declarations need only this presentation view.
+struct JavaParameters<'a> {
+    stages: Vec<&'a CallableValueStageLayout>,
+    shell: Option<&'a FacadeShellId>,
+    wide: bool,
+}
+
+impl<'a> JavaParameters<'a> {
+    fn new(stages: Vec<&'a CallableValueStageLayout>, shell: Option<&'a FacadeShellId>) -> Self {
+        let mut parameters = Self {
+            stages,
+            shell,
+            wide: false,
+        };
+        parameters.wide = parameters.arity() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT;
+        parameters
+    }
+
+    fn head(site: PreparedBoundaryCallableSite<'a>) -> Self {
+        Self::new(
+            site.presentation()
+                .head_stages()
+                .iter()
+                .filter_map(|stage| match stage {
+                    CallableExecutionStage::Value(layout) => Some(layout),
+                    CallableExecutionStage::Type { .. } => None,
+                })
+                .collect(),
+            site.plan().head_value_shell(),
+        )
+    }
+
+    fn arity(&self) -> usize {
+        if self.wide {
+            return 1;
+        }
+        self.stages
+            .iter()
+            .map(|stage| stage.public_parameter_count())
+            .sum()
+    }
+
+    fn names(&self, prefix: &str) -> Vec<String> {
+        (0..self.arity())
+            .map(|index| format!("{prefix}{index}"))
+            .collect()
+    }
+
+    fn types(&self, slots: &[String]) -> Result<Vec<String>, EmitError> {
+        if self.wide {
+            return Ok(vec![java_product_shell_type(self.whole_shell()?, slots)?]);
+        }
+        let mut types = Vec::new();
+        let mut offset = 0;
+        for stage in &self.stages {
+            for source in stage.source_params() {
+                let range = source.facade_slots();
+                let values = &slots[offset + range.start..offset + range.end];
+                match source.adapter() {
+                    CallableSourceParamAdapter::UnitValue => {}
+                    CallableSourceParamAdapter::Identity => types.push(values[0].clone()),
+                    CallableSourceParamAdapter::RightNest => {
+                        types.push(java_binary_product_type(values)?)
+                    }
+                }
+            }
+            offset += stage.facade_slot_count();
+        }
+        assert_eq!(
+            offset,
+            slots.len(),
+            "Java presentation covers all semantic slots"
+        );
+        Ok(types)
+    }
+
+    fn declarations(&self, slots: &[String], prefix: &str) -> Result<Vec<String>, EmitError> {
+        Ok(self
+            .types(slots)?
+            .iter()
+            .zip(self.names(prefix))
+            .map(|(ty, name)| format!("{ty} {name}"))
+            .collect())
+    }
+
+    fn expand(&self, prefix: &str) -> Result<Vec<String>, EmitError> {
+        if self.wide {
+            return Ok(self
+                .whole_shell()?
+                .ordered_keys()
+                .iter()
+                .map(|key| format!("{prefix}0.{}()", java_semantic_member(key)))
+                .collect());
+        }
+        let mut slots = Vec::new();
+        let mut index = 0;
+        for source in self.stages.iter().flat_map(|stage| stage.source_params()) {
+            match source.adapter() {
+                CallableSourceParamAdapter::UnitValue => continue,
+                CallableSourceParamAdapter::Identity => slots.push(format!("{prefix}{index}")),
+                CallableSourceParamAdapter::RightNest => {
+                    let shell = source
+                        .product_shell()
+                        .expect("prepared product parameter shell");
+                    slots.extend(render_internal_product_slots(
+                        &format!("{prefix}{index}"),
+                        shell.ordered_keys().len(),
+                    )?);
+                }
+            }
+            index += 1;
+        }
+        Ok(slots)
+    }
+
+    fn pack(&self, types: &[String], slots: &[String]) -> Result<Vec<String>, EmitError> {
+        if self.wide {
+            return Ok(vec![render_java_product_shell_value(
+                self.whole_shell()?,
+                types,
+                slots,
+            )?]);
+        }
+        let mut args = Vec::new();
+        let mut offset = 0;
+        for stage in &self.stages {
+            for source in stage.source_params() {
+                let range = source.facade_slots();
+                let range = offset + range.start..offset + range.end;
+                match source.adapter() {
+                    CallableSourceParamAdapter::UnitValue => {}
+                    CallableSourceParamAdapter::Identity => args.push(slots[range.start].clone()),
+                    CallableSourceParamAdapter::RightNest => {
+                        args.push(render_internal_product(&slots[range])?)
+                    }
+                }
+            }
+            offset += stage.facade_slot_count();
+        }
+        assert_eq!(
+            offset,
+            slots.len(),
+            "Java presentation covers all semantic slots"
+        );
+        Ok(args)
+    }
+
+    fn whole_shell(&self) -> Result<&'a FacadeShellId, EmitError> {
+        self.shell
+            .ok_or_else(|| EmitError::internal("wide Java callable has no prepared shell"))
+    }
 }
 
 fn prepared_site<'a>(
@@ -322,67 +470,13 @@ fn render_prepared_callable(
             shapes,
         )?
     };
-    let wide_param_shell = if param_javas.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT {
-        Some(
-            plan.head_value_shell()
-                .ok_or_else(|| {
-                    EmitError::internal(
-                        "wide Java callable has no exact prepared declaration-head shell",
-                    )
-                })?
-                .clone(),
-        )
-    } else {
-        None
-    };
     Ok(JavaPreparedCallable {
         method_type_parameters,
         param_javas,
         param_uses,
         ret_java,
         ret_use,
-        wide_param_shell,
     })
-}
-
-fn java_callable_parameter_declarations(
-    parameter_types: &[String],
-    wide_shell: Option<&FacadeShellId>,
-    prefix: &str,
-) -> Result<Vec<String>, EmitError> {
-    if let Some(shell) = wide_shell {
-        return Ok(vec![format!(
-            "{} {prefix}0",
-            java_product_shell_type(shell, parameter_types)?
-        )]);
-    }
-    Ok(parameter_types
-        .iter()
-        .enumerate()
-        .map(|(index, ty)| format!("{ty} {prefix}{index}"))
-        .collect())
-}
-
-fn java_callable_flat_expressions(
-    parameter_count: usize,
-    wide_shell: Option<&FacadeShellId>,
-    prefix: &str,
-) -> Result<Vec<String>, EmitError> {
-    if let Some(shell) = wide_shell {
-        if shell.ordered_keys().len() != parameter_count {
-            return Err(EmitError::internal(
-                "wide Java callable shell/parameter arity drift",
-            ));
-        }
-        return Ok(shell
-            .ordered_keys()
-            .iter()
-            .map(|key| format!("{prefix}0.{}()", java_semantic_member(key)))
-            .collect());
-    }
-    Ok((0..parameter_count)
-        .map(|index| format!("{prefix}{index}"))
-        .collect())
 }
 
 fn java_product_shell_type(
@@ -439,6 +533,28 @@ fn render_java_product_shell_value(
     ))
 }
 
+fn java_value_plan<'a>(
+    site: PreparedBoundaryCallableSite<'a>,
+    plan: &'a BoundaryFacadePlan,
+    shapes: &JavaShapes<'_>,
+) -> Result<&'a ValuePlan, EmitError> {
+    if std::ptr::eq(plan, site.plan().facade()) {
+        return Ok(site.plan().value_plan());
+    }
+    let name = shapes
+        .newtype_payload_plan_owner(plan)
+        .ok_or_else(|| EmitError::internal("Java value use has no exact prepared plan owner"))?;
+    match site.nominals().declaration(name) {
+        Some(BoundaryNominalDeclaration::Newtype {
+            transparent_payload: Some(payload),
+            ..
+        }) => Ok(payload.value_plan()),
+        _ => Err(EmitError::internal(
+            "Java value use omitted its prepared nominal payload",
+        )),
+    }
+}
+
 fn render_prepared_use(
     site: PreparedBoundaryCallableSite<'_>,
     plan: &BoundaryFacadePlan,
@@ -447,74 +563,134 @@ fn render_prepared_use(
     binders: &BTreeMap<FacadeBinderId, String>,
     shapes: &JavaShapes<'_>,
 ) -> Result<String, EmitError> {
-    Ok(match plan.use_at(id) {
-        FacadeUse::Unit { .. } => "Shapes.Unit".to_owned(),
-        FacadeUse::Bottom { .. } => "Void".to_owned(),
-        FacadeUse::Bound { binder, .. } => binders
-            .get(binder)
-            .cloned()
-            .unwrap_or_else(|| format!("KioBoundType_{}", binder.index())),
-        FacadeUse::Nominal { name, .. } => render_prepared_nominal(name, &[], nominals, shapes)?,
-        FacadeUse::Apply {
-            constructor, args, ..
-        } => {
-            let rendered_args = args
-                .iter()
-                .map(|arg| render_prepared_use(site, plan, nominals, *arg, binders, shapes))
-                .collect::<Result<Vec<_>, _>>()?;
-            match plan.use_at(*constructor) {
-                FacadeUse::Nominal { name, .. } => {
-                    render_prepared_nominal(name, &rendered_args, nominals, shapes)?
-                }
-                FacadeUse::Bound { binder, .. } => {
-                    let constructor = binders
-                        .get(binder)
-                        .cloned()
-                        .unwrap_or_else(|| format!("KioBoundType_{}", binder.index()));
-                    render_java_application(&constructor, &rendered_args)
-                }
-                _ => {
-                    let constructor =
-                        render_prepared_use(site, plan, nominals, *constructor, binders, shapes)?;
-                    render_java_application(&constructor, &rendered_args)
-                }
-            }
+    let values = java_value_plan(site, plan, shapes)?;
+    render_java_value_use(values, Some(nominals), values.source(id), binders, shapes)
+}
+
+fn java_value_stage_shape(
+    values: &ValuePlan,
+    root: ValueUseId,
+    nominals: Option<&BoundaryNominalDependencies>,
+    shapes: &JavaShapes<'_>,
+) -> Result<ValueStageShape, EmitError> {
+    values.stage_shape(root, |name| {
+        if let Some(nominals) = nominals {
+            nominals
+                .declaration(name)
+                .map(BoundaryNominalDeclaration::kind)
+        } else {
+            crate::backends::value_plan::nominal_declaration(shapes.package(), name)
+                .map(|declaration| declaration.kind())
         }
-        FacadeUse::Product { shell, args, .. } | FacadeUse::Sum { shell, args, .. } => {
-            let rendered_args = args
-                .iter()
-                .map(|arg| render_prepared_use(site, plan, nominals, *arg, binders, shapes))
-                .map(|result| result.map(|ty| boxed_java_type(&ty)))
-                .collect::<Result<Vec<_>, _>>()?;
-            format!(
-                "Shapes.{}{}",
-                java_facade_shell_name(shell),
-                java_generic_use(&rendered_args)
-            )
-        }
-        FacadeUse::Function { slots, result, .. } => {
-            let mut arguments = slots
-                .iter()
-                .map(|slot| render_prepared_use(site, plan, nominals, *slot, binders, shapes))
-                .map(|result| result.map(|ty| boxed_java_type(&ty)))
-                .collect::<Result<Vec<_>, _>>()?;
-            let result = render_prepared_use(site, plan, nominals, *result, binders, shapes)?;
-            if arguments.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT {
-                let shell = plan.function_shell(id).ok_or_else(|| {
-                    EmitError::internal("wide Java function has no exact prepared stage shell")
-                })?;
-                arguments = vec![java_product_shell_type(shell, &arguments)?];
-            }
-            let prefix = if result == "Shapes.Unit" {
-                format!("Proc{}", arguments.len())
-            } else {
-                arguments.push(boxed_java_type(&result));
-                format!("Fn{}", arguments.len() - 1)
-            };
-            format!("Shapes.{prefix}{}", java_generic_use(&arguments))
-        }
-        FacadeUse::Forall { .. } => render_java_forall_type(site, plan, id, binders, shapes)?,
+        .ok_or_else(|| EmitError::internal("a Java stage capture omitted its exact nominal kind"))
     })
+}
+
+fn java_value_forall_name(shape: &ValuePlan, identity: &str) -> String {
+    budgeted_mint_name(shape.readable_stage_symbol(), |_| {
+        Ok::<_, std::convert::Infallible>(format!("KioForall_H{}", fnv1a_64_hex(identity)))
+    })
+    .unwrap_or_else(|never| match never {})
+}
+
+fn render_java_value_use(
+    values: &ValuePlan,
+    nominals: Option<&BoundaryNominalDependencies>,
+    id: ValueUseId,
+    binders: &BTreeMap<FacadeBinderId, String>,
+    shapes: &JavaShapes<'_>,
+) -> Result<String, EmitError> {
+    enum Task {
+        Enter(ValueUseId),
+        Finish(ValueUseId, usize),
+        Application(usize),
+        Stage(String, usize),
+    }
+    let mut pending = vec![Task::Enter(id)];
+    let mut rendered = Vec::<String>::new();
+    while let Some(task) = pending.pop() {
+        match task {
+            Task::Enter(id) => {
+                if matches!(values.use_at(id), ValueUse::Forall { .. }) {
+                    let shape = java_value_stage_shape(values, id, nominals, shapes)?;
+                    let identity = shape
+                        .plan
+                        .identity(shape.plan.root(), shape.plan.ambient_binders());
+                    pending.push(Task::Stage(
+                        java_value_forall_name(&shape.plan, &identity),
+                        shape.captures.len(),
+                    ));
+                    for capture in shape.captures.into_iter().rev() {
+                        match capture {
+                            ValueCapture::Use(child) => pending.push(Task::Enter(child)),
+                            ValueCapture::ApplicationPrefix { constructor, args } => {
+                                pending.push(Task::Application(args.len()));
+                                pending.extend(args.into_iter().rev().map(Task::Enter));
+                                pending.push(Task::Enter(constructor));
+                            }
+                        }
+                    }
+                    continue;
+                }
+                let children = match values.use_at(id) {
+                    ValueUse::Apply { constructor, args } => std::iter::once(*constructor)
+                        .chain(args.iter().copied())
+                        .collect::<Vec<_>>(),
+                    ValueUse::Product { left, right } | ValueUse::Sum { left, right } => {
+                        vec![*left, *right]
+                    }
+                    ValueUse::Function { domain, result, .. } => vec![*domain, *result],
+                    _ => Vec::new(),
+                };
+                pending.push(Task::Finish(id, children.len()));
+                pending.extend(children.into_iter().rev().map(Task::Enter));
+            }
+            Task::Finish(id, count) => {
+                let children = rendered.split_off(rendered.len() - count);
+                rendered.push(match values.use_at(id) {
+                    ValueUse::Unit => "Shapes.Unit".to_owned(),
+                    ValueUse::Bottom => "Void".to_owned(),
+                    ValueUse::Bound(binder) => binders.get(binder).cloned().ok_or_else(|| {
+                        EmitError::internal("Java value plan refers to an unbound type parameter")
+                    })?,
+                    ValueUse::Nominal(name) => render_prepared_nominal(
+                        name,
+                        &[],
+                        nominals.ok_or_else(|| {
+                            EmitError::internal(
+                                "a shaped Java stage must capture independent nominal leaves",
+                            )
+                        })?,
+                        shapes,
+                    )?,
+                    ValueUse::Apply { .. } => render_java_application(&children[0], &children[1..]),
+                    ValueUse::Product { .. } | ValueUse::Sum { .. } | ValueUse::Function { .. } => {
+                        let carrier = match values.use_at(id) {
+                            ValueUse::Product { .. } => "Product",
+                            ValueUse::Sum { .. } => "Sum",
+                            _ => "Fn1",
+                        };
+                        format!(
+                            "Shapes.{carrier}<{}, {}>",
+                            boxed_java_type(&children[0]),
+                            boxed_java_type(&children[1])
+                        )
+                    }
+                    ValueUse::Forall { .. } => unreachable!("type stages use their shared shape"),
+                });
+            }
+            Task::Application(count) => {
+                let children = rendered.split_off(rendered.len() - count - 1);
+                rendered.push(render_java_application(&children[0], &children[1..]));
+            }
+            Task::Stage(name, count) => {
+                let arguments = rendered.split_off(rendered.len() - count);
+                rendered.push(format!("Shapes.{name}{}", java_generic_use(&arguments)));
+            }
+        }
+    }
+    assert_eq!(rendered.len(), 1, "one Java value root is rendered");
+    Ok(rendered.pop().expect("one rendered Java type"))
 }
 
 fn render_prepared_nominal(
@@ -541,7 +717,7 @@ fn render_prepared_nominal(
             let binding = shapes.host_binding(name).ok_or_else(|| {
                 EmitError::internal("prepared Java host nominal has no exact root binding")
             })?;
-            if args.len() < type_params.len() {
+            if !type_params.is_empty() {
                 let constructor = render_nominal_constructor_marker_use(
                     name,
                     JavaNominalConstructorKind::HostType,
@@ -572,7 +748,7 @@ fn render_prepared_nominal(
             if args.len() > type_params.len() {
                 return Err(EmitError::internal("prepared Java newtype arity drift"));
             }
-            if args.len() < type_params.len() {
+            if !type_params.is_empty() {
                 let constructor = render_nominal_constructor_marker_use(
                     name,
                     JavaNominalConstructorKind::Newtype,
@@ -640,221 +816,10 @@ fn render_nominal_constructor_marker_use(
     )
 }
 
-fn java_newtype_conversion_helper(name: &QualifiedTypeName, direction: JavaFfiDirection) -> String {
-    let direction = match direction {
-        JavaFfiDirection::In => "in",
-        JavaFfiDirection::Out => "out",
-    };
-    format!(
-        "__newtype_{direction}_{}__{}",
-        encode_host_identity(&name.module_segments().join("/")),
-        encode_host_identity(name.name())
-    )
-}
-
-fn java_newtype_internal_conversion_helper(
-    name: &QualifiedTypeName,
-    direction: JavaFfiDirection,
-) -> String {
-    let direction = match direction {
-        JavaFfiDirection::In => "in",
-        JavaFfiDirection::Out => "out",
-    };
-    format!(
-        "__newtype_body_{direction}_{}__{}",
-        encode_host_identity(&name.module_segments().join("/")),
-        encode_host_identity(name.name())
-    )
-}
-
 fn render_java_application(constructor: &str, args: &[String]) -> String {
-    let mut parameters = Vec::with_capacity(args.len() + 1);
-    parameters.push(boxed_java_type(constructor));
-    parameters.extend(args.iter().map(|arg| boxed_java_type(arg)));
-    format!(
-        "Shapes.Apply{}{}",
-        args.len(),
-        java_generic_use(&parameters)
-    )
-}
-
-fn java_application_body_helper(arity: usize, direction: JavaFfiDirection) -> String {
-    let direction = match direction {
-        JavaFfiDirection::In => "toBody",
-        JavaFfiDirection::Out => "fromBody",
-    };
-    format!("Shapes.__apply{arity}_{direction}")
-}
-
-fn java_boundary_site_identity(site: &BoundaryFacadeSiteId, encode: fn(&str) -> String) -> String {
-    let module = encode(&site.module_segments().join("/"));
-    match site.owner() {
-        BoundaryFacadeSiteOwner::HostFunction { name } => {
-            format!("M_{module}__H_{}", encode(name))
-        }
-        BoundaryFacadeSiteOwner::ExportedFunction { name } => {
-            format!("M_{module}__E_{}", encode(name))
-        }
-        BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member } => {
-            format!("M_{module}__NC_{}__{}", encode(newtype), encode(member))
-        }
-        BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
-            format!("M_{module}__NP_{}__{}", encode(newtype), encode(member))
-        }
-    }
-}
-
-fn java_forall_plan_identity(
-    site: PreparedBoundaryCallableSite<'_>,
-    plan: &BoundaryFacadePlan,
-    shapes: &JavaShapes<'_>,
-    encode: fn(&str) -> String,
-) -> Result<String, EmitError> {
-    if std::ptr::eq(plan, site.plan().facade()) {
-        return Ok(format!(
-            "Site_{}",
-            java_boundary_site_identity(site.site(), encode)
-        ));
-    }
-    shapes
-        .newtype_payload_plan_owner(plan)
-        .map(|name| {
-            format!(
-                "Newtype_{}__{}",
-                encode(&name.module_segments().join("/")),
-                encode(name.name())
-            )
-        })
-        .ok_or_else(|| EmitError::internal("Java forall use has no exact prepared plan owner"))
-}
-
-fn java_forall_exact_identity(
-    site: PreparedBoundaryCallableSite<'_>,
-    plan: &BoundaryFacadePlan,
-    root: FacadeUseId,
-    shapes: &JavaShapes<'_>,
-) -> Result<String, EmitError> {
-    java_forall_identity(site, plan, root, shapes, encode_source_identity)
-}
-
-fn java_forall_identity(
-    site: PreparedBoundaryCallableSite<'_>,
-    plan: &BoundaryFacadePlan,
-    root: FacadeUseId,
-    shapes: &JavaShapes<'_>,
-    encode: fn(&str) -> String,
-) -> Result<String, EmitError> {
-    let mut current = root;
-    let mut binders = Vec::new();
-    while let FacadeUse::Forall { binder, result, .. } = plan.use_at(current) {
-        binders.push(format!(
-            "B{}_A{}",
-            binder.index(),
-            plan.binder(*binder).kind.arity()
-        ));
-        current = *result;
-    }
-    if binders.is_empty() {
-        return Err(EmitError::internal(
-            "Java forall interface identity starts at a non-forall use",
-        ));
-    }
-    Ok(format!(
-        "KioForall_{}_Binders_K{}_{}",
-        java_forall_plan_identity(site, plan, shapes, encode)?,
-        binders.len(),
-        binders.join("_")
-    ))
-}
-
-fn java_forall_interface_name(
-    site: PreparedBoundaryCallableSite<'_>,
-    plan: &BoundaryFacadePlan,
-    root: FacadeUseId,
-    shapes: &JavaShapes<'_>,
-) -> Result<String, EmitError> {
-    let readable = java_forall_identity(site, plan, root, shapes, encode_host_identity)?;
-    budgeted_mint_name(readable, |_| {
-        let identity = java_forall_exact_identity(site, plan, root, shapes)?;
-        Ok(format!("KioForall_H{}", fnv1a_64_hex(&identity)))
+    args.iter().fold(boxed_java_type(constructor), |head, arg| {
+        format!("Shapes.Apply1<{head}, {}>", boxed_java_type(arg))
     })
-}
-
-fn java_forall_free_parameters(
-    binders: &BTreeMap<FacadeBinderId, String>,
-    shapes: &JavaShapes<'_>,
-) -> Vec<String> {
-    shapes
-        .live_root_type_parameters()
-        .iter()
-        .cloned()
-        .chain(binders.values().cloned())
-        .collect()
-}
-
-fn render_java_forall_type(
-    site: PreparedBoundaryCallableSite<'_>,
-    plan: &BoundaryFacadePlan,
-    root: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
-    shapes: &JavaShapes<'_>,
-) -> Result<String, EmitError> {
-    Ok(format!(
-        "Shapes.{}{}",
-        java_forall_interface_name(site, plan, root, shapes)?,
-        java_generic_use(&java_forall_free_parameters(binders, shapes))
-    ))
-}
-
-struct JavaForallMethod {
-    public_binders: BTreeMap<FacadeBinderId, String>,
-    erased_binders: BTreeMap<FacadeBinderId, String>,
-    type_parameters: Vec<String>,
-    body: FacadeUseId,
-}
-
-fn prepare_java_forall_method(
-    plan: &BoundaryFacadePlan,
-    root: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
-) -> JavaForallMethod {
-    let mut public_binders = binders.clone();
-    let mut erased_binders = binders.clone();
-    let mut type_parameters = Vec::new();
-    let mut body = root;
-    while let FacadeUse::Forall { binder, result, .. } = plan.use_at(body) {
-        let parameter = format!("KioPolyType_{}", binder.index());
-        public_binders.insert(*binder, parameter.clone());
-        erased_binders.insert(*binder, "Object".to_owned());
-        type_parameters.push(parameter);
-        body = *result;
-    }
-    JavaForallMethod {
-        public_binders,
-        erased_binders,
-        type_parameters,
-        body,
-    }
-}
-
-fn java_nominal_application_adapter(
-    name: &QualifiedTypeName,
-    kind: JavaNominalConstructorKind,
-    direction: JavaFfiDirection,
-) -> String {
-    let category = match kind {
-        JavaNominalConstructorKind::HostType => "HostType",
-        JavaNominalConstructorKind::Newtype => "Newtype",
-    };
-    let direction = match direction {
-        JavaFfiDirection::In => "lift",
-        JavaFfiDirection::Out => "project",
-    };
-    format!(
-        "Kio{category}Application_{}__{}_{direction}",
-        encode_host_identity(&name.module_segments().join("/")),
-        encode_host_identity(name.name())
-    )
 }
 
 fn boxed_java_type(ty: &str) -> String {
@@ -876,21 +841,6 @@ enum JavaFfiDirection {
     Out,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum JavaNominalContext {
-    Standalone,
-    TransparentSlot,
-    DirectNewtypeMember,
-}
-
-#[derive(Clone, Copy)]
-struct JavaConversionContext<'site, 'shapes, 'package> {
-    site: PreparedBoundaryCallableSite<'site>,
-    plan: &'site BoundaryFacadePlan,
-    shapes: &'shapes JavaShapes<'package>,
-    execution: Option<&'site BoundaryFacadeExecutionPlan>,
-}
-
 fn convert_prepared_use(
     site: PreparedBoundaryCallableSite<'_>,
     id: FacadeUseId,
@@ -899,870 +849,25 @@ fn convert_prepared_use(
     direction: JavaFfiDirection,
     shapes: &JavaShapes<'_>,
 ) -> Result<String, EmitError> {
-    convert_prepared_use_in_context(
-        site,
-        id,
-        binders,
-        expression,
-        direction,
-        shapes,
-        JavaNominalContext::Standalone,
-    )
-}
-
-fn convert_prepared_use_in_context(
-    site: PreparedBoundaryCallableSite<'_>,
-    id: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
-    expression: &str,
-    direction: JavaFfiDirection,
-    shapes: &JavaShapes<'_>,
-    requested_context: JavaNominalContext,
-) -> Result<String, EmitError> {
-    let nominal_context = if direct_newtype_member_root(site, id) {
-        JavaNominalContext::DirectNewtypeMember
-    } else {
-        requested_context
-    };
-    convert_facade_use(
-        JavaConversionContext {
-            site,
-            plan: site.plan().facade(),
-            shapes,
-            execution: site.execution().map(|execution| execution.root_uses()),
-        },
-        id,
-        binders,
-        expression,
-        direction,
-        nominal_context,
-    )
-}
-
-fn direct_newtype_member_root(site: PreparedBoundaryCallableSite<'_>, id: FacadeUseId) -> bool {
-    let entry = site.plan().entry();
-    match site.site().owner() {
-        BoundaryFacadeSiteOwner::NewtypeConstructor { .. } => id == entry.returned,
-        BoundaryFacadeSiteOwner::NewtypeProjector { .. } => entry
-            .head_stages
-            .iter()
-            .find_map(|stage| match stage {
-                BoundaryCallableHeadStage::Value { slots } => slots.first().copied(),
-                BoundaryCallableHeadStage::Type { .. } => None,
-            })
-            .is_some_and(|newtype| id == newtype),
-        BoundaryFacadeSiteOwner::HostFunction { .. }
-        | BoundaryFacadeSiteOwner::ExportedFunction { .. } => false,
-    }
-}
-
-fn convert_facade_use(
-    context: JavaConversionContext<'_, '_, '_>,
-    id: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
-    expression: &str,
-    direction: JavaFfiDirection,
-    nominal_context: JavaNominalContext,
-) -> Result<String, EmitError> {
-    let JavaConversionContext {
-        site,
-        plan,
-        shapes,
-        execution,
-    } = context;
-    let internal_body = execution.is_some() && !std::ptr::eq(plan, site.plan().facade());
-    Ok(match plan.use_at(id) {
-        FacadeUse::Unit { .. } => match direction {
-            JavaFfiDirection::In => "null".to_owned(),
-            JavaFfiDirection::Out => "new Shapes.Unit()".to_owned(),
-        },
-        FacadeUse::Bottom { .. } => match direction {
-            JavaFfiDirection::In => expression.to_owned(),
-            JavaFfiDirection::Out => format!("((Void) {expression})"),
-        },
-        FacadeUse::Bound { binder, .. } => match direction {
-            JavaFfiDirection::In => expression.to_owned(),
-            JavaFfiDirection::Out => format!(
-                "(({}) {expression})",
-                binders
-                    .get(binder)
-                    .cloned()
-                    .unwrap_or_else(|| "Object".to_owned())
-            ),
-        },
-        FacadeUse::Nominal { name, .. } => convert_prepared_nominal(
-            context,
-            name,
-            &[],
-            expression,
-            direction,
-            binders,
-            nominal_context,
-        )?,
-        FacadeUse::Apply {
-            constructor, args, ..
-        } => match plan.use_at(*constructor) {
-            FacadeUse::Nominal { name, .. } => convert_prepared_nominal(
-                context,
-                name,
-                args,
-                expression,
-                direction,
-                binders,
-                nominal_context,
-            )?,
-            _ => format!(
-                "{}({expression})",
-                java_application_body_helper(args.len(), direction)
-            ),
-        },
-        FacadeUse::Product { shell, args, .. } => {
-            let members = shell
-                .ordered_keys()
-                .iter()
-                .map(java_semantic_member)
-                .collect::<Vec<_>>();
-            match direction {
-                JavaFfiDirection::In => {
-                    let input = format!("__input_{}", id.index());
-                    let values = args
-                        .iter()
-                        .zip(&members)
-                        .map(|(arg, member)| {
-                            convert_facade_use(
-                                context,
-                                *arg,
-                                binders,
-                                &format!("{input}.{member}()"),
-                                direction,
-                                JavaNominalContext::TransparentSlot,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, EmitError>>()?;
-                    let converted = if internal_body {
-                        render_internal_product(&values)?
-                    } else {
-                        render_product_map(shell, &values)?
-                    };
-                    format!("__convert({expression}, {input} -> {converted})")
-                }
-                JavaFfiDirection::Out => {
-                    let raw = format!("__raw_{}", id.index());
-                    let raw_values: Vec<String> = if internal_body {
-                        render_internal_product_slots(&raw, args.len())?
-                    } else {
-                        shell
-                            .ordered_keys()
-                            .iter()
-                            .map(|key| {
-                                format!(
-                                    "((java.util.Map<?, ?>) {raw}).get(\"{}\")",
-                                    escape_java(&semantic_runtime_key(key))
-                                )
-                            })
-                            .collect()
-                    };
-                    let values = args
-                        .iter()
-                        .zip(raw_values)
-                        .map(|(arg, raw_value)| {
-                            convert_facade_use(
-                                context,
-                                *arg,
-                                binders,
-                                &raw_value,
-                                direction,
-                                JavaNominalContext::TransparentSlot,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let rendered_args = args
-                        .iter()
-                        .map(|arg| {
-                            render_prepared_use(site, plan, site.nominals(), *arg, binders, shapes)
-                                .map(|ty| boxed_java_type(&ty))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let converted =
-                        render_java_product_shell_value(shell, &rendered_args, &values)?;
-                    format!("__convert({expression}, {raw} -> {converted})")
-                }
-            }
-        }
-        FacadeUse::Sum { shell, args, .. } => match direction {
-            JavaFfiDirection::In => {
-                let case_binder = format!("__case_{}", id.index());
-                let cases = args
-                    .iter()
-                    .zip(shell.ordered_keys())
-                    .enumerate()
-                    .map(|(index, (arg, key))| {
-                        let value = convert_facade_use(
-                            context,
-                            *arg,
-                            binders,
-                            &case_binder,
-                            direction,
-                            JavaNominalContext::TransparentSlot,
-                        )?;
-                        let injected = if internal_body {
-                            render_internal_sum(&value, index, args.len())?
-                        } else {
-                            format!(
-                                "KioRuntime.map(\"{}\", {value})",
-                                escape_java(&semantic_runtime_key(key))
-                            )
-                        };
-                        Ok(format!("{case_binder} -> {injected}"))
-                    })
-                    .collect::<Result<Vec<_>, EmitError>>()?;
-                let cases = if args.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT {
-                    let case_types = args
-                        .iter()
-                        .map(|arg| {
-                            render_prepared_use(site, plan, site.nominals(), *arg, binders, shapes)
-                                .map(|ty| {
-                                    format!("Shapes.SumCase<{}, Object>", boxed_java_type(&ty))
-                                })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    vec![render_java_product_shell_value(
-                        &shell.product_companion(),
-                        &case_types,
-                        &cases,
-                    )?]
-                } else {
-                    cases
-                };
-                format!("({expression}).<Object>KioMatch({})", cases.join(", "))
-            }
-            JavaFfiDirection::Out => {
-                let rendered =
-                    render_prepared_use(site, plan, site.nominals(), id, binders, shapes)?;
-                let name = java_facade_shell_name(shell);
-                let rendered_args = args
-                    .iter()
-                    .map(|arg| {
-                        render_prepared_use(site, plan, site.nominals(), *arg, binders, shapes)
-                            .map(|ty| boxed_java_type(&ty))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let generic_use = java_generic_use(&rendered_args);
-                let raw = format!("__raw_{}", id.index());
-                if internal_body {
-                    let mut cursor = raw.clone();
-                    let mut alternatives = String::new();
-                    for (index, (arg, key)) in args.iter().zip(shell.ordered_keys()).enumerate() {
-                        let last = index + 1 == args.len();
-                        let payload = if last {
-                            cursor.clone()
-                        } else {
-                            format!("((java.util.List<?>) {cursor}).get(1)")
-                        };
-                        let member = java_semantic_member(key);
-                        let value = convert_facade_use(
-                            context,
-                            *arg,
-                            binders,
-                            &payload,
-                            direction,
-                            JavaNominalContext::TransparentSlot,
-                        )?;
-                        let variant = format!("new Shapes.{name}_{member}{generic_use}({value})");
-                        if last {
-                            alternatives.push_str(&variant);
-                        } else {
-                            alternatives.push_str(&format!(
-                                "((Number) ((java.util.List<?>) {cursor}).get(0)).intValue() == 0 ? {variant} : "
-                            ));
-                            cursor = payload;
-                        }
-                    }
-                    if alternatives.is_empty() {
-                        return Err(EmitError::internal(
-                            "prepared Java internal sum has no alternatives",
-                        ));
-                    }
-                    return Ok(format!(
-                        "__convert({expression}, {raw} -> (({rendered}) ({alternatives})))"
-                    ));
-                }
-                let alternative_parts = args
-                    .iter()
-                    .zip(shell.ordered_keys())
-                    .map(|(arg, key)| {
-                        let member = java_semantic_member(key);
-                        Ok(format!(
-                            "((java.util.Map<?, ?>) {raw}).containsKey(\"{key}\") ? new Shapes.{name}_{member}{generic_use}({value}) : ",
-                            key = escape_java(&semantic_runtime_key(key)),
-                            value = convert_facade_use(
-                                context,
-                                *arg,
-                                binders,
-                                &format!(
-                                    "((java.util.Map<?, ?>) {raw}).get(\"{}\")",
-                                    escape_java(&semantic_runtime_key(key))
-                                ),
-                                direction,
-                                JavaNominalContext::TransparentSlot,
-                            )?
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, EmitError>>()?;
-                let mut alternatives = alternative_parts.concat();
-                alternatives.push_str("__missingSum()");
-                format!("__convert({expression}, {raw} -> (({rendered}) ({alternatives})))")
-            }
-        },
-        FacadeUse::Function { slots, result, .. } => {
-            convert_prepared_function(context, id, slots, *result, binders, expression, direction)?
-        }
-        FacadeUse::Forall { .. } => {
-            convert_prepared_forall(context, id, binders, expression, direction, nominal_context)?
-        }
-    })
-}
-
-fn convert_prepared_forall(
-    context: JavaConversionContext<'_, '_, '_>,
-    root: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
-    expression: &str,
-    direction: JavaFfiDirection,
-    nominal_context: JavaNominalContext,
-) -> Result<String, EmitError> {
-    let JavaConversionContext {
-        site,
-        plan,
-        shapes,
-        execution,
-    } = context;
-    let method = prepare_java_forall_method(plan, root, binders);
-    let interface = render_java_forall_type(site, plan, root, binders, shapes)?;
-    let mut type_stages = Vec::new();
-    if let Some(execution) = execution.filter(|_| !std::ptr::eq(plan, site.plan().facade())) {
-        let mut current = root;
-        while let FacadeUse::Forall { result, .. } = plan.use_at(current) {
-            match execution.use_at(current) {
-                BoundaryFacadeExecutionUse::InvokeForall => type_stages.push(current),
-                BoundaryFacadeExecutionUse::DeclarationBinder => {}
-                _ => {
-                    return Err(EmitError::internal(
-                        "internal Java forall has no paired type-stage action",
-                    ));
-                }
-            }
-            current = *result;
-        }
-    }
     match direction {
-        JavaFfiDirection::In => {
-            let captured = format!("__forall_value_{}", root.index());
-            let source = if type_stages.is_empty() {
-                expression
-            } else {
-                &captured
-            };
-            let mut converted = match plan.use_at(method.body) {
-                FacadeUse::Function { slots, result, .. } => convert_prepared_function(
-                    context,
-                    method.body,
-                    slots,
-                    *result,
-                    &method.erased_binders,
-                    source,
-                    direction,
-                )?,
-                _ => convert_facade_use(
-                    context,
-                    method.body,
-                    &method.erased_binders,
-                    &format!("({source}).apply()"),
-                    direction,
-                    nominal_context,
-                )?,
-            };
-            if type_stages.is_empty() {
-                return Ok(converted);
-            }
-            for stage in type_stages.iter().rev() {
-                converted = format!(
-                    "(KioRuntime.KioFn) __forall_args_{} -> {converted}",
-                    stage.index()
-                );
-            }
-            Ok(format!(
-                "__convert({expression}, {captured} -> {converted})"
-            ))
-        }
+        JavaFfiDirection::In => Ok(expression.to_owned()),
         JavaFfiDirection::Out => {
-            let method_prefix = if method.type_parameters.is_empty() {
-                String::new()
-            } else {
-                format!("{} ", java_generic_declaration(&method.type_parameters))
-            };
-            let raw = format!("__forall_raw_{}", root.index());
-            let mut entered = raw.clone();
-            for _ in &type_stages {
-                entered = format!("((KioRuntime.KioFn) {entered}).call()");
-            }
-            let (parameters, ret, body) = match plan.use_at(method.body) {
-                FacadeUse::Function { slots, result, .. } => {
-                    let parameter_types = slots
-                        .iter()
-                        .map(|slot| {
-                            render_prepared_use(
-                                site,
-                                plan,
-                                site.nominals(),
-                                *slot,
-                                &method.public_binders,
-                                shapes,
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let wide_shell = (slots.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT)
-                        .then(|| {
-                            plan.function_shell(method.body).cloned().ok_or_else(|| {
-                                EmitError::internal(
-                                    "generic Java callable has no exact prepared stage shell",
-                                )
-                            })
-                        })
-                        .transpose()?;
-                    let parameters = java_callable_parameter_declarations(
-                        &parameter_types,
-                        wide_shell.as_ref(),
-                        "p",
-                    )?;
-                    let arguments = if wide_shell.is_some() {
-                        vec!["p0".to_owned()]
-                    } else {
-                        (0..slots.len())
-                            .map(|index| format!("p{index}"))
-                            .collect::<Vec<_>>()
-                    };
-                    let function_type = render_prepared_use(
-                        site,
-                        plan,
-                        site.nominals(),
-                        method.body,
-                        &method.public_binders,
-                        shapes,
-                    )?;
-                    let function = convert_prepared_function(
-                        context,
-                        method.body,
-                        slots,
-                        *result,
-                        &method.public_binders,
-                        &entered,
-                        direction,
-                    )?;
-                    let apply = format!(
-                        "(({function_type}) ({function})).apply({})",
-                        arguments.join(", ")
-                    );
-                    if matches!(plan.use_at(*result), FacadeUse::Unit { .. }) {
-                        (parameters, "void".to_owned(), format!("{{ {apply}; }}"))
-                    } else {
-                        let ret = render_prepared_use(
-                            site,
-                            plan,
-                            site.nominals(),
-                            *result,
-                            &method.public_binders,
-                            shapes,
-                        )?;
-                        (parameters, ret, format!("{{ return {apply}; }}"))
-                    }
-                }
-                _ => {
-                    let ret = render_prepared_use(
-                        site,
-                        plan,
-                        site.nominals(),
-                        method.body,
-                        &method.public_binders,
-                        shapes,
-                    )?;
-                    let converted = convert_facade_use(
-                        context,
-                        method.body,
-                        &method.public_binders,
-                        &entered,
-                        direction,
-                        nominal_context,
-                    )?;
-                    (Vec::new(), ret, format!("{{ return {converted}; }}"))
-                }
-            };
-            Ok(format!(
-                "__convert({expression}, {raw} -> new {interface}() {{ @Override public {method_prefix}{ret} apply({}) {body} }})",
-                parameters.join(", ")
-            ))
-        }
-    }
-}
-
-fn convert_prepared_nominal(
-    context: JavaConversionContext<'_, '_, '_>,
-    name: &QualifiedTypeName,
-    args: &[FacadeUseId],
-    expression: &str,
-    direction: JavaFfiDirection,
-    binders: &BTreeMap<FacadeBinderId, String>,
-    nominal_context: JavaNominalContext,
-) -> Result<String, EmitError> {
-    let JavaConversionContext {
-        site,
-        plan,
-        shapes,
-        execution,
-    } = context;
-    let internal_body = execution.is_some() && !std::ptr::eq(plan, site.plan().facade());
-    let rendered_args = args
-        .iter()
-        .map(|arg| render_prepared_use(site, plan, site.nominals(), *arg, binders, shapes))
-        .collect::<Result<Vec<_>, _>>()?;
-    render_prepared_nominal(name, &rendered_args, site.nominals(), shapes)?;
-    let declaration = site
-        .nominals()
-        .declaration(name)
-        .expect("a prepared Java nominal conversion has one declaration");
-    Ok(match declaration {
-        BoundaryNominalDeclaration::HostType { binding, .. } => {
-            let host_binding = shapes.host_binding(name).ok_or_else(|| {
-                EmitError::internal("prepared Java host nominal has no root binding")
-            })?;
-            let from_body = host_binding.adapter_from_body();
-            let to_body = host_binding.adapter_to_body();
-            match (binding, direction) {
-                (BoundaryHostTypeBinding::Role(role), JavaFfiDirection::In) => to_kio(
-                    role_to_java_type(*role),
-                    &format!("__host.{to_body}({expression})"),
-                ),
-                (BoundaryHostTypeBinding::Role(role), JavaFfiDirection::Out) => format!(
-                    "__host.{from_body}({})",
-                    from_kio(role_to_java_type(*role), expression)
-                ),
-                (BoundaryHostTypeBinding::Roleless, JavaFfiDirection::In) => {
-                    format!("__host.{to_body}({expression})")
-                }
-                (BoundaryHostTypeBinding::Roleless, JavaFfiDirection::Out) => {
-                    format!("__host.{from_body}({expression})")
-                }
-            }
-        }
-        BoundaryNominalDeclaration::Newtype {
-            transparent_payload,
-            ..
-        } => {
-            let internal_payload =
-                internal_body || nominal_context == JavaNominalContext::DirectNewtypeMember;
-            let transparent_slot = transparent_payload.is_some()
-                && nominal_context == JavaNominalContext::TransparentSlot;
-            let runtime_wrapper = !internal_payload && !transparent_slot;
-            let helper = if transparent_payload.is_some() && internal_payload {
-                java_newtype_internal_conversion_helper(name, direction)
-            } else {
-                java_newtype_conversion_helper(name, direction)
-            };
-            let value = match (direction, runtime_wrapper) {
-                (JavaFfiDirection::In, _) => {
-                    format!("{helper}(__host, {expression})")
-                }
-                (JavaFfiDirection::Out, false) => expression.to_owned(),
-                (JavaFfiDirection::Out, true) => format!(
-                    "((java.util.Map<?, ?>) {expression}).get(\"{}\")",
-                    escape_java(name.name())
-                ),
-            };
-            match direction {
-                JavaFfiDirection::In if runtime_wrapper => {
-                    format!("KioRuntime.map(\"{}\", {value})", escape_java(name.name()))
-                }
-                JavaFfiDirection::In => value,
-                JavaFfiDirection::Out => format!("{helper}(__host, {value})"),
-            }
-        }
-    })
-}
-
-fn convert_prepared_function(
-    context: JavaConversionContext<'_, '_, '_>,
-    id: FacadeUseId,
-    slots: &[FacadeUseId],
-    result: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
-    expression: &str,
-    direction: JavaFfiDirection,
-) -> Result<String, EmitError> {
-    let JavaConversionContext {
-        site,
-        plan,
-        shapes,
-        execution,
-        ..
-    } = context;
-    let internal_body = !std::ptr::eq(plan, site.plan().facade());
-    let layout = execution
-        .filter(|_| !direct_polymorphic_payload_function(context, id))
-        .and_then(|execution| match execution.use_at(id) {
-            BoundaryFacadeExecutionUse::Function(layout) => Some(layout),
-            _ => None,
-        });
-    let wide_shell = if slots.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT {
-        let semantic = plan.function_shell(id).ok_or_else(|| {
-            EmitError::internal("wide Java callback has no exact prepared stage shell")
-        })?;
-        if let Some(layout) = layout
-            && layout.facade_shell() != Some(semantic)
-        {
-            return Err(EmitError::internal(
-                "wide Java callback semantic/execution shell drift",
-            ));
-        }
-        Some(semantic.clone())
-    } else {
-        None
-    };
-    let parameter_prefix = format!("__p{}_", id.index());
-    let parameters = if wide_shell.is_some() {
-        vec![format!("{parameter_prefix}0")]
-    } else {
-        (0..slots.len())
-            .map(|index| format!("{parameter_prefix}{index}"))
-            .collect::<Vec<_>>()
-    };
-    let flat_parameters =
-        java_callable_flat_expressions(slots.len(), wide_shell.as_ref(), &parameter_prefix)?;
-    let nominal_contexts = source_nominal_contexts(layout, slots.len())?;
-    let captured = format!("__function_value_{}", id.index());
-    let adapter = match direction {
-        JavaFfiDirection::Out => {
-            let converted = slots
-                .iter()
-                .zip(&flat_parameters)
-                .zip(&nominal_contexts)
-                .map(|((slot, parameter), nominal_context)| {
-                    convert_facade_use(
-                        context,
-                        *slot,
-                        binders,
-                        parameter,
-                        JavaFfiDirection::In,
-                        *nominal_context,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let raw_args =
-                pack_prepared_source_arguments_in_domain(layout, &converted, internal_body)?;
-            let call = format!(
-                "((KioRuntime.KioFn) {captured}).call({})",
-                raw_args.join(", ")
-            );
-            let adapter = if matches!(plan.use_at(result), FacadeUse::Unit { .. }) {
-                format!("({}) -> {{ {call}; }}", parameters.join(", "))
-            } else {
-                let returned = convert_facade_use(
-                    context,
-                    result,
-                    binders,
-                    &call,
-                    JavaFfiDirection::Out,
-                    JavaNominalContext::Standalone,
-                )?;
-                format!("({}) -> {returned}", parameters.join(", "))
-            };
-            let function_type =
-                render_prepared_use(site, plan, site.nominals(), id, binders, shapes)?;
-            format!("({function_type}) ({adapter})")
-        }
-        JavaFfiDirection::In => {
-            let raw_count = layout.map_or(slots.len(), CallableValueStageLayout::body_abi_arity);
-            let raw_parameter = format!("__a_{}", id.index());
-            let raw_parameters = (0..raw_count)
-                .map(|index| format!("{raw_parameter}[{index}]"))
-                .collect::<Vec<_>>();
-            let expanded = expand_prepared_source_arguments_in_domain(
-                layout,
-                slots.len(),
-                &raw_parameters,
-                internal_body,
+            let ty = render_prepared_use(
+                site,
+                site.plan().facade(),
+                site.nominals(),
+                id,
+                binders,
+                shapes,
             )?;
-            let public_args = slots
-                .iter()
-                .zip(expanded)
-                .zip(&nominal_contexts)
-                .map(|((slot, raw), nominal_context)| {
-                    convert_facade_use(
-                        context,
-                        *slot,
-                        binders,
-                        &raw,
-                        JavaFfiDirection::Out,
-                        *nominal_context,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let public_args = if let Some(shell) = wide_shell.as_ref() {
-                let public_types = slots
-                    .iter()
-                    .map(|slot| {
-                        render_prepared_use(site, plan, site.nominals(), *slot, binders, shapes)
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                vec![render_java_product_shell_value(
-                    shell,
-                    &public_types,
-                    &public_args,
-                )?]
-            } else {
-                public_args
-            };
-            let apply = format!("({captured}).apply({})", public_args.join(", "));
-            if matches!(plan.use_at(result), FacadeUse::Unit { .. }) {
-                format!("(KioRuntime.KioFn) {raw_parameter} -> {{ {apply}; return null; }}")
-            } else {
-                let returned = convert_facade_use(
-                    context,
-                    result,
-                    binders,
-                    &apply,
-                    JavaFfiDirection::In,
-                    JavaNominalContext::Standalone,
-                )?;
-                format!("(KioRuntime.KioFn) {raw_parameter} -> {returned}")
-            }
+            Ok(format!("(({ty}) {expression})"))
         }
-    };
-    let converted = format!("__convert({expression}, {captured} -> {adapter})");
-    Ok(match direction {
-        JavaFfiDirection::In => format!("(KioRuntime.KioFn) {converted}"),
-        JavaFfiDirection::Out => converted,
-    })
-}
-
-fn direct_polymorphic_payload_function(
-    context: JavaConversionContext<'_, '_, '_>,
-    id: FacadeUseId,
-) -> bool {
-    let JavaConversionContext { site, plan, .. } = context;
-    if !std::ptr::eq(plan, site.plan().facade()) {
-        return false;
     }
-    let entry = site.plan().entry();
-    let mut payload = match site.site().owner() {
-        BoundaryFacadeSiteOwner::NewtypeConstructor { .. } => {
-            let Some(payload) = entry.head_stages.iter().find_map(|stage| match stage {
-                BoundaryCallableHeadStage::Value { slots } => slots.first().copied(),
-                BoundaryCallableHeadStage::Type { .. } => None,
-            }) else {
-                return false;
-            };
-            payload
-        }
-        BoundaryFacadeSiteOwner::NewtypeProjector { .. } => {
-            let mut payload = entry.returned;
-            if let Some(execution) = site.execution() {
-                let compactable = execution.direct_projector_compactable_foralls();
-                if compactable.contains(&payload) {
-                    // The CPS result stage accepts the continuation; its stage accepts the payload.
-                    for _ in 0..2 {
-                        while compactable.contains(&payload) {
-                            let FacadeUse::Forall { result, .. } = plan.use_at(payload) else {
-                                unreachable!(
-                                    "prepared compactable projector uses are forall stages"
-                                )
-                            };
-                            payload = *result;
-                        }
-                        let FacadeUse::Function { slots, .. } = plan.use_at(payload) else {
-                            unreachable!("prepared projector CPS stages are functions")
-                        };
-                        let Some(slot) = slots.first() else {
-                            return false;
-                        };
-                        payload = *slot;
-                    }
-                }
-            }
-            payload
-        }
-        BoundaryFacadeSiteOwner::HostFunction { .. }
-        | BoundaryFacadeSiteOwner::ExportedFunction { .. } => return false,
-    };
-    if !matches!(plan.use_at(payload), FacadeUse::Forall { .. }) {
-        return false;
-    }
-    while let FacadeUse::Forall { result, .. } = plan.use_at(payload) {
-        payload = *result;
-    }
-    // convertNewtypePayload flattens only this value stage, not its nested callbacks.
-    payload == id
 }
 
 fn pack_prepared_source_arguments(
     layout: Option<&CallableValueStageLayout>,
     converted: &[String],
-) -> Result<Vec<String>, EmitError> {
-    pack_prepared_source_arguments_in_domain(layout, converted, false)
-}
-
-fn source_nominal_contexts(
-    layout: Option<&CallableValueStageLayout>,
-    slot_count: usize,
-) -> Result<Vec<JavaNominalContext>, EmitError> {
-    let mut contexts = vec![JavaNominalContext::Standalone; slot_count];
-    let Some(layout) = layout else {
-        return Ok(contexts);
-    };
-    if layout.facade_slot_count() != slot_count {
-        return Err(EmitError::internal(
-            "prepared Java source context slot count drift",
-        ));
-    }
-    for source in layout.source_params() {
-        let context = match source.adapter() {
-            CallableSourceParamAdapter::RightNest => JavaNominalContext::TransparentSlot,
-            CallableSourceParamAdapter::UnitValue | CallableSourceParamAdapter::Identity => {
-                JavaNominalContext::Standalone
-            }
-        };
-        for index in source.facade_slots() {
-            let slot = contexts
-                .get_mut(index)
-                .ok_or_else(|| EmitError::internal("prepared Java source context range drift"))?;
-            *slot = context;
-        }
-    }
-    Ok(contexts)
-}
-
-fn prepared_callable_nominal_contexts(
-    site: PreparedBoundaryCallableSite<'_>,
-) -> Result<Vec<JavaNominalContext>, EmitError> {
-    let execution = site.execution().ok_or_else(|| {
-        EmitError::internal("retained Java callable cannot own live parameter contexts")
-    })?;
-    let mut contexts = Vec::new();
-    for stage in execution.head_stages() {
-        let CallableExecutionStage::Value(layout) = stage else {
-            continue;
-        };
-        contexts.extend(source_nominal_contexts(
-            Some(layout),
-            layout.facade_slot_count(),
-        )?);
-    }
-    Ok(contexts)
-}
-
-fn pack_prepared_source_arguments_in_domain(
-    layout: Option<&CallableValueStageLayout>,
-    converted: &[String],
-    internal_body: bool,
 ) -> Result<Vec<String>, EmitError> {
     let Some(layout) = layout else {
         return Ok(converted.to_vec());
@@ -1776,7 +881,7 @@ fn pack_prepared_source_arguments_in_domain(
                 .get(range)
                 .ok_or_else(|| EmitError::internal("prepared Java source range drift"))?;
             Ok(match source.adapter() {
-                CallableSourceParamAdapter::UnitValue => "null".to_owned(),
+                CallableSourceParamAdapter::UnitValue => "new Shapes.Unit()".to_owned(),
                 CallableSourceParamAdapter::Identity => values
                     .first()
                     .cloned()
@@ -1785,11 +890,10 @@ fn pack_prepared_source_arguments_in_domain(
                     let shell = source.product_shell().ok_or_else(|| {
                         EmitError::internal("Java RightNest source has no prepared product shell")
                     })?;
-                    if internal_body {
-                        render_internal_product(values)?
-                    } else {
-                        render_product_map(shell, values)?
+                    if shell.ordered_keys().len() != values.len() {
+                        return Err(EmitError::internal("Java source product arity drift"));
                     }
+                    render_internal_product(values)?
                 }
             })
         })
@@ -1879,7 +983,7 @@ fn expand_prepared_source_arguments_in_domain(
     layout: Option<&CallableValueStageLayout>,
     slot_count: usize,
     raw: &[String],
-    internal_body: bool,
+    _internal_body: bool,
 ) -> Result<Vec<String>, EmitError> {
     let Some(layout) = layout else {
         return Ok(raw.to_vec());
@@ -1893,19 +997,10 @@ fn expand_prepared_source_arguments_in_domain(
                 let shell = source.product_shell().ok_or_else(|| {
                     EmitError::internal("Java RightNest source has no prepared product shell")
                 })?;
-                if internal_body {
-                    expanded.extend(render_internal_product_slots(
-                        raw,
-                        shell.ordered_keys().len(),
-                    )?);
-                } else {
-                    for key in shell.ordered_keys() {
-                        expanded.push(format!(
-                            "((java.util.Map<?, ?>) {raw}).get(\"{}\")",
-                            escape_java(&semantic_runtime_key(key))
-                        ));
-                    }
-                }
+                expanded.extend(render_internal_product_slots(
+                    raw,
+                    shell.ordered_keys().len(),
+                )?);
             }
         }
     }
@@ -1924,7 +1019,7 @@ fn render_internal_product(values: &[String]) -> Result<String, EmitError> {
         ));
     };
     Ok(prefix.iter().rev().fold(last.clone(), |tail, value| {
-        format!("java.util.Arrays.asList({value}, {tail})")
+        format!("new Shapes.Product<>({value}, {tail})")
     }))
 }
 
@@ -1940,57 +1035,11 @@ fn render_internal_product_slots(raw: &str, arity: usize) -> Result<Vec<String>,
         if index + 1 == arity {
             slots.push(current.clone());
         } else {
-            slots.push(format!("((java.util.List<?>) {current}).get(0)"));
-            current = format!("((java.util.List<?>) {current}).get(1)");
+            slots.push(format!("((Shapes.Product<?, ?>) {current}).left()"));
+            current = format!("((Shapes.Product<?, ?>) {current}).right()");
         }
     }
     Ok(slots)
-}
-
-fn render_internal_sum(
-    value: &str,
-    alternative: usize,
-    alternatives: usize,
-) -> Result<String, EmitError> {
-    if alternatives == 0 || alternative >= alternatives {
-        return Err(EmitError::internal(
-            "prepared Java internal sum alternative is out of range",
-        ));
-    }
-    let mut injected = value.to_owned();
-    if alternative + 1 < alternatives {
-        injected = format!("java.util.Arrays.asList(0, {injected})");
-    }
-    for _ in 0..alternative {
-        injected = format!("java.util.Arrays.asList(1, {injected})");
-    }
-    Ok(injected)
-}
-
-fn render_product_map(shell: &FacadeShellId, values: &[String]) -> Result<String, EmitError> {
-    if shell.ordered_keys().len() != values.len() {
-        return Err(EmitError::internal(
-            "prepared Java product shell/value arity drift",
-        ));
-    }
-    let entries = shell
-        .ordered_keys()
-        .iter()
-        .zip(values)
-        .map(|(key, value)| format!("\"{}\", {value}", escape_java(&semantic_runtime_key(key))))
-        .collect::<Vec<_>>();
-    Ok(format!("KioRuntime.map({})", entries.join(", ")))
-}
-
-fn semantic_runtime_key(key: &SemanticKey) -> String {
-    match key {
-        SemanticKey::Bare { name } => name.clone(),
-        SemanticKey::Qualified {
-            module_segments,
-            name,
-        } => format!("{}.{}", module_segments.join("/"), name),
-        SemanticKey::Positional { index } => format!("_{index}"),
-    }
 }
 
 fn export_node<'t>(root: &'t mut ExportNode, module_key: &str) -> &'t mut ExportNode {
@@ -2022,7 +1071,6 @@ fn collect_export_tree(
             param_uses: callable.param_uses,
             ret_use: callable.ret_use,
             method_type_parameters: callable.method_type_parameters,
-            wide_param_shell: callable.wide_param_shell,
         });
     }
     for entry in prepared.public_newtypes() {
@@ -2070,18 +1118,16 @@ fn collect_export_tree(
                 type_name: name.name().to_owned(),
                 ctor,
                 projector,
-                existential: !entry.existential_params().is_empty(),
             });
     }
     Ok(root)
 }
 
 // =========================================================================
-// Conversion expressions (boundary Java type ⇄ interpreter boundary value).
+// Exact host-role operations (literal construction and condition inspection).
 // =========================================================================
 
-/// Interpreter boundary value → typed Java value of boundary type
-/// `java_ty` (the facade's `Out` direction).
+/// A lexical role value supplied to its exact declaration-owned adapter.
 fn from_kio(java_ty: &str, expr: &str) -> String {
     match java_ty {
         "String" => format!("((String) {expr})"),
@@ -2097,8 +1143,7 @@ fn from_kio(java_ty: &str, expr: &str) -> String {
     }
 }
 
-/// Typed Java value of boundary type `java_ty` → interpreter boundary
-/// value (the facade's `In` direction).
+/// A declaration-owned role adapter's result in the interpreter's scalar form.
 fn to_kio(java_ty: &str, expr: &str) -> String {
     match java_ty {
         "String" | "java.math.BigInteger" | "boolean" => expr.to_owned(),
@@ -2185,15 +1230,6 @@ fn render_handle(
         ));
     }
 
-    render_prepared_newtype_conversion_helpers(
-        &mut out,
-        handle,
-        prepared,
-        shapes,
-        &root_parameters,
-    )?;
-    render_nominal_application_adapters(&mut out, prepared, shapes, &root_parameters);
-
     // Namespace classes, depth-first.
     let mut path: Vec<FacadeSelector> = Vec::new();
     for (seg, child) in &tree.children {
@@ -2214,271 +1250,11 @@ fn render_handle(
     out.push_str(&render_host_adapter(handle, prepared, shapes)?);
 
     out.push_str(
-        "  private static <T, R> R __convert(T value, java.util.function.Function<T, R> conversion) {\n    return conversion.apply(value);\n  }\n\n  private static java.math.BigInteger __big(Object value) {\n    return value instanceof java.math.BigInteger big\n        ? big\n        : java.math.BigInteger.valueOf(((Number) value).longValue());\n  }\n\n  private static <T> T __missingSum() {\n    throw new IllegalStateException(\"sum value has no recognized semantic key\");\n  }\n\n",
+        "  private static java.math.BigInteger __big(Object value) {\n    return value instanceof java.math.BigInteger big\n        ? big\n        : java.math.BigInteger.valueOf(((Number) value).longValue());\n  }\n\n",
     );
 
     out.push_str("}\n");
     Ok(out)
-}
-
-fn render_prepared_newtype_conversion_helpers(
-    out: &mut String,
-    handle: &str,
-    prepared: &PreparedBoundaryCallableSites,
-    shapes: &JavaShapes<'_>,
-    root_parameters: &[String],
-) -> Result<(), EmitError> {
-    let host_type = java_applied_type(&format!("{handle}Host"), root_parameters);
-    for entry in prepared.public_newtypes() {
-        let name = entry.name();
-        let local_parameters = (0..entry.type_params().len())
-            .map(|index| format!("KioNewtypeType_{index}"))
-            .collect::<Vec<_>>();
-        let mut method_parameters = root_parameters.to_vec();
-        method_parameters.extend(local_parameters.iter().cloned());
-        let declaration = java_generic_declaration(&method_parameters);
-        let prefix = if declaration.is_empty() {
-            String::new()
-        } else {
-            format!("{declaration} ")
-        };
-        let mut carrier_parameters = root_parameters.to_vec();
-        carrier_parameters.extend(local_parameters.iter().cloned());
-        let carrier = format!(
-            "Shapes.{}{}",
-            java_newtype_carrier(name),
-            java_generic_use(&carrier_parameters)
-        );
-        let transparent = matches!(entry.surface(), BoundaryNewtypeSurface::Both { .. })
-            && entry.existential_params().is_empty();
-        let payload_owner = prepared_newtype_payload_owner(prepared, shapes, name)?;
-        if transparent && payload_owner.is_none() {
-            return Err(EmitError::internal(format!(
-                "public Java newtype {}.{} has no prepared conversion payload",
-                name.module_segments().join("."),
-                name.name()
-            )));
-        }
-        let has_payload_owner = payload_owner.is_some();
-        let (public_payload, private_payload, internal_public_payload, internal_private_payload) =
-            if let Some((payload, site, _)) = payload_owner
-                && transparent
-            {
-                let binders = payload
-                    .declaration_binders()
-                    .iter()
-                    .zip(&local_parameters)
-                    .map(|(binder, parameter)| (*binder, parameter.clone()))
-                    .collect::<BTreeMap<_, _>>();
-                let execution = site
-                    .execution()
-                    .and_then(|execution| execution.transparent_payload(name));
-                let boundary_context = JavaConversionContext {
-                    site,
-                    plan: payload.facade(),
-                    shapes,
-                    execution: None,
-                };
-                let internal_context = JavaConversionContext {
-                    execution,
-                    ..boundary_context
-                };
-                let internal_public_payload = convert_facade_use(
-                    internal_context,
-                    payload.payload_root(),
-                    &binders,
-                    "value",
-                    JavaFfiDirection::Out,
-                    JavaNominalContext::TransparentSlot,
-                )?;
-                let internal_private_payload = convert_facade_use(
-                    internal_context,
-                    payload.payload_root(),
-                    &binders,
-                    "value.value()",
-                    JavaFfiDirection::In,
-                    JavaNominalContext::TransparentSlot,
-                )?;
-                let public_payload = convert_facade_use(
-                    boundary_context,
-                    payload.payload_root(),
-                    &binders,
-                    "value",
-                    JavaFfiDirection::Out,
-                    JavaNominalContext::Standalone,
-                )?;
-                let private_payload = convert_facade_use(
-                    boundary_context,
-                    payload.payload_root(),
-                    &binders,
-                    "value.value()",
-                    JavaFfiDirection::In,
-                    JavaNominalContext::Standalone,
-                )?;
-                (
-                    public_payload,
-                    private_payload,
-                    internal_public_payload,
-                    internal_private_payload,
-                )
-            } else {
-                (
-                    "value".to_owned(),
-                    "value.value()".to_owned(),
-                    "value".to_owned(),
-                    "value.value()".to_owned(),
-                )
-            };
-        let out_helper = java_newtype_conversion_helper(name, JavaFfiDirection::Out);
-        let in_helper = java_newtype_conversion_helper(name, JavaFfiDirection::In);
-        out.push_str(&format!(
-            "  private static {prefix}{carrier} {out_helper}({host_type} __host, Object value) {{\n    return new {carrier}({public_payload});\n  }}\n\n"
-        ));
-        out.push_str(&format!(
-            "  private static {prefix}Object {in_helper}({host_type} __host, {carrier} value) {{\n    return {private_payload};\n  }}\n\n"
-        ));
-        if has_payload_owner {
-            let internal_out_helper =
-                java_newtype_internal_conversion_helper(name, JavaFfiDirection::Out);
-            let internal_in_helper =
-                java_newtype_internal_conversion_helper(name, JavaFfiDirection::In);
-            out.push_str(&format!(
-                "  private static {prefix}{carrier} {internal_out_helper}({host_type} __host, Object value) {{\n    return new {carrier}({internal_public_payload});\n  }}\n\n"
-            ));
-            out.push_str(&format!(
-                "  private static {prefix}Object {internal_in_helper}({host_type} __host, {carrier} value) {{\n    return {internal_private_payload};\n  }}\n\n"
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn render_nominal_application_adapters(
-    out: &mut String,
-    prepared: &PreparedBoundaryCallableSites,
-    shapes: &JavaShapes<'_>,
-    root_parameters: &[String],
-) {
-    for binding in shapes
-        .host_bindings()
-        .filter(|binding| binding.type_arity > 0 && binding.retained_at.is_none())
-    {
-        let parameters = java_host_binding_parameters(binding);
-        let declaration = java_generic_declaration(&parameters);
-        let prefix = if declaration.is_empty() {
-            String::new()
-        } else {
-            format!("{declaration} ")
-        };
-        let public_type = java_host_binding_public_type(binding, &parameters);
-        let marker = render_nominal_constructor_marker_use(
-            &binding.name,
-            JavaNominalConstructorKind::HostType,
-            shapes,
-        );
-        let application = render_java_application(&marker, &parameters);
-        let lift = java_nominal_application_adapter(
-            &binding.name,
-            JavaNominalConstructorKind::HostType,
-            JavaFfiDirection::In,
-        );
-        let project = java_nominal_application_adapter(
-            &binding.name,
-            JavaNominalConstructorKind::HostType,
-            JavaFfiDirection::Out,
-        );
-        let private = binding
-            .role
-            .map(|role| {
-                to_kio(
-                    role_to_java_type(role),
-                    &format!("__host.{}(value)", binding.adapter_to_body()),
-                )
-            })
-            .unwrap_or_else(|| format!("__host.{}(value)", binding.adapter_to_body()));
-        let body = binding
-            .role
-            .map(|role| {
-                from_kio(
-                    role_to_java_type(role),
-                    &format!(
-                        "{}(value)",
-                        java_application_body_helper(binding.type_arity, JavaFfiDirection::In)
-                    ),
-                )
-            })
-            .unwrap_or_else(|| {
-                format!(
-                    "{}(value)",
-                    java_application_body_helper(binding.type_arity, JavaFfiDirection::In)
-                )
-            });
-        out.push_str(&format!(
-            "  /** Lift the saturated `{qualified}` carrier into its exact constructor application. */\n  public {prefix}{application} {lift}({public_type} value) {{\n    return {from_body}({private});\n  }}\n\n  /** Project an exact `{qualified}` constructor application to its saturated carrier. */\n  public {prefix}{public_type} {project}({application} value) {{\n    return __host.{adapter_from_body}({body});\n  }}\n\n",
-            qualified = format!(
-                "{}.{}",
-                binding.name.module_segments().join("/"),
-                binding.name.name()
-            ),
-            from_body = java_application_body_helper(
-                binding.type_arity,
-                JavaFfiDirection::Out
-            ),
-            adapter_from_body = binding.adapter_from_body(),
-        ));
-    }
-
-    for entry in prepared
-        .public_newtypes()
-        .filter(|entry| !entry.type_params().is_empty())
-    {
-        let name = entry.name();
-        let parameters = (0..entry.type_params().len())
-            .map(|index| format!("KioNewtypeType_{index}"))
-            .collect::<Vec<_>>();
-        let declaration = java_generic_declaration(&parameters);
-        let prefix = if declaration.is_empty() {
-            String::new()
-        } else {
-            format!("{declaration} ")
-        };
-        let mut carrier_parameters = root_parameters.to_vec();
-        carrier_parameters.extend(parameters.iter().cloned());
-        let carrier = format!(
-            "Shapes.{}{}",
-            java_newtype_carrier(name),
-            java_generic_use(&carrier_parameters)
-        );
-        let marker = render_nominal_constructor_marker_use(
-            name,
-            JavaNominalConstructorKind::Newtype,
-            shapes,
-        );
-        let application = render_java_application(&marker, &parameters);
-        let lift = java_nominal_application_adapter(
-            name,
-            JavaNominalConstructorKind::Newtype,
-            JavaFfiDirection::In,
-        );
-        let project = java_nominal_application_adapter(
-            name,
-            JavaNominalConstructorKind::Newtype,
-            JavaFfiDirection::Out,
-        );
-        let conversion_helper = if shapes.newtype_payload_owner(name).is_some() {
-            java_newtype_internal_conversion_helper
-        } else {
-            java_newtype_conversion_helper
-        };
-        let in_helper = conversion_helper(name, JavaFfiDirection::In);
-        let out_helper = conversion_helper(name, JavaFfiDirection::Out);
-        let from_body = java_application_body_helper(parameters.len(), JavaFfiDirection::Out);
-        let to_body = java_application_body_helper(parameters.len(), JavaFfiDirection::In);
-        let qualified = format!("{}.{}", name.module_segments().join("/"), name.name());
-        out.push_str(&format!(
-            "  /** Lift the saturated `{qualified}` carrier into its exact constructor application. */\n  public {prefix}{application} {lift}({carrier} value) {{\n    return {from_body}({in_helper}(__host, value));\n  }}\n\n  /** Project an exact `{qualified}` constructor application to its saturated carrier. */\n  public {prefix}{carrier} {project}({application} value) {{\n    return {out_helper}(__host, {to_body}(value));\n  }}\n\n"
-        ));
-    }
 }
 
 /// Deterministic Java class name for one role-bearing facade path.
@@ -2610,25 +1386,21 @@ fn render_ns_class(
         } else {
             format!("{method_generics} ")
         };
-        let params =
-            java_callable_parameter_declarations(&f.param_javas, f.wide_param_shell.as_ref(), "p")?;
-        let flat_parameters =
-            java_callable_flat_expressions(f.param_javas.len(), f.wide_param_shell.as_ref(), "p")?;
-        let nominal_contexts = prepared_callable_nominal_contexts(site)?;
+        let parameters = JavaParameters::head(site);
+        let params = parameters.declarations(&f.param_javas, "p")?;
+        let flat_parameters = parameters.expand("p")?;
         let converted: Vec<String> = f
             .param_uses
             .iter()
             .zip(flat_parameters)
-            .zip(nominal_contexts)
-            .map(|((use_id, parameter), nominal_context)| {
-                convert_prepared_use_in_context(
+            .map(|(use_id, parameter)| {
+                convert_prepared_use(
                     site,
                     *use_id,
                     &binders,
                     &parameter,
                     JavaFfiDirection::In,
                     shapes,
-                    nominal_context,
                 )
             })
             .collect::<Result<_, _>>()?;
@@ -2732,17 +1504,10 @@ fn render_newtype_handle(
     }
     out.push_str("    }\n");
     if let Some(ctor) = &nt.ctor {
-        render_newtype_member_method(out, ctor, "__constructor", false, prepared, shapes)?;
+        render_newtype_member_method(out, ctor, "__constructor", prepared, shapes)?;
     }
     if let Some(projector) = &nt.projector {
-        render_newtype_member_method(
-            out,
-            projector,
-            "__projector",
-            nt.existential,
-            prepared,
-            shapes,
-        )?;
+        render_newtype_member_method(out, projector, "__projector", prepared, shapes)?;
     }
     out.push_str("  }\n\n");
     Ok(())
@@ -2752,7 +1517,6 @@ fn render_newtype_member_method(
     out: &mut String,
     member: &ExportNewtypeMember,
     runtime_field: &str,
-    flatten_returned_stage: bool,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &mut JavaShapes<'_>,
 ) -> Result<(), EmitError> {
@@ -2760,128 +1524,23 @@ fn render_newtype_member_method(
     let callable = render_prepared_callable(site, shapes)?;
     let binders = prepared_callable_binders(site);
     let method = java_public_item_name(&member.leaf);
-    let mut method_type_parameters = callable.method_type_parameters.clone();
-    let flattened = if flatten_returned_stage {
-        let mut nested = binders.clone();
-        let mut current = callable.ret_use;
-        while let FacadeUse::Forall { binder, result, .. } = site.plan().facade().use_at(current) {
-            let parameter = format!("KioCallType_{}", binder.index());
-            nested.insert(*binder, parameter.clone());
-            method_type_parameters.push(parameter);
-            current = *result;
-        }
-        let FacadeUse::Function { slots, result, .. } = site.plan().facade().use_at(current) else {
-            return Err(EmitError::internal(
-                "existential Java projector has no returned continuation stage",
-            ));
-        };
-        let continuation_types = slots
-            .iter()
-            .map(|slot| {
-                render_prepared_use(
-                    site,
-                    site.plan().facade(),
-                    site.nominals(),
-                    *slot,
-                    &nested,
-                    shapes,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Some((nested, current, slots.to_vec(), *result, continuation_types))
-    } else {
-        None
-    };
-    let generics = java_generic_declaration(&method_type_parameters);
+    let generics = java_generic_declaration(&callable.method_type_parameters);
     let prefix = if generics.is_empty() {
         String::new()
     } else {
         format!("{generics} ")
     };
-    let mut head_shell = callable.wide_param_shell.clone();
-    let mut continuation_shell = None;
-    if let Some((_, current, slots, _, _)) = &flattened {
-        let mut public_count = if head_shell.is_some() {
-            usize::from(!callable.param_javas.is_empty())
-        } else {
-            callable.param_javas.len()
-        } + slots.len();
-        if public_count > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT && slots.len() > 1 {
-            continuation_shell = Some(
-                site.plan()
-                    .facade()
-                    .function_shell(*current)
-                    .ok_or_else(|| {
-                        EmitError::internal(
-                            "wide Java existential continuation has no prepared stage shell",
-                        )
-                    })?
-                    .clone(),
-            );
-            public_count = public_count - slots.len() + 1;
-        }
-        if public_count > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT
-            && head_shell.is_none()
-            && callable.param_javas.len() > 1
-        {
-            head_shell = Some(
-                site.plan()
-                    .head_value_shell()
-                    .ok_or_else(|| {
-                        EmitError::internal(
-                            "wide Java existential projector has no prepared head shell",
-                        )
-                    })?
-                    .clone(),
-            );
-            public_count = public_count - callable.param_javas.len() + 1;
-        }
-        if public_count > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT {
-            return Err(EmitError::internal(
-                "prepared Java existential projector exceeds the JVM method-slot limit",
-            ));
-        }
-    }
-    let mut params =
-        java_callable_parameter_declarations(&callable.param_javas, head_shell.as_ref(), "p")?;
-    let flat_parameters =
-        java_callable_flat_expressions(callable.param_javas.len(), head_shell.as_ref(), "p")?;
-    let nominal_contexts = prepared_callable_nominal_contexts(site)?;
-    let converted = callable
-        .param_uses
-        .iter()
-        .zip(flat_parameters)
-        .zip(nominal_contexts)
-        .map(|((use_id, parameter), nominal_context)| {
-            convert_prepared_use_in_context(
-                site,
-                *use_id,
-                &binders,
-                &parameter,
-                JavaFfiDirection::In,
-                shapes,
-                nominal_context,
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let raw_args = pack_prepared_callable_arguments(site, &converted)?;
+    let head = JavaParameters::head(site);
+    let params = head.declarations(&callable.param_javas, "p")?;
+    let raw_args = pack_prepared_callable_arguments(site, &head.expand("p")?)?;
     let call = format!("{runtime_field}.call({})", raw_args.join(", "));
-
-    if let Some((nested, _current, slots, result, continuation_types)) = flattened {
-        params.extend(java_callable_parameter_declarations(
-            &continuation_types,
-            continuation_shell.as_ref(),
-            "k",
-        )?);
-        let returned = render_prepared_use(
-            site,
-            site.plan().facade(),
-            site.nominals(),
-            result,
-            &nested,
-            shapes,
-        )?;
-        let public_function = convert_prepared_use(
+    if callable.ret_java == "void" {
+        out.push_str(&format!(
+            "\n    public {prefix}void {method}({}) {{\n      {call};\n    }}\n",
+            params.join(", ")
+        ));
+    } else {
+        let returned = convert_prepared_use(
             site,
             callable.ret_use,
             &binders,
@@ -2889,49 +1548,10 @@ fn render_newtype_member_method(
             JavaFfiDirection::Out,
             shapes,
         )?;
-        let args =
-            if continuation_shell.is_some() && slots.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT {
-                vec!["k0".to_owned()]
-            } else {
-                java_callable_flat_expressions(slots.len(), continuation_shell.as_ref(), "k")?
-            }
-            .join(", ");
-        let apply = format!(
-            "(({ty}) ({public_function})).apply({args})",
-            ty = callable.ret_java
-        );
-        if matches!(site.plan().facade().use_at(result), FacadeUse::Unit { .. }) {
-            out.push_str(&format!(
-                "\n    public {prefix}void {method}({}) {{\n      {apply};\n    }}\n",
-                params.join(", ")
-            ));
-        } else {
-            out.push_str(&format!(
-                "\n    public {prefix}{returned} {method}({}) {{\n      return {apply};\n    }}\n",
-                params.join(", ")
-            ));
-        }
-        return Ok(());
-    }
-
-    let converted_return = convert_prepared_use(
-        site,
-        callable.ret_use,
-        &binders,
-        &call,
-        JavaFfiDirection::Out,
-        shapes,
-    )?;
-    if callable.ret_java == "void" {
         out.push_str(&format!(
-            "\n    public {prefix}void {method}({}) {{\n      {call};\n    }}\n",
-            params.join(", ")
-        ));
-    } else {
-        out.push_str(&format!(
-            "\n    public {prefix}{ret} {method}({}) {{\n      return {converted_return};\n    }}\n",
+            "\n    public {prefix}{ret} {method}({}) {{\n      return {returned};\n    }}\n",
             params.join(", "),
-            ret = callable.ret_java,
+            ret = callable.ret_java
         ));
     }
     Ok(())
@@ -3014,11 +1634,7 @@ fn render_host_interface(
         } else {
             format!("{method_generics} ")
         };
-        let decls = java_callable_parameter_declarations(
-            &callable.param_javas,
-            callable.wide_param_shell.as_ref(),
-            "p",
-        )?;
+        let decls = JavaParameters::head(site).declarations(&callable.param_javas, "p")?;
         let member = host_member_name(&module_path, name);
         push_doc(
             &mut out,
@@ -3056,6 +1672,32 @@ fn render_host_adapter(
     out.push_str(&format!(
         "  private static {root_declaration} KioRuntime.KioObject __hostRecord({host_type} __host) {{\n    KioRuntime.KioObject __r = new KioRuntime.KioObject();\n"
     ));
+    out.push_str("    KioRuntime.KioObject __fromRole = new KioRuntime.KioObject();\n    KioRuntime.KioObject __toRole = new KioRuntime.KioObject();\n    __r.set(\"__fromRole\", __fromRole);\n    __r.set(\"__toRole\", __toRole);\n");
+    for binding in shapes
+        .host_bindings()
+        .filter(|binding| binding.retained_at.is_none())
+    {
+        let Some(role) = binding.role else { continue };
+        assert_eq!(
+            binding.type_arity, 0,
+            "literal roles are nullary host types"
+        );
+        let role_type = role_to_java_type(role);
+        let native_type = java_host_binding_public_type(binding, &[]);
+        let key = escape_java(&java_nominal_runtime_key(&binding.name));
+        let from = from_kio(role_type, "__a[0]");
+        let to = to_kio(
+            role_type,
+            &format!(
+                "__host.{}(({native_type}) __a[0])",
+                binding.adapter_to_body()
+            ),
+        );
+        out.push_str(&format!(
+            "    __fromRole.set(\"{key}\", (KioRuntime.KioFn) __a -> __host.{adapter}({from}));\n    __toRole.set(\"{key}\", (KioRuntime.KioFn) __a -> {to});\n",
+            adapter=binding.adapter_from_body(),
+        ));
+    }
     // Group live prepared sites by the interpreter's exact host-record
     // namespace key. Retained sites have no execution layout and therefore
     // cannot enter this private adapter record.
@@ -3090,36 +1732,39 @@ fn render_host_adapter(
                 .collect::<BTreeMap<_, _>>();
             let member = host_member_name(&module_path, name);
             let boundary_args = expand_prepared_callable_arguments(site)?;
-            let nominal_contexts = prepared_callable_nominal_contexts(site)?;
             let args: Vec<String> = callable
                 .param_uses
                 .iter()
                 .zip(boundary_args)
-                .zip(nominal_contexts)
-                .map(|((use_id, expression), nominal_context)| {
-                    convert_prepared_use_in_context(
+                .map(|(use_id, expression)| {
+                    convert_prepared_use(
                         site,
                         *use_id,
                         &binders,
                         &expression,
                         JavaFfiDirection::Out,
                         shapes,
-                        nominal_context,
                     )
                 })
                 .collect::<Result<_, _>>()?;
-            let args = if let Some(shell) = callable.wide_param_shell.as_ref() {
-                vec![render_java_product_shell_value(
-                    shell,
-                    &callable.param_javas,
-                    &args,
-                )?]
-            } else {
-                args
-            };
+            let parameter_types = callable
+                .param_uses
+                .iter()
+                .map(|slot| {
+                    render_prepared_use(
+                        site,
+                        site.plan().facade(),
+                        site.nominals(),
+                        *slot,
+                        &binders,
+                        shapes,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let args = JavaParameters::head(site).pack(&parameter_types, &args)?;
             let call = format!("__host.{member}({})", args.join(", "));
             let body = if ret == "void" {
-                format!("{{ {call}; return null; }}")
+                format!("{{ {call}; return new Shapes.Unit(); }}")
             } else {
                 convert_prepared_use(
                     site,
@@ -3148,8 +1793,8 @@ fn render_shapes_java(
     namespace: &str,
     shapes: &JavaShapes<'_>,
     prepared: &PreparedBoundaryCallableSites,
+    body_plans: &[ValuePlan],
 ) -> Result<String, EmitError> {
-    validate_facade_shell_names(shapes)?;
     let mut out = String::new();
     out.push_str("// Generated by kio - do not edit by hand.\n");
     out.push_str(&format!("package {namespace};\n\n"));
@@ -3157,36 +1802,27 @@ fn render_shapes_java(
         "/**\n * Boundary shape declarations: one nominal Java type per distinct\n * FFI shape (see `specs/backends/java.md` § FFI surface). Names derive\n * from exact semantic keys and declaration identities.\n */\n",
     );
     out.push_str("public final class Shapes {\n  private Shapes() {}\n");
-    let sum_case_origin = shapes
-        .facade_shell_origins()
-        .filter(|(shell, _)| shell.kind() == FacadeKind::Sum)
-        .map(|(_, origin)| origin)
-        .reduce(join_java_support_origin);
-    if let Some(origin) = sum_case_origin {
-        out.push('\n');
-        push_java_deprecation(&mut out, origin, "  ");
-        out.push_str(&format!(
-            "  @FunctionalInterface\n  public interface SumCase<T, R> {{\n    {}R apply(T value);\n  }}\n",
-            java_deprecation_annotation(origin),
-        ));
+    let mut wide_shells = BTreeMap::new();
+    for site in prepared.sites() {
+        let parameters = JavaParameters::head(site);
+        if parameters.wide {
+            insert_java_support_origin(
+                &mut wide_shells,
+                parameters.whole_shell()?.clone(),
+                java_site_support_origin(site),
+            );
+        }
     }
-    for (shell, origin) in shapes.facade_shell_origins() {
-        render_facade_shell_java(&mut out, shell, origin);
+    validate_facade_shell_names(wide_shells.keys())?;
+    for (shell, origin) in wide_shells {
+        render_facade_shell_java(&mut out, &shell, origin);
     }
-    render_generic_callable_support(&mut out, prepared, shapes);
-    render_prepared_forall_interfaces(&mut out, prepared, shapes)?;
+    render_canonical_value_support(&mut out);
+    render_prepared_forall_interfaces(&mut out, prepared, shapes, body_plans)?;
+    render_body_stage_factories(&mut out, body_plans, shapes)?;
     render_nominal_constructor_markers(&mut out, prepared, shapes)?;
     render_parameterized_host_carriers(&mut out, prepared, shapes);
     render_prepared_newtype_carriers(&mut out, prepared, shapes)?;
-    if let Some(origin) = java_unit_origin(prepared, shapes) {
-        out.push('\n');
-        push_java_deprecation(&mut out, origin, "  ");
-        out.push_str("  /** The canonical unit value `()`. */\n  public record Unit() {\n");
-        if origin.removed_at_version().is_some() {
-            out.push_str("    @Deprecated public Unit {}\n");
-        }
-        out.push_str("  }\n");
-    }
     out.push_str("}\n");
     Ok(out)
 }
@@ -3224,9 +1860,11 @@ fn java_facade_shell_name(shell: &FacadeShellId) -> String {
     .unwrap_or_else(|never| match never {})
 }
 
-fn validate_facade_shell_names(shapes: &JavaShapes<'_>) -> Result<(), EmitError> {
+fn validate_facade_shell_names<'a>(
+    shells: impl Iterator<Item = &'a FacadeShellId>,
+) -> Result<(), EmitError> {
     let mut owners = BTreeMap::<String, &FacadeShellId>::new();
-    for shell in shapes.facade_shells() {
+    for shell in shells {
         let name = java_facade_shell_name(shell);
         if let Some(previous) = owners.insert(name.clone(), shell)
             && previous != shell
@@ -3279,15 +1917,13 @@ fn render_prepared_forall_interfaces(
     out: &mut String,
     prepared: &PreparedBoundaryCallableSites,
     shapes: &JavaShapes<'_>,
+    body_plans: &[ValuePlan],
 ) -> Result<(), EmitError> {
     let mut interfaces = BTreeMap::<String, (String, String, BoundaryFacadeSupportOrigin)>::new();
     for site in prepared.sites() {
-        let mut binders = BTreeMap::new();
         for stage in site.plan().entry().head_stages {
             match stage {
-                BoundaryCallableHeadStage::Type { id, .. } => {
-                    binders.insert(id, format!("KioCallType_{}", id.index()));
-                }
+                BoundaryCallableHeadStage::Type { .. } => {}
                 BoundaryCallableHeadStage::Value { slots } => {
                     for slot in slots {
                         collect_java_forall_interfaces(
@@ -3295,7 +1931,6 @@ fn render_prepared_forall_interfaces(
                             site,
                             site.plan().facade(),
                             *slot,
-                            &binders,
                             java_site_support_origin(site),
                             shapes,
                         )?;
@@ -3308,7 +1943,6 @@ fn render_prepared_forall_interfaces(
             site,
             site.plan().facade(),
             site.plan().entry().returned,
-            &binders,
             java_site_support_origin(site),
             shapes,
         )?;
@@ -3334,19 +1968,23 @@ fn render_prepared_forall_interfaces(
         else {
             continue;
         };
-        let binders = payload
-            .declaration_binders()
-            .iter()
-            .enumerate()
-            .map(|(index, binder)| (*binder, format!("T{index}")))
-            .collect::<BTreeMap<_, _>>();
         collect_java_forall_interfaces(
             &mut interfaces,
             site,
             payload.facade(),
             payload.payload_root(),
-            &binders,
             origin,
+            shapes,
+        )?;
+    }
+
+    for values in body_plans {
+        collect_java_value_forall_interfaces(
+            &mut interfaces,
+            values,
+            None,
+            values.root(),
+            BoundaryFacadeSupportOrigin::Live,
             shapes,
         )?;
     }
@@ -3354,7 +1992,10 @@ fn render_prepared_forall_interfaces(
     for (_, (_, declaration, origin)) in interfaces {
         out.push('\n');
         push_java_deprecation(out, origin, "  ");
-        out.push_str(&declaration);
+        out.push_str(&declaration.replace(
+            "__KIO_MEMBER_DEPRECATION__",
+            java_deprecation_annotation(origin),
+        ));
     }
     Ok(())
 }
@@ -3364,166 +2005,187 @@ fn collect_java_forall_interfaces(
     site: PreparedBoundaryCallableSite<'_>,
     plan: &BoundaryFacadePlan,
     id: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
     origin: BoundaryFacadeSupportOrigin,
     shapes: &JavaShapes<'_>,
 ) -> Result<(), EmitError> {
-    match plan.use_at(id) {
-        FacadeUse::Unit { .. } | FacadeUse::Bottom { .. } | FacadeUse::Bound { .. } => {}
-        FacadeUse::Nominal { .. } => {}
-        FacadeUse::Apply {
-            constructor, args, ..
-        } => {
-            collect_java_forall_interfaces(
-                interfaces,
-                site,
-                plan,
-                *constructor,
-                binders,
-                origin,
-                shapes,
-            )?;
-            for arg in args {
-                collect_java_forall_interfaces(
-                    interfaces, site, plan, *arg, binders, origin, shapes,
-                )?;
-            }
+    let values = java_value_plan(site, plan, shapes)?;
+    collect_java_value_forall_interfaces(
+        interfaces,
+        values,
+        Some(site.nominals()),
+        values.source(id),
+        origin,
+        shapes,
+    )
+}
+
+fn collect_java_value_forall_interfaces(
+    interfaces: &mut BTreeMap<String, (String, String, BoundaryFacadeSupportOrigin)>,
+    values: &ValuePlan,
+    nominals: Option<&BoundaryNominalDependencies>,
+    root: ValueUseId,
+    origin: BoundaryFacadeSupportOrigin,
+    shapes: &JavaShapes<'_>,
+) -> Result<(), EmitError> {
+    let mut seen = vec![false; values.uses().len()];
+    let mut pending = vec![root];
+    while let Some(id) = pending.pop() {
+        if std::mem::replace(&mut seen[id.index()], true) {
+            continue;
         }
-        FacadeUse::Product { args, .. } | FacadeUse::Sum { args, .. } => {
-            for arg in args {
-                collect_java_forall_interfaces(
-                    interfaces, site, plan, *arg, binders, origin, shapes,
-                )?;
+        match values.use_at(id) {
+            ValueUse::Unit | ValueUse::Bottom | ValueUse::Bound(_) | ValueUse::Nominal(_) => {}
+            ValueUse::Apply { constructor, args } => {
+                pending.push(*constructor);
+                pending.extend(args.iter().copied());
             }
-        }
-        FacadeUse::Function { slots, result, .. } => {
-            for slot in slots {
-                collect_java_forall_interfaces(
-                    interfaces, site, plan, *slot, binders, origin, shapes,
-                )?;
+            ValueUse::Product { left, right } | ValueUse::Sum { left, right } => {
+                pending.extend([*left, *right]);
             }
-            collect_java_forall_interfaces(
-                interfaces, site, plan, *result, binders, origin, shapes,
-            )?;
-        }
-        FacadeUse::Forall { .. } => {
-            let name = java_forall_interface_name(site, plan, id, shapes)?;
-            let identity = java_forall_exact_identity(site, plan, id, shapes)?;
-            let (declaration, nested, current) =
-                render_java_forall_interface(site, plan, id, binders, origin, shapes)?;
-            if let Some((previous_identity, previous_declaration, previous_origin)) =
-                interfaces.get_mut(&name)
-            {
-                if *previous_identity != identity || *previous_declaration != declaration {
-                    return Err(EmitError::internal(format!(
-                        "distinct prepared Java forall interfaces collide at bounded name `{name}`"
-                    )));
-                }
-                *previous_origin = join_java_support_origin(*previous_origin, origin);
-            } else {
-                interfaces.insert(
-                    name.clone(),
-                    (identity.clone(), declaration.clone(), origin),
+            ValueUse::Function { domain, result, .. } => {
+                pending.extend([*domain, *result]);
+            }
+            ValueUse::Forall { result, .. } => {
+                let shape = java_value_stage_shape(values, id, nominals, shapes)?;
+                let identity = shape
+                    .plan
+                    .identity(shape.plan.root(), shape.plan.ambient_binders());
+                let name = java_value_forall_name(&shape.plan, &identity);
+                let mut nested = shape
+                    .plan
+                    .ambient_binders()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, binder)| (*binder, format!("KioCaptured_{index}")))
+                    .collect::<BTreeMap<_, _>>();
+                let parameters = shape
+                    .plan
+                    .ambient_binders()
+                    .iter()
+                    .map(|binder| nested[binder].clone())
+                    .collect::<Vec<_>>();
+                let ValueUse::Forall {
+                    binder,
+                    result: shaped_result,
+                } = shape.plan.use_at(shape.plan.root())
+                else {
+                    unreachable!("a stage shape preserves its leading type binder")
+                };
+                nested.insert(*binder, "KioType".to_owned());
+                let ret =
+                    render_java_value_use(&shape.plan, None, *shaped_result, &nested, shapes)?;
+                let declaration = format!(
+                    "  @FunctionalInterface\n  public interface {name}{} {{\n    __KIO_MEMBER_DEPRECATION__public <KioType> {ret} advance();\n  }}\n",
+                    java_generic_declaration(&parameters),
                 );
-            }
-            match plan.use_at(current) {
-                FacadeUse::Function { slots, result, .. } => {
-                    for slot in slots {
-                        collect_java_forall_interfaces(
-                            interfaces, site, plan, *slot, &nested, origin, shapes,
-                        )?;
-                    }
-                    collect_java_forall_interfaces(
-                        interfaces, site, plan, *result, &nested, origin, shapes,
-                    )?;
-                }
-                _ => collect_java_forall_interfaces(
-                    interfaces, site, plan, current, &nested, origin, shapes,
-                )?,
+                register_java_forall_interface(interfaces, name, identity, declaration, origin)?;
+                pending.push(*result);
             }
         }
     }
     Ok(())
 }
 
-fn render_java_forall_interface(
-    site: PreparedBoundaryCallableSite<'_>,
-    plan: &BoundaryFacadePlan,
-    root: FacadeUseId,
-    binders: &BTreeMap<FacadeBinderId, String>,
+fn register_java_forall_interface(
+    interfaces: &mut BTreeMap<String, (String, String, BoundaryFacadeSupportOrigin)>,
+    name: String,
+    identity: String,
+    declaration: String,
     origin: BoundaryFacadeSupportOrigin,
-    shapes: &JavaShapes<'_>,
-) -> Result<(String, BTreeMap<FacadeBinderId, String>, FacadeUseId), EmitError> {
-    let name = java_forall_interface_name(site, plan, root, shapes)?;
-    let free_parameters = java_forall_free_parameters(binders, shapes);
-    let method = prepare_java_forall_method(plan, root, binders);
-    let (parameters, ret) = match plan.use_at(method.body) {
-        FacadeUse::Function { slots, result, .. } => {
-            let parameter_types = slots
-                .iter()
-                .map(|slot| {
-                    render_prepared_use(
-                        site,
-                        plan,
-                        site.nominals(),
-                        *slot,
-                        &method.public_binders,
-                        shapes,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let wide_shell = (slots.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT)
-                .then(|| {
-                    plan.function_shell(method.body).cloned().ok_or_else(|| {
-                        EmitError::internal(
-                            "generic Java callable has no exact prepared stage shell",
-                        )
-                    })
-                })
-                .transpose()?;
-            let parameters =
-                java_callable_parameter_declarations(&parameter_types, wide_shell.as_ref(), "p")?;
-            let ret = if matches!(plan.use_at(*result), FacadeUse::Unit { .. }) {
-                "void".to_owned()
-            } else {
-                render_prepared_use(
-                    site,
-                    plan,
-                    site.nominals(),
-                    *result,
-                    &method.public_binders,
-                    shapes,
-                )?
-            };
-            (parameters, ret)
+) -> Result<(), EmitError> {
+    if let Some((previous_identity, previous_declaration, previous_origin)) =
+        interfaces.get_mut(&name)
+    {
+        if *previous_identity != identity || *previous_declaration != declaration {
+            return Err(EmitError::internal(format!(
+                "distinct prepared Java forall interfaces collide at bounded name `{name}`"
+            )));
         }
-        _ => (
-            Vec::new(),
-            render_prepared_use(
-                site,
-                plan,
-                site.nominals(),
-                method.body,
-                &method.public_binders,
-                shapes,
-            )?,
-        ),
-    };
-    let method_prefix = if method.type_parameters.is_empty() {
-        String::new()
+        *previous_origin = join_java_support_origin(*previous_origin, origin);
     } else {
-        format!("{} ", java_generic_declaration(&method.type_parameters))
-    };
-    Ok((
-        format!(
-            "  @FunctionalInterface\n  public interface {name}{} {{\n    {deprecated}public {method_prefix}{ret} apply({});\n  }}\n",
-            java_generic_declaration(&free_parameters),
-            parameters.join(", "),
-            deprecated = java_deprecation_annotation(origin),
-        ),
-        method.public_binders,
-        method.body,
-    ))
+        interfaces.insert(name, (identity, declaration, origin));
+    }
+    Ok(())
+}
+
+fn render_body_stage_factories(
+    out: &mut String,
+    plans: &[ValuePlan],
+    shapes: &JavaShapes<'_>,
+) -> Result<(), EmitError> {
+    let mut factories = BTreeMap::<String, (String, String)>::new();
+    let mut registrations = Vec::new();
+    for (plan_index, plan) in plans.iter().enumerate() {
+        for (node_index, node) in plan.uses().iter().enumerate() {
+            let ValueUse::Forall { .. } = node else {
+                continue;
+            };
+            let id = plan.use_id(node_index);
+            let shape = java_value_stage_shape(plan, id, None, shapes)?;
+            let identity = shape
+                .plan
+                .identity(shape.plan.root(), shape.plan.ambient_binders());
+            let name = java_value_forall_name(&shape.plan, &identity);
+            let mut binders = shape
+                .plan
+                .ambient_binders()
+                .iter()
+                .map(|binder| (*binder, "Object".to_owned()))
+                .collect::<BTreeMap<_, _>>();
+            let ValueUse::Forall { binder, result } = shape.plan.use_at(shape.plan.root()) else {
+                unreachable!("a factored Java stage retains its leading binder")
+            };
+            binders.insert(*binder, "KioType".to_owned());
+            let result = render_java_value_use(&shape.plan, None, *result, &binders, shapes)?;
+            let parameters = vec!["Object".to_owned(); shape.captures.len()];
+            let carrier = java_applied_type(&name, &parameters);
+            // The shared binder-dependent skeleton fixes the actual interface.
+            // Its independent captures are erased only inside this private factory.
+            let factory = format!(
+                "  private static final class Factory_{name} implements KioRuntime.StageFactory {{\n\
+                 \x20   static final KioRuntime.StageFactory INSTANCE = new Factory_{name}();\n\
+                 \x20   public Object create(java.util.function.Supplier<Object> body) {{\n\
+                 \x20     return new {carrier}() {{\n\
+                 \x20       @SuppressWarnings(\"unchecked\")\n\
+                 \x20       public <KioType> {result} advance() {{ return ({result}) body.get(); }}\n\
+                 \x20     }};\n\
+                 \x20   }}\n\
+                 \x20   @SuppressWarnings(\"unchecked\")\n\
+                 \x20   public Object advance(Object value) {{ return (({carrier}) value).<Object>advance(); }}\n\
+                 \x20 }}\n"
+            );
+            if let Some((previous, declaration)) = factories.get(&name) {
+                if previous != &identity || declaration != &factory {
+                    return Err(EmitError::internal(format!(
+                        "distinct Java stage factories collide at `{name}`"
+                    )));
+                }
+            } else {
+                factories.insert(name.clone(), (identity, factory));
+            }
+            registrations.push(format!(
+                "    stages.put(KioRuntime.stageKey({plan_index}, {node_index}), Factory_{name}.INSTANCE);\n"
+            ));
+        }
+    }
+    for (_, declaration) in factories.values() {
+        out.push_str(declaration);
+    }
+    out.push_str("  static java.util.Map<Long, KioRuntime.StageFactory> stageFactories() {\n    var stages = new java.util.HashMap<Long, KioRuntime.StageFactory>();\n");
+    for index in 0..registrations.len().div_ceil(128) {
+        out.push_str(&format!("    registerStages{index}(stages);\n"));
+    }
+    out.push_str("    return java.util.Map.copyOf(stages);\n  }\n");
+    for (index, chunk) in registrations.chunks(128).enumerate() {
+        out.push_str(&format!(
+            "  private static void registerStages{index}(java.util.Map<Long, KioRuntime.StageFactory> stages) {{\n"
+        ));
+        for line in chunk {
+            out.push_str(line);
+        }
+        out.push_str("  }\n");
+    }
+    Ok(())
 }
 
 fn render_facade_shell_java(
@@ -3605,264 +2267,49 @@ fn render_facade_shell_java(
                 "\n      {member_deprecated}public {name}{use_} build() {{ return new {name}<>(values.clone()); }}\n    }}\n  }}\n"
             ));
         }
-        FacadeKind::Sum if arity <= JAVA_INSTANCE_REFERENCE_SLOT_LIMIT => {
-            let permits = members
-                .iter()
-                .map(|member| format!("{name}_{member}"))
-                .collect::<Vec<_>>();
-            out.push('\n');
-            push_java_deprecation(out, origin, "  ");
-            out.push_str(&format!(
-                "  public sealed interface {name}{declaration} permits {} {{\n    {member_deprecated}<R> R KioMatch({});\n  }}\n",
-                permits.join(", "),
-                parameters
-                    .iter()
-                    .enumerate()
-                    .map(|(index, parameter)| format!("SumCase<{parameter}, R> KioCase_{index}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-            for (index, member) in members.iter().enumerate() {
-                let cases = parameters
-                    .iter()
-                    .enumerate()
-                    .map(|(case_index, parameter)| {
-                        format!("SumCase<{parameter}, R> KioCase_{case_index}")
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                out.push('\n');
-                push_java_deprecation(out, origin, "  ");
-                out.push_str(&format!(
-                    "  public record {name}_{member}{declaration}({member_deprecated}T{index} value) implements {name}{use_} {{\n    {member_deprecated}public {name}_{member}(T{index} value) {{ this.value = value; }}\n    @Override\n    {member_deprecated}public <R> R KioMatch({cases}) {{ return KioCase_{index}.apply(value); }}\n  }}\n"
-                ));
-            }
-        }
-        FacadeKind::Sum => {
-            let permits = members
-                .iter()
-                .map(|member| format!("{name}_{member}"))
-                .collect::<Vec<_>>();
-            let case_types = parameters
-                .iter()
-                .map(|parameter| format!("SumCase<{parameter}, R>"))
-                .collect::<Vec<_>>();
-            let cases_type = format!(
-                "{}{}",
-                java_facade_shell_name(&shell.product_companion()),
-                java_generic_use(&case_types)
-            );
-            out.push('\n');
-            push_java_deprecation(out, origin, "  ");
-            out.push_str(&format!(
-                "  public sealed interface {name}{declaration} permits {} {{\n    {member_deprecated}<R> R KioMatch({cases_type} KioCases);\n  }}\n",
-                permits.join(", ")
-            ));
-            for (index, member) in members.iter().enumerate() {
-                out.push('\n');
-                push_java_deprecation(out, origin, "  ");
-                out.push_str(&format!(
-                    "  public record {name}_{member}{declaration}({member_deprecated}T{index} value) implements {name}{use_} {{\n    {member_deprecated}public {name}_{member}(T{index} value) {{ this.value = value; }}\n    @Override\n    {member_deprecated}public <R> R KioMatch({cases_type} KioCases) {{ return KioCases.{member}().apply(value); }}\n  }}\n"
-                ));
-            }
-        }
+        FacadeKind::Sum => unreachable!("only named wide products require a flat Java shell"),
     }
 }
 
-fn java_unit_origin(
-    prepared: &PreparedBoundaryCallableSites,
-    shapes: &JavaShapes<'_>,
-) -> Option<BoundaryFacadeSupportOrigin> {
-    let root_origin = prepared
-        .sites()
-        .filter_map(|site| {
-            let uses_unit = site
-                .plan()
-                .facade()
-                .uses()
-                .iter()
-                .any(|use_| matches!(use_, FacadeUse::Unit { .. }));
-            uses_unit.then(|| java_site_support_origin(site))
-        })
-        .reduce(join_java_support_origin);
-    shapes
-        .newtype_payload_owners()
-        .filter_map(|(name, owner)| {
-            let site = prepared
-                .site(&owner.site)
-                .expect("a Java payload owner denotes one prepared site");
-            let BoundaryNominalDeclaration::Newtype {
-                transparent_payload: Some(payload),
-                ..
-            } = site
-                .nominals()
-                .declaration(name)
-                .expect("a Java payload owner denotes one prepared newtype")
-            else {
-                unreachable!("a Java payload owner denotes a transparent newtype")
-            };
-            payload
-                .facade()
-                .uses()
-                .iter()
-                .any(|use_| matches!(use_, FacadeUse::Unit { .. }))
-                .then_some(owner.origin)
-        })
-        .chain(root_origin)
-        .reduce(join_java_support_origin)
+fn render_canonical_value_support(out: &mut String) {
+    out.push_str(
+        "  /** The canonical unit value. */\n  public record Unit() {}\n\n\
+         \x20 public record Product<L, R>(L left, R right) {}\n\n\
+         \x20 public sealed interface Sum<L, R> permits Left, Right {}\n\
+         \x20 public record Left<L, R>(L value) implements Sum<L, R> {}\n\
+         \x20 public record Right<L, R>(R value) implements Sum<L, R> {}\n\n\
+         \x20 @FunctionalInterface\n  public interface Fn1<A, R> { R apply(A value); }\n\n\
+         \x20 /** A canonical application index; storage is owned by its exact declaration. */\n\
+         \x20 public static final class Apply1<F, A> {\n\
+         \x20   private final String identity;\n    private final Object payload;\n\
+         \x20   private Apply1(String identity, Object payload) { this.identity = identity; this.payload = payload; }\n\
+         \x20 }\n\n\
+         \x20 private static Object applicationPayload(Apply1<?, ?> value, String identity) {\n\
+         \x20   if (!value.identity.equals(identity)) throw new IllegalArgumentException(\"wrong nominal application identity\");\n\
+         \x20   return value.payload;\n  }\n\n\
+         \x20 static Object createAppliedNominal(String identity, Object payload) {\n\
+         \x20   return new Apply1<>(identity, payload);\n  }\n\n\
+         \x20 static Object projectAppliedNominal(String identity, Object value) {\n\
+         \x20   return applicationPayload((Apply1<?, ?>) value, identity);\n  }\n"
+    );
 }
 
-fn render_generic_callable_support(
-    out: &mut String,
-    prepared: &PreparedBoundaryCallableSites,
-    shapes: &JavaShapes<'_>,
-) {
-    let mut functions = BTreeMap::new();
-    let mut applications = BTreeMap::new();
-    for site in prepared.sites() {
-        let origin = java_site_support_origin(site);
-        collect_generic_support_from_plan(
-            site.plan().facade(),
-            origin,
-            &mut functions,
-            &mut applications,
-        );
-    }
-    for (name, owner) in shapes.newtype_payload_owners() {
-        let site = prepared
-            .site(&owner.site)
-            .expect("a Java payload owner denotes one prepared site");
-        let BoundaryNominalDeclaration::Newtype {
-            transparent_payload: Some(payload),
-            ..
-        } = site
-            .nominals()
-            .declaration(name)
-            .expect("a Java payload owner denotes one prepared newtype")
-        else {
-            unreachable!("a Java payload owner denotes a transparent newtype")
-        };
-        collect_generic_support_from_plan(
-            payload.facade(),
-            owner.origin,
-            &mut functions,
-            &mut applications,
-        );
-    }
-    for binding in prepared.host_bindings() {
-        let arity = binding.type_params().len();
-        if arity == 0 {
-            continue;
-        }
-        let origin = match binding.origin() {
-            BoundaryHostBindingOrigin::Live => BoundaryFacadeSupportOrigin::Live,
-            BoundaryHostBindingOrigin::Retained { removed_at_version } => {
-                BoundaryFacadeSupportOrigin::Retained { removed_at_version }
-            }
-        };
-        insert_java_support_origin(&mut applications, arity, origin);
-    }
-    for entry in prepared.public_newtypes() {
-        let arity = entry.type_params().len();
-        if arity > 0 {
-            insert_java_support_origin(&mut applications, arity, BoundaryFacadeSupportOrigin::Live);
-        }
-    }
-    for entry in prepared.retained_public_newtypes() {
-        let arity = entry.type_params().len();
-        if arity == 0 {
-            continue;
-        }
-        let removed_at_version = prepared
-            .retained_public_newtype_removed_at(entry.name())
-            .unwrap_or_else(|| {
-                unreachable!("a retained Java public newtype has removal provenance")
-            });
-        insert_java_support_origin(
-            &mut applications,
-            arity,
-            BoundaryFacadeSupportOrigin::Retained { removed_at_version },
-        );
-    }
-    for ((arity, procedure), origin) in functions {
-        let parameters = (0..arity)
-            .map(|index| format!("T{index}"))
-            .collect::<Vec<_>>();
-        let args = parameters
-            .iter()
-            .enumerate()
-            .map(|(index, ty)| format!("{ty} p{index}"))
-            .collect::<Vec<_>>();
-        if procedure {
-            out.push('\n');
-            push_java_deprecation(out, origin, "  ");
-            out.push_str(&format!(
-                "  @FunctionalInterface\n  public interface Proc{arity}{} {{\n    {deprecated}void apply({});\n  }}\n",
-                java_generic_declaration(&parameters),
-                args.join(", "),
-                deprecated = java_deprecation_annotation(origin),
-            ));
-        } else {
-            let mut declaration_parameters = parameters.clone();
-            declaration_parameters.push("R".to_owned());
-            out.push('\n');
-            push_java_deprecation(out, origin, "  ");
-            out.push_str(&format!(
-                "  @FunctionalInterface\n  public interface Fn{arity}{} {{\n    {deprecated}R apply({});\n  }}\n",
-                java_generic_declaration(&declaration_parameters),
-                args.join(", "),
-                deprecated = java_deprecation_annotation(origin),
-            ));
-        }
-    }
-    for (arity, origin) in applications {
-        let mut parameters = vec!["F".to_owned()];
-        parameters.extend((0..arity).map(|index| format!("T{index}")));
-        let declaration = java_generic_declaration(&parameters);
-        let from_body = java_application_body_helper(arity, JavaFfiDirection::Out)
-            .strip_prefix("Shapes.")
-            .expect("a Java application body helper is Shapes-local")
-            .to_owned();
-        let to_body = java_application_body_helper(arity, JavaFfiDirection::In)
-            .strip_prefix("Shapes.")
-            .expect("a Java application body helper is Shapes-local")
-            .to_owned();
-        out.push('\n');
-        push_java_deprecation(out, origin, "  ");
-        out.push_str(&format!(
-            "  /** Typed application carrier; its erased body stays package-private. */\n  public static final class Apply{arity}{declaration} {{\n    private final Object __body;\n\n    private Apply{arity}(Object body) {{ this.__body = body; }}\n  }}\n\n  static {declaration} Apply{arity}{declaration} {from_body}(Object body) {{\n    return new Apply{arity}<>(body);\n  }}\n\n  static {declaration} Object {to_body}(Apply{arity}{declaration} value) {{\n    return value.__body;\n  }}\n"
+fn java_binary_product_type(types: &[String]) -> Result<String, EmitError> {
+    let Some((last, prefix)) = types.split_last() else {
+        return Err(EmitError::internal(
+            "a grouped Java product has at least one slot",
         ));
-    }
+    };
+    Ok(prefix
+        .iter()
+        .rev()
+        .fold(boxed_java_type(last), |right, left| {
+            format!("Shapes.Product<{}, {right}>", boxed_java_type(left))
+        }))
 }
 
-fn collect_generic_support_from_plan(
-    plan: &BoundaryFacadePlan,
-    origin: BoundaryFacadeSupportOrigin,
-    functions: &mut BTreeMap<(usize, bool), BoundaryFacadeSupportOrigin>,
-    applications: &mut BTreeMap<usize, BoundaryFacadeSupportOrigin>,
-) {
-    for use_ in plan.uses() {
-        match use_ {
-            FacadeUse::Function { slots, result, .. } => {
-                insert_java_support_origin(
-                    functions,
-                    (
-                        if slots.len() > JAVA_INSTANCE_REFERENCE_SLOT_LIMIT {
-                            1
-                        } else {
-                            slots.len()
-                        },
-                        matches!(plan.use_at(*result), FacadeUse::Unit { .. }),
-                    ),
-                    origin,
-                );
-            }
-            FacadeUse::Apply { args, .. } => {
-                insert_java_support_origin(applications, args.len(), origin);
-            }
-            _ => {}
-        }
-    }
+fn java_nominal_runtime_key(name: &QualifiedTypeName) -> String {
+    format!("{}\0{}", name.module_segments().join("/"), name.name())
 }
 
 fn render_nominal_constructor_marker(
@@ -3962,28 +2409,40 @@ fn render_parameterized_host_carriers(
         .host_bindings()
         .filter(|binding| binding.type_arity > 0 || binding.retained_at.is_some())
     {
-        let parameters = (0..binding.type_arity)
-            .map(|index| format!("T{index}"))
-            .collect::<Vec<_>>();
-        out.push('\n');
+        let parameters = java_host_binding_parameters(binding);
         let origin = binding
             .retained_at
             .map_or(BoundaryFacadeSupportOrigin::Live, |removed_at_version| {
                 BoundaryFacadeSupportOrigin::Retained { removed_at_version }
             });
-        let note = format!(
-            "Exact declaration-owned carrier for `{}.{}`.",
-            binding.name.module_segments().join("."),
-            binding.name.name(),
-        );
         let doc = prepared.host_binding(&binding.name).and_then(|binding| {
             crate::backends::boundary_docs::host_type(shapes.package(), binding)
         });
-        push_nominal_doc(out, doc, &note, origin, "  ");
+        push_nominal_doc(
+            out,
+            doc,
+            "Storage operations for this exact host declaration.",
+            origin,
+            "  ",
+        );
+        if parameters.is_empty() {
+            out.push_str(&format!("  public interface {} {{}}\n", binding.carrier()));
+            continue;
+        }
+        let marker = render_nominal_constructor_marker_use(
+            &binding.name,
+            JavaNominalConstructorKind::HostType,
+            shapes,
+        );
+        let ty = render_java_application(&marker, &parameters);
+        let generics = java_generic_declaration(&parameters);
+        let key = escape_java(&java_nominal_runtime_key(&binding.name));
+        let attribute = java_deprecation_annotation(origin);
         out.push_str(&format!(
-            "  public interface {}{} {{}}\n",
-            binding.carrier(),
-            java_generic_declaration(&parameters)
+            "  public static final class {carrier} {{\n    private {carrier}() {{}}\n\
+             \x20   {attribute}public static {generics} {ty} fromNative(Object value) {{ return new Apply1<>(\"{key}\", value); }}\n\
+             \x20   {attribute}public static {generics} Object toNative({ty} value) {{ return applicationPayload(value, \"{key}\"); }}\n  }}\n",
+            carrier=binding.carrier(),
         ));
     }
 }
@@ -3993,15 +2452,14 @@ fn render_prepared_newtype_carriers(
     prepared: &PreparedBoundaryCallableSites,
     shapes: &JavaShapes<'_>,
 ) -> Result<(), EmitError> {
+    let mut registrations = Vec::new();
     for (entry, origin) in prepared
         .public_newtypes()
         .map(|entry| (entry, BoundaryFacadeSupportOrigin::Live))
         .chain(prepared.retained_public_newtypes().map(|entry| {
             let removed_at_version = prepared
                 .retained_public_newtype_removed_at(entry.name())
-                .unwrap_or_else(|| {
-                    unreachable!("a retained Java public newtype has removal provenance")
-                });
+                .expect("retained newtype has removal provenance");
             (
                 entry,
                 BoundaryFacadeSupportOrigin::Retained { removed_at_version },
@@ -4009,60 +2467,68 @@ fn render_prepared_newtype_carriers(
         }))
     {
         let name = entry.name();
+        let key = escape_java(&java_nominal_runtime_key(name));
+        if !entry.type_params().is_empty() {
+            registrations.push(format!(
+                "    factories.put(\"{key}\", new KioRuntime.NominalFactory() {{\n\
+                 \x20     public Object create(Object payload) {{ return new Apply1<>(\"{key}\", payload); }}\n\
+                 \x20     public Object project(Object value) {{ return applicationPayload((Apply1<?, ?>) value, \"{key}\"); }}\n    }});\n"
+            ));
+            continue;
+        }
         let carrier = java_newtype_carrier(name);
-        let root_parameters = shapes.live_root_type_parameters();
-        let parameters = root_parameters
-            .iter()
-            .cloned()
-            .chain((0..entry.type_params().len()).map(|index| format!("T{index}")))
-            .collect::<Vec<_>>();
-        let declaration = java_generic_declaration(&parameters);
+        let parameters = shapes.live_root_type_parameters();
+        let declaration = java_generic_declaration(parameters);
+        let inference = if parameters.is_empty() { "" } else { "<>" };
         let transparent = matches!(entry.surface(), BoundaryNewtypeSurface::Both { .. })
             && entry.existential_params().is_empty();
-        let doc = if matches!(origin, BoundaryFacadeSupportOrigin::Live) {
-            crate::backends::boundary_docs::newtype(shapes.package(), entry)
-        } else {
-            None
-        };
+        let doc = matches!(origin, BoundaryFacadeSupportOrigin::Live)
+            .then(|| crate::backends::boundary_docs::newtype(shapes.package(), entry))
+            .flatten();
+        push_doc(out, doc, None, "  ");
+        push_java_deprecation(out, origin, "  ");
+        out.push_str(&format!(
+            "  public static final class {carrier}{declaration} {{\n    private final Object payload;\n\
+             \x20   private {carrier}(Object payload, boolean internal) {{ this.payload = payload; }}\n"
+        ));
         if transparent {
             let (payload, site, _) = prepared_newtype_payload_owner(prepared, shapes, name)?
                 .ok_or_else(|| {
-                    EmitError::internal(format!(
-                        "public Java newtype {}.{} has no prepared payload",
-                        name.module_segments().join("."),
-                        name.name()
-                    ))
+                    EmitError::internal("transparent Java newtype has a prepared payload")
                 })?;
-            let binders = payload
-                .declaration_binders()
-                .iter()
-                .enumerate()
-                .map(|(index, binder)| (*binder, format!("T{index}")))
-                .collect::<BTreeMap<_, _>>();
             let payload_ty = render_prepared_use(
                 site,
                 payload.facade(),
                 site.nominals(),
                 payload.payload_root(),
-                &binders,
+                &BTreeMap::new(),
                 shapes,
             )?;
-            out.push('\n');
-            push_doc(out, doc, None, "  ");
-            push_java_deprecation(out, origin, "  ");
+            let attribute = java_deprecation_annotation(origin);
             out.push_str(&format!(
-                "  public record {carrier}{declaration}({}{payload_ty} value) {{\n    {}public {carrier}({payload_ty} value) {{ this.value = value; }}\n  }}\n",
-                java_deprecation_annotation(origin),
-                java_deprecation_annotation(origin),
-            ));
-        } else {
-            out.push('\n');
-            push_doc(out, doc, None, "  ");
-            push_java_deprecation(out, origin, "  ");
-            out.push_str(&format!(
-                "  public static final class {carrier}{declaration} {{\n    final Object value;\n    {carrier}(Object value) {{ this.value = value; }}\n    Object value() {{ return value; }}\n  }}\n"
+                "    {attribute}public {carrier}({payload_ty} value) {{ this.payload = value; }}\n\
+                 \x20   @SuppressWarnings(\"unchecked\")\n    {attribute}public {payload_ty} value() {{ return ({payload_ty}) payload; }}\n"
             ));
         }
+        out.push_str("  }\n");
+        let erased = java_applied_type(&carrier, &vec!["?".to_owned(); parameters.len()]);
+        registrations.push(format!(
+            "    factories.put(\"{key}\", new KioRuntime.NominalFactory() {{\n\
+             \x20     public Object create(Object payload) {{ return new {carrier}{inference}(payload, true); }}\n\
+             \x20     public Object project(Object value) {{ return (({erased}) value).payload; }}\n    }});\n"
+        ));
+    }
+    out.push_str("  static java.util.Map<String, KioRuntime.NominalFactory> nominalFactories() {\n    var factories = new java.util.HashMap<String, KioRuntime.NominalFactory>();\n");
+    for index in 0..registrations.len().div_ceil(128) {
+        out.push_str(&format!("    registerNominals{index}(factories);\n"));
+    }
+    out.push_str("    return java.util.Map.copyOf(factories);\n  }\n");
+    for (index, chunk) in registrations.chunks(128).enumerate() {
+        out.push_str(&format!("  private static void registerNominals{index}(java.util.Map<String, KioRuntime.NominalFactory> factories) {{\n"));
+        for registration in chunk {
+            out.push_str(registration);
+        }
+        out.push_str("  }\n");
     }
     Ok(())
 }
@@ -4162,6 +2628,35 @@ mod tests {
     use crate::pass::structural_recovery;
     use std::path::{Path, PathBuf};
 
+    fn java_forall_exact_identity(
+        site: PreparedBoundaryCallableSite<'_>,
+        plan: &BoundaryFacadePlan,
+        root: FacadeUseId,
+        shapes: &JavaShapes<'_>,
+    ) -> Result<String, EmitError> {
+        let values = java_value_plan(site, plan, shapes)?;
+        let shape =
+            java_value_stage_shape(values, values.source(root), Some(site.nominals()), shapes)?;
+        Ok(shape
+            .plan
+            .identity(shape.plan.root(), shape.plan.ambient_binders()))
+    }
+
+    fn java_forall_interface_name(
+        site: PreparedBoundaryCallableSite<'_>,
+        plan: &BoundaryFacadePlan,
+        root: FacadeUseId,
+        shapes: &JavaShapes<'_>,
+    ) -> Result<String, EmitError> {
+        let values = java_value_plan(site, plan, shapes)?;
+        let shape =
+            java_value_stage_shape(values, values.source(root), Some(site.nominals()), shapes)?;
+        let identity = shape
+            .plan
+            .identity(shape.plan.root(), shape.plan.ambient_binders());
+        Ok(java_value_forall_name(&shape.plan, &identity))
+    }
+
     #[test]
     fn facade_and_host_names_preserve_semantic_components() {
         assert_eq!(host_member_name("foo/bar", "read"), "foo_bar__read");
@@ -4191,7 +2686,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_sum_input_uses_distinct_reserved_case_binders() {
+    fn nested_sum_input_preserves_canonical_value_and_exact_indices() {
         let package = build_package(
             &["module api; \
                host type Str role(str); \
@@ -4250,33 +2745,25 @@ mod tests {
             &shapes,
         )
         .expect("render nested public-sum input conversion");
-        let outer_binder = format!("__case_{}", outer.index());
-        let inner_binder = format!("__case_{}", inner.index());
-        assert_ne!(outer_binder, inner_binder);
         assert_eq!(
-            rendered.matches(&format!("{outer_binder} ->")).count(),
-            2,
-            "{rendered}"
+            rendered, "value",
+            "canonical input must not traverse either sum"
         );
-        assert_eq!(
-            rendered.matches(&format!("{inner_binder} ->")).count(),
-            2,
-            "{rendered}"
-        );
+        let native = render_prepared_use(
+            site,
+            site.plan().facade(),
+            site.nominals(),
+            outer,
+            &BTreeMap::new(),
+            &shapes,
+        )
+        .expect("canonical nested sum index");
+        assert_eq!(native.matches("Shapes.Sum<").count(), 2, "{native}");
+        assert_eq!(native.matches("Shapes.Product<").count(), 1, "{native}");
         assert!(
-            rendered
-                .replace(&format!("{outer_binder} ->"), "")
-                .contains(&outer_binder),
-            "outer declaration and recursive use diverged: {rendered}"
+            native.contains("KioNewtype_api__Red") && native.contains("KioNewtype_api__Black"),
+            "{native}"
         );
-        assert!(
-            rendered
-                .replace(&format!("{inner_binder} ->"), "")
-                .contains(&inner_binder),
-            "inner declaration and recursive use diverged: {rendered}"
-        );
-        assert_eq!(rendered.matches(".<Object>KioMatch(").count(), 2);
-        assert!(!rendered.contains("__case ->"), "{rendered}");
     }
 
     fn build_package(srcs: &[&str], package_file_src: &str) -> Package<Routed> {
@@ -4402,11 +2889,18 @@ mod tests {
     }
 
     #[test]
-    fn compound_input_binds_callback_product_producer_once() {
+    fn compound_callback_input_does_not_invoke_or_wrap_the_producer() {
         let rendered = compound_input_conversion(". -> Text & Text", "callback");
-        assert_eq!(rendered.matches(".apply(").count(), 1, "{rendered}");
+        assert_eq!(rendered, "callback");
+        let output =
+            prepared_return_conversion(". -> Text & Text", "produce()", JavaFfiDirection::Out);
+        assert!(
+            output.contains("Shapes.Fn1<Shapes.Unit, Shapes.Product<"),
+            "{output}"
+        );
+        assert_eq!(output.matches("produce()").count(), 1);
+        assert!(!output.contains(".apply("), "{output}");
     }
-
     #[test]
     fn compound_input_nested_product_preserves_one_source() {
         let source = "__host.receive()";
@@ -4423,168 +2917,137 @@ mod tests {
     }
 
     #[test]
-    fn function_conversion_captures_producer_before_callback() {
+    fn function_transport_evaluates_the_producer_once_without_invoking_it() {
         for direction in [JavaFfiDirection::In, JavaFfiDirection::Out] {
             for ty in [". -> Text", "Text -> .", "Text -> Text"] {
                 let rendered = prepared_return_conversion(ty, "produce()", direction);
-                let (capture, callback) = rendered
-                    .split_once(" -> ")
-                    .expect("eager conversion binding precedes the callback");
-                let prefix = match direction {
-                    JavaFfiDirection::In => "(KioRuntime.KioFn) ",
-                    JavaFfiDirection::Out => "",
-                };
+                assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
                 assert!(
-                    capture.starts_with(&format!("{prefix}__convert(produce(), __function_value_")),
+                    !rendered.contains(" -> ")
+                        && !rendered.contains(".apply(")
+                        && !rendered.contains(".call("),
                     "{rendered}"
                 );
-                assert!(!callback.contains("produce()"), "{rendered}");
-                assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
-                assert_eq!(rendered.matches("__convert(").count(), 1, "{rendered}");
+                match direction {
+                    JavaFfiDirection::In => assert_eq!(rendered, "produce()"),
+                    JavaFfiDirection::Out => {
+                        assert!(rendered.starts_with("((Shapes.Fn1<"), "{rendered}")
+                    }
+                }
             }
         }
     }
-
     #[test]
-    fn function_conversion_captures_each_result_at_its_own_stage() {
-        for direction in [JavaFfiDirection::In, JavaFfiDirection::Out] {
-            let rendered =
-                prepared_return_conversion("Text -> Text -> Text", "produce()", direction);
-            let (producer, outer) = rendered.split_once(" -> ").expect("producer capture");
-            let prefix = match direction {
-                JavaFfiDirection::In => "(KioRuntime.KioFn) ",
-                JavaFfiDirection::Out => "",
-            };
-            let outer_capture = producer
-                .strip_prefix(&format!("{prefix}__convert(produce(), "))
-                .expect("evaluate producer before constructing outer callable");
-            let (outer_parameters, outer_body) = outer.split_once(" -> ").expect("outer stage");
-            let (next_capture, inner) = outer_body.split_once(" -> ").expect("result capture");
-            let (inner_parameters, inner_body) = inner.split_once(" -> ").expect("inner stage");
-            let (_, inner_capture) = next_capture.rsplit_once(", ").expect("result capture name");
-            let invocation = match direction {
-                JavaFfiDirection::In => ".apply(",
-                JavaFfiDirection::Out => ".call(",
-            };
-            assert!(
-                next_capture.starts_with(&format!("{prefix}__convert(")),
-                "{rendered}"
-            );
-            assert!(next_capture.contains(outer_capture), "{rendered}");
-            assert_eq!(next_capture.matches(invocation).count(), 1, "{rendered}");
-            assert!(!outer_parameters.contains(invocation), "{rendered}");
-            assert!(!inner_parameters.contains(invocation), "{rendered}");
-            assert_ne!(outer_capture, inner_capture, "{rendered}");
-            assert!(inner_body.contains(inner_capture), "{rendered}");
-            assert!(!inner_body.contains(outer_capture), "{rendered}");
-            assert_eq!(inner_body.matches(invocation).count(), 1, "{rendered}");
-            assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
-            assert_eq!(rendered.matches("__convert(").count(), 2, "{rendered}");
-        }
+    fn returned_functions_keep_both_value_stages_without_eager_adaptation() {
+        let input =
+            prepared_return_conversion("Text -> Text -> Text", "produce()", JavaFfiDirection::In);
+        assert_eq!(input, "produce()");
+        let output =
+            prepared_return_conversion("Text -> Text -> Text", "produce()", JavaFfiDirection::Out);
+        assert_eq!(output.matches("Shapes.Fn1<").count(), 2, "{output}");
+        assert_eq!(output.matches("produce()").count(), 1, "{output}");
+        assert!(
+            !output.contains(" -> ") && !output.contains(".apply("),
+            "{output}"
+        );
     }
-
-    fn polymorphic_payload_conversion(
-        payload_type: &str,
-        direction: JavaFfiDirection,
-        internal: bool,
-    ) -> String {
+    fn polymorphic_payload_source(payload: &str) -> JavaPackage {
         let source = format!(
-            "module api; pub newtype Dictionary[*F] : {payload_type} {{ \
+            "module api; pub newtype Dictionary[*F] : {payload} {{ \
              pub constructor make; pub projector read; }};"
         );
         let package = build_package(&[&source], "bridge { api; }");
-        let prepared = PreparedBoundaryCallableSites::collect(&package, None)
-            .expect("prepare polymorphic payload");
-        let shapes = JavaShapes::new(&package, &prepared);
-        let name = QualifiedTypeName::new(vec!["api".to_owned()], "Dictionary".to_owned())
-            .expect("qualified newtype");
-        let (payload, site, _) = prepared_newtype_payload_owner(&prepared, &shapes, &name)
-            .expect("resolve payload owner")
-            .expect("public payload owner");
-        let binders = payload
-            .declaration_binders()
-            .iter()
-            .map(|binder| (*binder, format!("KioType_{}", binder.index())))
+        lower_package(&package, "pkg", None).expect("canonical polymorphic payload")
+    }
+
+    #[test]
+    fn forall_factories_defer_body_execution_until_each_advance() {
+        let emitted = polymorphic_payload_source("[A][B] ((A -> B) & F(A)) -> F(B)");
+        let factories: Vec<_> = emitted
+            .shapes_java
+            .split("private static final class Factory_")
+            .skip(1)
             .collect();
-        let execution = internal.then(|| {
-            site.execution()
-                .and_then(|execution| execution.transparent_payload(&name))
-                .expect("live payload execution")
-        });
-        convert_facade_use(
-            JavaConversionContext {
-                site,
-                plan: payload.facade(),
-                shapes: &shapes,
-                execution,
-            },
-            payload.payload_root(),
-            &binders,
-            "produce()",
-            direction,
-            JavaNominalContext::TransparentSlot,
-        )
-        .expect("convert polymorphic payload")
+        assert!(
+            !factories.is_empty(),
+            "actual serialized body stages require factories"
+        );
+        for factory in factories {
+            let create = factory
+                .split_once("public Object create(")
+                .expect("factory creates a stage")
+                .1;
+            let (construction, advance) =
+                create.split_once(" advance()").expect("one generic stage");
+            assert!(!construction.contains("body.get()"), "{construction}");
+            let advance = advance.split_once("\n    }").expect("create method end").0;
+            assert_eq!(advance.matches("body.get()").count(), 1, "{advance}");
+            assert!(!advance.contains(".advance()"), "{advance}");
+        }
+        assert!(emitted.shapes_java.contains("KioRuntime.stageKey("));
     }
 
     #[test]
-    fn internal_forall_input_retains_payload_stages_not_declaration_binders() {
-        let rendered = polymorphic_payload_conversion(
-            "[A][B] ((A -> B) & F(A)) -> F(B)",
-            JavaFfiDirection::In,
-            true,
+    fn forall_payload_stages_are_one_binder_methods_with_exact_residuals() {
+        let emitted = polymorphic_payload_source("[A][B] ((A -> B) & F(A)) -> F(B)");
+        let public_stages: Vec<_> = emitted
+            .shapes_java
+            .lines()
+            .filter(|line| {
+                line.trim_start().starts_with("public <KioType>") && line.ends_with("advance();")
+            })
+            .collect();
+        assert!(
+            public_stages
+                .iter()
+                .any(|line| line.contains("Shapes.KioForall_")),
+            "{public_stages:?}"
         );
-        assert_eq!(
-            rendered
-                .matches("(KioRuntime.KioFn) __forall_args_")
-                .count(),
-            2,
-            "{rendered}"
+        assert!(
+            public_stages
+                .iter()
+                .any(|line| line.contains("Shapes.Fn1<")),
+            "{public_stages:?}"
         );
-        assert!(rendered.starts_with("__convert(produce(), "), "{rendered}");
-        assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
+        assert!(
+            public_stages.iter().all(|line| !line.contains("Object")),
+            "{public_stages:?}"
+        );
+        assert!(!emitted.shapes_java.contains("KioPolyType_"));
     }
 
     #[test]
-    fn internal_forall_output_enters_stages_inside_public_apply() {
-        let rendered = polymorphic_payload_conversion(
-            "[A][B] ((A -> B) & F(A)) -> F(B)",
-            JavaFfiDirection::Out,
-            true,
+    fn forall_after_a_value_stage_stays_inside_its_function_result() {
+        let emitted = polymorphic_payload_source("[A] (A -> A) -> [B] B -> B");
+        assert!(
+            emitted.shapes_java.lines().any(|line| line
+                .contains("Shapes.Fn1<Shapes.Fn1<KioType, KioType>, KioCaptured_0>")
+                && line.ends_with("advance();")),
+            "{}",
+            emitted.shapes_java
         );
-        let (capture, apply) = rendered
-            .split_once(" apply(")
-            .expect("public forall method");
-        assert!(!capture.contains(").call()"), "{rendered}");
-        assert_eq!(apply.matches(").call()").count(), 2, "{rendered}");
-        assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
+        assert!(
+            emitted
+                .shapes_java
+                .contains("Shapes.Fn1<KioType, KioType> advance();")
+        );
+        assert!(
+            emitted.handle_java.contains("<Shapes.KioForall_"),
+            "{}",
+            emitted.handle_java
+        );
     }
 
     #[test]
-    fn internal_forall_nested_after_value_stage_keeps_its_stage() {
-        let payload = "[A] (A -> A) -> [B] B -> B";
-        let input = polymorphic_payload_conversion(payload, JavaFfiDirection::In, true);
-        let output = polymorphic_payload_conversion(payload, JavaFfiDirection::Out, true);
-        assert_eq!(
-            input.matches("(KioRuntime.KioFn) __forall_args_").count(),
-            2,
-            "{input}"
-        );
-        assert_eq!(output.matches(").call()").count(), 2, "{output}");
-        assert_eq!(input.matches("produce()").count(), 1, "{input}");
-        assert_eq!(output.matches("produce()").count(), 1, "{output}");
-    }
-
-    #[test]
-    fn boundary_forall_conversion_does_not_repeat_runtime_type_stages() {
+    fn boundary_forall_transport_does_not_advance_runtime_type_stages() {
         for direction in [JavaFfiDirection::In, JavaFfiDirection::Out] {
-            let rendered = polymorphic_payload_conversion(
-                "[A][B] ((A -> B) & F(A)) -> F(B)",
-                direction,
-                false,
+            let rendered =
+                prepared_return_conversion("[A][B] (A & B) -> A", "produce()", direction);
+            assert_eq!(rendered.matches("produce()").count(), 1, "{rendered}");
+            assert!(
+                !rendered.contains(".advance(") && !rendered.contains(" -> "),
+                "{rendered}"
             );
-            assert!(!rendered.contains("__forall_args_"), "{rendered}");
-            assert!(!rendered.contains(").call()"), "{rendered}");
         }
     }
 
@@ -4633,7 +3096,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_polymorphic_newtype_members_use_flat_runtime_payload_slots() {
+    fn direct_polymorphic_newtype_members_preserve_canonical_payloads() {
         for rendered in direct_payload_member_conversions("", "[A][B] ((A -> B) & F(A)) -> F(B)") {
             assert!(!rendered.contains("KioRuntime.map("), "{rendered}");
             assert!(!rendered.contains("java.util.Map"), "{rendered}");
@@ -4641,7 +3104,7 @@ mod tests {
     }
 
     #[test]
-    fn existential_polymorphic_payload_uses_flat_slots_inside_continuation() {
+    fn existential_polymorphic_payload_preserves_canonical_continuation() {
         for rendered in
             direct_payload_member_conversions("<U>", "[A][B] ((U -> A) & (A -> B)) -> B")
         {
@@ -4651,29 +3114,44 @@ mod tests {
     }
 
     #[test]
-    fn polymorphic_payload_keeps_nested_callback_grouping() {
+    fn polymorphic_payload_keeps_a_single_canonical_callback_domain() {
+        let emitted = polymorphic_payload_source("[A][B] (((A & B) -> A) & F(A)) -> F(A)");
+        assert!(
+            emitted.shapes_java.contains("Shapes.Fn1<Shapes.Product<"),
+            "{}",
+            emitted.shapes_java
+        );
         for rendered in
             direct_payload_member_conversions("", "[A][B] (((A & B) -> A) & F(A)) -> F(A)")
         {
+            assert_eq!(rendered.matches("value").count(), 1, "{rendered}");
             assert!(
-                rendered.contains("KioRuntime.map(") || rendered.contains("java.util.Map"),
+                !rendered.contains(" -> ") && !rendered.contains("KioRuntime.map("),
                 "{rendered}"
             );
         }
     }
-
     #[test]
-    fn ordinary_forall_and_monomorphic_members_keep_grouped_runtime_arguments() {
-        let ordinary = compound_input_conversion("[A][B] (A & B) -> A", "value");
-        assert!(ordinary.contains("java.util.Map"), "{ordinary}");
-        for rendered in direct_payload_member_conversions("", "(F(.) & F(.)) -> F(.)") {
+    fn ordinary_forall_and_monomorphic_members_share_canonical_callable_indices() {
+        assert_eq!(
+            compound_input_conversion("[A][B] (A & B) -> A", "value"),
+            "value"
+        );
+        let converted = direct_payload_member_conversions("", "(F(.) & F(.)) -> F(.)");
+        assert!(converted.iter().any(|value| value == "value"));
+        assert!(
+            converted
+                .iter()
+                .any(|value| value.starts_with("((Shapes.Fn1<Shapes.Product<")),
+            "{converted:?}"
+        );
+        for rendered in converted {
             assert!(
-                rendered.contains("KioRuntime.map(") || rendered.contains("java.util.Map"),
+                !rendered.contains("java.util.Map") && !rendered.contains(" -> "),
                 "{rendered}"
             );
         }
     }
-
     fn payload_owner_index_measurement(
         width: usize,
     ) -> super::super::skin::JavaPayloadOwnerIndexMeasurement {
@@ -4735,104 +3213,138 @@ mod tests {
     }
 
     #[test]
-    fn recursive_newtype_walk_allocates_one_ancestry_set_per_root() {
-        let traversal = RUNTIME
-            .split_once("    private boolean newtypeIsRecursive")
-            .expect("Java runtime has recursive-newtype entry point")
-            .1
-            .split_once("    private boolean isPassthrough")
-            .expect("Java runtime has recursive-newtype traversal boundary")
-            .0;
-
-        assert_eq!(
-            traversal.matches("new LinkedHashSet<>()").count(),
-            1,
-            "one root query must allocate exactly one ancestry set",
+    fn recursive_nominal_transport_uses_the_exact_factory_without_a_type_walk() {
+        let package = build_package(
+            &[
+                "module api; pub rec newtype Chain : . | Chain { pub constructor make; pub projector read; };",
+            ],
+            "bridge { api; }",
         );
-        assert!(!traversal.contains("new LinkedHashSet<>(visited)"));
+        let emitted = lower_package(&package, "pkg", None).expect("recursive nominal");
         assert!(
-            traversal.contains("if (!visited.add(key))")
-                && traversal.contains("finally {")
-                && traversal.contains("visited.remove(key);")
+            emitted
+                .shapes_java
+                .contains("public Shapes.Sum<Shapes.Unit, Shapes.KioNewtype_api__Chain> value()"),
+            "{}",
+            emitted.shapes_java
         );
+        assert!(
+            emitted
+                .shapes_java
+                .contains("return new KioNewtype_api__Chain(payload, true);")
+        );
+        assert!(
+            emitted
+                .shapes_java
+                .contains("return ((KioNewtype_api__Chain) value).payload;")
+        );
+        assert!(!RUNTIME.contains("newtypeIsRecursive") && !RUNTIME.contains("substType"));
+        assert!(!RUNTIME.contains("new LinkedHashSet<>(visited)"));
+    }
+    #[test]
+    fn internal_applied_nominal_storage_does_not_add_public_capabilities() {
+        let package = build_package(
+            &[
+                "module api; pub fn unit() -> . { () }",
+                "module internal; newtype Hidden[A] : . { constructor make; projector read; };",
+            ],
+            "bridge { api; }",
+        );
+        let emitted = lower_package(&package, "pkg", None).expect("internal applied nominal");
+        assert!(emitted.shapes_java.contains(
+            "\n  static Object createAppliedNominal(String identity, Object payload) {\n    return new Apply1<>(identity, payload);"
+        ));
+        assert!(emitted.shapes_java.contains(
+            "\n  static Object projectAppliedNominal(String identity, Object value) {\n    return applicationPayload((Apply1<?, ?>) value, identity);"
+        ));
+        assert!(emitted.shapes_java.contains(
+            "if (!value.identity.equals(identity)) throw new IllegalArgumentException(\"wrong nominal application identity\");"
+        ));
+        assert!(
+            !emitted
+                .shapes_java
+                .contains("KioNewtypeMk_internal__Hidden")
+        );
+        assert!(!emitted.shapes_java.contains("KioNewtype_internal__Hidden"));
+        assert_eq!(
+            RUNTIME
+                .matches("!asList(declaration.get(\"type_params\")).isEmpty()")
+                .count(),
+            2
+        );
+        assert!(RUNTIME.contains("return new PrivateNominal(key, payload);"));
+        assert!(RUNTIME.contains("if (!nominal.identity().equals(key))"));
     }
 
     #[test]
-    fn public_existential_newtype_transport_is_atomic_before_member_visibility() {
-        let predicate = RUNTIME
-            .split_once("    private boolean newtypeIsBoundaryAtomic")
-            .expect("atomic newtype predicate")
+    fn public_existential_newtype_transport_never_exposes_its_payload() {
+        let package = build_package(
+            &[
+                "module api; pub newtype Pack <U> : U { pub constructor make; pub projector read; };",
+            ],
+            "bridge { api; }",
+        );
+        let emitted = lower_package(&package, "pkg", None).expect("existential nominal");
+        let carrier = emitted
+            .shapes_java
+            .split_once("public static final class KioNewtype_api__Pack {")
+            .unwrap()
             .1
-            .split_once("    private boolean newtypeHasPublicHostSurface")
-            .expect("atomic predicate boundary")
+            .split_once("\n  }")
+            .unwrap()
             .0;
-        let surface_guard = predicate
-            .find("if (!newtypeHasPublicHostSurface(resolved)) {\n        return false;")
-            .expect("private and unbridged newtypes keep their existing handling");
-        let existential = predicate
-            .find("if (asBool(resolved.data().get(\"has_existentials\"))) {\n        return true;")
-            .expect("existential host carriers are opaque even with both public members");
-        let visibility = predicate
-            .find("boolean constructorPublic")
-            .expect("ordinary newtype member visibility still controls opacity");
-        assert!(surface_guard < existential && existential < visibility);
+        assert!(
+            carrier.contains("private final Object payload;"),
+            "{carrier}"
+        );
+        assert!(
+            carrier.contains("private KioNewtype_api__Pack(Object payload, boolean internal)"),
+            "{carrier}"
+        );
+        assert!(
+            !carrier.contains("public ") && !carrier.contains(" value()"),
+            "{carrier}"
+        );
+        assert!(emitted.handle_java.contains(" make(") && emitted.handle_java.contains(" read("));
     }
-
     #[test]
-    fn exact_existential_newtype_members_receive_internal_payload_helpers() {
+    fn exact_existential_newtype_factories_preserve_the_payload_without_conversion() {
         let package = build_package(
             &["module api; \
                pub newtype Pack <U> : U { pub constructor mk; pub projector get; }; \
-               pub newtype Loaded <U> : U & U { \
-                 pub constructor mk_loaded; pub projector get_loaded; \
-               };"],
+               pub newtype Loaded <U> : U & U { pub constructor mk_loaded; pub projector get_loaded; };"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-
+        for name in ["Pack", "Loaded"] {
+            assert!(
+                emitted.shapes_java.contains(&format!(
+                    "return new KioNewtype_api__{name}(payload, true);"
+                )),
+                "{}",
+                emitted.shapes_java
+            );
+            assert!(
+                emitted
+                    .shapes_java
+                    .contains(&format!("return ((KioNewtype_api__{name}) value).payload;")),
+                "{}",
+                emitted.shapes_java
+            );
+            assert!(
+                !emitted
+                    .shapes_java
+                    .contains(&format!("public KioNewtype_api__{name}("))
+            );
+        }
+        assert!(!emitted.handle_java.contains("__newtype_body_"));
         assert!(
-            emitted.handle_java.contains(
-                "KioNewtype_api__Pack __newtype_body_out_api__Pack(PkgHost __host, Object value)"
-            ) && emitted.handle_java.contains(
-                "Object __newtype_body_in_api__Pack(PkgHost __host, Shapes.KioNewtype_api__Pack value)"
-            ) && emitted
+            emitted
                 .handle_java
-                .matches("__newtype_body_out_api__Pack")
-                .count()
-                >= 2
-                && emitted
-                    .handle_java
-                    .matches("__newtype_body_in_api__Pack")
-                    .count()
-                    >= 2,
-            "{}",
-            emitted.handle_java
-        );
-        let loaded_out = emitted
-            .handle_java
-            .split_once(" __newtype_body_out_api__Loaded(")
-            .expect("exact existential product has an internal Out helper")
-            .1
-            .split_once("\n  }")
-            .expect("internal Out helper has a bounded body")
-            .0;
-        let loaded_in = emitted
-            .handle_java
-            .split_once(" __newtype_body_in_api__Loaded(")
-            .expect("exact existential product has an internal In helper")
-            .1
-            .split_once("\n  }")
-            .expect("internal In helper has a bounded body")
-            .0;
-        assert!(
-            loaded_out.contains("return new Shapes.KioNewtype_api__Loaded(value);")
-                && loaded_in.contains("return value.value();")
-                && !loaded_out.contains("java.util.List")
-                && !loaded_in.contains("java.util.Arrays"),
-            "out helper:{loaded_out}\nin helper:{loaded_in}"
+                .lines()
+                .any(|line| line.contains(" getLoaded(") && line.contains("Shapes.KioForall_"))
         );
     }
-
     #[test]
     fn existential_projector_retains_result_binder_after_head_binders() {
         let package = build_package(
@@ -4847,7 +3359,10 @@ mod tests {
             .find(|line| line.contains(" read("))
             .expect("public projector method");
         assert!(
-            declaration.contains("public <KioCallType_0, KioCallType_1> KioCallType_1 read("),
+            declaration.contains("public <KioCallType_0> Shapes.KioForall_")
+                && declaration.contains(
+                    " read(Shapes.Apply1<Shapes.KioNewtypeMk_api__Packed, KioCallType_0> p0)"
+                ),
             "{declaration}"
         );
         assert!(!declaration.contains("Object"), "{declaration}");
@@ -4920,30 +3435,6 @@ mod tests {
                 && over_limit_java.contains("values.clone()"),
             "{over_limit_java}"
         );
-
-        let wide_sum = FacadeShellId::new(
-            FacadeKind::Sum,
-            (0..=JAVA_INSTANCE_REFERENCE_SLOT_LIMIT as u64)
-                .map(|index| SemanticKey::Positional { index })
-                .collect(),
-        );
-        let mut wide_sum_java = String::new();
-        render_facade_shell_java(
-            &mut wide_sum_java,
-            &wide_sum.product_companion(),
-            BoundaryFacadeSupportOrigin::Live,
-        );
-        render_facade_shell_java(
-            &mut wide_sum_java,
-            &wide_sum,
-            BoundaryFacadeSupportOrigin::Live,
-        );
-        assert!(
-            wide_sum_java.contains("KioMatch(KioFacade_V1_Product_Positional_K255<")
-                && wide_sum_java.contains("KioCases._254().apply(value)")
-                && !wide_sum_java.contains("SumCase<T254, R> KioCase_254"),
-            "{wide_sum_java}"
-        );
     }
 
     #[test]
@@ -4979,7 +3470,7 @@ mod tests {
                         && emitted.handle_java.contains("public void send(Shapes.")
                         && emitted.handle_java.contains(".<T_api__Str")
                         && emitted.handle_java.contains("builder()")
-                        && emitted.host_java.contains("Shapes.Fn1<Shapes.KioFacade_")
+                        && emitted.host_java.contains("Shapes.Fn1<Shapes.Product<")
                         && !emitted.host_java.contains("Shapes.Fn255<")
                         && !emitted.shapes_java.contains("interface Fn255<"),
                     "host:\n{}\nhandle:\n{}\nshapes:\n{}",
@@ -5031,7 +3522,7 @@ mod tests {
         assert!(
             emitted
                 .shapes_java
-                .contains("/** Exact declaration-owned carrier for `api.Gone`.\n   * @deprecated Retained only for source compatibility after removal at contract v2.\n   */\n  @Deprecated\n  public interface KioHostType_api__Gone {}"),
+                .contains("/** Storage operations for this exact host declaration.\n   * @deprecated Retained only for source compatibility after removal at contract v2.\n   */\n  @Deprecated\n  public interface KioHostType_api__Gone {}"),
             "{}",
             emitted.shapes_java
         );
@@ -5072,12 +3563,9 @@ mod tests {
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
              Token;\n        archived;\n      }\n    }\n  }\n}\n",
         );
-        let carrier = exact_newtype_carrier("api", "Token");
 
         assert!(
-            emitted.shapes_java.contains(&format!(
-                "@Deprecated\n  public static final class {carrier}<T0>"
-            )),
+            !emitted.shapes_java.contains("class KioNewtype_api__Token<"),
             "{}",
             emitted.shapes_java
         );
@@ -5089,9 +3577,9 @@ mod tests {
             emitted.shapes_java
         );
         assert!(
-            emitted
-                .host_java
-                .contains(&format!("api__archived(Shapes.{carrier}<Shapes.Unit> p0)")),
+            emitted.host_java.contains(
+                "api__archived(Shapes.Apply1<Shapes.KioNewtypeMk_api__Token, Shapes.Unit> p0)"
+            ),
             "{}",
             emitted.host_java
         );
@@ -5121,29 +3609,35 @@ mod tests {
              newtype Box[A] : [T] T -> A { pub constructor make; pub projector read; };\n      }\n    };\n    remove {\n      module api {\n        first;\n      }\n    }\n  }\n}\n\
              v(3) {\n  nonbreaking {\n    remove {\n      module api {\n        Box;\n        second;\n      }\n    }\n  }\n}\n",
         );
-        let carrier = exact_newtype_carrier("api", "Box");
-        let forall = "KioForall_Newtype_api__Box_Binders_K1_";
-
         assert_eq!(
             emitted
                 .shapes_java
-                .matches(&format!("public record {carrier}<T0>"))
+                .matches("public interface KioNewtypeMk_api__Box {}")
                 .count(),
+            1
+        );
+        let stages: Vec<_> = emitted
+            .shapes_java
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| line.trim_start().starts_with("public interface KioForall_"))
+            .collect();
+        assert_eq!(
+            stages.len(),
             1,
-            "semantically equal retained payload epochs emitted multiple carriers:\n{}",
+            "equal payload epochs share one stage: {}",
             emitted.shapes_java
         );
+        let lines: Vec<_> = emitted.shapes_java.lines().collect();
+        let (index, _) = stages[0];
+        assert_eq!(lines[index - 2].trim(), "@Deprecated");
+        assert!(lines[index + 1].contains(
+            "@Deprecated public <KioType> Shapes.Fn1<KioType, KioCaptured_0> advance();"
+        ));
         assert!(
-            emitted
+            !emitted
                 .shapes_java
-                .contains(&format!("@Deprecated\n  public record {carrier}<T0>"))
-                && emitted.shapes_java.contains(&format!(
-                    "@Deprecated\n  @FunctionalInterface\n  public interface {forall}"
-                ))
-                && emitted.shapes_java.contains(" T0 apply(")
-                && emitted.shapes_java.contains("KioPolyType_"),
-            "retained transparent payload lost its closed deprecated forall support:\n{}",
-            emitted.shapes_java
+                .contains("public record KioNewtype_api__Box")
         );
     }
 
@@ -5276,10 +3770,10 @@ mod tests {
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        removed;\n      }\n    }\n  }\n}\n",
         );
         assert!(
-            emitted.shapes_java.contains("public interface Proc1<")
+            emitted.shapes_java.contains("public interface Fn1<")
                 && !emitted
                     .shapes_java
-                    .contains("@Deprecated\n  @FunctionalInterface\n  public interface Proc1<"),
+                    .contains("@Deprecated\n  @FunctionalInterface\n  public interface Fn1<"),
             "live Java callable support inherited retained deprecation:\n{}",
             emitted.shapes_java
         );
@@ -5303,13 +3797,126 @@ mod tests {
         );
         let carrier = exact_newtype_carrier("api", "Token");
         assert!(
-            emitted.shapes_java.contains(&format!(
-                "public record {carrier}<T_api__Str>(T_api__Str value)"
-            )) && !emitted.shapes_java.contains(&format!(
-                "public record {carrier}<T_api__Str>(Shapes.KioHostType_api__I32 value)"
-            )),
+            emitted
+                .shapes_java
+                .contains(&format!("public static final class {carrier}<T_api__Str>"))
+                && emitted
+                    .shapes_java
+                    .contains(&format!("public {carrier}(T_api__Str value)"))
+                && emitted.shapes_java.contains("public T_api__Str value()")
+                && !emitted.shapes_java.contains(&format!(
+                    "public {carrier}(Shapes.KioHostType_api__I32 value)"
+                )),
             "retained payload replaced the live Java newtype carrier:\n{}",
             emitted.shapes_java
+        );
+    }
+
+    #[test]
+    fn source_parameters_group_native_heads_without_changing_semantic_slots() {
+        let package = build_package(
+            &["module api; host type A; host type B; host type C; \
+               pub type Pair = A & B; \
+               host fn split(x: A, y: B) -> A; \
+               host fn grouped(pair: Pair) -> Pair; \
+               host fn mixed(x: A, pair: B & C) -> A; \
+               host fn generic[T](value: T) -> T; \
+               host fn unit(value: .) -> .;"],
+            "bridge { api; }",
+        );
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).expect("prepare");
+        let shapes = JavaShapes::new(&package, &prepared);
+        for (name, semantic, native) in [
+            ("split", 2, 2),
+            ("grouped", 2, 1),
+            ("mixed", 3, 2),
+            ("generic", 1, 1),
+            ("unit", 0, 0),
+        ] {
+            let site = prepared.sites().find(|site| {
+                matches!(site.site().owner(), BoundaryFacadeSiteOwner::HostFunction { name: leaf } if leaf == name)
+            }).expect("host site");
+            let callable = render_prepared_callable(site, &shapes).expect("render");
+            let public = JavaParameters::head(site);
+            assert_eq!(callable.param_uses.len(), semantic, "{name}");
+            assert_eq!(
+                public.types(&callable.param_javas).expect("types").len(),
+                native,
+                "{name}"
+            );
+            assert_eq!(
+                public.expand("p").expect("expand").len(),
+                semantic,
+                "{name}"
+            );
+            let values = (0..semantic)
+                .map(|index| format!("value{index}"))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                public
+                    .pack(&callable.param_javas, &values)
+                    .expect("pack")
+                    .len(),
+                native,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn grouped_callbacks_returned_stages_and_generic_unit_keep_their_cut() {
+        let package = build_package(
+            &["module api; host type A; host type B; \
+               pub fn first(x: A, y: B) -> A { x } \
+               pub fn second(pair: A & B) -> A & B { pair } \
+               pub fn generic[T](value: T) -> T { value } \
+               pub fn unit(value: .) -> . { value } \
+               pub fn returned(x: A) -> B -> A { .(y: B) { x } } \
+               pub fn callback(step: (A & B) -> A, pair: A & B) -> A { step(pair) }"],
+            "bridge { api; }",
+        );
+        let emitted = lower_package(&package, "pkg", None).expect("emit grouped Java");
+        for signature in [
+            "first(T_api__A p0, T_api__B p1)",
+            "second(Shapes.Product<T_api__A, T_api__B> p0)",
+            "<KioCallType_0> KioCallType_0 generic(KioCallType_0 p0)",
+            "void unit()",
+            "Shapes.Fn1<T_api__B, T_api__A> returned(T_api__A p0)",
+            "callback(Shapes.Fn1<Shapes.Product<T_api__A, T_api__B>, T_api__A> p0, Shapes.Product<T_api__A, T_api__B> p1)",
+        ] {
+            assert!(
+                emitted.handle_java.contains(signature),
+                "missing {signature}:\n{}",
+                emitted.handle_java
+            );
+        }
+    }
+
+    #[test]
+    fn retained_host_parameters_keep_grouping_without_execution() {
+        let package = build_package(
+            &["module api; host type A; host type B; pub fn unit() -> . { () }"],
+            "bridge { api; }",
+        );
+        let emitted = lower_with_sig(
+            &package,
+            "signature pkg v(3); \
+             v(1) { nonbreaking { add { module api { \
+             host type A; host type B; host fn archived(pair: A & B) -> A; \
+             pub fn unit() -> .; } } } } \
+             v(2) { nonbreaking { remove { module api { archived; } } } }",
+        );
+        assert!(
+            emitted
+                .host_java
+                .contains("default T_api__A api__archived(Shapes.Product<T_api__A, T_api__B> p0)"),
+            "{}",
+            emitted.host_java
+        );
+        assert!(
+            !emitted.handle_java.contains(".set(\"archived\""),
+            "{}",
+            emitted.handle_java
         );
     }
 
@@ -5325,22 +3932,29 @@ mod tests {
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
 
-        let rank_n = "KioForall_Site_M_main__H_applyPoly_Binders_K1_B0_A0";
+        let rank_n = emitted
+            .shapes_java
+            .lines()
+            .find_map(|line| {
+                line.trim_start()
+                    .strip_prefix("public interface KioForall_")
+                    .and_then(|tail| tail.strip_suffix(" {"))
+            })
+            .expect("one canonical identity stage");
+        let rank_n = format!("KioForall_{rank_n}");
         assert!(
-            emitted.host_java.contains(&format!(
-                "T_main__Str main__applyPoly(Shapes.{rank_n}<T_main__Str> p0);"
-            )) && emitted
-                .shapes_java
-                .contains(&format!("public interface {rank_n}<T_main__Str>"))
-                && emitted
-                    .shapes_java
-                    .contains("public <KioPolyType_0> KioPolyType_0 apply(KioPolyType_0 p0);")
-                && !emitted.host_java.contains("Fn1<Object, Object>")
-                && !emitted.shapes_java.contains("apply(Object p0)"),
-            "host:\n{}\nshapes:\n{}",
-            emitted.host_java,
-            emitted.shapes_java
+            emitted
+                .host_java
+                .contains(&format!("T_main__Str main__applyPoly(Shapes.{rank_n} p0);")),
+            "{}",
+            emitted.host_java
         );
+        assert!(
+            emitted
+                .shapes_java
+                .contains("public <KioType> Shapes.Fn1<KioType, KioType> advance();")
+        );
+        assert!(!emitted.host_java.contains("Fn1<Object, Object>"));
         assert!(
             emitted.handle_java.contains(
                 "public <KioCallType_0> KioCallType_0 ordered(Shapes.KioNewtype_main__T<T_main__Str> p0, KioCallType_0 p1)"
@@ -5351,7 +3965,7 @@ mod tests {
     }
 
     #[test]
-    fn rank_n_name_helper_drives_budgeted_declaration_and_use() {
+    fn rank_n_names_follow_shared_alpha_stable_shape_not_source_sites() {
         let package = build_package(
             &[
                 "module testapi; host type String role(str);",
@@ -5381,26 +3995,13 @@ mod tests {
         };
         let rank_n = java_forall_interface_name(site, site.plan().facade(), slots[0], &shapes)
             .expect("name rank-N interface");
-        assert_eq!(
-            rank_n,
-            "KioForall_Site_M_testapi_sarith__H_applyPoly_Binders_K1_B0_A0"
-        );
-        assert_eq!(rank_n.len(), 61);
-        assert!(rank_n.len() <= READABLE_MINT_MAX_LEN);
-
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
+        assert!(emitted.host_java.contains(&format!("Shapes.{rank_n} p0")));
         assert!(
             emitted
-                .host_java
-                .contains(&format!("Shapes.{rank_n}<T_testapi__String> p0"))
-                && emitted
-                    .shapes_java
-                    .contains(&format!("public interface {rank_n}<T_testapi__String>")),
-            "host:\n{}\nshapes:\n{}",
-            emitted.host_java,
-            emitted.shapes_java
+                .shapes_java
+                .contains(&format!("public interface {rank_n} {{"))
         );
-
         let long_site = prepared
             .sites()
             .find(|site| {
@@ -5422,22 +4023,90 @@ mod tests {
         let bounded =
             java_forall_interface_name(long_site, long_site.plan().facade(), slots[0], &shapes)
                 .expect("name long rank-N interface");
-        assert!(exact.len() > READABLE_MINT_MAX_LEN);
-        assert_eq!(bounded, format!("KioForall_H{}", fnv1a_64_hex(&exact)));
-        assert!(bounded.len() <= READABLE_MINT_MAX_LEN);
-        assert!(
-            emitted.host_java.contains(&format!("Shapes.{bounded}<"))
-                && emitted
-                    .shapes_java
-                    .contains(&format!("public interface {bounded}<")),
-            "host:\n{}\nshapes:\n{}",
-            emitted.host_java,
-            emitted.shapes_java
+        assert_eq!(
+            bounded, rank_n,
+            "alpha-renaming and source-site names do not change the stage"
+        );
+        assert_eq!(
+            exact, "V1;e0;q*fb0;b0;",
+            "exact shape identity is unchanged"
+        );
+        assert_eq!(bounded, "KioForall_Type_Fn_T0_T0");
+        assert_eq!(
+            emitted
+                .shapes_java
+                .matches(&format!("public interface {bounded} {{"))
+                .count(),
+            1
         );
     }
 
     #[test]
-    fn unsaturated_nominals_keep_exact_constructor_markers() {
+    fn wide_dependent_rank_n_shapes_keep_bounded_native_names() {
+        for width in [30, 128] {
+            let domain = vec!["T"; width].join(" & ");
+            let source = format!("module api; host fn use_stage(f: [T] ({domain}) -> T) -> .;");
+            let package = build_package(&[&source], "bridge { api; }");
+            let emitted = lower_package(&package, "pkg", None).expect("emit wide Java stage");
+            let identity = format!("V1;e0;q*f{}b0;b0;", "pb0;".repeat(width - 1));
+            let name = format!("KioForall_H{}", fnv1a_64_hex(&identity));
+            assert!(name.len() <= crate::backends::skin::READABLE_MINT_MAX_LEN);
+            assert!(
+                emitted
+                    .shapes_java
+                    .contains(&format!("public interface {name} {{")),
+                "width {width}: {}",
+                emitted.shapes_java
+            );
+            assert!(emitted.host_java.contains(&format!("Shapes.{name} p0")));
+        }
+    }
+
+    #[test]
+    fn bounded_forall_registry_compares_full_identity_and_declaration() {
+        let mut interfaces = BTreeMap::new();
+        let name = "KioForall_H0000000000000000".to_owned();
+        let retained = BoundaryFacadeSupportOrigin::Retained {
+            removed_at_version: 2,
+        };
+        register_java_forall_interface(
+            &mut interfaces,
+            name.clone(),
+            "complete first identity".to_owned(),
+            "exact declaration".to_owned(),
+            retained,
+        )
+        .unwrap();
+        register_java_forall_interface(
+            &mut interfaces,
+            name.clone(),
+            "complete first identity".to_owned(),
+            "exact declaration".to_owned(),
+            BoundaryFacadeSupportOrigin::Live,
+        )
+        .unwrap();
+        let before = interfaces.clone();
+        for (identity, declaration) in [
+            ("complete different identity", "exact declaration"),
+            ("complete first identity", "different declaration"),
+        ] {
+            assert!(
+                register_java_forall_interface(
+                    &mut interfaces,
+                    name.clone(),
+                    identity.to_owned(),
+                    declaration.to_owned(),
+                    retained,
+                )
+                .is_err()
+            );
+            assert_eq!(interfaces, before);
+        }
+        assert_eq!(interfaces[&name].2, BoundaryFacadeSupportOrigin::Live);
+    }
+
+    #[test]
+    fn unsaturated_and_saturated_nominals_share_the_exact_application_index() {
         let package = build_package(
             &["module api; \
                pub newtype Box[A] : A { pub constructor make_box; pub projector read_box; }; \
@@ -5446,29 +4115,8 @@ mod tests {
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-        let box_marker = "Shapes.KioNewtypeMk_api__Box";
-        let functor = format!("Shapes.KioNewtype_api__Functor<{box_marker}>");
-
-        assert!(
-            emitted
-                .shapes_java
-                .contains("public interface KioNewtypeMk_api__Box {}")
-                && emitted
-                    .shapes_java
-                    .contains("public interface KioNewtypeMk_api__Functor {}")
-                && emitted
-                    .shapes_java
-                    .contains("public static final class Apply1<F, T0>")
-                && emitted.shapes_java.contains("private final Object __body;")
-                && emitted
-                    .shapes_java
-                    .contains("static <F, T0> Apply1<F, T0> __apply1_fromBody(Object body)")
-                && emitted
-                    .shapes_java
-                    .contains("static <F, T0> Object __apply1_toBody(Apply1<F, T0> value)"),
-            "{}",
-            emitted.shapes_java
-        );
+        let functor =
+            "Shapes.Apply1<Shapes.KioNewtypeMk_api__Functor, Shapes.KioNewtypeMk_api__Box>";
         assert!(
             emitted
                 .host_java
@@ -5476,27 +4124,37 @@ mod tests {
             "{}",
             emitted.host_java
         );
+        for name in ["Box", "Functor"] {
+            assert!(
+                emitted
+                    .shapes_java
+                    .contains(&format!("public interface KioNewtypeMk_api__{name} {{}}"))
+            );
+            assert!(
+                !emitted
+                    .shapes_java
+                    .contains(&format!("class KioNewtype_api__{name}<"))
+            );
+        }
         assert!(
-            emitted.handle_java.contains(
-                "public <KioNewtypeType_0> Shapes.Apply1<Shapes.KioNewtypeMk_api__Box, KioNewtypeType_0> KioNewtypeApplication_api__Box_lift(Shapes.KioNewtype_api__Box<KioNewtypeType_0> value)"
-            ) && emitted.handle_java.contains(
-                "public <KioNewtypeType_0> Shapes.KioNewtype_api__Box<KioNewtypeType_0> KioNewtypeApplication_api__Box_project(Shapes.Apply1<Shapes.KioNewtypeMk_api__Box, KioNewtypeType_0> value)"
-            ),
-            "{}",
-            emitted.handle_java
+            emitted
+                .shapes_java
+                .contains("private Apply1(String identity, Object payload)")
+        );
+        assert!(!emitted.shapes_java.contains("public Apply1("));
+        assert!(
+            !emitted.handle_java.contains("_lift(") && !emitted.handle_java.contains("_project(")
         );
         assert!(
-            !emitted.handle_java.contains("new Pkg<>(")
-                && !emitted.handle_java.contains("new Ns_M_api<>(")
-                && !emitted.handle_java.contains("new NtH_M_api__T_Box<>(")
-                && !emitted.handle_java.contains("new NtH_M_api__T_Functor<>("),
+            emitted
+                .handle_java
+                .contains("Shapes.Apply1<Shapes.KioNewtypeMk_api__Box, KioCallType_0> makeBox("),
             "{}",
             emitted.handle_java
         );
     }
-
     #[test]
-    fn nominal_application_adapters_use_body_helpers_and_preserve_opaque_storage() {
+    fn nominal_application_indices_do_not_grant_generic_payload_access() {
         let package = build_package(
             &["module api; \
                pub newtype Box[A] : A & . { pub constructor make; pub projector read; }; \
@@ -5504,107 +4162,102 @@ mod tests {
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-        for (name, domain) in [("Box", "body_"), ("Hidden", "")] {
-            let lift = emitted
-                .handle_java
-                .split_once(&format!(" KioNewtypeApplication_api__{name}_lift("))
-                .expect("public nominal lift")
-                .1
-                .split_once("\n  }")
-                .expect("lift body")
-                .0;
-            let project = emitted
-                .handle_java
-                .split_once(&format!(" KioNewtypeApplication_api__{name}_project("))
-                .expect("public nominal project")
-                .1
-                .split_once("\n  }")
-                .expect("project body")
-                .0;
-            assert!(
-                lift.contains(&format!(
-                    "__apply1_fromBody(__newtype_{domain}in_api__{name}(__host, value))"
-                )),
-                "{lift}"
-            );
-            assert!(
-                project.contains(&format!(
-                    "__newtype_{domain}out_api__{name}(__host, Shapes.__apply1_toBody(value))"
-                )),
-                "{project}"
-            );
-            assert!(!lift.contains("KioRuntime.map("), "{lift}");
-            assert!(!project.contains("java.util.Map"), "{project}");
-        }
+        assert!(emitted.handle_java.contains(" make(") && emitted.handle_java.contains(" read("));
+        let hidden = emitted
+            .handle_java
+            .split_once("class NtH_M_api__T_Hidden")
+            .unwrap()
+            .1
+            .split_once("\n  }")
+            .unwrap()
+            .0;
+        assert!(
+            !hidden.contains(" make(") && !hidden.contains(" read("),
+            "{hidden}"
+        );
+        assert!(
+            !emitted.handle_java.contains("_lift(") && !emitted.handle_java.contains("_project(")
+        );
+        assert!(
+            !emitted.shapes_java.contains("fromNative(")
+                && !emitted.shapes_java.contains("toNative(")
+        );
+        let application = emitted
+            .shapes_java
+            .split_once("public static final class Apply1<F, A> {")
+            .unwrap()
+            .1
+            .split_once("\n  }")
+            .unwrap()
+            .0;
+        assert!(
+            application.contains("private final Object payload;")
+                && !application.contains("public "),
+            "{application}"
+        );
+        assert!(
+            emitted
+                .shapes_java
+                .contains("wrong nominal application identity")
+        );
     }
-
     #[test]
-    fn parameterized_host_type_application_uses_its_exact_adapter_seam() {
+    fn parameterized_host_type_storage_helpers_are_declaration_specific() {
         let package = build_package(
-            &["module api; \
-               host type Box[A]; \
-               host fn round[A](value: Box(A)) -> Box(A);"],
+            &["module api; host type Box[A]; host fn round[A](value: Box(A)) -> Box(A);"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-
+        let index = "Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, KioHostArg_0>";
         assert!(
             emitted
                 .shapes_java
                 .contains("public interface KioHostTypeMk_api__Box {}")
-                && emitted.handle_java.contains(
-                    "public <KioHostArg_0> Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, KioHostArg_0> KioHostTypeApplication_api__Box_lift(Shapes.KioHostType_api__Box<KioHostArg_0> value)"
-                )
-                && emitted.handle_java.contains(
-                    "public <KioHostArg_0> Shapes.KioHostType_api__Box<KioHostArg_0> KioHostTypeApplication_api__Box_project(Shapes.Apply1<Shapes.KioHostTypeMk_api__Box, KioHostArg_0> value)"
-                )
-                && !emitted.host_java.contains("Apply1<Object")
-                && !emitted.handle_java.contains("Apply1<Object"),
-            "shapes:\n{}\nhandle:\n{}\nhost:\n{}",
-            emitted.shapes_java,
-            emitted.handle_java,
-            emitted.host_java
         );
+        assert!(
+            emitted.shapes_java.contains(&format!(
+                "public static <KioHostArg_0> {index} fromNative(Object value)"
+            )),
+            "{}",
+            emitted.shapes_java
+        );
+        assert!(emitted.shapes_java.contains(&format!(
+            "public static <KioHostArg_0> Object toNative({index} value)"
+        )));
+        assert!(
+            emitted
+                .shapes_java
+                .contains("applicationPayload(value, \"api\\u0000Box\")")
+        );
+        assert!(
+            !emitted.handle_java.contains("_lift(") && !emitted.handle_java.contains("_project(")
+        );
+        assert!(!emitted.host_java.contains("Apply1<Object"));
     }
-
     #[test]
-    fn procedure_callbacks_execute_on_both_boundary_directions() {
+    fn procedure_callbacks_keep_explicit_unit_results_in_both_directions() {
         let package = build_package(
-            &["module api; \
-               host type Str role(str); \
+            &["module api; host type Str role(str); \
                pub fn invoke(callback: Str -> .) -> . { callback(\"called\"(Str)) } \
                pub fn supply() -> Str -> . { .(_value: Str) { () } }"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
-
-        let input = emitted
-            .handle_java
-            .split_once("__convert(p0, ")
-            .expect("capture the supplied procedure")
-            .1;
-        let (input_capture, input_callback) = input.split_once(" -> ").expect("input capture");
-        let input_callback = input_callback.split_once('\n').expect("input method").0;
         assert!(
-            input_callback.contains(&format!("({input_capture}).apply("))
-                && input_callback.contains("; return null; }"),
-            "{input_callback}"
+            emitted
+                .handle_java
+                .contains("public void invoke(Shapes.Fn1<T_api__Str, Shapes.Unit> p0)")
         );
-
-        let output = emitted
-            .handle_java
-            .split_once("__convert(__fn_supply.call(), ")
-            .expect("evaluate the producer before returning its procedure")
-            .1;
-        let (output_capture, output_callback) = output.split_once(" -> ").expect("output capture");
-        let output_callback = output_callback.split_once('\n').expect("output method").0;
         assert!(
-            output_callback.contains(&format!("((KioRuntime.KioFn) {output_capture}).call("))
-                && !output_callback.contains("__fn_supply.call()"),
-            "{output_callback}"
+            emitted
+                .handle_java
+                .contains("public Shapes.Fn1<T_api__Str, Shapes.Unit> supply()")
         );
+        assert!(emitted.handle_java.contains("__fn_invoke.call(p0);"));
+        assert_eq!(emitted.handle_java.matches("__fn_supply.call()").count(), 1);
+        assert!(!emitted.handle_java.contains("__convert("));
+        assert!(RUNTIME.contains("((Shapes.Fn1<Object, Object>) value).apply(domain)"));
     }
-
     #[test]
     fn public_opaque_newtypes_are_nameable_without_public_payload_access() {
         let package = build_package(
@@ -5641,175 +4294,120 @@ mod tests {
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
 
-        let opaque_a = exact_newtype_carrier("api", "Opaque_a");
-        let opaque_b = exact_newtype_carrier("api", "Opaque_b");
-        let constructor_only = exact_newtype_carrier("api", "Constructor_only");
-        let projector_only = exact_newtype_carrier("api", "Projector_only");
-        let existential = exact_newtype_carrier("api", "Existential");
-        let hidden = exact_newtype_carrier("api", "Hidden");
-        let recursive_constructor = exact_newtype_carrier("api", "Recursive_constructor");
-        let recursive_projector = exact_newtype_carrier("api", "Recursive_projector");
-        let transparent = exact_newtype_carrier("api", "Transparent_both");
-        let outer = exact_newtype_carrier("api", "Outer");
-        let direct_recursive = exact_newtype_carrier("api", "Direct_recursive");
-        let comptime_both = exact_newtype_carrier("api", "Comptime_both");
-        let comptime_opaque = exact_newtype_carrier("api", "Comptime_opaque");
-        let comptime_constructor = exact_newtype_carrier("api", "Comptime_constructor");
-
-        assert!(
+        let class_body = |name: &str| {
+            let header = format!(
+                "public static final class {} {{",
+                exact_newtype_carrier("api", name)
+            );
             emitted
                 .shapes_java
-                .contains(&format!("public static final class {opaque_a}")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            emitted
-                .shapes_java
-                .contains(&format!("public static final class {opaque_b}")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            !emitted
-                .shapes_java
-                .contains(&format!("public record {opaque_a}")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            !emitted
-                .shapes_java
-                .contains(&format!("public record {opaque_b}")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            emitted.handle_java.contains("class NtH_M_api__T_OpaqueA"),
-            "{}",
-            emitted.handle_java
-        );
-        assert!(
-            emitted
-                .shapes_java
-                .contains(&format!("public static final class {constructor_only}"))
-                && emitted
+                .split_once(&header)
+                .expect("public nominal carrier")
+                .1
+                .split_once("\n  }")
+                .expect("carrier end")
+                .0
+        };
+        for name in [
+            "Opaque_a",
+            "Opaque_b",
+            "Existential",
+            "Hidden",
+            "Recursive_constructor",
+            "Recursive_projector",
+            "Comptime_opaque",
+            "Comptime_constructor",
+            "Constructor_unit_alias",
+        ] {
+            let body = class_body(name);
+            assert!(
+                body.contains("private final Object payload;"),
+                "{name}: {body}"
+            );
+            assert!(
+                !body.contains("public ") && !body.contains(" value()"),
+                "{name}: {body}"
+            );
+        }
+        for name in [
+            "Transparent_both",
+            "Outer",
+            "Direct_recursive",
+            "Comptime_both",
+            "Packed_function",
+            "Spread_function",
+        ] {
+            let body = class_body(name);
+            assert!(
+                body.contains("private final Object payload;")
+                    && body.contains("public ")
+                    && body.contains(" value()"),
+                "{name}: {body}"
+            );
+        }
+        for name in ["ConstructorOnly", "ProjectorOnly"] {
+            assert!(
+                emitted
                     .shapes_java
-                    .contains(&format!("public static final class {projector_only}"))
-                && emitted
+                    .contains(&format!("public interface KioNewtypeMk_api__{name} {{}}"))
+            );
+            assert!(
+                !emitted
                     .shapes_java
-                    .contains(&format!("public static final class {existential}"))
-                && emitted
-                    .shapes_java
-                    .contains(&format!("public static final class {hidden}")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            emitted
-                .shapes_java
-                .contains(&format!("public record {transparent}(Shapes.Unit value)")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            emitted.shapes_java.contains("public record Unit() {")
-                && !emitted
-                    .shapes_java
-                    .contains("public static final class Unit {"),
-            "{}",
-            emitted.shapes_java
-        );
+                    .contains(&format!("class KioNewtype_api__{name}<"))
+            );
+        }
+        assert!(emitted.shapes_java.contains("public record Unit() {}"));
         assert!(
             emitted.handle_java.contains("makeConstructor(")
                 && !emitted.handle_java.contains("readConstructor(")
                 && !emitted.handle_java.contains("makeProjector(")
                 && emitted.handle_java.contains("readProjector(")
-                && emitted.handle_java.contains("readExistential("),
-            "{}",
-            emitted.handle_java
+                && emitted.handle_java.contains("readExistential(")
         );
-        assert!(
-            emitted.handle_java.contains("makeConstructorUnitAlias()"),
-            "{}",
-            emitted.handle_java
-        );
-        assert!(
-            emitted
-                .host_java
-                .contains(&format!("Shapes.{outer} api__echoOuter(Shapes.{outer} p0)")),
-            "{}",
-            emitted.host_java
-        );
-        let recursive_constructor_method = emitted
+        assert!(emitted.handle_java.contains("makeConstructorUnitAlias()"));
+        assert!(emitted.handle_java.contains("class NtH_M_api__T_OpaqueA"));
+        assert!(emitted.host_java.contains(
+            "Shapes.KioNewtype_api__Outer api__echoOuter(Shapes.KioNewtype_api__Outer p0)"
+        ));
+        assert!(emitted.host_java.contains("Shapes.KioNewtype_api__DirectRecursive api__echoDirect(Shapes.KioNewtype_api__DirectRecursive p0)"));
+        let constructor = emitted
             .handle_java
             .lines()
             .find(|line| line.contains(" makeRecursive("))
-            .expect("recursive constructor method");
-        let recursive_projector_method = emitted
+            .unwrap();
+        let projector = emitted
             .handle_java
             .lines()
             .find(|line| line.contains(" readRecursive("))
-            .expect("recursive projector method");
+            .unwrap();
         assert!(
-            recursive_constructor_method
-                .contains(&format!("public Shapes.{recursive_constructor}"))
-                && recursive_constructor_method.contains("(Shapes.KioFacade_")
-                && recursive_projector_method.contains("public Shapes.KioFacade_")
-                && recursive_projector_method
-                    .contains(&format!("(Shapes.{recursive_projector} p0)")),
-            "constructor: {recursive_constructor_method}\nprojector: {recursive_projector_method}\n{}",
-            emitted.handle_java
+            constructor
+                .contains("Shapes.Sum<Shapes.Unit, Shapes.KioNewtype_api__RecursiveConstructor>"),
+            "{constructor}"
         );
         assert!(
-            emitted.shapes_java.contains(&format!(
-                "public static final class {recursive_constructor} {{\n    final Object value;"
-            )) && emitted.shapes_java.contains(&format!(
-                "public static final class {recursive_projector} {{\n    final Object value;"
-            )),
-            "{}",
-            emitted.shapes_java
+            projector
+                .contains("Shapes.Sum<Shapes.Unit, Shapes.KioNewtype_api__RecursiveProjector>"),
+            "{projector}"
         );
-        assert!(
-            emitted.host_java.contains(&format!(
-                "Shapes.{direct_recursive} api__echoDirect(Shapes.{direct_recursive} p0)"
-            )) && emitted.shapes_java.contains(&format!(
-                "public record {direct_recursive}(Shapes.KioFacade_"
-            )),
-            "shapes:\n{}\nhost:\n{}",
-            emitted.shapes_java,
-            emitted.host_java
-        );
-        assert!(
-            emitted
-                .shapes_java
-                .contains(&format!("public record {comptime_both}(Void value)"))
-                && emitted
-                    .shapes_java
-                    .contains(&format!("public static final class {comptime_opaque}"))
-                && emitted
-                    .shapes_java
-                    .contains(&format!("public static final class {comptime_constructor}")),
-            "{}",
-            emitted.shapes_java
-        );
-        assert!(
-            emitted
-                .shapes_java
-                .contains(&format!("Shapes.Fn2<Shapes.{opaque_a}"))
-                && emitted.shapes_java.contains(&format!(
-                    "Shapes.{projector_only}<Shapes.Unit>, Shapes.{opaque_a}>"
-                )),
-            "{}",
-            emitted.shapes_java
-        );
+        assert!(class_body("Comptime_both").contains("public Void value()"));
+        assert!(class_body("Packed_function").contains("Shapes.Fn1<Shapes.Product<Shapes.KioNewtype_api__OpaqueA, Shapes.Apply1<Shapes.KioNewtypeMk_api__ProjectorOnly, Shapes.Unit>>, Shapes.KioNewtype_api__OpaqueA>"));
         assert!(
             !emitted
                 .shapes_java
-                .contains("KioNewtype_api__HiddenPayload"),
-            "{}",
-            emitted.shapes_java
+                .contains("KioNewtype_api__HiddenPayload")
         );
+        for line in emitted
+            .shapes_java
+            .lines()
+            .filter(|line| line.starts_with("  public "))
+        {
+            assert!(
+                !line.contains("Object"),
+                "erased payload leaks into public carrier API: {line}"
+            );
+        }
     }
 
     #[test]
@@ -5852,7 +4450,7 @@ mod tests {
         assert!(
             emitted
                 .shapes_java
-                .contains(&format!("public record {visible}<")),
+                .contains(&format!("public static final class {visible}<")),
             "{}",
             emitted.shapes_java
         );
@@ -5883,7 +4481,7 @@ mod tests {
                     .contains(&format!("Shapes.{wrapped}<"))
                 && emitted
                     .shapes_java
-                    .contains(&format!("public record {wrapped}<")),
+                    .contains(&format!("public static final class {wrapped}<")),
             "{}",
             emitted.handle_java
         );

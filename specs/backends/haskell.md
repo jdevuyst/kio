@@ -346,14 +346,13 @@ that exceptional spelling from the emitted `<Handle>Host` declaration.
 
 Each field's type is `<arg shapes…> -> m <ret shape>` — the value
 parameters at their boundary shapes (§ FFI surface), curried, returning
-the monad applied to the return's boundary shape. The argument list is the
-shared callable facade's canonical slot list at every value stage: a
-right-spine product domain contributes its positional slots, while a direct
-Unit domain contributes no term argument. A slot whose already-established
-type is later instantiated with Unit remains one `()` argument. The Haskell
-adapter uses the paired execution layout to rebuild the declaration's original
-source parameters before invoking the body, so the public slot cut never
-depends on a backend-local signature walk. A concrete host type is
+the monad applied to the return's boundary shape. Each written value parameter
+is one native argument: `f(x: A, y: B)` gives `a -> b -> m c`, whereas
+`f(pair: A & B)` gives `(a, b) -> m c`. A direct Unit domain contributes no
+term argument. An established generic slot instantiated with Unit or a product
+remains one argument. The shared prepared source partition determines these
+native arguments without changing Kio's semantic slots or application stages.
+A concrete host type is
 spelled by its exact associated family applied to `h`; a generic host fn
 quantifies its Kio type parameters with native Haskell `forall`, without
 adding term-level type-argument slots to the call ABI. Adjacent binders in
@@ -373,13 +372,13 @@ first-class type-application stages do.
 
 Structural shapes under generic binders remain fully typed. A product or
 sum that mentions scoped parameters adds those parameters to its stable
-`Env_H…` alias in lexical binder order, preserving both repeated occurrences
+`Host_…` alias in lexical binder order, preserving both repeated occurrences
 and binder kinds. The alias expands through `<Handle>Product` or
 `<Handle>Sum`; substituting a parameter changes only the family arguments,
 never the representation rule. Thus substituting `T := B & C` in `A & T`
 yields the same Haskell type as translating `A & (B & C)` directly. An
 abstract application such as `F(A & B)` is therefore
-`f (Env_H… h m a b)` on both sides of the call; the backend does not attempt
+`f (a, b)` (or its `Host_…` view) on both sides of the call; the backend does not attempt
 to traverse an arbitrary host-supplied `f`.
 
 ## Deprecated host items
@@ -628,13 +627,14 @@ right-spine walk + 3-step key fallback). A compound type's Haskell shape:
   `<SumFamily> (a ': as) = Either a (<SumFamily> as)` for two or more arms.
   Thus `(A | B | C)` reduces to `Either a (Either b c)`.
 - **Boundary presentation** → every compound host-function slot has a
-  stable exported `Env_H…` alias, and every compound exported-item slot has
-  a stable exported `Exp_H…` alias. The alias applies the corresponding
+  stable exported `Host_…` alias, and every compound exported-item slot has
+  a stable exported `Export_…` or `Member_…` alias. The alias applies the corresponding
   family to the right-spine slots and explicitly kinded lexical binders.
   A product alias exports one flat bidirectional record pattern with an
-  `EnvP_H…` or `ExpP_H…` name, independently exported `envSel_H…` or
-  `expSel_H…` selectors, and a one-pattern `COMPLETE` set. A sum alias exports
-  one bidirectional unary `EnvS_H…` or `ExpS_H…` pattern per arm, encoding the
+  name identical to the alias in Haskell's constructor namespace, independently
+  exported lowercase-prefix `_FieldN_<key>` selectors, and a one-pattern
+  `COMPLETE` set. A sum alias exports one bidirectional unary
+  `<alias>_CaseN_<key>` pattern per arm, encoding the
   arm's first-non-colliding 3-step key, and a `COMPLETE` set containing every
   arm. These
   patterns hide the nested pair / `Either` spelling without introducing a
@@ -654,11 +654,11 @@ right-spine walk + 3-step key fallback). A compound type's Haskell shape:
   contains it. Its universal arguments use their direct native
   representation, so applying the carrier to a structural type does not
   change the carrier's identity across the boundary.
-- **Function value** → a native curried Haskell function `a -> … ->
-  m ret` whose value-domain arguments are the shared canonical facade slots.
-  A product domain is therefore curried positionally and direct Unit is
-  nullary; the paired execution layout reconstructs the native body's original
-  tuple/domain representation. Compound legs are converted across the
+- **Function value** → a native Haskell function returning `m ret`.
+  An explicit product domain `(A & B) -> C` takes one tuple argument,
+  `(a, b) -> m c`; direct Unit is nullary. The paired layout adapts that
+  interface to the body's original tuple/domain representation, including a
+  declaration passed as a value. Compound legs are converted across the
   boundary, and the function value itself crosses as a real Haskell function.
 - **First-class polymorphic value** → `forall a. m next`, nested once per
   successive Kio `forall`. The host uses visible type application and binds
@@ -691,205 +691,128 @@ change or erase the typed FFI skin the host observes.
 
 ### Declaration-local type names
 
-Source-readable components use [shared word casing](README.md#source-derived-public-names)
-(`do_work` → `doWork`, `Native_token` → `NativeToken`).
-This conversion applies to primary names and to cosmetic readable suffixes,
-never to the raw byte identities in an exact codec.
+Source components use [shared word casing](README.md#source-derived-public-names)
+(`do_work` → `doWork`, `Native_token` → `NativeToken`), followed by
+`_` → `_u` escaping. Join these independently encoded components with
+`__`. Thus `a/b.Tree` has the readable path `a__b__Tree`, while
+`a_b.Tree` has `aB__Tree`; affixes cannot become path separators.
+The fixed role prefix determines how many final components name the item or
+newtype member. The complete source identity is retained, without a hash,
+truncation, or package-wide name allocation.
 
 The host-type class is `<Handle>HostTypes h`, package-qualified through
-`<Ns>`. Each exact Kio host-type declaration contributes
-`HostType__<module-segment>__…__<leaf>` with word-cased components when every identity component is
-boundary-safe — no `__`, leading `_`, or trailing `_` — and that name does not
-overlap a fixed facade type claim. Otherwise it contributes
-`HostType_H<hex(UTF-8(module\0leaf))>__<readable-module>__<readable-leaf>`.
-The fallback hexadecimal component encodes the unsanitized bytes; its suffix
-is cosmetic. The spelling depends only on the exact declaration identity and
-the configured target namespace, never on the declaration's `role(...)`, the
-Haskell type selected by the host, other package declarations, or encounter
-order. A fallback that itself overlaps a fixed type claim uses the structural
-escape below.
+`<Ns>`. Each exact host declaration contributes
+`HostType__<module-segment>__…__<leaf>`, using the escaped components above.
+For example, `api.Box` contributes `HostType__api__Box`.
+The spelling depends only on that declaration and the configured target
+namespace, not its `role(...)`, the host-selected type, or other declarations.
 
-A non-existential newtype that requires a nominal carrier — because it is
-parametric, recursive, opaque, or has exactly one public member — has the one
-abstract head
-`KioCarrier_H<hex(UTF-8(module\0leaf))>__<readable-module>_<readable-leaf>`.
-This same `KioCarrier` family covers ordinary, function-payload, and
-dictionary-shaped parametric newtypes; payload shape does not select another
-nominal identity. An existential newtype instead uses
-`KioExistential_H<hex(UTF-8(module\0leaf))>__<readable-module>_<readable-leaf>`.
-Both names are declaration-local and are exported abstractly when a public
-signature names them.
+A non-existential newtype requiring a nominal carrier — because it is
+parametric, recursive, opaque, or has exactly one public member — has the
+actual Haskell type constructor `KioType_<module-segment>__…__<leaf>`.
+An existential uses `KioExists_<module-segment>__…__<leaf>`.
+These are abstract nominal heads, not aliases that must be saturated:
+`KioType_origin__Box h m` can itself be supplied as a higher-kinded argument.
+Ordinary, function-payload, and dictionary-shaped newtypes use the same
+declaration-local rule. Raw constructors and payloads remain private.
 
-The structural families prefer `<Handle>Product` and `<Handle>Sum`, derived
-from the namespace's final segment. If either preferred spelling overlaps an
-existing generated type-name class, the structural collision rule below
-selects its deterministic escaped spelling instead. Their equations are
-specified in § FFI surface.
+The structural families prefer `<Handle>Product` and `<Handle>Sum`.
+Their equations are specified in § FFI surface. Fixed namespace conflicts use
+the reversible escape described below.
 
-### Readable public names and exact fallback encoding
+### Boundary views and patterns
 
-Host fields and exported wrappers ordinarily expose the source route as
-word-cased, `__`-separated components:
+Ordinary tuples, `Either`, functions, and `forall` remain usable directly.
+Declaration-owned aliases and typed bidirectional patterns provide optional
+names for structural boundary positions, including higher-rank positions.
+
+| Owner | View prefix and path |
+| --- | --- |
+| Host function | `Host_<module-path>__<function>` |
+| Exported ordinary function | `Export_<module-path>__<function>` |
+| Exported newtype member | `Member_<module-path>__<newtype>__<member>` |
+
+Each path uses the independently escaped components above. Append `_ArgN`
+for a zero-based boundary argument or `_Result` for its result, then the
+prepared nested-position steps in order: `_AppN` for a type argument,
+`_SlotN` for a structural slot, `_CallbackArgN` for a function argument,
+and `_CallbackResult` for a function result. These tagged steps are not
+source names.
+
+The type alias and product pattern share that spelling in Haskell's distinct
+type and constructor namespaces. A product selector lowercases the prefix's
+first letter and appends `_FieldN_<key>`. A sum-arm pattern appends
+`_CaseN_<key>`. Keys preserve the shared three-step key selection:
+
+- bare newtype: `Type_<newtype>`;
+- qualified newtype: `TypeAt_<module-path>__<newtype>`;
+- positional key: `PositionN`.
+
+The field/arm index and the key are separate identity components, including
+when both are positional. For example, `Host_api__exchange_Result` names
+a host result, `Host_api__exchange_Result_Case0_Position0` selects its first
+positional sum arm, and `Member_api__Pair__unPair_Result` names a projector's
+product result. Its first positional selector is
+`member_api__Pair__unPair_Result_Field0_Position0`.
+Aliases retain the exact binders, kinds and type arguments of their positions;
+naming introduces no wrapper, type application, or stage execution.
+
+### Host fields and exported entry wrappers
+
+These existing entry points use word-cased, `__`-separated source components:
 
 - host field: `host__<module-segment>__…__<leaf>`;
 - ordinary export: `export__<module-segment>__…__<leaf>`;
 - newtype-member export:
   `export__<module-segment>__…__<newtype>__<member>`.
 
-This primary form is used only when every source component is boundary-safe:
-it contains no `__` and neither starts nor ends with `_`. Consequently every
-`__` run denotes exactly one route boundary. Boundary-safe Kio module and value
-names are lowercase-initial while boundary-safe newtype names are
-uppercase-initial, so the newtype component also keeps ordinary exports and
-member exports disjoint. A Kio newtype name carrying the optional leading
-underscore is not boundary-safe and therefore uses the exact codec below; it
-is never emitted raw into a Haskell constructor position. The role prefix
-separates host fields from exports. These rules make the ordinary form
-injective and reversible without consulting other declarations. A name with
-any non-boundary-safe component uses the exact codec below instead. Internal
-module functions, boundary aliases and patterns, selectors, and their
-generated helpers always use the codec.
+This primary form requires every source component to contain no `__` and
+have no leading or trailing `_`. Lowercase-initial modules/values and
+uppercase-initial newtypes keep ordinary and member routes distinct.
+A non-boundary-safe entry uses
+`<prefix>_H<hex(01 || tagged-payload)>__<readable>`, with prefix `host`
+or `exp`. The raw-byte payload is `01 02 || item` for a host field or
+`01 03 || item` for an export. Here `u32` is unsigned big-endian,
+`text(s) = u32(len(UTF-8(s))) || UTF-8(s)`, and `module` is a
+`u32` segment count followed by each segment's `text`. An ordinary item is
+`01 || module || text(leaf)`; a member is
+`02 || module || text(newtype) || text(member)`.
 
-The codec's *semantic-role tags* distinguish kinds of Haskell declaration;
-they are unrelated to Kio `role(...)` annotations.
+The fallback suffix is cosmetic: word-case source components, join module
+segments with `_`, separate owners/leaves with `__`, replace characters
+other than ASCII letters/digits/`_`/`'` with `_`, and retain at most
+64 bytes. The complete identity is in the hexadecimal payload, not the suffix.
+Private implementation identifiers are not part of the host API.
 
-All tags below are hexadecimal bytes. All identity strings in this codec are
-raw source strings, not word-cased host spellings. `||` means byte concatenation.
-`u32(n)` is the four-byte unsigned big-endian encoding of `n`, and
-`text(s) = u32(len(UTF-8(s))) || UTF-8(s)`, where the length is in bytes.
-A module path is encoded as
-`module = u32(segment-count)` followed by `text(segment)` for every segment in
-source order; a zero count denotes the no-module identity. Then:
+### Fixed namespace conflicts
 
-- `module-item = module || text(leaf)`;
-- `item = 01 || module-item` for an ordinary item;
-- `item = 02 || module || text(newtype) || text(member)` for a newtype member.
+The configured facade retains `<Handle>`, `<Handle>Host`,
+`<Handle>HostTypes`, and `create<Handle>`. An immutable collision context
+contains those type/constructor/value claims, the resolved product/sum
+families, and the fixed type names `Type` and `KioOpaque` plus value
+`pkgHost`. Structural names also avoid the generated nominal classes
+`KioType_` and `KioExists_`; structural type names additionally avoid
+`HostType__`. Host-type names avoid fixed type claims; actual nominal heads
+avoid both fixed type and constructor claims.
 
-The distinct item tags keep ordinary-item and newtype-member identities
-disjoint independently of their cosmetic readable suffixes.
+An overlapping declaration uses
+`<prefix>_N<len>_<owner>_<role>_<preferred>`. The prefix is `KioStructT`,
+`KioStructC`, or `kioStructV` for a type, constructor, or value. A nominal
+uses the type form for its single type/constructor spelling. Encode the full
+configured namespace as `owner` by replacing `_` with `_u` and dots
+with `_s`; `len` is the encoded byte length. The role is
+`ProductFamily`, `SumFamily`, `View`, `HostType`, or `Nominal`.
+The complete preferred spelling remains unchanged at the end.
 
-A boundary is `owner || root || u32(step-count)` followed by every encoded step
-in order:
+For example, namespace `KioType_api__Box` conflicts with the nominal
+`api.Box`. That nominal becomes
+`KioStructT_N19_KioType_uapi_u_uBox_Nominal_KioType_api__Box`.
+This mapping is reversible and has no digest or length cap.
 
-- environment owner: `01 || module-item`; exported-item owner:
-  `02 || item`;
-- argument root: `01 || u32(index)`; return root: `02`;
-- type-application step: `01 || u32(index)`; product/sum-slot step:
-  `02 || u32(index)`; callback-argument step: `03 || u32(index)`;
-  callback-return step: `04`.
-
-A structural key is `01 || text(newtype)` for a bare newtype,
-`02 || module || text(newtype)` for a qualified newtype, or
-`03 || u32(index)` for a positional key. A sum-pattern identity is
-`boundary || key || u32(arm-index)`. A rank-helper pattern identity is
-`01 || boundary` for a product or `02 || sum-pattern` for a sum.
-
-The top-level semantic roles are:
-
-| Semantic role | Haskell prefix | Namespace | Tagged payload after the format tag |
-| --- | --- | --- | --- |
-| Internal module function | `mod` | value | `01 01`, then `item(ordinary)` |
-| Host-record field | `host` | value | `01 02`, then `item(ordinary)` |
-| Export wrapper | `exp` | value | `01 03`, then `item` |
-| Boundary alias | environment `Env`, export `Exp` | type | `10`, then `boundary` |
-| Product pattern | environment `EnvP`, export `ExpP` | constructor | `20`, then `boundary` |
-| Sum-arm pattern | environment `EnvS`, export `ExpS` | constructor | `21`, then `sum-pattern` |
-| Product selector | environment `envSel`, export `expSel` | value | `22`, then `boundary`, `key`, and `u32(index)` |
-| Rank-N view type | `ViewT` | type | `30`, then `pattern` |
-| Rank-N view constructor | `ViewC` | constructor | `31`, then `pattern` |
-| Rank-N no-match constructor | `NoMatch` | constructor | `32`, then `sum-pattern` |
-| Rank-N view function | `view` | value | `33`, then `pattern` |
-
-The fallback or internal name is
-`<prefix>_H<hex(01 || tagged-payload)>__<readable>`, where the leading `01`
-is the fixed format tag and the complete byte
-identity formatted as lowercase hexadecimal. Uppercase prefixes are used for
-Haskell type/constructor namespaces and lowercase prefixes for the value
-namespace, so every result is a legal identifier in its declaration position.
-
-The readable basis is deterministic but cosmetic. Each source component is
-word-cased before fixed role delimiters are inserted. A module is its segments
-joined by `_`; a module item is `<module>__<leaf>` (or just `<leaf>` for the
-no-module identity); and a newtype member is
-`<module>__<newtype>__<member>` (or `<newtype>__<member>` with no module). A
-boundary appends `_arg<n>` or `_ret`, then
-`_app<n>`, `_slot<n>`, `_cbarg<n>`, or `_cbret` for each step. A bare key is
-its newtype, a qualified key is `<module>_<newtype>` (or just `<newtype>` with
-no module), and a positional key is `pos<n>`. Product patterns append `_P`;
-sum patterns append
-`_S_<key>_<arm-index>`; selectors append `_Sel_<key>_<index>`. Rank-N helpers
-reuse their product/sum pattern basis. Sanitization retains ASCII letters,
-digits, `_`, and `'`, replaces every other character with `_`, truncates to
-64 ASCII bytes, and uses `name` if the result is empty. Neither compiler nor
-runner parses this suffix.
-
-For example:
-
-- host field `f` in module `a/b` is
-  `host__a__b__f`;
-- host field `f` in the distinct module `a_b` is
-  `host__aB__f`;
-- the ordinary export `a.foo_bar_` is
-  `exp_H0101030100000001000000016100000008666f6f5f6261725f__a__fooBar_`,
-  while member `bar` of the legal newtype `a.Foo` is
-  `export__a__Foo__bar`;
-- routes `a_/b.g` and `a/_b.g` both use distinct exact fallbacks rather than
-  sharing the ambiguous primary candidate `host__a___b__g`; member routes
-  `api.A_.b` and `api.A._b` follow the same rule rather than sharing
-  `export__api__A___b`.
-
-The two host-field names are distinct because one route has two module
-components and the other has one. The export examples show the fallback for a
-source affix and the ordinary spelling for a
-newtype member; the final examples show the same fallback preventing an
-underscore run from straddling a component boundary. None of these decisions
-consults declaration occupancy.
-
-Within a Haskell namespace, repeated generation deduplicates only the same
-semantic identity with the same declaration. A repeated identity with a
-different declaration, or distinct identities that render to one name, is a
-compiler error rather than a suffix-allocation rule.
-
-The namespace-derived facade names `<Handle>HostTypes`, `<Handle>Host`,
-`<Handle>`, and `create<Handle>` retain the spellings specified in § Output
-layout. Structural declarations use an immutable collision context derived
-from the full target namespace. Their preferred spellings are retained unless
-they overlap a fixed claim in the same Haskell namespace. The type claims are
-`<Handle>`, `<Handle>Host`, `<Handle>HostTypes`, `Type`, `KioOpaque`, and the
-resolved product and sum families; the constructor claims are `<Handle>` and
-`<Handle>Host`; the value claims are `create<Handle>` and `pkgHost`. A
-preferred type or constructor spelling also overlaps when it is exactly a
-generated `KioCarrier` or `KioExistential` name; a preferred type spelling
-additionally overlaps either an ordinary or fallback generated `HostType`
-name.
-
-An overlapping structural name or exact-host fallback is escaped as
-`<escape-prefix>_H<hex(identity)>__<readable-preferred>`. The escape prefix is
-`KioStructT` in the type namespace, `KioStructC` in the constructor namespace,
-and `kioStructV` in the value namespace. Its byte identity is
-`01 || text(full-target-namespace) || structural-identity`, where
-`structural-identity` is `01` for the product family, `02` for the sum family,
-`03 || tagged-payload` for a semantic-name entry from the table above, or
-`04 || module-item` for an exact host type.
-The readable suffix uses the same sanitization and bound as the ordinary
-semantic-name suffix and carries no identity.
-
-For example, target namespace
-`KioCarrier_H6170690050726f64756374__api_` would make the preferred product
-family `KioCarrier_H6170690050726f64756374__api_Product`, exactly the nominal
-carrier for `api.Product`. The family therefore uses
-`KioStructT_H01000000284b696f436172726965725f48363137303639303035303732366636343735363337345f5f6170695f01__KioCarrier_H6170690050726f64756374__api_Product`.
-
-Neither public-primary eligibility, family selection, nor structural escaping
-inspects package declarations or encounter order. Adding an unrelated
-declaration therefore cannot rename an existing host binding, export, family,
-alias, pattern, selector, or rank-N helper; the compiler and independent runner
-reconstruct the same name from the target namespace and semantic identity
-alone.
-
-Field keys follow the 3-step key fallback ([`README.md`](README.md)); the
-positional fallback is `_<i>`. The key is encoded into the relevant pattern or
-selector identity rather than flattened into an identity-bearing suffix.
+Adding unrelated declarations cannot change a source path, prepared boundary
+position/key, fixed namespace context, or rendered name. Repeated generation
+shares only identical semantic identities with identical declarations; it
+does not allocate suffixes from declaration occupancy.
 
 ## Worked example
 

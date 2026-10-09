@@ -1,0 +1,14 @@
+package nominal_namespace;
+
+build {
+  cache "out/.kio-cache/";
+
+  target haskell {
+    out "out/haskell/";
+    namespace "KioType_api__Box"
+  }
+}
+
+bridge {
+  api
+}

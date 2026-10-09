@@ -4,13 +4,14 @@ const pkg = createBuildTsLabelsBoundarySkin();
 type GeneratedChoice = ReturnType<typeof pkg.api.KioModule_main.echoChoice>;
 
 function readChoiceNonexhaustively(value: GeneratedChoice): string {
-  if ("Accepted" in value) {
-    return value.Accepted;
+  if ("_0" in value) {
+    return value._0.Accepted;
   }
-  if ("Retry" in value) {
-    return String(value.Retry);
+  const tail = value._1;
+  if ("_0" in tail) {
+    return String(tail._0.Retry);
   }
-  const exhausted: never = value;
+  const exhausted: never = tail;
   return exhausted;
 }
 

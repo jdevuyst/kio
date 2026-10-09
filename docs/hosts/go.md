@@ -61,24 +61,15 @@ out/go/
 Every file declares `package greeter` — the package's **namespace**,
 which defaults to the Kio package name and is overridden by the
 `namespace` target key. You wrote the manifest, so you already know it.
-If the default would produce the handle `Unit`, `Product`, `Sum`, or `KioSum`,
-Kio uses an exact reserved default namespace to avoid the package's fixed
-generated types (`product` → `__kio_pkg_product`, handle `KioPkg_Product`).
-Go keywords and unimportable `main` / `internal` use the same rule.
-An explicit namespace that produces one of those
-four exact handles is rejected; near misses such as `united` and `product_row`
-remain valid. Reserving the names up front keeps an existing handle stable if
-the package later exposes another structural value.
-The branded surface names all derive from it: the handle `Greeter` (the
-namespace's public title brand), the host interface `GreeterHost`, the factory
-`CreateGreeter`. Go import qualification scopes the fixed support names to
-their emitted package, while those branded names stay namespace-derived, so
-two Kio packages with distinct namespaces coexist in one Go build.
+Go keywords and unimportable `main` / `internal` receive an escaped default
+namespace; explicit namespaces cannot use those names or the blank identifier
+`_`. Names such as `unit`, `product`, and `my_pkg` stay unchanged.
 
-Namespace `my_pkg` retains the package clause `my_pkg`, but the handle is
-`MyPkg` and its factory is `CreateMyPkg`. Affixed source names, reserved
-defaults, and non-source explicit namespaces use the exact brands specified
-in [the namespace rules](../../specs/backends/go.md#output-layout).
+The public roles are always `Package`, `Host`, and `New`. Hosts write
+`greeter.New(host)`, name `greeter.Package` and implement `greeter.Host`.
+An import alias works the same way: `g.New(host)`. Go's import qualification
+keeps two packages' roles and support types distinct. See the precise
+[namespace rules](../../specs/backends/go.md#output-layout).
 
 ## How Go hosts the package
 
@@ -118,7 +109,7 @@ replace greeter => ./out/go
 
 ### 2. Implement the host interface
 
-The generated `GreeterHost` interface in `host.go` declares one method
+The generated `Host` interface in `host.go` declares one method
 per `host fn` the bridged modules declare. For module paths without `_`,
 method names carry the module namespace — `/` becomes `_`, then `__`
 separates the leaf — and the **first letter is capitalized so the method
@@ -171,16 +162,19 @@ They convert the host-selected public type to and from the private Go type used
 for the Kio role. Selecting `string` directly would make both adapters
 identities; selecting `HostString` proves that the public declaration remains
 distinct. A roleless nullary declaration needs no adapters. Go interface
-satisfaction is structural — `MyHost` satisfies `GreeterHost[HostString]`
+satisfaction is structural — `MyHost` satisfies `Host[HostString]`
 because it has the right methods, with no explicit declaration. If the emitted
 interface ever drifts from what you implement, your host fails to compile; the
 interface is the contract.
 
-For `host type Box[A]`, generated host signatures use the
-declaration-owned `KioHostType_...[A]` carrier. Host integration code may wrap
+For `host type Box[A]` in module `api`, generated host signatures use the
+declaration-owned `KioHostType_api__Box[A]` carrier. Host integration code may wrap
 and unwrap the erased runtime payload through the carrier's explicitly unsafe
-`UnsafeKioHostType_...FromNative` and `UnsafeNative` operations; ordinary host
-methods retain the exact carrier application in their signatures.
+`UnsafeKioHostType_api__BoxFromNative` and `UnsafeNative` operations; ordinary host
+methods retain the exact carrier application in their signatures. For example,
+`pkg.UnsafeKioHostType_api__BoxFromNative[int32](value)` wraps a native value
+for that declaration, and `box.UnsafeNative()` retrieves it. These helpers do
+not check that erased native storage agrees with its selected Go type index.
 
 When a later package signature removes a `host fn`, the generated interface
 simply drops that method. Your host may leave its extra method in place because
@@ -211,11 +205,11 @@ banner above.
 ### 3. Instantiate and invoke
 
 ```go
-pkg := greeter.CreateGreeter[HostString](MyHost{})
+pkg := greeter.New[HostString](MyHost{})
 pkg.Greeter.KioModule_main.Main()
 ```
 
-`CreateGreeter[HostString]` returns a `*Greeter[HostString]` whose surface mirrors the bridged
+`New[HostString]` returns a `*Package[HostString]` whose surface mirrors the bridged
 exports under their module namespace. Root modules keep a natural exported
 component: unmarked source names use title word casing; leading or trailing
 underscore runs use `KioItem_...` with word casing before exact escaping.
@@ -246,7 +240,14 @@ does not permit a generic alias whose right-hand side is only that parameter.
   type switch on `<alias>_N`, and the case's typed `.Value()`. The zero value
   is usable and selects the first arm with that payload type's zero value.
 
-A callback written as `. -> R` is a nullary Go `func() R`. A generic
+A Kio declaration `fn first(x: A, y: B)` takes two Go arguments. A declaration
+`fn second(pair: A & B)` instead takes one product struct, even if it
+destructures that parameter. This also applies to host methods and newtype
+members. Multiple parameter groups in a declaration head join one native
+call; a function returned by that call remains a separate callable value.
+
+A callback written as `(A & B) -> R` takes one product argument. A callback
+written as `. -> R` is a nullary Go `func() R`. A generic
 one-argument callback such as `A -> R` keeps that argument when `A` is later
 set to Unit, so its Go type is `func(Unit) R`.
 
@@ -311,9 +312,8 @@ identity; their storage stays private. Their public methods retain exact host
 bindings and declaration-owned host-type applications. A free method-local
 polymorphic position remains `any`. An
 existential projector accepts a continuation instead of returning its payload
-directly. Canonical Unit contributes no continuation argument, a product
-contributes one argument per flat right-spine slot, and every other payload
-contributes one. This allows the host to use the hidden value without returning
+directly. Canonical Unit contributes no continuation argument; every other
+payload, including a product, contributes one. This allows the host to use the hidden value without returning
 its hidden type. A recursive both-member newtype uses Go's erased `any` boundary
 representation unless an opaque or one-member carrier cuts the boundary
 cycle first.
@@ -412,7 +412,7 @@ func (MyHost) Greeter__print(arg0 HostString) {
 }
 
 func main() {
-    pkg := greeter.CreateGreeter[HostString](MyHost{})
+    pkg := greeter.New[HostString](MyHost{})
     pkg.Greeter.KioModule_main.Main()
 }
 ```

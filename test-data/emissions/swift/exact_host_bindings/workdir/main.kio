@@ -34,6 +34,8 @@ pub fn roundtrip_text_literal() -> Text { echo_text("direct literal") }
 
 pub fn keep_token(value: Token) -> Token { echo_token(value) }
 
+pub fn discard(_value: Token) { () }
+
 pub fn apply_text(step: Text -> Text, value: Text) -> Text { step(value) }
 
 pub fn pair(value: Text, token: Token) -> Text & Token { (value, token) }

@@ -1,13 +1,13 @@
 //! Injective public names for the Haskell package ABI.
 //!
-//! Host-authored names use readable `__`-separated source components when
-//! every component is boundary-safe: it contains no `__` and neither starts
-//! nor ends with `_`. Host fields and exports otherwise use the versioned
-//! typed codec and its bounded cosmetic suffix. Exact host-type families keep
-//! their separate raw `module\0leaf` hexadecimal fallback and unbounded
-//! readable suffix.
+//! Public structural views use role-tagged, reversibly escaped source paths.
+//! Their typed identities remain separate from presentation. Private body and
+//! rank-N helper names retain the versioned codec; public host fields and
+//! entry wrappers retain their existing readable primary routes.
 
 use std::collections::{BTreeMap, BTreeSet};
+
+use crate::backends::public_names::{encode_source_identity, readable_public_identity};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct ModuleId(Vec<String>);
@@ -346,11 +346,12 @@ fn runtime_private_name(
 }
 
 #[derive(Clone, Copy)]
-enum StructuralIdentity<'a> {
+enum StructuralIdentity {
     ProductFamily,
     SumFamily,
-    Abi(&'a HaskellName),
-    HostType(&'a ModuleItemId),
+    Abi,
+    HostType,
+    Nominal,
 }
 
 impl StructuralNames {
@@ -402,21 +403,30 @@ impl StructuralNames {
         &self.sum_family
     }
 
+    /// A nominal's type head and private data constructor share a spelling.
+    /// Only fixed facade claims matter; other nominal declarations cannot
+    /// influence the declaration's name.
+    pub(crate) fn nominal_name(&self, preferred: &str) -> String {
+        if !self.type_claims.contains(preferred) && !self.constructor_claims.contains(preferred) {
+            return preferred.to_owned();
+        }
+        self.escape(
+            HaskellNamespace::Type,
+            preferred,
+            StructuralIdentity::Nominal,
+        )
+    }
+
     pub(crate) fn host_assoc_name(&self, module: &str, leaf: &str) -> String {
         let item = ModuleItemId::new(module, leaf);
-        if let Some(preferred) = primary_module_item_name("HostType", &item)
-            && !self.type_claims.contains(&preferred)
-        {
+        let preferred = format!("HostType__{}", module_item_public(&item));
+        if !self.type_claims.contains(&preferred) {
             return preferred;
-        }
-        let fallback = fallback_host_assoc_name(module, leaf);
-        if !self.type_claims.contains(&fallback) {
-            return fallback;
         }
         let escaped = self.escape(
             HaskellNamespace::Type,
-            &fallback,
-            StructuralIdentity::HostType(&item),
+            &preferred,
+            StructuralIdentity::HostType,
         );
         assert!(
             !self.is_claimed_or_generated(HaskellNamespace::Type, &escaped),
@@ -431,14 +441,14 @@ impl StructuralNames {
             "the structural naming context only renders structural ABI identities"
         );
         let preferred = name.render();
-        self.resolve(name.namespace(), &preferred, StructuralIdentity::Abi(name))
+        self.resolve(name.namespace(), &preferred, StructuralIdentity::Abi)
     }
 
     fn resolve(
         &self,
         namespace: HaskellNamespace,
         preferred: &str,
-        identity: StructuralIdentity<'_>,
+        identity: StructuralIdentity,
     ) -> String {
         if !self.is_claimed_or_generated(namespace, preferred) {
             return preferred.to_owned();
@@ -470,32 +480,26 @@ impl StructuralNames {
         &self,
         namespace: HaskellNamespace,
         preferred: &str,
-        identity: StructuralIdentity<'_>,
+        identity: StructuralIdentity,
     ) -> String {
-        let mut bytes = vec![0x01];
-        encode_string(&self.target_namespace, &mut bytes);
-        match identity {
-            StructuralIdentity::ProductFamily => bytes.push(0x01),
-            StructuralIdentity::SumFamily => bytes.push(0x02),
-            StructuralIdentity::Abi(name) => {
-                bytes.push(0x03);
-                name.encode(&mut bytes);
-            }
-            StructuralIdentity::HostType(item) => {
-                bytes.push(0x04);
-                encode_module_item(item, &mut bytes);
-            }
-        }
+        let role = match identity {
+            StructuralIdentity::ProductFamily => "ProductFamily",
+            StructuralIdentity::SumFamily => "SumFamily",
+            StructuralIdentity::Abi => "View",
+            StructuralIdentity::HostType => "HostType",
+            StructuralIdentity::Nominal => "Nominal",
+        };
         let prefix = match namespace {
             HaskellNamespace::Type => "KioStructT",
             HaskellNamespace::Constructor => "KioStructC",
             HaskellNamespace::Value => "kioStructV",
         };
-        format!(
-            "{prefix}_H{}__{}",
-            lowercase_hex(&bytes),
-            bounded_readable(preferred)
-        )
+        // Dots are module separators in a configured Haskell namespace; `/`
+        // cannot occur there. The complete escaped namespace is longer than
+        // its original spelling once framed, so it cannot equal its own
+        // handle or any of that handle's fixed short-suffix facade claims.
+        let owner = encode_source_identity(&self.target_namespace.replace('.', "/"));
+        format!("{prefix}_N{}_{}_{}_{preferred}", owner.len(), owner, role)
     }
 }
 
@@ -524,6 +528,26 @@ impl HaskellName {
 
     pub(crate) fn render(&self) -> String {
         match self {
+            Self::BoundaryAlias(boundary) | Self::ProductPattern(boundary) => {
+                return boundary_public(boundary);
+            }
+            Self::SumPattern(pattern) => {
+                return format!(
+                    "{}_Case{}_{}",
+                    boundary_public(&pattern.boundary),
+                    pattern.index,
+                    key_public(&pattern.key)
+                );
+            }
+            Self::ProductSelector {
+                boundary,
+                key,
+                index,
+            } => {
+                let mut owner = boundary_public(boundary);
+                owner[..1].make_ascii_lowercase();
+                return format!("{owner}_Field{index}_{}", key_public(key));
+            }
             Self::HostField(item) => {
                 if let Some(primary) = primary_module_item_name("host", item) {
                     return primary;
@@ -886,27 +910,71 @@ fn primary_components_are_safe(components: &[&str]) -> bool {
         })
 }
 
-fn fallback_host_assoc_name(module: &str, leaf: &str) -> String {
-    let exact = format!("{module}\0{leaf}");
-    let module = module
-        .split('/')
-        .map(crate::backends::public_names::host_name_core)
-        .collect::<Vec<_>>()
-        .join("/");
-    let leaf = crate::backends::public_names::host_name_core(leaf);
-    let readable_module = module
-        .replace('/', "__")
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let readable_leaf = leaf
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    format!(
-        "HostType_H{}__{readable_module}__{readable_leaf}",
-        lowercase_hex(exact.as_bytes())
+fn module_item_public(item: &ModuleItemId) -> String {
+    readable_public_identity(
+        item.module
+            .0
+            .iter()
+            .map(String::as_str)
+            .chain(std::iter::once(item.item.as_str())),
     )
+}
+
+fn boundary_public(boundary: &BoundaryId) -> String {
+    let mut rendered = match &boundary.owner {
+        BoundaryOwner::Env(item) => format!("Host_{}", module_item_public(item)),
+        BoundaryOwner::Exp(ItemId::Item(item)) => {
+            format!("Export_{}", module_item_public(item))
+        }
+        BoundaryOwner::Exp(ItemId::NewtypeMember {
+            module,
+            newtype,
+            member,
+        }) => {
+            format!(
+                "Member_{}",
+                readable_public_identity(
+                    module
+                        .0
+                        .iter()
+                        .map(String::as_str)
+                        .chain([newtype.as_str(), member.as_str()]),
+                )
+            )
+        }
+    };
+    match boundary.root {
+        BoundaryRoot::Arg(index) => rendered.push_str(&format!("_Arg{index}")),
+        BoundaryRoot::Ret => rendered.push_str("_Result"),
+    }
+    for step in &boundary.tail {
+        match step {
+            BoundaryStep::App(index) => rendered.push_str(&format!("_App{index}")),
+            BoundaryStep::Slot(index) => rendered.push_str(&format!("_Slot{index}")),
+            BoundaryStep::CallbackArg(index) => rendered.push_str(&format!("_CallbackArg{index}")),
+            BoundaryStep::CallbackRet => rendered.push_str("_CallbackResult"),
+        }
+    }
+    rendered
+}
+
+fn key_public(key: &StructuralKey) -> String {
+    match key {
+        StructuralKey::BareNewtype(name) => {
+            format!("Type_{}", readable_public_identity([name.as_str()]))
+        }
+        StructuralKey::QualifiedNewtype { module, newtype } => format!(
+            "TypeAt_{}",
+            readable_public_identity(
+                module
+                    .0
+                    .iter()
+                    .map(String::as_str)
+                    .chain([newtype.as_str()])
+            )
+        ),
+        StructuralKey::Positional(index) => format!("Position{index}"),
+    }
 }
 
 fn boundary_readable(boundary: &BoundaryId) -> String {
@@ -981,94 +1049,11 @@ fn bounded_readable(value: &str) -> String {
 }
 
 fn is_existing_generated_type_name(name: &str) -> bool {
-    is_exact_nominal_name(name, "KioCarrier")
-        || is_exact_nominal_name(name, "KioExistential")
-        || is_primary_host_type_name(name)
-        || is_exact_host_type_name(name)
-}
-
-fn is_primary_host_type_name(name: &str) -> bool {
-    let Some(components) = name.strip_prefix("HostType__") else {
-        return false;
-    };
-    let components = components.split("__").collect::<Vec<_>>();
-    primary_components_are_safe(&components)
+    is_existing_generated_constructor_name(name) || name.starts_with("HostType__")
 }
 
 fn is_existing_generated_constructor_name(name: &str) -> bool {
-    is_exact_nominal_name(name, "KioCarrier") || is_exact_nominal_name(name, "KioExistential")
-}
-
-fn is_exact_nominal_name(name: &str, prefix: &str) -> bool {
-    let Some((module, leaf)) = decoded_generated_identity(name, &format!("{prefix}_H")) else {
-        return false;
-    };
-    let readable_module = module
-        .split('/')
-        .map(crate::backends::public_names::host_name_core)
-        .collect::<Vec<_>>()
-        .join("/");
-    let readable_leaf = crate::backends::public_names::host_name_core(&leaf);
-    let readable = format!("{readable_module}_{readable_leaf}")
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let exact = format!("{module}\0{leaf}");
-    name == format!("{prefix}_H{}__{readable}", lowercase_hex(exact.as_bytes()))
-}
-
-fn is_exact_host_type_name(name: &str) -> bool {
-    let Some((module, leaf)) = decoded_generated_identity(name, "HostType_H") else {
-        return false;
-    };
-    let readable_module = module
-        .split('/')
-        .map(crate::backends::public_names::host_name_core)
-        .collect::<Vec<_>>()
-        .join("/")
-        .replace('/', "__")
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let readable_leaf = crate::backends::public_names::host_name_core(&leaf)
-        .chars()
-        .map(sanitize_generated_name_char)
-        .collect::<String>();
-    let exact = format!("{module}\0{leaf}");
-    name == format!(
-        "HostType_H{}__{readable_module}__{readable_leaf}",
-        lowercase_hex(exact.as_bytes())
-    )
-}
-
-fn decoded_generated_identity(name: &str, prefix: &str) -> Option<(String, String)> {
-    let encoded_and_readable = name.strip_prefix(prefix)?;
-    let (encoded, _) = encoded_and_readable.split_once("__")?;
-    if encoded.is_empty() || encoded.len() % 2 != 0 {
-        return None;
-    }
-    let bytes = encoded
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| {
-            let digits = std::str::from_utf8(pair).ok()?;
-            u8::from_str_radix(digits, 16).ok()
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let identity = String::from_utf8(bytes).ok()?;
-    let (module, leaf) = identity.split_once('\0')?;
-    if leaf.contains('\0') {
-        return None;
-    }
-    Some((module.to_owned(), leaf.to_owned()))
-}
-
-fn sanitize_generated_name_char(ch: char) -> char {
-    if ch.is_ascii_alphanumeric() || ch == '_' {
-        ch
-    } else {
-        '_'
-    }
+    name.starts_with("KioType_") || name.starts_with("KioExists_")
 }
 
 #[derive(Default)]
@@ -1291,7 +1276,7 @@ mod tests {
             .nested(BoundaryStep::Slot(0));
         assert_eq!(
             HaskellName::ProductPattern(nested.clone()).render(),
-            "ExpP_H0120020100000001000000016100000001660100000000000000010200000000__a__f_arg0_slot0_P"
+            "Export_a__f_Arg0_Slot0"
         );
 
         let outer = BoundaryId::exp(ItemId::item("a", "f"), BoundaryRoot::Arg(0));
@@ -1305,7 +1290,7 @@ mod tests {
         };
         assert_eq!(
             HaskellName::SumPattern(arm).render(),
-            "ExpS_H012102010000000100000001610000000166010000000000000000020000000100000005736c6f7430000000015000000000__a__f_arg0_S_slot0_P_0"
+            "Export_a__f_Arg0_Case0_TypeAt_slot0__P"
         );
 
         let outer_selector = HaskellName::ProductSelector {
@@ -1323,7 +1308,7 @@ mod tests {
         };
         assert_eq!(
             outer_selector.render(),
-            "expSel_H012202010000000100000001610000000166010000000000000000020000000100000005736c6f7430000000015900000002__a__f_arg0_Sel_slot0_Y_2"
+            "export_a__f_Arg0_Field2_TypeAt_slot0__Y"
         );
         assert_ne!(outer_selector.render(), nested_selector.render());
     }
@@ -1388,8 +1373,8 @@ mod tests {
             vectors,
             [
                 "exp_H0101030100000001000000016100000008666f6f5f5f626172__a__fooBar",
-                "Env_H01100100000001000000016d000000016802000000030100000002030000000304__m__h_ret_app2_cbarg3_cbret",
-                "EnvS_H01210100000001000000016d000000016802000000030100000002030000000304030000000700000007__m__h_ret_app2_cbarg3_cbret_S_pos7_7",
+                "Host_m__h_Result_App2_CallbackArg3_CallbackResult",
+                "Host_m__h_Result_App2_CallbackArg3_CallbackResult_Case7_Position7",
                 "ViewT_H0130010100000001000000016d000000016802000000030100000002030000000304__m__h_ret_app2_cbarg3_cbret_P",
             ]
         );
@@ -1397,14 +1382,14 @@ mod tests {
 
     #[test]
     fn structural_family_fixed_vector_escapes_a_nominal_name_class() {
-        let names = StructuralNames::new("KioCarrier_H6170690050726f64756374__api_");
+        let names = StructuralNames::new("KioType_api__");
         assert_eq!(
             names.product_family(),
-            "KioStructT_H01000000284b696f436172726965725f48363137303639303035303732366636343735363337345f5f6170695f01__KioCarrier_H6170690050726f64756374__api_Product"
+            "KioStructT_N16_KioType_uapi_u_u_ProductFamily_KioType_api__Product"
         );
         assert_eq!(
             names.sum_family(),
-            "KioCarrier_H6170690050726f64756374__api_Sum"
+            "KioStructT_N16_KioType_uapi_u_u_SumFamily_KioType_api__Sum"
         );
     }
 
@@ -1415,31 +1400,27 @@ mod tests {
             names.host_assoc_name("a/b", "Thing"),
             "HostType__a__b__Thing"
         );
-        assert_eq!(
-            names.host_assoc_name("a__b", "Thing"),
-            "HostType_H615f5f62005468696e67__aB__Thing"
-        );
+        assert_eq!(names.host_assoc_name("a_b", "Thing"), "HostType__aB__Thing");
         assert_eq!(
             names.host_assoc_name("a_/b", "Edge"),
-            "HostType_H615f2f620045646765__a___b__Edge"
+            "HostType__a_u__b__Edge"
         );
         assert_eq!(
             names.host_assoc_name("a/_b", "Edge"),
-            "HostType_H612f5f620045646765__a___b__Edge"
+            "HostType__a___ub__Edge"
         );
 
         let colliding = StructuralNames::new("HostType__a__b__Thing");
         assert_eq!(
             colliding.host_assoc_name("a/b", "Thing"),
-            "HostType_H612f62005468696e67__a__b__Thing"
+            "KioStructT_N27_HostType_u_ua_u_ub_u_uThing_HostType_HostType__a__b__Thing"
         );
 
-        let fallback = "HostType_H615f5f62005468696e67__aB__Thing";
+        let fallback = "HostType__aB__Thing";
         let fallback_colliding = StructuralNames::new(fallback);
-        assert_eq!(
-            fallback_colliding.host_assoc_name("a__b", "Thing"),
-            "KioStructT_H0100000029486f7374547970655f4836313566356636323030353436383639366536375f5f61425f5f5468696e67040000000100000004615f5f62000000055468696e67__HostType_H615f5f62005468696e67__aB__Thing"
-        );
+        let escaped = fallback_colliding.host_assoc_name("a_b", "Thing");
+        assert_ne!(escaped, fallback);
+        assert!(escaped.ends_with("_HostType_HostType__aB__Thing"));
     }
 
     #[test]
@@ -1449,14 +1430,14 @@ mod tests {
         let preferred_alias = alias.render();
         let escaped_alias = StructuralNames::new(&preferred_alias).render(&alias);
         assert_ne!(escaped_alias, preferred_alias);
-        assert!(escaped_alias.starts_with("KioStructT_H"), "{escaped_alias}");
+        assert!(escaped_alias.starts_with("KioStructT_N"), "{escaped_alias}");
 
         let pattern = HaskellName::ProductPattern(boundary);
         let preferred_pattern = pattern.render();
         let escaped_pattern = StructuralNames::new(&preferred_pattern).render(&pattern);
         assert_ne!(escaped_pattern, preferred_pattern);
         assert!(
-            escaped_pattern.starts_with("KioStructC_H"),
+            escaped_pattern.starts_with("KioStructC_N"),
             "{escaped_pattern}"
         );
     }
@@ -1472,12 +1453,138 @@ mod tests {
     }
 
     #[test]
+    fn public_views_preserve_owner_and_key_roles_without_a_codec() {
+        let host = BoundaryId::env("api", "pair", BoundaryRoot::Ret);
+        let exported = BoundaryId::exp(ItemId::item("api", "pair"), BoundaryRoot::Ret);
+        let member = BoundaryId::exp(
+            ItemId::newtype_member("api", "Pair", "un_pair"),
+            BoundaryRoot::Ret,
+        );
+        assert_eq!(
+            HaskellName::BoundaryAlias(host).render(),
+            "Host_api__pair_Result"
+        );
+        assert_eq!(
+            HaskellName::BoundaryAlias(exported.clone()).render(),
+            "Export_api__pair_Result"
+        );
+        assert_eq!(
+            HaskellName::ProductPattern(member.clone()).render(),
+            "Member_api__Pair__unPair_Result"
+        );
+        let keys = [
+            StructuralKey::BareNewtype("Pair".into()),
+            StructuralKey::QualifiedNewtype {
+                module: ModuleId::from_path("api"),
+                newtype: "Pair".into(),
+            },
+            StructuralKey::Positional(0),
+        ];
+        let names = keys
+            .into_iter()
+            .map(|key| {
+                HaskellName::ProductSelector {
+                    boundary: member.clone(),
+                    key,
+                    index: 0,
+                }
+                .render()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(names.len(), 3);
+        assert!(names.contains("member_api__Pair__unPair_Result_Field0_Type_Pair"));
+        assert!(names.contains("member_api__Pair__unPair_Result_Field0_TypeAt_api__Pair"));
+        assert!(names.contains("member_api__Pair__unPair_Result_Field0_Position0"));
+        assert_ne!(
+            HaskellName::BoundaryAlias(exported.nested(BoundaryStep::App(0))).render(),
+            HaskellName::BoundaryAlias(BoundaryId::exp(
+                ItemId::item("api", "pair_result_app0"),
+                BoundaryRoot::Ret
+            ))
+            .render(),
+        );
+    }
+
+    #[test]
+    fn readable_nominals_escape_only_their_immutable_facade_context() {
+        let preferred = "KioType_api__Box";
+        assert_eq!(
+            StructuralNames::new("Ordinary").nominal_name(preferred),
+            preferred
+        );
+        let names = StructuralNames::new(preferred);
+        let escaped = names.nominal_name(preferred);
+        assert_eq!(
+            escaped,
+            "KioStructT_N19_KioType_uapi_u_uBox_Nominal_KioType_api__Box"
+        );
+        assert_ne!(escaped, preferred);
+        assert_eq!(
+            names.nominal_name("KioType_other__Box"),
+            "KioType_other__Box"
+        );
+        assert_eq!(names.nominal_name(preferred), escaped);
+        assert_ne!(
+            StructuralNames::new("Outer.KioType_api__Box").nominal_name(preferred),
+            escaped,
+        );
+    }
+
+    #[test]
     fn claims_dedupe_only_identical_semantics_and_payloads() {
         let mut claims = NameClaims::default();
         let name = HaskellName::ModuleFn(ModuleItemId::new("a", "f"));
         let rendered = name.render();
         assert!(claims.claim(name.clone(), &rendered, "f :: ()"));
         assert!(!claims.claim(name, &rendered, "f :: ()"));
+    }
+
+    #[test]
+    fn readable_views_do_not_depend_on_declaration_encounter_order() {
+        let names = StructuralNames::new("Example");
+        let identities = [
+            HaskellName::BoundaryAlias(BoundaryId::env("a_/b", "get", BoundaryRoot::Ret)),
+            HaskellName::BoundaryAlias(BoundaryId::env("a/_b", "get", BoundaryRoot::Ret)),
+            HaskellName::BoundaryAlias(BoundaryId::exp(
+                ItemId::item("a/b", "get"),
+                BoundaryRoot::Ret,
+            )),
+        ];
+        let collect = |order: &[usize]| {
+            let mut claims = NameClaims::default();
+            order
+                .iter()
+                .map(|&index| {
+                    let identity = identities[index].clone();
+                    let rendered = names.render(&identity);
+                    claims.claim(identity.clone(), &rendered, "type declaration");
+                    (identity, rendered)
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
+        let all = collect(&[0, 1, 2]);
+        assert_eq!(all, collect(&[2, 1, 0]));
+        assert_eq!(all[&identities[0]], collect(&[0])[&identities[0]]);
+        assert_eq!(
+            all.values().collect::<BTreeSet<_>>().len(),
+            identities.len()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "distinct Haskell ABI identities")]
+    fn claims_reject_distinct_identities_even_with_equal_declarations() {
+        let mut claims = NameClaims::default();
+        claims.claim(
+            HaskellName::BoundaryAlias(BoundaryId::env("a", "f", BoundaryRoot::Ret)),
+            "collision",
+            "type declaration",
+        );
+        claims.claim(
+            HaskellName::BoundaryAlias(BoundaryId::env("b", "f", BoundaryRoot::Ret)),
+            "collision",
+            "type declaration",
+        );
     }
 
     #[test]

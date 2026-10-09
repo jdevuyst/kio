@@ -173,7 +173,7 @@ it does not change which items are present.
   value groups into one call while retaining the declaration's source-value
   parameter partition. Each runtime-bearing source parameter remains one
   TypeScript parameter; a product-typed parameter remains one object parameter
-  with its right-spine keys, while a canonical Unit-only domain is nullary.
+  with its binary structural keys, while a direct Unit-only domain is nullary.
   Callbacks, returns, and nested `forall`s remain first-class values and retain
   their own callable and generic layers.
 - One namespace per `pub newtype`, selected as
@@ -210,7 +210,7 @@ For each `host fn <name>(p0: <args...>) -> <ret>;` declared in module `<m>`
   with each parameter and the return at its exact boundary type (see § FFI
   surface). Making it a function-valued property rather than an interface
   method preserves strict parameter variance under `--strictFunctionTypes`.
-  Rank-N callbacks and returns remain generic function types.
+  Polymorphic callbacks and returns retain explicit generic `advance` stages.
 - The host supplies the callable synchronously; TypeScript checks it against
   the declared signature.
 
@@ -321,7 +321,8 @@ carve-outs (unit, function values, bottom) are TypeScript-native.
 A `role(...)` annotation on a `host type` makes that type a receiver for
 literal tokens whose shape its role admits
 ([`specs/language.md` § Literals](../language.md#literals)). At the boundary the
-TypeScript backend binds each role to the TypeScript type of the JS value shape
+TypeScript backend represents host types carrying these roles with the
+TypeScript types of the JS value shapes
 in [`js.md` § Atomic types](js.md#atomic-types-governed-by-role):
 
 | Role                       | TypeScript type |
@@ -337,7 +338,7 @@ in [`js.md` § Atomic types](js.md#atomic-types-governed-by-role):
 `number` and `bigint` are distinct in TypeScript and in JS arithmetic (`1 + 1n`
 throws at runtime), so the wide-integer roles type as `bigint` exactly because
 the JS `.js` carries them as `BigInt` ([`js.md` § Atomic types](js.md#atomic-types-governed-by-role)).
-A host passing a value outside a role's range gets the JS backend's
+A host passing a value outside the JS backend's range for its declared host type gets the JS backend's
 implementation-defined behavior; the type is a contract on shape, not on range.
 
 ### Non-atomic host types
@@ -355,13 +356,14 @@ binding relation is declaration-keyed, not injective.
 
 ### Structural and nominal types
 
-Values of structural type (built from `&`, `|`) and newtypes whose constructor
-and projector are both public cross as the JS plain-object shapes
+Values of structural type (built from `&`, `|`) and newtypes eligible for
+structural wrappers under the visibility, existential, and recursion rules below
+cross as the JS plain-object shapes
 ([`js.md` § Structural and nominal types](js.md#structural-and-nominal-types)),
-typed in the `.d.ts` as **anonymous TypeScript object / union types** keyed by
-the right-spine slot. The shape is determined by the source-level type, walked
-over the right spine of `&` and `|`
-([`README.md` § The right-spine walk](README.md#the-right-spine-walk)):
+typed in the `.d.ts` as **anonymous TypeScript object / union types** with
+binary `_0`/`_1` selectors. The representation preserves complete child types
+under [generic substitution](README.md#generic-substitution-and-opaque-constructors),
+including unknown right tails:
 
 - `()` (unit) — `null`.
 - `!` (bottom) — `never` (no inhabitants; never crosses).
@@ -369,10 +371,10 @@ over the right spine of `&` and `|`
 - An ordinary type variable (`[A]`-quantified) — the corresponding TypeScript
   generic `A`. A higher-kinded binder is a constrained structural witness;
   its applications use `Apply` / `Bind`.
-- A function type — a TypeScript function type (see § Carve-outs).
-- A `newtype` with payload `X` and both members public —
+- A function type — `<Handle>Callable<A, R>` (see § Carve-outs).
+- A nonexistential `newtype` with payload `X` and both members public —
   `{ [k]: shape(X) }` where `[k]` is the newtype's FFI key (its type name)
-  per the [3-step fallback](README.md#3-step-key-fallback). `labels` sugar
+  with source-component word casing. `labels` sugar
   and an equivalent explicit `newtype` use this same shape. An uncut
   payload-visible recursive cycle is the exception (**Recursive newtypes**
   below).
@@ -386,15 +388,15 @@ over the right spine of `&` and `|`
   Distinct Kio declarations have distinct TypeScript types even when their
   leaf names and payload shapes coincide. This types the JS backend's exact,
   declaration-specific hidden handle.
-- A product type `(A & B)` — `{ <k0>: shape(A); <k1>: shape(B) }`, every
-  right-spine slot a property.
-- A sum type `(A | B)` — a **discriminated union** `{ <k0>: shape(A) } | { <k1>:
-  shape(B) }`, exactly one property set, identifying the inhabited slot.
+- A product type `(A & B)` — `{ _0: shape(A); _1: shape(B) }`.
+- A sum type `(A | B)` — a **discriminated union** `{ _0: shape(A) } | { _1:
+  shape(B) }`, exactly one property set. Nested products, sums, and nominal
+  wrappers remain complete children rather than adding enclosing fields.
 
 **Recursive payload-visible newtypes.** Recursion is classified at the JS
 boundary. A payload-visible cycle that reaches itself directly (`List : . |
 (I32 & List)`) or only through other payload-visible newtypes has no finite
-structural value walk, so it crosses as the package's opaque internal carrier
+structural value walk, so it crosses as a declaration-specific nominal handle
 ([`js.md` § Structural and nominal types](js.md#structural-and-nominal-types)).
 The `.d.ts` gives that carrier a declaration-private nominal type parameterized
 invariantly by `B` and every universal parameter. The host can construct and
@@ -411,16 +413,10 @@ uses a private structural interface only as a finite name for the recursive
 reference; the interface has no brand and does not remove the host's ability
 to construct the public object shape.
 
-Per-slot key naming follows the [3-step fallback in
-`README.md`](README.md#3-step-key-fallback): unqualified newtype name →
-canonical `<modulepath>.<TypeName>` → positional `_<n>`. TypeScript-specific
-instantiation: steps 1 and 3 are legal property identifiers; the step-2
-qualified spelling carries a `.`, which is a legal property key only as a quoted
-string literal, so the `.d.ts` renders it `"<modulepath>.<TypeName>"` (a quoted
-key), matching the JS object key the host already uses with bracket access.
-Both named steps word-case the type leaf and each module component while
-retaining route `/` and `.` (`data_api/model.Native_token` →
-`"dataApi/model.NativeToken"`). Positional keys remain `_<n>`.
+A visible nominal wrapper uses its word-cased type leaf (`Native_token` →
+`NativeToken`). Its key does not replace an enclosing product or sum selector.
+The declaration-private brand of a hidden nominal is independent of display
+keys, preserving exact identity across same-leaf declarations.
 
 Worked examples (assume `labels { t1 : I32, t2 : Str };` declares generated
 types `T1`, `T2`; `I32`, `Str` are role-typed host types):
@@ -428,30 +424,39 @@ types `T1`, `T2`; `I32`, `Str` are role-typed host types):
 | Kio type            | TypeScript type                         |
 | ------------------- | --------------------------------------- |
 | `T1`                | `{ T1: number }`                        |
-| `T1 & T2`           | `{ T1: number; T2: string }`            |
+| `T1 & T2`           | `{ _0: { T1: number }; _1: { T2: string } }` |
 | `(I32 & Str)`       | `{ _0: number; _1: string }`            |
-| `(T1 \| T2)`        | `{ T1: number } \| { T2: string }`      |
+| `(T1 \| T2)`        | `{ _0: { T1: number } } \| { _1: { T2: string } }` |
 | `(I32 \| Str)`      | `{ _0: number } \| { _1: string }`      |
 
 A host narrows a sum by checking which property is present, exactly as on JS
-(`"T1" in v ? … : …`), and the discriminated union lets TypeScript narrow the
-type in each branch. The type describes the public JS shape, not the package's
-internal rep — hosts must not introspect an internal shape across kio versions
-([`js.md` § Conversion semantics](js.md#conversion-semantics)).
+(`"_0" in v ? … : …`), and the discriminated union lets TypeScript narrow the
+type in each branch. Concrete snapshots, abstract-reference passthrough, and
+opaque host containers follow [JS conversion semantics](js.md#conversion-semantics).
 
 ### Carve-outs
 
-Three kinds of value are TypeScript-native, mirroring the JS carve-outs
+The following value interfaces mirror the JS carve-outs
 ([`js.md` § Carve-outs](js.md#carve-outs)):
 
 - **Unit `()`** is `null`.
-- **Function values** are TypeScript function types `(p0: <T0>, …) => <R>`,
-  called synchronously with the callable's canonical source-parameter
-  partition. A runtime-bearing parameter whose type is a product is therefore
-  one structural object, while a canonical Unit-only domain is nullary. Each
-  parameter and the return follows whichever rule applies to its type.
-  (Parameters are named `p0`, `p1`, … in the `.d.ts` because TypeScript
-  requires names in a function-type position.)
+- **Function values** use `<Handle>Callable<A, R>`, synchronously callable as
+  `(value: A) => R`, with one complete domain value. Direct Unit uses `null`;
+  only named direct-Unit declaration views remain nullary. The callable's
+  `adapt(before: (value: A) => A, after: (value: R) => R)` returns another
+  `<Handle>Callable<A, R>` retaining its existing protections.
+- **Polymorphic values** use `<Handle>Poly<Advance>`, where `Advance` is the
+  exact generic nullary function type for one binder. `[A] A -> A` therefore
+  uses `<Handle>Poly<<A>() => <Handle>Callable<A, A>>`. A second binder adds a
+  second `Poly` layer; captured outer types remain captured. `advance` is a
+  function-valued property, retaining its generic relationship and strict
+  parameter variance. The type-preserving `adapt` operation accepts a
+  universally endomorphic `<T>(value: T) => T` and retains the exact `Advance`
+  type. Runtime adaptation preserves the [JS stage and stack contract](js.md#carve-outs).
+- **Host construction** uses `lift<Handle>Callable(body)` or
+  `lift<Handle>Poly({advance: body})`. These helpers retain the supplied
+  argument/result or generic advance signature and provide the composable
+  carrier. Named host-record functions remain ordinary native functions.
 - **Bottom `!`** is `never`. A `fn` declared `-> !` is contractually obliged not
   to return normally; a `!`-typed return from package code is unreachable in
   well-typed programs.
@@ -517,16 +522,12 @@ their readable declaration paths for generic host-side composition.
 HKT representation in the `.js`: bound types erase at runtime, but the stored
 callable retains the application stages described in
 [`README.md` § Polymorphic newtype payloads](README.md#polymorphic-newtype-payloads).
-Every binder of this first-class value remains one hidden callable stage; a
-work-free stage returns the next callable, while a stage with computation
-performs it first. A direct known call may separately compact adjacent leading
-type applications. With both members public, the constructor and projector use
-the ordinary structural newtype boundary. Inside the JavaScript body those
-operations are identities around the complete staged callable; the public
-wrapper performs the ordinary value-only function adaptation. At the `.d.ts`,
-that case surfaces as `{ <ffi_key>: <payload type> }` (§ FFI surface), with
-every ordinary and higher-kinded `forall` retained as a TypeScript generic
-function layer and every application rendered through `Apply` / `Bind`.
+Every binder of this first-class value remains one explicit generic `advance`
+stage. Computation at a stage precedes its returned value; construction,
+storage, and projection do not enter the payload. With both members public,
+the wrapper is `{ <ffi_key>: <payload type> }` (§ FFI surface). Each ordinary
+and higher-kinded `forall` is a `Poly` layer, and constructor applications use
+`Apply` / `Bind` without runtime type arguments.
 Hiding either member instead selects the exact invariant nominal carrier; the
 hidden payload remains the same stored closure.
 

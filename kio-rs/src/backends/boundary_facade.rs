@@ -170,14 +170,6 @@ impl FacadeShellId {
         &self.ordered_keys
     }
 
-    /// Exact product shell carrying one value for every semantic position of
-    /// this shell. Backends use this when a host API must group per-branch
-    /// handlers (for example, a wide sum eliminator) without re-selecting or
-    /// renumbering the sum's keys locally.
-    pub(crate) fn product_companion(&self) -> Self {
-        Self::new(FacadeKind::Product, self.ordered_keys.clone())
-    }
-
     /// Encode the complete identity with readable, reversible role frames.
     ///
     /// The common anonymous binary shells keep their exact friendly names.
@@ -788,13 +780,19 @@ impl<'a> PreparedBoundaryScheme<'a> {
 }
 
 fn validate_prepared_scheme(scheme: &Type<Routed>) -> Result<(), PreparedSchemeError> {
+    validate_scoped_prepared_scheme(scheme, Vec::new())
+}
+
+fn validate_scoped_prepared_scheme(
+    scheme: &Type<Routed>,
+    mut scope: Vec<String>,
+) -> Result<(), PreparedSchemeError> {
     enum Task<'a> {
         Enter(&'a Type<Routed>),
         ExitBinder,
     }
 
     let mut tasks = vec![Task::Enter(scheme)];
-    let mut scope = Vec::<String>::new();
     while let Some(task) = tasks.pop() {
         match task {
             Task::ExitBinder => {
@@ -856,6 +854,10 @@ impl FacadeUseId {
 pub struct FacadeBinderId(usize);
 
 impl FacadeBinderId {
+    pub(crate) fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+
     pub fn index(self) -> usize {
         self.0
     }
@@ -927,6 +929,40 @@ pub struct BoundaryFacadePlan {
 }
 
 impl BoundaryFacadePlan {
+    /// Prepare a body-local type without granting facade visibility or callable
+    /// execution authority. The lexical scope is supplied by the Routed owner.
+    pub(crate) fn from_routed_type(
+        package: &Package<Routed>,
+        module: &crate::ast::Module<Routed>,
+        ambient: &[crate::ast::TypeParam],
+        ty: &Type<Routed>,
+    ) -> Result<(Self, Vec<FacadeBinderId>), PreparedSchemeError> {
+        let canonical = canonical_routed_type(package, module, ambient, ty);
+        validate_scoped_prepared_scheme(
+            &canonical,
+            ambient.iter().map(|param| param.name.clone()).collect(),
+        )?;
+        // Body value topology does not use presentation keys. Exact nominal
+        // identities remain in every use; no package-wide public scan is needed.
+        let nominals = BTreeSet::new();
+        let mut builder = PlanBuilder::new(&nominals, 0, false);
+        let mut ambient_ids = Vec::with_capacity(ambient.len());
+        for param in ambient {
+            if param.name.is_empty() {
+                return Err(PreparedSchemeError::EmptyBinder);
+            }
+            let id = FacadeBinderId(builder.binders.len());
+            builder.binders.push(FacadeBinder {
+                name: param.name.clone(),
+                kind: param.effective_kind(),
+                span: param.span,
+            });
+            builder.scope.push((param.name.clone(), id));
+            ambient_ids.push(id);
+        }
+        Ok((builder.build(&canonical).0, ambient_ids))
+    }
+
     pub fn from_prepared_scheme(prepared: PreparedBoundaryScheme<'_>) -> Self {
         PlanBuilder::new(prepared.semantic_nominals, 0, false)
             .build(prepared.scheme)
@@ -956,15 +992,6 @@ impl BoundaryFacadePlan {
 
     pub fn binder(&self, id: FacadeBinderId) -> &FacadeBinder {
         &self.binders[id.0]
-    }
-
-    /// Exact product identity for one function value's semantic slots.
-    /// Nullary and unary functions need no grouping shell.
-    pub(crate) fn function_shell(&self, id: FacadeUseId) -> Option<&FacadeShellId> {
-        match self.use_at(id) {
-            FacadeUse::Function { shell, .. } => shell.as_ref(),
-            _ => None,
-        }
     }
 
     pub fn uses(&self) -> &[FacadeUse] {
@@ -1039,6 +1066,22 @@ impl BoundaryFacadePlan {
         out.root = node_map[self.root.0];
         Some(out)
     }
+}
+
+pub(crate) fn canonical_routed_type(
+    package: &Package<Routed>,
+    module: &crate::ast::Module<Routed>,
+    ambient: &[crate::ast::TypeParam],
+    ty: &Type<Routed>,
+) -> Type<Routed> {
+    let kinds = ambient
+        .iter()
+        .map(|param| (param.name.clone(), param.effective_kind()))
+        .collect();
+    let qualified =
+        crate::pass::resolve::qualify_routed_contract_type_in_module(ty, module, &kinds);
+    let locals = ambient.iter().map(|param| param.name.clone()).collect();
+    canonicalize_authoritative_scheme(&qualified, package, Some(&locals))
 }
 
 fn append_plan(
@@ -1573,6 +1616,7 @@ pub enum BoundaryCallableHeadStageKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BoundaryCallablePlan {
     facade: BoundaryFacadePlan,
+    values: super::value_plan::ValuePlan,
     head_stage_kinds: Vec<BoundaryCallableHeadStageKind>,
     head_value_shell: Option<FacadeShellId>,
 }
@@ -1629,6 +1673,7 @@ impl BoundaryCallablePlan {
         semantic_nominals: &BTreeSet<QualifiedTypeName>,
     ) -> Self {
         let mut plan = Self {
+            values: super::value_plan::ValuePlan::from_facade(&facade),
             facade,
             head_stage_kinds,
             head_value_shell: None,
@@ -1658,6 +1703,10 @@ impl BoundaryCallablePlan {
 
     pub fn facade(&self) -> &BoundaryFacadePlan {
         &self.facade
+    }
+
+    pub(crate) fn value_plan(&self) -> &super::value_plan::ValuePlan {
+        &self.values
     }
 
     pub fn head_stage_kinds(&self) -> &[BoundaryCallableHeadStageKind] {
@@ -1972,6 +2021,7 @@ impl BoundaryPublicNewtypeInventoryEntry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BoundaryNewtypePayloadPlan {
     facade: BoundaryFacadePlan,
+    values: super::value_plan::ValuePlan,
     shells: BTreeSet<FacadeShellId>,
     declaration_binders: Vec<FacadeBinderId>,
     payload_root: FacadeUseId,
@@ -1980,6 +2030,10 @@ pub(crate) struct BoundaryNewtypePayloadPlan {
 impl BoundaryNewtypePayloadPlan {
     pub(crate) fn facade(&self) -> &BoundaryFacadePlan {
         &self.facade
+    }
+
+    pub(crate) fn value_plan(&self) -> &super::value_plan::ValuePlan {
+        &self.values
     }
 
     pub(crate) fn shell_dependencies(
@@ -2007,9 +2061,38 @@ pub(crate) enum BoundaryNominalDeclaration {
     Newtype {
         type_params: Vec<BoundaryNominalTypeParam>,
         existential_params: Vec<BoundaryNominalTypeParam>,
-        transparent_payload: Option<BoundaryNewtypePayloadPlan>,
+        transparent_payload: Option<Box<BoundaryNewtypePayloadPlan>>,
         surface: BoundaryNewtypeSurface,
     },
+}
+
+impl BoundaryNominalDeclaration {
+    /// Payload eligible for a structural host view. Existential payload plans
+    /// remain available for CPS members, not for exposing their stored witness.
+    /// A structural renderer must additionally cut payload-visible recursion.
+    pub(crate) fn public_structural_payload(&self) -> Option<&BoundaryNewtypePayloadPlan> {
+        match self {
+            Self::Newtype {
+                existential_params,
+                transparent_payload,
+                surface,
+                ..
+            } if existential_params.is_empty() && !surface.uses_nominal_carrier() => {
+                transparent_payload.as_deref()
+            }
+            _ => None,
+        }
+    }
+
+    /// Uses the declaration belonging to this exact live or retained snapshot.
+    pub(crate) fn kind(&self) -> Kind {
+        let type_params = match self {
+            Self::HostType { type_params, .. } | Self::Newtype { type_params, .. } => type_params,
+        };
+        type_params.iter().rev().fold(Kind::Star, |result, param| {
+            Kind::Arrow(Box::new(param.kind().clone()), Box::new(result))
+        })
+    }
 }
 
 fn semantically_equal_nominal_declarations(
@@ -2684,11 +2767,20 @@ impl CallableValueStageLayout {
         &self.source_params
     }
 
+    /// Native parameter count when preserving the prepared source groups,
+    /// before any host-specific arity-limit adapter.
+    pub(crate) fn public_parameter_count(&self) -> usize {
+        self.source_params
+            .iter()
+            .filter(|param| param.adapter() != CallableSourceParamAdapter::UnitValue)
+            .count()
+    }
+
     /// Exact product identity for the complete public value stage.
     ///
-    /// Most backends expose its slots directly. A host with a hard callable
-    /// arity ceiling can instead accept this one prepared shell and use the
-    /// same source-parameter layout to reconstruct the private call.
+    /// A host with a hard callable arity ceiling can accept this one prepared
+    /// shell instead of separate source-grouped parameters and use the same
+    /// source-parameter layout to reconstruct the private call.
     pub(crate) fn facade_shell(&self) -> Option<&FacadeShellId> {
         self.facade_shell.as_ref()
     }
@@ -3564,16 +3656,6 @@ impl PreparedBoundaryCallableSites {
         &self,
     ) -> impl DoubleEndedIterator<Item = &FacadeShellId> + ExactSizeIterator {
         self.catalog.shells.keys()
-    }
-
-    pub(crate) fn shell_origins(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = (&FacadeShellId, BoundaryFacadeSupportOrigin)> + ExactSizeIterator
-    {
-        self.catalog
-            .shells
-            .iter()
-            .map(|(shell, origin)| (shell, *origin))
     }
 
     pub(crate) fn public_newtypes(
@@ -4771,7 +4853,7 @@ fn project_newtype<P: crate::ast::Phase>(
             .iter()
             .map(BoundaryNominalTypeParam::from_source)
             .collect(),
-        transparent_payload,
+        transparent_payload: transparent_payload.map(Box::new),
         surface,
     }
 }
@@ -4827,6 +4909,7 @@ fn finish_newtype_payload_plan(
         })
         .collect();
     BoundaryNewtypePayloadPlan {
+        values: super::value_plan::ValuePlan::from_facade(&facade),
         facade,
         shells,
         declaration_binders,
@@ -6236,7 +6319,7 @@ fn prepare_newtype_member_boundary_callable_from_declaration(
         declaration.name.clone(),
         declaration.meta.span,
     ));
-    let scheme = crate::pass::typecheck_core::newtype_member_scheme_in_module(
+    let scheme = crate::pass::typecheck_core::newtype_member_scheme_in_routed_module(
         declaration,
         &member.name,
         &nominal_segments,
@@ -6726,6 +6809,7 @@ mod tests {
         assert_ne!(nullary_execution, unit_execution);
         let nullary = expect_execution_function(&nullary_execution, nullary_plan.facade().root());
         assert_eq!(nullary.source_param_count(), 0);
+        assert_eq!(nullary.public_parameter_count(), 0);
         assert_eq!(nullary.body_abi_arity(), 0);
         assert!(nullary.source_params().is_empty());
         let (unit_slots, _) = expect_function(unit_plan.facade(), unit_plan.facade().root());
@@ -6736,6 +6820,7 @@ mod tests {
         ));
         let unit = expect_execution_function(&unit_execution, unit_plan.facade().root());
         assert_eq!(unit.source_param_count(), 1);
+        assert_eq!(unit.public_parameter_count(), 1);
         assert_eq!(unit.body_abi_arity(), 1);
         let [unit_param] = unit.source_params() else {
             panic!("substituted Unit owns one source range")
@@ -6767,6 +6852,22 @@ mod tests {
             .expect("substituted-Unit semantic payload");
         assert_ne!(nullary_payload, unit_payload);
         assert_ne!(nullary_payload_execution, unit_payload_execution);
+    }
+
+    #[test]
+    fn public_parameter_count_preserves_grouping_without_changing_semantic_slots() {
+        let domain = product(nominal("host", "Left"), nominal("host", "Right"));
+        let grouped = function(domain.clone(), nominal("host", "Result"), 1);
+        let split = function(domain, nominal("host", "Result"), 2);
+        let (grouped_plan, grouped_execution) = callable_plan_with_execution(&grouped);
+        let (split_plan, split_execution) = callable_plan_with_execution(&split);
+        assert_eq!(grouped_plan, split_plan);
+        let grouped = expect_execution_function(&grouped_execution, grouped_plan.facade().root());
+        let split = expect_execution_function(&split_execution, split_plan.facade().root());
+        assert_eq!(grouped.facade_slot_count(), 2);
+        assert_eq!(split.facade_slot_count(), 2);
+        assert_eq!(grouped.public_parameter_count(), 1);
+        assert_eq!(split.public_parameter_count(), 2);
     }
 
     #[test]
@@ -6924,7 +7025,8 @@ mod tests {
                 SemanticKey::Positional { index: 5 },
             ]
         );
-        assert_eq!(plan.function_shell(function_id), Some(result_shell));
+        assert!(matches!(plan.use_at(function_id),
+            FacadeUse::Function { shell: Some(shell), .. } if shell == result_shell));
         assert_eq!(callable.head_value_shell(), Some(result_shell));
         let layout = expect_execution_function(&execution, function_id);
         assert_eq!(layout.facade_shell.as_ref(), Some(result_shell));
@@ -7317,24 +7419,6 @@ mod tests {
             two_groups.facade().use_at(two_groups.entry().returned),
             FacadeUse::Nominal { name, .. } if name == &semantic_name("api", "R")
         ));
-    }
-
-    #[test]
-    fn product_companion_preserves_exact_semantic_key_order() {
-        let sum = FacadeShellId::new(
-            FacadeKind::Sum,
-            vec![
-                SemanticKey::Qualified {
-                    module_segments: vec!["api".to_owned(), "nested".to_owned()],
-                    name: "Value".to_owned(),
-                },
-                SemanticKey::Positional { index: 1 },
-            ],
-        );
-        assert_eq!(
-            sum.product_companion(),
-            FacadeShellId::new(FacadeKind::Product, sum.ordered_keys().to_vec())
-        );
     }
 
     #[test]
@@ -8525,6 +8609,60 @@ v(2) {
     }
 
     #[test]
+    fn structural_payload_authority_excludes_existential_witnesses() {
+        let Item::Newtype(mut packed) = public_newtype("Packed", bare("T")) else {
+            unreachable!("newtype helper")
+        };
+        packed.existential_params.push(TypeParam {
+            name: "T".to_owned(),
+            span: span(),
+            kind: Some(Kind::Star),
+        });
+        let package = package_with_items(
+            "api",
+            vec![
+                public_newtype("Visible", unit()),
+                Item::Newtype(packed),
+                newtype_with_visibility(
+                    "Hidden",
+                    unit(),
+                    Visibility::Public,
+                    Visibility::Public,
+                    Visibility::Private,
+                ),
+            ],
+        );
+        let prepared =
+            PreparedBoundaryCallableSites::collect_live(&package).expect("nominal inventory");
+        for (name, structural) in [("Visible", true), ("Packed", false), ("Hidden", false)] {
+            let site = prepared
+                .site(&newtype_site(
+                    "api",
+                    name,
+                    "wrap",
+                    NewtypeMemberRole::Constructor,
+                ))
+                .unwrap();
+            assert_eq!(
+                nominal_declaration(site, "api", name)
+                    .public_structural_payload()
+                    .is_some(),
+                structural,
+                "{name}"
+            );
+            if name == "Packed" {
+                assert_eq!(
+                    newtype_payload(site, "api", name)
+                        .declaration_binders()
+                        .len(),
+                    1,
+                    "CPS retains its existential binder"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn payload_declaration_binders_keep_universals_before_existentials() {
         let Item::Newtype(mut poly) = public_newtype(
             "Poly",
@@ -9310,7 +9448,7 @@ v(2) {
                 .collect::<BTreeSet<_>>(),
             BTreeSet::from([FacadeKind::Product, FacadeKind::Sum])
         );
-        assert!(prepared.shell_origins().all(|(_, origin)| matches!(
+        assert!(prepared.catalog.shells.values().all(|origin| matches!(
             origin,
             BoundaryFacadeSupportOrigin::Retained {
                 removed_at_version: 2
@@ -11315,11 +11453,13 @@ v(2) {
             retained.plan().facade().use_at(callback_slots[0]),
             FacadeUse::Function { .. }
         ));
-        let callback_shell = retained
-            .plan()
-            .facade()
-            .function_shell(callback_slots[0])
-            .expect("two-slot retained callback owns one exact shell");
+        let FacadeUse::Function {
+            shell: Some(callback_shell),
+            ..
+        } = retained.plan().facade().use_at(callback_slots[0])
+        else {
+            panic!("two-slot retained callback owns one exact shell");
+        };
         assert_eq!(callback_shell.ordered_keys().len(), 2);
         assert!(prepared.shells().any(|shell| shell == callback_shell));
         assert!(matches!(
@@ -11340,6 +11480,7 @@ v(2) {
             panic!("retained callback head keeps its source presentation");
         };
         assert_eq!(callback_head.source_param_count(), 1);
+        assert_eq!(callback_head.public_parameter_count(), 1);
         let FacadeUse::Function { .. } = retained.plan().facade().use_at(callback_slots[0]) else {
             unreachable!()
         };
@@ -11349,11 +11490,9 @@ v(2) {
             panic!("retained nested function keeps its source presentation");
         };
         assert_eq!(callback_presentation.source_param_count(), 1);
+        assert_eq!(callback_presentation.public_parameter_count(), 1);
         assert!(matches!(
-            prepared
-                .shell_origins()
-                .find(|(shell, _)| *shell == callback_shell)
-                .map(|(_, origin)| origin),
+            prepared.catalog.shells.get(callback_shell),
             Some(BoundaryFacadeSupportOrigin::Retained {
                 removed_at_version: 2
             })
@@ -11712,6 +11851,7 @@ v(2) {
             panic!("nullary export has one execution value stage");
         };
         assert_eq!(nullary_layout.source_param_count(), 0);
+        assert_eq!(nullary_layout.public_parameter_count(), 0);
         assert_eq!(nullary_layout.body_abi_arity(), 0);
         assert_eq!(nullary_layout.facade_slot_count(), 0);
         assert!(nullary_layout.source_params().is_empty());
@@ -11722,6 +11862,7 @@ v(2) {
             panic!("unitful export has one execution value stage");
         };
         assert_eq!(unitful_layout.source_param_count(), 1);
+        assert_eq!(unitful_layout.public_parameter_count(), 0);
         assert_eq!(unitful_layout.body_abi_arity(), 1);
         assert_eq!(unitful_layout.facade_slot_count(), 0);
         let [unitful_param] = unitful_layout.source_params() else {
@@ -11851,6 +11992,7 @@ v(2) {
             .expect("two-parameter site");
         let two = execution_value_stage(two_site, 0);
         assert_eq!(two.source_param_count(), 2);
+        assert_eq!(two.public_parameter_count(), 2);
         assert_eq!(two.body_abi_arity(), 2);
         assert_eq!(two.facade_slot_count(), 3);
         let two_stage_shell = two.facade_shell().expect("three-slot facade shell");

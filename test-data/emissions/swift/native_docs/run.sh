@@ -52,14 +52,14 @@ def docs(symbol):
     return "\n".join(line["text"] for line in symbol.get("docComment", {}).get("lines", []))
 for marker, kind, title in (
     ("HOST-TYPE-DOC", "swift.associatedtype", "testapi__String"),
-    ("HOST-GENERIC-DOC", "swift.struct", "KioHostType_testapi__Box"),
+    ("HOST-GENERIC-DOC", "swift.typealias", "KioHostType_testapi__Box"),
     ("HOST-FN-DOC", "swift.method", "testapi_io__print"),
     ("EXPORT-DOC", "swift.method", "main"),
     ("FIRST-SAME-DOC", "swift.method", "same"),
     ("SECOND-SAME-DOC", "swift.method", "same"),
     ("NEWTYPE-DOC", "swift.struct", "KioNewtype_testapi__Token"),
     ("OPAQUE-DOC", "swift.struct", "KioNewtype_testapi__Opaque"),
-    ("GENERIC-DOC", "swift.struct", "KioNewtype_testapi__Wrapper"),
+    ("GENERIC-DOC", "swift.enum", "KioNewtypeMk_testapi__Wrapper"),
     ("EXISTENTIAL-DOC", "swift.struct", "KioNewtype_testapi__Packed"),
     ("NATIVE-DOC", "swift.method", "example"),
     ("CR-DOC", "swift.method", "example"),

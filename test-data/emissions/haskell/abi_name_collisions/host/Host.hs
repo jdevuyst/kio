@@ -3,8 +3,8 @@
 module Host (main) where
 
 import BuildHaskellAbiNameCollisions
-  ( type HostType_H612f5f620045646765__a___b__Edge,
-    type HostType_H615f2f620045646765__a___b__Edge,
+  ( type HostType__a___ub__Edge,
+    type HostType__a_u__b__Edge,
     type HostType__a__b__Token,
   )
 import qualified BuildHaskellAbiNameCollisions as P
@@ -12,8 +12,8 @@ import qualified BuildHaskellAbiNameCollisions as P
 data HostTypes = HostTypes
 
 instance P.BuildHaskellAbiNameCollisionsHostTypes HostTypes where
-  type HostType_H612f5f620045646765__a___b__Edge HostTypes = ()
-  type HostType_H615f2f620045646765__a___b__Edge HostTypes = ()
+  type HostType__a___ub__Edge HostTypes = ()
+  type HostType__a_u__b__Edge HostTypes = ()
   type HostType__a__b__Token HostTypes = ()
 
 host :: P.BuildHaskellAbiNameCollisionsHost HostTypes IO
@@ -28,34 +28,32 @@ package :: P.BuildHaskellAbiNameCollisions HostTypes IO
 package = P.createBuildHaskellAbiNameCollisions host
 
 outerSelector value =
-  P.expSel_H01220201000000010000000573686170650000001273656c6563746f725f636f6c6c6973696f6e020000000001000000015900000002__shape__selectorCollision_ret_Sel_Y_2 value
+  P.export_shape__selectorCollision_Result_Field2_Type_Y value
 
 innerSelector value =
-  P.expSel_H01220201000000010000000573686170650000001273656c6563746f725f636f6c6c6973696f6e0200000001020000000001000000015900000002__shape__selectorCollision_ret_slot0_Sel_Y_2 value
+  P.export_shape__selectorCollision_Result_Slot0_Field2_Type_Y value
 
 outerPattern
-  (P.ExpP_H01200201000000010000000573686170650000001273656c6563746f725f636f6c6c6973696f6e0200000000__shape__selectorCollision_ret_P nested _ _) = nested
+  (P.Export_shape__selectorCollision_Result nested _ _) = nested
 
 innerPattern
-  (P.ExpP_H01200201000000010000000573686170650000001273656c6563746f725f636f6c6c6973696f6e02000000010200000000__shape__selectorCollision_ret_slot0_P _ _ value) = value
+  (P.Export_shape__selectorCollision_Result_Slot0 _ _ value) = value
 
 qualifiedY
-  :: P.KioCarrier_H736c6f74300059__slot0_Y HostTypes IO
-  -> P.KioCarrier_H736c6f74300059__slot0_Y HostTypes IO
+  :: P.KioType_slot0__Y HostTypes IO
+  -> P.KioType_slot0__Y HostTypes IO
 qualifiedY = id
 
 selectorCollision inner unit qualified =
   P.export__shape__selectorCollision
     package
-    inner
-    unit
-    (qualifiedY qualified)
+    (inner, (unit, qualifiedY qualified))
 
 sumPattern
-  (P.ExpS_H0121020100000001000000057368617065000000117061747465726e5f636f6c6c6973696f6e01000000000000000001000000015000000000__shape__patternCollision_arg0_S_P_0 value) = value
+  (P.Export_shape__patternCollision_Arg0_Case0_Type_P value) = value
 
 sumPayloadPattern
-  (P.ExpP_H0120020100000001000000057368617065000000117061747465726e5f636f6c6c6973696f6e0100000000000000010200000000__shape__patternCollision_arg0_slot0_P _ _) = ()
+  (P.Export_shape__patternCollision_Arg0_Slot0 _ _) = ()
 
 main :: IO ()
 main = do

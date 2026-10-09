@@ -1,7 +1,7 @@
 module PackConstructor where
 
 import PublicAbi
-  ( KioExistential_H617069005061636b__api_Pack
+  ( KioExists_api__Pack
   )
 
-unavailableConstructor = KioExistential_H617069005061636b__api_Pack
+unavailableConstructor = KioExists_api__Pack

@@ -24,83 +24,77 @@ instance P.SubstitutionStableHostShapesHostTypes HostTypes where
 
 genericProduct
   :: forall (a :: Type) (t :: Type)
-   . a
-  -> t
-  -> IO (P.Env_H01100100000001000000036170690000000f67656e657269635f70726f647563740200000000__api__genericProduct_ret HostTypes IO a t)
-genericProduct first second =
-  pure (P.EnvP_H01200100000001000000036170690000000f67656e657269635f70726f647563740200000000__api__genericProduct_ret_P first second)
+   . (a, t)
+  -> IO (P.Host_api__genericProduct_Result HostTypes IO a t)
+genericProduct (first, second) =
+  pure (P.Host_api__genericProduct_Result first second)
 
 directProduct
   :: forall (a :: Type) (b :: Type) (c :: Type)
-   . a
-  -> b
-  -> c
-  -> IO (P.Env_H01100100000001000000036170690000000e6469726563745f70726f647563740200000000__api__directProduct_ret HostTypes IO a b c)
-directProduct first second third =
-  pure (P.EnvP_H01200100000001000000036170690000000e6469726563745f70726f647563740200000000__api__directProduct_ret_P first second third)
+   . (a, (b, c))
+  -> IO (P.Host_api__directProduct_Result HostTypes IO a b c)
+directProduct (first, (second, third)) =
+  pure (P.Host_api__directProduct_Result first second third)
 
 genericSum
   :: forall (a :: Type) (t :: Type)
-   . P.Env_H01100100000001000000036170690000000b67656e657269635f73756d010000000000000000__api__genericSum_arg0 HostTypes IO a t
-  -> IO (P.Env_H01100100000001000000036170690000000b67656e657269635f73756d0200000000__api__genericSum_ret HostTypes IO a t)
+   . P.Host_api__genericSum_Arg0 HostTypes IO a t
+  -> IO (P.Host_api__genericSum_Result HostTypes IO a t)
 genericSum = pure
 
 directSum
   :: forall (a :: Type) (b :: Type) (c :: Type)
-   . P.Env_H01100100000001000000036170690000000a6469726563745f73756d010000000000000000__api__directSum_arg0 HostTypes IO a b c
-  -> IO (P.Env_H01100100000001000000036170690000000a6469726563745f73756d0200000000__api__directSum_ret HostTypes IO a b c)
+   . P.Host_api__directSum_Arg0 HostTypes IO a b c
+  -> IO (P.Host_api__directSum_Result HostTypes IO a b c)
 directSum = pure
 
 rankProduct
-  :: PolyId
-  -> ()
-  -> IO (P.Env_H01100100000001000000036170690000000c72616e6b5f70726f647563740200000000__api__rankProduct_ret HostTypes IO)
-rankProduct identity unit =
-  pure (P.EnvP_H01200100000001000000036170690000000c72616e6b5f70726f647563740200000000__api__rankProduct_ret_P identity unit)
+  :: (PolyId, ())
+  -> IO (P.Host_api__rankProduct_Result HostTypes IO)
+rankProduct (identity, unit) =
+  pure (P.Host_api__rankProduct_Result identity unit)
 
 rankSum
-  :: P.Env_H01100100000001000000036170690000000872616e6b5f73756d010000000000000000__api__rankSum_arg0 HostTypes IO
-  -> IO (P.Env_H01100100000001000000036170690000000872616e6b5f73756d0200000000__api__rankSum_ret HostTypes IO)
+  :: P.Host_api__rankSum_Arg0 HostTypes IO
+  -> IO (P.Host_api__rankSum_Result HostTypes IO)
 rankSum = pure
 
 aliasRankProduct
-  :: PolyId
-  -> PolyId
-  -> IO (P.Env_H011001000000010000000361706900000012616c6961735f72616e6b5f70726f647563740200000000__api__aliasRankProduct_ret HostTypes IO)
-aliasRankProduct first second =
-  pure (P.EnvP_H012001000000010000000361706900000012616c6961735f72616e6b5f70726f647563740200000000__api__aliasRankProduct_ret_P first second)
+  :: (PolyId, PolyId)
+  -> IO (P.Host_api__aliasRankProduct_Result HostTypes IO)
+aliasRankProduct (first, second) =
+  pure (P.Host_api__aliasRankProduct_Result first second)
 
 aliasRankSum
-  :: P.Env_H01100100000001000000036170690000000e616c6961735f72616e6b5f73756d010000000000000000__api__aliasRankSum_arg0 HostTypes IO
-  -> IO (P.Env_H01100100000001000000036170690000000e616c6961735f72616e6b5f73756d0200000000__api__aliasRankSum_ret HostTypes IO)
+  :: P.Host_api__aliasRankSum_Arg0 HostTypes IO
+  -> IO (P.Host_api__aliasRankSum_Result HostTypes IO)
 aliasRankSum = pure
 
 newtypeRankProduct
-  :: PolyId
-  -> PolyId
-  -> IO (P.Env_H0110010000000100000003617069000000146e6577747970655f72616e6b5f70726f647563740200000000__api__newtypeRankProduct_ret HostTypes IO)
-newtypeRankProduct first second =
-  pure (P.EnvP_H0120010000000100000003617069000000146e6577747970655f72616e6b5f70726f647563740200000000__api__newtypeRankProduct_ret_P first second)
+  :: (PolyId, PolyId)
+  -> IO (P.Host_api__newtypeRankProduct_Result HostTypes IO)
+newtypeRankProduct (first, second) =
+  pure (P.Host_api__newtypeRankProduct_Result first second)
 
 newtypeRankSum
-  :: P.Env_H0110010000000100000003617069000000106e6577747970655f72616e6b5f73756d010000000000000000__api__newtypeRankSum_arg0 HostTypes IO
-  -> IO (P.Env_H0110010000000100000003617069000000106e6577747970655f72616e6b5f73756d0200000000__api__newtypeRankSum_ret HostTypes IO)
+  :: P.Host_api__newtypeRankSum_Arg0 HostTypes IO
+  -> IO (P.Host_api__newtypeRankSum_Result HostTypes IO)
 newtypeRankSum = pure
 
 scopedApplication
   :: forall (f :: Type -> Type) (a :: Type) (b :: Type)
-   . f (P.Env_H01100100000001000000036170690000001273636f7065645f6170706c69636174696f6e0100000000000000010100000000__api__scopedApplication_arg0_app0 HostTypes IO a b)
-  -> IO (f (P.Env_H01100100000001000000036170690000001273636f7065645f6170706c69636174696f6e02000000010100000000__api__scopedApplication_ret_app0 HostTypes IO a b))
+   . f (P.Host_api__scopedApplication_Arg0_App0 HostTypes IO a b)
+  -> IO (f (P.Host_api__scopedApplication_Result_App0 HostTypes IO a b))
 scopedApplication = pure
 
-stagedHost :: forall a. a -> IO (forall b. IO (forall c. IO (b -> c -> IO c)))
+stagedHost :: forall a. a -> IO (forall b. IO (forall c. IO ((b, c) -> IO c)))
 stagedHost _ = pure second
   where
-    second :: forall b. IO (forall c. IO (b -> c -> IO c))
+    second :: forall b. IO (forall c. IO ((b, c) -> IO c))
     second = pure third
       where
-        third :: forall c. IO (b -> c -> IO c)
-        third = pure $ \_ value -> pure value
+        third :: forall c. IO ((b, c) -> IO c)
+        third = pure $ \(_, value) -> pure value
 
 host :: P.SubstitutionStableHostShapesHost HostTypes IO
 host =
@@ -156,74 +150,74 @@ publicRankRoundTrip = do
   identity True
 
 aliasProductEquality
-  :: P.Env_H011001000000010000000361706900000012616c6961735f72616e6b5f70726f647563740200000000__api__aliasRankProduct_ret HostTypes IO
+  :: P.Host_api__aliasRankProduct_Result HostTypes IO
      :~: P.SubstitutionStableHostShapesProduct '[PolyId, PolyId]
 aliasProductEquality = Refl
 
 aliasSumEquality
-  :: P.Env_H01100100000001000000036170690000000e616c6961735f72616e6b5f73756d010000000000000000__api__aliasRankSum_arg0 HostTypes IO
+  :: P.Host_api__aliasRankSum_Arg0 HostTypes IO
      :~: P.SubstitutionStableHostShapesSum '[PolyId, PolyId]
 aliasSumEquality = Refl
 
 newtypeProductEquality
-  :: P.Env_H0110010000000100000003617069000000146e6577747970655f72616e6b5f70726f647563740200000000__api__newtypeRankProduct_ret HostTypes IO
+  :: P.Host_api__newtypeRankProduct_Result HostTypes IO
      :~: P.SubstitutionStableHostShapesProduct '[PolyId, PolyId]
 newtypeProductEquality = Refl
 
 newtypeSumEquality
-  :: P.Env_H0110010000000100000003617069000000106e6577747970655f72616e6b5f73756d010000000000000000__api__newtypeRankSum_arg0 HostTypes IO
+  :: P.Host_api__newtypeRankSum_Arg0 HostTypes IO
      :~: P.SubstitutionStableHostShapesSum '[PolyId, PolyId]
 newtypeSumEquality = Refl
 
 directProductValue
-  :: P.Env_H01100100000001000000036170690000000e6469726563745f70726f647563740200000000__api__directProduct_ret HostTypes IO Int Bool Char
-directProductValue = P.EnvP_H01200100000001000000036170690000000e6469726563745f70726f647563740200000000__api__directProduct_ret_P 7 False 'x'
+  :: P.Host_api__directProduct_Result HostTypes IO Int Bool Char
+directProductValue = P.Host_api__directProduct_Result 7 False 'x'
 
 genericProductValue
-  :: P.Env_H01100100000001000000036170690000000f67656e657269635f70726f647563740200000000__api__genericProduct_ret HostTypes IO Int (Bool, Char)
+  :: P.Host_api__genericProduct_Result HostTypes IO Int (Bool, Char)
 genericProductValue = directProductValue
 
 productSelectors :: (Int, Bool, Char)
 productSelectors = case directProductValue of
-  P.EnvP_H01200100000001000000036170690000000e6469726563745f70726f647563740200000000__api__directProduct_ret_P first second third ->
+  P.Host_api__directProduct_Result first second third ->
     (first, second, third)
 
-directSumValue :: P.Env_H01100100000001000000036170690000000a6469726563745f73756d010000000000000000__api__directSum_arg0 HostTypes IO Int Bool Char
-directSumValue = P.EnvS_H01210100000001000000036170690000000a6469726563745f73756d010000000000000000030000000200000002__api__directSum_arg0_S_pos2_2 'z'
+directSumValue :: P.Host_api__directSum_Arg0 HostTypes IO Int Bool Char
+directSumValue = P.Host_api__directSum_Arg0_Case2_Position2 'z'
 
 genericSumValue
-  :: P.Env_H01100100000001000000036170690000000b67656e657269635f73756d010000000000000000__api__genericSum_arg0 HostTypes IO Int (Either Bool Char)
+  :: P.Host_api__genericSum_Arg0 HostTypes IO Int (Either Bool Char)
 genericSumValue = directSumValue
 
-rankProductValue :: P.Env_H01100100000001000000036170690000000c72616e6b5f70726f647563740200000000__api__rankProduct_ret HostTypes IO
-rankProductValue = P.EnvP_H01200100000001000000036170690000000c72616e6b5f70726f647563740200000000__api__rankProduct_ret_P polyId ()
+rankProductValue :: P.Host_api__rankProduct_Result HostTypes IO
+rankProductValue = P.Host_api__rankProduct_Result polyId ()
 
 rankProductResult :: IO (Bool, Char)
 rankProductResult = case rankProductValue of
-  P.EnvP_H01200100000001000000036170690000000c72616e6b5f70726f647563740200000000__api__rankProduct_ret_P apply () -> do
+  P.Host_api__rankProduct_Result apply () -> do
     boolId <- apply @Bool
     bool <- boolId False
     charId <- apply @Char
     char <- charId 'q'
     pure (bool, char)
 
-rankSumValue :: P.Env_H01100100000001000000036170690000000872616e6b5f73756d010000000000000000__api__rankSum_arg0 HostTypes IO
-rankSumValue = P.EnvS_H01210100000001000000036170690000000872616e6b5f73756d010000000000000000030000000000000000__api__rankSum_arg0_S_pos0_0 polyId
+rankSumValue :: P.Host_api__rankSum_Arg0 HostTypes IO
+rankSumValue = P.Host_api__rankSum_Arg0_Case0_Position0 polyId
 
 rankSumResult :: IO Bool
 rankSumResult = case rankSumValue of
-  P.EnvS_H01210100000001000000036170690000000872616e6b5f73756d010000000000000000030000000000000000__api__rankSum_arg0_S_pos0_0 apply -> apply @Bool >>= \identity -> identity True
-  P.EnvS_H01210100000001000000036170690000000872616e6b5f73756d010000000000000000030000000100000001__api__rankSum_arg0_S_pos1_1 () -> pure False
+  P.Host_api__rankSum_Arg0_Case0_Position0 apply -> apply @Bool >>= \identity -> identity True
+  P.Host_api__rankSum_Arg0_Case1_Position1 () -> pure False
 
-aliasRankProductValue :: P.Env_H011001000000010000000361706900000012616c6961735f72616e6b5f70726f647563740200000000__api__aliasRankProduct_ret HostTypes IO
-aliasRankProductValue = P.EnvP_H012001000000010000000361706900000012616c6961735f72616e6b5f70726f647563740200000000__api__aliasRankProduct_ret_P polyId polyId
+aliasRankProductValue :: P.Host_api__aliasRankProduct_Result HostTypes IO
+aliasRankProductValue = P.Host_api__aliasRankProduct_Result polyId polyId
 
-newtypeRankProductValue :: P.Env_H0110010000000100000003617069000000146e6577747970655f72616e6b5f70726f647563740200000000__api__newtypeRankProduct_ret HostTypes IO
-newtypeRankProductValue = P.EnvP_H0120010000000100000003617069000000146e6577747970655f72616e6b5f70726f647563740200000000__api__newtypeRankProduct_ret_P polyId polyId
+newtypeRankProductValue :: P.Host_api__newtypeRankProduct_Result HostTypes IO
+newtypeRankProductValue = P.Host_api__newtypeRankProduct_Result polyId polyId
 
 aliasRankResults :: IO (Bool, Char)
 aliasRankResults = case aliasRankProductValue of
-  P.EnvP_H012001000000010000000361706900000012616c6961735f72616e6b5f70726f647563740200000000__api__aliasRankProduct_ret_P aliasId expandedId -> do
+  P.Host_api__aliasRankProduct_Result aliasId expandedId -> do
     boolId <- aliasId @Bool
     bool <- boolId False
     charId <- expandedId @Char
@@ -232,7 +226,7 @@ aliasRankResults = case aliasRankProductValue of
 
 newtypeRankResults :: IO (Bool, Char)
 newtypeRankResults = case newtypeRankProductValue of
-  P.EnvP_H0120010000000100000003617069000000146e6577747970655f72616e6b5f70726f647563740200000000__api__newtypeRankProduct_ret_P newtypeId expandedId -> do
+  P.Host_api__newtypeRankProduct_Result newtypeId expandedId -> do
     boolId <- newtypeId @Bool
     bool <- boolId True
     charId <- expandedId @Char
@@ -250,8 +244,8 @@ main = do
   _ <- pure aliasSumEquality
   _ <- pure newtypeProductEquality
   _ <- pure newtypeSumEquality
-  _ <- genericProduct (7 :: Int) (False, 'x')
-  _ <- directProduct (7 :: Int) False 'x'
+  _ <- genericProduct (7 :: Int, (False, 'x'))
+  _ <- directProduct (7 :: Int, (False, 'x'))
   _ <- genericSum genericSumValue
   if productSelectors == (7, False, 'x')
     then pure ()

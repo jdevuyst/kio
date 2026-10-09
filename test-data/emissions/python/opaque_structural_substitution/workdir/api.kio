@@ -1,0 +1,31 @@
+module api;
+
+import __intrinsics__;
+
+host type Box[T];
+
+host type Number role(i32);
+
+host type Text role(str);
+
+host fn unbox[T](boxed: Box(T)) -> T;
+
+host fn pack[T](value: T) -> Box(T);
+
+host fn consume(head: Number, tail: Number) -> Number;
+
+host fn text_length(value: Text) -> Number;
+
+fn relay[T](boxed: Box(T)) -> T { unbox(boxed) }
+
+pub fn direct(boxed: Box(Number & Number)) -> Number { consume(unbox(boxed)) }
+
+pub fn through_relay(boxed: Box(Number & Number)) -> Number { consume(relay(boxed)) }
+
+pub fn put_left[A][B](value: A) -> Box(A | B) { pack(__left__(A, B, value)) }
+
+pub fn put_right[A][B](value: B) -> Box(A | B) { pack(__right__(A, B, value)) }
+
+pub fn read_sum(value: Box(Number | Text)) -> Number {
+  __either__(Number, Text, Number, unbox(value), .(n: Number) { n }, text_length)
+}

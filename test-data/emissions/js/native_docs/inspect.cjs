@@ -26,13 +26,67 @@ const has = (text, marker) => new RegExp('(^|[^A-Z-])' + marker + '([^A-Z-]|$)')
 const syntax = text => ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith('.js') ? ts.ScriptKind.JS : ts.ScriptKind.TS);
 if (process.argv[5] === '--absent') {
   for (const marker of [...markers, 'EXPORT-EDIT-DOC']) assert(!has(source, marker), 'cached stale documentation: ' + marker);
-  function declarationTree(node, root) {
+  function descriptorDocs(root, documented) {
+    const factories = root.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'createNativeDocs');
+    assert.equal(factories.length, 1);
+    const descriptors = [];
+    function find(node) {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === '__kioBoundaryPlans') descriptors.push(node);
+      ts.forEachChild(node, find);
+    }
+    find(factories[0]);
+    assert.equal(descriptors.length, 1, 'one boundary descriptor');
+    const initializer = descriptors[0].initializer;
+    assert(initializer && ts.isObjectLiteralExpression(initializer));
+    const descriptor = JSON.parse(initializer.getText(root));
+    assert(Array.isArray(descriptor.sites));
+    const sitesProperty = initializer.properties.filter(node => ts.isPropertyAssignment(node) && node.name.text === 'sites');
+    assert.equal(sitesProperty.length, 1);
+    const sites = sitesProperty[0].initializer;
+    assert(ts.isArrayLiteralExpression(sites));
+    assert.equal(sites.elements.length, descriptor.sites.length);
+    const expected = new Map([
+      [JSON.stringify([['testapi', 'main'], ['export', 'main']]), 'EXPORT-DOC'],
+      [JSON.stringify([['testapi', 'main'], ['export', 'same']]), 'FIRST-SAME-DOC'],
+      [JSON.stringify([['testapi', 'other'], ['export', 'same']]), 'SECOND-SAME-DOC'],
+    ]);
+    const ignored = new Set();
+    for (const [index, site] of descriptor.sites.entries()) {
+      const node = sites.elements[index];
+      assert(ts.isObjectLiteralExpression(node));
+      const fields = node.properties.filter(property => ts.isPropertyAssignment(property) && property.name.text === 'doc');
+      if (!Object.hasOwn(site, 'doc')) {
+        assert.equal(fields.length, 0);
+        continue;
+      }
+      assert(documented, 'stripped descriptor retained documentation');
+      assert.equal(fields.length, 1);
+      const marker = expected.get(site.key);
+      assert(marker, 'unexpected documented boundary identity: ' + site.key);
+      const [module, owner] = JSON.parse(site.key);
+      assert.deepEqual(site.module, module);
+      assert.deepEqual(site.owner, { kind: 'exported_function', name: owner[1] });
+      assert.equal(typeof site.doc, 'string');
+      assert(has(site.doc, marker), 'documentation attached to wrong descriptor');
+      for (const other of ['EXPORT-DOC', 'FIRST-SAME-DOC', 'SECOND-SAME-DOC']) {
+        if (other !== marker) assert(!has(site.doc, other));
+      }
+      expected.delete(site.key);
+      ignored.add(fields[0]);
+    }
+    assert.equal(ignored.size, documented ? 3 : 0);
+    if (documented) assert.equal(expected.size, 0);
+    return ignored;
+  }
+  function declarationTree(node, root, ignored) {
     const children = [];
-    ts.forEachChild(node, child => { children.push(declarationTree(child, root)); });
+    ts.forEachChild(node, child => {
+      if (!ignored.has(child)) children.push(declarationTree(child, root, ignored));
+    });
     return [node.kind, children.length ? children : node.getText(root)];
   }
   const current = syntax(source), previous = syntax(fs.readFileSync(process.argv[4], 'utf8'));
-  assert.deepEqual(declarationTree(current, current), declarationTree(previous, previous), 'documentation changed executable declarations');
+  assert.deepEqual(declarationTree(current, current, descriptorDocs(current, false)), declarationTree(previous, previous, descriptorDocs(previous, true)), 'documentation changed executable declarations');
   process.exit(0);
 }
 const program = ts.createProgram([file], { allowJs: true, noEmit: true, target: ts.ScriptTarget.ES2020 });

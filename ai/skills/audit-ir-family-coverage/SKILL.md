@@ -18,7 +18,7 @@ For each of the following AST enums in `kio-rs/src/ast.rs`, list all variants:
 
 - `Expr` — the surface-level expression variants.
 - `Expr::Low*` — the Low IR variants (`LowHostCall`, `LowClosureCall`, `LowAbsurdCall`, `LowCpsProjectorApply`, `LowQualifiedModuleCall`, `LowQualifiedNewtypeMember`, `LowNewtypeCtor`, `LowNewtypeProj`, `LowIndirectCall`, …).
-- `Expr::Enriched*` — the structurally-recovered variants (`EnrichedTuple`, `EnrichedRecord`, `EnrichedProject`, `EnrichedFieldGet`, `EnrichedInject`, `EnrichedMatch`, `EnrichedConditional`).
+- `Expr::Enriched*` — the structurally-recovered variants (`EnrichedTuple`, `EnrichedProject`, `EnrichedFieldGet`, `EnrichedInject`, `EnrichedMatch`, `EnrichedConditional`).
 - `Type` — top-level type variants.
 - The capability annotations on closure / fn nodes: `Lifetime` (on `Type::Function` via `FnTypeCapabilities`). `Capabilities.captured_from` on `Expr::FnExpr` is an internal cross-pass annotation no emitter consumes, and the Rust build-block `thread_safety` key is a post-emit transform, not an AST annotation — neither joins the coverage matrix.
 

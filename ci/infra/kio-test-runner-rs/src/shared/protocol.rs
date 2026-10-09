@@ -1033,6 +1033,7 @@ pub const HOST_CALLBACK_ROUNDTRIP_PROTOCOL_NAME: &str = "host-callback-roundtrip
 pub const HOST_GENERIC_RETURN_ONLY_ROUNDTRIP_PROTOCOL_NAME: &str =
     "host-generic-return-only-roundtrip";
 pub const HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME: &str = "host-generic-type-roundtrip";
+pub const HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME: &str = "host-generic-type-elab-roundtrip";
 pub const HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME: &str = "host-rankn-roundtrip";
 pub const HOST_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME: &str = "host-structural-roundtrip";
 pub const HOST_STRUCTURAL_ELAB_ROUNDTRIP_PROTOCOL_NAME: &str = "host-structural-elab-roundtrip";
@@ -1395,6 +1396,7 @@ pub enum RunnerProtocol {
     /// `testapi/main.main`.
     HostGenericReturnOnlyRoundtrip,
     HostGenericTypeRoundtrip,
+    HostGenericTypeElabRoundtrip,
     HostRanknRoundtrip,
     HostStructuralRoundtrip,
     HostStructuralElabRoundtrip,
@@ -2000,6 +2002,15 @@ const TYPES_HOST_BOX: &[HostTypeBinding] = &[
     HostTypeBinding::opaque("testapi", "Box", 1, HostTypeFixture::Box),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
+];
+const TYPES_HOST_BOX_ELAB: &[HostTypeBinding] = &[
+    TYPES_HOST_BOX[0],
+    TYPES_HOST_BOX[1],
+    TYPES_HOST_BOX[2],
+    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
 ];
 const TYPES_DYN_LOAD: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
@@ -3556,6 +3567,7 @@ impl RunnerProtocol {
         Self::ModuleAliasScopeCollision,
         Self::HostGenericReturnOnlyRoundtrip,
         Self::HostGenericTypeRoundtrip,
+        Self::HostGenericTypeElabRoundtrip,
         Self::HostRanknRoundtrip,
         Self::HostStructuralRoundtrip,
         Self::HostStructuralElabRoundtrip,
@@ -3690,6 +3702,7 @@ impl RunnerProtocol {
                 HOST_GENERIC_RETURN_ONLY_ROUNDTRIP_PROTOCOL_NAME
             }
             Self::HostGenericTypeRoundtrip => HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME,
+            Self::HostGenericTypeElabRoundtrip => HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostRanknRoundtrip => HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostStructuralRoundtrip => HOST_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostStructuralElabRoundtrip => HOST_STRUCTURAL_ELAB_ROUNDTRIP_PROTOCOL_NAME,
@@ -3850,6 +3863,9 @@ impl RunnerProtocol {
                 Ok(Self::HostGenericReturnOnlyRoundtrip)
             }
             HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostGenericTypeRoundtrip),
+            HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME => {
+                Ok(Self::HostGenericTypeElabRoundtrip)
+            }
             HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostRanknRoundtrip),
             HOST_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostStructuralRoundtrip),
             HOST_STRUCTURAL_ELAB_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostStructuralElabRoundtrip),
@@ -4200,6 +4216,7 @@ impl RunnerProtocol {
                 main_contract(TYPES_HOST_ARRAY_RETURN_ONLY, FNS_HOST_ARRAY_RETURN_ONLY)
             }
             Self::HostGenericTypeRoundtrip => main_contract(TYPES_HOST_BOX, FNS_HOST_BOX),
+            Self::HostGenericTypeElabRoundtrip => main_contract(TYPES_HOST_BOX_ELAB, FNS_HOST_BOX),
             Self::HostRanknRoundtrip => main_contract(TYPES_TESTAPI_STRING, FNS_HOST_RANKN),
             Self::HostStructuralRoundtrip => {
                 main_contract(TYPES_TESTAPI_I32_STRING, FNS_HOST_STRUCTURAL)
@@ -5466,6 +5483,27 @@ mod tests {
     }
 
     #[test]
+    fn host_generic_type_elab_adds_only_standard_elab_roles() {
+        let base = RunnerProtocol::HostGenericTypeRoundtrip.contract();
+        let elab = RunnerProtocol::HostGenericTypeElabRoundtrip.contract();
+        assert_eq!(base.host_types, TYPES_HOST_BOX);
+        assert_eq!(base.host_types.len(), 3);
+        assert_eq!(&elab.host_types[..3], base.host_types);
+        assert_eq!(
+            &elab.host_types[3..],
+            &[
+                HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
+                HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
+                HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
+                HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+            ]
+        );
+        assert_eq!(elab.host_fns, base.host_fns);
+        assert_eq!(elab.execution, base.execution);
+        assert_eq!(elab.testapi_conformed, base.testapi_conformed);
+    }
+
+    #[test]
     fn dict_collection_protocol_binds_list_elaborator_host_types() {
         let contract = RunnerProtocol::TestApiArithCollectionDictElab.contract();
         assert_eq!(contract.host_types.len(), 15);
@@ -5666,6 +5704,10 @@ mod tests {
                 RunnerProtocol::HostGenericTypeRoundtrip,
             ),
             (
+                HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME,
+                RunnerProtocol::HostGenericTypeElabRoundtrip,
+            ),
+            (
                 HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME,
                 RunnerProtocol::HostRanknRoundtrip,
             ),
@@ -5830,6 +5872,7 @@ mod tests {
             RunnerProtocol::HostGenericReturnOnlyRoundtrip,
             RunnerProtocol::HostRanknRoundtrip,
             RunnerProtocol::HostGenericTypeRoundtrip,
+            RunnerProtocol::HostGenericTypeElabRoundtrip,
             RunnerProtocol::HostStructuralRoundtrip,
             RunnerProtocol::HostFunctorDictRoundtrip,
             RunnerProtocol::HostPolyFunctionNewtypeRoundtrip,

@@ -6,9 +6,9 @@
 //! share one primitive role. Role primitives occur only on the matching
 //! declaration-keyed `KioHostIn_…` / `KioHostOut_…` adapter methods.
 //! Parameterized host declarations and public newtypes use declaration-owned
-//! generic carriers; an `Mk` witness is emitted only for an unsaturated
-//! constructor occurrence. Product and sum keys are the prepared semantic
-//! shell keys, and callable source partitions use the paired execution plan.
+//! generic carriers; an `Mk` witness identifies each constructor at every
+//! application stage. Canonical binary values come from the shared value
+//! plan; named callable source partitions use the paired execution plan.
 //!
 //! Exact bindings and fallback adapter names use a reversible identity frame;
 //! ordinary role adapters use the readable per-declaration spelling. Site-local
@@ -19,18 +19,17 @@
 
 use crate::ast::{Role, Routed};
 use crate::backends::boundary_facade::{
-    BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadeExecutionUse,
-    BoundaryFacadePlan, BoundaryFacadeSiteOwner, BoundaryHostBindingOrigin,
+    BoundaryCallableHeadStage, BoundaryFacadeSiteOwner, BoundaryHostBindingOrigin,
     BoundaryHostTypeBinding, BoundaryNominalDeclaration, BoundaryNominalDependencies,
-    CallableExecutionLayout, CallableExecutionStage, CallableSourceParamAdapter,
-    CallableValueStageLayout, FacadeBinderId, FacadeUse, FacadeUseId, PreparedBoundaryCallableSite,
-    PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
+    CallableExecutionStage, CallableValueStageLayout, FacadeBinderId, FacadeUseId,
+    PreparedBoundaryCallableSite, PreparedBoundaryCallableSites, QualifiedTypeName,
 };
 use crate::backends::namespace::{is_python_keyword, pascal_case};
 use crate::backends::public_names::readable_role_adapter_identity;
 use crate::backends::public_names::{
     FacadeSelector, host_module_key, host_name_core, module_facade_path,
 };
+use crate::backends::value_plan::{ValueCapture, ValueDomainStep, ValuePlan, ValueUse, ValueUseId};
 #[cfg(all(test, feature = "surface"))]
 use crate::host_descriptor::exact_host_type_role;
 use crate::pass::resolve::Package;
@@ -64,11 +63,19 @@ impl std::error::Error for EmitError {}
 #[derive(Debug, Eq, PartialEq)]
 pub struct PythonStubPackage {
     files: BTreeMap<String, String>,
+    companions: BTreeMap<String, String>,
 }
 
 impl PythonStubPackage {
     pub fn files(&self) -> impl Iterator<Item = (&str, &str)> {
         self.files
+            .iter()
+            .map(|(path, content)| (path.as_str(), content.as_str()))
+    }
+
+    /// Immutable checker definitions, relative to the target output root.
+    pub fn companion_files(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.companions
             .iter()
             .map(|(path, content)| (path.as_str(), content.as_str()))
     }
@@ -79,17 +86,19 @@ impl PythonStubPackage {
     }
 }
 
-/// Render the package's flat typed stub: the `<Handle>Host`
+/// Render a flat diagnostic view of the package's types: the `<Handle>Host`
 /// protocol, the `create_<value-brand>` factory, and the typed `<Handle>` surface,
 /// all from the compiler-prepared callable and nominal plans.
 /// Package brands derive from the effective namespace `ns` through
 /// `crate::backends::namespace`, shared with the `.py` factory, so the stub
 /// and runtime module agree while the artifact stem remains unchanged.
+/// Filesystem consumers use [`lower_package_to_stub_package`] so independently
+/// generated packages resolve callable definitions through the shared inventory.
 pub fn lower_package_to_stub(package: &Package<Routed>, ns: &str) -> Result<String, EmitError> {
     lower_package_to_stub_with_signature(package, ns, None)
 }
 
-/// Render a stub with sealed signature history available to shared boundary
+/// Render the flat diagnostic view with sealed signature history available to shared boundary
 /// preparation. Python emits only live declarations; history-only sites and
 /// their dependencies contribute no type, method, or package capability.
 pub fn lower_package_to_stub_with_signature(
@@ -97,6 +106,27 @@ pub fn lower_package_to_stub_with_signature(
     ns: &str,
     sig: Option<&(u32, crate::sig::ReplayedInterface)>,
 ) -> Result<String, EmitError> {
+    Ok(render_stub_artifact(package, ns, sig)?.source)
+}
+
+pub(super) struct RenderedPythonStub {
+    pub(super) source: String,
+    pub(super) stage_bases: Vec<String>,
+    pub(super) public_aliases: BTreeMap<String, String>,
+    shared_owners: BTreeMap<String, String>,
+}
+
+impl RenderedPythonStub {
+    pub(super) fn into_package(self) -> Result<PythonStubPackage, EmitError> {
+        partition_python_stub(self.source, &self.shared_owners)
+    }
+}
+
+pub(super) fn render_stub_artifact(
+    package: &Package<Routed>,
+    ns: &str,
+    sig: Option<&(u32, crate::sig::ReplayedInterface)>,
+) -> Result<RenderedPythonStub, EmitError> {
     let prepared =
         PreparedBoundaryCallableSites::collect(package, sig.map(|(_, replayed)| replayed))
             .map_err(|error| EmitError {
@@ -121,7 +151,7 @@ pub fn lower_package_to_stub_package_with_signature(
     ns: &str,
     sig: Option<&(u32, crate::sig::ReplayedInterface)>,
 ) -> Result<PythonStubPackage, EmitError> {
-    shard_python_stub(lower_package_to_stub_with_signature(package, ns, sig)?)
+    render_stub_artifact(package, ns, sig)?.into_package()
 }
 
 #[derive(Clone, Default)]
@@ -170,17 +200,6 @@ impl PreparedSurfaceTree {
     }
 }
 
-struct LiveNewtypeRepresentatives<'a> {
-    by_name: BTreeMap<QualifiedTypeName, PreparedBoundaryCallableSite<'a>>,
-}
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct PythonRepresentativeIndexWork {
-    construction_site_visits: usize,
-    indexed_lookups: usize,
-}
-
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct PythonStubBatchWork {
@@ -193,24 +212,8 @@ struct PythonStubBatchWork {
 
 #[cfg(test)]
 thread_local! {
-    static PYTHON_REPRESENTATIVE_INDEX_WORK:
-        std::cell::Cell<Option<PythonRepresentativeIndexWork>> =
-        const { std::cell::Cell::new(None) };
     static PYTHON_STUB_BATCH_WORK: std::cell::Cell<Option<PythonStubBatchWork>> =
         const { std::cell::Cell::new(None) };
-}
-
-#[cfg(test)]
-fn record_python_representative_index_work(
-    update: impl FnOnce(&mut PythonRepresentativeIndexWork),
-) {
-    PYTHON_REPRESENTATIVE_INDEX_WORK.with(|slot| {
-        let Some(mut work) = slot.get() else {
-            return;
-        };
-        update(&mut work);
-        slot.set(Some(work));
-    });
 }
 
 #[cfg(test)]
@@ -224,42 +227,9 @@ fn record_python_stub_batch_work(update: impl FnOnce(&mut PythonStubBatchWork)) 
     });
 }
 
-impl<'a> LiveNewtypeRepresentatives<'a> {
-    fn new(prepared: &'a PreparedBoundaryCallableSites) -> Self {
-        let mut by_name = BTreeMap::new();
-        for site in prepared.sites() {
-            #[cfg(test)]
-            record_python_representative_index_work(|work| {
-                work.construction_site_visits += 1;
-            });
-            if site.execution().is_none() {
-                continue;
-            }
-            for (name, declaration) in site.nominals().declarations() {
-                if matches!(declaration, BoundaryNominalDeclaration::Newtype { .. }) {
-                    by_name.entry(name.clone()).or_insert(site);
-                }
-            }
-        }
-        Self { by_name }
-    }
-
-    fn get(&self, name: &QualifiedTypeName) -> Option<PreparedBoundaryCallableSite<'a>> {
-        #[cfg(test)]
-        record_python_representative_index_work(|work| {
-            work.indexed_lookups += 1;
-        });
-        self.by_name.get(name).copied()
-    }
-
-    #[cfg(all(test, feature = "surface"))]
-    fn len(&self) -> usize {
-        self.by_name.len()
-    }
-}
-
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 struct PythonTypedDictDefinition {
+    owner: Option<String>,
     params: Vec<String>,
     fields: Vec<(String, String)>,
 }
@@ -270,17 +240,19 @@ struct PreparedPythonStub<'a> {
     handle: String,
     namespace: String,
     root_bindings: BTreeMap<QualifiedTypeName, String>,
-    live_newtype_representatives: LiveNewtypeRepresentatives<'a>,
     typevars: BTreeMap<String, String>,
     declaration_defs: BTreeMap<String, String>,
     shape_defs: BTreeMap<String, String>,
     typed_dict_representatives: BTreeMap<PythonTypedDictDefinition, String>,
     protocol_defs: BTreeMap<String, String>,
+    stage_bases: BTreeSet<String>,
+    stage_lifts: BTreeMap<String, (String, String)>,
     protocol_variances: BTreeMap<String, Vec<ProtocolPolarity>>,
-    payload_alias_defs: BTreeMap<String, String>,
-    transparent_expansion_stack: Vec<QualifiedTypeName>,
-    recursive_payloads: BTreeSet<QualifiedTypeName>,
     hkt_defs: BTreeMap<String, String>,
+    shared_owners: BTreeMap<String, String>,
+    slot_aliases: BTreeMap<String, String>,
+    public_aliases: BTreeMap<String, String>,
+    annotation_children: BTreeMap<String, Vec<String>>,
 }
 
 impl<'a> PreparedPythonStub<'a> {
@@ -304,31 +276,33 @@ impl<'a> PreparedPythonStub<'a> {
                 (binding.name().clone(), name)
             })
             .collect();
-        // Index each exact live nominal owner once. Public-newtype rendering
-        // then performs one logarithmic lookup per declaration instead of
-        // rescanning every callable site for every carrier.
-        let live_newtype_representatives = LiveNewtypeRepresentatives::new(prepared);
         Self {
             package,
             prepared,
             handle,
             namespace: namespace.to_owned(),
             root_bindings,
-            live_newtype_representatives,
             typevars: BTreeMap::new(),
             declaration_defs: BTreeMap::new(),
             shape_defs: BTreeMap::new(),
             typed_dict_representatives: BTreeMap::new(),
             protocol_defs: BTreeMap::new(),
+            stage_bases: BTreeSet::new(),
+            stage_lifts: BTreeMap::new(),
             protocol_variances: BTreeMap::new(),
-            payload_alias_defs: BTreeMap::new(),
-            transparent_expansion_stack: Vec::new(),
-            recursive_payloads: BTreeSet::new(),
             hkt_defs: BTreeMap::new(),
+            shared_owners: BTreeMap::new(),
+            slot_aliases: BTreeMap::new(),
+            public_aliases: BTreeMap::new(),
+            annotation_children: BTreeMap::new(),
         }
     }
 
-    fn render(mut self) -> Result<String, EmitError> {
+    fn render(mut self) -> Result<RenderedPythonStub, EmitError> {
+        self.render_callable_protocol();
+        // Every output carries the same core checker module, even if its own
+        // public surface does not apply a higher-kinded constructor.
+        self.render_hkt_application("KioApply1_Constructor", &["KioApply1_Argument".to_owned()]);
         for binding in self.root_bindings.values().cloned().collect::<Vec<_>>() {
             self.declare_typevar(&binding);
         }
@@ -362,21 +336,76 @@ impl<'a> PreparedPythonStub<'a> {
             out.push_str(definition);
             out.push('\n');
         }
-        for definition in self.payload_alias_defs.values() {
+        for definition in self.slot_aliases.values() {
             out.push_str(definition);
             out.push('\n');
+        }
+        for (source, stage) in self.stage_lifts.values() {
+            if self.stage_lifts.len() > 1 {
+                out.push_str("@typing.overload\n");
+            }
+            out.push_str(&format!(
+                "def kio_lift_stage(source: {source}, /) -> {stage}: ...\n\n"
+            ));
         }
         out.push_str(&host);
         out.push('\n');
         out.push_str(&handle);
         out.push_str(&factory);
-        Ok(out)
+        Ok(RenderedPythonStub {
+            source: out,
+            stage_bases: self.stage_bases.into_iter().collect(),
+            public_aliases: self.public_aliases,
+            shared_owners: self.shared_owners,
+        })
     }
 
     fn declare_typevar(&mut self, name: &str) {
         self.typevars
             .entry(name.to_owned())
             .or_insert_with(|| format!("{name} = typing.TypeVar({})", py_string_literal(name)));
+    }
+
+    fn render_callable_protocol(&mut self) {
+        self.declare_protocol_typevar("KioFn_Arg", ProtocolPolarity::Contravariant);
+        self.declare_protocol_typevar("KioFn_Result", ProtocolPolarity::Covariant);
+        self.declare_typevar("KioFn_Input");
+        self.declare_typevar("KioFn_Output");
+        self.protocol_variances.insert(
+            "KioFn".to_owned(),
+            vec![ProtocolPolarity::Contravariant, ProtocolPolarity::Covariant],
+        );
+        self.protocol_variances.insert(
+            "KioFnAdapt".to_owned(),
+            vec![ProtocolPolarity::Contravariant, ProtocolPolarity::Covariant],
+        );
+        self.protocol_defs.insert(
+            "KioFn".to_owned(),
+            concat!(
+                "class KioFn(typing.Protocol[KioFn_Arg, KioFn_Result]):\n",
+                "    def __call__(self, value: KioFn_Arg, /) -> KioFn_Result: ...\n",
+                "    @property\n",
+                "    def adapt(self) -> KioFnAdapt[KioFn_Arg, KioFn_Result]: ...\n",
+            )
+            .to_owned(),
+        );
+        self.protocol_defs.insert("KioFnAdapt".to_owned(), concat!(
+            "class KioFnAdapt(typing.Protocol[KioFn_Arg, KioFn_Result]):\n",
+            "    def __call__(self, before: typing.Callable[[KioFn_Input], KioFn_Arg], after: typing.Callable[[KioFn_Result], KioFn_Output], /) -> KioFn[KioFn_Input, KioFn_Output]: ...\n",
+        ).to_owned());
+        self.protocol_defs.insert("kio_lift".to_owned(),
+            "def kio_lift(body: typing.Callable[[KioFn_Input], KioFn_Output], /) -> KioFn[KioFn_Input, KioFn_Output]: ...\n".to_owned());
+        for name in [
+            "KioFn",
+            "KioFnAdapt",
+            "KioFn_Arg",
+            "KioFn_Result",
+            "KioFn_Input",
+            "KioFn_Output",
+        ] {
+            self.shared_owners
+                .insert(name.to_owned(), "core".to_owned());
+        }
     }
 
     fn declare_protocol_typevar(&mut self, name: &str, polarity: ProtocolPolarity) {
@@ -449,16 +478,6 @@ impl<'a> PreparedPythonStub<'a> {
         self.root_bindings.values().cloned().collect()
     }
 
-    fn generic_class_bases(&self, primary: &str, extra: &[String]) -> String {
-        let mut args = self.root_typevars();
-        args.extend(extra.iter().cloned());
-        if args.is_empty() {
-            primary.to_owned()
-        } else {
-            format!("{primary}, typing.Generic[{}]", args.join(", "))
-        }
-    }
-
     fn render_host_type_declarations(&mut self) {
         // Keep the stub live-only per `specs/backends/python.md` §
         // History-only generated names are not source-stable on Python.
@@ -481,24 +500,23 @@ impl<'a> PreparedPythonStub<'a> {
             for param in &params {
                 self.declare_typevar(param);
             }
-            let applied = format!("{class_name}[{}]", params.join(", "));
+            let witness =
+                self.ensure_constructor_witness("Host", binding.name(), params.len(), None);
+            let applied = self.render_hkt_application(&witness, &params);
             let definition = format!(
-                "class {class_name}(typing.Generic[{}]):\n{}    @classmethod\n    def from_native(cls, value: object, /) -> {applied}: ...\n    def to_native(self, /) -> object: ...\n",
+                "class {class_name}(typing.Generic[{}]):\n{}    @classmethod\n    def from_native(cls, value: object, /) -> {applied}: ...\n    @staticmethod\n    def to_native(value: {applied}, /) -> object: ...\n",
                 params.join(", "),
                 stub_doc(
                     super::super::boundary_docs::host_type(self.package, binding),
                     "    "
                 )
             );
+            self.register_declaration_alias("HostType", binding.name(), &class_name, &params);
             self.declaration_defs.insert(class_name, definition);
         }
     }
 
     fn render_public_newtype_declarations(&mut self) -> Result<(), EmitError> {
-        // `public_newtypes` is the live inventory; the retained inventory is
-        // deliberately absent under the Python history-omission contract in
-        // `specs/backends/python.md` § History-only generated names are not
-        // source-stable on Python.
         let inventory = self.prepared.public_newtypes().cloned().collect::<Vec<_>>();
         for entry in inventory {
             let frame = exact_qtn_frame(entry.name());
@@ -512,104 +530,66 @@ impl<'a> PreparedPythonStub<'a> {
             for param in &params {
                 self.declare_typevar(param);
             }
-            let representative = self
-                .live_newtype_representatives
-                .get(entry.name())
-                .and_then(|site| {
-                    site.nominals()
-                        .declaration(entry.name())
-                        .map(|declaration| (site, declaration))
-                });
-            let transparent = representative.and_then(|(site, declaration)| match declaration {
-                BoundaryNominalDeclaration::Newtype {
-                    existential_params,
-                    transparent_payload: Some(payload),
-                    surface,
-                    ..
-                } if existential_params.is_empty() && !surface.uses_nominal_carrier() => {
-                    Some((site, payload))
-                }
-                _ => None,
-            });
-            let definition = if let Some((site, payload)) = transparent {
-                let execution_layout = site.execution().ok_or_else(|| {
-                    prepared_error("public newtype payload has no live execution layout")
-                })?;
-                let payload_execution = execution_layout
-                    .transparent_payload(entry.name())
-                    .ok_or_else(|| {
-                        prepared_error("public newtype payload has no prepared execution plan")
-                    })?;
-                let mut scope = PythonFacadeScope::default();
-                if payload.declaration_binders().len() != params.len() {
-                    return Err(prepared_error(
-                        "public newtype binder arity disagrees with its prepared payload",
-                    ));
-                }
-                for (binder, rendered) in payload.declaration_binders().iter().zip(&params) {
-                    scope.bind(*binder, rendered.clone());
-                }
-                self.transparent_expansion_stack.push(entry.name().clone());
-                let payload_ty = self.render_facade_use(
-                    site,
-                    payload.facade(),
-                    payload.payload_root(),
-                    payload_execution,
-                    execution_layout,
-                    site.nominals(),
-                    &scope,
-                    &format!("Newtype_{frame}"),
-                    false,
-                );
-                let popped = self
-                    .transparent_expansion_stack
-                    .pop()
-                    .expect("the public Python newtype expansion was pushed");
-                debug_assert_eq!(popped, *entry.name());
-                let payload_ty = payload_ty?;
-                let payload_ty = if self.recursive_payloads.contains(entry.name()) {
-                    let alias = format!("KioPayload_{frame}");
-                    self.payload_alias_defs.insert(
-                        alias.clone(),
-                        format!("{alias}: typing.TypeAlias = {payload_ty}\n"),
-                    );
-                    let mut all = self.root_typevars();
-                    all.extend(params.iter().cloned());
-                    apply_py_type(&alias, &all)
+            let definition = if params.is_empty() {
+                let roots = self.root_typevars();
+                let bases = if roots.is_empty() {
+                    String::new()
                 } else {
-                    payload_ty
+                    format!("(typing.Generic[{}])", roots.join(", "))
                 };
-                let bases = self.generic_class_bases("typing.TypedDict", &params);
+                let applied = apply_py_type(&class_name, &roots);
                 format!(
-                    "class {class_name}({bases}):\n    {}: {payload_ty}\n",
-                    host_name_core(entry.name().name())
+                    "class {class_name}{bases}:\n{}    def __new__(cls, value: typing.NoReturn, /) -> {applied}: ...\n",
+                    stub_doc(
+                        super::super::boundary_docs::newtype(self.package, &entry),
+                        "    "
+                    )
                 )
             } else {
-                let bases = self.generic_class_bases("typing.Generic", &params);
-                if bases == "typing.Generic" {
-                    format!("class {class_name}:\n    ...\n")
-                } else {
-                    // `generic_class_bases` treats its primary as an ordinary
-                    // base; nominal carriers need only the Generic base.
-                    let mut all = self.root_typevars();
-                    all.extend(params.iter().cloned());
-                    format!(
-                        "class {class_name}(typing.Generic[{}]):\n    ...\n",
-                        all.join(", ")
-                    )
-                }
+                let doc = super::super::boundary_docs::newtype(self.package, &entry);
+                let witness =
+                    self.ensure_constructor_witness("Newtype", entry.name(), params.len(), doc);
+                let applied = self.render_hkt_application(&witness, &params);
+                format!("{class_name}: typing.TypeAlias = {applied}\n")
             };
-            let mut definition = definition;
-            if let Some(doc) = super::super::boundary_docs::newtype(self.package, &entry) {
-                let at = definition
-                    .find('\n')
-                    .expect("a class declaration has a body")
-                    + 1;
-                definition.insert_str(at, &stub_doc(Some(doc), "    "));
-            }
+            let mut alias_params = self.root_typevars();
+            alias_params.extend(params);
+            self.register_declaration_alias("Newtype", entry.name(), &class_name, &alias_params);
             self.declaration_defs.insert(class_name, definition);
         }
         Ok(())
+    }
+
+    fn register_declaration_alias(
+        &mut self,
+        role: &str,
+        name: &QualifiedTypeName,
+        target: &str,
+        params: &[String],
+    ) {
+        let identity = crate::backends::public_names::readable_public_identity(
+            name.module_segments()
+                .iter()
+                .map(String::as_str)
+                .chain([name.name()]),
+        );
+        let alias = format!("Kio{role}_{identity}");
+        let definition = format!(
+            "{alias}: typing.TypeAlias = {}\n",
+            apply_py_type(target, params)
+        );
+        if let Some(previous) = self.slot_aliases.insert(alias.clone(), definition.clone()) {
+            assert_eq!(
+                previous, definition,
+                "one readable declaration alias has one exact target"
+            );
+        }
+        if let Some(previous) = self.public_aliases.insert(alias, target.to_owned()) {
+            assert_eq!(
+                previous, target,
+                "one readable runtime alias has one exact target"
+            );
+        }
     }
 
     fn render_prepared_host(&mut self) -> Result<String, EmitError> {
@@ -947,6 +927,7 @@ impl<'a> PreparedPythonStub<'a> {
             .ok_or_else(|| prepared_error("Python callable has no live execution layout"))?;
         let entry = site.plan().entry();
         let context = exact_site_frame(site);
+        let alias = readable_site_alias(site);
         let mut scope = PythonFacadeScope::default();
         let mut params = Vec::new();
         let mut method_typevars = Vec::new();
@@ -969,17 +950,20 @@ impl<'a> PreparedPythonStub<'a> {
                 (
                     BoundaryCallableHeadStage::Value { slots },
                     CallableExecutionStage::Value(layout),
-                ) => params.extend(self.render_callable_params(
-                    site,
-                    site.plan().facade(),
-                    slots,
-                    layout,
-                    execution_layout.root_uses(),
-                    execution_layout,
-                    site.nominals(),
-                    &scope,
-                    &format!("{context}_H{stage_index}"),
-                )?),
+                ) => {
+                    let parameters = self.render_callable_params(
+                        site.plan().value_plan(),
+                        slots,
+                        layout,
+                        site.nominals(),
+                        &scope,
+                        &format!("{context}_H{stage_index}"),
+                    )?;
+                    for parameter in parameters {
+                        self.record_slot_alias(&format!("{alias}_Arg{}", params.len()), &parameter);
+                        params.push(parameter);
+                    }
+                }
                 _ => {
                     return Err(prepared_error(
                         "Python callable head disagrees with its execution layout",
@@ -987,17 +971,14 @@ impl<'a> PreparedPythonStub<'a> {
                 }
             }
         }
-        let ret = self.render_facade_use(
-            site,
-            site.plan().facade(),
-            entry.returned,
-            execution_layout.root_uses(),
-            execution_layout,
+        let ret = self.render_value_use(
+            site.plan().value_plan(),
+            site.plan().value_plan().source(entry.returned),
             site.nominals(),
             &scope,
             &context,
-            false,
         )?;
+        self.record_slot_alias(&format!("{alias}_Result"), &ret);
         let suppress_invalid_typevar_use = method_typevars.iter().any(|typevar| {
             params
                 .iter()
@@ -1013,399 +994,288 @@ impl<'a> PreparedPythonStub<'a> {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render_callable_params(
         &mut self,
-        site: PreparedBoundaryCallableSite<'_>,
-        plan: &BoundaryFacadePlan,
+        values: &ValuePlan,
         slots: &[FacadeUseId],
         layout: &CallableValueStageLayout,
-        execution: &BoundaryFacadeExecutionPlan,
-        execution_layout: &CallableExecutionLayout,
         nominals: &BoundaryNominalDependencies,
         scope: &PythonFacadeScope,
         context: &str,
     ) -> Result<Vec<String>, EmitError> {
         let mut params = Vec::new();
         for (source_index, source) in layout.source_params().iter().enumerate() {
-            let range = source.facade_slots();
-            if range.end > slots.len() {
-                return Err(prepared_error("Python source range exceeds facade slots"));
-            }
-            match source.adapter() {
-                CallableSourceParamAdapter::UnitValue => {}
-                CallableSourceParamAdapter::Identity => {
-                    let [use_id] = &slots[range] else {
-                        return Err(prepared_error(
-                            "Python identity source does not own one facade slot",
-                        ));
-                    };
-                    params.push(self.render_facade_use(
-                        site,
-                        plan,
-                        *use_id,
-                        execution,
-                        execution_layout,
-                        nominals,
-                        scope,
-                        context,
-                        false,
-                    )?);
+            let mut product_index = 0;
+            let parameter = values.native_parameter_domain(source, slots, |step| match step {
+                ValueDomainStep::Value(id) => {
+                    self.render_value_use(values, id, nominals, scope, context)
                 }
-                CallableSourceParamAdapter::RightNest => {
-                    let shell = source.product_shell().ok_or_else(|| {
-                        prepared_error("Python right-nest source has no prepared shell")
-                    })?;
-                    let uses = &slots[range];
-                    let fields = shell
-                        .ordered_keys()
-                        .iter()
-                        .zip(uses)
-                        .map(|(key, use_id)| {
-                            Ok((
-                                render_semantic_key(key),
-                                self.render_facade_use(
-                                    site,
-                                    plan,
-                                    *use_id,
-                                    execution,
-                                    execution_layout,
-                                    nominals,
-                                    scope,
-                                    context,
-                                    true,
-                                )?,
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, EmitError>>()?;
-                    params.push(self.synth_typed_dict(
-                        &format!("KioShape_{context}_P{source_index}"),
-                        &fields,
+                ValueDomainStep::Product(left, right) => {
+                    let name = format!("KioShape_{context}_P{source_index}_R{product_index}");
+                    product_index += 1;
+                    Ok(self.synth_typed_dict(
+                        &name,
+                        &[("left".to_owned(), left), ("right".to_owned(), right)],
                         scope,
-                    ));
+                    ))
                 }
+            })?;
+            if let Some(parameter) = parameter {
+                params.push(parameter);
             }
         }
         Ok(params)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_facade_use(
+    fn render_value_use(
         &mut self,
-        site: PreparedBoundaryCallableSite<'_>,
-        plan: &BoundaryFacadePlan,
-        use_id: FacadeUseId,
-        execution: &BoundaryFacadeExecutionPlan,
-        execution_layout: &CallableExecutionLayout,
+        values: &ValuePlan,
+        use_id: ValueUseId,
         nominals: &BoundaryNominalDependencies,
         scope: &PythonFacadeScope,
         context: &str,
-        absorb_transparent: bool,
     ) -> Result<String, EmitError> {
-        match plan.use_at(use_id) {
-            FacadeUse::Unit { .. } => Ok("None".to_owned()),
-            FacadeUse::Bottom { .. } => Ok("typing.NoReturn".to_owned()),
-            FacadeUse::Bound { binder, .. } => Ok(scope.lookup(*binder)?.to_owned()),
-            FacadeUse::Nominal { name, .. } => self.render_facade_nominal(
-                site,
-                plan,
-                name,
-                &[],
-                execution,
-                execution_layout,
-                nominals,
-                scope,
-                context,
-                absorb_transparent,
-            ),
-            FacadeUse::Apply {
-                constructor, args, ..
-            } => {
-                if let FacadeUse::Nominal { name, .. } = plan.use_at(*constructor) {
-                    return self.render_facade_nominal(
-                        site,
-                        plan,
-                        name,
-                        args,
-                        execution,
-                        execution_layout,
-                        nominals,
-                        scope,
-                        context,
-                        absorb_transparent,
-                    );
-                }
-                let head = self.render_facade_use(
-                    site,
-                    plan,
-                    *constructor,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    scope,
-                    context,
-                    false,
-                )?;
-                let args = self.render_facade_args(
-                    site,
-                    plan,
-                    args,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    scope,
-                    context,
-                )?;
-                Ok(self.render_hkt_application(&head, &args))
-            }
-            FacadeUse::Product { shell, args, .. } => {
-                let fields = shell
-                    .ordered_keys()
-                    .iter()
-                    .zip(args)
-                    .map(|(key, child)| {
-                        Ok((
-                            render_semantic_key(key),
-                            self.render_facade_use(
-                                site,
-                                plan,
-                                *child,
-                                execution,
-                                execution_layout,
-                                nominals,
-                                scope,
-                                context,
-                                true,
-                            )?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, EmitError>>()?;
-                Ok(self.synth_typed_dict(
-                    &format!("KioShape_{context}_U{}", use_id.index()),
-                    &fields,
-                    scope,
-                ))
-            }
-            FacadeUse::Sum { shell, args, .. } => {
-                let mut arms = Vec::new();
-                for (index, (key, child)) in shell.ordered_keys().iter().zip(args).enumerate() {
-                    let value = self.render_facade_use(
-                        site,
-                        plan,
-                        *child,
-                        execution,
-                        execution_layout,
-                        nominals,
-                        scope,
-                        context,
-                        true,
-                    )?;
-                    arms.push(self.synth_typed_dict(
-                        &format!("KioShape_{context}_U{}_A{index}", use_id.index()),
-                        &[(render_semantic_key(key), value)],
-                        scope,
-                    ));
-                }
-                Ok(arms.join(" | "))
-            }
-            FacadeUse::Function { slots, result, .. } => {
-                let BoundaryFacadeExecutionUse::Function(layout) = execution.use_at(use_id) else {
-                    return Err(prepared_error(
-                        "Python function facade has no prepared execution layout",
-                    ));
-                };
-                let params = self.render_callable_params(
-                    site,
-                    plan,
-                    slots,
-                    layout,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    scope,
-                    &format!("{context}_U{}", use_id.index()),
-                )?;
-                let ret = self.render_facade_use(
-                    site,
-                    plan,
-                    *result,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    scope,
-                    context,
-                    false,
-                )?;
-                Ok(format!("typing.Callable[[{}], {ret}]", params.join(", ")))
-            }
-            FacadeUse::Forall { .. } => self.render_forall_protocol(
-                site,
-                plan,
-                use_id,
-                execution,
-                execution_layout,
-                nominals,
-                scope,
-                context,
-            ),
+        use std::rc::Rc;
+        #[derive(Clone)]
+        enum Plan<'a> {
+            Source(&'a ValuePlan),
+            Stage(Rc<ValuePlan>, String),
         }
+        impl Plan<'_> {
+            fn value(&self) -> &ValuePlan {
+                match self {
+                    Self::Source(plan) => plan,
+                    Self::Stage(plan, _) => plan,
+                }
+            }
+        }
+        enum Task<'a> {
+            Enter(Plan<'a>, ValueUseId, Rc<PythonFacadeScope>, Rc<str>),
+            Finish(Plan<'a>, ValueUseId, Rc<PythonFacadeScope>, Rc<str>, usize),
+            Application(usize),
+            Captures(Rc<ValuePlan>, String, usize),
+            Stage(String, Vec<String>, String),
+        }
+
+        // Structural width and nested type stages both use the heap worklist.
+        let mut pending = vec![Task::Enter(
+            Plan::Source(values),
+            use_id,
+            Rc::new(scope.clone()),
+            Rc::from(context),
+        )];
+        let mut rendered = Vec::<String>::new();
+        while let Some(task) = pending.pop() {
+            match task {
+                Task::Enter(plan, id, scope, context) => {
+                    let values = plan.value();
+                    if matches!(values.use_at(id), ValueUse::Forall { .. }) {
+                        let shape = values.stage_shape(id, |name| {
+                            nominals
+                                .declaration(name)
+                                .map(BoundaryNominalDeclaration::kind)
+                                .ok_or_else(|| {
+                                    prepared_error(
+                                        "a Python stage capture omitted its nominal kind",
+                                    )
+                                })
+                        })?;
+                        let identity = shape
+                            .plan
+                            .identity(shape.plan.root(), shape.plan.ambient_binders());
+                        let protocol = super::super::value_plan::canonical_stage_symbol(&identity);
+                        pending.push(Task::Captures(
+                            Rc::new(shape.plan),
+                            protocol,
+                            shape.captures.len(),
+                        ));
+                        for capture in shape.captures.into_iter().rev() {
+                            match capture {
+                                ValueCapture::Use(child) => pending.push(Task::Enter(
+                                    plan.clone(),
+                                    child,
+                                    Rc::clone(&scope),
+                                    Rc::clone(&context),
+                                )),
+                                ValueCapture::ApplicationPrefix { constructor, args } => {
+                                    pending.push(Task::Application(args.len()));
+                                    for arg in args.into_iter().rev() {
+                                        pending.push(Task::Enter(
+                                            plan.clone(),
+                                            arg,
+                                            Rc::clone(&scope),
+                                            Rc::clone(&context),
+                                        ));
+                                    }
+                                    pending.push(Task::Enter(
+                                        plan.clone(),
+                                        constructor,
+                                        Rc::clone(&scope),
+                                        Rc::clone(&context),
+                                    ));
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    let mut children = Vec::new();
+                    match values.use_at(id) {
+                        ValueUse::Apply { constructor, args } => {
+                            children.push(*constructor);
+                            children.extend(args);
+                        }
+                        ValueUse::Product { left, right } | ValueUse::Sum { left, right } => {
+                            children.extend([*left, *right]);
+                        }
+                        ValueUse::Function { domain, result, .. } => {
+                            children.extend([*domain, *result]);
+                        }
+                        ValueUse::Forall { .. } => {
+                            unreachable!("type stages use their shared shape")
+                        }
+                        ValueUse::Unit
+                        | ValueUse::Bottom
+                        | ValueUse::Bound(_)
+                        | ValueUse::Nominal(_) => {}
+                    }
+                    pending.push(Task::Finish(
+                        plan.clone(),
+                        id,
+                        Rc::clone(&scope),
+                        Rc::clone(&context),
+                        children.len(),
+                    ));
+                    pending.extend(children.into_iter().rev().map(|child| {
+                        Task::Enter(plan.clone(), child, Rc::clone(&scope), Rc::clone(&context))
+                    }));
+                }
+                Task::Finish(plan, id, scope, context, count) => {
+                    let children = rendered.split_off(rendered.len() - count);
+                    let owner = match &plan {
+                        Plan::Source(_) => None,
+                        Plan::Stage(_, owner) => Some(owner.as_str()),
+                    };
+                    let result = match plan.value().use_at(id) {
+                        ValueUse::Unit => "None".to_owned(),
+                        ValueUse::Bottom => "typing.NoReturn".to_owned(),
+                        ValueUse::Bound(binder) => scope.lookup(*binder)?.to_owned(),
+                        ValueUse::Nominal(name) => self.render_value_nominal(name, nominals)?,
+                        ValueUse::Apply { .. } => {
+                            let (head, args) = children
+                                .split_first()
+                                .expect("an application has its constructor");
+                            self.render_hkt_application(head, args)
+                        }
+                        ValueUse::Product { .. } => self.synth_owned_typed_dict(
+                            &format!("KioShape_{context}_U{}", id.index()),
+                            &[
+                                ("left".to_owned(), children[0].clone()),
+                                ("right".to_owned(), children[1].clone()),
+                            ],
+                            &scope,
+                            owner,
+                        ),
+                        ValueUse::Sum { .. } => {
+                            let mut arms = Vec::new();
+                            for (tag, child) in ["left", "right"].into_iter().zip(children) {
+                                arms.push(self.synth_owned_typed_dict(
+                                    &format!("KioShape_{context}_U{}_{tag}", id.index()),
+                                    &[
+                                        ("tag".to_owned(), format!("typing.Literal['{tag}']")),
+                                        ("value".to_owned(), child),
+                                    ],
+                                    &scope,
+                                    owner,
+                                ));
+                            }
+                            arms.join(" | ")
+                        }
+                        ValueUse::Function { .. } => {
+                            format!("KioFn[{}, {}]", children[0], children[1])
+                        }
+                        ValueUse::Forall { .. } => {
+                            unreachable!("type stages use their shared shape")
+                        }
+                    };
+                    rendered.push(result);
+                }
+                Task::Application(count) => {
+                    let children = rendered.split_off(rendered.len() - count - 1);
+                    rendered.push(self.render_hkt_application(&children[0], &children[1..]));
+                }
+                Task::Captures(plan, protocol, count) => {
+                    let arguments = rendered.split_off(rendered.len() - count);
+                    let applied = apply_py_type(&protocol, &arguments);
+                    if self.protocol_defs.contains_key(&protocol) {
+                        rendered.push(applied);
+                        continue;
+                    }
+                    let mut scope = PythonFacadeScope::default();
+                    let mut locals = Vec::new();
+                    for (index, binder) in plan.ambient_binders().iter().enumerate() {
+                        let local = format!("{protocol}_C{index}");
+                        self.declare_typevar(&local);
+                        self.shared_owners.insert(local.clone(), protocol.clone());
+                        scope.bind(*binder, local.clone());
+                        locals.push(local);
+                    }
+                    let ValueUse::Forall { binder, result } = plan.use_at(plan.root()) else {
+                        unreachable!("a stage shape preserves its leading type binder")
+                    };
+                    let selected = format!("{protocol}_Selected");
+                    self.declare_typevar(&selected);
+                    self.shared_owners
+                        .insert(selected.clone(), protocol.clone());
+                    scope.bind(*binder, selected);
+                    let result = *result;
+                    let context = Rc::from(format!("Stage_{protocol}"));
+                    pending.push(Task::Stage(protocol.clone(), locals, applied));
+                    pending.push(Task::Enter(
+                        Plan::Stage(plan, protocol),
+                        result,
+                        Rc::new(scope),
+                        context,
+                    ));
+                }
+                Task::Stage(protocol, locals, applied) => {
+                    let ret = rendered.pop().expect("a type stage has its result");
+                    self.render_stage_protocol(&protocol, &locals, &ret);
+                    rendered.push(applied);
+                }
+            }
+        }
+        assert_eq!(rendered.len(), 1, "one Python value root is rendered");
+        Ok(rendered.pop().expect("one rendered Python value"))
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_facade_args(
+    fn render_value_nominal(
         &mut self,
-        site: PreparedBoundaryCallableSite<'_>,
-        plan: &BoundaryFacadePlan,
-        args: &[FacadeUseId],
-        execution: &BoundaryFacadeExecutionPlan,
-        execution_layout: &CallableExecutionLayout,
-        nominals: &BoundaryNominalDependencies,
-        scope: &PythonFacadeScope,
-        context: &str,
-    ) -> Result<Vec<String>, EmitError> {
-        args.iter()
-            .map(|arg| {
-                self.render_facade_use(
-                    site,
-                    plan,
-                    *arg,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    scope,
-                    context,
-                    false,
-                )
-            })
-            .collect()
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn render_facade_nominal(
-        &mut self,
-        site: PreparedBoundaryCallableSite<'_>,
-        plan: &BoundaryFacadePlan,
         name: &QualifiedTypeName,
-        args: &[FacadeUseId],
-        execution: &BoundaryFacadeExecutionPlan,
-        execution_layout: &CallableExecutionLayout,
         nominals: &BoundaryNominalDependencies,
-        scope: &PythonFacadeScope,
-        context: &str,
-        absorb_transparent: bool,
     ) -> Result<String, EmitError> {
-        let declaration = nominals
-            .declaration(name)
-            .ok_or_else(|| prepared_error("Python facade omitted an exact nominal dependency"))?;
-        let rendered_args = self.render_facade_args(
-            site,
-            plan,
-            args,
-            execution,
-            execution_layout,
-            nominals,
-            scope,
-            context,
-        )?;
+        let declaration = nominals.declaration(name).ok_or_else(|| {
+            prepared_error("Python value plan omitted an exact nominal dependency")
+        })?;
         match declaration {
             BoundaryNominalDeclaration::HostType { type_params, .. } => {
-                if rendered_args.len() > type_params.len() {
-                    return Err(prepared_error(
-                        "Python host-type application exceeds declaration arity",
-                    ));
-                }
                 if type_params.is_empty() {
-                    return self
-                        .root_bindings
+                    self.root_bindings
                         .get(name)
                         .cloned()
-                        .ok_or_else(|| prepared_error("exact Python host binding is absent"));
-                }
-                let frame = exact_qtn_frame(name);
-                if rendered_args.len() == type_params.len() {
-                    return Ok(format!("KioHostType_{frame}[{}]", rendered_args.join(", ")));
-                }
-                let witness = self.ensure_constructor_witness("Host", name, type_params.len());
-                if rendered_args.is_empty() {
-                    Ok(witness)
+                        .ok_or_else(|| prepared_error("exact Python host binding is absent"))
                 } else {
-                    Ok(self.render_hkt_application(&witness, &rendered_args))
+                    Ok(self.ensure_constructor_witness("Host", name, type_params.len(), None))
                 }
             }
-            BoundaryNominalDeclaration::Newtype {
-                type_params,
-                existential_params,
-                transparent_payload,
-                surface,
-            } => {
-                if rendered_args.len() > type_params.len() {
-                    return Err(prepared_error(
-                        "Python newtype application exceeds declaration arity",
-                    ));
+            BoundaryNominalDeclaration::Newtype { type_params, .. } => {
+                if type_params.is_empty() {
+                    Ok(apply_py_type(
+                        &format!("KioNewtype_{}", exact_qtn_frame(name)),
+                        &self.root_typevars(),
+                    ))
+                } else {
+                    Ok(self.ensure_constructor_witness("Newtype", name, type_params.len(), None))
                 }
-                if rendered_args.len() < type_params.len() {
-                    let witness =
-                        self.ensure_constructor_witness("Newtype", name, type_params.len());
-                    return if rendered_args.is_empty() {
-                        Ok(witness)
-                    } else {
-                        Ok(self.render_hkt_application(&witness, &rendered_args))
-                    };
-                }
-                if absorb_transparent
-                    && existential_params.is_empty()
-                    && !surface.uses_nominal_carrier()
-                    && let Some(payload) = transparent_payload
-                {
-                    if self.transparent_expansion_stack.contains(name) {
-                        self.recursive_payloads.insert(name.clone());
-                        let mut all = self.root_typevars();
-                        all.extend(rendered_args);
-                        return Ok(apply_py_type(
-                            &format!("KioPayload_{}", exact_qtn_frame(name)),
-                            &all,
-                        ));
-                    }
-                    let payload_execution =
-                        execution_layout.transparent_payload(name).ok_or_else(|| {
-                            prepared_error("transparent Python nominal has no execution plan")
-                        })?;
-                    if payload.declaration_binders().len() != rendered_args.len() {
-                        return Err(prepared_error(
-                            "transparent Python nominal has inconsistent binder arity",
-                        ));
-                    }
-                    let mut nested = scope.clone();
-                    for (binder, rendered) in
-                        payload.declaration_binders().iter().zip(&rendered_args)
-                    {
-                        nested.bind(*binder, rendered.clone());
-                    }
-                    self.transparent_expansion_stack.push(name.clone());
-                    let rendered = self.render_facade_use(
-                        site,
-                        payload.facade(),
-                        payload.payload_root(),
-                        payload_execution,
-                        execution_layout,
-                        nominals,
-                        &nested,
-                        &format!("{context}_N{}", exact_qtn_frame(name)),
-                        false,
-                    );
-                    let popped = self
-                        .transparent_expansion_stack
-                        .pop()
-                        .expect("the nested Python newtype expansion was pushed");
-                    debug_assert_eq!(popped, *name);
-                    return rendered;
-                }
-                let mut all = self.root_typevars();
-                all.extend(rendered_args);
-                Ok(apply_py_type(
-                    &format!("KioNewtype_{}", exact_qtn_frame(name)),
-                    &all,
-                ))
             }
         }
     }
@@ -1415,6 +1285,7 @@ impl<'a> PreparedPythonStub<'a> {
         category: &str,
         name: &QualifiedTypeName,
         arity: usize,
+        doc: Option<&crate::ast::DocComment>,
     ) -> String {
         let witness = format!("Kio{category}Mk_{}", exact_qtn_frame(name));
         let roots = if category == "Newtype" {
@@ -1429,9 +1300,11 @@ impl<'a> PreparedPythonStub<'a> {
                 format!("(typing.Generic[{}])", roots.join(", "))
             };
             format!(
-                "class {witness}{bases}:\n    # Declaration-owned witness for an unsaturated arity-{arity} constructor.\n    ...\n"
+                "class {witness}{bases}:\n{}    # Exact arity-{arity} constructor index for every application stage.\n    ...\n",
+                stub_doc(doc, "    ")
             )
         });
+        self.register_declaration_alias(&format!("{category}Mk"), name, &witness, &roots);
         apply_py_type(&witness, &roots)
     }
 
@@ -1439,133 +1312,61 @@ impl<'a> PreparedPythonStub<'a> {
         if args.is_empty() {
             return head.to_owned();
         }
-        let name = format!("KioApply{}", args.len());
-        if !self.hkt_defs.contains_key(&name) {
-            let head_var = format!("{name}_Constructor");
-            self.declare_typevar(&head_var);
-            let arg_vars = (0..args.len())
-                .map(|index| format!("{name}_Arg{index}"))
-                .collect::<Vec<_>>();
-            for arg in &arg_vars {
-                self.declare_typevar(arg);
+        let name = "KioApply1";
+        if !self.hkt_defs.contains_key(name) {
+            self.declare_typevar("KioApply1_Constructor");
+            self.declare_typevar("KioApply1_Argument");
+            self.hkt_defs.insert(name.to_owned(),
+                "class KioApply1(typing.Generic[KioApply1_Constructor, KioApply1_Argument]):\n    def __new__(cls, value: typing.NoReturn, /) -> KioApply1[KioApply1_Constructor, KioApply1_Argument]: ...\n".to_owned());
+            for name in ["KioApply1", "KioApply1_Constructor", "KioApply1_Argument"] {
+                self.shared_owners
+                    .insert(name.to_owned(), "core".to_owned());
             }
-            let mut params = vec![head_var];
-            params.extend(arg_vars);
-            self.hkt_defs.insert(
-                name.clone(),
-                format!(
-                    "class {name}(typing.Generic[{}]):\n    ...\n",
-                    params.join(", ")
-                ),
-            );
         }
-        let mut applied = vec![head.to_owned()];
-        applied.extend(args.iter().cloned());
-        format!("{name}[{}]", applied.join(", "))
+        args.iter().fold(head.to_owned(), |head, arg| {
+            format!("{name}[{head}, {arg}]")
+        })
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn render_forall_protocol(
-        &mut self,
-        site: PreparedBoundaryCallableSite<'_>,
-        plan: &BoundaryFacadePlan,
-        root: FacadeUseId,
-        execution: &BoundaryFacadeExecutionPlan,
-        execution_layout: &CallableExecutionLayout,
-        nominals: &BoundaryNominalDependencies,
-        scope: &PythonFacadeScope,
-        context: &str,
-    ) -> Result<String, EmitError> {
-        let mut nested = scope.clone();
-        let mut current = root;
-        while let FacadeUse::Forall { binder, result, .. } = plan.use_at(current) {
-            let name = format!("KioType_{context}_B{}", binder.index());
-            self.declare_typevar(&name);
-            nested.bind(*binder, name);
-            current = *result;
+    fn render_stage_protocol(&mut self, protocol: &str, locals: &[String], ret: &str) {
+        let applied = apply_py_type(protocol, locals);
+        let source = format!("{protocol}Source");
+        let check = format!("{protocol}Check");
+        let applied_source = apply_py_type(&source, locals);
+        let applied_check = apply_py_type(&check, locals);
+        for name in [protocol.to_owned(), source.clone(), check.clone()] {
+            self.shared_owners.insert(name, protocol.to_owned());
         }
-        let protocol = format!("KioCallable_{context}_U{}", root.index());
-        let (params, ret) = if let FacadeUse::Function { slots, result, .. } = plan.use_at(current)
-        {
-            let BoundaryFacadeExecutionUse::Function(layout) = execution.use_at(current) else {
-                return Err(prepared_error(
-                    "generic Python callable has no prepared execution layout",
-                ));
-            };
-            (
-                self.render_callable_params(
-                    site,
-                    plan,
-                    slots,
-                    layout,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    &nested,
-                    &protocol,
-                )?,
-                self.render_facade_use(
-                    site,
-                    plan,
-                    *result,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    &nested,
-                    &protocol,
-                    false,
-                )?,
-            )
-        } else {
-            (
-                Vec::new(),
-                self.render_facade_use(
-                    site,
-                    plan,
-                    current,
-                    execution,
-                    execution_layout,
-                    nominals,
-                    &nested,
-                    &protocol,
-                    false,
-                )?,
-            )
-        };
-        let mut signatures = vec![FnSig {
-            params,
-            ret,
-            suppress_invalid_typevar_use: false,
-        }];
-        let mut captured = self.root_typevars();
-        captured.extend(scope.binders.values().cloned());
-        let (locals, arguments) = self.localize_protocol_typevars(
-            &format!("Callable_{context}_U{}", root.index()),
-            &protocol,
-            captured,
-            false,
-            &mut signatures,
-        );
-        let signature = signatures.pop().expect("one callable signature");
-        let bases = if locals.is_empty() {
+        self.annotation_children
+            .insert(protocol.to_owned(), vec![ret.to_owned()]);
+        let protocol_base = if locals.is_empty() {
             "typing.Protocol".to_owned()
         } else {
             format!("typing.Protocol[{}]", locals.join(", "))
         };
-        self.protocol_defs
-            .entry(protocol.clone())
-            .or_insert_with(|| {
-                // A Kio `forall` remains a method-scoped TypeVar even when
-                // the binder has only one value occurrence. Pyright otherwise
-                // asks to replace that exact binder with `object`; suppress
-                // only that widening diagnostic on the generated method.
-                format!(
-                    "class {protocol}({bases}):\n    def __call__(self{}) -> {ret}: ...  # pyright: ignore[reportInvalidTypeVarUse]\n",
-                    positional_method_params(&signature.params),
-                    ret = signature.ret,
-                )
-            });
-        Ok(apply_py_type(&protocol, &arguments))
+        let source_base = if locals.is_empty() {
+            String::new()
+        } else {
+            format!("(typing.Generic[{}])", locals.join(", "))
+        };
+        self.protocol_defs.insert(source, format!(
+            "class {protocol}Source{source_base}:\n    def advance(self) -> {ret}: ...  # pyright: ignore[reportInvalidTypeVarUse]\n"
+        ));
+        self.protocol_defs.insert(check.clone(), format!(
+            "class {check}({protocol_base}):\n    def __call__(self, value: {ret}, /) -> {ret}: ...\n"
+        ));
+        self.protocol_defs.insert(protocol.to_owned(), format!(
+            "class {protocol}({protocol_base}):\n    def advance(self) -> {ret}: ...  # pyright: ignore[reportInvalidTypeVarUse]\n    def adapt(self, after: {applied_check}, /) -> {applied}: ...\n"
+        ));
+        self.stage_lifts
+            .insert(protocol.to_owned(), (applied_source, applied));
+        self.protocol_variances.insert(
+            protocol.to_owned(),
+            vec![ProtocolPolarity::Invariant; locals.len()],
+        );
+        self.protocol_variances
+            .insert(check, vec![ProtocolPolarity::Invariant; locals.len()]);
+        self.stage_bases.insert(protocol.to_owned());
     }
 
     fn synth_typed_dict(
@@ -1574,6 +1375,23 @@ impl<'a> PreparedPythonStub<'a> {
         fields: &[(String, String)],
         scope: &PythonFacadeScope,
     ) -> String {
+        self.synth_owned_typed_dict(name, fields, scope, None)
+    }
+
+    fn synth_owned_typed_dict(
+        &mut self,
+        name: &str,
+        fields: &[(String, String)],
+        scope: &PythonFacadeScope,
+        owner: Option<&str>,
+    ) -> String {
+        self.annotation_children.insert(
+            name.to_owned(),
+            fields.iter().map(|(_, ty)| ty.clone()).collect(),
+        );
+        if let Some(owner) = owner {
+            self.shared_owners.insert(name.to_owned(), owner.to_owned());
+        }
         let definition_cached = self.shape_defs.contains_key(name);
         let mut params = self.root_typevars();
         params.extend(scope.binders.values().cloned());
@@ -1585,6 +1403,7 @@ impl<'a> PreparedPythonStub<'a> {
             let all_identifiers = fields.iter().all(|(key, _)| is_plain_identifier(key));
             let definition = if all_identifiers {
                 let key = PythonTypedDictDefinition {
+                    owner: owner.map(str::to_owned),
                     params: params.clone(),
                     fields: fields.to_vec(),
                 };
@@ -1635,6 +1454,65 @@ impl<'a> PreparedPythonStub<'a> {
         }
         apply_py_type(name, &params)
     }
+
+    fn record_slot_alias(&mut self, alias: &str, annotation: &str) {
+        // A bare TypeVar is not a Python type alias. All compound views retain
+        // the exact existing annotation and its implicitly bound parameters.
+        if !self.typevars.contains_key(annotation) {
+            self.slot_aliases.insert(
+                alias.to_owned(),
+                format!("{alias}: typing.TypeAlias = {annotation}\n"),
+            );
+        }
+        let head = annotation.split('[').next().unwrap_or(annotation);
+        if self.stage_lifts.contains_key(head) {
+            for suffix in ["Source", "Check"] {
+                let target = replace_python_identifiers(
+                    annotation,
+                    &BTreeMap::from([(head.to_owned(), format!("{head}{suffix}"))]),
+                );
+                let name = format!("{alias}{suffix}");
+                self.slot_aliases.insert(
+                    name.clone(),
+                    format!("{name}: typing.TypeAlias = {target}\n"),
+                );
+                self.public_aliases.insert(name, format!("{head}{suffix}"));
+            }
+        }
+        let mut pending = vec![annotation.to_owned()];
+        let mut visited = BTreeSet::new();
+        let mut stage_index = 0;
+        while let Some(annotation) = pending.pop() {
+            let mut names = Vec::new();
+            visit_python_identifiers(&annotation, |name| names.push(name.to_owned()));
+            let mut children = Vec::new();
+            for name in names {
+                if !visited.insert(name.clone()) {
+                    continue;
+                }
+                if let Some((source, stage)) = self.stage_lifts.get(&name) {
+                    let view = format!("{alias}_Stage{stage_index}");
+                    stage_index += 1;
+                    let check = replace_python_identifiers(
+                        stage,
+                        &BTreeMap::from([(name.clone(), format!("{name}Check"))]),
+                    );
+                    for (suffix, target) in [("", stage), ("Source", source), ("Check", &check)] {
+                        let alias = format!("{view}{suffix}");
+                        self.slot_aliases.insert(
+                            alias.clone(),
+                            format!("{alias}: typing.TypeAlias = {target}\n"),
+                        );
+                        self.public_aliases.insert(alias, format!("{name}{suffix}"));
+                    }
+                }
+                if let Some(dependencies) = self.annotation_children.get(&name) {
+                    children.extend(dependencies.iter().cloned());
+                }
+            }
+            pending.extend(children.into_iter().rev());
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1643,7 +1521,112 @@ struct PythonStubDeclaration {
     source: String,
 }
 
-fn shard_python_stub(flat_stub: String) -> Result<PythonStubPackage, EmitError> {
+fn static_family_module(owner: &str) -> String {
+    if owner == "core" {
+        return "core".to_owned();
+    }
+    crate::backends::skin::budgeted_mint_name(format!("family_{owner}"), |_| {
+        Ok::<_, std::convert::Infallible>(format!(
+            "family_H{}",
+            crate::backends::skin::fnv1a_64_hex(owner)
+        ))
+    })
+    .expect("static module naming is infallible")
+}
+
+fn claim_static_locator(
+    locators: &mut BTreeMap<String, String>,
+    module: &str,
+    owner: &str,
+) -> Result<(), EmitError> {
+    if let Some(previous) = locators.get(module) {
+        if previous != owner {
+            return Err(EmitError {
+                message: format!(
+                    "Python static type identities have the same bounded module locator `{module}`"
+                ),
+            });
+        }
+    } else {
+        locators.insert(module.to_owned(), owner.to_owned());
+    }
+    Ok(())
+}
+
+fn partition_python_stub(
+    source: String,
+    shared_owners: &BTreeMap<String, String>,
+) -> Result<PythonStubPackage, EmitError> {
+    use crate::backends::namespace::PYTHON_STATIC_NAMESPACE;
+    let declarations = split_python_stub_declarations(&source)?;
+    let declared = declarations
+        .iter()
+        .map(|declaration| declaration.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut groups: BTreeMap<String, BTreeMap<String, String>> = BTreeMap::new();
+    let mut locators = BTreeMap::new();
+    let mut local = String::from(PYTHON_STUB_HEADER);
+    for declaration in &declarations {
+        if let Some(owner) = shared_owners.get(&declaration.name) {
+            let module = static_family_module(owner);
+            claim_static_locator(&mut locators, &module, owner)?;
+            if groups
+                .entry(owner.clone())
+                .or_default()
+                .insert(
+                    declaration.name.clone(),
+                    format!("{}\n", declaration.source.trim_end()),
+                )
+                .is_some()
+            {
+                return Err(prepared_error(
+                    "duplicate Python static declaration identity",
+                ));
+            }
+            let name = &declaration.name;
+            local.push_str(&format!(
+                "from {PYTHON_STATIC_NAMESPACE}.{module} import {name} as {name}\n"
+            ));
+        } else {
+            local.push_str(&declaration.source);
+        }
+    }
+    let mut package = shard_python_stub(local)?;
+    for (owner, definitions) in groups {
+        let mut dependencies = BTreeSet::new();
+        for definition in definitions.values() {
+            visit_python_identifiers(definition, |name| {
+                if declared.contains(name) && !definitions.contains_key(name) {
+                    dependencies.insert(name.to_owned());
+                }
+            });
+        }
+        let mut content = String::from(PYTHON_STUB_HEADER);
+        for name in dependencies {
+            let dependency = shared_owners.get(&name).ok_or_else(|| {
+                prepared_error(
+                    "a shared Python static definition depends on a package-owned declaration",
+                )
+            })?;
+            let module = static_family_module(dependency);
+            content.push_str(&format!(
+                "from {PYTHON_STATIC_NAMESPACE}.{module} import {name} as {name}\n"
+            ));
+        }
+        content.push('\n');
+        for definition in definitions.values() {
+            content.push_str(definition);
+            content.push('\n');
+        }
+        let module = static_family_module(&owner);
+        package
+            .companions
+            .insert(format!("{PYTHON_STATIC_NAMESPACE}/{module}.pyi"), content);
+    }
+    Ok(package)
+}
+
+pub(super) fn shard_python_stub(flat_stub: String) -> Result<PythonStubPackage, EmitError> {
     let declarations = split_python_stub_declarations(&flat_stub)?;
     let shard_count = declarations
         .len()
@@ -1698,7 +1681,10 @@ fn shard_python_stub(flat_stub: String) -> Result<PythonStubPackage, EmitError> 
         files.insert(format!("{module}.pyi"), content);
     }
     files.insert("__init__.pyi".to_owned(), entrypoint);
-    Ok(PythonStubPackage { files })
+    Ok(PythonStubPackage {
+        files,
+        companions: BTreeMap::new(),
+    })
 }
 
 fn split_python_stub_declarations(
@@ -1714,6 +1700,7 @@ fn split_python_stub_declarations(
             && !line.starts_with(' ')
             && !line.starts_with('\t')
             && !current.trim().is_empty()
+            && current.trim() != "@typing.overload"
         {
             declarations.push(parse_python_stub_declaration(std::mem::take(&mut current))?);
         }
@@ -1722,15 +1709,42 @@ fn split_python_stub_declarations(
     if !current.trim().is_empty() {
         declarations.push(parse_python_stub_declaration(current)?);
     }
-    Ok(declarations)
+    let mut merged: Vec<PythonStubDeclaration> = Vec::new();
+    for declaration in declarations {
+        if let Some(previous) = merged.last_mut()
+            && previous.name == declaration.name
+            && previous
+                .source
+                .trim_start()
+                .starts_with("@typing.overload\n")
+            && declaration
+                .source
+                .trim_start()
+                .starts_with("@typing.overload\n")
+        {
+            previous.source.push_str(&declaration.source);
+        } else {
+            merged.push(declaration);
+        }
+    }
+    Ok(merged)
 }
 
 fn parse_python_stub_declaration(source: String) -> Result<PythonStubDeclaration, EmitError> {
     let line = source
         .lines()
-        .find(|line| !line.trim().is_empty())
+        .find(|line| !line.trim().is_empty() && !line.starts_with('@'))
         .ok_or_else(|| prepared_error("typed-stub render produced an empty declaration"))?
         .trim_start();
+    if line.starts_with("from ") {
+        let (_, name) = line
+            .rsplit_once(" as ")
+            .ok_or_else(|| prepared_error("static import omitted its exact reexport binding"))?;
+        return Ok(PythonStubDeclaration {
+            name: name.to_owned(),
+            source,
+        });
+    }
     let name_source = line
         .strip_prefix("class ")
         .or_else(|| line.strip_prefix("def "))
@@ -1772,6 +1786,9 @@ fn rewrite_python_stub_line(
     owners: &BTreeMap<String, usize>,
     dependencies: &mut BTreeSet<usize>,
 ) -> String {
+    if line.starts_with("from ") {
+        return line.to_owned();
+    }
     let protected = python_stub_binding_range(line);
     let bytes = line.as_bytes();
     let mut rendered = String::with_capacity(line.len());
@@ -1948,6 +1965,26 @@ fn exact_site_frame(site: PreparedBoundaryCallableSite<'_>) -> String {
     out
 }
 
+fn readable_site_alias(site: PreparedBoundaryCallableSite<'_>) -> String {
+    let module = site.site().module_segments().join("/");
+    let (role, names) = match site.site().owner() {
+        BoundaryFacadeSiteOwner::HostFunction { name } => ("Host", vec![name]),
+        BoundaryFacadeSiteOwner::ExportedFunction { name } => ("Export", vec![name]),
+        BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member } => {
+            ("Ctor", vec![newtype, member])
+        }
+        BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
+            ("Proj", vec![newtype, member])
+        }
+    };
+    format!(
+        "KioView{role}_{}",
+        crate::backends::public_names::readable_public_identity(
+            std::iter::once(module.as_str()).chain(names.into_iter().map(String::as_str)),
+        )
+    )
+}
+
 fn python_facade_module_path(module_segments: &[String]) -> Vec<String> {
     let module_path = module_segments.join("/");
     module_facade_path(&module_path)
@@ -1980,25 +2017,6 @@ fn positional_method_params(params: &[String]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(", {rendered}, /")
-}
-
-fn render_semantic_key(key: &SemanticKey) -> String {
-    match key {
-        SemanticKey::Bare { name } => host_name_core(name),
-        SemanticKey::Qualified {
-            module_segments,
-            name,
-        } => format!(
-            "{}.{}",
-            module_segments
-                .iter()
-                .map(|part| host_name_core(part))
-                .collect::<Vec<_>>()
-                .join("/"),
-            host_name_core(name)
-        ),
-        SemanticKey::Positional { index } => format!("_{index}"),
-    }
 }
 
 #[derive(Clone)]
@@ -2646,6 +2664,35 @@ mod tests {
         assert_eq!(first_declarations.len(), PYTHON_STUB_DECLARATIONS_PER_SHARD);
     }
 
+    #[test]
+    fn stub_sharding_keeps_overloads_together_at_a_shard_boundary() {
+        let mut flat = String::from(PYTHON_STUB_HEADER);
+        for index in 0..PYTHON_STUB_DECLARATIONS_PER_SHARD - 1 {
+            flat.push_str(&format!("T{index} = typing.TypeVar('T{index}')\n\n"));
+        }
+        flat.push_str(
+            "@typing.overload\n\
+             def lift(source: int, /) -> Result: ...\n\n\
+             @typing.overload\n\
+             def lift(source: str, /) -> Result: ...\n\n\
+             class Result:\n    ...\n",
+        );
+        let declarations = split_python_stub_declarations(&flat).expect("split overloads");
+        assert_eq!(declarations.len(), PYTHON_STUB_DECLARATIONS_PER_SHARD + 1);
+        let overloads = &declarations[PYTHON_STUB_DECLARATIONS_PER_SHARD - 1];
+        assert_eq!(overloads.name, "lift");
+        assert_eq!(overloads.source.matches("@typing.overload\n").count(), 2);
+        assert_eq!(overloads.source.matches("def lift(").count(), 2);
+
+        let package = shard_python_stub(flat).expect("shard overloads");
+        let first = package.file("_kio_stub_0000.pyi").expect("first shard");
+        let second = package.file("_kio_stub_0001.pyi").expect("second shard");
+        assert_eq!(first.matches("@typing.overload\ndef lift(").count(), 2);
+        assert_eq!(first.matches("-> _kio_stub_0001.Result").count(), 2);
+        assert!(!second.contains("def lift("));
+        assert!(second.contains("class Result:"));
+    }
+
     fn measure_python_stub_batch_work<T>(run: impl FnOnce() -> T) -> (T, PythonStubBatchWork) {
         PYTHON_STUB_BATCH_WORK.with(|slot| {
             assert!(
@@ -2915,115 +2962,40 @@ mod tests {
         );
     }
 
-    fn legacy_rescan_newtype_representative<'a>(
-        prepared: &'a PreparedBoundaryCallableSites,
-        name: &QualifiedTypeName,
-    ) -> (PreparedBoundaryCallableSite<'a>, usize) {
-        let mut site_visits = 0;
-        let representative = prepared
-            .sites()
-            .find_map(|site| {
-                site_visits += 1;
-                site.execution()?;
-                site.nominals().declaration(name).map(|_| site)
-            })
-            .unwrap_or_else(|| panic!("missing legacy representative for {name:?}"));
-        (representative, site_visits)
-    }
-
-    fn render_with_representative_index_work(
-        package: &Package<Routed>,
-        prepared: &PreparedBoundaryCallableSites,
-    ) -> (String, PythonRepresentativeIndexWork) {
-        PYTHON_REPRESENTATIVE_INDEX_WORK.with(|slot| {
-            assert!(
-                slot.replace(Some(PythonRepresentativeIndexWork::default()))
-                    .is_none(),
-                "the Python representative-index work ledger is already active"
-            );
-            let rendered =
-                PreparedPythonStub::new(package, prepared, "Greeter".to_owned(), "greeter")
-                    .render();
-            let work = slot
-                .replace(None)
-                .expect("the Python representative-index work ledger is active");
-            (rendered.expect("render wide Python stub"), work)
-        })
-    }
-
-    fn wide_python_representative_index_work(
-        width: usize,
-    ) -> (PythonRepresentativeIndexWork, usize) {
-        let mut source = "module main; host type I32 role(i32);".to_owned();
-        for index in 0..width {
-            source.push_str(&format!(
-                " pub newtype Wrapper{index:03} : I32 {{ \
-                   pub constructor wrap{index:03}; \
-                   pub projector unwrap{index:03}; \
-                 }};"
-            ));
-        }
-        let pkg = build_package(&[source.as_str()], "bridge { main; }");
-        let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
-        let names = prepared
-            .public_newtypes()
-            .map(|entry| entry.name().clone())
-            .collect::<Vec<_>>();
-        assert_eq!(names.len(), width);
-        assert_eq!(prepared.sites().count(), width * 2);
-
-        let index = LiveNewtypeRepresentatives::new(&prepared);
-        assert_eq!(index.len(), width);
-        let mut legacy_site_visits = 0;
-        for name in &names {
-            let indexed = index
-                .get(name)
-                .unwrap_or_else(|| panic!("missing indexed representative for {name:?}"));
-            let (legacy, visits) = legacy_rescan_newtype_representative(&prepared, name);
-            legacy_site_visits += visits;
-            assert_eq!(
-                indexed.site(),
-                legacy.site(),
-                "the index changed the selected representative for {name:?}"
-            );
-            assert_eq!(
-                indexed.nominals().declaration(name),
-                legacy.nominals().declaration(name),
-                "the index changed the representative declaration for {name:?}"
-            );
-        }
-
-        let (rendered, indexed_work) = render_with_representative_index_work(&pkg, &prepared);
-        for name in &names {
-            assert!(
-                rendered.contains(&format!("class KioNewtype_{}(", exact_qtn_frame(name))),
-                "the measured render omitted {name:?}:\n{rendered}"
-            );
-        }
-        assert_eq!(
-            indexed_work.construction_site_visits,
-            prepared.sites().count(),
-            "index construction must visit every prepared site exactly once"
-        );
-        assert_eq!(
-            indexed_work.indexed_lookups, width,
-            "rendering must perform one indexed lookup per public newtype"
-        );
-        (indexed_work, legacy_site_visits)
-    }
-
     #[test]
-    fn public_newtype_representative_index_scales_with_rendered_width() {
-        let (small, legacy_small) = wide_python_representative_index_work(8);
-        let (large, legacy_large) = wide_python_representative_index_work(32);
-        let indexed_small = small.construction_site_visits + small.indexed_lookups;
-        let indexed_large = large.construction_site_visits + large.indexed_lookups;
-
-        assert_eq!((legacy_small, legacy_large), (36, 528));
-        assert_eq!((indexed_small, indexed_large), (24, 96));
-        assert!(legacy_large > legacy_small * 14);
-        assert_eq!(indexed_large, indexed_small * 4);
-        assert!(legacy_large > indexed_large * 5);
+    fn public_newtype_indices_do_not_expand_payloads_at_wide_sites() {
+        for width in [8, 32] {
+            let mut source = "module main;".to_owned();
+            for index in 0..width {
+                source.push_str(&format!(
+                    " pub newtype Wrapper{index:03}[A] : A -> A {{ \
+                       pub constructor wrap{index:03}; \
+                       pub projector unwrap{index:03}; \
+                     }};"
+                ));
+            }
+            let pkg = build_package(&[source.as_str()], "bridge { main; }");
+            let rendered = lower_package_to_stub(&pkg, "greeter").expect("render");
+            let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
+            assert_eq!(prepared.public_newtypes().count(), width);
+            for entry in prepared.public_newtypes() {
+                let frame = exact_qtn_frame(entry.name());
+                assert!(
+                    rendered.contains(&format!(
+                        "KioNewtype_{frame}: typing.TypeAlias = KioApply1[KioNewtypeMk_{frame}, "
+                    )),
+                    "a parameterized nominal must retain its constructor index: {rendered}"
+                );
+                assert!(
+                    !rendered.contains(&format!("class KioNewtype_{frame}(")),
+                    "a saturated application must not introduce a second nominal class: {rendered}"
+                );
+                assert!(
+                    !rendered.contains(&format!("    {}:", host_name_core(entry.name().name()))),
+                    "nominal storage is accessible only through its declared members: {rendered}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -3038,14 +3010,10 @@ mod tests {
         );
         let stub = lower_package_to_stub(&pkg, "facade").expect("render");
 
+        assert!(stub.contains("def make(self) -> KioFn[KioShape_"), "{stub}");
         assert!(
-            stub.contains("def make(self) -> typing.Callable[[KioShape_"),
-            "{stub}"
-        );
-        assert!(
-            !stub.contains(
-                "def make(self) -> typing.Callable[[KioHost_V1_M1_C4_mainN3_I32, KioHost_V1_M1_C4_mainN3_I32], KioHost_V1_M1_C4_mainN3_I32]: ..."
-            ),
+            stub.contains("    left: KioHost_V1_M1_C4_mainN3_I32\n")
+                && stub.contains("    right: KioHost_V1_M1_C4_mainN3_I32\n"),
             "{stub}"
         );
     }
@@ -3076,6 +3044,257 @@ mod tests {
     }
 
     #[test]
+    fn first_class_unit_keeps_one_domain_argument_and_type_stages_stay_separate() {
+        let pkg = build_package(
+            &["module main; \
+               pub fn relay(f: . -> .) -> . -> . { f } \
+               host fn stages(f: [A, B] A -> B -> A) -> .;"],
+            "bridge { main; }",
+        );
+        let artifact = render_stub_artifact(&pkg, "facade", None).expect("render");
+        assert!(
+            artifact
+                .source
+                .contains("def relay(self, p0: KioFn[None, None], /) -> KioFn[None, None]: ..."),
+            "{}",
+            artifact.source
+        );
+        assert_eq!(artifact.stage_bases.len(), 2, "each binder owns a stage");
+        let declarations = split_python_stub_declarations(&artifact.source).expect("declarations");
+        for name in &artifact.stage_bases {
+            let stage = declarations
+                .iter()
+                .find(|entry| &entry.name == name)
+                .expect("stage");
+            assert_eq!(stage.source.matches("def advance(self)").count(), 1);
+            assert!(!stage.source.contains("def __call__(self"));
+            assert!(stage.source.contains("def adapt(self"));
+            let source = declarations
+                .iter()
+                .find(|entry| entry.name == format!("{name}Source"))
+                .expect("importable source base");
+            assert_eq!(source.source.matches("def advance(self)").count(), 1);
+        }
+        let (module, stubs) =
+            super::super::emit::lower_package(&pkg, "facade").expect("render paired artifacts");
+        for name in artifact.stage_bases {
+            assert!(module.contains(&format!("{name} = type('{name}', (_KioTypeStage,), {{}})")));
+            assert!(stubs.files().any(|(_, source)| source.contains(&name)));
+        }
+    }
+
+    #[test]
+    fn callable_adaptation_has_a_structural_bound_method_protocol() {
+        let pkg = build_package(
+            &["module main; pub fn relay(f: . -> .) -> . -> . { f }"],
+            "bridge { main; }",
+        );
+        let stub = lower_package_to_stub(&pkg, "facade").expect("render");
+        assert!(
+            stub.contains(
+                "    @property\n    def adapt(self) -> KioFnAdapt[KioFn_Arg, KioFn_Result]: ..."
+            ),
+            "{stub}"
+        );
+        assert!(
+            stub.contains("class KioFnAdapt(typing.Protocol[KioFn_Arg, KioFn_Result]):"),
+            "{stub}"
+        );
+        assert!(
+            stub.contains("def __call__(self, before: typing.Callable[[KioFn_Input], KioFn_Arg], after: typing.Callable[[KioFn_Result], KioFn_Output], /) -> KioFn[KioFn_Input, KioFn_Output]: ..."),
+            "{stub}"
+        );
+    }
+
+    #[test]
+    fn shared_stage_files_are_closed_and_independent_of_package_inventory() {
+        let first = build_package(
+            &["module alpha; host fn use(f: [A] A -> A) -> .;"],
+            "bridge { alpha; }",
+        );
+        let second = build_package(
+            &[
+                "module beta; host type Token; host fn extra(f: [A, B] A -> B -> A) -> .; host fn use(f: [A] A -> A) -> .;",
+            ],
+            "bridge { beta; }",
+        );
+        let first = lower_package_to_stub_package(&first, "one").expect("first stub");
+        let second = lower_package_to_stub_package(&second, "two").expect("second stub");
+        assert!(first.companions.contains_key("kio_static_v1/core.pyi"));
+        assert!(second.companions.len() > first.companions.len());
+        for (path, bytes) in &first.companions {
+            assert_eq!(
+                second.companions.get(path),
+                Some(bytes),
+                "independent bytes: {path}"
+            );
+            assert!(!path.ends_with("__init__.pyi"));
+            assert!(!bytes.contains("KioHost_V1_"));
+            assert!(!bytes.contains("alpha"));
+            assert!(!bytes.contains("beta"));
+        }
+        assert!(
+            first
+                .files
+                .values()
+                .any(|file| file.contains("from kio_static_v1."))
+        );
+    }
+
+    #[test]
+    fn static_locator_collisions_fail_without_merging_exact_definitions() {
+        let mut locators = BTreeMap::new();
+        claim_static_locator(&mut locators, "same", "exact first").expect("first identity");
+        claim_static_locator(&mut locators, "same", "exact first").expect("same identity");
+        assert!(claim_static_locator(&mut locators, "same", "exact second").is_err());
+        assert_eq!(locators["same"], "exact first");
+        let key = crate::backends::value_plan::canonical_stage_symbol(&"nested".repeat(80));
+        assert!(static_family_module(&key).len() <= crate::backends::skin::READABLE_MINT_MAX_LEN);
+        let source = format!("{PYTHON_STUB_HEADER}class {key}:\n    ...\n");
+        let package = partition_python_stub(source, &BTreeMap::from([(key.clone(), key.clone())]))
+            .expect("bounded locator");
+        assert!(
+            package
+                .files
+                .values()
+                .any(|source| source.contains(&format!("import {key} as {key}")))
+        );
+        assert!(
+            package
+                .companions
+                .values()
+                .any(|source| source.contains(&format!("class {key}:")))
+        );
+    }
+
+    #[test]
+    fn readable_declaration_views_alias_exact_classes_and_constructor_indices() {
+        let pkg = build_package(
+            &["module api; host type Token; host type Box[A]; \
+               pub fn keep[A](value: Box(A)) -> Box(A) { value } \
+               pub newtype Wrapper[A] : Token & A { pub constructor wrap; pub projector unwrap }"],
+            "bridge { api; }",
+        );
+        let artifact = render_stub_artifact(&pkg, "one", None).expect("declaration views");
+        for (alias, target) in [
+            ("KioHostType_api__Box", "KioHostType_V1_M1_C3_apiN3_Box"),
+            ("KioHostMk_api__Box", "KioHostMk_V1_M1_C3_apiN3_Box"),
+            (
+                "KioNewtype_api__Wrapper",
+                "KioNewtype_V1_M1_C3_apiN7_Wrapper",
+            ),
+            (
+                "KioNewtypeMk_api__Wrapper",
+                "KioNewtypeMk_V1_M1_C3_apiN7_Wrapper",
+            ),
+        ] {
+            assert_eq!(artifact.public_aliases[alias], target);
+            assert!(
+                artifact
+                    .source
+                    .contains(&format!("{alias}: typing.TypeAlias = {target}"))
+            );
+            assert!(!artifact.source.contains(&format!("class {alias}")));
+        }
+        assert!(artifact.source.contains(
+            "KioNewtype_api__Wrapper: typing.TypeAlias = KioNewtype_V1_M1_C3_apiN7_Wrapper[KioHost_V1_M1_C3_apiN5_Token, KioNewtypeParam_V1_M1_C3_apiN7_Wrapper_0]"
+        ));
+        let (runtime, _) =
+            super::super::emit::lower_package(&pkg, "one").expect("paired declarations");
+        let installed = runtime
+            .find("_KIO_PACKAGE.install_declarations(globals())")
+            .expect("install");
+        for (alias, target) in artifact.public_aliases {
+            let assignment = runtime
+                .find(&format!("{alias} = {target}\n"))
+                .expect("runtime alias");
+            assert!(
+                assignment > installed,
+                "a nominal alias follows its exact class installation"
+            );
+        }
+    }
+
+    #[test]
+    fn readable_slot_views_preserve_sources_and_local_stage_order() {
+        let source = "module api; host fn apply_poly(f: [T] T -> T) -> .; pub newtype Shadow[T] : T & ([U] U -> U) { pub constructor make_shadow; pub projector read_shadow }";
+        let pkg = build_package(&[source], "bridge { api; }");
+        let expanded = build_package(
+            &[&format!(
+                "{source} host fn earlier(f: [A, B] A -> B -> A) -> .;"
+            )],
+            "bridge { api; }",
+        );
+        let original = render_stub_artifact(&pkg, "one", None).expect("original");
+        let expanded = render_stub_artifact(&expanded, "two", None).expect("expanded");
+        let alias = "KioViewHost_api__applyPoly_Arg0Source";
+        assert!(original.public_aliases.contains_key(alias));
+        for (name, target) in &original.public_aliases {
+            assert_eq!(expanded.public_aliases.get(name), Some(target));
+        }
+        assert!(
+            original
+                .source
+                .contains("KioViewCtor_api__Shadow__makeShadow_Arg0: typing.TypeAlias = KioShape_")
+        );
+        let (runtime, _) = super::super::emit::lower_package(&pkg, "one").expect("paired views");
+        assert!(runtime.contains(&format!("{alias} = {}\n", original.public_aliases[alias])));
+        assert!(!runtime.contains("import kio_static_v1"));
+    }
+
+    #[test]
+    fn readable_views_keep_module_and_member_roles_distinct() {
+        let pkg = build_package(
+            &[
+                "module a/b; host fn use(f: [T] T -> T) -> .;",
+                "module a_b; host fn use(f: [T] T -> T) -> .; pub fn echo(f: . -> .) -> . -> . { f } pub newtype N : . { pub constructor echo; pub projector read }",
+            ],
+            "bridge { a/b; a_b; }",
+        );
+        let stub = lower_package_to_stub(&pkg, "facade").expect("readable views");
+        for name in [
+            "KioViewHost_a_sb__use_Arg0Source",
+            "KioViewHost_aB__use_Arg0Source",
+            "KioViewExport_aB__echo_Arg0",
+            "KioViewCtor_aB__N__echo_Result",
+            "KioViewProj_aB__N__read_Result",
+        ] {
+            assert!(
+                stub.contains(&format!("{name}: typing.TypeAlias =")),
+                "missing {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_binary_slots_keep_nominals_explicit() {
+        let pkg = build_package(
+            &["module main; \
+               host type N role(i32); \
+               pub newtype Named : N { pub constructor named; pub projector un_named; }; \
+               host fn split(a: N, b: N) -> N; \
+               host fn packed(pair: N & Named) -> N | Named;"],
+            "bridge { main; }",
+        );
+        let stub = lower_package_to_stub(&pkg, "facade").expect("render");
+        let split = stub
+            .lines()
+            .find(|line| line.contains("def split("))
+            .expect("split");
+        let packed = stub
+            .lines()
+            .find(|line| line.contains("def packed("))
+            .expect("packed");
+        assert!(split.contains("p1:"), "{split}");
+        assert!(!packed.contains("p1:"), "{packed}");
+        assert!(stub.contains("    left: KioHost_"), "{stub}");
+        assert!(stub.contains("    right: KioNewtype_"), "{stub}");
+        assert!(stub.contains("tag: typing.Literal['left']"), "{stub}");
+        assert!(stub.contains("tag: typing.Literal['right']"), "{stub}");
+        assert!(stub.contains("    value: KioNewtype_"), "{stub}");
+    }
+
+    #[test]
     fn type_variable_erasure_observes_ordered_and_nested_binder_scope() {
         let pkg = build_package(
             &["module main; \
@@ -3097,7 +3316,7 @@ mod tests {
             .find(|line| line.contains("def applyPoly"))
             .expect("host callable in stub");
         assert!(
-            apply_poly.contains("p0: KioCallable_")
+            apply_poly.contains("p0: KioForall_")
                 && apply_poly.ends_with("-> KioProtocol_Host_main_B0: ...")
                 && !apply_poly.contains("object"),
             "{apply_poly}\n\n{stub}"
@@ -3132,7 +3351,7 @@ mod tests {
         );
         assert!(!ordered.contains("object"), "{ordered}\n\n{stub}");
 
-        assert!(stub.contains("_1: KioCallable_"), "{stub}");
+        assert!(stub.contains("right: KioForall_"), "{stub}");
         assert!(
             stub.contains("class KioNewtype_V1_M1_C4_mainN4_Pack(typing.Generic[")
                 && !stub.contains("    Pack: object\n"),
@@ -3157,7 +3376,7 @@ mod tests {
             .find(|line| {
                 line.starts_with("class KioShape_")
                     && line.contains("CtorN6_Shadow")
-                    && line.contains("_P0(")
+                    && line.contains("_P0_R0(")
             })
             .expect("constructor product shape");
         assert!(
@@ -3180,53 +3399,45 @@ mod tests {
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
-        let lines = stub.lines().collect::<Vec<_>>();
-
-        let (inner_index, inner_header) = lines
+        let declarations = split_python_stub_declarations(&stub).expect("declarations");
+        let outer_method = stub
+            .lines()
+            .find(|line| line.starts_with("    def advance(self) -> KioFn[KioForall_"))
+            .expect("projector result stage");
+        let inner_application = outer_method.split_once("KioFn[").expect("outer function").1;
+        let (inner_name, application_tail) =
+            inner_application.split_once('[').expect("callback capture");
+        let (captured_argument, result_tail) = application_tail
+            .split_once("], ")
+            .expect("callback/result split");
+        assert_eq!(
+            result_tail.split_once(']').expect("outer result").0,
+            captured_argument,
+            "callback result must use the projector's selected result binder: {outer_method}"
+        );
+        let inner = declarations
             .iter()
-            .enumerate()
-            .find(|(_, line)| {
-                line.starts_with("class KioCallable_KioCallable_") && line.contains("openPack")
-            })
-            .expect("nested existential callback protocol");
-        let inner_name = inner_header
-            .strip_prefix("class ")
-            .and_then(|header| header.split_once('('))
-            .map(|(name, _)| name)
-            .expect("nested protocol class name");
+            .find(|entry| entry.name == inner_name)
+            .expect("callback stage");
+        let inner_header = inner.source.lines().next().expect("callback header");
         let capture = inner_header
             .split_once("typing.Protocol[")
             .and_then(|(_, tail)| tail.split_once(']'))
             .map(|(capture, _)| capture)
             .expect("nested protocol capture parameter");
-        let inner_method = lines
-            .get(inner_index + 1)
-            .expect("nested protocol call method");
+        let inner_method = inner
+            .source
+            .lines()
+            .find(|line| line.contains("def advance("))
+            .expect("callback advance");
         assert!(
             inner_method.ends_with(&format!(
-                "-> {capture}: ...  # pyright: ignore[reportInvalidTypeVarUse]"
+                ", {capture}]: ...  # pyright: ignore[reportInvalidTypeVarUse]"
             )),
             "the nested protocol must render its result through the localized capture:\n{inner_header}\n{inner_method}\n\n{stub}"
         );
-
-        let outer_method = lines
-            .iter()
-            .find(|line| line.contains(&format!("p0: {inner_name}[")))
-            .expect("outer protocol applies the nested capture");
-        let captured_argument = outer_method
-            .split_once(&format!("p0: {inner_name}["))
-            .and_then(|(_, tail)| tail.split_once(']'))
-            .map(|(argument, _)| argument)
-            .expect("outer capture application");
-        let outer_result = outer_method
-            .split_once(" -> ")
-            .and_then(|(_, tail)| tail.split_once(':'))
-            .map(|(result, _)| result)
-            .expect("outer protocol result");
-        assert_eq!(
-            captured_argument, outer_result,
-            "the nested callback must share the outer projector result binder:\n{outer_method}\n\n{stub}"
-        );
+        assert!(inner_method.contains("_Selected, "), "{inner_method}");
+        assert!(!inner_method.contains("def __call__"));
     }
 
     #[test]
@@ -3336,11 +3547,20 @@ mod tests {
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
-        // Product param -> a TypedDict; sum return -> a union of one-key
-        // TypedDicts; the export method takes / returns those.
         assert!(stub.contains("typing.TypedDict, typing.Generic["), "{stub}");
-        assert!(stub.contains("_0: KioHost_V1_M1_C4_mainN3_I32"), "{stub}");
-        assert!(stub.contains("_1: KioHost_V1_M1_C4_mainN3_Str"), "{stub}");
+        assert!(stub.contains("left: KioHost_V1_M1_C4_mainN3_I32"), "{stub}");
+        assert!(
+            stub.contains("right: KioHost_V1_M1_C4_mainN3_Str"),
+            "{stub}"
+        );
+        assert!(
+            stub.contains("tag: typing.Literal['left']\n    value: KioHost_V1_M1_C4_mainN3_I32"),
+            "{stub}"
+        );
+        assert!(
+            stub.contains("tag: typing.Literal['right']\n    value: KioHost_V1_M1_C4_mainN3_Str"),
+            "{stub}"
+        );
         assert!(stub.contains("def split(self, p0:"), "{stub}");
         assert!(stub.contains(" | "), "sum union expected: {stub}");
     }
@@ -3388,7 +3608,7 @@ mod tests {
     }
 
     #[test]
-    fn transparent_public_wrapper_keys_case_words_and_preserve_affixes() {
+    fn public_newtype_markers_case_words_and_preserve_affixes() {
         let pkg = build_package(
             &["module main; \
                pub newtype _Word_box__[Item_type] : Item_type { \
@@ -3397,10 +3617,44 @@ mod tests {
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "facade").expect("render");
-        assert!(stub.contains("\n    _WordBox__: "), "{stub}");
+        assert!(
+            stub.contains("class KioNewtypeMk_V1_M1_C4_mainN10__WordBox__:"),
+            "{stub}"
+        );
+        assert!(stub.contains("KioNewtype_V1_M1_C4_mainN10__WordBox__: typing.TypeAlias = KioApply1[KioNewtypeMk_V1_M1_C4_mainN10__WordBox__, "), "{stub}");
         assert!(stub.contains("def wrapWord("), "{stub}");
         assert!(stub.contains("def unwrapWord("), "{stub}");
         assert!(!stub.contains("\n    _Word_box__:"), "{stub}");
+    }
+
+    #[test]
+    fn generic_newtype_docs_belong_to_the_exact_public_constructor_index() {
+        let pkg = build_package(
+            &[
+                "module left;\n/// Left wrapper.\npub newtype Box[A] : A { pub constructor make; pub projector read };",
+                "module right;\n/// Right wrapper.\npub newtype Box[A] : A { pub constructor make; pub projector read };",
+            ],
+            "bridge { left; right; }",
+        );
+        let stub = lower_package_to_stub(&pkg, "facade").expect("render");
+        let declarations = split_python_stub_declarations(&stub).expect("declarations");
+        for (frame, expected, wrong) in [
+            ("V1_M1_C4_leftN3_Box", "Left wrapper.", "Right wrapper."),
+            ("V1_M1_C5_rightN3_Box", "Right wrapper.", "Left wrapper."),
+        ] {
+            let marker = declarations
+                .iter()
+                .find(|entry| entry.name == format!("KioNewtypeMk_{frame}"))
+                .expect("exact constructor index");
+            assert!(marker.source.contains(expected), "{}", marker.source);
+            assert!(!marker.source.contains(wrong), "{}", marker.source);
+            assert!(
+                stub.contains(&format!(
+                    "KioNewtype_{frame}: typing.TypeAlias = KioApply1[KioNewtypeMk_{frame}, "
+                )),
+                "{stub}"
+            );
+        }
     }
 
     #[test]
@@ -3620,8 +3874,8 @@ mod tests {
         assert!(!stub.contains("MakeOnly: int"), "{stub}");
         assert!(!stub.contains("ReadOnly: int"), "{stub}");
         assert!(
-            stub.contains(&format!("    MakeOnly: {make_only_type}\n"))
-                && stub.contains(&format!("    ReadOnly: {read_only_type}\n")),
+            stub.contains(&format!("    left: {make_only_type}\n"))
+                && stub.contains(&format!("    right: {read_only_type}\n")),
             "{stub}"
         );
 
@@ -3640,13 +3894,11 @@ mod tests {
             .expect("both-public projector");
         let both_head = both_type.split_once('[').expect("applied carrier").0;
         assert!(
-            stub.contains(&format!(
-                "class {both_head}(typing.TypedDict, typing.Generic["
-            )),
+            stub.contains(&format!("class {both_head}(typing.Generic[")),
             "{stub}"
         );
         assert!(
-            stub.contains(&format!("    BothPublic: {root}\n"))
+            !stub.contains(&format!("    BothPublic: {root}\n"))
                 && read_both.contains(&format!("p0: {both_type}"))
                 && read_both.ends_with(&format!("-> {root}: ...")),
             "{read_both}\n\n{stub}"
@@ -3662,12 +3914,12 @@ mod tests {
             .expect("polymorphic projector");
         assert!(
             make_box.contains("p0: KioType_")
-                && make_box.contains("-> KioNewtype_V1_M1_C4_mainN3_Box[")
+                && make_box.contains("-> KioApply1[KioNewtypeMk_V1_M1_C4_mainN3_Box[")
                 && !make_box.contains("object"),
             "{make_box}\n\n{stub}"
         );
         assert!(
-            read_box.contains("p0: KioNewtype_V1_M1_C4_mainN3_Box[")
+            read_box.contains("p0: KioApply1[KioNewtypeMk_V1_M1_C4_mainN3_Box[")
                 && read_box.contains("], /) -> KioType_")
                 && !read_box.contains("object"),
             "{read_box}\n\n{stub}"
@@ -3689,7 +3941,7 @@ mod tests {
         );
         assert!(
             open_pack.contains("p0: KioNewtype_V1_M1_C4_mainN4_Pack[")
-                && open_pack.contains("-> KioCallable_")
+                && open_pack.contains("-> KioForall_")
                 && !open_pack.contains("object"),
             "{open_pack}\n\n{stub}"
         );
@@ -3747,10 +3999,8 @@ mod tests {
         let hidden_head = hidden.split_once('[').expect("applied carrier").0;
         assert!(
             signature("roundVisible").contains(&format!("p0: {visible}"))
-                && stub.contains(&format!(
-                    "class {visible_head}(typing.TypedDict, typing.Generic["
-                ))
-                && stub.contains("    ComptimeBool: KioHost_V1_M1_C7_visibleN3_I32\n"),
+                && stub.contains(&format!("class {visible_head}(typing.Generic["))
+                && !stub.contains("    ComptimeBool: KioHost_V1_M1_C7_visibleN3_I32\n"),
             "{stub}"
         );
         assert!(
@@ -3785,10 +4035,8 @@ mod tests {
         let wrapped_head = wrapped.split_once('[').expect("applied carrier").0;
         assert!(
             signature("roundWrapped").contains(&format!("p0: {wrapped}"))
-                && stub.contains(&format!(
-                    "class {wrapped_head}(typing.TypedDict, typing.Generic["
-                ))
-                && stub.contains("    Wrapped: KioHost_V1_M1_C7_hostishN12_ComptimeBool\n"),
+                && stub.contains(&format!("class {wrapped_head}(typing.Generic["))
+                && !stub.contains("    Wrapped: KioHost_V1_M1_C7_hostishN12_ComptimeBool\n"),
             "{stub}"
         );
     }
@@ -3933,7 +4181,7 @@ mod tests {
                 .filter(|line| line.contains("def round"))
                 .any(|line| {
                     line.contains(&format!(
-                        "KioNewtype_V1_M1_C3_apiN7_Functor[{host_root}, {witness}[{host_root}]]"
+                        "KioApply1[KioNewtypeMk_V1_M1_C3_apiN7_Functor[{host_root}], {witness}[{host_root}]]"
                     ))
                 }),
             "higher-kinded application lost the exact constructor selection:\n{stub}"
@@ -3948,7 +4196,7 @@ mod tests {
     }
 
     #[test]
-    fn recursive_transparent_newtype_uses_a_finite_exact_payload_alias() {
+    fn recursive_newtype_uses_a_finite_exact_nominal_leaf() {
         let pkg = build_package(
             &["module main; \
                import __intrinsics__; \
@@ -3964,13 +4212,28 @@ mod tests {
         let frame = "V1_M1_C4_mainN9_Recursive";
 
         assert!(
-            stub.contains(&format!("KioPayload_{frame}: typing.TypeAlias =")),
-            "recursive payload alias is absent:\n{stub}"
+            stub.contains(&format!("class KioNewtype_{frame}(typing.Generic[")),
+            "recursive nominal is absent:\n{stub}"
         );
         assert!(
-            stub.contains(&format!("KioPayload_{frame}[KioHost_V1_M1_C4_mainN3_I32]")),
-            "recursive payload alias lost the exact host root:\n{stub}"
+            stub.contains(&format!("tag: typing.Literal['right']\n    value: KioNewtype_{frame}[KioHost_V1_M1_C4_mainN3_I32]")),
+            "recursive sum leaf lost the exact nominal/root:\n{stub}"
         );
+        assert_eq!(
+            stub.matches(&format!("class KioNewtype_{frame}(")).count(),
+            1
+        );
+        assert!(!stub.contains("KioPayload_"), "{stub}");
+        for method in ["makeRecursive", "readRecursive"] {
+            let signature = stub
+                .lines()
+                .find(|line| line.contains(&format!("def {method}(")))
+                .expect("recursive member");
+            assert!(
+                signature.contains(" | ") && signature.contains(&format!("KioNewtype_{frame}[")),
+                "{signature}"
+            );
+        }
         assert!(
             !stub
                 .lines()
@@ -4048,7 +4311,7 @@ v(2) {
             "KioHostParam_V1_M1_C3_apiN7_LiveBox_0 = typing.TypeVar",
             "class KioHostType_V1_M1_C3_apiN7_LiveBox(",
             "KioNewtypeParam_V1_M1_C3_apiN9_LiveToken_0 = typing.TypeVar",
-            "class KioNewtype_V1_M1_C3_apiN9_LiveToken(",
+            "KioNewtype_V1_M1_C3_apiN9_LiveToken: typing.TypeAlias = KioApply1[",
             "def KioHostIn_api_Live(",
             "def KioHostOut_api_Live(",
             "def current(",

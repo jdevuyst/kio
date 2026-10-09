@@ -262,22 +262,29 @@ mod tests {
 
     #[test]
     fn documentation_cannot_select_javascript_runtime_helpers() {
-        let markers = "/// __kioOpaqueOut( __kioOpaqueIn( __kioProductSlots( __kioProductSlot( __kioSumPayload( __kioSumInject(\n";
-        let source = format!(
-            "module a;\n{markers}pub fn unit() -> . {{ () }}\n{markers}pub newtype Token : . {{ pub constructor make; pub projector read; }};\n"
-        );
-        let package = package_from_sources(&[("a.kio", &source), ("b.kio", "module b;")]);
-        let js =
-            super::super::js::emit::lower_package_to_factory_module(&package, "fixture").unwrap();
-        assert!(js.contains("__kioOpaqueOut("));
-        assert!(!js.contains("const __kioOpaqueStores = new Map()"), "{js}");
-        assert!(!js.contains("function __kioProductSlots("), "{js}");
-        let source = "module a; pub newtype Opaque : . { pub constructor make; projector read; }; pub fn pair(value: . & .) -> . & . { value }";
-        let package = package_from_sources(&[("a.kio", source), ("b.kio", "module b;")]);
-        let js =
-            super::super::js::emit::lower_package_to_factory_module(&package, "fixture").unwrap();
-        assert!(js.contains("const __kioOpaqueStores = new Map()"), "{js}");
-        assert!(js.contains("function __kioProductSlots("), "{js}");
+        let markers = "__kioOpaqueOut( __kioOpaqueIn( __kioProductSlots( __kioProductSlot( __kioSumPayload( __kioSumInject(";
+        let benign = "Documentation about this declaration.";
+        for source in [
+            "module a;\npub fn unit() -> . { () }\npub newtype Token : . { pub constructor make; pub projector read; };\n",
+            "module a;\npub newtype Opaque : . { pub constructor make; projector read; };\npub fn pair(value: . & .) -> . & . { value }\n",
+        ] {
+            let emit = |prose| {
+                let source = source.replace("\npub ", &format!("\n/// {prose}\npub "));
+                let package = package_from_sources(&[("a.kio", &source), ("b.kio", "module b;")]);
+                super::super::js::emit::lower_package_to_factory_module(&package, "fixture")
+                    .unwrap()
+            };
+            let js = emit(markers);
+            // Two declaration comments also appear in the factory's documentation;
+            // the callable's plain-text documentation is retained in its static plan.
+            assert_eq!(js.matches(markers).count(), 4, "{js}");
+            let plain_doc = format!("\"doc\":\"{}\"", markers.replace("__", ""));
+            assert_eq!(js.matches(&plain_doc).count(), 1, "{js}");
+            let normalized = js
+                .replace(markers, benign)
+                .replace(&plain_doc, &format!("\"doc\":\"{benign}\""));
+            assert_eq!(normalized, emit(benign));
+        }
     }
 
     #[test]

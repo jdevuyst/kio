@@ -23,7 +23,9 @@ use super::{FieldAccessStyle, Profile, RuntimeSupport};
 pub mod emit;
 pub mod stub;
 
-pub use emit::{EmitError, lower_package_to_module, lower_package_to_module_with_signature};
+pub use emit::{
+    EmitError, lower_package, lower_package_to_module, lower_package_to_module_with_signature,
+};
 pub use stub::{
     PythonStubPackage, lower_package_to_stub, lower_package_to_stub_package,
     lower_package_to_stub_package_with_signature, lower_package_to_stub_with_signature,

@@ -681,12 +681,18 @@ impl GoHostTypeCarrier {
         provenance: GoDeclarationProvenance,
     ) -> Result<Self, GoFacadeError> {
         let frame = encode_qualified_type_frame(name);
+        let readable = crate::backends::public_names::readable_public_identity(
+            name.module_segments()
+                .iter()
+                .map(String::as_str)
+                .chain([name.name()]),
+        );
         Ok(Self {
             name: name.clone(),
             arity,
-            public_type: go_identifier(format!("KioHostType_{frame}"))?,
+            public_type: go_identifier(format!("KioHostType_{readable}"))?,
             identity_field: go_identifier(format!("kioHostTypeMarker_{frame}"))?,
-            from_native: go_identifier(format!("UnsafeKioHostType_{frame}FromNative"))?,
+            from_native: go_identifier(format!("UnsafeKioHostType_{readable}FromNative"))?,
             provenance,
         })
     }
@@ -1234,15 +1240,19 @@ impl<'a> GoFacadeSite<'a> {
     /// Semantic declaration cut used for stable live and retained aliases.
     ///
     /// The projection contextualizes every value slot and the post-cut return
-    /// under the type binders consumed by earlier heads. It carries no live
-    /// cursor, execution action, or ABI layout; those remain exclusive to
-    /// [`GoLiveFacadeSite::callable_entry`].
+    /// under the type binders consumed by earlier heads and pairs them with
+    /// source-parameter presentation. It carries no live cursor or execution
+    /// authority; those remain exclusive to [`GoLiveFacadeSite::callable_entry`].
     pub(crate) fn callable_entry(&self) -> Result<GoCallableEntry<'_, 'a>, GoFacadeError> {
         let semantic = self.callable().entry();
         let mut current = self.root_facade().root_use()?.traversal;
         let mut stages = Vec::with_capacity(semantic.head_stages.len());
 
-        for semantic_stage in semantic.head_stages {
+        for (semantic_stage, presentation) in semantic
+            .head_stages
+            .into_iter()
+            .zip(self.prepared.presentation().head_stages())
+        {
             match semantic_stage {
                 BoundaryCallableHeadStage::Type { id, binder } => {
                     let FacadeUse::Forall {
@@ -1294,6 +1304,9 @@ impl<'a> GoFacadeSite<'a> {
                     };
                 }
                 BoundaryCallableHeadStage::Value { slots } => {
+                    let CallableExecutionStage::Value(layout) = presentation else {
+                        unreachable!("a prepared callable pairs semantic and presentation heads")
+                    };
                     let FacadeUse::Function {
                         slots: actual,
                         result,
@@ -1320,6 +1333,7 @@ impl<'a> GoFacadeSite<'a> {
                         .collect::<Result<Vec<_>, GoFacadeError>>()?;
                     stages.push(GoCallableHeadStage::Value(GoCallableValueHeadStage {
                         slots,
+                        layout,
                     }));
                     current = self.child_traversal(&current, *result)?;
                 }
@@ -1353,6 +1367,17 @@ impl<'a> GoFacadeSite<'a> {
                 execution.transparent_payload(name)?.use_at(source.use_id)
             }
         })
+    }
+
+    fn presentation_use(&self, source: &GoFacadeUseSource) -> &'a BoundaryFacadeExecutionUse {
+        let presentation = self.prepared.presentation();
+        match &source.arena {
+            GoFacadeArenaId::Root => presentation.root_uses().use_at(source.use_id),
+            GoFacadeArenaId::TransparentPayload(name) => presentation
+                .transparent_payload(name)
+                .expect("a prepared transparent payload has presentation metadata")
+                .use_at(source.use_id),
+        }
     }
 
     fn arena_plan(&self, arena: &GoFacadeArenaId) -> Result<&BoundaryFacadePlan, GoFacadeError> {
@@ -1656,6 +1681,27 @@ impl<'a> GoFacadeSite<'a> {
                         }
                     }
                 }
+                let source =
+                    Self::source_of(context).expect("a semantic function has its exact source use");
+                let BoundaryFacadeExecutionUse::Function(layout) = self.presentation_use(&source)
+                else {
+                    unreachable!("a prepared function has its source-parameter presentation")
+                };
+                let mut grouped = Vec::with_capacity(layout.source_param_count());
+                for parameter in layout.source_params() {
+                    let values = &params[parameter.facade_slots()];
+                    match parameter.adapter() {
+                        CallableSourceParamAdapter::UnitValue => {}
+                        CallableSourceParamAdapter::Identity => grouped.push(values[0].clone()),
+                        CallableSourceParamAdapter::RightNest => {
+                            let shell = parameter
+                                .product_shell()
+                                .expect("a grouped product parameter has its exact shell");
+                            reachability.shells.insert(shell.clone());
+                            grouped.push(GoFacadeShell::new(shell)?.application(values)?);
+                        }
+                    }
+                }
                 let result = self.child_traversal(traversal, *result)?;
                 let result = match self.render_context(&result, reachability)? {
                     GoRenderResult::Complete(complete) => complete.ty,
@@ -1663,7 +1709,7 @@ impl<'a> GoFacadeSite<'a> {
                 };
                 Ok(GoRenderResult::Complete(GoRenderedType::concrete(format!(
                     "func({}) {result}",
-                    params
+                    grouped
                         .iter()
                         .map(GoType::as_str)
                         .collect::<Vec<_>>()
@@ -1832,6 +1878,15 @@ impl<'a> GoFacadeSite<'a> {
         let root = self.root_facade().root_use()?;
         let root = root.traversal;
         let mut reachability = GoReachability::default();
+        for stage in self.prepared.presentation().head_stages() {
+            if let CallableExecutionStage::Value(layout) = stage {
+                for parameter in layout.source_params() {
+                    if let Some(shell) = parameter.product_shell() {
+                        reachability.shells.insert(shell.clone());
+                    }
+                }
+            }
+        }
         match self.render_context(&root, &mut reachability)? {
             GoRenderResult::Complete(_) => Ok(reachability),
             GoRenderResult::Cycle(name) => Err(GoFacadeError::new(format!(
@@ -2248,7 +2303,7 @@ mod prepared_tests {
             .expect("validate ordinary Church-shaped projector");
 
         assert!(matches!(&member, GoLiveNewtypeMemberEntry::Projector(_)));
-        assert_eq!(member.public_parameters().len(), 1);
+        assert_eq!(member.public_parameters().unwrap().len(), 1);
         assert!(std::ptr::eq(member.result(), member.entry().returned()));
         assert!(matches!(
             member.entry().returned().view().unwrap(),
@@ -2282,12 +2337,15 @@ mod prepared_tests {
         let GoLiveNewtypeMemberEntry::ExistentialProjector(single_projector) = &single else {
             panic!("identity existential projector must have its nominal-derived class");
         };
-        let single_parameters = single.public_parameters();
+        let single_parameters = single.public_parameters().unwrap();
         assert_eq!(single_parameters.len(), 2);
-        assert!(std::ptr::eq(
-            single_parameters[1],
-            single_projector.continuation()
-        ));
+        let GoPublicParameter::Value(continuation) = &single_parameters[1] else {
+            panic!("the continuation is one function-valued public argument")
+        };
+        assert_eq!(
+            continuation.source(),
+            single_projector.continuation().semantic().source()
+        );
         assert!(std::ptr::eq(
             single.result(),
             single_projector.selected_result()
@@ -2344,7 +2402,7 @@ mod prepared_tests {
                 .name,
             "A"
         );
-        assert_eq!(packed.public_parameters().len(), 2);
+        assert_eq!(packed.public_parameters().unwrap().len(), 2);
 
         let mut packed_payload_function = packed_projector.continuation().clone();
         for expected in ["Hidden", "Secret"] {
@@ -2411,7 +2469,7 @@ mod prepared_tests {
             })
             .collect::<Vec<_>>();
         assert_eq!(type_head_names, ["A", "Hidden", "Secret"]);
-        assert_eq!(constructor.public_parameters().len(), 3);
+        assert_eq!(constructor.public_parameters().unwrap().len(), 1);
     }
 
     #[test]
@@ -2756,6 +2814,37 @@ mod tests {
                 .map(|index| SemanticKey::Positional { index })
                 .collect(),
         )
+    }
+
+    #[test]
+    fn host_carrier_views_are_readable_without_changing_private_identity() {
+        let named = |module: &[&str], name| {
+            GoHostTypeCarrier::new(&qualified(module, name), 1, GoDeclarationProvenance::Live)
+                .expect("host carrier")
+        };
+        let carrier = named(&["api"], "Box");
+        assert_eq!(carrier.public_type().as_str(), "KioHostType_api__Box");
+        assert_eq!(
+            carrier.native_constructor().as_str(),
+            "UnsafeKioHostType_api__BoxFromNative"
+        );
+        assert_eq!(
+            carrier.identity_field.as_str(),
+            "kioHostTypeMarker_V1_M1_C3_apiN3_Box"
+        );
+        let paths = [
+            named(&["a", "b"], "Box"),
+            named(&["a_b"], "Box"),
+            named(&["a_", "b"], "Box"),
+            named(&["a", "_b"], "Box"),
+            named(&["a", "b"], "_Box"),
+        ];
+        let names = paths
+            .iter()
+            .map(|carrier| carrier.public_type().as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(names.len(), paths.len());
+        assert_eq!(carrier.public_type(), named(&["api"], "Box").public_type());
     }
 
     #[test]
@@ -3104,11 +3193,18 @@ impl<'source> GoCallableTypeHeadStage<'source> {
 /// Contextual facade slots for one declaration-owned value head.
 pub(crate) struct GoCallableValueHeadStage<'site, 'source> {
     slots: Vec<GoFacadeUseRef<'site, 'source>>,
+    layout: &'source CallableValueStageLayout,
 }
 
 impl<'site, 'source> GoCallableValueHeadStage<'site, 'source> {
     pub(crate) fn slots(&self) -> &[GoFacadeUseRef<'site, 'source>] {
         &self.slots
+    }
+
+    pub(crate) fn public_parameters(
+        &self,
+    ) -> Result<Vec<GoPublicParameter<'site, 'source>>, GoFacadeError> {
+        public_parameters(&self.slots, self.layout)
     }
 }
 
@@ -3135,27 +3231,29 @@ impl<'site, 'source> GoLiveNewtypeMemberEntry<'site, 'source> {
         }
     }
 
-    /// Exact flattened public value parameters for the member method.
+    /// Exact source-grouped public value parameters for the member method.
     ///
     /// Declaration type heads remain execution-only nullary stages. An
     /// existential projector appends its validated continuation cursor to
     /// the declaration-owned receiver slots, making the public method the
     /// established `(receiver, continuation) -> R` shape rather than a
     /// method returning the intermediate CPS function.
-    pub(crate) fn public_parameters(&self) -> Vec<&GoLiveFacadeUseRef<'site, 'source>> {
+    pub(crate) fn public_parameters(
+        &self,
+    ) -> Result<Vec<GoPublicParameter<'site, 'source>>, GoFacadeError> {
         let mut parameters = self
             .entry()
             .stages()
             .iter()
             .find_map(GoLiveHeadStage::value_stage)
             .expect("a validated newtype member owns one value head")
-            .slots()
-            .iter()
-            .collect::<Vec<_>>();
+            .public_parameters()?;
         if let Self::ExistentialProjector(member) = self {
-            parameters.push(member.continuation());
+            parameters.push(GoPublicParameter::Value(
+                member.continuation().semantic().clone(),
+            ));
         }
-        parameters
+        Ok(parameters)
     }
 
     /// Exact public result cursor after member-specific flattening.
@@ -3677,6 +3775,21 @@ pub(crate) struct GoLiveValueHeadStage<'site, 'source> {
 impl<'site, 'source> GoLiveValueHeadStage<'site, 'source> {
     pub(crate) fn slots(&self) -> &[GoLiveFacadeUseRef<'site, 'source>] {
         &self.slots
+    }
+
+    pub(crate) fn public_parameter_count(&self) -> usize {
+        self.layout.public_parameter_count()
+    }
+
+    pub(crate) fn public_parameters(
+        &self,
+    ) -> Result<Vec<GoPublicParameter<'site, 'source>>, GoFacadeError> {
+        let slots = self
+            .slots
+            .iter()
+            .map(|slot| slot.semantic().clone())
+            .collect::<Vec<_>>();
+        public_parameters(&slots, self.layout)
     }
 
     pub(crate) fn source_groups(
@@ -4671,6 +4784,59 @@ pub(crate) struct GoProductUse<'site, 'source> {
     fields: Vec<GoProductFieldUse<'site, 'source>>,
 }
 
+/// Native parameter presentation without package execution authority.
+pub(crate) enum GoPublicParameter<'site, 'source> {
+    Value(GoFacadeUseRef<'site, 'source>),
+    Product(GoProductUse<'site, 'source>),
+}
+
+impl GoPublicParameter<'_, '_> {
+    pub(crate) fn boundary_type(&self) -> Result<GoType, GoFacadeError> {
+        match self {
+            Self::Value(value) => value.boundary_type(),
+            Self::Product(product) => Ok(product.boundary_type().clone()),
+        }
+    }
+}
+
+fn public_parameters<'site, 'source>(
+    slots: &[GoFacadeUseRef<'site, 'source>],
+    layout: &CallableValueStageLayout,
+) -> Result<Vec<GoPublicParameter<'site, 'source>>, GoFacadeError> {
+    let mut parameters = Vec::with_capacity(layout.source_param_count());
+    for source in layout.source_params() {
+        let values = &slots[source.facade_slots()];
+        match source.adapter() {
+            CallableSourceParamAdapter::UnitValue => {}
+            CallableSourceParamAdapter::Identity => {
+                parameters.push(GoPublicParameter::Value(values[0].clone()));
+            }
+            CallableSourceParamAdapter::RightNest => {
+                let shell = GoFacadeShell::new(
+                    source
+                        .product_shell()
+                        .expect("a grouped product parameter has its exact shell"),
+                )?;
+                let types = values
+                    .iter()
+                    .map(GoFacadeUseRef::boundary_type)
+                    .collect::<Result<Vec<_>, _>>()?;
+                parameters.push(GoPublicParameter::Product(GoProductUse {
+                    boundary_type: shell.application(&types)?,
+                    fields: shell
+                        .fields()
+                        .iter()
+                        .cloned()
+                        .zip(values.iter().cloned())
+                        .map(|(name, payload)| GoProductFieldUse { name, payload })
+                        .collect(),
+                }));
+            }
+        }
+    }
+    Ok(parameters)
+}
+
 impl<'site, 'source> GoProductUse<'site, 'source> {
     pub(crate) fn boundary_type(&self) -> &GoType {
         &self.boundary_type
@@ -4877,6 +5043,7 @@ pub(crate) struct GoFunctionUse<'site, 'source> {
     boundary_type: GoType,
     slots: Vec<GoFacadeUseRef<'site, 'source>>,
     result: GoFacadeUseRef<'site, 'source>,
+    layout: &'source CallableValueStageLayout,
 }
 
 impl<'site, 'source> GoFunctionUse<'site, 'source> {
@@ -4890,6 +5057,12 @@ impl<'site, 'source> GoFunctionUse<'site, 'source> {
 
     pub(crate) fn slots(&self) -> &[GoFacadeUseRef<'site, 'source>] {
         &self.slots
+    }
+
+    pub(crate) fn public_parameters(
+        &self,
+    ) -> Result<Vec<GoPublicParameter<'site, 'source>>, GoFacadeError> {
+        public_parameters(&self.slots, self.layout)
     }
 
     pub(crate) fn result(&self) -> &GoFacadeUseRef<'site, 'source> {
@@ -5041,6 +5214,10 @@ impl<'a> GoFacadeSite<'a> {
             }
             FacadeUse::Function { slots, result, .. } => {
                 let boundary_type = self.complete_type(traversal)?.ty;
+                let BoundaryFacadeExecutionUse::Function(layout) = self.presentation_use(&source)
+                else {
+                    unreachable!("a prepared function has its source-parameter presentation")
+                };
                 let slots = slots
                     .iter()
                     .map(|use_id| {
@@ -5059,6 +5236,7 @@ impl<'a> GoFacadeSite<'a> {
                     boundary_type,
                     slots,
                     result,
+                    layout,
                 }))
             }
             FacadeUse::Forall { binder, result, .. } => {

@@ -1,0 +1,13 @@
+package carrier_privacy;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/"
+  }
+}
+
+bridge {
+  api
+}

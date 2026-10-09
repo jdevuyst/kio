@@ -1,0 +1,21 @@
+module api;
+
+host type Box[T];
+
+host type Text role(str);
+
+host type Number role(i32);
+
+host type Flag role(bool);
+
+host fn unbox[T](boxed: Box(T)) -> T;
+
+pub fn read_product(boxed: Box(Number & Flag)) -> Number & Flag { unbox(boxed) }
+
+pub fn product[A][T](boxed: Box(A & T)) -> Box(A & T) { boxed }
+
+pub fn sum[A][T](boxed: Box(A | T)) -> Box(A | T) { boxed }
+
+pub fn direct_product(boxed: Box(Text & Number & Flag)) -> Box(Text & Number & Flag) { boxed }
+
+pub fn direct_sum(boxed: Box(Text | Number | Flag)) -> Box(Text | Number | Flag) { boxed }

@@ -1,0 +1,95 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi as api;
+import testapi/arith as boxes;
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+labels { first: api.I32, second: api.I32, last: api.String };
+
+type Choice = First | Second | Last;
+
+fn keep[T](value: api.Box(T)) -> api.Box(T) { value }
+
+fn relay[*F][A][T](value: F(A & T)) -> F(A & T) { value }
+
+fn product_tail[A][T](value: api.Box(A & T)) -> T {
+  let .(_head, tail) = boxes.box_get(value);
+  tail
+}
+
+fn product_box[A][T](head: A, tail: T) -> api.Box(A & T) { boxes.box_make((head, tail)) }
+
+fn sum_tail[A][T](value: api.Box(A | T), fallback: T) -> T {
+  match! boxes.box_get(value) {
+    (.(_head: A) { fallback }, .(tail: T) { tail })
+  }
+}
+
+fn sum_box[A][T](tail: T) -> api.Box(A | T) { boxes.box_make(widen_sum!(tail, A | T)) }
+
+fn print_number(value: api.I32) { io.print(fmt.i32_to_string(value)) }
+
+fn print_pair(value: api.I32 & api.String) {
+  let .(number, text) = value;
+  print_number(number);
+  io.print(":");
+  io.print(text);
+  io.print("\n")
+}
+
+fn print_product(value: api.I32 & api.I32 & api.String) {
+  let .(head, number, text) = value;
+  print_number(head);
+  io.print(":");
+  print_pair((number, text))
+}
+
+fn print_choice(value: Choice) {
+  match! value {
+    (
+      , .(first: First) { io.print("first:"); print_number(first.>First.get); io.print("\n") }
+      , .(second: Second) { io.print("second:"); print_number(second.>Second.get); io.print("\n") }
+      , .(last: Last) { io.print("last:"); io.print(last.>Last.get); io.print("\n") }
+      )
+  }
+}
+
+pub fn main() {
+  print_product(boxes.box_get(keep(boxes.box_make((11, 22, "whole")))));
+  print_pair(product_tail(
+    , api.I32
+    , api.I32 & api.String
+    , relay(api.Box, api.I32, api.I32 & api.String, boxes.box_make((11, 22, "tail")))
+    ));
+  print_product(boxes.box_get(product_box(api.I32, api.I32 & api.String, 11, (33, "back"))));
+  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum!({first = 11}, Choice)))));
+  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum!({second = 22}, Choice)))));
+  print_choice(boxes.box_get(keep(boxes.box_make(widen_sum!({last = "whole"}, Choice)))));
+  let fallback = widen_sum!({second = 99}, Second | Last);
+  print_choice(widen_sum!(
+    , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({first = 11}, Choice)), fallback)
+    , Choice
+    ));
+  print_choice(widen_sum!(
+    , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({second = 22}, Choice)), fallback)
+    , Choice
+    ));
+  print_choice(widen_sum!(
+    , sum_tail(First, Second | Last, boxes.box_make(widen_sum!({last = "tail"}, Choice)), fallback)
+    , Choice
+    ));
+  print_choice(boxes.box_get(sum_box(First, Second | Last, widen_sum!({second = 33}, Second | Last))));
+  print_choice(boxes.box_get(sum_box(
+    , First
+    , Second | Last
+    , widen_sum!({last = "back"}, Second | Last)
+    )));
+  io.print(boxes.box_get(boxes.box_get(keep(boxes.box_make(boxes.box_make("nested"))))));
+  io.print("\n");
+  let nominal = product_tail(api.I32, Last, boxes.box_make((11, {last = "nominal"})));
+  io.print(nominal.>Last.get);
+  io.print("\n")
+}

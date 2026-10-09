@@ -392,10 +392,10 @@ pub fn empty[A]() -> List(A) { nil(A) }
 pub fn prepend[A](head: A, tail: List(A)) -> List(A) { cons(head, tail) }
 
 /// Indexes into a list in receiver-first order.
-pub fn index[A](xs: List(A), i: I32) -> A | . { at(A, i, xs) }
+pub fn index[A](xs: List(A), i: I32) -> A | . { at(i, xs) }
 
 /// Maps over a list in receiver-first order.
-pub fn map_with[A][B](xs: List(A), f: A -> B) -> List(B) { map(A, B, f, xs) }
+pub fn map_with[A][B](xs: List(A), f: A -> B) -> List(B) { map(f, xs) }
 
 /// Prepends an element to a list.
 pub op _ +: __ { impl prepend }

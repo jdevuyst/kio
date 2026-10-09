@@ -1,0 +1,20 @@
+module testapi/main;
+
+import library/core as lib;
+import library/core(Box);
+import testapi(String);
+import testapi/io as io;
+
+type Text = String;
+
+fn selected(value: Box(Text)) -> Text { Box.read(Text, value) }
+
+fn qualified(value: lib.Box(Text)) -> Text { lib.Box.read(Text, value) }
+
+fn relay[A](value: Box(A)) -> A { Box.read(A, value) }
+
+pub fn main() {
+  io.print(selected(Box.make(Text, "selected\n"(Text))));
+  io.print(qualified(lib.Box.make(Text, "qualified\n"(Text))));
+  io.print(relay(Text, Box.make(Text, "generic\n"(Text))))
+}

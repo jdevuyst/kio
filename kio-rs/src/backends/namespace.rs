@@ -262,23 +262,10 @@ const GO_KEYWORDS: &[&str] = &[
 /// keywords.
 const GO_UNIMPORTABLE: &[&str] = &["internal", "main"];
 
-/// Branded handle names colliding with the Go backend's fixed package types.
-///
-/// `Unit` is runtime support. `Product` and `Sum` are the canonical anonymous
-/// binary facade shells, and `KioSum` is the shared concrete sum carrier. A
-/// package must reserve all four even when its current boundary does not use a
-/// structural shell: adding an unrelated declaration later must not introduce
-/// a handle/type collision. The default derivation mangles these names;
-/// explicit values reject them.
-const GO_SUPPORT_BRANDS: &[&str] = &["KioSum", "Product", "Sum", "Unit"];
-
-/// Default Go package clauses retain source spelling unless a fixed host or
-/// support identity requires the disjoint default-escape class.
+/// Default Go package clauses retain source spelling unless Go rejects the
+/// name as an import qualifier. Public roles are scoped by that qualifier.
 pub fn default_go_namespace(pkg_name: &str) -> String {
-    if GO_KEYWORDS.contains(&pkg_name)
-        || GO_UNIMPORTABLE.contains(&pkg_name)
-        || GO_SUPPORT_BRANDS.contains(&source_brand(pkg_name, false).as_str())
-    {
+    if GO_KEYWORDS.contains(&pkg_name) || GO_UNIMPORTABLE.contains(&pkg_name) {
         escaped_default_namespace(pkg_name)
     } else {
         pkg_name.to_owned()
@@ -287,8 +274,7 @@ pub fn default_go_namespace(pkg_name: &str) -> String {
 
 /// Validate an explicit Go `namespace` value: a Go package name host
 /// code spells as the import qualifier. Accepts `[a-z_][a-z0-9_]*`
-/// (lower-case, per Go convention, keeping the derived handle names' case
-/// split deterministic), with no keyword, import, or fixed-brand collision.
+/// (lower-case, per Go convention), with no keyword or import collision.
 pub fn validate_go_namespace(value: &str) -> Result<(), String> {
     let mut chars = value.chars();
     let first_ok = chars
@@ -313,18 +299,10 @@ pub fn validate_go_namespace(value: &str) -> Result<(), String> {
              a Go host cannot import a package named `{value}`"
         ));
     }
-    let brand = pascal_case(value);
-    if value.trim_matches('_').is_empty() {
+    if value == "_" {
         return Err(format!(
             "invalid `namespace` value `{value}` for the `go` backend: \
-             no branded facade name can be derived from it"
-        ));
-    }
-    if GO_SUPPORT_BRANDS.contains(&brand.as_str()) {
-        return Err(format!(
-            "invalid `namespace` value `{value}` for the `go` backend: \
-             its handle `{brand}` collides with the compiler-generated package \
-             type `{brand}`"
+             the blank identifier cannot qualify a package"
         ));
     }
     Ok(())
@@ -387,7 +365,16 @@ pub(crate) fn is_python_keyword(name: &str) -> bool {
     PYTHON_KEYWORDS.contains(&name)
 }
 
-/// Python module stems retain source spelling; hard keywords use the exact
+pub(crate) const PYTHON_STATIC_NAMESPACE: &str = "kio_static_v1";
+
+fn is_python_static_namespace(name: &str) -> bool {
+    name.strip_prefix("kio_static_v").is_some_and(|version| {
+        !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
+/// Python module stems retain source spelling; hard keywords and the static
+/// support namespace use the exact
 /// default-escape class so the emitted module remains importable.
 ///
 /// A stem that shadows a standard-library module (a package named `json`,
@@ -399,7 +386,7 @@ pub(crate) fn is_python_keyword(name: &str) -> bool {
 /// name for a case the host already governs; `specs/backends/python.md`
 /// § Output layout documents the resolution as the host's responsibility.
 pub fn default_python_namespace(pkg_name: &str) -> String {
-    if PYTHON_KEYWORDS.contains(&pkg_name) {
+    if PYTHON_KEYWORDS.contains(&pkg_name) || is_python_static_namespace(pkg_name) {
         escaped_default_namespace(pkg_name)
     } else {
         pkg_name.to_owned()
@@ -407,7 +394,7 @@ pub fn default_python_namespace(pkg_name: &str) -> String {
 }
 
 /// Explicit Python module stems use the host's ASCII identifier grammar and
-/// exclude hard keywords. The public factory component uses `value_brand`.
+/// exclude hard keywords and static support. The public factory component uses `value_brand`.
 pub fn validate_python_namespace(value: &str) -> Result<(), String> {
     let mut chars = value.chars();
     let first_ok = chars
@@ -424,6 +411,12 @@ pub fn validate_python_namespace(value: &str) -> Result<(), String> {
         return Err(format!(
             "invalid `namespace` value `{value}` for the `python` backend: \
              `{value}` is a Python keyword, so host code could not `import` the module"
+        ));
+    }
+    if is_python_static_namespace(value) {
+        return Err(format!(
+            "invalid `namespace` value `{value}` for the `python` backend: \
+             this name belongs to generated immutable type definitions"
         ));
     }
     Ok(())
@@ -923,6 +916,22 @@ mod tests {
     fn python_default_mangles_keyword_collisions() {
         assert_eq!(default_python_namespace("import"), "__kio_pkg_import");
         assert_eq!(default_python_namespace("class"), "__kio_pkg_class");
+        assert_eq!(
+            default_python_namespace("kio_static_v1"),
+            "__kio_pkg_kio_ustatic_uv1"
+        );
+        assert_eq!(
+            default_python_namespace("kio_static_v2"),
+            "__kio_pkg_kio_ustatic_uv2"
+        );
+        assert_eq!(
+            default_python_namespace("kio_static_v02"),
+            "__kio_pkg_kio_ustatic_uv02"
+        );
+        for name in ["kio_static_v", "kio_static_vx", "kio_static_v2_extra"] {
+            assert_eq!(default_python_namespace(name), name);
+            assert!(validate_python_namespace(name).is_ok());
+        }
     }
 
     #[test]
@@ -943,6 +952,9 @@ mod tests {
         assert!(validate_python_namespace("a.b").is_err());
         assert!(validate_python_namespace("import").is_err());
         assert!(validate_python_namespace("None").is_err());
+        assert!(validate_python_namespace("kio_static_v1").is_err());
+        assert!(validate_python_namespace("kio_static_v2").is_err());
+        assert!(validate_python_namespace("kio_static_v02").is_err());
     }
 
     #[test]
@@ -1093,20 +1105,16 @@ mod tests {
     }
 
     #[test]
-    fn go_default_mangles_support_brand_collisions() {
-        assert_eq!(default_go_namespace("unit"), "__kio_pkg_unit");
-        assert_eq!(default_go_namespace("product"), "__kio_pkg_product");
-        assert_eq!(default_go_namespace("sum"), "__kio_pkg_sum");
-        assert_eq!(default_go_namespace("kio_sum"), "__kio_pkg_kio_usum");
+    fn go_qualifiers_are_independent_of_package_scope_roles() {
+        for name in ["unit", "product", "sum", "kio_sum", "host", "new", "____"] {
+            assert_eq!(default_go_namespace(name), name);
+            assert!(validate_go_namespace(name).is_ok());
+        }
     }
 
     #[test]
-    fn go_explicit_value_rejects_support_brands_and_empty_brand() {
-        assert!(validate_go_namespace("unit").is_err());
-        assert!(validate_go_namespace("product").is_err());
-        assert!(validate_go_namespace("sum").is_err());
-        assert!(validate_go_namespace("kio_sum").is_err());
-        assert!(validate_go_namespace("____").is_err());
+    fn go_explicit_value_rejects_blank_qualifier() {
+        assert!(validate_go_namespace("_").is_err());
         assert!(validate_go_namespace("united").is_ok());
         assert!(validate_go_namespace("product_row").is_ok());
         assert!(validate_go_namespace("sum_k0_case").is_ok());

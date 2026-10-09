@@ -779,7 +779,7 @@ fn haskell_method(
         HostFnBodyKind::CallStep { i32, string, bool_ } => method(
             vec![
                 format!(
-                    "({} -> {} -> {} -> m {})",
+                    "(({}, ({}, {})) -> m {})",
                     role(i32),
                     role(string),
                     role(bool_),
@@ -1440,7 +1440,7 @@ fn render_main_call(contract: protocol::ProtocolContract, target_namespace: &str
 /// items through their typed `export__…` wrappers and
 /// prints the results, matching the golden's `expected.stdout`. A compound
 /// arg / result is built / destructured through the emitter's stable
-/// `ExpP_H…` product pattern synonym or `ExpS_H…` sum arm synonym, keeping
+/// `Export_…` product pattern synonym or its `_CaseN_…` sum arm, keeping
 /// the driver independent of the nested pair / `Either` representation.
 /// Mirrors the Go runner's `render_export_driver`. Returns
 /// `None` for a non-export protocol (the caller falls back to the `main`
@@ -1545,17 +1545,15 @@ fn render_export_driver(
                 &export_boundary("main", "make_pair", BoundaryRoot::Ret),
             ),
         ),
-        // `say(p: A & B) -> .` exported in `testapi/main`. Its source product
-        // is the declaration-head value domain, so the public facade exposes
-        // the two canonical positional slots directly.
+        // A written product parameter crosses as one Haskell pair.
         ExportDriver::MultilabelRoundtrip => {
             let echo_pair_ret = pkg_product_pattern(
                 target_namespace,
                 &export_boundary("testapi/main", "echo_pair", BoundaryRoot::Ret),
             );
             format!(
-                "  {say} pkg 42 (T.pack \"shown\\n\")\n\
-                 \x20 {echo_pair} pkg 88 (T.pack \"99\") >>= \\({echo_pair_ret} outA outB) -> do\n\
+                "  {say} pkg (42, T.pack \"shown\\n\")\n\
+                 \x20 {echo_pair} pkg (88, T.pack \"99\") >>= \\({echo_pair_ret} outA outB) -> do\n\
                  \x20   print outA\n\
                  \x20   TIO.putStrLn outB\n\
                  \x20 a <- {make_a} pkg 111\n\
@@ -1590,25 +1588,25 @@ fn render_export_driver(
       toInteger value = Data.IORef.modifyIORef' texts (++ [value]) >> pure (fromIntegral (T.length value) :: Data.Int.Int32)
       check actual expected = if actual == expected then pure () else fail "functor payload changed"
   dict <- {make} pkg >>= {echo} pkg
-  input1 <- {mk_box} pkg (42 :: Data.Int.Int32) ()
+  input1 <- {mk_box} pkg (42 :: Data.Int.Int32, ())
   first <- {apply} pkg dict toText input1
   {unbox_pattern} firstValue () <- {un_box} pkg first
   check firstValue (T.pack "v:42")
-  input2 <- {mk_box} pkg (T.pack "apple") ()
+  input2 <- {mk_box} pkg (T.pack "apple", ())
   second <- {apply} pkg dict toInteger input2
   {unbox_pattern} secondValue () <- {un_box} pkg second
   check secondValue 5
   mapping <- {fmap} pkg dict
   firstType <- mapping @Data.Int.Int32
   mapInteger <- firstType @T.Text
-  input3 <- {mk_box} pkg (7 :: Data.Int.Int32) ()
-  third <- mapInteger toText input3
+  input3 <- {mk_box} pkg (7 :: Data.Int.Int32, ())
+  third <- mapInteger (toText, input3)
   {unbox_pattern} thirdValue () <- {un_box} pkg third
   check thirdValue (T.pack "v:7")
   secondType <- mapping @T.Text
   mapText <- secondType @Data.Int.Int32
-  input4 <- {mk_box} pkg (T.pack "pear") ()
-  fourth <- mapText toInteger input4
+  input4 <- {mk_box} pkg (T.pack "pear", ())
+  fourth <- mapText (toInteger, input4)
   {unbox_pattern} fourthValue () <- {un_box} pkg fourth
   check fourthValue 4
   Data.IORef.readIORef integers >>= flip check [42, 7]
@@ -1642,8 +1640,8 @@ fn render_export_driver(
                 "  let check :: Eq a => a -> a -> IO (); check actual expected = if actual == expected then pure () else error \"callable slot payload changed\"\n\
                  \x20 productCalls <- Data.IORef.newIORef (0 :: Int)\n\
                  \x20 let productStep value = Data.IORef.modifyIORef' productCalls (+ 1) >> pure (value + 5)\n\
-                 \x20 {apply_product} pkg productStep 11 >>= (\\value -> check value 16)\n\
-                 \x20 {echo_product_ret} echoedStep echoedSeed <- {echo_product} pkg productStep 17\n\
+                 \x20 {apply_product} pkg (productStep, 11) >>= (\\value -> check value 16)\n\
+                 \x20 {echo_product_ret} echoedStep echoedSeed <- {echo_product} pkg (productStep, 17)\n\
                  \x20 check echoedSeed 17\n\
                  \x20 echoedStep echoedSeed >>= (\\value -> check value 22)\n\
                  \x20 {make_product_ret} madeStep madeSeed <- {make_product} pkg 23\n\
@@ -1722,8 +1720,7 @@ fn render_export_driver(
         ),
         // `pair_swap((I32, String)) -> (String & I32)` and
         // `dispatch_left(I32 | String) -> String`, exported in `testapi/main`.
-        // Product declaration-head domains expose their positional slots
-        // directly; product returns still read through `_P` synonyms. The sum
+        // Product parameters use one tuple; returns read through `_P` synonyms. The sum
         // param is built through the arm synonyms (`arg0_0` = I32, `arg0_1` =
         // String).
         ExportDriver::StructuralRoundtrip => {
@@ -1824,7 +1821,7 @@ fn render_export_driver(
                  \x20   putStrLn (show tag ++ \" \" ++ payload)) [{samples}]\n"
             );
             let script = format!(
-                "  {pair_swap} pkg 42 (T.pack \"hello\") >>= \\({pair_ret} s i) -> putStrLn (T.unpack s ++ \" \" ++ show i)\n  {dispatch} pkg ({dispatch_0} 7) >>= TIO.putStrLn\n  {dispatch} pkg ({dispatch_1} (T.pack \"from-sum\")) >>= TIO.putStrLn\n  {rotate} pkg 1 2 3 4 5 6 7 8 9 10 11 12 >>= \\({rotate_ret} a b _ _ _ _ _ _ _ _ _ l) -> putStrLn (show a ++ \" \" ++ show b ++ \" \" ++ show l)\n  {classify} pkg ({classify_0} 1) >>= (putStrLn . show)\n  {classify} pkg ({classify_4} 5) >>= (putStrLn . show)\n  {classify} pkg ({classify_9} (T.pack \"ten\")) >>= (putStrLn . show)\n  {choose_first} pkg >>= {classify} pkg >>= (putStrLn . show)\n  {choose_middle} pkg >>= {classify} pkg >>= (putStrLn . show)\n  {choose_last} pkg >>= {classify} pkg >>= (putStrLn . show)\n",
+                "  {pair_swap} pkg (42, T.pack \"hello\") >>= \\({pair_ret} s i) -> putStrLn (T.unpack s ++ \" \" ++ show i)\n  {dispatch} pkg ({dispatch_0} 7) >>= TIO.putStrLn\n  {dispatch} pkg ({dispatch_1} (T.pack \"from-sum\")) >>= TIO.putStrLn\n  {rotate} pkg (1, (2, (3, (4, (5, (6, (7, (8, (9, (10, (11, 12))))))))))) >>= \\({rotate_ret} a b _ _ _ _ _ _ _ _ _ l) -> putStrLn (show a ++ \" \" ++ show b ++ \" \" ++ show l)\n  {classify} pkg ({classify_0} 1) >>= (putStrLn . show)\n  {classify} pkg ({classify_4} 5) >>= (putStrLn . show)\n  {classify} pkg ({classify_9} (T.pack \"ten\")) >>= (putStrLn . show)\n  {choose_first} pkg >>= {classify} pkg >>= (putStrLn . show)\n  {choose_middle} pkg >>= {classify} pkg >>= (putStrLn . show)\n  {choose_last} pkg >>= {classify} pkg >>= (putStrLn . show)\n",
                 choose_first = pkg_export("testapi/main", "choose_first"),
                 choose_middle = pkg_export("testapi/main", "choose_middle"),
                 choose_last = pkg_export("testapi/main", "choose_last"),
@@ -1900,10 +1897,10 @@ fn render_export_driver(
              \x20 rightReboxed <- {make_shared_right} pkg rightPayload\n\
              \x20 KioRunnerSelectedI32 outRight <- {read_shared_right} pkg rightReboxed\n\
              \x20 print outRight\n\
-             \x20 constructorPair <- {make_constructor_pair} pkg (KioRunnerSelectedI32 81) (KioRunnerSelectedI32 82)\n\
+             \x20 constructorPair <- {make_constructor_pair} pkg (KioRunnerSelectedI32 81, KioRunnerSelectedI32 82)\n\
              \x20 {constructor_pair_ret} (KioRunnerSelectedI32 constructorPairLeft) (KioRunnerSelectedI32 constructorPairRight) <- {read_constructor_pair} pkg constructorPair\n\
              \x20 putStrLn (show constructorPairLeft ++ \" \" ++ show constructorPairRight)\n\
-             \x20 projectorPair <- {make_projector_pair} pkg (KioRunnerSelectedI32 constructorPairLeft) (KioRunnerSelectedI32 constructorPairRight)\n\
+             \x20 projectorPair <- {make_projector_pair} pkg (KioRunnerSelectedI32 constructorPairLeft, KioRunnerSelectedI32 constructorPairRight)\n\
              \x20 {projector_pair_ret} (KioRunnerSelectedI32 projectorPairLeft) (KioRunnerSelectedI32 projectorPairRight) <- {read_projector_pair} pkg projectorPair\n\
              \x20 putStrLn (show projectorPairLeft ++ \" \" ++ show projectorPairRight)\n\
              \x20 constructorGeneric <- {make_constructor_generic} pkg (KioRunnerSelectedI32 85)\n\
@@ -1912,9 +1909,9 @@ fn render_export_driver(
              \x20 projectorGeneric <- {make_projector_generic} pkg (KioRunnerSelectedI32 86)\n\
              \x20 KioRunnerSelectedI32 projectorGenericOut <- {read_projector_generic} pkg projectorGeneric\n\
              \x20 print projectorGenericOut\n\
-             \x20 packed <- {make_packed_function} pkg (\\(KioRunnerSelectedI32 l) (KioRunnerSelectedI32 r) -> pure (KioRunnerSelectedI32 (l + r)))\n\
+             \x20 packed <- {make_packed_function} pkg (\\(KioRunnerSelectedI32 l, KioRunnerSelectedI32 r) -> pure (KioRunnerSelectedI32 (l + r)))\n\
              \x20 unpacked <- {read_packed_function} pkg packed\n\
-             \x20 unpacked (KioRunnerSelectedI32 constructorPairLeft) (KioRunnerSelectedI32 constructorPairRight) >>= \\(KioRunnerSelectedI32 packedOut) -> print packedOut\n\
+             \x20 unpacked (KioRunnerSelectedI32 constructorPairLeft, KioRunnerSelectedI32 constructorPairRight) >>= \\(KioRunnerSelectedI32 packedOut) -> print packedOut\n\
              \x20 existential <- {make_existential_unit} pkg\n\
              \x20 {read_existential_unit} pkg existential (pure (\\_ -> pure (89 :: Int))) >>= print\n\
              \x20 existentialEmpty <- {make_existential_empty} pkg\n\
@@ -1931,7 +1928,7 @@ fn render_export_driver(
              \x20 recursiveProjectorOut <- {read_recursive_projector} pkg recursiveProjector\n\
              \x20 {recursive_projector_payload_is_base} pkg recursiveProjectorOut >>= \\(KioRunnerSelectedI32 n) -> print n\n\
              \x20 inputs <- Data.IORef.newIORef ([] :: [Data.Int.Int32])\n\
-             \x20 constructed <- {make_constructor_spread} pkg (pure (\\(KioRunnerSelectedI32 seed) _ -> Data.IORef.modifyIORef' inputs (++ [seed]) >> pure (KioRunnerSelectedI32 (seed + 3))))\n\
+             \x20 constructed <- {make_constructor_spread} pkg (pure (\\(KioRunnerSelectedI32 seed, _) -> Data.IORef.modifyIORef' inputs (++ [seed]) >> pure (KioRunnerSelectedI32 (seed + 3))))\n\
              \x20 KioRunnerSelectedI32 constructedI32 <- {invoke_constructor_i32} pkg constructed (KioRunnerSelectedI32 101)\n\
              \x20 KioRunnerSelectedI32 constructedUnit <- {invoke_constructor_unit} pkg constructed (KioRunnerSelectedI32 102)\n\
              \x20 constructorInputs <- Data.IORef.readIORef inputs\n\
@@ -1940,8 +1937,8 @@ fn render_export_driver(
              \x20 projected <- {read_projector_spread} pkg projectorValue\n\
              \x20 projectedI32 <- projected @KioRunnerSelectedI32\n\
              \x20 projectedUnit <- projected @()\n\
-             \x20 KioRunnerSelectedI32 outputI32 <- projectedI32 (KioRunnerSelectedI32 111) (KioRunnerSelectedI32 1)\n\
-             \x20 KioRunnerSelectedI32 outputUnit <- projectedUnit (KioRunnerSelectedI32 112) ()\n\
+             \x20 KioRunnerSelectedI32 outputI32 <- projectedI32 (KioRunnerSelectedI32 111, KioRunnerSelectedI32 1)\n\
+             \x20 KioRunnerSelectedI32 outputUnit <- projectedUnit (KioRunnerSelectedI32 112, ())\n\
              \x20 if outputI32 == 111 && outputUnit == 112 then pure () else fail \"projector callback changed\"\n\
              \x20 spreadOpens <- Data.IORef.newIORef (0 :: Int)\n\
              \x20 recursiveOpens <- Data.IORef.newIORef (0 :: Int)\n\
@@ -2235,7 +2232,7 @@ fn render_export_driver(
              \x20\x20{keep} pkg (66 :: Data.Int.Int32) >>= print\n\
              \x20\x20firstBox <- {wrap} pkg (77 :: Data.Int.Int32)\n\
              \x20\x20secondBox <- {other_wrap} pkg (88 :: Data.Int.Int32)\n\
-             \x20\x20{keep_pair} pkg firstBox secondBox >>= \\({pair_ret} firstWord secondWord) -> do\n\
+             \x20\x20{keep_pair} pkg (firstBox, secondBox) >>= \\({pair_ret} firstWord secondWord) -> do\n\
              \x20\x20\x20\x20{unwrap} pkg firstWord >>= print\n\
              \x20\x20\x20\x20{other_unwrap} pkg secondWord >>= print\n",
             plain = pkg_export("word_api", "read_word"),
@@ -2264,8 +2261,8 @@ fn render_export_driver(
                 &export_boundary("testapi/b", "make", BoundaryRoot::Ret),
             );
             format!(
-                "  _ <- {make_a} pkg >>= \\({a_ret} a0 a1) -> {consume_a} pkg a0 a1\n\
-                 \x20\x20_ <- {make_b} pkg >>= \\({b_ret} b0 b1 b2) -> {consume_b} pkg b0 b1 b2\n\
+                "  _ <- {make_a} pkg >>= \\({a_ret} a0 a1) -> {consume_a} pkg (a0, a1)\n\
+                 \x20\x20_ <- {make_b} pkg >>= \\({b_ret} b0 b1 b2) -> {consume_b} pkg (b0, (b1, b2))\n\
                  \x20\x20pure ()\n",
                 make_a = pkg_export("testapi/a", "make"),
                 consume_a = pkg_export("testapi/a", "consume"),
@@ -2278,6 +2275,11 @@ fn render_export_driver(
                 .map(|index| index.to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
+            let callback_argument = (0..WIDE_CALLABLE_SLOT_COUNT - 1)
+                .rev()
+                .fold((WIDE_CALLABLE_SLOT_COUNT - 1).to_string(), |tail, head| {
+                    format!("({head}, {tail})")
+                });
             let ret = pkg_product_pattern(
                 target_namespace,
                 &export_boundary("testapi/main", "select", BoundaryRoot::Ret),
@@ -2288,7 +2290,7 @@ fn render_export_driver(
                     .nested(BoundaryStep::CallbackRet),
             );
             format!(
-                "  {select} pkg {arguments} >>= \\({ret} first middle last) -> do\n    print first\n    print middle\n    print last\n    callback <- {make_select} pkg\n    callback {arguments} >>= \\({callback_ret} callbackFirst callbackMiddle callbackLast) -> do\n      print callbackFirst\n      print callbackMiddle\n      print callbackLast\n",
+                "  {select} pkg {arguments} >>= \\({ret} first middle last) -> do\n    print first\n    print middle\n    print last\n    callback <- {make_select} pkg\n    callback {callback_argument} >>= \\({callback_ret} callbackFirst callbackMiddle callbackLast) -> do\n      print callbackFirst\n      print callbackMiddle\n      print callbackLast\n",
                 select = pkg_export("testapi/main", "select"),
                 make_select = pkg_export("testapi/main", "make_select"),
             )
@@ -2304,10 +2306,10 @@ fn render_export_driver(
             )
         }
         // `mk_pair` constructs the exported `Pair` newtype's nominal carrier
-        // from its two canonical declaration-head slots; `un_pair` projects
+        // from one tuple parameter; `un_pair` projects
         // the product return through its boundary pattern.
         ExportDriver::TypeRoundtrip => format!(
-            "  boxed <- {} pkg (T.pack \"export-type-left\") (T.pack \"export-type-right\")\n  {} pkg boxed >>= \\({} l r) -> do\n    TIO.putStrLn l\n    TIO.putStrLn r\n",
+            "  boxed <- {} pkg (T.pack \"export-type-left\", T.pack \"export-type-right\")\n  {} pkg boxed >>= \\({} l r) -> do\n    TIO.putStrLn l\n    TIO.putStrLn r\n",
             pkg_newtype_export("testapi/types", "Pair", "mk_pair"),
             pkg_newtype_export("testapi/types", "Pair", "un_pair"),
             pkg_product_pattern(
@@ -2409,8 +2411,8 @@ fn canonical_kind(body: HostFnBodyKind) -> CanonicalKind {
 /// `apply_poly`, `make_step`, `make_pair`, `call_step`, `sum_to_string`)
 /// before the canonical-kind dispatch. The bespoke bodies key on the
 /// binding's structured body and mirror the Go runner's semantics, building /
-/// destructuring shaped values through the emitted `EnvP_H…` (product) /
-/// `EnvS_H…` (sum arm) boundary patterns. Exact host types use the ordinary
+/// destructuring shaped values through the emitted `Host_…` product and
+/// `_CaseN_…` sum arm boundary patterns. Exact host types use the ordinary
 /// fixture types selected by
 /// `KioRunnerHostTypes`.
 fn render_haskell_body_for_binding(
@@ -2447,7 +2449,7 @@ fn render_haskell_body_for_binding(
         HostFnBodyKind::RoundPolyUnitSlot => "\\arg0 -> pure arg0".to_owned(),
         HostFnBodyKind::ObservePacked { .. } => {
             let read = pkg_newtype_export("testapi/types", "Packed", "read_packed");
-            format!("\\arg0 -> do {{ Data.IORef.modifyIORef' existentialCounts (\\(observations, openings) -> (observations + 1, openings)); {read} pkg arg0 (pure (\\seed step -> do {{ Data.IORef.modifyIORef' existentialCounts (\\(observations, openings) -> (observations, openings + 1)); step seed }})) }}")
+            format!("\\arg0 -> do {{ Data.IORef.modifyIORef' existentialCounts (\\(observations, openings) -> (observations + 1, openings)); {read} pkg arg0 (pure (\\(seed, step) -> do {{ Data.IORef.modifyIORef' existentialCounts (\\(observations, openings) -> (observations, openings + 1)); step seed }})) }}")
         }
         HostFnBodyKind::StagedSecond { .. } => "\\_arg0 arg1 -> pure arg1".to_owned(),
         HostFnBodyKind::NestedCurriedRoundtrip { .. } => {
@@ -2503,10 +2505,9 @@ fn render_haskell_body_for_binding(
                 "\\arg0 -> pure (case arg0 of {{ {arm0} n -> T.pack (show n); {arm1} s -> s }})"
             )
         }
-        // `call_step(step, seed) -> I32`: the callback's source product is its
-        // public value domain, so apply its three canonical slots directly.
+        // `call_step(step, seed) -> I32`: the callback takes one nested tuple.
         HostFnBodyKind::CallStep { .. } => {
-            "\\arg0 arg1 -> arg0 arg1 (T.pack \"compound-callback\") True".to_owned()
+            "\\arg0 arg1 -> arg0 (arg1, (T.pack \"compound-callback\", True))".to_owned()
         }
         // `make_pair(build, seed) -> I32`: apply the callback (returns `(I32 &
         // String)` through its `_cbret_P` synonym) and take the first field.
@@ -2997,7 +2998,7 @@ mod tests {
     }
 
     #[test]
-    fn module_alias_driver_matches_exact_products_before_flattened_calls() {
+    fn module_alias_driver_matches_exact_products_before_grouped_calls() {
         let contract = RunnerProtocol::ModuleAliasScopeCollision.contract();
         let driver = render_export_driver(
             ExportDriver::ModuleAliasScopeCollision,
@@ -3019,8 +3020,8 @@ mod tests {
             driver.contains(&format!("\\({b_ret} b0 b1 b2)")),
             "{driver}"
         );
-        assert!(driver.contains("pkg a0 a1"), "{driver}");
-        assert!(driver.contains("pkg b0 b1 b2"), "{driver}");
+        assert!(driver.contains("pkg (a0, a1)"), "{driver}");
+        assert!(driver.contains("pkg (b0, (b1, b2))"), "{driver}");
     }
 
     #[test]
@@ -3040,7 +3041,7 @@ mod tests {
         for literal in [
             format!("firstBox <- {first_wrap} pkg (77 :: Data.Int.Int32)"),
             format!("secondBox <- {second_wrap} pkg (88 :: Data.Int.Int32)"),
-            "pkg firstBox secondBox >>= ".to_owned(),
+            "pkg (firstBox, secondBox) >>= ".to_owned(),
             format!("{first_unwrap} pkg firstWord >>= print"),
             format!("{second_unwrap} pkg secondWord >>= print"),
         ] {

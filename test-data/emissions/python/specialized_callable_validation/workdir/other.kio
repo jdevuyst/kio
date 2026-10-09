@@ -1,0 +1,5 @@
+module other;
+
+import api as a;
+
+pub newtype N : a.Number { pub constructor wrap; pub projector unwrap }

@@ -444,6 +444,7 @@ impl<'p> HaskellShapes<'p> {
                 prepared,
                 &names.runtime_names,
                 &names.standard_names,
+                &names.structural_names,
             ),
             resolution: NewtypeResolution::build(package),
             structural_names: names.structural_names.clone(),
@@ -515,6 +516,7 @@ impl<'p> HaskellShapes<'p> {
 
     pub(crate) fn boundary_alias_haskell_type_in(
         &self,
+        facade: &super::facade::HaskellFacadeCatalog,
         boundary: &BoundaryId,
         ty: &Type<Routed>,
         scope: &[TypeParam],
@@ -535,11 +537,13 @@ impl<'p> HaskellShapes<'p> {
                 ..
             } => {
                 let mut rendered = String::new();
+                let mut slots = Vec::new();
                 for (index, param) in Type::right_spine_take(param, *abi_arity)
                     .into_iter()
                     .enumerate()
                 {
                     let param = self.boundary_alias_haskell_type_in(
+                        facade,
                         &boundary.nested(BoundaryStep::CallbackArg(
                             index.try_into().expect("callback argument index fits u32"),
                         )),
@@ -547,10 +551,17 @@ impl<'p> HaskellShapes<'p> {
                         scope,
                         module,
                     )?;
+                    slots.push(param);
+                }
+                let layout = facade.function_layout(boundary).unwrap_or_else(|| {
+                    unreachable!("a live Haskell callback has a prepared source layout")
+                });
+                for param in super::facade::source_parameters(layout, &slots) {
                     rendered.push_str(&paren_arg(&param));
                     rendered.push_str(" -> ");
                 }
                 let ret = self.boundary_alias_haskell_type_in(
+                    facade,
                     &boundary.nested(BoundaryStep::CallbackRet),
                     ret,
                     scope,
@@ -561,21 +572,37 @@ impl<'p> HaskellShapes<'p> {
             }
             Type::Forall { param, body, .. } => {
                 let nested = extend_type_scope(scope, param);
-                let body = self.boundary_alias_haskell_type_in(boundary, body, &nested, module)?;
+                let body =
+                    self.boundary_alias_haskell_type_in(facade, boundary, body, &nested, module)?;
                 Ok(format!(
                     "forall {}. m {}",
                     kinded_haskell_binder(param, &self.standard_names),
                     paren_arg(&body)
                 ))
             }
-            Type::Path { .. } => {
-                if let Type::Path { segments, args, .. } = ty
-                    && let [name] = segments.as_slice()
+            Type::Path { segments, args, .. } => {
+                let head = if let [name] = segments.as_slice()
                     && scope.iter().any(|param| param.name == name.as_str())
                 {
-                    let mut rendered = haskell_type_var(name.as_str());
+                    Some(haskell_type_var(name.as_str()))
+                } else if let Some(binding) = self.host_types.resolve(ty, module) {
+                    if args.len() != binding.type_params.len() {
+                        return Err(EmitError::unsupported(format!(
+                            "Haskell emitter: host type `{}/{}` reached code generation with {} argument(s), expected {}",
+                            binding.module_path,
+                            binding.source_name,
+                            args.len(),
+                            binding.type_params.len()
+                        )));
+                    }
+                    Some(format!("{} h", binding.assoc_name))
+                } else {
+                    None
+                };
+                if let Some(mut rendered) = head {
                     for (index, arg) in args.iter().enumerate() {
                         let arg = self.boundary_alias_haskell_type_in(
+                            facade,
                             &boundary.nested(BoundaryStep::App(
                                 index.try_into().expect("type argument index fits u32"),
                             )),
@@ -590,6 +617,7 @@ impl<'p> HaskellShapes<'p> {
                 }
                 if let Some((body, owner)) = self.boundary_path_expansion_in(ty, scope, module) {
                     return self.boundary_alias_haskell_type_in(
+                        facade,
                         boundary,
                         &body,
                         scope,
@@ -1373,7 +1401,7 @@ impl SkinProfile for HaskellSkin<'_> {
         let boundary_tys = plan.boundary_slots();
         let boundary_arity = plan.boundary_arity();
         let internal_arity = plan.internal_arity();
-        // The native boundary function is curried `a -> b -> m ret`; the
+        // The native boundary follows the stored parameter partition; the
         // internal closure uses the private function constructor and takes the stored ABI partition as
         // one product param (or a single value when unary), returning
         // a monadic private carrier. The shared plan is the sole authority for
@@ -1381,7 +1409,7 @@ impl SkinProfile for HaskellSkin<'_> {
         let params: Vec<String> = (0..boundary_arity).map(|i| format!("__fp{i}")).collect();
         match dir {
             // Internal function -> native boundary function. Produce a native
-            // curried `\a b -> m ret_native`: convert each native arg `In` to
+            // source-shaped lambda: convert each native slot `In` to
             // the internal rep, repartition the canonical slots into the
             // stored callable ABI, build its one Kio value-group product,
             // call the internal function, and convert the internal result
@@ -1408,11 +1436,9 @@ impl SkinProfile for HaskellSkin<'_> {
                         self.shapes.runtime_names().unit,
                     ));
                 }
-                let lam_params = if params.is_empty() {
-                    "()".to_owned()
-                } else {
-                    params.join(" ")
-                };
+                let lam_params = plan
+                    .boundary_to_internal_args(&params, |left, right| format!("({left}, {right})"))
+                    .join(" ");
                 Ok(format!(
                     "(\\{lam_params} -> {} ({expr}) ({arg_internal}) >>= \\__fr -> pure ({ret_conv}))",
                     self.shapes.runtime_names().call_function,
@@ -1458,6 +1484,9 @@ impl SkinProfile for HaskellSkin<'_> {
                     let native = self.convert(ty, value, FfiDir::Out)?;
                     natives.push(paren_arg_expr(&native));
                 }
+                let natives = plan.boundary_to_internal_args(&natives, |left, right| {
+                    format!("({left}, {right})")
+                });
                 let call = if natives.is_empty() {
                     format!("({expr})")
                 } else {
@@ -1530,29 +1559,18 @@ pub(super) fn haskell_type_var(name: &str) -> String {
 }
 
 pub(super) fn nominal_haskell_type_name(prefix: &str, module_path: &str, name: &str) -> String {
-    let exact = format!("{module_path}\0{name}");
-    let encoded = exact
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    let readable_module = module_path
-        .split('/')
-        .map(crate::backends::public_names::host_name_core)
-        .collect::<Vec<_>>()
-        .join("/");
-    let readable_name = crate::backends::public_names::host_name_core(name);
-    let readable = format!("{readable_module}_{readable_name}")
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    format!("{prefix}_H{encoded}__{readable}")
+    let role = match prefix {
+        "KioCarrier" => "KioType",
+        "KioExistential" => "KioExists",
+        _ => unreachable!("Haskell nominal names have a carrier or existential role"),
+    };
+    let identity = crate::backends::public_names::readable_public_identity(
+        module_path
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .chain([name]),
+    );
+    format!("{role}_{identity}")
 }
 
 /// Parenthesize a rendered Haskell type in an argument position.

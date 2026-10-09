@@ -2,7 +2,7 @@
 # the Right arm. Against the emitted three-arm TypedDict union, the final
 # assert_never call must fail with the remaining arm still inhabited.
 import sys
-from typing import NoReturn, TypedDict
+from typing import NoReturn
 
 from build_python_typed_stub_skin import (
     BuildPythonTypedStubSkinHost,
@@ -32,30 +32,29 @@ class Host:
         return value
 
 
-class RightChoice(TypedDict):
-    Right: int
-
-
 def assert_never(value: NoReturn) -> NoReturn:
     raise AssertionError(f"unreachable value: {value!r}")
 
 
 def check(host: BuildPythonTypedStubSkinHost[int, str]) -> None:
     pkg = create_buildPythonTypedStubSkin(host)
-    right_choice: RightChoice = {"Right": 29}
-    choice = pkg.api.KioModule_main.echoChoice(right_choice)
+    labels = pkg.api.KioModule_labels
+    choice = pkg.api.KioModule_main.echoChoice({
+        "tag": "right", "value": {"tag": "right", "value": labels.KioType_Right.mk(29)},
+    })
 
-    if "Left" in choice:
-        left: int = choice["Left"]
+    if choice["tag"] == "left":
+        left: int = labels.KioType_Left.get(choice["value"])
         _ = left
         return
-    if "Middle" in choice:
-        middle: str = choice["Middle"]
+    inner = choice["value"]
+    if inner["tag"] == "left":
+        middle: str = labels.KioType_Middle.get(inner["value"])
         _ = middle
         return
-    remaining_right: int = choice["Right"]
+    remaining_right: int = labels.KioType_Right.get(inner["value"])
     _ = remaining_right
-    assert_never(choice)
+    assert_never(inner)
 
 
 check(Host())

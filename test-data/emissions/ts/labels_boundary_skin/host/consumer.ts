@@ -6,43 +6,43 @@ import { createBuildTsLabelsBoundarySkin } from "../workdir/out/ts/build_ts_labe
 
 const pkg = createBuildTsLabelsBoundarySkin();
 
-type HostPair = { Name: string; Counter: number };
+type HostPair = { _0: { Name: string }; _1: { Counter: number } };
 type HostChoice =
-  | { Accepted: string }
-  | { Retry: number }
-  | { Rejected: string };
+  | { _0: { Accepted: string } }
+  | { _1: { _0: { Retry: number } } | { _1: { Rejected: string } } };
 
 const generatedEchoPair = pkg.api.KioModule_main.echoPair;
 const generatedPairAsHost: (value: HostPair) => HostPair = generatedEchoPair;
 const hostPairAsGenerated: typeof generatedEchoPair =
   (value: HostPair): HostPair => value;
 
-const constructedPair: HostPair = { Name: "host", Counter: 7 };
+const constructedPair: HostPair = { _0: { Name: "host" }, _1: { Counter: 7 } };
 const echoedPair: HostPair = generatedPairAsHost(constructedPair);
 const madePair: HostPair = pkg.api.KioModule_main.make("kio", 3);
-const name: string = echoedPair.Name;
-const counter: number = madePair.Counter;
+const name: string = echoedPair._0.Name;
+const counter: number = madePair._1.Counter;
 
 const generatedEchoChoice = pkg.api.KioModule_main.echoChoice;
 const generatedChoiceAsHost: (value: HostChoice) => HostChoice = generatedEchoChoice;
 const hostChoiceAsGenerated: typeof generatedEchoChoice =
   (value: HostChoice): HostChoice => value;
 
-const accepted: HostChoice = { Accepted: "ready" };
-const retry: HostChoice = { Retry: 17 };
-const rejected: HostChoice = { Rejected: "invalid" };
+const accepted: HostChoice = { _0: { Accepted: "ready" } };
+const retry: HostChoice = { _1: { _0: { Retry: 17 } } };
+const rejected: HostChoice = { _1: { _1: { Rejected: "invalid" } } };
 
 function readChoice(value: HostChoice): string {
-  if ("Accepted" in value) {
-    return value.Accepted;
+  if ("_0" in value) {
+    return value._0.Accepted;
   }
-  if ("Retry" in value) {
-    return String(value.Retry);
+  const tail = value._1;
+  if ("_0" in tail) {
+    return String(tail._0.Retry);
   }
-  if ("Rejected" in value) {
-    return value.Rejected;
+  if ("_1" in tail) {
+    return tail._1.Rejected;
   }
-  const exhausted: never = value;
+  const exhausted: never = tail;
   return exhausted;
 }
 

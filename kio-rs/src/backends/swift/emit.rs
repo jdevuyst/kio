@@ -3,9 +3,9 @@
 //! Consumes a `Package<Routed>` (post-recovery + post-resolution-lowering)
 //! and produces a self-contained Swift package as a [`SwiftPackage`].
 //!
-//! Swift's **body** computes over the universal erased value (`Any`), the
-//! JS dynamic body's shape on a statically-typed host: scalar polymorphism
-//! and higher-kinded carriers alike flow as erased values. The **skin** is
+//! Swift's **body** carries canonical native values through erased (`Any`)
+//! execution interfaces, retaining private type witnesses at lexical stages.
+//! The **skin** is
 //! the host's exact typed contract — the `Host` protocol, generic semantic
 //! product/native-sum shells, declaration-owned nominal and application
 //! carriers, exact callable carriers, and the exported surface. One shared
@@ -21,24 +21,21 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::ast::{Expr, Role, Routed, Type};
 use crate::backends::boundary_facade::{
-    BoundaryCallableHeadStage, BoundaryFacadeExecutionPlan, BoundaryFacadeExecutionUse,
-    BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, BoundaryHostBindingOrigin,
-    BoundaryNominalDeclaration, BoundaryNominalDependencies, CallableExecutionLayout,
+    BoundaryCallableHeadStage, BoundaryFacadePlan, BoundaryFacadeSiteId, BoundaryFacadeSiteOwner,
+    BoundaryFacadeSupportOrigin, BoundaryHostBindingOrigin, CallableExecutionLayout,
     CallableExecutionStage, CallableSourceParamAdapter, CallableValueStageLayout, FacadeBinderId,
     FacadeUse, FacadeUseId, PreparedBoundaryCallableSite, PreparedBoundaryCallableSites,
-    QualifiedTypeName,
 };
 use crate::backends::public_names::{
     FacadeSelector, encode_host_identity, encode_source_identity, has_readable_snake_components,
     host_name_core,
 };
-use crate::backends::reconstruct::{ReconProfile, apply_subst, build_typearg_subst_from_sig};
-use crate::backends::skin::{
-    exact_nullary_host_type_table, instantiate_boundary_newtype_payload, resolve_newtype,
-};
+use crate::backends::reconstruct::RoutedBodyTypes;
+use crate::backends::skin::exact_nullary_host_type_table;
 use crate::backends::structural::{
-    ProductRebuildPlan, bound_product_rebuild_plan, render_cached_product_rebuild,
+    NominalValueRepresentation, bound_product_rebuild_plan, render_cached_product_rebuild,
 };
+use crate::backends::value_plan::{ValuePlan, ValueUse};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
 
@@ -55,7 +52,7 @@ impl EmitError {
         }
     }
 
-    fn internal(message: impl Into<String>) -> Self {
+    pub(super) fn internal(message: impl Into<String>) -> Self {
         EmitError {
             message: format!("internal Swift emitter error: {}", message.into()),
         }
@@ -82,8 +79,7 @@ pub struct SwiftPackage {
     /// `host.swift` — the `<Handle>Host` protocol (current requirements plus
     /// optional deprecated defaults retained from sealed history).
     pub host_swift: String,
-    /// `shapes.swift` — generic semantic shells plus exact nominal,
-    /// application, and rank-N callable carriers the FFI surfaces.
+    /// `shapes.swift` — exact nominal and rank-N callable declarations.
     pub shapes_swift: String,
     /// `ffi.swift` — per-member boundary-type aliases.
     pub ffi_swift: String,
@@ -164,7 +160,7 @@ pub fn lower_package_with_signature(
     // Expression literals need only their exact nullary host identity. Public
     // facade planning and every callable adapter consume `prepared` below.
     let literal_shapes = super::skin::SwiftLiteralContext::new(package, exact_host_types);
-    let facade_shapes = super::skin::PreparedSwiftShapes::new(&prepared, &names.host_ty);
+    let facade_shapes = super::skin::PreparedSwiftShapes::new(&prepared, &names.host_ty, package);
 
     let host_swift = render_host_protocol(package, &prepared, &facade_shapes, &names)?;
     let pkg_swift = render_pkg_swift(package, &prepared, &facade_shapes, &literal_shapes, &names)?;
@@ -243,26 +239,6 @@ impl SwiftFacadeScope {
         self.binders.insert(id, rendered.clone());
         rendered
     }
-
-    fn lookup(&self, id: FacadeBinderId) -> Result<&str, EmitError> {
-        self.binders.get(&id).map(String::as_str).ok_or_else(|| {
-            EmitError::internal(format!(
-                "Swift facade refers to unbound type binder {id:?}; bound binders: {:?}",
-                self.binders.keys().collect::<Vec<_>>()
-            ))
-        })
-    }
-
-    fn erased(&self) -> Self {
-        Self {
-            binders: self
-                .binders
-                .keys()
-                .copied()
-                .map(|binder| (binder, "Any".to_owned()))
-                .collect(),
-        }
-    }
 }
 
 struct PreparedSwiftCallable {
@@ -280,8 +256,7 @@ struct PreparedSwiftCallable {
 struct PreparedSwiftRender<'site, 'shapes> {
     site: PreparedBoundaryCallableSite<'site>,
     plan: &'site BoundaryFacadePlan,
-    presentation: &'site BoundaryFacadeExecutionPlan,
-    shapes: &'shapes super::skin::PreparedSwiftShapes,
+    shapes: &'shapes super::skin::PreparedSwiftShapes<'shapes>,
 }
 
 fn prepared_site<'a>(
@@ -328,84 +303,6 @@ fn live_execution(
     })
 }
 
-fn render_swift_application(head: &str, args: &[String]) -> String {
-    if args.is_empty() {
-        return head.to_owned();
-    }
-    let mut parameters = Vec::with_capacity(args.len() + 1);
-    parameters.push(head.to_owned());
-    parameters.extend(args.iter().cloned());
-    format!(
-        "{}{}",
-        super::skin::swift_apply_carrier_name(args.len()),
-        super::skin::swift_generic_use(&parameters)
-    )
-}
-
-fn render_prepared_nominal(
-    name: &QualifiedTypeName,
-    args: &[String],
-    nominals: &BoundaryNominalDependencies,
-    shapes: &super::skin::PreparedSwiftShapes,
-    host_ref: &str,
-) -> Result<String, EmitError> {
-    let declaration = nominals.declaration(name).ok_or_else(|| {
-        EmitError::internal(format!(
-            "Swift facade is missing nominal dependency {}.{}",
-            name.module_segments().join("."),
-            name.name()
-        ))
-    })?;
-    match declaration {
-        BoundaryNominalDeclaration::HostType { type_params, .. } => {
-            if args.len() > type_params.len() {
-                return Err(EmitError::internal(
-                    "Swift prepared host-type application exceeds its declaration arity",
-                ));
-            }
-            let binding = shapes.host_binding(name).ok_or_else(|| {
-                EmitError::internal("Swift prepared host nominal has no exact binding")
-            })?;
-            if args.len() < type_params.len() {
-                let marker = super::skin::swift_host_constructor_name(name);
-                return Ok(render_swift_application(&marker, args));
-            }
-            if binding.type_arity == 0 {
-                return Ok(format!(
-                    "{host_ref}.{}",
-                    host_type_member_name(&name.module_segments().join("/"), name.name())
-                ));
-            }
-            Ok(format!(
-                "{}{}",
-                super::skin::swift_host_carrier_name(name),
-                super::skin::swift_generic_use(args)
-            ))
-        }
-        BoundaryNominalDeclaration::Newtype { type_params, .. } => {
-            if args.len() > type_params.len() {
-                return Err(EmitError::internal(
-                    "Swift prepared newtype application exceeds its declaration arity",
-                ));
-            }
-            if args.len() < type_params.len() {
-                let marker = format!(
-                    "{}<{host_ref}>",
-                    super::skin::swift_newtype_constructor_name(name)
-                );
-                return Ok(render_swift_application(&marker, args));
-            }
-            let mut parameters = vec![host_ref.to_owned()];
-            parameters.extend(args.iter().cloned());
-            Ok(format!(
-                "{}{}",
-                super::skin::swift_newtype_carrier_name(name),
-                super::skin::swift_generic_use(&parameters)
-            ))
-        }
-    }
-}
-
 fn render_prepared_source_param_type(
     render: PreparedSwiftRender<'_, '_>,
     slots: &[FacadeUseId],
@@ -428,19 +325,40 @@ fn render_prepared_source_param_type(
             render_prepared_use(render, *slot, scope, host_ref)
         }
         CallableSourceParamAdapter::RightNest => {
-            let shell = source.product_shell().ok_or_else(|| {
-                EmitError::internal("Swift right-nested source parameter has no exact shell")
-            })?;
-            let args = source_slots
-                .iter()
-                .map(|slot| render_prepared_use(render, *slot, scope, host_ref))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(format!(
-                "{}{}",
-                super::skin::swift_facade_shell_name(shell),
-                super::skin::swift_generic_use(&args)
-            ))
+            let values = prepared_values(render);
+            values
+                .plan
+                .native_parameter_domain(source, slots, |step| match step {
+                    crate::backends::value_plan::ValueDomainStep::Value(id) => {
+                        values.native(id, &scope.binders, host_ref)
+                    }
+                    crate::backends::value_plan::ValueDomainStep::Product(left, right) => {
+                        Ok(format!("Product<{left}, {right}>"))
+                    }
+                })?
+                .ok_or_else(|| {
+                    EmitError::internal("a prepared product source parameter has a domain")
+                })
         }
+    }
+}
+
+fn prepared_values<'a, 'p>(render: PreparedSwiftRender<'a, 'p>) -> super::value::Types<'a, 'p>
+where
+    'p: 'a,
+{
+    super::value::Types {
+        plan: render.site.plan().value_plan(),
+        shapes: render.shapes,
+        retained_nominals: Some(render.site.nominals()),
+        origin: render
+            .site
+            .retained()
+            .map_or(BoundaryFacadeSupportOrigin::Live, |metadata| {
+                BoundaryFacadeSupportOrigin::Retained {
+                    removed_at_version: metadata.removed_at_version(),
+                }
+            }),
     }
 }
 
@@ -450,293 +368,8 @@ fn render_prepared_use(
     scope: &SwiftFacadeScope,
     host_ref: &str,
 ) -> Result<String, EmitError> {
-    Ok(match render.plan.use_at(id) {
-        FacadeUse::Unit { .. } => "KioUnit".to_owned(),
-        FacadeUse::Bottom { .. } => "Never".to_owned(),
-        FacadeUse::Bound { binder, .. } => scope.lookup(*binder)?.to_owned(),
-        FacadeUse::Nominal { name, .. } => {
-            render_prepared_nominal(name, &[], render.site.nominals(), render.shapes, host_ref)?
-        }
-        FacadeUse::Apply {
-            constructor, args, ..
-        } => {
-            let rendered_args = args
-                .iter()
-                .map(|arg| render_prepared_use(render, *arg, scope, host_ref))
-                .collect::<Result<Vec<_>, _>>()?;
-            match render.plan.use_at(*constructor) {
-                FacadeUse::Nominal { name, .. } => render_prepared_nominal(
-                    name,
-                    &rendered_args,
-                    render.site.nominals(),
-                    render.shapes,
-                    host_ref,
-                )?,
-                _ => {
-                    let head = render_prepared_use(render, *constructor, scope, host_ref)?;
-                    render_swift_application(&head, &rendered_args)
-                }
-            }
-        }
-        FacadeUse::Product { shell, args, .. } | FacadeUse::Sum { shell, args, .. } => {
-            let args = args
-                .iter()
-                .map(|arg| render_prepared_use(render, *arg, scope, host_ref))
-                .collect::<Result<Vec<_>, _>>()?;
-            format!(
-                "{}{}",
-                super::skin::swift_facade_shell_name(shell),
-                super::skin::swift_generic_use(&args)
-            )
-        }
-        FacadeUse::Function { slots, result, .. } => {
-            let BoundaryFacadeExecutionUse::Function(layout) = render.presentation.use_at(id)
-            else {
-                return Err(EmitError::internal(
-                    "Swift prepared function has no paired source presentation",
-                ));
-            };
-            let params = layout
-                .source_params()
-                .iter()
-                .map(|source| {
-                    render_prepared_source_param_type(render, slots, source, scope, host_ref)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let result = render_prepared_use(render, *result, scope, host_ref)?;
-            format!("({}) -> {result}", params.join(", "))
-        }
-        FacadeUse::Forall { .. } => render_prepared_forall_type(render, id, scope, host_ref)?,
-    })
-}
-
-fn render_prepared_forall_type(
-    render: PreparedSwiftRender<'_, '_>,
-    root: FacadeUseId,
-    scope: &SwiftFacadeScope,
-    host_ref: &str,
-) -> Result<String, EmitError> {
-    let name = super::skin::swift_forall_carrier_name(render.site.site(), root);
-    let implementation_protocol = format!("{name}Implementation");
-    let free_binders = scope.binders.keys().copied().collect::<Vec<_>>();
-    let mut carrier_parameters = vec![host_ref.to_owned()];
-    carrier_parameters.extend(scope.binders.values().cloned());
-    let public_type = format!(
-        "{name}{}",
-        super::skin::swift_generic_use(&carrier_parameters)
-    );
-
-    // The declaration is a pure function of binder identities, independent of
-    // the particular rendering context (`KioType_*`, `Any`, ... ) in which the
-    // same exact use is mentioned. Its application below uses that context's
-    // actual arguments.
-    let mut public_scope = SwiftFacadeScope {
-        binders: free_binders
-            .iter()
-            .copied()
-            .map(|binder| (binder, format!("KioOuterType_{}", binder.index())))
-            .collect(),
-    };
-    let mut implementation_scope = public_scope.clone();
-    let mut method_parameters = Vec::new();
-    let mut current = root;
-    let mut stage_count = 0usize;
-    while let FacadeUse::Forall { binder, result, .. } = render.plan.use_at(current) {
-        if !matches!(
-            render.presentation.use_at(current),
-            BoundaryFacadeExecutionUse::InvokeForall
-        ) {
-            return Err(EmitError::internal(
-                "Swift public forall carrier has no callable source type stage",
-            ));
-        }
-        method_parameters.push(public_scope.bind(*binder));
-        implementation_scope
-            .binders
-            .insert(*binder, "Any".to_owned());
-        current = *result;
-        stage_count += 1;
-    }
-
-    // Swift has no explicit generic-function application syntax. Optional
-    // metatype witnesses let ordinary value arguments infer the quantified
-    // types while still allowing a caller to select a binder that occurs only
-    // in a result (or not at all). The implementation protocol always receives
-    // the witnesses, so the erased adapter can specialize every binder to
-    // `Any` without inference holes.
-    let public_type_witnesses = method_parameters
-        .iter()
-        .enumerate()
-        .map(|(index, parameter)| {
-            format!("asKioType{index} _: {parameter}.Type = {parameter}.self")
-        })
-        .collect::<Vec<_>>();
-    let implementation_type_witnesses = method_parameters
-        .iter()
-        .enumerate()
-        .map(|(index, parameter)| format!("_ __kioType{index}: {parameter}.Type"))
-        .collect::<Vec<_>>();
-    let erased_type_witnesses = method_parameters
-        .iter()
-        .map(|_| "Any.self".to_owned())
-        .collect::<Vec<_>>();
-
-    let mut raw = "self.__kioValue".to_owned();
-    for _ in 0..stage_count {
-        raw = format!("({raw} as! (() -> Any))()");
-    }
-    let (value_params, returned, ret_type, implementation_value) = match render.plan.use_at(current)
-    {
-        FacadeUse::Function { slots, result, .. } => {
-            let BoundaryFacadeExecutionUse::Function(layout) = render.presentation.use_at(current)
-            else {
-                return Err(EmitError::internal(
-                    "Swift forall carrier function has no paired source presentation",
-                ));
-            };
-            let params = layout
-                .source_params()
-                .iter()
-                .enumerate()
-                .map(|(index, source)| {
-                    Ok(format!(
-                        "_ arg{index}: {}",
-                        escaping_param_ty(&render_prepared_source_param_type(
-                            render,
-                            slots,
-                            source,
-                            &public_scope,
-                            "H",
-                        )?)
-                    ))
-                })
-                .collect::<Result<Vec<_>, EmitError>>()?;
-            let values = (0..layout.source_param_count())
-                .map(|index| format!("arg{index}"))
-                .collect::<Vec<_>>();
-            let body_args =
-                prepared_public_to_body_args(render, slots, layout, &values, &public_scope, 0)?;
-            let call = format!(
-                "({raw} as! {})({})",
-                swift_closure_type(layout.body_abi_arity()),
-                body_args.join(", ")
-            );
-            let returned = convert_prepared_use(
-                render,
-                *result,
-                PreparedSwiftConversion::new(&call, PreparedSwiftDir::Out, &public_scope, 0),
-            )?;
-            let ret_type = render_prepared_use(render, *result, &public_scope, "H")?;
-
-            let implementation_body_values = (0..layout.body_abi_arity())
-                .map(|index| format!("__kioBodyArg{index}"))
-                .collect::<Vec<_>>();
-            let implementation_public_args = prepared_body_to_public_args(
-                render,
-                slots,
-                layout,
-                &implementation_body_values,
-                &implementation_scope,
-                0,
-            )?;
-            let mut implementation_args = erased_type_witnesses.clone();
-            implementation_args.extend(implementation_public_args);
-            let implementation_call =
-                format!("implementation.call({})", implementation_args.join(", "));
-            let implementation_returned = convert_prepared_use(
-                render,
-                *result,
-                PreparedSwiftConversion::new(
-                    &implementation_call,
-                    PreparedSwiftDir::In,
-                    &implementation_scope,
-                    0,
-                ),
-            )?;
-            let implementation_params = implementation_body_values
-                .iter()
-                .map(|value| format!("{value}: Any"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let implementation_value = format!(
-                "{{ ({implementation_params}) -> Any in return {implementation_returned} }}"
-            );
-            (params, returned, ret_type, implementation_value)
-        }
-        _ => {
-            let returned = convert_prepared_use(
-                render,
-                current,
-                PreparedSwiftConversion::new(&raw, PreparedSwiftDir::Out, &public_scope, 0),
-            )?;
-            let ret_type = render_prepared_use(render, current, &public_scope, "H")?;
-            let implementation_call =
-                format!("implementation.call({})", erased_type_witnesses.join(", "));
-            let implementation_value = convert_prepared_use(
-                render,
-                current,
-                PreparedSwiftConversion::new(
-                    &implementation_call,
-                    PreparedSwiftDir::In,
-                    &implementation_scope,
-                    0,
-                ),
-            )?;
-            (Vec::new(), returned, ret_type, implementation_value)
-        }
-    };
-    let mut stored = implementation_value;
-    for _ in 0..stage_count {
-        stored = format!("{{ () -> Any in return {stored} }}");
-    }
-    let mut declaration_parameters = vec![format!("H: {}", render.shapes.host_protocol())];
-    declaration_parameters.extend(
-        free_binders
-            .iter()
-            .map(|binder| format!("KioOuterType_{}", binder.index())),
-    );
-    let declaration_generic = super::skin::swift_generic_use(&declaration_parameters);
-    let method_generic = super::skin::swift_generic_use(&method_parameters);
-    let mut public_params = public_type_witnesses;
-    public_params.extend(value_params.iter().cloned());
-    let mut implementation_params = implementation_type_witnesses;
-    implementation_params.extend(value_params);
-    let deprecation = retained_host_function_deprecation(render.site);
-    let deprecated = deprecation
-        .as_deref()
-        .map(super::skin::swift_deprecated_attribute)
-        .unwrap_or_default();
-    let member_deprecated = deprecation
-        .as_deref()
-        .map(|message| format!("\t{}", super::skin::swift_deprecated_attribute(message)))
-        .unwrap_or_default();
-    let mut implementation_associated_types = vec![format!(
-        "{member_deprecated}\tassociatedtype H: {}\n",
-        render.shapes.host_protocol()
-    )];
-    implementation_associated_types.extend(free_binders.iter().map(|binder| {
-        format!(
-            "{member_deprecated}\tassociatedtype KioOuterType_{}\n",
-            binder.index()
-        )
-    }));
-    let mut implementation_constraints = vec!["Implementation.H == H".to_owned()];
-    implementation_constraints.extend(free_binders.iter().map(|binder| {
-        format!(
-            "Implementation.KioOuterType_{} == KioOuterType_{}",
-            binder.index(),
-            binder.index()
-        )
-    }));
-    let implementation_where = format!(" where {}", implementation_constraints.join(", "));
-    let declaration = format!(
-        "\n{deprecated}public protocol {implementation_protocol} {{\n{}{member_deprecated}\tfunc call{method_generic}({}) -> {ret_type}\n}}\n\n{deprecated}public struct {name}{declaration_generic} {{\n\tlet __kioValue: Any\n\tinit(__kioBody value: Any) {{ self.__kioValue = value }}\n{member_deprecated}\tpublic init<Implementation: {implementation_protocol}>(_ implementation: Implementation){implementation_where} {{ self.__kioValue = {stored} }}\n{member_deprecated}\tpublic func call{method_generic}({}) -> {ret_type} {{\n\t\treturn {returned}\n\t}}\n}}\n",
-        implementation_associated_types.concat(),
-        implementation_params.join(", "),
-        public_params.join(", ")
-    );
-    render.shapes.register_forall(name, declaration);
-    Ok(public_type)
+    let values = prepared_values(render);
+    values.native(values.plan.source(id), &scope.binders, host_ref)
 }
 
 fn render_prepared_callable(
@@ -749,7 +382,6 @@ fn render_prepared_callable(
     let render = PreparedSwiftRender {
         site,
         plan: plan.facade(),
-        presentation: presentation.root_uses(),
         shapes,
     };
     let entry = plan.entry();
@@ -890,17 +522,22 @@ fn swift_type_mentions_identifier(ty: &str, identifier: &str) -> bool {
 }
 
 fn swift_public_method_generics(callable: &PreparedSwiftCallable) -> Vec<String> {
+    callable.generic_params.clone()
+}
+
+fn swift_method_type_selectors(callable: &PreparedSwiftCallable) -> Vec<(usize, &str)> {
     callable
         .generic_params
         .iter()
-        .filter(|generic| {
-            callable
+        .enumerate()
+        .filter_map(|(index, generic)| {
+            let inferred = callable
                 .param_types
                 .iter()
                 .chain(std::iter::once(&callable.ret_type))
-                .any(|ty| swift_type_mentions_identifier(ty, generic))
+                .any(|ty| swift_type_mentions_identifier(ty, generic));
+            (!inferred).then_some((index, generic.as_str()))
         })
-        .cloned()
         .collect()
 }
 
@@ -925,7 +562,6 @@ fn emit_prepared_nested_callable_aliases(
     let render = PreparedSwiftRender {
         site,
         plan: site.plan().facade(),
-        presentation: presentation.root_uses(),
         shapes,
     };
     let entry = site.plan().entry();
@@ -983,33 +619,23 @@ fn emit_prepared_nested_use_aliases(
 ) -> Result<(), EmitError> {
     match render.plan.use_at(id) {
         FacadeUse::Function { slots, result, .. } => {
-            let BoundaryFacadeExecutionUse::Function(layout) = render.presentation.use_at(id)
+            let values = prepared_values(render);
+            let ValueUse::Function { domain, .. } = values.plan.use_at(values.plan.source(id))
             else {
-                return Err(EmitError::internal(
-                    "Swift FFI function alias has no source presentation",
-                ));
+                unreachable!()
             };
-            for (index, source) in layout.source_params().iter().enumerate() {
-                let ty =
-                    render_prepared_source_param_type(render, slots, source, context.scope, "H")?;
-                let nested_alias = format!("{alias}_cbarg{index}");
-                emit_prepared_ffi_alias(
-                    &nested_alias,
-                    &ty,
-                    context.callable_generics,
-                    context.names,
-                    context.deprecation,
-                    out,
-                );
-                if source.adapter() == CallableSourceParamAdapter::Identity {
-                    let range = source.facade_slots();
-                    let [slot] = &slots[range] else {
-                        return Err(EmitError::internal(
-                            "Swift nested FFI alias identity source does not own one slot",
-                        ));
-                    };
-                    emit_prepared_nested_use_aliases(render, *slot, &nested_alias, context, out)?;
-                }
+            let ty = values.native(*domain, &context.scope.binders, "H")?;
+            let nested_alias = format!("{alias}_cbarg0");
+            emit_prepared_ffi_alias(
+                &nested_alias,
+                &ty,
+                context.callable_generics,
+                context.names,
+                context.deprecation,
+                out,
+            );
+            if let [slot] = slots.as_slice() {
+                emit_prepared_nested_use_aliases(render, *slot, &nested_alias, context, out)?;
             }
             let ret = render_prepared_use(render, *result, context.scope, "H")?;
             let nested_alias = format!("{alias}_cbret");
@@ -1023,8 +649,9 @@ fn emit_prepared_nested_use_aliases(
             );
             emit_prepared_nested_use_aliases(render, *result, &nested_alias, context, out)?;
         }
-        FacadeUse::Forall { .. } => {
-            let carrier = super::skin::swift_forall_carrier_name(render.site.site(), id);
+        FacadeUse::Forall { binder, result, .. } => {
+            let values = prepared_values(render);
+            let carrier = values.forall_name(values.plan.source(id))?;
             let deprecated = context
                 .deprecation
                 .map(super::skin::swift_deprecated_attribute)
@@ -1034,15 +661,21 @@ fn emit_prepared_nested_use_aliases(
             ));
             let mut nested_scope = context.scope.clone();
             let mut nested_generics = context.callable_generics.to_vec();
-            let mut current = id;
-            while let FacadeUse::Forall { binder, result, .. } = render.plan.use_at(current) {
-                nested_generics.push(nested_scope.bind(*binder));
-                current = *result;
-            }
+            nested_generics.push(nested_scope.bind(*binder));
+            let nested_alias = format!("{alias}_typeRet");
+            let ty = render_prepared_use(render, *result, &nested_scope, "H")?;
+            emit_prepared_ffi_alias(
+                &nested_alias,
+                &ty,
+                &nested_generics,
+                context.names,
+                context.deprecation,
+                out,
+            );
             emit_prepared_nested_use_aliases(
                 render,
-                current,
-                alias,
+                *result,
+                &nested_alias,
                 SwiftNestedAliasContext {
                     scope: &nested_scope,
                     callable_generics: &nested_generics,
@@ -1136,13 +769,18 @@ fn render_host_protocol(
         let method = host_member_name(&site.site().module_segments().join("/"), name);
         let callable = render_prepared_callable(site, shapes, "Self")?;
         let generic = super::skin::swift_generic_use(&swift_public_method_generics(&callable));
-        let params = callable
+        let mut params = callable
             .param_types
             .iter()
             .enumerate()
             .map(|(index, ty)| format!("_ arg{index}: {}", escaping_param_ty(ty)))
-            .collect::<Vec<_>>()
-            .join(", ");
+            .collect::<Vec<_>>();
+        params.extend(
+            swift_method_type_selectors(&callable)
+                .into_iter()
+                .map(|(index, ty)| format!("asKioType{index} _: {ty}.Type")),
+        );
+        let params = params.join(", ");
         let ret = if matches!(
             site.plan().facade().use_at(callable.ret_use),
             FacadeUse::Unit { .. }
@@ -1348,25 +986,6 @@ fn export_ns_node<'t>(root: &'t mut ExportTree, module_key: &str) -> &'t mut Exp
     node
 }
 
-/// Every value group's param types, in declaration order — one inner
-/// vec per group. The exported facade flattens these across groups
-/// (`specs/backends/README.md` § Function-type FFI canonicalization)
-/// while the internal body stays curried one layer per group.
-fn value_group_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<Option<Type<Routed>>>> {
-    crate::backends::skin::erase_signature_value_groups(sig)
-}
-
-fn first_value_group_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Option<Type<Routed>>> {
-    value_group_param_types(sig)
-        .into_iter()
-        .next()
-        .unwrap_or_default()
-}
-
-fn signature_ret_type(sig: &crate::ast::Signature<Routed>, ret: &Type<Routed>) -> Type<Routed> {
-    crate::backends::skin::erase_signature_ret(sig, ret)
-}
-
 /// The Swift method name on the package handle for a module fn.
 fn module_fn_method_name(module_key: &str, leaf: &str) -> String {
     if !module_key.contains('_') && !leaf.contains('_') {
@@ -1478,43 +1097,17 @@ fn render_export_ns_type_rec(
     Ok(())
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum PreparedSwiftDir {
-    In,
-    Out,
-}
-
-#[derive(Clone, Copy)]
-struct PreparedSwiftConversion<'a> {
-    expression: &'a str,
-    direction: PreparedSwiftDir,
-    scope: &'a SwiftFacadeScope,
-    depth: usize,
-}
-
-impl<'a> PreparedSwiftConversion<'a> {
-    fn new(
-        expression: &'a str,
-        direction: PreparedSwiftDir,
-        scope: &'a SwiftFacadeScope,
-        depth: usize,
-    ) -> Self {
-        Self {
-            expression,
-            direction,
-            scope,
-            depth,
-        }
-    }
-}
-
-fn swift_right_nest(values: &[String]) -> Result<String, EmitError> {
-    if values.is_empty() {
-        return Err(EmitError::internal(
-            "Swift prepared product adapter has no values",
-        ));
-    }
-    Ok(format!("kioProductNest([{}])", values.join(", ")))
+fn swift_product_expression(values: &[String], witnesses: &[String]) -> String {
+    assert_eq!(
+        values.len(),
+        witnesses.len(),
+        "each Swift product slot has its exact type witness"
+    );
+    format!(
+        "__kioProduct([{}], [{}])",
+        values.join(", "),
+        witnesses.join(", ")
+    )
 }
 
 fn prepared_public_to_body_args(
@@ -1523,7 +1116,7 @@ fn prepared_public_to_body_args(
     layout: &CallableValueStageLayout,
     public_values: &[String],
     scope: &SwiftFacadeScope,
-    depth: usize,
+    _depth: usize,
 ) -> Result<Vec<String>, EmitError> {
     if slots.len() != layout.facade_slot_count()
         || public_values.len() != layout.source_param_count()
@@ -1532,51 +1125,15 @@ fn prepared_public_to_body_args(
             "Swift prepared public/source stage alignment drift",
         ));
     }
-    let mut body = Vec::with_capacity(layout.body_abi_arity());
-    for (source, public) in layout.source_params().iter().zip(public_values) {
-        let range = source.facade_slots();
-        let source_slots = slots.get(range).ok_or_else(|| {
-            EmitError::internal("Swift prepared source range exceeds facade slots")
-        })?;
-        match source.adapter() {
-            CallableSourceParamAdapter::UnitValue => body.push("KioUnit()".to_owned()),
-            CallableSourceParamAdapter::Identity => {
-                let [slot] = source_slots else {
-                    return Err(EmitError::internal(
-                        "Swift identity source parameter does not own one slot",
-                    ));
-                };
-                body.push(convert_prepared_use(
-                    render,
-                    *slot,
-                    PreparedSwiftConversion::new(public, PreparedSwiftDir::In, scope, depth + 1),
-                )?);
-            }
-            CallableSourceParamAdapter::RightNest => {
-                let shell = source.product_shell().ok_or_else(|| {
-                    EmitError::internal("Swift RightNest source has no prepared shell")
-                })?;
-                let converted = source_slots
-                    .iter()
-                    .zip(shell.ordered_keys())
-                    .map(|(slot, key)| {
-                        convert_prepared_use(
-                            render,
-                            *slot,
-                            PreparedSwiftConversion::new(
-                                &format!("{public}.{}", super::skin::swift_semantic_member(key)),
-                                PreparedSwiftDir::In,
-                                scope,
-                                depth + 1,
-                            ),
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                body.push(swift_right_nest(&converted)?);
-            }
-        }
-    }
-    Ok(body)
+    layout
+        .source_params()
+        .iter()
+        .zip(public_values)
+        .map(|(source, value)| {
+            let ty = render_prepared_source_param_type(render, slots, source, scope, "H")?;
+            Ok(format!("(({value} as {ty}) as Any)"))
+        })
+        .collect()
 }
 
 fn prepared_body_to_public_args(
@@ -1585,481 +1142,94 @@ fn prepared_body_to_public_args(
     layout: &CallableValueStageLayout,
     body_values: &[String],
     scope: &SwiftFacadeScope,
-    depth: usize,
+    _depth: usize,
 ) -> Result<Vec<String>, EmitError> {
     if slots.len() != layout.facade_slot_count() || body_values.len() != layout.body_abi_arity() {
         return Err(EmitError::internal(
             "Swift prepared body/source stage alignment drift",
         ));
     }
-    let mut public = Vec::with_capacity(layout.source_param_count());
-    for (source, body) in layout.source_params().iter().zip(body_values) {
-        let range = source.facade_slots();
-        let source_slots = slots.get(range).ok_or_else(|| {
-            EmitError::internal("Swift prepared source range exceeds facade slots")
-        })?;
-        match source.adapter() {
-            CallableSourceParamAdapter::UnitValue => public.push("KioUnit()".to_owned()),
-            CallableSourceParamAdapter::Identity => {
-                let [slot] = source_slots else {
-                    return Err(EmitError::internal(
-                        "Swift identity source parameter does not own one slot",
-                    ));
-                };
-                public.push(convert_prepared_use(
-                    render,
-                    *slot,
-                    PreparedSwiftConversion::new(body, PreparedSwiftDir::Out, scope, depth + 1),
-                )?);
-            }
-            CallableSourceParamAdapter::RightNest => {
-                let shell = source.product_shell().ok_or_else(|| {
-                    EmitError::internal("Swift RightNest source has no prepared shell")
-                })?;
-                let value = format!("__kioSourceSlots{depth}");
-                let fields = source_slots
-                    .iter()
-                    .zip(shell.ordered_keys())
-                    .enumerate()
-                    .map(|(index, (slot, key))| {
-                        Ok(format!(
-                            "{}: {}",
-                            super::skin::swift_semantic_member(key),
-                            convert_prepared_use(
-                                render,
-                                *slot,
-                                PreparedSwiftConversion::new(
-                                    &format!("{value}[{index}]"),
-                                    PreparedSwiftDir::Out,
-                                    scope,
-                                    depth + 1,
-                                ),
-                            )?
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, EmitError>>()?;
-                let ty = render_prepared_source_param_type(render, slots, source, scope, "H")?;
-                public.push(format!(
-                    "{{ () -> {ty} in let {value} = kioProductSlots({body}, {}); return {}({}) }}()",
-                    source_slots.len(),
-                    super::skin::swift_facade_shell_name(shell),
-                    fields.join(", ")
-                ));
-            }
-        }
-    }
-    Ok(public)
+    layout
+        .source_params()
+        .iter()
+        .zip(body_values)
+        .map(|(source, value)| {
+            let ty = render_prepared_source_param_type(render, slots, source, scope, "H")?;
+            Ok(format!("__kioChecked({value}, as: ({ty}).self)"))
+        })
+        .collect()
 }
 
-fn nominal_application<'a>(
-    plan: &'a BoundaryFacadePlan,
-    constructor: FacadeUseId,
-    args: &'a [FacadeUseId],
-) -> Option<(&'a QualifiedTypeName, &'a [FacadeUseId])> {
-    match plan.use_at(constructor) {
-        FacadeUse::Nominal { name, .. } => Some((name, args)),
-        _ => None,
-    }
-}
-
-fn convert_prepared_use(
-    render: PreparedSwiftRender<'_, '_>,
-    id: FacadeUseId,
-    conversion: PreparedSwiftConversion<'_>,
+/// Open the hidden type stages retained by one nominal existential packet,
+/// then invoke its continuation at the exact payload type.
+fn render_existential_continuation(
+    types: &super::value::Types<'_, '_>,
+    mut current: crate::backends::value_plan::ValueUseId,
+    scope: &super::value::Scope,
+    continuation: &str,
+    packet: &str,
 ) -> Result<String, EmitError> {
-    let PreparedSwiftConversion {
-        expression,
-        direction,
-        scope,
-        depth,
-    } = conversion;
-    match render.plan.use_at(id) {
-        FacadeUse::Unit { .. } => Ok(format!(
-            "{{ () -> KioUnit in _ = {expression}; return KioUnit() }}()"
-        )),
-        FacadeUse::Bottom { .. } => Ok(match direction {
-            PreparedSwiftDir::In => format!("({expression} as Any)"),
-            PreparedSwiftDir::Out => format!("({expression} as! Never)"),
-        }),
-        FacadeUse::Bound { .. } => match direction {
-            PreparedSwiftDir::In => Ok(format!("({expression} as Any)")),
-            PreparedSwiftDir::Out => Ok(format!(
-                "({expression} as! {})",
-                render_prepared_use(render, id, scope, "H")?
-            )),
-        },
-        FacadeUse::Nominal { name, .. } => {
-            convert_prepared_nominal(render, id, name, &[], conversion)
-        }
-        FacadeUse::Apply {
-            constructor, args, ..
-        } => {
-            if let Some((name, args)) = nominal_application(render.plan, *constructor, args) {
-                convert_prepared_nominal(render, id, name, args, conversion)
-            } else {
-                let ty = render_prepared_use(render, id, scope, "H")?;
-                Ok(match direction {
-                    PreparedSwiftDir::In => format!("{expression}.__kioValue"),
-                    PreparedSwiftDir::Out => format!("{ty}({expression})"),
-                })
-            }
-        }
-        FacadeUse::Product { shell, args, .. } => {
-            let ty = render_prepared_use(render, id, scope, "H")?;
-            let value = format!("__kioProduct{depth}_{}", id.index());
-            match direction {
-                PreparedSwiftDir::In => {
-                    let converted = args
-                        .iter()
-                        .zip(shell.ordered_keys())
-                        .map(|(arg, key)| {
-                            convert_prepared_use(
-                                render,
-                                *arg,
-                                PreparedSwiftConversion::new(
-                                    &format!("{value}.{}", super::skin::swift_semantic_member(key)),
-                                    direction,
-                                    scope,
-                                    depth + 1,
-                                ),
-                            )
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    Ok(format!(
-                        "{{ () -> Any in let {value} = {expression}; return {} }}()",
-                        swift_right_nest(&converted)?
-                    ))
-                }
-                PreparedSwiftDir::Out => {
-                    let fields = args
-                        .iter()
-                        .zip(shell.ordered_keys())
-                        .enumerate()
-                        .map(|(index, (arg, key))| {
-                            Ok(format!(
-                                "{}: {}",
-                                super::skin::swift_semantic_member(key),
-                                convert_prepared_use(
-                                    render,
-                                    *arg,
-                                    PreparedSwiftConversion::new(
-                                        &format!("{value}[{index}]"),
-                                        direction,
-                                        scope,
-                                        depth + 1,
-                                    ),
-                                )?
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, EmitError>>()?;
-                    Ok(format!(
-                        "{{ () -> {ty} in let {value} = kioProductSlots({expression}, {}); return {}({}) }}()",
-                        args.len(),
-                        super::skin::swift_facade_shell_name(shell),
-                        fields.join(", ")
-                    ))
-                }
-            }
-        }
-        FacadeUse::Sum { shell, args, .. } => {
-            if args.is_empty() {
-                return Err(EmitError::internal(
-                    "Swift prepared sum has no alternatives",
-                ));
-            }
-            let ty = render_prepared_use(render, id, scope, "H")?;
-            match direction {
-                PreparedSwiftDir::In => {
-                    let cases = args
-                        .iter()
-                        .zip(shell.ordered_keys())
-                        .enumerate()
-                        .map(|(index, (arg, key))| {
-                            Ok(format!(
-                                "case .{}(let __payload): return kioSumInject({}, {index}, {})",
-                                super::skin::swift_semantic_member(key),
-                                convert_prepared_use(
-                                    render,
-                                    *arg,
-                                    PreparedSwiftConversion::new(
-                                        "__payload",
-                                        direction,
-                                        scope,
-                                        depth + 1,
-                                    ),
-                                )?,
-                                args.len()
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, EmitError>>()?;
-                    Ok(format!(
-                        "{{ () -> Any in switch {expression} {{ {} }} }}()",
-                        cases.join(" ")
-                    ))
-                }
-                PreparedSwiftDir::Out => {
-                    let cases = args
-                        .iter()
-                        .zip(shell.ordered_keys())
-                        .enumerate()
-                        .map(|(index, (arg, key))| {
-                            Ok(format!(
-                                "case {index}: return .{}({})",
-                                super::skin::swift_semantic_member(key),
-                                convert_prepared_use(
-                                    render,
-                                    *arg,
-                                    PreparedSwiftConversion::new(
-                                        "__payload",
-                                        direction,
-                                        scope,
-                                        depth + 1,
-                                    ),
-                                )?
-                            ))
-                        })
-                        .collect::<Result<Vec<_>, EmitError>>()?;
-                    Ok(format!(
-                        "{{ () -> {ty} in let (__variant, __payload) = kioSumPayload({expression}, {}); switch __variant {{ {} default: fatalError(\"kio: invalid prepared sum variant\") }} }}()",
-                        args.len(),
-                        cases.join(" ")
-                    ))
-                }
-            }
-        }
-        FacadeUse::Function { slots, result, .. } => {
-            convert_prepared_function(render, id, slots, *result, conversion)
-        }
-        FacadeUse::Forall { .. } => {
-            let ty = render_prepared_forall_type(render, id, scope, "H")?;
-            Ok(match direction {
-                PreparedSwiftDir::In => format!("{expression}.__kioValue"),
-                PreparedSwiftDir::Out => format!("{ty}(__kioBody: {expression})"),
-            })
-        }
-    }
-}
-
-fn convert_prepared_nominal(
-    render: PreparedSwiftRender<'_, '_>,
-    id: FacadeUseId,
-    name: &QualifiedTypeName,
-    _args: &[FacadeUseId],
-    conversion: PreparedSwiftConversion<'_>,
-) -> Result<String, EmitError> {
-    let declaration = render.site.nominals().declaration(name).ok_or_else(|| {
-        EmitError::internal("Swift prepared conversion omitted a nominal dependency")
-    })?;
-    let ty = render_prepared_use(render, id, conversion.scope, "H")?;
-    let expression = conversion.expression;
-    let direction = conversion.direction;
-    match declaration {
-        BoundaryNominalDeclaration::HostType { type_params, .. } if type_params.is_empty() => {
-            Ok(match direction {
-                PreparedSwiftDir::In => format!("({expression} as Any)"),
-                PreparedSwiftDir::Out => format!("({expression} as! {ty})"),
-            })
-        }
-        BoundaryNominalDeclaration::HostType { .. } => Ok(match direction {
-            PreparedSwiftDir::In => format!("{expression}.__kioValue"),
-            PreparedSwiftDir::Out => format!("{ty}({expression})"),
-        }),
-        BoundaryNominalDeclaration::Newtype { .. } => Ok(match direction {
-            PreparedSwiftDir::In => format!("{expression}.__kioValue"),
-            PreparedSwiftDir::Out => format!("{ty}({expression})"),
-        }),
-    }
-}
-
-fn convert_prepared_function(
-    render: PreparedSwiftRender<'_, '_>,
-    id: FacadeUseId,
-    slots: &[FacadeUseId],
-    result: FacadeUseId,
-    conversion: PreparedSwiftConversion<'_>,
-) -> Result<String, EmitError> {
-    let PreparedSwiftConversion {
-        expression,
-        direction,
-        scope,
-        depth,
-    } = conversion;
-    let BoundaryFacadeExecutionUse::Function(layout) = render.presentation.use_at(id) else {
-        return Err(EmitError::internal(
-            "Swift prepared function has no execution layout",
-        ));
-    };
-    let public_ty = render_prepared_use(render, id, scope, "H")?;
-    let body_ty = swift_closure_type(layout.body_abi_arity());
-    let inner = format!("__kioBoundaryFn{depth}_{}", id.index());
-    match direction {
-        PreparedSwiftDir::Out => {
-            let params = layout
-                .source_params()
-                .iter()
-                .enumerate()
-                .map(|(index, source)| {
-                    Ok(format!(
-                        "__p{index}: {}",
-                        render_prepared_source_param_type(render, slots, source, scope, "H",)?
-                    ))
-                })
-                .collect::<Result<Vec<_>, EmitError>>()?;
-            let values = (0..layout.source_param_count())
-                .map(|index| format!("__p{index}"))
-                .collect::<Vec<_>>();
-            let body_args =
-                prepared_public_to_body_args(render, slots, layout, &values, scope, depth + 1)?;
-            let call = format!("({inner} as! {body_ty})({})", body_args.join(", "));
-            let returned = convert_prepared_use(
-                render,
-                result,
-                PreparedSwiftConversion::new(&call, PreparedSwiftDir::Out, scope, depth + 1),
-            )?;
-            Ok(format!(
-                "{{ ({inner}: Any) -> {public_ty} in return {{ ({}) in return {returned} }} }}({expression})",
-                params.join(", ")
-            ))
-        }
-        PreparedSwiftDir::In => {
-            let params = (0..layout.body_abi_arity())
-                .map(|index| format!("__b{index}: Any"))
-                .collect::<Vec<_>>();
-            let values = (0..layout.body_abi_arity())
-                .map(|index| format!("__b{index}"))
-                .collect::<Vec<_>>();
-            let public_args =
-                prepared_body_to_public_args(render, slots, layout, &values, scope, depth + 1)?;
-            let call = format!("({inner} as! {public_ty})({})", public_args.join(", "));
-            let returned = convert_prepared_use(
-                render,
-                result,
-                PreparedSwiftConversion::new(&call, PreparedSwiftDir::In, scope, depth + 1),
-            )?;
-            Ok(format!(
-                "{{ ({inner}: Any) -> {body_ty} in return {{ ({}) -> Any in return {returned} }} }}({expression} as Any)",
-                params.join(", ")
-            ))
-        }
-    }
-}
-
-/// Rebuild the private erased CPS value behind one direct existential
-/// projector. The public facade retains every quantified stage; only this
-/// declaration-owned body adapter consumes the prepared exact-ID compaction
-/// proof.
-fn render_prepared_existential_projector_body(
-    render: PreparedSwiftRender<'_, '_>,
-    returned: FacadeUseId,
-    payload: &str,
-) -> Result<String, EmitError> {
-    let compactable = live_execution(render.site)?.direct_projector_compactable_foralls();
-    if !compactable.contains(&returned) {
-        return Err(EmitError::internal(
-            "Swift existential projector lacks its prepared direct-compaction proof",
-        ));
-    }
-
-    let mut selected_stage_count = 0usize;
-    let mut selected_body = returned;
-    while compactable.contains(&selected_body) {
-        let FacadeUse::Forall { result, .. } = render.plan.use_at(selected_body) else {
-            return Err(EmitError::internal(
-                "Swift existential projector compaction proof does not name a forall",
-            ));
-        };
-        selected_stage_count += 1;
-        selected_body = *result;
-    }
-    let FacadeUse::Function {
-        slots: continuation_slots,
-        ..
-    } = render.plan.use_at(selected_body)
-    else {
-        return Err(EmitError::internal(
-            "Swift existential projector selected-result stage is not callable",
-        ));
-    };
-    let BoundaryFacadeExecutionUse::Function(selected_layout) =
-        render.presentation.use_at(selected_body)
-    else {
-        return Err(EmitError::internal(
-            "Swift existential projector selected-result stage has no execution layout",
-        ));
-    };
-    let [continuation_root] = continuation_slots.as_slice() else {
-        return Err(EmitError::internal(
-            "Swift existential projector does not expose one continuation",
-        ));
-    };
-    let [continuation_source] = selected_layout.source_params() else {
-        return Err(EmitError::internal(
-            "Swift existential projector continuation has no exact source layout",
-        ));
-    };
-    if selected_layout.source_param_count() != 1
-        || selected_layout.body_abi_arity() != 1
-        || selected_layout.facade_slot_count() != 1
-        || continuation_source.facade_slots() != (0..1)
-        || continuation_source.adapter() != CallableSourceParamAdapter::Identity
-    {
-        return Err(EmitError::internal(
-            "Swift existential projector continuation layout drifted",
-        ));
-    }
-
-    let mut hidden_stage_count = 0usize;
-    let mut payload_function = *continuation_root;
-    while compactable.contains(&payload_function) {
-        let FacadeUse::Forall { result, .. } = render.plan.use_at(payload_function) else {
-            return Err(EmitError::internal(
-                "Swift existential continuation compaction proof does not name a forall",
-            ));
-        };
-        hidden_stage_count += 1;
-        payload_function = *result;
-    }
-    if selected_stage_count + hidden_stage_count != compactable.len() {
-        return Err(EmitError::internal(
-            "Swift existential projector left a prepared compaction stage unconsumed",
-        ));
-    }
-    let FacadeUse::Function { .. } = render.plan.use_at(payload_function) else {
-        return Err(EmitError::internal(
-            "Swift existential projector continuation is not callable",
-        ));
-    };
-    let BoundaryFacadeExecutionUse::Function(payload_layout) =
-        render.presentation.use_at(payload_function)
-    else {
-        return Err(EmitError::internal(
-            "Swift existential projector payload has no execution layout",
-        ));
-    };
-
-    let continuation = "__kioContinuation";
+    let mut scope = scope.clone();
     let mut advanced = continuation.to_owned();
-    for _ in 0..hidden_stage_count {
-        advanced = format!("({advanced} as! (() -> Any))()");
+    let mut index = 0;
+    while let ValueUse::Forall { binder, result } = types.plan.use_at(current) {
+        let witness = format!("{packet}.witnesses[{index}]");
+        scope.insert(*binder, witness.clone());
+        advanced = format!("__kioAdvance({advanced}, {witness})");
+        current = *result;
+        index += 1;
     }
-    let call = match payload_layout.body_abi_arity() {
-        0 if payload_layout.source_param_count() == 0 => {
-            format!("({advanced} as! (() -> Any))()")
-        }
-        1 if payload_layout.source_param_count() == 1 => {
-            format!("({advanced} as! ((Any) -> Any))({payload})")
-        }
-        arity => {
-            return Err(EmitError::internal(format!(
-                "Swift existential projector payload occupies {arity} body values"
-            )));
-        }
+    if !matches!(types.plan.use_at(current), ValueUse::Function { .. }) {
+        return Err(EmitError::internal(
+            "Swift existential continuation lost its typed value stage",
+        ));
+    }
+    let witness = types.witness(current, &scope, "H")?;
+    Ok(format!(
+        "{{ () -> Any in precondition({packet}.witnesses.count == {index}); let __kioContinuation: Any = {advanced}; return __kioChecked({witness}, as: (any __KioFunctionWitness).self).invoke(__kioContinuation, {packet}.payload) }}()"
+    ))
+}
+
+fn render_existential_projection(
+    types: &super::value::Types<'_, '_>,
+    root: crate::backends::value_plan::ValueUseId,
+    scope: &super::value::Scope,
+    target: &str,
+) -> Result<String, EmitError> {
+    let mut scope = scope.clone();
+    let mut current = root;
+    let mut stages = Vec::new();
+    while let ValueUse::Forall { binder, result } = types.plan.use_at(current) {
+        let witness = types.witness(current, &scope, "H")?;
+        let argument = format!("__kioSelected{}", stages.len());
+        scope.insert(*binder, argument.clone());
+        stages.push((witness, argument));
+        current = *result;
+    }
+    let ValueUse::Function { domain, .. } = types.plan.use_at(current) else {
+        return Err(EmitError::internal(
+            "Swift existential projection lost its continuation stage",
+        ));
     };
-    let mut body = format!("{{ ({continuation}: Any) -> Any in return {call} }}");
-    for _ in 0..selected_stage_count {
-        body = format!("{{ () -> Any in return {body} }}");
+    let call = render_existential_continuation(
+        types,
+        *domain,
+        &scope,
+        "__kioContinuation",
+        "__kioPacket",
+    )?;
+    let witness = types.witness(current, &scope, "H")?;
+    let mut body = format!(
+        "__kioChecked({witness}, as: (any __KioFunctionWitness).self).construct {{ __kioContinuation in return {call} }}"
+    );
+    for (witness, argument) in stages.into_iter().rev() {
+        body = format!(
+            "__kioChecked({witness}, as: (any __KioForallWitness).self).construct {{ {argument} in return {body} }}"
+        );
     }
-    Ok(body)
+    Ok(format!(
+        "{{ () -> Any in let __kioPacket = __kioChecked(__kioChecked({target}, as: (any __KioNominalValue).self).__kioValue, as: __KioExistential.self); return {body} }}()"
+    ))
 }
 
 /// Render one exported method from its exact prepared callable plan and paired
@@ -2075,17 +1245,21 @@ fn render_export_method(
     let render = PreparedSwiftRender {
         site,
         plan: site.plan().facade(),
-        presentation: site.presentation().root_uses(),
         shapes,
     };
     let callable = render_prepared_callable(site, shapes, "H")?;
     let generic = super::skin::swift_generic_use(&swift_public_method_generics(&callable));
-    let params = callable
+    let mut params = callable
         .param_types
         .iter()
         .enumerate()
         .map(|(index, ty)| format!("_ arg{index}: {}", escaping_param_ty(ty)))
         .collect::<Vec<_>>();
+    params.extend(
+        swift_method_type_selectors(&callable)
+            .into_iter()
+            .map(|(index, ty)| format!("asKioType{index} _: {ty}.Type = {ty}.self")),
+    );
     let public_values = (0..callable.param_types.len())
         .map(|index| format!("arg{index}"))
         .collect::<Vec<_>>();
@@ -2129,44 +1303,84 @@ fn render_export_method(
         ));
     }
 
+    let values = prepared_values(render);
+    let witness_scope = callable
+        .scope
+        .binders
+        .iter()
+        .map(|(binder, ty)| (*binder, format!("__KioNativeWitness<{ty}>()")))
+        .collect::<super::value::Scope>();
     let internal = match &entry.body {
         ExportBody::ModuleFn { method } => {
-            let mut applied = format!("self.{PACKAGE_BACKREF_MEMBER}.{method}");
-            for (index, (runtime, args)) in execution
-                .head_stages()
-                .iter()
-                .zip(&stage_body_args)
-                .enumerate()
-            {
-                match runtime {
-                    CallableExecutionStage::Type { .. } if index == 0 => applied.push_str("()"),
-                    CallableExecutionStage::Type { .. } => {
-                        applied = format!("({applied} as! (() -> Any))()")
+            let mut applied = format!("self.{PACKAGE_BACKREF_MEMBER}.{method}()");
+            let mut current = values.plan.root();
+            for (runtime, args) in execution.head_stages().iter().zip(&stage_body_args) {
+                match (runtime, values.plan.use_at(current)) {
+                    (CallableExecutionStage::Type { .. }, ValueUse::Forall { binder, result }) => {
+                        applied = format!("__kioAdvance({applied}, {})", witness_scope[binder]);
+                        current = *result;
                     }
-                    CallableExecutionStage::Value(layout) if index == 0 => {
-                        debug_assert_eq!(layout.body_abi_arity(), args.len());
-                        applied.push('(');
-                        applied.push_str(&args.join(", "));
-                        applied.push(')');
-                    }
-                    CallableExecutionStage::Value(layout) => {
-                        debug_assert_eq!(layout.body_abi_arity(), args.len());
+                    (
+                        CallableExecutionStage::Value(_),
+                        ValueUse::Function { domain, result, .. },
+                    ) => {
+                        let parts = values.plan.right_spine_parts(*domain, args.len(), false);
+                        let witnesses = parts
+                            .into_iter()
+                            .map(|id| values.witness(id, &witness_scope, "H"))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let domain = if args.is_empty() {
+                            "KioUnit()".to_owned()
+                        } else {
+                            format!(
+                                "__kioProduct([{}], [{}])",
+                                args.join(", "),
+                                witnesses.join(", ")
+                            )
+                        };
+                        let witness = values.witness(current, &witness_scope, "H")?;
                         applied = format!(
-                            "({applied} as! {})({})",
-                            swift_closure_type(layout.body_abi_arity()),
-                            args.join(", ")
+                            "__kioChecked({witness}, as: (any __KioFunctionWitness).self).invoke({applied}, {domain})"
                         );
+                        current = *result;
+                    }
+                    _ => {
+                        return Err(EmitError::internal(
+                            "Swift export execution disagrees with its canonical value stages",
+                        ));
                     }
                 }
             }
             applied
         }
-        ExportBody::NewtypeConstructor => stage_body_args
-            .iter()
-            .flatten()
-            .next()
-            .cloned()
-            .unwrap_or_else(|| "KioUnit()".to_owned()),
+        ExportBody::NewtypeConstructor => {
+            let payload = stage_body_args
+                .iter()
+                .flatten()
+                .next()
+                .cloned()
+                .unwrap_or_else(|| "KioUnit()".to_owned());
+            let result = values.plan.source(callable.ret_use);
+            let ambient = witness_scope.keys().copied().collect::<Vec<_>>();
+            let universal = values.plan.free_binders(result, &ambient);
+            let hidden = ambient
+                .iter()
+                .filter(|binder| !universal.contains(binder))
+                .map(|binder| witness_scope[binder].clone())
+                .collect::<Vec<_>>();
+            let payload = if hidden.is_empty() {
+                payload
+            } else {
+                format!(
+                    "__KioExistential(payload: {payload}, witnesses: [{}])",
+                    hidden.join(", ")
+                )
+            };
+            let witness = values.witness(result, &witness_scope, "H")?;
+            format!(
+                "__kioChecked({witness}, as: (any __KioNominalWitness).self).construct({payload})"
+            )
+        }
         ExportBody::NewtypeProjector => {
             let args = stage_body_args
                 .iter()
@@ -2179,9 +1393,14 @@ fn render_export_method(
                 ));
             };
             if execution.direct_projector_compactable_foralls().is_empty() {
-                target.clone()
+                format!("__kioChecked({target}, as: (any __KioNominalValue).self).__kioValue")
             } else {
-                render_prepared_existential_projector_body(render, callable.ret_use, target)?
+                render_existential_projection(
+                    &values,
+                    values.plan.source(callable.ret_use),
+                    &witness_scope,
+                    target,
+                )?
             }
         }
     };
@@ -2192,14 +1411,8 @@ fn render_export_method(
     ) {
         format!("_ = {internal}; return KioUnit()")
     } else {
-        format!(
-            "return {}",
-            convert_prepared_use(
-                render,
-                callable.ret_use,
-                PreparedSwiftConversion::new(&internal, PreparedSwiftDir::Out, &callable.scope, 0,),
-            )?
-        )
+        let ty = render_prepared_use(render, callable.ret_use, &callable.scope, "H")?;
+        format!("return __kioChecked({internal}, as: ({ty}).self)")
     };
     let mut out = String::new();
     push_doc(&mut out, boundary_docs::callable(package, site), "\t");
@@ -2249,40 +1462,6 @@ fn swift_ident(s: &str) -> String {
     }
 }
 
-/// Render a Swift `struct` with a stored property + public memberwise init
-/// per field. `fields` is a `(name, type)` list.
-pub(crate) fn render_swift_struct(
-    name: &str,
-    fields: &[(String, String)],
-    deprecation_message: Option<&str>,
-) -> String {
-    let deprecated = deprecation_message
-        .map(super::skin::swift_deprecated_attribute)
-        .unwrap_or_default();
-    let member_deprecated = deprecation_message
-        .map(|message| format!("\t{}", super::skin::swift_deprecated_attribute(message)))
-        .unwrap_or_default();
-    let mut out = format!("{deprecated}public struct {name} {{\n");
-    for (fname, ftype) in fields {
-        out.push_str(&format!(
-            "{member_deprecated}\tpublic let {fname}: {ftype}\n"
-        ));
-    }
-    let init_params: Vec<String> = fields
-        .iter()
-        .map(|(n, t)| format!("{n}: {}", escaping_param_ty(t)))
-        .collect();
-    out.push_str(&format!(
-        "{member_deprecated}\tpublic init({}) {{\n",
-        init_params.join(", ")
-    ));
-    for (fname, _) in fields {
-        out.push_str(&format!("\t\tself.{fname} = {fname}\n"));
-    }
-    out.push_str("\t}\n}\n");
-    out
-}
-
 /// Render the top-level package-handle class: the host, the root
 /// export-namespace properties, the init (wiring namespace back-pointers),
 /// the root-level export methods, and every module fn as a method.
@@ -2329,35 +1508,6 @@ fn render_package_class(
     // Root-level export methods (a `pub fn` in a top-level module).
     for e in &root.exports {
         out.push_str(&render_export_method(package, e, prepared, shapes)?);
-    }
-    for entry in prepared
-        .public_newtypes()
-        .filter(|entry| !entry.type_params().is_empty())
-    {
-        let args = (0..entry.type_params().len())
-            .map(|index| format!("T{index}"))
-            .collect::<Vec<_>>();
-        let generics = super::skin::swift_generic_use(&args);
-        let mut nominal_args = vec!["H".to_owned()];
-        nominal_args.extend(args.iter().cloned());
-        let nominal = format!(
-            "{}{}",
-            super::skin::swift_newtype_carrier_name(entry.name()),
-            super::skin::swift_generic_use(&nominal_args)
-        );
-        let marker = format!(
-            "{}<H>",
-            super::skin::swift_newtype_constructor_name(entry.name())
-        );
-        let application = render_swift_application(&marker, &args);
-        let stem = format!(
-            "KioNewtypeApplication_{}",
-            super::skin::swift_nominal_identity(entry.name())
-        );
-        out.push_str(&format!(
-            "\tpublic func {stem}_lift{generics}(_ value: {nominal}) -> {application} {{ .init(value.__kioValue) }}\n\
-             \tpublic func {stem}_project{generics}(_ value: {application}) -> {nominal} {{ .init(value.__kioValue) }}\n"
-        ));
     }
 
     // Module fns become methods on the package handle. Fan out per module.
@@ -2423,7 +1573,6 @@ fn render_module_fns(
     for item in &entry.module.items {
         if let crate::ast::Item::FnDef(f) = item {
             let method = module_fn_method_name(module_key, &f.name);
-            let runtime_groups = runtime_param_name_groups(&f.sig);
             let mut emitter = BodyEmitter::new(
                 module_key,
                 &selective_imports,
@@ -2432,125 +1581,14 @@ fn render_module_fns(
                 shapes,
                 literal_shapes,
             );
-            for param in &f.sig.params {
-                if let crate::ast::SignatureParam::Value(value) = param
-                    && let Some(ty) = &value.ty
-                {
-                    emitter.local_types.insert(value.name.clone(), ty.clone());
-                }
-            }
-            for g in &runtime_groups {
-                for n in g {
-                    emitter.locals.push((*n).to_owned());
-                }
-            }
-            let body = emitter.emit_expr(&f.body)?;
-            let body = emitter.adapt_fn_value_for_type(body, &f.body, &f.ret);
-            let outer = runtime_groups.first().cloned().unwrap_or_default();
-            let outer_list: String = outer
-                .iter()
-                .map(|n| format!("_ {}: Any", swift_local_ident(n)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let mut acc = body;
-            for g in runtime_groups.iter().skip(1).rev() {
-                let params: String = g
-                    .iter()
-                    .map(|n| format!("{}: Any", swift_local_ident(n)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                acc = format!("{{ ({params}) -> Any in return {acc} }}");
-            }
+            let full_type = f.sig.signature_ty(f.ret.clone(), f.meta.span);
+            let body = emitter.callable_value(&f.sig, &full_type, &f.body)?;
             out.push_str(&format!(
-                "\tfunc {method}({outer_list}) -> Any {{\n\t\treturn {acc}\n\t}}\n"
+                "\tfunc {method}() -> Any {{\n\t\treturn {body}\n\t}}\n"
             ));
         }
     }
     Ok(out)
-}
-
-fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups: Vec<Vec<&str>> = sig
-        .canonical_groups()
-        .into_iter()
-        .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter_map(|p| match p {
-                        crate::ast::SignatureParam::Value(vp) => Some(vp.name.as_str()),
-                        crate::ast::SignatureParam::Type(_) => None,
-                    })
-                    .collect(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
-        })
-        .collect();
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
-}
-
-/// Runtime closure layers for a signature. Each type binder becomes its own
-/// empty layer, each value group keeps its parameter names, and a signature
-/// without any groups receives a nullary value stage.
-fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                groups.extend(params.iter().map(|_| Vec::new()));
-            }
-            crate::ast::SignatureGroupRef::Value(params) => {
-                groups.push(
-                    params
-                        .iter()
-                        .filter_map(|param| match param {
-                            crate::ast::SignatureParam::Value(param) => Some(param.name.as_str()),
-                            crate::ast::SignatureParam::Type(_) => None,
-                        })
-                        .collect(),
-                );
-            }
-        }
-    }
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
-}
-
-fn runtime_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
-    runtime_param_name_groups(sig)
-        .into_iter()
-        .map(|group| group.len())
-        .collect()
-}
-
-fn underlying_fn_expr_sig(e: &Expr<Routed>) -> Option<&crate::ast::Signature<Routed>> {
-    match e {
-        Expr::FnExpr { sig, .. } => Some(sig),
-        Expr::LowHostFnValueRef { sig, .. } | Expr::LowModuleFnValueRef { sig, .. } => Some(sig),
-        Expr::Let { body, .. } | Expr::Seq { body, .. } => underlying_fn_expr_sig(body),
-        Expr::LowTypeApplication { callee, .. } => underlying_fn_expr_sig(callee),
-        Expr::LowClosureCall { args, .. } if args.is_empty() => None,
-        Expr::LowIndirectCall { callee, args, .. } if args.is_empty() => {
-            if let Expr::FnExpr { body, .. } = callee.as_ref() {
-                underlying_fn_expr_sig(body)
-            } else {
-                None
-            }
-        }
-        Expr::LowModuleCall { args, .. } | Expr::LowQualifiedModuleCall { args, .. }
-            if args.len() == 1 =>
-        {
-            underlying_fn_expr_sig(&args[0])
-        }
-        Expr::LowNewtypeCtor { payload, .. } => underlying_fn_expr_sig(payload),
-        Expr::LowNewtypeProj { target, .. } => underlying_fn_expr_sig(target),
-        _ => None,
-    }
 }
 
 fn value_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
@@ -2594,12 +1632,6 @@ fn build_selective_imports(
     package: &Package<Routed>,
 ) -> SelectiveImports {
     crate::backends::selective_module_fn_import_owners(importer, package)
-        .into_iter()
-        .map(|(name, owner)| {
-            let method = module_fn_method_name(&owner, &name);
-            (name, method)
-        })
-        .collect()
 }
 
 /// Walks a module fn body and renders Swift expression source over the
@@ -2609,152 +1641,14 @@ fn build_selective_imports(
 struct BodyEmitter<'a, 'p> {
     locals: Vec<String>,
     local_types: HashMap<String, Type<Routed>>,
+    type_binders: Vec<(crate::ast::TypeParam, String)>,
     fresh: usize,
     module_key: &'a str,
     selective_imports: &'a SelectiveImports,
     qualified_imports: &'a QualifiedImports,
     prepared: &'a PreparedBoundaryCallableSites,
-    facade_shapes: &'a super::skin::PreparedSwiftShapes,
+    facade_shapes: &'a super::skin::PreparedSwiftShapes<'p>,
     shapes: &'a super::skin::SwiftLiteralContext<'p>,
-}
-
-struct SwiftTypeRecon<'e, 'a, 'p> {
-    emit: &'e BodyEmitter<'a, 'p>,
-}
-
-impl SwiftTypeRecon<'_, '_, '_> {
-    fn newtype_member_type(
-        &self,
-        module_path: &str,
-        newtype: &str,
-        member: &str,
-        type_args: &[Type<Routed>],
-    ) -> Option<Type<Routed>> {
-        let entry = self.emit.shapes.package().module(module_path)?;
-        let mut found = None;
-        for item in &entry.module.items {
-            crate::pass::resolve::for_each_item_declaration(item, |declaration| {
-                if let Some(candidate) = declaration.newtype()
-                    && candidate.name == newtype
-                {
-                    found = Some(candidate);
-                }
-            });
-            if found.is_some() {
-                break;
-            }
-        }
-        let decl = found?;
-        let universals = type_args.get(..decl.type_params.len())?.to_vec();
-        let mut segments = module_path
-            .split('/')
-            .filter(|segment| !segment.is_empty())
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        segments.push(newtype.to_owned());
-        if member == decl.constructor.name {
-            return Some(Type::synth_path(segments, universals, decl.meta.span));
-        }
-        if member != decl.projector.name || !decl.existential_params.is_empty() {
-            return None;
-        }
-        let subst = decl
-            .type_params
-            .iter()
-            .zip(universals)
-            .map(|(param, arg)| (param.name.clone(), arg))
-            .collect();
-        Some(apply_subst(&decl.payload, &subst))
-    }
-}
-
-impl ReconProfile for SwiftTypeRecon<'_, '_, '_> {
-    fn bound_param_ty(&self, name: &str) -> Option<Type<Routed>> {
-        self.emit.local_types.get(name).cloned()
-    }
-
-    fn resolved_call_return_type(
-        &self,
-        sig: &crate::ast::Signature<Routed>,
-        type_args: &[Type<Routed>],
-        _args: &[Expr<Routed>],
-        ret_ty: &Type<Routed>,
-    ) -> Type<Routed> {
-        apply_subst(ret_ty, &build_typearg_subst_from_sig(sig, type_args))
-    }
-
-    fn accept_direct_enriched_slot(&self, _slot_ty: &Type<Routed>) -> bool {
-        true
-    }
-
-    fn normalize_target_ty(&self, ty: &Type<Routed>) -> Type<Routed> {
-        ty.clone()
-    }
-
-    fn enriched_field_payload_type(&self, field_ty: &Type<Routed>) -> Option<Type<Routed>> {
-        let (decl, _) = resolve_newtype(field_ty, self.emit.shapes.package())?;
-        Some(instantiate_boundary_newtype_payload(decl, field_ty))
-    }
-
-    fn module_fn_value_type(
-        &self,
-        mangled: &str,
-        sig: &crate::ast::Signature<Routed>,
-        span: crate::span::Span,
-    ) -> Option<Type<Routed>> {
-        let method = self
-            .emit
-            .selective_imports
-            .get(mangled)
-            .cloned()
-            .unwrap_or_else(|| module_fn_method_name(self.emit.module_key, mangled));
-        for (module_path, entry) in self.emit.shapes.package().modules() {
-            for item in &entry.module.items {
-                let crate::ast::Item::FnDef(def) = item else {
-                    continue;
-                };
-                if module_fn_method_name(module_path, &def.name) == method {
-                    return Some(sig.signature_ty(signature_ret_type(&def.sig, &def.ret), span));
-                }
-            }
-        }
-        None
-    }
-
-    fn reconstruct_other(
-        &self,
-        expr: &Expr<Routed>,
-        _locals: &mut HashMap<String, Type<Routed>>,
-    ) -> Option<Type<Routed>> {
-        match expr {
-            Expr::LowNewtypeCtor {
-                newtype,
-                member,
-                type_args,
-                ..
-            }
-            | Expr::LowNewtypeProj {
-                newtype,
-                member,
-                type_args,
-                ..
-            } => self.newtype_member_type(self.emit.module_key, newtype, member, type_args),
-            Expr::LowQualifiedNewtypeMember {
-                module_path,
-                newtype,
-                member,
-                type_args,
-                ..
-            } => self.newtype_member_type(module_path, newtype, member, type_args),
-            Expr::LowCpsProjectorApply {
-                continuation_ty, ..
-            } => match continuation_ty.peel_leading_foralls().1 {
-                Type::Function { ret, .. } => Some((**ret).clone()),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
 }
 
 impl<'a, 'p> BodyEmitter<'a, 'p> {
@@ -2763,12 +1657,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         selective_imports: &'a SelectiveImports,
         qualified_imports: &'a QualifiedImports,
         prepared: &'a PreparedBoundaryCallableSites,
-        facade_shapes: &'a super::skin::PreparedSwiftShapes,
+        facade_shapes: &'a super::skin::PreparedSwiftShapes<'p>,
         shapes: &'a super::skin::SwiftLiteralContext<'p>,
     ) -> Self {
         BodyEmitter {
             locals: Vec::new(),
             local_types: HashMap::new(),
+            type_binders: Vec::new(),
             fresh: 0,
             module_key,
             selective_imports,
@@ -2786,8 +1681,160 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     }
 
     fn expr_type(&self, expr: &Expr<Routed>) -> Option<Type<Routed>> {
-        let recon = SwiftTypeRecon { emit: self };
-        ReconProfile::value_type_with_locals(&recon, expr, &mut HashMap::new())
+        let type_params = self
+            .type_binders
+            .iter()
+            .map(|(param, _)| param.clone())
+            .collect::<Vec<_>>();
+        RoutedBodyTypes {
+            package: self.shapes.package(),
+            module: &self.shapes.package().module(self.module_key)?.module,
+            type_params: &type_params,
+            values: &self.local_types,
+        }
+        .value_type(expr)
+    }
+
+    fn value_plan(&self, ty: &Type<Routed>) -> Result<ValuePlan, EmitError> {
+        let module = &self
+            .shapes
+            .package()
+            .module(self.module_key)
+            .expect("a routed Swift body belongs to a package module")
+            .module;
+        let ambient = self
+            .type_binders
+            .iter()
+            .map(|(param, _)| param.clone())
+            .collect::<Vec<_>>();
+        ValuePlan::from_routed_type(self.shapes.package(), module, &ambient, ty).map_err(|error| {
+            EmitError::internal(format!("Swift body value planning failed: {error}"))
+        })
+    }
+
+    fn witness(&self, ty: &Type<Routed>) -> Result<String, EmitError> {
+        let plan = self.value_plan(ty)?;
+        let scope = plan
+            .ambient_binders()
+            .iter()
+            .copied()
+            .zip(self.type_binders.iter().map(|(_, value)| value.clone()))
+            .collect();
+        super::value::Types {
+            plan: &plan,
+            shapes: self.facade_shapes,
+            retained_nominals: None,
+            origin: BoundaryFacadeSupportOrigin::Live,
+        }
+        .witness(plan.root(), &scope, "H")
+    }
+
+    fn callable_value(
+        &mut self,
+        sig: &crate::ast::Signature<Routed>,
+        full_type: &Type<Routed>,
+        body: &Expr<Routed>,
+    ) -> Result<String, EmitError> {
+        let plan = self.value_plan(full_type)?;
+        let types = super::value::Types {
+            plan: &plan,
+            shapes: self.facade_shapes,
+            retained_nominals: None,
+            origin: BoundaryFacadeSupportOrigin::Live,
+        };
+        let mut scope = plan
+            .ambient_binders()
+            .iter()
+            .copied()
+            .zip(self.type_binders.iter().map(|(_, value)| value.clone()))
+            .collect::<super::value::Scope>();
+        let saved_binders = self.type_binders.len();
+        let saved_locals = self.locals.len();
+        let saved_types = self.local_types.clone();
+        let mut current = plan.root();
+        let mut stages = Vec::new();
+        for group in sig.canonical_groups() {
+            match group {
+                crate::ast::SignatureGroupRef::Type(params) => {
+                    for param in params {
+                        let crate::ast::SignatureParam::Type(param) = param else {
+                            unreachable!("a canonical type group contains type parameters")
+                        };
+                        let ValueUse::Forall { binder, result } = plan.use_at(current) else {
+                            return Err(EmitError::internal(
+                                "Swift signature type stage disagrees with its value plan",
+                            ));
+                        };
+                        let witness = types.witness(current, &scope, "H")?;
+                        let local = self.fresh_name("binder");
+                        stages.push((true, witness, local.clone(), Vec::new()));
+                        scope.insert(*binder, local.clone());
+                        self.type_binders.push((param.clone(), local));
+                        current = *result;
+                    }
+                }
+                crate::ast::SignatureGroupRef::Value(params) => {
+                    let ValueUse::Function { result, .. } = plan.use_at(current) else {
+                        return Err(EmitError::internal(
+                            "Swift signature value stage disagrees with its value plan",
+                        ));
+                    };
+                    let witness = types.witness(current, &scope, "H")?;
+                    let local = self.fresh_name("domain");
+                    let mut names = Vec::new();
+                    for param in params {
+                        if let crate::ast::SignatureParam::Value(param) = param {
+                            self.locals.push(param.name.clone());
+                            if let Some(ty) = &param.ty {
+                                self.local_types.insert(param.name.clone(), ty.clone());
+                            }
+                            names.push(swift_local_ident(&param.name));
+                        }
+                    }
+                    stages.push((false, witness, local, names));
+                    current = *result;
+                }
+            }
+        }
+        if stages.is_empty() {
+            let ValueUse::Function { .. } = plan.use_at(current) else {
+                return Err(EmitError::internal(
+                    "an empty Swift function signature has a Unit domain",
+                ));
+            };
+            stages.push((
+                false,
+                types.witness(current, &scope, "H")?,
+                self.fresh_name("domain"),
+                Vec::new(),
+            ));
+        }
+        let emitted = self.emit_expr(body);
+        self.type_binders.truncate(saved_binders);
+        self.locals.truncate(saved_locals);
+        self.local_types = saved_types;
+        let mut result = emitted?;
+        for (type_stage, witness, argument, names) in stages.into_iter().rev() {
+            if type_stage {
+                result = format!(
+                    "__kioChecked({witness}, as: (any __KioForallWitness).self).construct {{ {argument} in return {result} }}"
+                );
+            } else {
+                let mut bindings = String::new();
+                for (index, name) in names.iter().enumerate() {
+                    let value = if names.len() == 1 {
+                        argument.clone()
+                    } else {
+                        format!("kioProductSlot({argument}, {index}, {})", names.len())
+                    };
+                    bindings.push_str(&format!("let {name}: Any = {value}; _ = {name}; "));
+                }
+                result = format!(
+                    "__kioChecked({witness}, as: (any __KioFunctionWitness).self).construct {{ {argument} in {bindings}return {result} }}"
+                );
+            }
+        }
+        Ok(result)
     }
 
     /// Render one Routed-phase expression to a Swift expression string.
@@ -2878,11 +1925,12 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Expr::LowHostCall {
                 name,
                 module_path,
+                type_args,
                 args,
                 sig,
                 ret_ty,
                 ..
-            } => self.emit_low_host_call(name, module_path, args, sig, ret_ty),
+            } => self.emit_low_host_call(name, module_path, type_args, args, sig, ret_ty),
             Expr::LowBoundRef { name, .. } => Ok(swift_local_ident(name)),
             Expr::EnrichedConditional {
                 cond,
@@ -2903,47 +1951,83 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 payload,
                 variant,
                 variants,
+                synth_ty,
                 ..
-            } => self.emit_inject(payload, *variant, *variants),
+            } => self.emit_inject(payload, *variant, *variants, synth_ty),
             Expr::EnrichedMatch {
                 scrutinee,
                 arms,
                 scrutinee_ty,
                 ..
             } => self.emit_match(scrutinee, arms, scrutinee_ty),
-            Expr::EnrichedRecord { fields, .. } => {
-                let items: Vec<&Expr<Routed>> = fields.iter().map(|f| &f.value).collect();
-                self.emit_tuple_refs(&items)
-            }
             Expr::EnrichedFieldGet {
                 target,
                 index,
                 arity,
                 ..
-            } => self.emit_project(target, *index, *arity),
+            } => {
+                let field = self.emit_project(target, *index, *arity)?;
+                Ok(format!(
+                    "__kioChecked({field}, as: (any __KioNominalValue).self).__kioValue"
+                ))
+            }
             Expr::LowModuleCall {
                 mangled,
                 type_args,
                 args,
                 sig,
+                meta,
                 ..
-            } => self.emit_module_call(mangled, type_args.len(), args, sig),
+            } => {
+                let module = self
+                    .selective_imports
+                    .get(mangled)
+                    .map(String::as_str)
+                    .unwrap_or(self.module_key);
+                self.emit_module_call(module, mangled, type_args, args, sig, meta.span)
+            }
             Expr::LowQualifiedModuleCall {
                 mangled,
                 type_args,
                 args,
                 sig,
+                meta,
                 ..
-            } => self.emit_qualified_module_call(mangled, type_args.len(), args, sig),
-            Expr::LowNewtypeCtor { payload, .. } => self.emit_expr(payload),
-            Expr::LowNewtypeProj { target, .. } => self.emit_expr(target),
+            } => {
+                let (alias, leaf) = mangled.split_once('.').ok_or_else(|| {
+                    EmitError::internal("a qualified Swift module call has an import prefix")
+                })?;
+                let module = self.qualified_imports.get(alias).ok_or_else(|| {
+                    EmitError::internal("a qualified Swift module call has a resolved import")
+                })?;
+                self.emit_module_call(module, leaf, type_args, args, sig, meta.span)
+            }
+            Expr::LowNewtypeCtor {
+                newtype,
+                member,
+                type_args,
+                payload,
+                ..
+            } => self.emit_newtype_member(None, newtype, member, type_args, payload),
+            Expr::LowNewtypeProj {
+                newtype,
+                member,
+                type_args,
+                target,
+                ..
+            } => self.emit_newtype_member(None, newtype, member, type_args, target),
             Expr::LowAbsurdCall { value_arg, .. } => {
                 let arg = self.emit_expr(value_arg)?;
                 Ok(format!(
                     "{{ () -> Any in _ = {arg}; fatalError(\"kio: __absurd__ reached\") }}()"
                 ))
             }
-            Expr::FnExpr { sig, body, .. } => self.emit_fn_expr(sig, body),
+            Expr::FnExpr { sig, body, .. } => {
+                let full_type = self
+                    .expr_type(e)
+                    .ok_or_else(|| EmitError::internal("Swift closure has no phase-owned type"))?;
+                self.callable_value(sig, &full_type, body)
+            }
             Expr::LowClosureCall {
                 name,
                 type_args,
@@ -2951,8 +2035,16 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 ..
             } => {
                 let callee = swift_local_ident(name);
-                let callee = self.emit_erased_type_applications(callee, type_args.len());
-                self.emit_apply(&callee, args)
+                let ty = self
+                    .local_types
+                    .get(name)
+                    .ok_or_else(|| EmitError::internal("Swift closure call has no lexical type"))?;
+                let ty = crate::backends::reconstruct::instantiate_type_stages(ty, type_args)
+                    .ok_or_else(|| {
+                        EmitError::internal("Swift closure type applications cross a value stage")
+                    })?;
+                let callee = self.emit_type_applications(callee, type_args)?;
+                self.emit_value_call(&callee, &ty, args)
             }
             Expr::LowIndirectCall {
                 callee,
@@ -2961,18 +2053,21 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 ..
             } => {
                 let c = self.emit_expr(callee)?;
-                let c = self.emit_erased_type_applications(c, type_args.len());
-                match callee.as_ref() {
-                    Expr::FnExpr { sig, .. } => {
-                        let param_tys = first_value_group_param_types(sig);
-                        self.emit_apply_adapting(&c, args, &param_tys)
-                    }
-                    _ => self.emit_apply_erased(&c, args),
-                }
+                let ty = self.expr_type(callee).ok_or_else(|| {
+                    EmitError::internal("Swift indirect call has no phase-owned callee type")
+                })?;
+                let ty = crate::backends::reconstruct::instantiate_type_stages(&ty, type_args)
+                    .ok_or_else(|| {
+                        EmitError::internal("Swift indirect type applications cross a value stage")
+                    })?;
+                let c = self.emit_type_applications(c, type_args)?;
+                self.emit_value_call(&c, &ty, args)
             }
-            Expr::LowTypeApplication { callee, .. } => {
+            Expr::LowTypeApplication {
+                callee, type_arg, ..
+            } => {
                 let c = self.emit_expr(callee)?;
-                Ok(self.emit_erased_type_applications(c, 1))
+                self.emit_type_applications(c, std::slice::from_ref(type_arg))
             }
             Expr::LowCpsProjectorApply {
                 receiver,
@@ -2990,7 +2085,117 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Expr::LowModuleFnValueRef { mangled, sig, .. } => {
                 self.emit_module_fn_value_ref(mangled, sig)
             }
-            Expr::LowQualifiedNewtypeMember { payload, .. } => self.emit_expr(payload),
+            Expr::LowQualifiedNewtypeMember {
+                module_path,
+                newtype,
+                member,
+                type_args,
+                payload,
+                ..
+            } => self.emit_newtype_member(Some(module_path), newtype, member, type_args, payload),
+        }
+    }
+
+    fn emit_newtype_member(
+        &mut self,
+        module: Option<&str>,
+        name: &str,
+        member: &str,
+        arguments: &[Type<Routed>],
+        payload: &Expr<Routed>,
+    ) -> Result<String, EmitError> {
+        let caller_module = &self
+            .shapes
+            .package()
+            .module(self.module_key)
+            .expect("a routed Swift body belongs to a package module")
+            .module;
+        let type_params = self
+            .type_binders
+            .iter()
+            .map(|(param, _)| param.clone())
+            .collect::<Vec<_>>();
+        let types = RoutedBodyTypes {
+            package: self.shapes.package(),
+            module: caller_module,
+            type_params: &type_params,
+            values: &self.local_types,
+        };
+        let mut segments = module
+            .map(|module| module.split('/').map(str::to_owned).collect::<Vec<_>>())
+            .unwrap_or_default();
+        segments.push(name.to_owned());
+        let qualified = types
+            .nominal(&Type::synth_path(segments, Vec::new(), payload.span()))
+            .ok_or_else(|| EmitError::internal("a resolved Swift member has a nominal owner"))?;
+        let arguments = arguments
+            .iter()
+            .map(|argument| types.canonical(argument))
+            .collect::<Vec<_>>();
+        let module = qualified.module_segments().join("/");
+        let Some(crate::backends::value_plan::ValueNominalDeclaration::Newtype(declaration)) =
+            crate::backends::value_plan::nominal_declaration(self.shapes.package(), &qualified)
+        else {
+            return Err(EmitError::internal(
+                "a resolved Swift newtype member lost its declaration",
+            ));
+        };
+        let result_ty = crate::backends::reconstruct::newtype_member_result(
+            self.shapes.package(),
+            &module,
+            declaration,
+            member,
+            &arguments,
+        )
+        .ok_or_else(|| EmitError::internal("Swift newtype member lost its instantiated result"))?;
+        let value = self.emit_expr(payload)?;
+        if member == declaration.constructor.name {
+            let hidden = arguments
+                .get(declaration.type_params.len()..)
+                .ok_or_else(|| {
+                    EmitError::internal("Swift constructor lost its universal arguments")
+                })?;
+            let payload = if hidden.is_empty() {
+                value
+            } else {
+                let witnesses = hidden
+                    .iter()
+                    .map(|ty| self.witness(ty))
+                    .collect::<Result<Vec<_>, _>>()?;
+                format!(
+                    "__KioExistential(payload: {value}, witnesses: [{}])",
+                    witnesses.join(", ")
+                )
+            };
+            let witness = self.witness(&result_ty)?;
+            Ok(format!(
+                "__kioChecked({witness}, as: (any __KioNominalWitness).self).construct({payload})"
+            ))
+        } else if member == declaration.projector.name {
+            if declaration.existential_params.is_empty() {
+                Ok(format!(
+                    "__kioChecked({value}, as: (any __KioNominalValue).self).__kioValue"
+                ))
+            } else {
+                let plan = self.value_plan(&result_ty)?;
+                let scope = plan
+                    .ambient_binders()
+                    .iter()
+                    .copied()
+                    .zip(self.type_binders.iter().map(|(_, value)| value.clone()))
+                    .collect();
+                let types = super::value::Types {
+                    plan: &plan,
+                    shapes: self.facade_shapes,
+                    retained_nominals: None,
+                    origin: BoundaryFacadeSupportOrigin::Live,
+                };
+                render_existential_projection(&types, plan.root(), &scope, &value)
+            }
+        } else {
+            Err(EmitError::internal(
+                "a resolved Swift newtype member is neither its constructor nor projector",
+            ))
         }
     }
 
@@ -3000,27 +2205,30 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         continuation: &Expr<Routed>,
         continuation_ty: &Type<Routed>,
     ) -> Result<String, EmitError> {
-        let recv = self.emit_expr(receiver)?;
-        let cont = self.emit_expr(continuation)?;
-        let receiver_name = self.fresh_name("cps_receiver");
-        let continuation_name = self.fresh_name("cps_continuation");
-        let (type_stages, callable) = continuation_ty.peel_leading_foralls();
-        let Type::Function { abi_arity, .. } = callable else {
-            unreachable!("a routed CPS projector continuation has a function type")
+        let receiver = self.emit_expr(receiver)?;
+        let continuation = self.emit_expr(continuation)?;
+        let plan = self.value_plan(continuation_ty)?;
+        let scope = plan
+            .ambient_binders()
+            .iter()
+            .copied()
+            .zip(self.type_binders.iter().map(|(_, value)| value.clone()))
+            .collect();
+        let types = super::value::Types {
+            plan: &plan,
+            shapes: self.facade_shapes,
+            retained_nominals: None,
+            origin: BoundaryFacadeSupportOrigin::Live,
         };
-        assert!(
-            *abi_arity <= 1,
-            "a routed CPS projector continuation has zero or one ABI slot"
-        );
-        let advanced = self.emit_erased_type_applications(continuation_name.clone(), type_stages);
-        let args = if *abi_arity == 0 {
-            String::new()
-        } else {
-            receiver_name.clone()
-        };
+        let call = render_existential_continuation(
+            &types,
+            plan.root(),
+            &scope,
+            "__kioContinuation",
+            "__kioPacket",
+        )?;
         Ok(format!(
-            "{{ () -> Any in let {receiver_name} = {recv}; let {continuation_name} = {cont}; return ({advanced} as! {})({args}) }}()",
-            swift_closure_type(*abi_arity)
+            "{{ () -> Any in let __kioPacket = __kioChecked(__kioChecked({receiver}, as: (any __KioNominalValue).self).__kioValue, as: __KioExistential.self); let __kioContinuation: Any = {continuation}; return {call} }}()"
         ))
     }
 
@@ -3040,86 +2248,156 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         let render = PreparedSwiftRender {
             site,
             plan: site.plan().facade(),
-            presentation: site.presentation().root_uses(),
             shapes: self.facade_shapes,
         };
-        let callable = render_prepared_callable(site, self.facade_shapes, "H")?;
-        let body_scope = callable.scope.erased();
-        let method = host_member_name(module_path, name);
-        let entry = site.plan().entry();
-        let mut stage_body_values = Vec::<Vec<String>>::new();
-        let mut public_args = Vec::new();
-        let mut body_index = 0usize;
-        for (semantic, runtime) in entry.head_stages.iter().zip(execution.head_stages()) {
-            match (semantic, runtime) {
-                (BoundaryCallableHeadStage::Type { .. }, CallableExecutionStage::Type { .. }) => {
-                    stage_body_values.push(Vec::new());
+        let values = prepared_values(render);
+        let mut current = values.plan.root();
+        let mut scope = super::value::Scope::new();
+        let mut stages = Vec::new();
+        let mut arguments = Vec::new();
+        let mut witnesses = Vec::new();
+        for stage in execution.head_stages() {
+            let witness = values.witness(current, &scope, "H")?;
+            let argument = self.fresh_name("host_stage");
+            match (stage, values.plan.use_at(current)) {
+                (CallableExecutionStage::Type { .. }, ValueUse::Forall { binder, result }) => {
+                    witnesses.push(argument.clone());
+                    scope.insert(*binder, argument.clone());
+                    stages.push((true, witness, argument, Vec::new()));
+                    current = *result;
                 }
-                (
-                    BoundaryCallableHeadStage::Value { slots },
-                    CallableExecutionStage::Value(layout),
-                ) => {
-                    let values = (0..layout.body_abi_arity())
-                        .map(|_| {
-                            let value = format!("__p{body_index}");
-                            body_index += 1;
-                            value
-                        })
+                (CallableExecutionStage::Value(layout), ValueUse::Function { result, .. }) => {
+                    let names = (0..layout.body_abi_arity())
+                        .map(|index| format!("{argument}_{index}"))
                         .collect::<Vec<_>>();
-                    public_args.extend(prepared_body_to_public_args(
-                        render,
-                        slots,
-                        layout,
-                        &values,
-                        &body_scope,
-                        0,
-                    )?);
-                    stage_body_values.push(values);
+                    arguments.extend(names.clone());
+                    stages.push((false, witness, argument, names));
+                    current = *result;
                 }
                 _ => {
                     return Err(EmitError::internal(
-                        "Swift host value reference has mismatched prepared stages",
+                        "Swift host execution stages disagree with their canonical value plan",
                     ));
                 }
             }
         }
+        let mut body = self.opened_host_call(render, name, module_path, &witnesses, &arguments)?;
+        for (type_stage, witness, argument, names) in stages.into_iter().rev() {
+            if type_stage {
+                body = format!(
+                    "__kioChecked({witness}, as: (any __KioForallWitness).self).construct {{ {argument} in return {body} }}"
+                );
+            } else {
+                let mut bindings = String::new();
+                for (index, name) in names.iter().enumerate() {
+                    let value = if names.len() == 1 {
+                        argument.clone()
+                    } else {
+                        format!("kioProductSlot({argument}, {index}, {})", names.len())
+                    };
+                    bindings.push_str(&format!("let {name}: Any = {value}; "));
+                }
+                body = format!(
+                    "__kioChecked({witness}, as: (any __KioFunctionWitness).self).construct {{ {argument} in {bindings}return {body} }}"
+                );
+            }
+        }
+        Ok(body)
+    }
+
+    fn opened_host_call(
+        &self,
+        render: PreparedSwiftRender<'_, '_>,
+        name: &str,
+        module_path: &str,
+        witnesses: &[String],
+        arguments: &[String],
+    ) -> Result<String, EmitError> {
+        let callable = render_prepared_callable(render.site, self.facade_shapes, "H")?;
+        let execution = live_execution(render.site)?;
+        let type_selectors = swift_method_type_selectors(&callable)
+            .into_iter()
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let mut scope = callable.scope;
+        if scope.binders.len() != witnesses.len() {
+            return Err(EmitError::internal(
+                "Swift host call did not retain each declared type witness",
+            ));
+        }
+        for (index, native) in scope.binders.values_mut().enumerate() {
+            *native = format!("W{index}.Native");
+        }
+        let mut cursor = 0;
+        let mut public_args = Vec::new();
+        for (semantic, runtime) in render
+            .site
+            .plan()
+            .entry()
+            .head_stages
+            .iter()
+            .zip(execution.head_stages())
+        {
+            if let (
+                BoundaryCallableHeadStage::Value { slots },
+                CallableExecutionStage::Value(layout),
+            ) = (semantic, runtime)
+            {
+                let end = cursor + layout.body_abi_arity();
+                let locals = (cursor..end)
+                    .map(|index| format!("argument{index}"))
+                    .collect::<Vec<_>>();
+                public_args.extend(prepared_body_to_public_args(
+                    render, slots, layout, &locals, &scope, 0,
+                )?);
+                cursor = end;
+            }
+        }
+        if cursor != arguments.len() {
+            return Err(EmitError::internal(
+                "Swift opened host call value arity drift",
+            ));
+        }
+        let method = host_member_name(module_path, name);
+        public_args.extend(
+            type_selectors
+                .into_iter()
+                .map(|index| format!("asKioType{index}: W{index}.Native.self")),
+        );
+        let ty = render_prepared_use(render, callable.ret_use, &scope, "H")?;
         let call = format!(
             "self.{HOST_STORAGE_MEMBER}.{method}({})",
             public_args.join(", ")
         );
-        let mut body = if matches!(
-            site.plan().facade().use_at(callable.ret_use),
-            FacadeUse::Unit { .. }
-        ) {
-            format!("{{ () -> Any in {call}; return KioUnit() }}()")
+        let returned = if matches!(render.plan.use_at(callable.ret_use), FacadeUse::Unit { .. }) {
+            format!("{call}; return KioUnit()")
         } else {
-            let ret_type = render_prepared_use(render, callable.ret_use, &body_scope, "H")?;
-            let call = format!("({call} as {ret_type})");
-            convert_prepared_use(
-                render,
-                callable.ret_use,
-                PreparedSwiftConversion::new(&call, PreparedSwiftDir::In, &body_scope, 0),
-            )?
+            format!("return (({call}) as {ty}) as Any")
         };
-        let mut body_cursor = body_index;
-        for (runtime, values) in execution.head_stages().iter().zip(&stage_body_values).rev() {
-            match runtime {
-                CallableExecutionStage::Type { .. } => {
-                    body = format!("{{ () -> Any in return {body} }}")
-                }
-                CallableExecutionStage::Value(layout) => {
-                    body_cursor -= layout.body_abi_arity();
-                    let params = values
-                        .iter()
-                        .map(|value| format!("{value}: Any"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    body = format!("{{ ({params}) -> Any in return {body} }}");
-                }
-            }
-        }
-        debug_assert_eq!(body_cursor, 0);
-        Ok(format!("({body} as Any)"))
+        let generic = (0..witnesses.len())
+            .map(|index| format!("W{index}: __KioTypeWitness"))
+            .collect::<Vec<_>>();
+        let mut params = (0..witnesses.len())
+            .map(|index| format!("_ witness{index}: W{index}"))
+            .collect::<Vec<_>>();
+        params.extend((0..arguments.len()).map(|index| format!("_ argument{index}: Any")));
+        let witness_bindings = witnesses
+            .iter()
+            .enumerate()
+            .map(|(index, witness)| {
+                format!("let __kioOpenedType{index}: any __KioTypeWitness = {witness}; ")
+            })
+            .collect::<String>();
+        let mut actual = (0..witnesses.len())
+            .map(|index| format!("__kioOpenedType{index}"))
+            .collect::<Vec<_>>();
+        actual.extend_from_slice(arguments);
+        Ok(format!(
+            "{{ () -> Any in func invoke{}({}) -> Any {{ {returned} }}; {witness_bindings}return invoke({}) }}()",
+            super::skin::swift_generic_use(&generic),
+            params.join(", "),
+            actual.join(", ")
+        ))
     }
 
     fn emit_host_fn_value_ref(
@@ -3137,309 +2415,126 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     fn emit_module_fn_value_ref(
         &mut self,
         mangled: &str,
-        sig: &crate::ast::Signature<Routed>,
+        _sig: &crate::ast::Signature<Routed>,
     ) -> Result<String, EmitError> {
-        let method = match self.selective_imports.get(mangled) {
-            Some(m) => m.clone(),
-            None => module_fn_method_name(self.module_key, mangled),
-        };
-        // The package-handle method binds the fn's **first** value group and
-        // returns nested closures for the inner groups (see
-        // `render_module_fns`). So the value-ref closure binds only the
-        // first group's params and forwards them to `self.method(...)`;
-        // the method's own currying supplies the inner-group layers, which
-        // a per-group application (`get()(x)(y)`) reaches through the
-        // erased-call casts (`(… as! ClosureType)(…)`). Binding *every*
-        // group's params in one flat closure and passing them all to
-        // `self.method` is wrong on two counts — the method takes only the
-        // first group, and the flat closure can't be applied one group at
-        // a time — so a multi-group module-fn value failed at runtime.
-        let first_group = runtime_group_arities(sig).first().copied().unwrap_or(0);
-        let params: Vec<String> = (0..first_group).map(|i| format!("__p{i}: Any")).collect();
-        let fwd: Vec<String> = (0..first_group).map(|i| format!("__p{i}")).collect();
-        Ok(format!(
-            "({{ ({}) -> Any in return self.{method}({}) }} as Any)",
-            params.join(", "),
-            fwd.join(", ")
-        ))
+        let module = self
+            .selective_imports
+            .get(mangled)
+            .map(String::as_str)
+            .unwrap_or(self.module_key);
+        let method = module_fn_method_name(module, mangled);
+        Ok(format!("self.{method}()"))
     }
 
-    /// Lower a Kio closure `.(x, y) { body }` to a Swift closure. A value
-    /// group with `n ≥ 2` binders destructures a single product param; the
-    /// closure literal stays multi-param and a flow site adapts it.
-    fn emit_fn_expr(
-        &mut self,
-        sig: &crate::ast::Signature<Routed>,
-        body: &Expr<Routed>,
-    ) -> Result<String, EmitError> {
-        let groups = runtime_param_name_groups(sig);
-        let param_types: HashMap<&str, Type<Routed>> = sig
-            .params
-            .iter()
-            .filter_map(|param| match param {
-                crate::ast::SignatureParam::Value(value) => value
-                    .ty
-                    .as_ref()
-                    .map(|ty| (value.name.as_str(), ty.clone())),
-                crate::ast::SignatureParam::Type(_) => None,
-            })
-            .collect();
-        let mut pushed = 0usize;
-        let mut prior_types = Vec::new();
-        for g in &groups {
-            for n in g {
-                self.locals.push((*n).to_owned());
-                let prior = self.local_types.remove(*n);
-                if let Some(ty) = param_types.get(*n) {
-                    self.local_types.insert((*n).to_owned(), ty.clone());
-                }
-                prior_types.push(((*n).to_owned(), prior));
-                pushed += 1;
-            }
-        }
-        let body_src = self.emit_expr(body);
-        for _ in 0..pushed {
-            self.locals.pop();
-        }
-        for (name, prior) in prior_types.into_iter().rev() {
-            self.local_types.remove(&name);
-            if let Some(ty) = prior {
-                self.local_types.insert(name, ty);
-            }
-        }
-        let body_src = body_src?;
-        let mut acc = body_src;
-        for g in groups.iter().rev() {
-            let params: String = g
-                .iter()
-                .map(|n| format!("{}: Any", swift_local_ident(n)))
-                .collect::<Vec<_>>()
-                .join(", ");
-            acc = format!("{{ ({params}) -> Any in return {acc} }}");
-        }
-        Ok(format!("({acc} as Any)"))
-    }
-
-    /// Adapt a fn-valued expression `rendered` to the product-grouping the
-    /// function type `expected` requires, when the two differ.
-    fn adapt_fn_value_for_type(
+    fn emit_type_applications(
         &self,
-        rendered: String,
-        source: &Expr<Routed>,
-        expected: &Type<Routed>,
-    ) -> String {
-        let Some(sig) = underlying_fn_expr_sig(source) else {
-            return rendered;
-        };
-        let expected = peel_forall(expected);
-        let Type::Function {
-            param, abi_arity, ..
-        } = expected
-        else {
-            return rendered;
-        };
-        let groups = value_param_name_groups(sig);
-        let Some(first_group) = groups.first() else {
-            return rendered;
-        };
-        let binder_count = first_group.len();
-        let type_arity = Type::right_spine_take(param, *abi_arity).len();
-        if binder_count == type_arity || groups.len() > 1 {
-            return rendered;
+        mut callee: String,
+        arguments: &[Type<Routed>],
+    ) -> Result<String, EmitError> {
+        for argument in arguments {
+            callee = format!("__kioAdvance({callee}, {})", self.witness(argument)?);
         }
-        if type_arity == 1 && binder_count >= 2 {
-            let peels: Vec<String> = (0..binder_count)
-                .map(|i| product_param_slot_access("__a0", i, binder_count))
-                .collect();
-            return format!(
-                "({{ (__a0: Any) -> Any in return ({rendered} as! {})({}) }} as Any)",
-                swift_closure_type(binder_count),
-                peels.join(", ")
-            );
-        }
-        rendered
+        Ok(callee)
     }
 
-    fn emit_apply(&mut self, callee: &str, args: &[Expr<Routed>]) -> Result<String, EmitError> {
-        self.emit_apply_erased(callee, args)
-    }
-
-    /// Consume one hidden nullary closure per erased type application.
-    /// Each application remains an ordinary runtime call boundary.
-    fn emit_erased_type_applications(&self, mut callee: String, count: usize) -> String {
-        for _ in 0..count {
-            callee = format!("({callee} as! (() -> Any))()")
+    fn product_from_values(
+        &self,
+        ty: &Type<Routed>,
+        values: &[String],
+    ) -> Result<String, EmitError> {
+        if values.is_empty() {
+            return Ok("KioUnit()".to_owned());
         }
-        callee
+        let witnesses = self.structural_witnesses(ty, values.len(), false)?;
+        Ok(swift_product_expression(values, &witnesses))
     }
 
-    fn emit_apply_erased(
+    fn structural_witnesses(
+        &self,
+        ty: &Type<Routed>,
+        arity: usize,
+        sum: bool,
+    ) -> Result<Vec<String>, EmitError> {
+        let plan = self.value_plan(ty)?;
+        let scope = plan
+            .ambient_binders()
+            .iter()
+            .copied()
+            .zip(self.type_binders.iter().map(|(_, value)| value.clone()))
+            .collect();
+        let types = super::value::Types {
+            plan: &plan,
+            shapes: self.facade_shapes,
+            retained_nominals: None,
+            origin: BoundaryFacadeSupportOrigin::Live,
+        };
+        plan.right_spine_parts(plan.root(), arity, sum)
+            .into_iter()
+            .map(|id| types.witness(id, &scope, "H"))
+            .collect()
+    }
+
+    fn emit_value_call(
         &mut self,
         callee: &str,
+        callee_type: &Type<Routed>,
         args: &[Expr<Routed>],
     ) -> Result<String, EmitError> {
-        self.emit_apply_adapting(callee, args, &[])
-    }
-
-    /// Apply an `Any`-typed callee by casting it to the arity-matched Swift
-    /// closure type `(Any, …) -> Any` and calling. Each fn-valued arg is
-    /// adapted to the callee's declared param type when known.
-    fn emit_apply_adapting(
-        &mut self,
-        callee: &str,
-        args: &[Expr<Routed>],
-        param_tys: &[Option<Type<Routed>>],
-    ) -> Result<String, EmitError> {
-        let mut emitted = Vec::with_capacity(args.len());
-        for (i, a) in args.iter().enumerate() {
-            let rendered = self.emit_expr(a)?;
-            let rendered = match param_tys.get(i).and_then(|t| t.as_ref()) {
-                Some(ty) => self.adapt_fn_value_for_type(rendered, a, ty),
-                None => rendered,
-            };
-            emitted.push(rendered);
-        }
-        let fn_ty = swift_closure_type(args.len());
-        Ok(format!("({callee} as! {fn_ty})({})", emitted.join(", ")))
-    }
-
-    fn emit_qualified_module_call(
-        &mut self,
-        mangled: &str,
-        type_arg_count: usize,
-        args: &[Expr<Routed>],
-        sig: &crate::ast::Signature<Routed>,
-    ) -> Result<String, EmitError> {
-        let (alias, leaf) = mangled.split_once('.').ok_or_else(|| {
-            EmitError::unsupported(format!(
-                "Swift emitter: qualified module call `{mangled}` is not `<alias>.<leaf>`"
-            ))
-        })?;
-        let module_key = self.qualified_imports.get(alias).ok_or_else(|| {
-            EmitError::unsupported(format!(
-                "Swift emitter: qualified-call alias `{alias}` has no `import … as {alias};` mapping"
-            ))
-        })?;
-        let method = module_fn_method_name(module_key, leaf);
-        self.emit_grouped_method_call(&method, type_arg_count, args, sig)
-    }
-
-    /// Emit a call to a package-handle module-fn method `method` over `args`,
-    /// honoring currying.
-    fn emit_grouped_method_call(
-        &mut self,
-        method: &str,
-        type_arg_count: usize,
-        args: &[Expr<Routed>],
-        sig: &crate::ast::Signature<Routed>,
-    ) -> Result<String, EmitError> {
-        let group_arities = value_group_arities(sig);
-        let first = group_arities.first().copied().unwrap_or(0);
-        let param_tys = sig_all_value_param_types(sig);
-        let mut emitted = Vec::with_capacity(args.len());
-        for (i, a) in args.iter().enumerate() {
-            let v = self.emit_expr(a)?;
-            let v = match param_tys.get(i).and_then(|t| t.as_ref()) {
-                Some(t) => self.adapt_fn_value_for_type(v, a, t),
-                None => v,
-            };
-            emitted.push(v);
-        }
-        // A direct module call carries its leading type applications on
-        // this node. The method itself is the first nullary type stage;
-        // further binders are nullary closures returned from it. Bind the
-        // staged callee before evaluating any value argument so the
-        // observable type-stage effects stay ordered ahead of them.
-        if type_arg_count > 0 {
-            let staged =
-                self.emit_erased_type_applications(format!("self.{method}()"), type_arg_count - 1);
-            if !sig.has_value_group() {
-                assert!(
-                    args.is_empty(),
-                    "a routed type-only head has no value arguments"
-                );
-                return Ok(staged);
-            }
-            if args.len() < first {
-                let missing = first - args.len();
-                let fresh: Vec<String> = (0..missing).map(|i| format!("__pa{i}")).collect();
-                let params = fresh
-                    .iter()
-                    .map(|p| format!("{p}: Any"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let mut all_args = emitted.clone();
-                all_args.extend(fresh.iter().cloned());
-                let applied_ty = swift_closure_type(all_args.len());
-                return Ok(format!(
-                    "{{ () -> Any in let __kioTypeCallee: Any = {staged}; return ({{ ({params}) -> Any in return (__kioTypeCallee as! {applied_ty})({}) }} as Any) }}()",
-                    all_args.join(", ")
-                ));
-            }
-            let first_args = &emitted[..first];
-            let mut call = format!(
-                "(__kioTypeCallee as! {})({})",
-                swift_closure_type(first),
-                first_args.join(", ")
-            );
-            let mut consumed = first;
-            for arity in group_arities.iter().skip(1) {
-                if consumed >= emitted.len() {
-                    break;
-                }
-                let slice = &emitted[consumed..(consumed + arity).min(emitted.len())];
-                call = format!(
-                    "({call} as! {})({})",
-                    swift_closure_type(slice.len()),
-                    slice.join(", ")
-                );
-                consumed += arity;
-            }
-            return Ok(format!(
-                "{{ () -> Any in let __kioTypeCallee: Any = {staged}; return {call} }}()"
+        let Type::Function { param, .. } = callee_type else {
+            return Err(EmitError::internal(
+                "Swift value application must follow a resolved function stage",
             ));
-        }
-        if args.len() < first {
-            let missing = first - args.len();
-            let fresh: Vec<String> = (0..missing).map(|i| format!("__pa{i}")).collect();
-            let params: String = fresh
-                .iter()
-                .map(|p| format!("{p}: Any"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let mut all_args = emitted.clone();
-            all_args.extend(fresh.iter().cloned());
-            return Ok(format!(
-                "({{ ({params}) -> Any in return self.{method}({}) }} as Any)",
-                all_args.join(", ")
-            ));
-        }
-        let mut call = format!("self.{method}({})", emitted[..first].join(", "));
-        let mut consumed = first;
-        for arity in group_arities.iter().skip(1) {
-            if consumed >= emitted.len() {
-                break;
-            }
-            let slice = &emitted[consumed..(consumed + arity).min(emitted.len())];
-            let fn_ty = swift_closure_type(slice.len());
-            call = format!("({call} as! {fn_ty})({})", slice.join(", "));
-            consumed += arity;
-        }
-        Ok(call)
+        };
+        let values = args
+            .iter()
+            .map(|arg| self.emit_expr(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        let argument = self.product_from_values(param, &values)?;
+        let witness = self.witness(callee_type)?;
+        Ok(format!(
+            "{{ () -> Any in let __kioCallee: Any = {callee}; let __kioArgument: Any = {argument}; return __kioChecked({witness}, as: (any __KioFunctionWitness).self).invoke(__kioCallee, __kioArgument) }}()"
+        ))
     }
 
     fn emit_module_call(
         &mut self,
-        mangled: &str,
-        type_arg_count: usize,
+        module: &str,
+        name: &str,
+        type_args: &[Type<Routed>],
         args: &[Expr<Routed>],
         sig: &crate::ast::Signature<Routed>,
+        span: crate::span::Span,
     ) -> Result<String, EmitError> {
-        let method = match self.selective_imports.get(mangled) {
-            Some(m) => m.clone(),
-            None => module_fn_method_name(self.module_key, mangled),
-        };
-        self.emit_grouped_method_call(&method, type_arg_count, args, sig)
+        let full_type = crate::backends::reconstruct::module_function_scheme(
+            self.shapes.package(),
+            module,
+            name,
+            span,
+        )
+        .ok_or_else(|| {
+            EmitError::internal("Swift resolved module call lost its declared scheme")
+        })?;
+        let ty = crate::backends::reconstruct::instantiate_type_stages(&full_type, type_args)
+            .ok_or_else(|| {
+                EmitError::internal("Swift module type applications cross a value stage")
+            })?;
+        let method = module_fn_method_name(module, name);
+        let call = self.emit_type_applications(format!("self.{method}()"), type_args)?;
+        let first_arity = value_group_arities(sig)[0];
+        if !sig.has_value_group() || (args.is_empty() && first_arity > 0) {
+            if !args.is_empty() {
+                return Err(EmitError::internal(
+                    "a type-only module head has no value arguments",
+                ));
+            }
+            return Ok(call);
+        }
+        if args.len() != first_arity {
+            return Err(EmitError::internal(
+                "a typed Routed module call must complete exactly its first value group",
+            ));
+        }
+        self.emit_value_call(&call, &ty, args)
     }
 
     /// `if cond { then } else { else }` → an immediately-invoked Swift
@@ -3479,95 +2574,39 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     }
 
     /// A product `(A & B & C)` → the nested-binary erased value
-    /// `[a, [b, c]] as [Any]`.
+    /// Exact binary native nodes carried through the erased interface.
     fn emit_tuple_typed(
         &mut self,
         items: &[Expr<Routed>],
         synth_ty: &Type<Routed>,
     ) -> Result<String, EmitError> {
-        let n = items.len();
-        if n == 0 {
-            return Ok("(KioUnit())".to_owned());
+        if items.is_empty() {
+            return Ok("KioUnit()".to_owned());
         }
-        let slots = Type::right_spine_product(synth_ty);
-        let item_refs: Vec<&Expr<Routed>> = items.iter().collect();
-        if let Some(plan) = bound_product_rebuild_plan(&item_refs) {
-            return self.emit_tuple_with_cached_slots(&item_refs, Some(&slots), &plan);
+        let witnesses = self.structural_witnesses(synth_ty, items.len(), false)?;
+        let construct = |values: &[String]| swift_product_expression(values, &witnesses);
+        let item_refs = items.iter().collect::<Vec<_>>();
+        if let Some(plan) =
+            bound_product_rebuild_plan(&item_refs, NominalValueRepresentation::Retained)
+        {
+            return render_cached_product_rebuild(
+                &plan,
+                |slot| format!("__slots[{slot}]"),
+                |index| self.emit_expr(&items[index]),
+                construct,
+                |source, arity, tuple| {
+                    let source = swift_local_ident(source);
+                    format!(
+                        "{{ () -> Any in let __slots = kioProductSlots({source}, {arity}); return {tuple} }}()"
+                    )
+                },
+            );
         }
-        let mut rendered = Vec::with_capacity(n);
-        for i in 0..n {
-            rendered.push(self.emit_tuple_item(items, &slots, i)?);
-        }
-        Ok(Self::emit_tuple_from_rendered(&rendered))
-    }
-
-    fn emit_tuple_item(
-        &mut self,
-        items: &[Expr<Routed>],
-        slots: &[&Type<Routed>],
-        i: usize,
-    ) -> Result<String, EmitError> {
-        let v = self.emit_expr(&items[i])?;
-        match slots.get(i) {
-            Some(slot) if matches!(slot, Type::Function { .. }) => {
-                Ok(self.adapt_fn_value_for_type(v, &items[i], slot))
-            }
-            _ => Ok(v),
-        }
-    }
-
-    fn emit_tuple_refs(&mut self, items: &[&Expr<Routed>]) -> Result<String, EmitError> {
-        let n = items.len();
-        if n == 0 {
-            return Ok("(KioUnit())".to_owned());
-        }
-        if let Some(plan) = bound_product_rebuild_plan(items) {
-            return self.emit_tuple_with_cached_slots(items, None, &plan);
-        }
-        let mut rendered = Vec::with_capacity(n);
-        for item in items {
-            rendered.push(self.emit_expr(item)?);
-        }
-        Ok(Self::emit_tuple_from_rendered(&rendered))
-    }
-
-    fn emit_tuple_from_rendered(rendered: &[String]) -> String {
-        let n = rendered.len();
-        debug_assert!(n > 0);
-        let mut acc = rendered[n - 1].clone();
-        for head in rendered[..n - 1].iter().rev() {
-            acc = format!("[{head}, {acc}] as [Any]");
-        }
-        format!("({acc} as Any)")
-    }
-
-    fn emit_tuple_with_cached_slots(
-        &mut self,
-        items: &[&Expr<Routed>],
-        slot_tys: Option<&[&Type<Routed>]>,
-        plan: &ProductRebuildPlan,
-    ) -> Result<String, EmitError> {
-        render_cached_product_rebuild(
-            plan,
-            |slot| format!("__slots[{slot}]"),
-            |i| {
-                let item = items[i];
-                let v = self.emit_expr(item)?;
-                match slot_tys.and_then(|slots| slots.get(i)).copied() {
-                    Some(slot_ty) if matches!(slot_ty, Type::Function { .. }) => {
-                        Ok(self.adapt_fn_value_for_type(v, item, slot_ty))
-                    }
-                    _ => Ok(v),
-                }
-            },
-            Self::emit_tuple_from_rendered,
-            |source, source_arity, tuple| {
-                let source = swift_local_ident(source);
-                format!(
-                    "{{ () -> Any in let __slots = kioProductSlots({source}, {source_arity}); return {tuple} }}()"
-                )
-            },
-        )
+        let values = items
+            .iter()
+            .map(|item| self.emit_expr(item))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(construct(&values))
     }
 
     /// Project slot `index` (of `arity`) from the erased nested-binary product
@@ -3588,9 +2627,14 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         payload: &Expr<Routed>,
         variant: usize,
         variants: usize,
+        synth_ty: &Type<Routed>,
     ) -> Result<String, EmitError> {
         let p = self.emit_expr(payload)?;
-        Ok(format!("kioSumInject({p}, {variant}, {variants})"))
+        let witnesses = self.structural_witnesses(synth_ty, variants, true)?;
+        Ok(format!(
+            "__kioInject({p}, {variant}, [{}])",
+            witnesses.join(", ")
+        ))
     }
 
     /// Match on a sum scrutinee by peeling it once to `(variant, payload)`.
@@ -3650,80 +2694,27 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         &mut self,
         name: &str,
         module_path: &str,
+        type_args: &[Type<Routed>],
         args: &[Expr<Routed>],
         _sig: &crate::ast::Signature<Routed>,
         _ret_ty: &Type<Routed>,
     ) -> Result<String, EmitError> {
         let site_id = host_function_site_id(module_path, name);
         let site = prepared_site(self.prepared, &site_id)?;
-        let execution = live_execution(site)?;
         let render = PreparedSwiftRender {
             site,
             plan: site.plan().facade(),
-            presentation: site.presentation().root_uses(),
             shapes: self.facade_shapes,
         };
-        let callable = render_prepared_callable(site, self.facade_shapes, "H")?;
-        let body_scope = callable.scope.erased();
-        let method = host_member_name(module_path, name);
-        let body_values = args
+        let witnesses = type_args
+            .iter()
+            .map(|ty| self.witness(ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        let arguments = args
             .iter()
             .map(|arg| self.emit_expr(arg))
             .collect::<Result<Vec<_>, _>>()?;
-        let entry = site.plan().entry();
-        let expected_body_arity = execution
-            .head_stages()
-            .iter()
-            .map(|stage| match stage {
-                CallableExecutionStage::Type { .. } => 0,
-                CallableExecutionStage::Value(layout) => layout.body_abi_arity(),
-            })
-            .sum::<usize>();
-        if expected_body_arity != body_values.len() {
-            return Err(EmitError::unsupported(format!(
-                "Swift emitter: host fn `{name}` arity mismatch ({} params, {} args)",
-                expected_body_arity,
-                body_values.len()
-            )));
-        }
-        let mut body_cursor = 0usize;
-        let mut public_args = Vec::new();
-        for (semantic, runtime) in entry.head_stages.iter().zip(execution.head_stages()) {
-            let (BoundaryCallableHeadStage::Value { slots }, CallableExecutionStage::Value(layout)) =
-                (semantic, runtime)
-            else {
-                continue;
-            };
-            let end = body_cursor + layout.body_abi_arity();
-            public_args.extend(prepared_body_to_public_args(
-                render,
-                slots,
-                layout,
-                &body_values[body_cursor..end],
-                &body_scope,
-                0,
-            )?);
-            body_cursor = end;
-        }
-        let call = format!(
-            "self.{HOST_STORAGE_MEMBER}.{method}({})",
-            public_args.join(", ")
-        );
-        if matches!(
-            site.plan().facade().use_at(callable.ret_use),
-            FacadeUse::Unit { .. }
-        ) {
-            Ok(format!("{{ () -> Any in {call}; return KioUnit() }}()"))
-        } else {
-            let ret_type = render_prepared_use(render, callable.ret_use, &body_scope, "H")?;
-            let call = format!("({call} as {ret_type})");
-            let converted = convert_prepared_use(
-                render,
-                callable.ret_use,
-                PreparedSwiftConversion::new(&call, PreparedSwiftDir::In, &body_scope, 0),
-            )?;
-            Ok(format!("{{ () -> Any in return {converted} }}()"))
-        }
+        self.opened_host_call(render, name, module_path, &witnesses, &arguments)
     }
 
     /// Resolve an exact nullary host atom to its literal role, if any.
@@ -3785,14 +2776,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     }
 }
 
-fn sig_all_value_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Option<Type<Routed>>> {
-    host_sig_value_param_types(sig)
-}
-
-fn host_sig_value_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Option<Type<Routed>>> {
-    value_group_param_types(sig).into_iter().flatten().collect()
-}
-
 /// Render a Kio string value as a Swift double-quoted string literal.
 fn swift_string_lit(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
@@ -3822,30 +2805,10 @@ fn swift_local_ident(name: &str) -> String {
     format!("k_{name}")
 }
 
-/// The Swift function type a body closure of value-arity `arity` is cast to
-/// before application: `(Any, …, Any) -> Any`.
-fn swift_closure_type(arity: usize) -> String {
-    let params = vec!["Any"; arity].join(", ");
-    format!("({params}) -> Any")
-}
-
-fn peel_forall(ty: &Type<Routed>) -> &Type<Routed> {
-    let mut t = ty;
-    while let Type::Forall { body, .. } = t {
-        t = body;
-    }
-    t
-}
-
-/// The Swift access expression for slot `i` of an `n`-slot right-nested
-/// binary product held in `v_expr` (an `Any`).
-fn product_param_slot_access(v_expr: &str, i: usize, n: usize) -> String {
-    format!("kioProductSlot({v_expr}, {i}, {n})")
-}
-
 #[cfg(all(test, feature = "surface"))]
 mod tests {
     use super::*;
+    use crate::backends::boundary_facade::QualifiedTypeName;
     use crate::pass::full::FullPipeline;
     use crate::pass::parser::{parse, parse_package_file};
     use crate::pass::resolve::PackageFileEntry;
@@ -3861,7 +2824,11 @@ mod tests {
             emitted.host_swift,
             emitted.ffi_swift
         );
-        for source in [&emitted.pkg_swift, &emitted.shapes_swift] {
+        for source in [
+            &emitted.pkg_swift,
+            &emitted.shapes_swift,
+            &emitted.runtime_swift,
+        ] {
             for line in source.lines().filter(|line| line.contains("public ")) {
                 let signature = line.split(" {").next().unwrap_or(line);
                 assert!(
@@ -3877,16 +2844,84 @@ mod tests {
         let values = (0..255)
             .map(|index| format!("v{index}"))
             .collect::<Vec<_>>();
-        let rendered = swift_right_nest(&values).expect("render wide prepared product");
+        let witnesses = vec!["witness".to_owned(); values.len()];
+        let rendered = swift_product_expression(&values, &witnesses);
 
-        assert!(rendered.starts_with("kioProductNest([v0, v1, v2, "));
-        assert!(rendered.ends_with(", v252, v253, v254])"));
-        assert_eq!(rendered.matches('[').count(), 1, "{rendered}");
+        assert!(rendered.starts_with("__kioProduct([v0, v1, v2, "));
+        assert!(rendered.contains(", v252, v253, v254], [witness, "));
+        assert_eq!(rendered.matches('[').count(), 2, "{rendered}");
         assert!(!rendered.contains("as [Any]"), "{rendered}");
         assert!(
-            super::super::runtime::RUNTIME_SUPPORT_FILE_CONTENT
-                .contains("func kioProductNest(_ slots: [Any]) -> Any")
+            super::super::runtime::RUNTIME_SUPPORT_FILE_CONTENT.contains(
+                "func __kioProduct(_ slots: [Any], _ witnesses: [any __KioTypeWitness]) -> Any"
+            )
         );
+    }
+
+    #[test]
+    fn wide_canonical_types_and_witnesses_use_linear_output() {
+        use crate::ast::Meta;
+        use crate::backends::boundary_facade::PreparedBoundaryScheme;
+        let package = single_api_package("module api; pub fn unit() -> . { () }");
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
+        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
+        let span = crate::span::Span::new(0, 0);
+        let width = 2048;
+        for sum in [false, true] {
+            let mut ty = Type::Unit {
+                meta: Meta::new(span),
+            };
+            for _ in 1..width {
+                let left = Box::new(Type::Unit {
+                    meta: Meta::new(span),
+                });
+                ty = if sum {
+                    Type::Sum {
+                        left,
+                        right: Box::new(ty),
+                        meta: Meta::new(span),
+                    }
+                } else {
+                    Type::Product {
+                        left,
+                        right: Box::new(ty),
+                        meta: Meta::new(span),
+                    }
+                };
+            }
+            let nominals = Default::default();
+            let facade = BoundaryFacadePlan::from_prepared_scheme(
+                PreparedBoundaryScheme::try_new(&ty, &nominals).unwrap(),
+            );
+            let plan = ValuePlan::from_facade(&facade);
+            let types = super::super::value::Types {
+                plan: &plan,
+                shapes: &shapes,
+                retained_nominals: None,
+                origin: BoundaryFacadeSupportOrigin::Live,
+            };
+            let scope = Default::default();
+            let native = types.native(plan.root(), &scope, "H").unwrap();
+            let witness = types.witness(plan.root(), &scope, "H").unwrap();
+            assert_eq!(
+                native
+                    .matches(if sum { "Sum<" } else { "Product<" })
+                    .count(),
+                width - 1
+            );
+            assert_eq!(
+                witness
+                    .matches(if sum {
+                        "__kioSumType("
+                    } else {
+                        "__kioProductType("
+                    })
+                    .count(),
+                width - 1
+            );
+            assert!(native.len() < width * 24);
+            assert!(witness.len() < width * 240);
+        }
     }
 
     #[test]
@@ -3899,6 +2934,134 @@ mod tests {
             escaping_param_ty(product_with_closure),
             product_with_closure
         );
+    }
+
+    #[test]
+    fn higher_order_domains_preserve_generic_escaping_convention() {
+        let package = single_api_package(
+            "module api; \
+             host fn apply(value: (. -> .) -> .) -> .; \
+             pub fn keep(value: (. -> .) -> .) -> (. -> .) -> . { value }",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit higher-order Swift");
+        let higher_order = "(@escaping (KioUnit) -> KioUnit) -> KioUnit";
+        assert!(emitted.ffi_swift.contains(&format!("= {higher_order}")));
+        assert!(emitted.host_swift.contains(&format!(
+            "func api__apply(_ arg0: @escaping {higher_order})"
+        )));
+        assert!(emitted.pkg_swift.contains(&format!(
+            "public func keep(_ arg0: @escaping {higher_order}) -> {higher_order}"
+        )));
+    }
+
+    #[test]
+    fn native_leaf_witnesses_do_not_emit_immediate_closures() {
+        use crate::ast::{Meta, PathSegment};
+        let package = single_api_package("module api; host type Atom; pub fn unit() { () }");
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
+        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
+        let span = crate::span::Span::new(0, 0);
+        for (ty, native) in [
+            (
+                Type::Unit {
+                    meta: Meta::new(span),
+                },
+                "KioUnit",
+            ),
+            (
+                Type::Bottom {
+                    meta: Meta::new(span),
+                },
+                "Never",
+            ),
+            (
+                Type::Path {
+                    segments: vec![PathSegment::new("Atom", span)],
+                    args: vec![],
+                    meta: Meta::new(span),
+                },
+                "H.api__Atom",
+            ),
+        ] {
+            let plan = ValuePlan::from_routed_type(
+                &package,
+                &package.module("api").unwrap().module,
+                &[],
+                &ty,
+            )
+            .unwrap();
+            let types = super::super::value::Types {
+                plan: &plan,
+                shapes: &shapes,
+                retained_nominals: None,
+                origin: BoundaryFacadeSupportOrigin::Live,
+            };
+            assert_eq!(
+                types
+                    .witness(plan.root(), &Default::default(), "H")
+                    .unwrap(),
+                format!("__KioNativeWitness<{native}>()")
+            );
+        }
+    }
+
+    #[test]
+    fn one_witness_prelude_reuses_only_exact_native_leaves() {
+        use crate::ast::{Meta, PathSegment};
+        let package =
+            single_api_package("module api; host type Atom; host type Other; pub fn unit() { () }");
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
+        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
+        let span = crate::span::Span::new(0, 0);
+        let atom = |name| Type::Path {
+            segments: vec![PathSegment::new(name, span)],
+            args: vec![],
+            meta: Meta::new(span),
+        };
+        let mut ty = Type::Bottom {
+            meta: Meta::new(span),
+        };
+        for left in [
+            Type::Unit {
+                meta: Meta::new(span),
+            },
+            atom("Other"),
+            atom("Atom"),
+            atom("Atom"),
+        ] {
+            ty = Type::Product {
+                left: Box::new(left),
+                right: Box::new(ty),
+                meta: Meta::new(span),
+            };
+        }
+        let plan =
+            ValuePlan::from_routed_type(&package, &package.module("api").unwrap().module, &[], &ty)
+                .unwrap();
+        let types = super::super::value::Types {
+            plan: &plan,
+            shapes: &shapes,
+            retained_nominals: None,
+            origin: BoundaryFacadeSupportOrigin::Live,
+        };
+        let witness = types
+            .witness(plan.root(), &Default::default(), "H")
+            .unwrap();
+        for native in ["H.api__Atom", "H.api__Other", "KioUnit", "Never"] {
+            assert_eq!(
+                witness
+                    .matches(&format!("__KioNativeWitness<{native}>()"))
+                    .count(),
+                1,
+                "{witness}"
+            );
+        }
+        assert_eq!(witness.matches("__kioProductType(").count(), 4, "{witness}");
+        let other_host = types
+            .witness(plan.root(), &Default::default(), "OtherHost")
+            .unwrap();
+        assert!(other_host.contains("__KioNativeWitness<OtherHost.api__Atom>()"));
+        assert!(!other_host.contains("__KioNativeWitness<H.api__Atom>()"));
     }
 
     #[test]
@@ -4071,7 +3234,8 @@ v(2) {
         let package = single_api_package("module api; pub fn unit() -> . { () }");
         let prepared = PreparedBoundaryCallableSites::collect(&package, Some(&replayed))
             .expect("prepare Swift reached-nominal width fixture");
-        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "FacadeHost");
+        let shapes =
+            super::super::skin::PreparedSwiftShapes::new(&prepared, "FacadeHost", &package);
         shapes.measure_reached_nominal_index(&prepared)
     }
 
@@ -4178,27 +3342,27 @@ v(2) {
         assert!(
             retained
                 .shapes_swift
-                .contains(&format!("public struct {box_carrier}<T0>")),
+                .contains(&format!("public typealias {box_carrier}<T0> = KioApply1<")),
             "{}",
             retained.shapes_swift
         );
         assert!(
             retained.shapes_swift.contains(&format!(
-                "@available(*, deprecated, message: \"Kio host type `api.Box` is retained only for removed host declarations from contract v2\")\npublic struct {box_carrier}<T0>"
+                "@available(*, deprecated, message: \"Kio host type `api.Box` is retained only for removed host declarations from contract v2\")\npublic typealias {box_carrier}<T0>"
             )),
             "{}",
             retained.shapes_swift
         );
         assert!(
-            retained
-                .shapes_swift
-                .contains(&format!("public struct {token_carrier}<H: FacadeHost, T0>")),
+            retained.shapes_swift.contains(&format!(
+                "public typealias {token_carrier}<H: FacadeHost, T0> = KioApply1<"
+            )),
             "{}",
             retained.shapes_swift
         );
         assert!(
             retained.shapes_swift.contains(&format!(
-                "@available(*, deprecated, message: \"Kio newtype `api.Token` is retained only for removed host declarations from contract v2\")\npublic struct {token_carrier}<H: FacadeHost, T0>"
+                "@available(*, deprecated, message: \"Kio newtype `api.Token` is retained only for removed host declarations from contract v2\")\npublic typealias {token_carrier}<H: FacadeHost, T0>"
             )),
             "{}",
             retained.shapes_swift
@@ -4256,21 +3420,17 @@ v(2) {
             retained.ffi_swift
         );
         assert!(
-            retained.shapes_swift.contains("Kio facade shell `"),
+            retained.shapes_swift.contains("Kio callable carrier `"),
             "{}",
             retained.shapes_swift
         );
         assert!(
-            retained.shapes_swift.contains(
-                "Kio application carrier `KioApply1` is retained only for removed host declarations from contract v2"
-            ),
+            !retained.runtime_swift.contains("@available(*, deprecated"),
             "{}",
             retained.shapes_swift
         );
         assert!(
-            retained
-                .shapes_swift
-                .contains(&format!("{}public protocol KioForall_", old_attribute)),
+            retained.shapes_swift.contains("public protocol KioForall_"),
             "{}",
             retained.shapes_swift
         );
@@ -4280,7 +3440,7 @@ v(2) {
             if declaration.starts_with("public ")
                 || declaration.starts_with("case ")
                 || declaration.starts_with("associatedtype ")
-                || declaration.starts_with("func ")
+                || declaration.starts_with("func specialize<")
             {
                 assert!(
                     index > 0 && shape_lines[index - 1].contains("@available(*, deprecated"),
@@ -4305,6 +3465,48 @@ v(2) {
     }
 
     #[test]
+    fn nested_callable_support_promotes_retained_origins_before_reusing_declarations() {
+        let package = single_api_package("module api; host fn nested() -> [A] A -> [B] B -> A;");
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
+        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
+        let site = prepared.sites().next().expect("the one host callable");
+        let plan = site.plan().value_plan();
+        let render = |origin| {
+            let types = super::super::value::Types {
+                plan,
+                shapes: &shapes,
+                retained_nominals: Some(site.nominals()),
+                origin,
+            };
+            let native = types.native(plan.root(), &Default::default(), "H").unwrap();
+            (native, shapes.render_shapes(&package, &prepared))
+        };
+        let (initial_native, initial) = render(BoundaryFacadeSupportOrigin::Retained {
+            removed_at_version: 7,
+        });
+        assert_eq!(initial.matches("public protocol KioForall_").count(), 2);
+        assert!(initial.contains("contract v7"), "{initial}");
+        let (earlier_native, earlier) = render(BoundaryFacadeSupportOrigin::Retained {
+            removed_at_version: 2,
+        });
+        assert_eq!(initial_native, earlier_native);
+        assert_eq!(
+            initial.matches("contract v7").count(),
+            earlier.matches("contract v2").count()
+        );
+        assert!(!earlier.contains("contract v7"), "{earlier}");
+        let (live_native, live) = render(BoundaryFacadeSupportOrigin::Live);
+        assert_eq!(initial_native, live_native);
+        assert!(!live.contains("@available"), "{live}");
+        assert_eq!(live.matches("public protocol KioForall_").count(), 2);
+        let (late_native, late) = render(BoundaryFacadeSupportOrigin::Retained {
+            removed_at_version: 1,
+        });
+        assert_eq!(live_native, late_native);
+        assert_eq!(live, late);
+    }
+
+    #[test]
     fn live_provenance_dominates_retained_swift_support_deprecation() {
         let package = single_api_package(
             "module api; \
@@ -4323,7 +3525,7 @@ v(2) {
         assert!(
             emitted
                 .shapes_swift
-                .contains(&format!("public struct {box_carrier}<T0>")),
+                .contains(&format!("public typealias {box_carrier}<T0> = KioApply1<")),
             "{}",
             emitted.shapes_swift
         );
@@ -4354,10 +3556,8 @@ v(2) {
             emitted.shapes_swift
         );
         assert!(
-            emitted
-                .shapes_swift
-                .contains("Kio host fn `api.old` was removed at contract v2"),
-            "the site-specific retained rank-N carrier remains deprecated:\n{}",
+            !emitted.shapes_swift.contains("@available(*, deprecated"),
+            "the alpha-identical callable carrier also reached by live code stays current:\n{}",
             emitted.shapes_swift
         );
     }
@@ -4408,14 +3608,24 @@ v(2) {
             emitted.pkg_swift
         );
         assert!(
-            emitted.pkg_swift.contains(&format!("self.{id_method}()"))
-                && emitted.pkg_swift.contains("as! (Any) -> Any"),
+            emitted
+                .pkg_swift
+                .contains(&format!("__kioAdvance(self.{id_method}(),"))
+                && emitted
+                    .pkg_swift
+                    .contains("__KioFunctionWitness).self).invoke("),
             "{}",
             emitted.pkg_swift
         );
         assert!(
             emitted.pkg_swift.contains("host.api__hostId(")
-                && emitted.pkg_swift.contains("{ () -> Any in return"),
+                && emitted.pkg_swift.contains(".construct { __kio_host_stage")
+                && emitted
+                    .pkg_swift
+                    .contains("let __kioOpenedType0: any __KioTypeWitness = __kio_host_stage")
+                && emitted
+                    .pkg_swift
+                    .contains("return invoke(__kioOpenedType0,"),
             "{}",
             emitted.pkg_swift
         );
@@ -4438,7 +3648,7 @@ v(2) {
     }
 
     #[test]
-    fn public_host_method_omits_a_staged_generic_absent_from_its_signature() {
+    fn public_host_method_selects_a_staged_generic_absent_from_its_signature() {
         let package = single_api_package(
             "module api; \
              host fn staged[A](value: A)[B](unit: .) -> .; \
@@ -4449,27 +3659,25 @@ v(2) {
         assert!(
             emitted
                 .host_swift
-                .contains("func api__staged<KioType_0>(_ arg0: KioType_0)"),
+                .contains("func api__staged<KioType_0, KioType_1>(_ arg0: KioType_0, asKioType1 _: KioType_1.Type)"),
             "{}",
             emitted.host_swift
         );
         assert!(
-            !emitted
-                .host_swift
-                .contains("api__staged<KioType_0, KioType_1>"),
+            !emitted.host_swift.contains("asKioType0"),
             "{}",
             emitted.host_swift
         );
         assert!(
             emitted.pkg_swift.contains("self.__kio_host.api__staged(")
-                && emitted.pkg_swift.contains("as! (() -> Any))()"),
+                && emitted.pkg_swift.contains("asKioType1: W1.Native.self"),
             "{}",
             emitted.pkg_swift
         );
     }
 
     #[test]
-    fn public_export_method_omits_a_staged_generic_absent_from_its_signature() {
+    fn public_export_method_selects_a_staged_generic_absent_from_its_signature() {
         let package = single_api_package(
             "module api; \
              pub fn staged[A](value: A)[B](unit: .) -> . { unit }",
@@ -4479,14 +3687,14 @@ v(2) {
         assert!(
             emitted
                 .pkg_swift
-                .contains("public func staged<KioType_0>(_ arg0: KioType_0) -> KioUnit"),
+                .contains("public func staged<KioType_0, KioType_1>(_ arg0: KioType_0, asKioType1 _: KioType_1.Type = KioType_1.self) -> KioUnit"),
             "{}",
             emitted.pkg_swift
         );
         assert!(
-            !emitted
+            emitted
                 .pkg_swift
-                .contains("public func staged<KioType_0, KioType_1>"),
+                .contains("__KioNativeWitness<KioType_1>()"),
             "{}",
             emitted.pkg_swift
         );
@@ -4646,7 +3854,6 @@ v(2) {
             "Opaque_b",
             "Constructor_only",
             "Projector_only",
-            "Generic",
             "Existential",
             "Transparent_both",
             "Transparent_spread",
@@ -4677,7 +3884,7 @@ v(2) {
         );
         assert!(
             emitted.shapes_swift.contains(&format!(
-                "public struct {}<H: PkgHost, T0>",
+                "public typealias {}<H: PkgHost, T0> = KioApply1<KioNewtypeMk_api__Generic<H>, T0>",
                 carrier("Generic")
             )),
             "{}",
@@ -4689,7 +3896,7 @@ v(2) {
                 .contains(&format!("_ arg0: {opaque_a}<Self>) -> {opaque_a}<Self>"))
                 && emitted
                     .host_swift
-                    .contains(&format!("_ arg0: {}<Self, KioType_", carrier("Generic"))),
+                    .contains("_ arg0: KioApply1<KioNewtypeMk_api__Generic<Self>, KioType_"),
             "{}",
             emitted.host_swift
         );
@@ -4707,19 +3914,24 @@ v(2) {
         let emitted = lower_package(&opaque_newtype_package(), "Pkg").expect("emit Swift");
 
         assert!(
-            emitted
-                .pkg_swift
-                .contains("{ () -> Any in return { (__kioContinuation: Any) -> Any in return")
-                && emitted.pkg_swift.contains(
-                    "((__kioContinuation as! (() -> Any))() as! ((Any) -> Any))(arg0.__kioValue)"
-                ),
+            emitted.pkg_swift.contains("as: __KioExistential.self)")
+                && emitted.pkg_swift.contains(".construct { __kioSelected0 in")
+                && emitted
+                    .pkg_swift
+                    .contains("__kioAdvance(__kioContinuation, __kioPacket.witnesses[0])")
+                && emitted
+                    .pkg_swift
+                    .contains(".invoke(__kioContinuation, __kioPacket.payload)"),
             "{}",
             emitted.pkg_swift
         );
         assert_eq!(
-            emitted.pkg_swift.matches("__kioContinuation: Any").count(),
+            emitted
+                .pkg_swift
+                .matches("precondition(__kioPacket.witnesses.count == 1)")
+                .count(),
             2,
-            "only the two existential projector bodies compact prepared forall stages:\n{}",
+            "each existential projector opens its one retained hidden witness:\n{}",
             emitted.pkg_swift
         );
         assert_no_public_any(&emitted);
@@ -4741,10 +3953,10 @@ v(2) {
                     .contains("public typealias KioHostTypeMk_api__Box = KioNative<KioHostTypeIdentity_api__Box>")
                 && emitted
                     .shapes_swift
-                    .contains("public struct KioHostType_api__Box<T0>")
+                    .contains("public typealias KioHostType_api__Box<T0> = KioApply1<KioHostTypeMk_api__Box, T0>")
                 && emitted
-                    .shapes_swift
-                    .contains("public struct KioApply1<F, T0>"),
+                    .runtime_swift
+                    .contains("public struct KioApply1<F, T>"),
             "host:\n{}\nshapes:\n{}",
             emitted.host_swift,
             emitted.shapes_swift
@@ -4752,10 +3964,10 @@ v(2) {
         assert!(
             emitted
                 .host_swift
-                .contains("_ arg0: KioHostType_api__Box<KioType_")
+                .contains("_ arg0: KioApply1<KioHostTypeMk_api__Box, KioType_")
                 && emitted
                     .host_swift
-                    .contains("-> KioHostType_api__Box<KioType_"),
+                    .contains("-> KioApply1<KioHostTypeMk_api__Box, KioType_"),
             "{}",
             emitted.host_swift
         );
@@ -4779,30 +3991,26 @@ v(2) {
                     .shapes_swift
                     .contains(&format!("public enum KioNewtypeMk_api__{name}<H: PkgHost>"))
             );
-            for direction in ["lift", "project"] {
-                assert!(emitted.pkg_swift.contains(&format!(
-                    "KioNewtypeApplication_api__{name}_{direction}<T0, T1>"
-                )));
-            }
             assert!(
                 emitted
-                    .pkg_swift
-                    .contains(&format!("KioApply2<KioNewtypeMk_api__{name}<H>, T0, T1>"))
+                    .shapes_swift
+                    .contains(&format!("public typealias KioNewtype_api__{name}<H: PkgHost, T0, T1> = KioApply1<KioApply1<KioNewtypeMk_api__{name}<H>, T0>, T1>"))
             );
         }
+        assert!(!emitted.pkg_swift.contains("KioNewtypeApplication_"));
         assert!(
             emitted.shapes_swift.contains(
                 "public typealias KioApply2<F, T0, T1> = KioApply1<KioApply1<F, T0>, T1>"
             )
         );
         let application = emitted
-            .shapes_swift
+            .runtime_swift
             .split("public struct KioApply1")
             .nth(1)
             .unwrap();
         let application = application.split('}').next().unwrap();
         assert!(!application.contains("public init") && !application.contains("public func value"));
-        assert!(emitted.shapes_swift.contains("fileprivate init() {}"));
+        assert!(emitted.runtime_swift.contains("fileprivate init() {}"));
         assert_no_public_any(&emitted);
     }
 
@@ -4820,10 +4028,15 @@ v(2) {
             emitted.shapes_swift.contains("public protocol KioForall_")
                 && emitted
                     .shapes_swift
-                    .contains("Implementation {\n\tassociatedtype H: PkgHost")
+                    .contains("Implementation {\n    associatedtype H: PkgHost")
                 && emitted.shapes_swift.contains(".Type")
-                && emitted.shapes_swift.contains(" = KioType_")
-                && emitted.shapes_swift.contains("public func call<KioType_"),
+                && emitted
+                    .shapes_swift
+                    .contains("func specialize<T>(_: T.Type) -> (T) -> T")
+                && emitted
+                    .shapes_swift
+                    .contains("public func specialize<T>(asKioType _: T.Type = T.self)")
+                && !emitted.shapes_swift.contains("public func call<"),
             "{}",
             emitted.shapes_swift
         );

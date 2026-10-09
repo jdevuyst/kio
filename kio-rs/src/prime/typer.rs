@@ -214,7 +214,6 @@ impl Typer<Prime> for PrimeTyper {
             | crate::ast::Expr::EnrichedInject { ext, .. }
             | crate::ast::Expr::EnrichedMatch { ext, .. }
             | crate::ast::Expr::EnrichedConditional { ext, .. }
-            | crate::ast::Expr::EnrichedRecord { ext, .. }
             | crate::ast::Expr::EnrichedFieldGet { ext, .. } => match *ext {},
             crate::ast::Expr::LowHostCall { ext, .. }
             | crate::ast::Expr::LowModuleCall { ext, .. }
@@ -1017,7 +1016,6 @@ fn bake_expr(
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. } => match *ext {},
         crate::ast::Expr::LowHostCall { ext, .. }
         | crate::ast::Expr::LowModuleCall { ext, .. }

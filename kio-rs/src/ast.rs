@@ -881,15 +881,15 @@ pub trait Phase: Sized {
         + Eq
         + serde::Serialize
         + serde::de::DeserializeOwned;
-    /// Witness for the seven **enriched** `Expr` variants the
+    /// Witness for the six **enriched** `Expr` variants the
     /// structural-recovery pass introduces — `Expr::EnrichedTuple`,
     /// `Expr::EnrichedProject`, `Expr::EnrichedInject`,
     /// `Expr::EnrichedMatch`, `Expr::EnrichedConditional`,
-    /// `Expr::EnrichedRecord`, and `Expr::EnrichedFieldGet`. These are the
+    /// and `Expr::EnrichedFieldGet`. These are the
     /// structural forms recovered from right-leaning intrinsic chains after
     /// typechecking. They are uninhabited at every front-end phase (`Surface` /
     /// `Desugared` / `Lowered` / `Prime`, witness [`Never`]) and inhabited at
-    /// [`Enriched`] and [`Routed`] (witness `()`). The seven variants share one
+    /// [`Enriched`] and [`Routed`] (witness `()`). The six variants share one
     /// witness for the same
     /// reason `ExprElab` is shared by the elaboration-bearing
     /// variants: it collapses the per-variant bookkeeping while
@@ -903,7 +903,7 @@ pub trait Phase: Sized {
         + serde::de::DeserializeOwned;
     /// Witness for the synthesized-type fields on the enriched
     /// variants (`EnrichedTuple::synth_ty`,
-    /// `EnrichedInject::synth_ty`, `EnrichedRecord::synth_ty`,
+    /// `EnrichedInject::synth_ty`,
     /// `EnrichedConditional::result_ty`,
     /// `EnrichedMatch::scrutinee_ty` / `result_ty`,
     /// `EnrichedProject::target_ty`,
@@ -4984,31 +4984,6 @@ pub enum Expr<P: Phase = Surface> {
         meta: Meta<P>,
         ext: P::ExprEnriched,
     },
-    /// Flat n-field record literal, recovered from a right-leaning
-    /// `__pair__` chain whose **every** component is a newtype
-    /// constructor call (`Foo.mk_foo(payload)` for some
-    /// module-level `newtype Foo : T`). Each [`RecordField`]
-    /// carries the newtype's FFI key (its projector's name; see
-    /// [`Newtype::ffi_key`]) as `name` and the *unwrapped* payload
-    /// (the constructor wrap is
-    /// type-erased / runtime-identity, so the IR strips it). Field
-    /// order is the right-spine order; backends that emit native
-    /// records consume `fields` directly, while backends that keep a
-    /// positional internal rep treat them as the n-ary product the
-    /// surface tuple desugars into. Introduced by the structural-
-    /// recovery pass; inhabited at [`Enriched`] and [`Routed`].
-    EnrichedRecord {
-        #[serde(skip)]
-        occurrence: P::ExpressionOccurrence,
-        fields: Vec<RecordField<P>>,
-        /// The product type the record inhabits (with each slot a
-        /// label-derived newtype). Carried over from the recovered
-        /// `__pair__(A, B, …)` chain's type args. Typed backends use
-        /// it to look up the shape struct.
-        synth_ty: P::ExprEnrichedSynthTy,
-        meta: Meta<P>,
-        ext: P::ExprEnriched,
-    },
     /// Named-slot access into a record, recovered from a
     /// `Label.get(<positional access>)` call where `Label` is the
     /// label-derived newtype whose projector strips the wrap. Carries
@@ -5405,20 +5380,6 @@ pub enum Expr<P: Phase = Surface> {
 pub struct EnrichedArm<P: Phase = Surface> {
     pub param: String,
     pub body: Expr<P>,
-    pub meta: Meta<P>,
-}
-
-/// One field of an [`Expr::EnrichedRecord`]. `name` is the
-/// newtype's FFI key — the originating newtype's projector name
-/// (see [`Newtype::ffi_key`]); `value` is the unwrapped payload
-/// — the runtime-identity newtype constructor wrap is gone.
-/// Field order in the parent record matches the right-spine
-/// order of the underlying product type, so positional consumers
-/// see the same layout an `EnrichedTuple` would have.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct RecordField<P: Phase = Surface> {
-    pub name: String,
-    pub value: Expr<P>,
     pub meta: Meta<P>,
 }
 
@@ -6666,7 +6627,6 @@ where
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. } => match *ext {},
         // The Low-IR variants are statically uninhabited at every
         // phase `convert_expr` accepts as a source (the bound pins
@@ -6978,7 +6938,6 @@ impl<P: Phase> Expr<P> {
             | Self::EnrichedInject { occurrence, .. }
             | Self::EnrichedMatch { occurrence, .. }
             | Self::EnrichedConditional { occurrence, .. }
-            | Self::EnrichedRecord { occurrence, .. }
             | Self::EnrichedFieldGet { occurrence, .. }
             | Self::LowHostCall { occurrence, .. }
             | Self::LowModuleCall { occurrence, .. }
@@ -7026,7 +6985,6 @@ impl<P: Phase> Expr<P> {
             | Self::EnrichedInject { occurrence, .. }
             | Self::EnrichedMatch { occurrence, .. }
             | Self::EnrichedConditional { occurrence, .. }
-            | Self::EnrichedRecord { occurrence, .. }
             | Self::EnrichedFieldGet { occurrence, .. }
             | Self::LowHostCall { occurrence, .. }
             | Self::LowModuleCall { occurrence, .. }
@@ -7081,7 +7039,6 @@ impl<P: Phase> Expr<P> {
             | Expr::EnrichedInject { meta, .. }
             | Expr::EnrichedMatch { meta, .. }
             | Expr::EnrichedConditional { meta, .. }
-            | Expr::EnrichedRecord { meta, .. }
             | Expr::EnrichedFieldGet { meta, .. }
             | Expr::LowHostCall { meta, .. }
             | Expr::LowModuleCall { meta, .. }
@@ -7132,7 +7089,6 @@ impl<P: Phase> Expr<P> {
             | Expr::EnrichedInject { meta, .. }
             | Expr::EnrichedMatch { meta, .. }
             | Expr::EnrichedConditional { meta, .. }
-            | Expr::EnrichedRecord { meta, .. }
             | Expr::EnrichedFieldGet { meta, .. }
             | Expr::LowHostCall { meta, .. }
             | Expr::LowModuleCall { meta, .. }

@@ -36,14 +36,33 @@ class Host:
 def check(host: BuildPythonTypedStubSkinHost[int, str], observed: Host) -> None:
     pkg = create_buildPythonTypedStubSkin(host)
     pkg.api.KioModule_main.greet("hello from kio\n")
+    labels = pkg.api.KioModule_labels
     pair = pkg.api.KioModule_main.make("kio", 3)
-    name: str = pair["Name"]
-    count: int = pair["Count"]
-    wrapped = pkg.api.KioModule_labels.KioType_Name.mk(name)
-    unwrapped: str = pkg.api.KioModule_labels.KioType_Name.get(wrapped)
+    name: str = labels.KioType_Name.get(pair["left"])
+    count: int = labels.KioType_Count.get(pair["right"])
+    echoed = pkg.api.KioModule_main.echoPair({
+        "left": labels.KioType_Name.mk("host"),
+        "right": labels.KioType_Count.mk(7),
+    })
+    wrapped = labels.KioType_Name.mk(name)
+    unwrapped: str = labels.KioType_Name.get(wrapped)
+    choices = (
+        pkg.api.KioModule_main.echoChoice({"tag": "left", "value": labels.KioType_Left.mk(11)}),
+        pkg.api.KioModule_main.echoChoice({"tag": "right", "value": {
+            "tag": "left", "value": labels.KioType_Middle.mk("middle"),
+        }}),
+        pkg.api.KioModule_main.echoChoice({"tag": "right", "value": {
+            "tag": "right", "value": labels.KioType_Right.mk(29),
+        }}),
+    )
     reserved: object = getattr(pkg.api.KioModule_main, "return")
 
     assert count == 3
+    assert labels.KioType_Name.get(echoed["left"]) == "host"
+    assert labels.KioType_Count.get(echoed["right"]) == 7
+    assert labels.KioType_Left.get(choices[0]["value"]) == 11
+    assert labels.KioType_Middle.get(choices[1]["value"]["value"]) == "middle"
+    assert labels.KioType_Right.get(choices[2]["value"]["value"]) == 29
     assert unwrapped == "kio"
     assert callable(reserved)
     assert observed.api.messages == ["hello from kio\n"]

@@ -1,0 +1,6 @@
+{
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": "error",
+  "extraPaths": ["../workdir/out/python"]
+}

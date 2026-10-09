@@ -23,7 +23,7 @@ use crate::backends::skin::FfiDir;
 use super::facade::{
     GoFacadeError, GoFunctionUse, GoLiveFacadeUseRef, GoLiveFacadeUseView, GoLiveTypeHeadStage,
     GoLiveValueHeadStage, GoLiveValueSourceGroup, GoLiveValueSourceGroupView, GoProductUse,
-    GoSumUse,
+    GoPublicParameter, GoSumUse,
 };
 
 const ERASED_TYPE: &str = "any";
@@ -138,8 +138,8 @@ where
 
 /// Apply one declaration-owned value stage to typed host arguments.
 ///
-/// The callee is evaluated before the arguments. Each argument then converts
-/// `In` from left to right, and the capability's bound source groups map those
+/// The callee and arguments are evaluated once in call order. Conversion then
+/// proceeds `In` from left to right, and the capability's bound source groups map those
 /// facade slots to the erased body's exact source-parameter ABI.
 pub(crate) fn invoke_value_stage<S, N>(
     stage: &GoLiveValueHeadStage<'_, '_>,
@@ -152,15 +152,35 @@ where
     S: GoStatementSink,
     N: GoFreshNames,
 {
+    let parameters = stage.public_parameters()?;
+    if parameters.len() != arguments.len() {
+        return Err(GoFacadeSkinError::invariant(
+            "Go public parameter count drift",
+        ));
+    }
+    let callee = materialize(statements, names, "value_callee", ERASED_TYPE, expression);
+    let arguments = parameters
+        .iter()
+        .zip(arguments)
+        .map(|(parameter, argument)| {
+            Ok(materialize(
+                statements,
+                names,
+                "value_argument",
+                parameter.boundary_type()?.as_str(),
+                argument,
+            ))
+        })
+        .collect::<Result<Vec<_>, GoFacadeSkinError>>()?;
+    let arguments = flatten_public_arguments(&parameters, &arguments)?;
     if arguments.len() != stage.slots().len() {
         return Err(GoFacadeSkinError::invariant(
             "Go facade value stage argument count disagrees with its paired slots",
         ));
     }
     let source_groups = stage.source_groups()?;
-    let callee = materialize(statements, names, "value_callee", ERASED_TYPE, expression);
     let body_arguments =
-        convert_live_value_arguments(&source_groups, arguments, statements, names)?;
+        convert_live_value_arguments(&source_groups, &arguments, statements, names)?;
     let body_type = erased_function_type(source_groups.len());
     Ok(materialize(
         statements,
@@ -169,6 +189,65 @@ where
         ERASED_TYPE,
         &format!("({callee}).({body_type})({})", body_arguments.join(", ")),
     ))
+}
+
+/// Project already-bound native parameters into the prepared semantic slots.
+pub(crate) fn flatten_public_arguments(
+    parameters: &[GoPublicParameter<'_, '_>],
+    arguments: &[String],
+) -> Result<Vec<String>, GoFacadeSkinError> {
+    if parameters.len() != arguments.len() {
+        return Err(GoFacadeSkinError::invariant(
+            "Go public parameter count drift",
+        ));
+    }
+    let mut slots = Vec::new();
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        match parameter {
+            GoPublicParameter::Value(_) => slots.push(argument.clone()),
+            GoPublicParameter::Product(product) => {
+                slots.extend(
+                    product
+                        .fields()
+                        .iter()
+                        .map(|field| format!("({argument}).{}", field.name())),
+                );
+            }
+        }
+    }
+    Ok(slots)
+}
+
+/// Rebuild native product parameters from individually converted slot locals.
+pub(crate) fn group_public_arguments(
+    parameters: &[GoPublicParameter<'_, '_>],
+    slots: &[String],
+) -> Result<Vec<String>, GoFacadeSkinError> {
+    let mut values = slots.iter();
+    let mut arguments = Vec::with_capacity(parameters.len());
+    for parameter in parameters {
+        let argument = match parameter {
+            GoPublicParameter::Value(_) => values
+                .next()
+                .cloned()
+                .ok_or_else(|| GoFacadeSkinError::invariant("missing Go public slot"))?,
+            GoPublicParameter::Product(product) => {
+                let mut fields = Vec::with_capacity(product.fields().len());
+                for field in product.fields() {
+                    let value = values
+                        .next()
+                        .ok_or_else(|| GoFacadeSkinError::invariant("missing Go product slot"))?;
+                    fields.push(format!("{}: {value}", field.name()));
+                }
+                format!("{}{{{}}}", product.boundary_type(), fields.join(", "))
+            }
+        };
+        arguments.push(argument);
+    }
+    if values.next().is_some() {
+        return Err(GoFacadeSkinError::invariant("unused Go public slot"));
+    }
+    Ok(arguments)
 }
 
 fn convert_live_value_arguments<S, N>(
@@ -497,14 +576,18 @@ where
     }
     validate_layout(layout, slots.len())?;
     match direction {
-        FfiDir::Out => function_out(slots, result, layout, expression, statements, names),
+        FfiDir::Out => function_out(
+            function, slots, result, layout, expression, statements, names,
+        ),
         FfiDir::In => function_in(
             function, slots, result, layout, expression, statements, names,
         ),
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn function_out<S, N>(
+    function: &GoFunctionUse<'_, '_>,
     slots: &[GoLiveFacadeUseRef<'_, '_>],
     result: &GoLiveFacadeUseRef<'_, '_>,
     layout: &CallableValueStageLayout,
@@ -525,13 +608,15 @@ where
         &format!("({expression}).({body_type})"),
     );
 
-    let mut parameters = Vec::with_capacity(slots.len());
-    let mut arguments = Vec::with_capacity(slots.len());
-    for slot in slots {
+    let public = function.public_parameters()?;
+    let mut parameters = Vec::with_capacity(public.len());
+    let mut arguments = Vec::with_capacity(public.len());
+    for parameter in &public {
         let name = names.fresh("function_param");
-        parameters.push(format!("{name} {}", slot.boundary_type()?));
+        parameters.push(format!("{name} {}", parameter.boundary_type()?));
         arguments.push(name);
     }
+    let arguments = flatten_public_arguments(&public, &arguments)?;
     let return_type = result.boundary_type()?;
     let mut body = GoSourceBlock::with_indent(1);
     let body_arguments =
@@ -581,6 +666,8 @@ where
         .collect::<Vec<_>>();
     let mut body = GoSourceBlock::with_indent(1);
     let facade_arguments = expand_body_arguments(layout, slots, &parameters, &mut body, names)?;
+    let facade_arguments =
+        group_public_arguments(&function.public_parameters()?, &facade_arguments)?;
     let call = materialize(
         &mut body,
         names,
@@ -1067,24 +1154,20 @@ mod prepared_tests {
 
         let regroup_entry = live_entry(&catalog, "regroup");
         let regroup = only_value_head(&regroup_entry);
-        let arguments = [
-            "nextLeft()".to_owned(),
-            "nextMiddle()".to_owned(),
-            "nextRight()".to_owned(),
-        ];
+        let arguments = ["nextLeft()".to_owned(), "nextPair()".to_owned()];
         let regroup_source = render_value_invocation(regroup, "nextCallee()", &arguments);
         assert_in_order(
             &regroup_source,
             &[
                 "nextCallee()".to_owned(),
                 "nextLeft()".to_owned(),
-                "nextMiddle()".to_owned(),
-                "nextRight()".to_owned(),
+                "nextPair()".to_owned(),
             ],
         );
-        for expression in ["nextCallee()", "nextLeft()", "nextMiddle()", "nextRight()"] {
+        for expression in ["nextCallee()", "nextLeft()", "nextPair()"] {
             assert_once(&regroup_source, expression);
         }
+        assert_in_order(&regroup_source, &[".F0".to_owned(), ".F1".to_owned()]);
         assert_eq!(regroup_source.matches("[]any{").count(), 1);
         assert!(regroup_source.contains(".(func(any, any) any)("));
     }

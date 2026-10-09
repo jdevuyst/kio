@@ -146,7 +146,6 @@ fn collect_names(e: &Expr<Prime>, out: &mut HashSet<String>) {
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. }
         | Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }
@@ -568,7 +567,6 @@ fn collect_free_path_heads(e: &Expr<Prime>, bound: &HashSet<String>, free: &mut 
         | Expr::EnrichedInject { ext, .. }
         | Expr::EnrichedMatch { ext, .. }
         | Expr::EnrichedConditional { ext, .. }
-        | Expr::EnrichedRecord { ext, .. }
         | Expr::EnrichedFieldGet { ext, .. }
         | Expr::LowHostCall { ext, .. }
         | Expr::LowModuleCall { ext, .. }

@@ -11,4 +11,4 @@ import testapi/io(print);
 // dependency still materializes and the consumer links against it.
 pub fn greeting() -> String { first("git dependency works\n"(String), "discarded\n"(String)) }
 
-pub fn main() -> . { print(greeting()) }
+pub fn main() { print(greeting()) }
