@@ -6,7 +6,7 @@
 
 - **Syntax highlighting** out of the box — a fast TextMate baseline, refined by a tree-sitter overlay for parser-accurate tokens.
 - **Inline diagnostics** — precise type, parse, and elaboration errors with source context, right in your editor, from the `kio` language server.
-- Highlighting works in desktop and web editors; diagnostics are desktop-only.
+- Highlighting works in desktop and web editors; diagnostics also work in Codespaces and other environments that can run the Kio language server.
 
 ## Requirements
 

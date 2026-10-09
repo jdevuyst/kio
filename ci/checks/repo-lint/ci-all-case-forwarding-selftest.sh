@@ -302,22 +302,28 @@ assert_args() {
 
 # Pin the actual hosted-gate branch as one exact block, so unrelated mentions
 # elsewhere in the workflow cannot make a missing sampled flag look green.
-awk '
-  /^          if \[ "\$CASE_COVERAGE" = full \]; then$/ { capture=1 }
-  capture {
-    end = ($0 == "          fi")
-    sub(/^          /, "")
-    print
-    if (end) exit
-  }
-' "$WORKFLOW" >"$scratch/actual.workflow-coverage"
+workflow_run_body() {
+  awk -v step_name="$1" '
+    $0 == "      - name: " step_name { step=1; next }
+    step && /^        run: \|$/ { body=1; next }
+    body && /^          / { sub(/^          /, ""); print; next }
+    body { exit }
+  ' "$WORKFLOW"
+}
+workflow_run_body 'Run CI suite with selected coverage' \
+  >"$scratch/actual.workflow-coverage"
 cat >"$scratch/expected.workflow-coverage" <<'EOF'
+set -eu
+set --
+if [ -n "$CASE_SEED" ]; then
+  set -- "--case-seed=$CASE_SEED"
+fi
 if [ "$CASE_COVERAGE" = full ]; then
-  sh ci/all.sh "$IMPLS" --all-cases
+  sh ci/all.sh "$IMPLS" --all-cases "$@"
 else
   sh ci/all.sh "$IMPLS" --sample-cases \
     --impl-verification=dyn-load-prime \
-    --case-coverage=dyn-load-prime:10
+    --case-coverage=dyn-load-prime:10 "$@"
 fi
 EOF
 if ! diff -u "$scratch/expected.workflow-coverage" \
@@ -374,7 +380,7 @@ for workflow_impl_policy in "$workflow_default" full; do
   for workflow_case_policy in sampled full; do
     (
       cd "$workflow_fixture"
-      IMPLS="$workflow_impls" CASE_COVERAGE="$workflow_case_policy" \
+      IMPLS="$workflow_impls" CASE_COVERAGE="$workflow_case_policy" CASE_SEED='' \
         KIO_TEST_WORKFLOW_ARGS="$scratch/workflow.args" \
         sh -eu "$scratch/actual.workflow-coverage"
     )
@@ -400,19 +406,16 @@ done
 # Execute the portability step's real shell body with fake Cargo and harness
 # entry points. This checks the shared macOS/Windows case policy without
 # compiling a package or walking the golden corpus.
-awk '
-  /^      - name: Golden compile checks / { step = 1; next }
-  step && /^        run: \|$/ { body = 1; next }
-  body && /^          / { sub(/^          /, ""); print; next }
-  body { exit }
-' "$WORKFLOW" >"$scratch/workflow-portability.sh"
+workflow_run_body 'Golden compile checks — test + build, no run' \
+  >"$scratch/workflow-portability.sh"
 awk '
   /^      - name: Golden compile checks / { step = 1; next }
   step && /^        run: \|$/ { exit }
-  step && /^          CASE_COVERAGE:/ { print; exit }
+  step && /^          CASE_(COVERAGE|SEED):/ { print }
 ' "$WORKFLOW" >"$scratch/actual.portability-env"
 cat >"$scratch/expected.portability-env" <<'EOF'
           CASE_COVERAGE: ${{ inputs.case_coverage || 'sampled' }}
+          CASE_SEED: ${{ inputs.case_seed }}
 EOF
 if ! diff -u "$scratch/expected.portability-env" \
     "$scratch/actual.portability-env"; then
@@ -435,7 +438,7 @@ for portability_policy in sampled full invalid; do
   : >"$scratch/portability.args"
   if (
     cd "$workflow_fixture"
-    CASE_COVERAGE="$portability_policy" TMPDIR="$scratch/tmp" \
+    CASE_COVERAGE="$portability_policy" CASE_SEED='' TMPDIR="$scratch/tmp" \
       KIO_TEST_PORTABILITY_CARGO_CALLS="$scratch/portability.cargo-calls" \
       KIO_TEST_PORTABILITY_HARNESS_CALLS="$scratch/portability.harness-calls" \
       KIO_TEST_PORTABILITY_ARGS="$scratch/portability.args" \
@@ -475,6 +478,68 @@ for portability_policy in sampled full invalid; do
     '--cache-base=<work>/cache' \
     "--impl-def=name=kio,kio=$workflow_fixture/kio-rs/target/debug/kio,runner=SKIP,target=js" \
     "--sample-cases=$portability_count" --keep-cache
+done
+
+workflow_seed_default=$(awk '
+  /^      case_seed:$/ { input=1; next }
+  input && /^        default:/ { print $2; exit }
+' "$WORKFLOW")
+[ "$workflow_seed_default" = "''" ] || {
+  printf 'ci-all-case-forwarding-selftest: replay seed must default to blank\n' >&2
+  exit 1
+}
+# shellcheck disable=SC2016 # Match the workflow expression literally.
+[ "$(grep -Fc 'CASE_SEED: ${{ inputs.case_seed }}' "$WORKFLOW")" -eq 3 ] || {
+  printf 'ci-all-case-forwarding-selftest: replay seed must reach all three harness steps\n' >&2
+  exit 1
+}
+mkdir -p "$workflow_fixture/ci/checks/orchestrators"
+cat >"$workflow_fixture/ci/checks/orchestrators/castle-tests.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$KIO_TEST_WORKFLOW_ARGS"
+EOF
+workflow_run_body 'Castle sample' >"$scratch/workflow-castles.sh"
+# shellcheck disable=SC2016 # Command-substitution text must remain literal seed data.
+for workflow_seed in '' 'replay seed *; $(exit 97)'; do
+  for replay_policy in sampled full; do
+    (
+      cd "$workflow_fixture"
+      IMPLS=SAMPLE_IMPL CASE_COVERAGE="$replay_policy" CASE_SEED="$workflow_seed" \
+        KIO_TEST_WORKFLOW_ARGS="$scratch/replay-linux.args" \
+        sh -eu "$scratch/actual.workflow-coverage"
+    )
+    set -- SAMPLE_IMPL --sample-cases --impl-verification=dyn-load-prime \
+      --case-coverage=dyn-load-prime:10
+    [ "$replay_policy" != full ] || set -- SAMPLE_IMPL --all-cases
+    [ -z "$workflow_seed" ] || set -- "$@" "--case-seed=$workflow_seed"
+    assert_args "$scratch/replay-linux.args" "$@"
+    (
+      cd "$workflow_fixture"
+      CASE_COVERAGE="$replay_policy" CASE_SEED="$workflow_seed" TMPDIR="$scratch/tmp" \
+        KIO_TEST_PORTABILITY_CARGO_CALLS="$scratch/portability.cargo-calls" \
+        KIO_TEST_PORTABILITY_HARNESS_CALLS="$scratch/portability.harness-calls" \
+        KIO_TEST_PORTABILITY_ARGS="$scratch/replay-portability.args" \
+        sh -eu "$scratch/workflow-portability.sh"
+    )
+    sed 's|^--cache-base=.*|--cache-base=<work>/cache|' \
+      "$scratch/replay-portability.args" >"$scratch/replay-portability.normalized.args"
+    replay_count=100
+    [ "$replay_policy" != full ] || replay_count=all
+    set -- --cases-dir=test-data/goldens/00_success \
+      '--cache-base=<work>/cache' \
+      "--impl-def=name=kio,kio=$workflow_fixture/kio-rs/target/debug/kio,runner=SKIP,target=js" \
+      "--sample-cases=$replay_count" --keep-cache
+    [ -z "$workflow_seed" ] || set -- "$@" "--case-seed=$workflow_seed"
+    assert_args "$scratch/replay-portability.normalized.args" "$@"
+  done
+  (
+    cd "$workflow_fixture"
+    CASE_SEED="$workflow_seed" KIO_TEST_WORKFLOW_ARGS="$scratch/replay-castles.args" \
+      sh -eu "$scratch/workflow-castles.sh"
+  )
+  set -- --impls=kio@js,kio@ts,kio@rust,kio@swift --case-count=5
+  [ -z "$workflow_seed" ] || set -- "$@" "--case-seed=$workflow_seed"
+  assert_args "$scratch/replay-castles.args" "$@"
 done
 
 run_all github-sampled "$fixture/bin/gnu-time" 20 30.0 \

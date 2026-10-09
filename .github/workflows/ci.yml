@@ -43,6 +43,11 @@ on:
         options:
           - sampled
           - full
+      case_seed:
+        description: Optional case-sampling seed to replay a previous draw on the selected ref.
+        required: false
+        default: ''
+        type: string
       platforms:
         description: Platform jobs to run; scheduled and default manual runs use all.
         required: true
@@ -269,14 +274,19 @@ jobs:
         env:
           IMPLS: ${{ steps.impls.outputs.impls }}
           CASE_COVERAGE: ${{ inputs.case_coverage || 'sampled' }}
+          CASE_SEED: ${{ inputs.case_seed }}
         run: |
           set -eu
+          set --
+          if [ -n "$CASE_SEED" ]; then
+            set -- "--case-seed=$CASE_SEED"
+          fi
           if [ "$CASE_COVERAGE" = full ]; then
-            sh ci/all.sh "$IMPLS" --all-cases
+            sh ci/all.sh "$IMPLS" --all-cases "$@"
           else
             sh ci/all.sh "$IMPLS" --sample-cases \
               --impl-verification=dyn-load-prime \
-              --case-coverage=dyn-load-prime:10
+              --case-coverage=dyn-load-prime:10 "$@"
           fi
 
   # macOS / Windows portability is intentionally narrower than the Linux
@@ -388,7 +398,15 @@ jobs:
       - name: Castle sample
         if: runner.os == 'macOS'
         shell: bash
-        run: sh ci/checks/orchestrators/castle-tests.sh --impls="kio@js,kio@ts,kio@rust,kio@swift" --case-count=5
+        env:
+          CASE_SEED: ${{ inputs.case_seed }}
+        run: |
+          set -eu
+          set --
+          if [ -n "$CASE_SEED" ]; then
+            set -- "--case-seed=$CASE_SEED"
+          fi
+          sh ci/checks/orchestrators/castle-tests.sh --impls="kio@js,kio@ts,kio@rust,kio@swift" --case-count=5 "$@"
 
       - name: Kiodoc checks
         if: runner.os == 'macOS'
@@ -467,6 +485,7 @@ jobs:
         shell: bash
         env:
           CASE_COVERAGE: ${{ inputs.case_coverage || 'sampled' }}
+          CASE_SEED: ${{ inputs.case_seed }}
         run: |
           # Compile selected 00_success goldens with `kio test` and
           # `kio build js` without executing the emitted output, via
@@ -477,6 +496,10 @@ jobs:
           # ci/all.sh (and the Linux gate) would auto-run — redundant, since
           # Linux already does test + build + run for these cases.
           set -eu
+          set --
+          if [ -n "$CASE_SEED" ]; then
+            set -- "--case-seed=$CASE_SEED"
+          fi
           case "$CASE_COVERAGE" in
             sampled) sample_cases=100 ;;
             full) sample_cases=all ;;
@@ -491,4 +514,4 @@ jobs:
             --cache-base="$work/cache" \
             --impl-def="name=kio,kio=$kio,runner=SKIP,target=js" \
             --sample-cases="$sample_cases" \
-            --keep-cache
+            --keep-cache "$@"

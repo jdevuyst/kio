@@ -144,6 +144,22 @@ incoming/outgoing owner and subsequent invocation; an internal staged call
 alone cannot discharge a host conversion seam. Reuse shared-owner evidence
 under § 2 rather than require duplicate fixtures for identical behavior.
 
+### Generated sequential call-depth witness
+
+For every backend, identify bounded runtime evidence for ordinary binding and
+expression sequences, separate from explicit recursion. Inspect its realization
+for an unnecessary retained call frame per binding or sequenced expression;
+follow [Generated call depth](../../topics/emit.md#generated-call-depth) for
+scope/effect controls, runtime configuration, peer applicability and causal
+guards. A fixed-depth pass does not discharge an unexamined growth mechanism.
+Report missing evidence and demonstrated overflow separately.
+
+Include adapters and elaborator-generated continuations in the inspection,
+but distinguish semantic call nesting from administrative frames. Do not
+require arbitrary bind functions to be flattened or assume their continuation
+runs exactly once. Reuse shared-owner evidence without substituting it for each
+backend's applicable execution evidence.
+
 ### Recursive control-flow stack-safety runtime witness
 
 The boundary matrix and polymorphic-stage witness do not prove that lowering

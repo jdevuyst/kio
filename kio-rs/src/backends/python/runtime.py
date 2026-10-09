@@ -596,17 +596,21 @@ class _PackageRuntime:
         return layer(0, dict(base_env))
 
     def eval(self, module_key, expr, env):
-        tag, data = _tag(expr)
+        while True:
+            tag, data = _tag(expr)
+            if tag == "Let":
+                value = self.eval(module_key, data["value"], env)
+                local = dict(env)
+                local[data["name"]] = value
+                env = local
+                expr = data["body"]
+            elif tag == "Seq":
+                self.eval(module_key, data["value"], env)
+                expr = data["body"]
+            else:
+                break
         if tag == "Unit":
             return None
-        if tag == "Let":
-            value = self.eval(module_key, data["value"], env)
-            local = dict(env)
-            local[data["name"]] = value
-            return self.eval(module_key, data["body"], local)
-        if tag == "Seq":
-            self.eval(module_key, data["value"], env)
-            return self.eval(module_key, data["body"], env)
         if tag == "FnExpr":
             return self._make_lambda(module_key, data, env)
         if tag == "StrLit":

@@ -29,6 +29,13 @@ macOS / Windows run one sequential portability job per OS. Both prepare the sche
 
 Scheduled runs and a manual dispatch with default `platforms=all` start Linux, macOS and Windows. A manual `platforms=linux`, `macos`, or `windows` dispatch starts only the selected platform job; `platforms=portability` starts macOS and Windows without the Linux gate. The portability matrix is selected before runner allocation, so a Windows-only retry does not allocate macOS or Linux runners. `implementation_coverage` applies to Linux whenever selected; `case_coverage` applies to Linux and the portability golden compile checks. The workflow concurrency key includes the selected platform set, so a Windows-only retry does not cancel a Linux-only run on the same ref. Different selections can overlap on a platform (`all` and `windows`, for example); avoid concurrent overlapping selections unless that duplicated work is intentional. A new dispatch with the same selection and ref still cancels its prior in-progress run.
 
+The optional manual `case_seed` input forwards `--case-seed` to the Linux
+gate, macOS castle sample, and portability golden compile checks. Leaving it
+blank retains the default draw from the GitHub run ID and attempt. Supplying
+a previously logged seed replays the selection on the dispatched ref when
+the case inventory and cap match; it changes neither coverage axis nor the
+macOS castle sample's five-case cap and JS / TS / Rust / Swift pool.
+
 Both hosted implementation modes install all eight backends because
 `SAMPLE_IMPL` samples the configured pool; it cannot be combined with an
 explicit implementation list. `ci/impl-toolchain.sh tooling-impls` also closes

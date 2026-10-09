@@ -1,42 +1,33 @@
-# Publishes the Kio VS Code extension (tools/vscode-kio) to the VS Code
-# Marketplace and the Open VSX Registry on each release tag. The binary
-# release is handled by release.yml. Extension publishing uses `releases/v*`;
-# the generated binary release uses `**[0-9]+.[0-9]+.[0-9]+*`.
-# A `releases/v<major>.<minor>.<patch>` tag matches both at the repo-wide version.
-#
-# Uses two repo secrets: VSCE_PAT (Marketplace, publisher `kio-lang`) and
-# OVSX_PAT (Open VSX, namespace `kio-lang`). The job runs only on tags of
-# the canonical repo. Each registry is independent, and a registry whose
-# token is absent is skipped with a warning rather than failing the run;
-# the built .vsix is uploaded either way, so a skipped registry can be
-# released by hand.
-#
-# The .vsix build mirrors devcontainer-publish.yml: `tree-sitter build
-# --wasm` (run by `npm run build:wasm`) falls back to docker when
-# emcc/wasi-sdk aren't on PATH, and GitHub runners ship docker.
+# cargo-dist calls this publisher after its binary release succeeds.
+# Both registries and manual handoffs consume the same immutable run artifact.
 name: Publish VS Code extension
 
 on:
-  push:
-    tags:
-      - 'releases/v*'
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: publish-vscode-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish extension to Marketplace and Open VSX
-    if: github.repository == 'jdevuyst/kio'
+  package:
+    name: Package extension
+    if: >-
+      github.repository == 'jdevuyst/kio' && github.ref_type == 'tag' &&
+      startsWith(github.ref_name, 'releases/v') &&
+      fromJSON(inputs.plan).announcement_tag == github.ref_name
     runs-on: ubuntu-latest
-    environment: publish
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
@@ -51,39 +42,143 @@ jobs:
           npm ci --no-fund --no-audit
           npm run package
 
-      # A publish arm can legitimately skip (see below), so the release still
-      # has to hand over something to upload by hand. Keep the .vsix the run
-      # built rather than leaving a manual upload to reproduce the build.
+      - name: Inspect the .vsix
+        working-directory: tools/vscode-kio
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          unzip -l kio.vsix
+          inspection=$(mktemp -d "$RUNNER_TEMP/kio-vsix.XXXXXX")
+          unzip -q kio.vsix -d "$inspection"
+          node - "$inspection" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const assert = require('node:assert/strict');
+          const root = path.join(process.argv[2], 'extension');
+          const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
+          assert.equal(manifest.publisher, 'kio-lang');
+          assert.equal(manifest.name, 'kio');
+          assert.equal(process.env.RELEASE_TAG, 'releases/v' + manifest.version);
+          assert.equal(manifest.license, 'MIT OR Apache-2.0');
+          for (const file of ['dist/extension.js', 'syntaxes/kio.tmLanguage.json', 'language-configuration.json']) {
+            assert(fs.statSync(path.join(root, file)).size > 0);
+          }
+          for (const file of ['parsers/tree-sitter-kio.wasm', 'dist/web-tree-sitter.wasm']) {
+            assert.equal(fs.readFileSync(path.join(root, file)).subarray(0, 4).toString('hex'), '0061736d');
+          }
+          const license = fs.readFileSync(path.join(root, 'LICENSE.txt'), 'utf8');
+          assert(license.includes('MIT License') && license.includes('Apache License'));
+          for (const file of fs.readdirSync(process.argv[2], {recursive: true})) {
+            assert(!file.split(path.sep).some(part => ['.vscode', '.codex', '.claude', 'AGENTS.md', 'settings.json', '.env'].includes(part)));
+          }
+          NODE
+          sha256sum kio.vsix
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        id: vsix
         with:
           name: kio-vsix
           path: tools/vscode-kio/kio.vsix
           if-no-files-found: error
+    outputs:
+      artifact-id: ${{ steps.vsix.outputs.artifact-id }}
 
-      # Each registry publishes only if its token is configured. A missing
-      # token means that registry is being released by hand, which is not a
-      # failure; a token that is present and does not publish still is. The
-      # two are independent — Open VSX issues its own token, so it can stay
-      # automated while the Marketplace is done manually. `secrets` is not
-      # available to `if:`, so the check reads the mapped env var instead.
-      - name: Publish to the VS Code Marketplace
-        working-directory: tools/vscode-kio
+  marketplace:
+    name: Publish extension to Marketplace
+    needs: package
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - name: Check Marketplace credential
+        id: credential
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: |
           if [ -z "${VSCE_PAT:-}" ]; then
-            echo "::warning title=Marketplace publish skipped::VSCE_PAT is not set. Upload the .vsix at https://marketplace.visualstudio.com/manage"
-            exit 0
+            echo "::warning title=Marketplace publish skipped::VSCE_PAT is not set. Upload the kio-vsix artifact at https://marketplace.visualstudio.com/manage"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
           fi
-          npx vsce publish --packagePath kio.vsix
 
-      - name: Publish to Open VSX
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        if: steps.credential.outputs.available == 'true'
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        if: steps.credential.outputs.available == 'true'
+        with:
+          version: 2026.6.14
+          install_args: node
+          cache: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        if: steps.credential.outputs.available == 'true'
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact-id }}
+          path: tools/vscode-kio
+          merge-multiple: true
+
+      - name: Install publisher dependencies
+        if: steps.credential.outputs.available == 'true'
         working-directory: tools/vscode-kio
+        run: npm ci --no-fund --no-audit
+
+      - name: Publish to the VS Code Marketplace
+        if: steps.credential.outputs.available == 'true'
+        working-directory: tools/vscode-kio
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --no-install vsce publish --packagePath kio.vsix
+
+  open-vsx:
+    name: Publish extension to Open VSX
+    needs: package
+    runs-on: ubuntu-latest
+    environment: publish
+    steps:
+      - name: Check Open VSX credential
+        id: credential
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           if [ -z "${OVSX_PAT:-}" ]; then
-            echo "::warning title=Open VSX publish skipped::OVSX_PAT is not set. Upload the .vsix at https://open-vsx.org"
-            exit 0
+            echo "::warning title=Open VSX publish skipped::OVSX_PAT is not set. Upload the kio-vsix artifact at https://open-vsx.org"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
           fi
-          npx ovsx publish kio.vsix
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        if: steps.credential.outputs.available == 'true'
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        if: steps.credential.outputs.available == 'true'
+        with:
+          version: 2026.6.14
+          install_args: node
+          cache: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        if: steps.credential.outputs.available == 'true'
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact-id }}
+          path: tools/vscode-kio
+          merge-multiple: true
+
+      - name: Install publisher dependencies
+        if: steps.credential.outputs.available == 'true'
+        working-directory: tools/vscode-kio
+        run: npm ci --no-fund --no-audit
+
+      - name: Publish to Open VSX
+        if: steps.credential.outputs.available == 'true'
+        working-directory: tools/vscode-kio
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --no-install ovsx publish kio.vsix

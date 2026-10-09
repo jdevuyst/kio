@@ -2,7 +2,7 @@
   "name": "kio",
   "displayName": "Kio",
   "description": "Syntax highlighting and language-server integration for the Kio programming language.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "kio-lang",
   "private": true,
   "license": "MIT OR Apache-2.0",

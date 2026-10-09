@@ -80,14 +80,15 @@ candidate SHA and track all launched work through completion. Sampling or skippe
 jobs must remain visible in the receipt. The publishing workflows do not enforce
 this prerequisite; establish it before launching them.
 
-The publication workflows are independent. The current
-`releases/v<major>.<minor>.<patch>` tag starts binary, crate, and extension work
-together; neither registry waits for CI or completed binary artifacts. If the
-requested order requires CI/artifact completion before irreversible publication,
-and current automation cannot guarantee it, stop before the tag and report the
-concrete conflict and available choices. Do not claim this skill changes workflow
-ordering, disable publishers, or alter automation without separate authority.
-Never push a tag merely to obtain a VSIX.
+The `releases/v<major>.<minor>.<patch>` tag starts the cargo-dist binary release.
+Its custom registry publishers run only after successful binary hosting, using
+the same tagged source revision. GitHub release assets are available before
+crates.io, Marketplace, or Open VSX publication starts. This dependency does not
+gate on Tests and Checks; establish that prerequisite before the tag. If a
+requested order or inspection hold is absent from the actual candidate workflows,
+stop before the tag and report the concrete conflict and choices. Do not disable
+publishers or alter automation without separate authority. Never push a tag merely
+to obtain a VSIX.
 
 Preflight candidate packages before the tag, preserving their source SHA and
 artifact hashes. Automated publishing can rebuild/package and immediately publish
@@ -132,7 +133,11 @@ receipt, with blocked/skipped channels explicitly identified.
 
 Before retrying, reconcile which versions and artifacts already exist. Retry only
 failed or unpublished arms after checking the workflow's idempotence; do not
-blindly rerun successful crate publishing. A GitHub Actions rerun uses the
+blindly rerun successful crate publishing. Marketplace and Open VSX are separate
+jobs that consume the same `kio-vsix` artifact ID. Retry only a failed registry
+job; preserve the successful packaging job and artifact. Rebuilding the package
+requires renewed inspection and can collide with the immutable run artifact.
+A GitHub Actions rerun uses the
 original source SHA: after a source amendment, launch the necessary checks on
 the new SHA instead of treating an old run's retry as validation of new code.
 

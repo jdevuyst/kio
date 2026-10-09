@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "name": "Kio",
   "scopeName": "source.kio",
   "fileTypes": ["kio"],

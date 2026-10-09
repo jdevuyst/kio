@@ -9,6 +9,21 @@ mod runtime_tests {
     use super::RUNTIME;
 
     #[test]
+    fn statement_spine_does_not_reenter_the_evaluator() {
+        let spine = RUNTIME
+            .split_once("    def eval(")
+            .unwrap()
+            .1
+            .split_once("        if tag == \"Unit\":")
+            .unwrap()
+            .0;
+        assert!(spine.contains("while True:"));
+        assert!(spine.contains("local = dict(env)"));
+        assert_eq!(spine.matches("expr = data[\"body\"]").count(), 2);
+        assert!(!spine.contains("self.eval(module_key, data[\"body\"]"));
+    }
+
+    #[test]
     fn product_projection_does_not_collect_argument_slots() {
         let projection = RUNTIME
             .split_once("def _product_slot(")

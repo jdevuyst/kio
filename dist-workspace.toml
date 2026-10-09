@@ -13,3 +13,7 @@ installers = ["shell", "powershell"]
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
 # Where to host releases
 hosting = "github"
+# Registry publishers consume a successful binary release.
+github-release = "host"
+publish-jobs = ["./publish-crate", "./publish-vscode"]
+github-custom-job-permissions = { publish-crate = { contents = "read" }, publish-vscode = { contents = "read" } }

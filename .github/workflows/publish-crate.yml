@@ -1,37 +1,33 @@
-# Publishes the kio-lang crate to crates.io on each release tag, so
-# `cargo install kio-lang --bin kio` works. The binary release and the VS
-# Code extension are handled by release.yml and publish-vscode.yml.
-# Crate and extension publishing use `releases/v*`; the generated binary
-# release uses `**[0-9]+.[0-9]+.[0-9]+*`. A
-# `releases/v<major>.<minor>.<patch>` tag matches every channel at the
-# repo-wide version.
-#
-# Requires CARGO_REGISTRY_TOKEN (a crates.io API token) as a secret of the
-# `publish` environment this job declares. The job runs only on tags of the
-# canonical repo; without the token the publish step fails.
+# cargo-dist calls this publisher after its binary release succeeds.
 name: Publish crate
 
 on:
-  push:
-    tags:
-      - 'releases/v*'
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: publish-crate-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   publish:
     name: Publish kio-lang to crates.io
-    if: github.repository == 'jdevuyst/kio'
+    if: >-
+      github.repository == 'jdevuyst/kio' && github.ref_type == 'tag' &&
+      startsWith(github.ref_name, 'releases/v') &&
+      fromJSON(inputs.plan).announcement_tag == github.ref_name
     runs-on: ubuntu-latest
     environment: publish
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
@@ -44,7 +40,4 @@ jobs:
         working-directory: kio-rs
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        # A long-lived crates.io API token is the simplest first-publish
-        # path; crates.io Trusted Publishing (OIDC, no stored secret) is a
-        # stronger option worth adopting once the crate exists.
         run: sh ../ci/cargo.sh publish --locked  # zizmor: ignore[use-trusted-publishing]

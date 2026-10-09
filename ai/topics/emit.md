@@ -195,6 +195,31 @@ stage, or permits skipping a required effectful host conversion or adapter call.
 A declaration's `pure`
 marker is not a blanket conversion exemption.
 
+### Generated call depth
+
+Review host-stack growth beyond explicit recursion: ordinary binding and
+expression sequences, immediately invoked closures, adapters and
+elaborator-generated continuations can also accumulate frames. Distinguish
+calls required by the program from calls introduced only to express a binding,
+sequence or representation change. Prefer native statements or iterative
+interpreter traversal for a straight-line body spine, preserving initializer
+scope, captures, shadowing and effect order; do not flatten across arbitrary
+function boundaries.
+
+Use bounded execution witnesses plus a causal guard at the owning layer.
+Record the actual runtime and stack configuration; a larger stack limit or a
+different runner does not repair unnecessary frame growth. A passing fixed
+depth is evidence for that workload, not proof of arbitrary-depth safety.
+Check applicable backend peers and reuse shared lowering or rendering when
+their semantic requirements agree.
+
+Higher-order sequencing needs a separate argument: an ordinary bind function
+may invoke its continuation zero, one or multiple times, retain it, or perform
+effects after it returns. A surface elaborator name supplies no optimization
+authority. Establish the relevant call/use facts before reducing its call
+depth; uncertain cases remain unchanged. This is not a blanket tail-call or
+constant-stack guarantee for arbitrary function composition.
+
 ### Backend evidence boundary
 
 Keep three evidence layers distinct:

@@ -5,11 +5,55 @@ They establish only the claims stated with each comparison; they neither change
 [backend contracts](../specs/backends/README.md) nor require another backend to
 adopt the same implementation.
 
-These are inherited recorded results, not new measurements or revalidation.
+These are retained results, not claims of revalidation against each checkout.
 Each record retains the available workload, controls, settings and claim limits.
 Any omitted source revision, toolchain version, invocation or raw-log location
 remains unrecorded; it cannot be inferred from the current checkout. The results
 apply to the stated experiments and assumptions.
+
+## Sequential statement call depth
+
+This correctness-primary comparison starts from compiler revision
+`268cb4da950cad8ab2dc114e4dc5bfda0bebd826`. JS and TS share the JS renderer;
+Python embeds its own evaluator. The ordinary runtimes were unchanged:
+QuickJS through pinned `rquickjs` 0.11.0 and Python 3.12.15, without increased stack
+or recursion limits. QuickJS retained its default 1 MiB engine stack cap;
+the JS/TS runners' existing 64 MiB native worker stacks are a separate setting.
+Python's `sys.getrecursionlimit()` was 1,000. A 128-effect function invoked through eight ordinary
+continuations executes 1,024 prints followed by a newline. The dedicated
+`exec_statement_spine_stack` golden fails on the baseline JS and Python
+backends with native stack/recursion errors and passes on the repaired JS,
+TS, and Python backends with the complete, byte-exact output.
+
+The JS renderer emits one immediately invoked call scope per contiguous
+`Let`/`Seq` body spine rather than one per node. Nested lexical blocks retain
+initializer lookups, shadowing, and closure capture; child expression and
+function boundaries remain separate. A private emitter guard checks constant
+call-scope count at 4 and 64 bindings, alongside nested-function isolation.
+Python advances only through those body links in a loop, preserving a fresh
+environment copy at every `Let`; its private guard rejects evaluator re-entry
+through either body link. The separate `exec_statement_spine_scopes` golden
+checks ordered effects, own-initializer module lookup, earlier closures across
+later shadows, consecutive shadows, and a host-keyword binder.
+Both new cases and three existing shadowing/mixed-sequence controls passed
+on all eight backends (5/5 each), with all five also passing the dynamic-Prime
+differential. The direct-Prime-eligible shadowing control passed separately.
+
+A source-equivalent eight-function, 128-effect-per-function probe also failed
+on baseline JS and Python. Java, Swift, Rust, Go, and Haskell executed that
+bounded probe successfully. Rust lexical blocks and Go destination statements
+avoid per-statement native calls structurally; Java's evaluator recursion and
+Swift's immediately invoked closures remain distinct mechanisms, so their
+bounded passes are not proofs of arbitrary-depth safety. Haskell's strict
+bindings and effect sequencing likewise require their own evidence.
+
+The unchanged `egraph_equality_saturation` castle exposed the JS/TS failure on
+macOS; the exact castle passed on Linux both before and after this change.
+The Linux result alone does not establish native macOS clearance. These
+results establish removal of avoidable sequential call frames, not a runtime
+latency win, general tail-call elimination, or flattening of arbitrary bind
+continuations. An ordinary bind may invoke, store, skip, or replay its
+continuation; its semantics are unchanged.
 
 ## Callable-purity dispatch recovery
 

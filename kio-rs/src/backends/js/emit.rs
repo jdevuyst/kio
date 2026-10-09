@@ -2009,6 +2009,66 @@ fn signature_type_params(sig: &Signature) -> impl Iterator<Item = &crate::ast::T
     })
 }
 
+fn lower_statement_spine(
+    mut tail: &Expr,
+    top: &TopLevel,
+    locals: &mut JsLocalScope,
+    out: &mut String,
+) -> Result<(), EmitError> {
+    let mark = locals.values.len();
+    let mut blocks = 0;
+    out.push_str("(() => { ");
+    let result = (|| {
+        loop {
+            match tail {
+                Expr::Let {
+                    name, value, body, ..
+                } => {
+                    // Each binder keeps its lexical scope: later declarations must
+                    // not capture earlier initializers or closures through JS's TDZ.
+                    out.push_str("{ const ");
+                    blocks += 1;
+                    let is_shadow = locals.values.iter().any(|n| n == name)
+                        || top.local_runtime_bindings.contains(name.as_str());
+                    if is_shadow {
+                        // Evaluate outside the new binder's scope. Separate
+                        // temporary blocks keep consecutive shadows disjoint.
+                        out.push_str("__kio_let_init = ");
+                        lower_expr(value, top, locals, out)?;
+                        out.push_str("; { const ");
+                        blocks += 1;
+                        out.push_str(&mangle_js_ident(name));
+                        out.push_str(" = __kio_let_init; ");
+                    } else {
+                        out.push_str(&mangle_js_ident(name));
+                        out.push_str(" = ");
+                        lower_expr(value, top, locals, out)?;
+                        out.push_str("; ");
+                    }
+                    locals.values.push(name.clone());
+                    tail = body;
+                }
+                Expr::Seq { value, body, .. } => {
+                    lower_expr(value, top, locals, out)?;
+                    out.push_str("; ");
+                    tail = body;
+                }
+                _ => break,
+            }
+        }
+        out.push_str("return ");
+        lower_expr(tail, top, locals, out)?;
+        out.push_str("; ");
+        for _ in 0..blocks {
+            out.push_str("} ");
+        }
+        out.push_str("})()");
+        Ok(())
+    })();
+    locals.values.truncate(mark);
+    result
+}
+
 fn lower_expr(
     e: &Expr,
     top: &TopLevel,
@@ -2021,72 +2081,7 @@ fn lower_expr(
             out.push_str("null");
             Ok(())
         }
-        Expr::Let {
-            name, value, body, ..
-        } => {
-            // Non-shadow:  `(() => { const <name> = <value>; return <body>; })()`.
-            //
-            // Shadow case (an outer local or module-level runtime binding
-            // of the same Kio name is visible): `<value>` references to the
-            // outer `<name>` would resolve to the inner `const <name>` and
-            // hit JS's TDZ (`ReferenceError: access of uninitialized
-            // binding`), since the inner binder is in scope throughout the
-            // IIFE — even during its own initializer.
-            //
-            // Fix: hoist the RHS into an outer-scope temp before
-            // opening the IIFE that introduces the inner binder.
-            //
-            //   (() => {
-            //     const __kio_let_init = <value>;     // outer scope: outer <name> visible
-            //     return (() => {
-            //       const <name> = __kio_let_init;     // inner scope: shadows outer <name>
-            //       return <body>;
-            //     })();
-            //   })()
-            //
-            // The temp name `__kio_let_init` is safe at any nesting depth
-            // because each shadow let opens its own IIFE pair, so siblings
-            // and nested shadows never share a scope. User identifiers
-            // cannot begin with `__`, so no collision with source names.
-            let is_shadow = locals.values.iter().any(|n| n == name)
-                || top.local_runtime_bindings.contains(name.as_str());
-            if is_shadow {
-                out.push_str("(() => { const __kio_let_init = ");
-                lower_expr(value, top, locals, out)?;
-                out.push_str("; return (() => { const ");
-                out.push_str(&mangle_js_ident(name));
-                out.push_str(" = __kio_let_init; return ");
-                locals.values.push(name.clone());
-                let body_result = lower_expr(body, top, locals, out);
-                locals.values.pop();
-                body_result?;
-                out.push_str("; })(); })()");
-            } else {
-                out.push_str("(() => { const ");
-                out.push_str(&mangle_js_ident(name));
-                out.push_str(" = ");
-                lower_expr(value, top, locals, out)?;
-                out.push_str("; return ");
-                locals.values.push(name.clone());
-                let body_result = lower_expr(body, top, locals, out);
-                locals.values.pop();
-                body_result?;
-                out.push_str("; })()");
-            }
-            Ok(())
-        }
-        Expr::Seq { value, body, .. } => {
-            // `e;` discards the value of `e` (typer ensures `e : .`).
-            // Codegen is identical to `let <fresh> = e;` minus the
-            // binder — `(() => { <value>; return <body>; })()` — no
-            // shadowing concern because there's no binding name.
-            out.push_str("(() => { ");
-            lower_expr(value, top, locals, out)?;
-            out.push_str("; return ");
-            lower_expr(body, top, locals, out)?;
-            out.push_str("; })()");
-            Ok(())
-        }
+        Expr::Let { .. } | Expr::Seq { .. } => lower_statement_spine(e, top, locals, out),
         Expr::FnExpr { sig, body, .. } => {
             // Wrap the arrow function in parentheses so an outer `Call`
             // applies to the arrow itself rather than to its body —
@@ -3445,6 +3440,35 @@ mod tests {
         let pkg = prime_package_routed(src, None);
         let (_, entry) = pkg.modules().next().expect("one module");
         lower_module(&entry.module, None, None, None).expect("lower")
+    }
+
+    #[test]
+    fn statement_spine_uses_one_call_scope() {
+        for count in [4, 64] {
+            let mut source = "module test; host type Item; host fn observe(value: Item) -> .; \
+                 fn run(input: Item) -> Item { "
+                .to_owned();
+            for index in 0..count {
+                source.push_str(&format!("let item{index} = input; observe(item{index}); "));
+            }
+            source.push_str("input }");
+            let js = lower(&source);
+            assert_eq!(js.matches("(() => {").count(), 2, "{js}");
+            assert_eq!(js.matches("{ const item").count(), count, "{js}");
+        }
+    }
+
+    #[test]
+    fn statement_spine_keeps_nested_function_bodies_separate() {
+        let js = lower(
+            "module test; host fn observe() -> .; \
+             fn run(input: .) -> . { \
+               let child = .(value: .) -> . { observe(); value }; \
+               observe(); child(input) \
+             }",
+        );
+        assert_eq!(js.matches("(() => {").count(), 3, "{js}");
+        assert!(js.contains("return value; } })()"), "{js}");
     }
 
     fn typed_package_routed_with_package(

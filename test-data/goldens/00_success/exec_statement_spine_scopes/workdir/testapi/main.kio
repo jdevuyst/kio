@@ -1,0 +1,25 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn seed() -> String { print("module;"); "outer" }
+
+fn scoped(input: String) -> String {
+  let early = seed();
+  let before = .() { seed() };
+  let seed = seed();
+  let read = .() { seed };
+  let seed = input;
+  let seed = seed;
+  let class = .(value: String) -> String { print("lambda;"); let value = value; value };
+  print(before());
+  print(";");
+  print(early);
+  print(";");
+  print(read());
+  print(";");
+  class(seed)
+}
+
+pub fn main() { print(scoped("inner")); print("\n") }

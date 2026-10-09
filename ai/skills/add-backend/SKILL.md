@@ -220,6 +220,17 @@ If practical output requires a different representation, investigate that before
 acceptance. An exotic target is not an automatic exemption: stop and present
 the costs and alternatives, including not adding the backend, for a user decision.
 
+### Generated call-depth check
+
+Follow [Generated call depth](../../topics/emit.md#generated-call-depth) in
+addition to the recursive witness: inspect straight-line bindings/sequences,
+immediately invoked closures, adapters and elaborator-generated continuations.
+Run a bounded sequential-work witness through the actual runner and distinguish
+semantic nesting from avoidable emitter/interpreter frames. Preserve lexical
+scope and effects; do not infer continuation cardinality from a library name,
+rely on increased stack limits, or treat one passing depth as a general proof.
+Reuse existing causal guards and shared owners where applicable.
+
 ### Comparative runtime check
 
 Before acceptance, compare generated-program execution on a small, bounded set

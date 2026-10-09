@@ -1,0 +1,154 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn segment(next: . -> .) -> . {
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  print(".");
+  next(())
+}
+
+pub fn main() {
+  segment(.() {
+    segment(.() {
+      segment(.() {
+        segment(.() {
+          segment(.() {
+            segment(.() {
+              segment(.() {
+                segment(.() { print("\n") })
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+}
