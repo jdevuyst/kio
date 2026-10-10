@@ -46,7 +46,13 @@ function authenticatePulled(info, image, manifest, native) {
   assert.equal(native.os, info.Os, 'selected native OS must match pulled image');
   assert.equal(native.architecture, info.Architecture, 'selected native architecture must match pulled image');
   assert.deepEqual(info.RootFS.Layers, native.rootfs.diff_ids, 'pulled layers must match the selected immutable native config');
-  assert.deepEqual(info.Config, native.config, 'pulled configuration must match the selected immutable native config');
+  // Docker's image-inspect API can materialize empty container/config fields
+  // omitted from the registry config. Compare their values, not JSON omission.
+  const defaults = { Hostname: '', Domainname: '', Image: '', AttachStdin: false,
+    AttachStdout: false, AttachStderr: false, Tty: false, OpenStdin: false,
+    StdinOnce: false, Entrypoint: null, Volumes: null, OnBuild: null };
+  assert.deepEqual({ ...defaults, ...info.Config }, { ...defaults, ...native.config },
+    'pulled configuration must match the selected immutable native config');
   if (info.Id !== manifest.config.digest) {
     assert.equal(info.Descriptor?.digest, image.split('@')[1], 'containerd image descriptor must match the requested immutable digest');
     assert.equal(info.Id, info.Descriptor.digest, 'containerd image identity must match its descriptor');
@@ -513,6 +519,15 @@ async function selftest(compiler) {
     const manifest = { config: { digest: 'config-digest' } };
     const legacy = { Id: 'config-digest', Os: 'linux', Architecture: 'amd64', RootFS: { Layers: ['layer-one'] }, Config: native.config };
     authenticatePulled(legacy, image, manifest, native);
+    const expanded = { ...legacy, Config: { ...native.config, Hostname: '', Domainname: '', Image: '',
+      AttachStdin: false, AttachStdout: false, AttachStderr: false, Tty: false,
+      OpenStdin: false, StdinOnce: false, Entrypoint: null, Volumes: null, OnBuild: null } };
+    authenticatePulled(expanded, image, manifest, native);
+    for (const [key, value] of Object.entries({ Hostname: 'other', AttachStdin: true,
+      Entrypoint: ['changed'], Volumes: { '/changed': {} }, OnBuild: ['changed'], Unknown: null })) {
+      assert.throws(() => authenticatePulled({ ...expanded, Config: { ...expanded.Config, [key]: value } },
+        image, manifest, native), /pulled configuration/);
+    }
     const modern = { ...legacy, Id: image.split('@')[1], Descriptor: { digest: image.split('@')[1] } };
     authenticatePulled(modern, image, manifest, native);
     assert.throws(() => authenticatePulled({ ...modern, RootFS: { Layers: ['wrong-layer'] } }, image, manifest, native), /pulled layers/);

@@ -1,44 +1,48 @@
 name: Publish release
 on:
   workflow_call:
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: false
+      VSCE_PAT:
+        required: false
+      OVSX_PAT:
+        required: false
     inputs:
       plan:
         required: true
         type: string
+      artifact-id:
+        required: true
+        type: string
+      sha256:
+        required: true
+        type: string
+      source-sha:
+        type: string
+        default: ''
+      artifact-run-id:
+        type: string
+        default: ''
 permissions:
   contents: read
+  actions: read
 jobs:
-  package:
-    if: >-
-      github.repository == 'jdevuyst/kio' && github.ref_type == 'tag' &&
-      startsWith(github.ref_name, 'releases/v') &&
-      fromJSON(inputs.plan).announcement_tag == github.ref_name
-    uses: ./.github/workflows/package-vscode.yml
-    with:
-      release-tag: ${{ github.ref_name }}
-  container:
-    needs: package
-    permissions:
-      contents: read
-      packages: write
-    uses: ./.github/workflows/devcontainer-candidate.yml
-    with:
-      artifact-id: ${{ needs.package.outputs.artifact-id }}
-      sha256: ${{ needs.package.outputs.sha256 }}
   crate:
-    needs: container
     uses: ./.github/workflows/publish-crate.yml
     with:
       plan: ${{ inputs.plan }}
+      source-sha: ${{ inputs.source-sha }}
     secrets:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
   vscode:
-    needs: [package, container]
     uses: ./.github/workflows/publish-vscode.yml
     with:
       plan: ${{ inputs.plan }}
-      artifact-id: ${{ needs.package.outputs.artifact-id }}
-      sha256: ${{ needs.package.outputs.sha256 }}
+      artifact-id: ${{ inputs.artifact-id }}
+      sha256: ${{ inputs.sha256 }}
+      source-sha: ${{ inputs.source-sha }}
+      artifact-run-id: ${{ inputs.artifact-run-id }}
     secrets:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}

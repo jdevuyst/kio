@@ -1,0 +1,98 @@
+name: Accept and promote candidate container
+on:
+  workflow_call:
+    inputs:
+      source-sha:
+        type: string
+        required: true
+      digest:
+        type: string
+        required: true
+      artifact-id:
+        type: string
+        required: true
+      sha256:
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: kio-devcontainer-promotion
+  cancel-in-progress: false
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        env:
+          MISE_ENV: optional
+        with:
+          version: 2026.6.14
+          install_args: node
+          cache: false
+      - name: Full native installed-editor acceptance
+        env:
+          IMAGE_DIGEST: ${{ inputs.digest }}
+          VSIX_SHA256: ${{ inputs.sha256 }}
+          VSIX_ARTIFACT_ID: ${{ inputs.artifact-id }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
+        run: sh ci/infra/release-container-accept.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always()
+        with:
+          name: container-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kio-container-evidence/*
+          if-no-files-found: warn
+  promote:
+    needs: accept
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: node
+          cache: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.source-sha }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Promote accepted immutable index without rebuilding
+        working-directory: release-source
+        env:
+          IMAGE_DIGEST: ${{ inputs.digest }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
+          VSIX_SHA256: ${{ inputs.sha256 }}
+          VSIX_ARTIFACT_ID: ${{ inputs.artifact-id }}
+          PROMOTION_RECEIPT: ${{ runner.temp }}/kio-container-promotion.json
+        run: node ../ci/infra/release-container.cjs promote
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always()
+        with:
+          name: container-promotion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kio-container-promotion.json
+          if-no-files-found: error

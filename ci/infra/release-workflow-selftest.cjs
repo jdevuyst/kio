@@ -5,53 +5,44 @@ const { augment, assertFresh, inputs } = require('./release-workflow.cjs');
 const root = path.resolve(__dirname, '../..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const actual = read('.github/workflows/release.yml');
-const dependency = '      - custom-release-credentials\n';
-const guard = "needs.custom-release-credentials.result == 'success' && ";
-const verified = "needs.custom-release-credentials.outputs.verified == 'true' && ";
-const raw = actual.replace('  host:\n    needs:\n' + dependency, '  host:\n    needs:\n').replace(guard, '').replaceAll(verified, '');
-assert.equal(augment(raw), actual);
-assert.throws(() => augment(actual));
-assert.throws(() => augment(raw.replace('  host:', '  upstream-renamed-host:')));
-assert.throws(() => augment(raw.replace("always() && needs.plan.result", "always() && upstream.result")));
-assert.throws(() => augment(raw.replace('  custom-release-credentials:', '  removed-hook:')));
-assert.throws(() => augment(raw.replace(dependency, '')));
-assertFresh(augment(raw), actual);
-assert.throws(() => assertFresh(augment(raw), actual.replace('ubuntu-22.04', 'ubuntu-24.04')));
+// Both credential success and complete preparation are execution witnesses,
+// not merely needs-edges that an always() job could bypass after a skip.
 const host = actual.match(/^  host:\n([\s\S]*?)(?=^  [\w-]+:)/m)[1];
-assert(host.includes(dependency));
 const condition = host.match(/^    if: (.*)$/m)[1];
-// Unmodified upstream accepts skipped builds after a failed plan prerequisite:
-// this control proves the strict guard is what prevents publication.
-const before = condition.replace(guard, '').replace(verified, '')
-  .replace(/\$\{\{|\}\}/g, '').replace('always()', 'true')
-  .replace(/needs\.plan\.result/g, "'success'").replace(/needs\.plan\.outputs\.publishing/g, "'true'")
-  .replace(/needs\.build-(?:local|global)-artifacts\.result/g, "'skipped'");
-assert.equal(Function(`return (${before});`)(), true, 'before-fix bypass must be observable');
-for (const status of ['failure', 'cancelled', 'skipped', 'success']) for (const output of ['', 'true']) {
+function evaluate(condition, overrides = {}) {
+  const values = {'plan.result': 'success', 'plan.outputs.publishing': 'true',
+    'custom-release-credentials.result': 'success', 'custom-release-credentials.outputs.verified': 'true',
+    'build-local-artifacts.result': 'success', 'build-global-artifacts.result': 'success',
+    'custom-prepare-release.result': 'success', 'custom-prepare-release.outputs.ready': 'true', ...overrides};
   const expression = condition.replace(/\$\{\{|\}\}/g, '').replace('always()', 'true')
-    .replace(/needs\.custom-release-credentials\.result/g, JSON.stringify(status))
-    .replace(/needs\.custom-release-credentials\.outputs\.verified/g, JSON.stringify(output))
-    .replace(/needs\.plan\.result/g, "'success'").replace(/needs\.plan\.outputs\.publishing/g, "'true'")
-    .replace(/needs\.build-(?:local|global)-artifacts\.result/g, "'skipped'");
-  assert.equal(Function(`return (${expression});`)(), status === 'success' && output === 'true', `${status}/${output}`);
+    .replace(/needs\.([\w.-]+)/g, (_, key) => {assert(key in values, key); return JSON.stringify(values[key]);});
+  return Function('return (' + expression + ')')();
 }
-const build = actual.match(/^  build-local-artifacts:\n([\s\S]*?)(?=^  [\w-]+:)/m)[1];
-assert(build.includes('    if: ${{ ' + verified));
-assert(preflightOutputIsExecutionWitness());
-function preflightOutputIsExecutionWitness() {
-  const text = read('.github/workflows/release-credentials.yml');
-  return text.includes('value: ${{ jobs.check.outputs.verified }}') &&
-    text.includes('verified: ${{ steps.verify.outputs.verified }}') &&
-    /node ci\/infra\/release-credentials.cjs\n\s+echo 'verified=true'/.test(text);
-}
+assert.equal(evaluate(condition), true);
+for (const job of ['plan', 'custom-release-credentials', 'build-local-artifacts', 'build-global-artifacts', 'custom-prepare-release'])
+  for (const status of ['failure', 'cancelled', 'skipped'])
+    assert.equal(evaluate(condition, {[job + '.result']: status}), false, job + '/' + status);
+for (const witness of ['custom-release-credentials.outputs.verified', 'custom-prepare-release.outputs.ready', 'plan.outputs.publishing'])
+  for (const output of ['', 'false']) assert.equal(evaluate(condition, {[witness]: output}), false);
+assert(host.includes('      - custom-prepare-release\n'));
+assert(host.includes('Point of no return'));
+// The previously shipped graph hosted binaries before any container acceptance.
+const before = condition.replace(" && needs.custom-prepare-release.result == 'success' && needs.custom-prepare-release.outputs.ready == 'true'", '');
+assert.equal(evaluate(before, {'custom-prepare-release.result': 'failure'}), true);
+assert.throws(() => augment(actual), 'already augmented source must fail');
+assertFresh(actual, actual);
+assert.throws(() => assertFresh(actual, actual.replace('ubuntu-22.04', 'ubuntu-24.04')));
 const publisher = actual.match(/^  custom-publish-release:\n([\s\S]*?)(?=^  [\w-]+:)/m)[1];
-assert(publisher.includes('      - host\n') && !publisher.includes('always()'));
-assert(actual.includes("always() && needs.host.result == 'success'"));
+assert(publisher.includes('      - host\n') && publisher.includes('      - custom-prepare-release\n'));
+assert(publisher.includes('artifact-id: ${{ needs.custom-prepare-release.outputs.artifact-id }}'));
+assert(publisher.includes('sha256: ${{ needs.custom-prepare-release.outputs.sha256 }}'));
 const preflight = read('.github/workflows/release-credentials.yml');
 assert(!preflight.includes('pull_request') && !preflight.includes('schedule:'));
 assert(preflight.includes("github.event_name == 'push' && github.ref_type == 'tag'"));
 assert(preflight.includes('node ci/infra/release-workflow.cjs --check'));
-assert(preflight.indexOf('--check') < preflight.indexOf('CARGO_REGISTRY_TOKEN:'));
+assert(preflight.indexOf('--check') < preflight.indexOf('          CARGO_REGISTRY_TOKEN:'));
+assert(preflight.includes('value: ${{ jobs.check.outputs.verified }}') &&
+  /node ci\/infra\/release-credentials.cjs\n\s+echo 'verified=true'/.test(preflight));
 const exists = file => fs.existsSync(path.join(root, file));
 const list = dir => fs.readdirSync(path.join(root, dir));
 inputs(read, exists, list);
@@ -65,4 +56,4 @@ for (const [file, mutate] of [
 ]) assert.throws(() => inputs(name => name === file ? mutate(read(name)) : read(name), exists, list));
 assert.throws(() => inputs(read, file => file === 'kio-rs/dist/tests' || exists(file), list));
 assert.throws(() => inputs(read, exists, () => ['kio-prime.rs', 'new.rs']));
-console.log('release workflow freshness and failed/cancelled/skipped preflight guards passed');
+console.log('release workflow freshness and failed/cancelled/skipped preparation guards passed');

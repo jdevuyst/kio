@@ -216,15 +216,29 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+
+  custom-prepare-release:
+    needs:
+      - plan
+      - build-local-artifacts
+    uses: ./.github/workflows/prepare-release.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
+    permissions:
+      "contents": "read"
+      "packages": "write"
   # Determines if we should publish/announce
   host:
+    name: Point of no return — publish immutable GitHub release
     needs:
       - custom-release-credentials
       - plan
       - build-local-artifacts
       - build-global-artifacts
-    # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.custom-release-credentials.result == 'success' && needs.custom-release-credentials.outputs.verified == 'true' && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+      - custom-prepare-release
+    # Every preparation job must have executed successfully before publication.
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.custom-release-credentials.result == 'success' && needs.custom-release-credentials.outputs.verified == 'true' && needs.build-local-artifacts.result == 'success' && needs.build-global-artifacts.result == 'success' && needs.custom-prepare-release.result == 'success' && needs.custom-prepare-release.outputs.ready == 'true' }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
@@ -288,15 +302,18 @@ jobs:
     needs:
       - plan
       - host
+      - custom-prepare-release
     if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
     uses: ./.github/workflows/publish-release.yml
     with:
       plan: ${{ needs.plan.outputs.val }}
+      artifact-id: ${{ needs.custom-prepare-release.outputs.artifact-id }}
+      sha256: ${{ needs.custom-prepare-release.outputs.sha256 }}
     secrets: inherit
     # publish jobs get escalated permissions
     permissions:
+      "actions": "read"
       "contents": "read"
-      "packages": "write"
 
   announce:
     needs:
@@ -315,3 +332,16 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  custom-deploy-release-site:
+    needs:
+      - plan
+      - announce
+    uses: ./.github/workflows/deploy-release-site.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
+    permissions:
+      "contents": "read"
+      "id-token": "write"
+      "pages": "write"

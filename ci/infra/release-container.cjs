@@ -62,16 +62,22 @@ function ancestor(before, after) {
   assert([0, 1].includes(result.status), 'cannot establish source ancestry: ' + result.stderr);
   return result.status === 0;
 }
-function currentLatest(read = inspect) {
+function tagManifest(ref, read = inspect) {
   let descriptor;
   // Only failure to find the mutable tag itself can prove initial bootstrap.
   try {
-    descriptor = read(image + ':latest', 'Manifest');
+    descriptor = read(ref, 'Manifest');
   } catch (error) {
-    if (/manifest unknown|MANIFEST_UNKNOWN/.test(String(error.stderr))) return undefined;
+    const stderr = String(error.stderr).trim();
+    if (/manifest unknown|MANIFEST_UNKNOWN/.test(stderr) || stderr === 'ERROR: ' + ref + ': not found') return undefined;
     throw error;
   }
   assert.match(descriptor.digest, /^sha256:[a-f0-9]{64}$/);
+  return descriptor;
+}
+function currentLatest(read = inspect) {
+  const descriptor = tagManifest(image + ':latest', read);
+  if (!descriptor) return undefined;
   const current = read(image + '@' + descriptor.digest, 'Image');
   const revisions = ['linux/amd64', 'linux/arm64'].map(p => current[p].config.Labels['org.opencontainers.image.revision']);
   assert.equal(revisions[0], revisions[1]);
@@ -88,11 +94,19 @@ function promote() {
   const policy = latestPolicy(expected.source, latest?.source, ancestor);
   const tags = ['sha-' + expected.source];
   if (policy === 'advance') tags.push('latest');
+  // Write the rollback inputs before changing even one mutable tag. An absent
+  // tag is distinct from a failed lookup, and a newer publication must survive.
+  const before = Object.fromEntries(tags.map(tag => [tag, tagManifest(image + ':' + tag)?.digest ?? null]));
+  const record = {schema: 'kio-container-promotion-v1', ...expected, index, tags, before, completed: false};
+  assert(process.env.PROMOTION_RECEIPT, 'promotion requires a durable rollback receipt');
+  fs.writeFileSync(process.env.PROMOTION_RECEIPT, JSON.stringify(record, null, 2));
   command('docker', ['buildx', 'imagetools', 'create', ...tags.flatMap(t => ['--tag', image + ':' + t]), ref]);
   for (const tag of tags) assert.equal(inspect(image + ':' + tag, 'Manifest').digest, expected.digest);
   if (policy === 'retain-newer') assert.equal(inspect(image + ':latest', 'Manifest').digest, latest.digest, 'newer latest must remain untouched');
-  console.log(JSON.stringify({schema: 'kio-container-promotion-v1', ...expected, index, tags,
-    latest: {policy, ...(policy === 'retain-newer' ? latest : {digest: expected.digest, source: expected.source})}}, null, 2));
+  record.completed = true;
+  record.latest = {policy, ...(policy === 'retain-newer' ? latest : {digest: expected.digest, source: expected.source})};
+  fs.writeFileSync(process.env.PROMOTION_RECEIPT, JSON.stringify(record, null, 2));
+  console.log(JSON.stringify(record, null, 2));
 }
 function selftest() {
   const expected = inputs({IMAGE_DIGEST: 'sha256:' + 'a'.repeat(64), SOURCE_SHA: 'b'.repeat(40), VSIX_SHA256: 'c'.repeat(64), VSIX_ARTIFACT_ID: '123'});
@@ -123,4 +137,4 @@ if (require.main === module) {
     default: throw new Error('expected promote, receipt, refresh or selftest');
   }
 }
-module.exports = {inputs, authenticate, receipt, latestPolicy, currentLatest};
+module.exports = {inputs, authenticate, receipt, latestPolicy, currentLatest, tagManifest, inspect};

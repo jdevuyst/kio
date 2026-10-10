@@ -15,8 +15,10 @@ installers = ["shell", "powershell"]
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
 # Where to host releases
 hosting = "github"
-# Registry publishers consume a successful binary release.
+# All preparation and container promotion finish before immutable hosting.
 github-release = "host"
 plan-jobs = ["./release-credentials"]
+global-artifacts-jobs = ["./prepare-release"]
 publish-jobs = ["./publish-release"]
-github-custom-job-permissions = { publish-release = { contents = "read", packages = "write" } }
+post-announce-jobs = ["./deploy-release-site"]
+github-custom-job-permissions = { prepare-release = { contents = "read", packages = "write" }, publish-release = { contents = "read", actions = "read" }, deploy-release-site = { contents = "read", pages = "write", id-token = "write" } }

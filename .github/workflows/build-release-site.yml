@@ -1,0 +1,30 @@
+name: Build release website artifact
+on:
+  workflow_call:
+    inputs:
+      image:
+        type: string
+        required: true
+      source-sha:
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: ${{ inputs.image }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.source-sha || github.sha }}
+          persist-credentials: false
+      - name: Build and smoke-test website
+        working-directory: website
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+          npm run smoke
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b  # v4.0.0
+        with:
+          path: website/.vitepress/dist

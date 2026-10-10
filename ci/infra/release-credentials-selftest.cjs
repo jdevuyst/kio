@@ -68,6 +68,17 @@ async function main() {
   }
 
   inspect(read, inventory);
+  for (const job of ['credentials', 'publish']) {
+    for (const {secret} of inventory) {
+      assert.throws(() => inspect(name => {
+        const text = read(name);
+        if (name !== '.github/workflows/release-recovery.yml') return text;
+        return text.replace(new RegExp('^  ' + job + ':\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))', 'm'),
+          block => block.replace(`      ${secret}: \${{ secrets.${secret} }}\n`, ''));
+      }, inventory), new RegExp('recovery must explicitly forward ' + secret + ' to ' + job),
+      'each recovery caller must pass secrets even when other callers preserve the inventory');
+    }
+  }
   assert.throws(() => inspect(read, inventory.slice(1)), /differ/);
   assert.throws(() => inspect(name => name === '.github/workflows/pages.yml' ? read(name) + '\n    env:\n      PAGES_PAT: ${{ secrets.ADDED_PAGES_PAT }}\n' : read(name), inventory), /differ/, 'website publisher secrets also require coverage');
   assert.throws(() => inspect(read, [...inventory, {...inventory[0], secret: 'STALE_PAT'}]), /differ/);

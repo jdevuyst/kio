@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const {inputs, authenticate, latestPolicy, currentLatest} = require('./release-container.cjs');
+const {inputs, authenticate, latestPolicy, currentLatest, tagManifest} = require('./release-container.cjs');
 const root = path.resolve(__dirname, '../..');
 const read = name => fs.readFileSync(path.join(root, '.github/workflows', name + '.yml'), 'utf8');
 function jobs(text) {
@@ -16,13 +16,6 @@ function jobs(text) {
   }
   return result;
 }
-function checkGraph(release, container) {
-  for (const publisher of ['crate', 'vscode']) assert(release[publisher].needs.includes('container'), publisher + ' must await accepted promotion');
-  assert.deepEqual(release.container.needs, ['package']);
-  assert.match(release.package.text, /uses: .*package-vscode.yml/);
-  assert.deepEqual(container.accept.needs, ['build']);
-  assert.deepEqual(container.promote.needs, ['build', 'accept']);
-}
 function simulate(graph, failures = []) {
   const state = {};
   for (const [job, {needs}] of Object.entries(graph)) {
@@ -31,33 +24,59 @@ function simulate(graph, failures = []) {
   }
   return state;
 }
-const release = jobs(read('publish-release'));
-const container = jobs(read('devcontainer-candidate'));
-checkGraph(release, container);
-for (const failed of ['build', 'accept', 'promote']) {
-  const candidate = simulate(container, [failed]);
-  assert.notEqual(candidate.promote, 'success');
-  const publishers = simulate(release, ['container']);
-  assert.equal(publishers.crate, 'skipped');
-  assert.equal(publishers.vscode, 'skipped');
+function checkGraph(prepare, container, acceptance, recovery) {
+  assert.deepEqual(container.acceptance.needs, ['build']);
+  assert.match(container.acceptance.text, /uses: .*accept-container.yml/);
+  assert.deepEqual(acceptance.promote.needs, ['accept']);
+  assert.deepEqual(prepare.ready.needs, ['package', 'container', 'crate', 'website']);
+  assert.deepEqual(prepare.container.needs, ['package']);
+  assert.deepEqual(prepare.website.needs, ['container']);
+  assert.deepEqual(recovery.container.needs, ['verify', 'credentials']);
+  assert.match(recovery.container.text, /uses: .*accept-container.yml/);
+  assert.deepEqual(recovery.publish.needs, ['verify', 'container', 'website']);
+  assert.deepEqual(recovery.deploy.needs, ['verify', 'website', 'publish']);
 }
-assert.equal(simulate(release, ['crate']).vscode, 'success', 'independent leaf failure must not block editor publishers');
+const release = jobs(read('publish-release'));
+const prepare = jobs(read('prepare-release'));
+const container = jobs(read('devcontainer-candidate'));
+const acceptance = jobs(read('accept-container'));
+const recovery = jobs(read('release-recovery'));
+checkGraph(prepare, container, acceptance, recovery);
+for (const failed of ['package', 'container', 'crate', 'website'])
+  assert.notEqual(simulate(prepare, [failed]).ready, 'success');
+for (const failed of ['verify', 'credentials', 'container', 'website'])
+  assert.equal(simulate(recovery, [failed]).publish, 'skipped');
+assert.equal(simulate(acceptance, ['accept']).promote, 'skipped');
+assert.equal(simulate(release, ['crate']).vscode, 'success');
 const registries = jobs(read('publish-vscode'));
 assert.equal(simulate(registries, ['marketplace'])['open-vsx'], 'success');
 assert.equal(simulate(registries, ['open-vsx']).marketplace, 'success');
-for (const publisher of ['crate', 'vscode']) {
-  const bad = structuredClone(release); bad[publisher].needs = ['package'];
-  assert.throws(() => checkGraph(bad, container), 'ungated publishers must be rejected');
-}
-const bad = structuredClone(container); bad.promote.needs = ['build'];
-assert.throws(() => checkGraph(release, bad), 'acceptance bypass must be rejected');
-assert.match(read('release'), /custom-publish-release:\n    needs:\n      - plan\n      - host/);
+const bad = structuredClone(acceptance); bad.promote.needs = [];
+assert.throws(() => checkGraph(prepare, container, bad, recovery));
+const unguarded = structuredClone(recovery); unguarded.publish.needs = ['verify'];
+assert.throws(() => checkGraph(prepare, container, acceptance, unguarded));
 assert(!read('release').includes('custom-publish-crate:'));
 assert(!read('release').includes('custom-publish-vscode:'));
-assert.match(fs.readFileSync(path.join(root, 'dist-workspace.toml'), 'utf8'), /publish-jobs = \["\.\/publish-release"\]/);
 assert.equal((read('publish-vscode').match(/sha256sum --check --strict/g) || []).length, 2);
+assert.equal((read('publish-vscode').match(/run-id: \$\{\{ inputs.artifact-run-id \|\| github.run_id \}\}/g) || []).length, 2);
 assert(!read('publish-vscode').includes('npm run package'));
-assert(!read('devcontainer-candidate').includes('value=latest'));
+assert(!read('release-recovery').includes('build-push-action'));
+assert.match(read('accept-container'), /PROMOTION_RECEIPT:/);
+const {validate} = require('./release-recovery.cjs');
+const metadata = {tag: 'releases/v1.2.3', release: {tag_name: 'releases/v1.2.3', immutable: true, draft: false, prerelease: false},
+  source: 'b'.repeat(40), run: {id: 123, run_attempt: 2, head_sha: 'b'.repeat(40), repository: {full_name: 'jdevuyst/kio'},
+    path: '.github/workflows/release.yml', event: 'push', status: 'completed'},
+  jobs: ['host', 'custom-publish-release / package / Package extension', 'custom-publish-release / container / build']
+    .map(name => ({name, conclusion: 'success'})),
+  artifacts: [{name: 'kio-vsix-123-2', id: 456, expired: false}]};
+assert.equal(validate(metadata).id, 456);
+for (const change of [
+  m => {m.release.immutable = false;}, m => {m.run.head_sha = 'c'.repeat(40);},
+  m => {m.run.repository.full_name = 'other/repo';}, m => {m.run.event = 'pull_request';},
+  m => {m.jobs[1].conclusion = 'skipped';}, m => {m.artifacts[0].expired = true;},
+  m => {m.artifacts[0].name = 'kio-vsix-123-1';},
+  m => {m.jobs.push({name: 'custom-publish-release / crate / publish', conclusion: 'success'});},
+]) { const invalid = structuredClone(metadata); change(invalid); assert.throws(() => validate(invalid)); }
 const expected = inputs({IMAGE_DIGEST: 'sha256:' + 'a'.repeat(64), SOURCE_SHA: 'b'.repeat(40), VSIX_SHA256: 'c'.repeat(64), VSIX_ARTIFACT_ID: '123'});
 const index = {digest: expected.digest, manifests: ['amd64', 'arm64'].map(architecture => ({digest: 'sha256:' + 'd'.repeat(64), platform: {os: 'linux', architecture}}))};
 const labels = {'org.opencontainers.image.source': 'https://github.com/jdevuyst/kio', 'org.opencontainers.image.revision': expected.source, 'io.kio.vsix.sha256': expected.vsix, 'io.kio.vsix.artifact-id': expected.artifact};
@@ -76,6 +95,22 @@ assert.equal(latestPolicy('candidate', 'newer', ancestor), 'retain-newer');
 assert.throws(() => latestPolicy('candidate', 'divergent', ancestor));
 const missing = Object.assign(new Error('registry manifest missing'), {stderr: 'MANIFEST_UNKNOWN'});
 assert.equal(currentLatest(() => {throw missing;}), undefined, 'absent mutable tag permits bootstrap');
+const missingLatest = Object.assign(new Error('registry tag missing'), {
+  stderr: 'ERROR: ghcr.io/jdevuyst/kio-devcontainer:latest: not found\n'
+});
+assert.equal(currentLatest(() => {throw missingLatest;}), undefined, 'buildx absent-tag response permits bootstrap');
+const sourceTag = 'ghcr.io/jdevuyst/kio-devcontainer:sha-' + expected.source;
+assert.equal(tagManifest(sourceTag, () => {throw Object.assign(new Error('missing source tag'), {
+  stderr: 'ERROR: ' + sourceTag + ': not found\n'
+});}), undefined, 'first promotion records an absent source tag');
+assert.equal(tagManifest(sourceTag, () => index).digest, expected.digest);
+assert.throws(() => tagManifest(sourceTag, () => ({digest: 'invalid'})));
+for (const stderr of [
+  'ERROR: ghcr.io/other/image:latest: not found\n',
+  'ERROR: ghcr.io/jdevuyst/kio-devcontainer:latest: unauthorized\n',
+  'ERROR: ghcr.io/jdevuyst/kio-devcontainer:latest: not found\nconnection failed',
+  'ERROR: executable not found\n',
+]) assert.throws(() => currentLatest(() => {throw Object.assign(new Error('lookup failed'), {stderr});}));
 let lookups = 0;
 assert.throws(() => currentLatest(() => {
   if (++lookups === 1) return index;

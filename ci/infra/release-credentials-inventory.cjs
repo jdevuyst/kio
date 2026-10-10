@@ -24,6 +24,7 @@ function inspect(read, inventory) {
     }
   }
   visit('.github/workflows/release.yml');
+  visit('.github/workflows/release-recovery.yml');
   visit('.github/workflows/devcontainer-publish.yml');
   visit('.github/workflows/pages.yml');
   const names = inventory.map(entry => entry.secret);
@@ -33,6 +34,14 @@ function inspect(read, inventory) {
   const mappings = [...preflight.matchAll(/^\s+([A-Z_][A-Z_0-9]*): \$\{\{ secrets\.([A-Z_][A-Z_0-9]*) \}\}/gm)];
   assert.deepEqual(mappings.map(match => match[1]).sort(), [...names].sort(), 'preflight environment must cover exactly the inventory');
   assert(mappings.every(match => match[1] === match[2]), 'preflight must use each publisher\'s actual secret');
+  const recovery = read('.github/workflows/release-recovery.yml');
+  for (const job of ['credentials', 'publish']) {
+    const body = recovery.match(new RegExp('^  ' + job + ':\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))', 'm'))?.[1];
+    assert(body, 'recovery caller missing: ' + job);
+    for (const name of names)
+      assert(body.includes(name + ': ${{ secrets.' + name + ' }}'),
+        'recovery must explicitly forward ' + name + ' to ' + job);
+  }
   const extension = JSON.parse(read('tools/vscode-kio/package.json'));
   const crate = /^name = "([^"]+)"$/m.exec(read('kio-rs/Cargo.toml'))?.[1];
   for (const entry of inventory) {

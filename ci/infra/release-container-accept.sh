@@ -1,5 +1,5 @@
 #!/bin/sh
-# Disposable hosted-runner adapter; the acceptance oracle remains unchanged.
+# Disposable hosted-runner adapter for native container acceptance.
 set -eu
 if [ "${GITHUB_ACTIONS-}" != true ] || [ "${RUNNER_ENVIRONMENT-}" != github-hosted ] ||
   [ "${RUNNER_OS-}" != Linux ] || [ "$(uname -m)" != x86_64 ]; then
@@ -30,35 +30,40 @@ fi
 sudo usermod -aG docker "$account"
 group=$(id -gn "$account")
 sudo install -d -o "$(id -un)" -g "$(id -gn)" "$task" "$task/home" "$task/tmp"
-mise_bin=$(command -v mise)
-mise_data=${MISE_DATA_DIR:-"$HOME/.local/share/mise"}
+mkdir "$task/bin"
+# The runner's home may be private. Give the acceptance user its own pinned
+# tool installation instead of granting access to the runner's home/secrets.
+install -m 755 "$(command -v mise)" "$task/bin/mise"
 git clone --no-hardlinks "$repo" "$task/repo"
-git -C "$task/repo" checkout --detach "$SOURCE_SHA"
+# Use repaired automation; the oracle checks out the image's frozen source
+# separately before running its lifecycle hooks and compiler/editor checks.
+git -C "$task/repo" checkout --detach "$(git -C "$repo" rev-parse HEAD)"
 export TMPDIR="$task/tmp"
-for directory in tools/vscode-kio ci/infra/highlight-agreement-js; do
-  (cd "$repo/$directory" && npm ci --no-fund --no-audit)
-  cp -R "$repo/$directory/node_modules" "$task/repo/$directory/node_modules"
-done
-refresh=$(node ci/infra/release-container.cjs refresh)
-mkdir "$task/editor"
-curl --fail --location --proto '=https' --tlsv1.2 \
-  https://update.code.visualstudio.com/latest/linux-x64/stable --output "$task/editor.tar.gz"
-tar xzf "$task/editor.tar.gz" -C "$task/editor" --strip-components=1
-commit=$(node -e 'const p=require(process.argv[1]); if(!/^[a-f0-9]{40}$/.test(p.commit)) throw Error("official editor commit missing"); process.stdout.write(p.commit)' "$task/editor/resources/app/product.json")
-curl --fail --location --proto '=https' --tlsv1.2 \
-  "https://update.code.visualstudio.com/commit:$commit/server-linux-x64/stable" --output "$task/server.tar.gz"
 sudo chown -R "$account:$group" "$task"
 as_owner() {
-  sudo -u "$account" env HOME="$task/home" TMPDIR="$task/tmp" PATH="$PATH" \
-    MISE_DATA_DIR="$mise_data" MISE_CACHE_DIR="$task/mise-cache" MISE_STATE_DIR="$task/mise-state" \
+  sudo -u "$account" env HOME="$task/home" TMPDIR="$task/tmp" \
+    PATH="$task/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
+    MISE_DATA_DIR="$task/mise-data" MISE_CACHE_DIR="$task/mise-cache" MISE_STATE_DIR="$task/mise-state" \
     MISE_CONFIG_DIR="$task/home/.config/mise" MISE_TRUSTED_CONFIG_PATHS="$task/repo" MISE_AUTO_INSTALL=0 \
-    "$mise_bin" -C "$task/repo" -E optional exec "$@"
+    "$task/bin/mise" -C "$task/repo" -E optional "$@"
 }
-# Fail on pinned-tool accessibility before pulling the larger candidate image.
-as_owner node -- node --version
-as_owner npm:@devcontainers/cli -- devcontainer --version
+as_owner install --locked node npm:@devcontainers/cli
+# Check tools as their actual consumer before downloading editor/image assets.
+as_owner exec node -- node --version
+as_owner exec npm:@devcontainers/cli -- devcontainer --version
+for directory in tools/vscode-kio ci/infra/highlight-agreement-js; do
+  as_owner exec node -- npm --prefix "$task/repo/$directory" ci --no-fund --no-audit
+done
+refresh=$(node ci/infra/release-container.cjs refresh)
+sudo -u "$account" mkdir "$task/editor"
+as_owner exec node -- curl --fail --location --proto '=https' --tlsv1.2 \
+  https://update.code.visualstudio.com/latest/linux-x64/stable --output "$task/editor.tar.gz"
+as_owner exec node -- tar xzf "$task/editor.tar.gz" -C "$task/editor" --strip-components=1
+commit=$(node -e 'const p=require(process.argv[1]); if(!/^[a-f0-9]{40}$/.test(p.commit)) throw Error("official editor commit missing"); process.stdout.write(p.commit)' "$task/editor/resources/app/product.json")
+as_owner exec node -- curl --fail --location --proto '=https' --tlsv1.2 \
+  "https://update.code.visualstudio.com/commit:$commit/server-linux-x64/stable" --output "$task/server.tar.gz"
 status=0
-as_owner node -- sh "$task/repo/ci/infra/devcontainer-acceptance.sh" \
+as_owner exec node -- sh "$task/repo/ci/infra/devcontainer-acceptance.sh" \
   "ghcr.io/jdevuyst/kio-devcontainer@$IMAGE_DIGEST" "$refresh" "$task/server.tar.gz" \
   "$task/editor" "$task/result" 4 12g || status=$?
 # Upload explicit evidence only, not private checkouts or container environments.

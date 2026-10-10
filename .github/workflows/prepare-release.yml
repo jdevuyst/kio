@@ -1,0 +1,63 @@
+name: Prepare release before publication
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+    outputs:
+      ready:
+        value: ${{ jobs.ready.outputs.ready }}
+      artifact-id:
+        value: ${{ jobs.package.outputs.artifact-id }}
+      sha256:
+        value: ${{ jobs.package.outputs.sha256 }}
+permissions:
+  contents: read
+jobs:
+  package:
+    if: >-
+      github.repository == 'jdevuyst/kio' && github.ref_type == 'tag' &&
+      startsWith(github.ref_name, 'releases/v') &&
+      fromJSON(inputs.plan).announcement_tag == github.ref_name
+    uses: ./.github/workflows/package-vscode.yml
+    with:
+      release-tag: ${{ github.ref_name }}
+  container:
+    needs: package
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/devcontainer-candidate.yml
+    with:
+      artifact-id: ${{ needs.package.outputs.artifact-id }}
+      sha256: ${{ needs.package.outputs.sha256 }}
+  crate:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: rust
+          cache: false
+      - name: Verify packaged crate without publishing
+        working-directory: kio-rs
+        run: sh ../ci/cargo.sh publish --dry-run --locked
+  website:
+    needs: container
+    uses: ./.github/workflows/build-release-site.yml
+    with:
+      image: ghcr.io/jdevuyst/kio-devcontainer@${{ needs.container.outputs.digest }}
+  ready:
+    needs: [package, container, crate, website]
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.ready.outputs.ready }}
+    steps:
+      - name: All preparation passed; next phase freezes source and version
+        id: ready
+        run: echo 'ready=true' >> "$GITHUB_OUTPUT"

@@ -1,0 +1,28 @@
+name: Deploy prepared release website
+on:
+  workflow_call:
+    inputs:
+      plan:
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  deploy:
+    if: >-
+      github.repository == 'jdevuyst/kio' &&
+      ((github.ref_type == 'tag' && fromJSON(inputs.plan).announcement_tag == github.ref_name) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow == 'Resume release'))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e  # v4.0.5
