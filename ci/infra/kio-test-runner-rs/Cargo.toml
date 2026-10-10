@@ -1,6 +1,6 @@
 [package]
 name = "kio-test-runner-rs"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Per-target test runners for the Kio golden corpus. Private test artifact."
 license = "MIT OR Apache-2.0"

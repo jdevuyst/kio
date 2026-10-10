@@ -234,7 +234,7 @@ dependencies = [
 
 [[package]]
 name = "kio-lang"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "blake3",
  "crossbeam-channel",
@@ -249,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "kio-repl-wasm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "console_error_panic_hook",
  "kio-lang",

@@ -1,6 +1,6 @@
 {
   "name": "kio-highlight-agreement",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "MIT OR Apache-2.0",
   "private": true,
   "description": "Cross-tokenizer agreement check for Kio.",
