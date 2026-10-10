@@ -137,4 +137,4 @@ if (require.main === module) {
     default: throw new Error('expected promote, receipt, refresh or selftest');
   }
 }
-module.exports = {inputs, authenticate, receipt, latestPolicy, currentLatest, tagManifest, inspect};
+module.exports = {inputs, authenticate, receipt, latestPolicy, currentLatest, tagManifest};

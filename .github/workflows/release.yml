@@ -238,7 +238,7 @@ jobs:
       - build-global-artifacts
       - custom-prepare-release
     # Every preparation job must have executed successfully before publication.
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.custom-release-credentials.result == 'success' && needs.custom-release-credentials.outputs.verified == 'true' && needs.build-local-artifacts.result == 'success' && needs.build-global-artifacts.result == 'success' && needs.custom-prepare-release.result == 'success' && needs.custom-prepare-release.outputs.ready == 'true' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.custom-release-credentials.result == 'success' && needs.custom-release-credentials.outputs.verified == 'true' && needs.build-local-artifacts.result == 'success' && needs.build-global-artifacts.result == 'success' && needs.custom-prepare-release.result == 'success' && needs.custom-prepare-release.outputs.ready == 'true' }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"

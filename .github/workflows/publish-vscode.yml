@@ -20,13 +20,6 @@ on:
         required: true
         type: string
 
-      source-sha:
-        type: string
-        default: ''
-      artifact-run-id:
-        type: string
-        default: ''
-
 permissions:
   contents: read
   actions: read
@@ -40,9 +33,8 @@ jobs:
     name: Publish extension to Marketplace
     if: >-
       github.repository == 'jdevuyst/kio' &&
-      ((github.ref_type == 'tag' && startsWith(github.ref_name, 'releases/v') &&
-      fromJSON(inputs.plan).announcement_tag == github.ref_name) ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow == 'Resume release'))
+      github.ref_type == 'tag' && startsWith(github.ref_name, 'releases/v') &&
+      fromJSON(inputs.plan).announcement_tag == github.ref_name
     runs-on: ubuntu-latest
     environment: publish
     steps:
@@ -61,7 +53,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         if: steps.credential.outputs.available == 'true'
         with:
-          ref: ${{ inputs.source-sha || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
@@ -75,7 +67,7 @@ jobs:
         if: steps.credential.outputs.available == 'true'
         with:
           artifact-ids: ${{ inputs.artifact-id }}
-          run-id: ${{ inputs.artifact-run-id || github.run_id }}
+          run-id: ${{ github.run_id }}
           github-token: ${{ github.token }}
           path: tools/vscode-kio
           merge-multiple: true
@@ -104,9 +96,8 @@ jobs:
     name: Publish extension to Open VSX
     if: >-
       github.repository == 'jdevuyst/kio' &&
-      ((github.ref_type == 'tag' && startsWith(github.ref_name, 'releases/v') &&
-      fromJSON(inputs.plan).announcement_tag == github.ref_name) ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow == 'Resume release'))
+      github.ref_type == 'tag' && startsWith(github.ref_name, 'releases/v') &&
+      fromJSON(inputs.plan).announcement_tag == github.ref_name
     runs-on: ubuntu-latest
     environment: publish
     steps:
@@ -125,7 +116,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         if: steps.credential.outputs.available == 'true'
         with:
-          ref: ${{ inputs.source-sha || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
@@ -139,7 +130,7 @@ jobs:
         if: steps.credential.outputs.available == 'true'
         with:
           artifact-ids: ${{ inputs.artifact-id }}
-          run-id: ${{ inputs.artifact-run-id || github.run_id }}
+          run-id: ${{ github.run_id }}
           github-token: ${{ github.token }}
           path: tools/vscode-kio
           merge-multiple: true

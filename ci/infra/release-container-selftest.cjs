@@ -24,59 +24,34 @@ function simulate(graph, failures = []) {
   }
   return state;
 }
-function checkGraph(prepare, container, acceptance, recovery) {
+function checkGraph(prepare, container, acceptance) {
   assert.deepEqual(container.acceptance.needs, ['build']);
   assert.match(container.acceptance.text, /uses: .*accept-container.yml/);
   assert.deepEqual(acceptance.promote.needs, ['accept']);
   assert.deepEqual(prepare.ready.needs, ['package', 'container', 'crate', 'website']);
   assert.deepEqual(prepare.container.needs, ['package']);
   assert.deepEqual(prepare.website.needs, ['container']);
-  assert.deepEqual(recovery.container.needs, ['verify', 'credentials']);
-  assert.match(recovery.container.text, /uses: .*accept-container.yml/);
-  assert.deepEqual(recovery.publish.needs, ['verify', 'container', 'website']);
-  assert.deepEqual(recovery.deploy.needs, ['verify', 'website', 'publish']);
 }
 const release = jobs(read('publish-release'));
 const prepare = jobs(read('prepare-release'));
 const container = jobs(read('devcontainer-candidate'));
 const acceptance = jobs(read('accept-container'));
-const recovery = jobs(read('release-recovery'));
-checkGraph(prepare, container, acceptance, recovery);
+checkGraph(prepare, container, acceptance);
 for (const failed of ['package', 'container', 'crate', 'website'])
   assert.notEqual(simulate(prepare, [failed]).ready, 'success');
-for (const failed of ['verify', 'credentials', 'container', 'website'])
-  assert.equal(simulate(recovery, [failed]).publish, 'skipped');
 assert.equal(simulate(acceptance, ['accept']).promote, 'skipped');
 assert.equal(simulate(release, ['crate']).vscode, 'success');
 const registries = jobs(read('publish-vscode'));
 assert.equal(simulate(registries, ['marketplace'])['open-vsx'], 'success');
 assert.equal(simulate(registries, ['open-vsx']).marketplace, 'success');
 const bad = structuredClone(acceptance); bad.promote.needs = [];
-assert.throws(() => checkGraph(prepare, container, bad, recovery));
-const unguarded = structuredClone(recovery); unguarded.publish.needs = ['verify'];
-assert.throws(() => checkGraph(prepare, container, acceptance, unguarded));
+assert.throws(() => checkGraph(prepare, container, bad));
 assert(!read('release').includes('custom-publish-crate:'));
 assert(!read('release').includes('custom-publish-vscode:'));
 assert.equal((read('publish-vscode').match(/sha256sum --check --strict/g) || []).length, 2);
-assert.equal((read('publish-vscode').match(/run-id: \$\{\{ inputs.artifact-run-id \|\| github.run_id \}\}/g) || []).length, 2);
+assert.equal((read('publish-vscode').match(/run-id: \$\{\{ github.run_id \}\}/g) || []).length, 2);
 assert(!read('publish-vscode').includes('npm run package'));
-assert(!read('release-recovery').includes('build-push-action'));
 assert.match(read('accept-container'), /PROMOTION_RECEIPT:/);
-const {validate} = require('./release-recovery.cjs');
-const metadata = {tag: 'releases/v1.2.3', release: {tag_name: 'releases/v1.2.3', immutable: true, draft: false, prerelease: false},
-  source: 'b'.repeat(40), run: {id: 123, run_attempt: 2, head_sha: 'b'.repeat(40), repository: {full_name: 'jdevuyst/kio'},
-    path: '.github/workflows/release.yml', event: 'push', status: 'completed'},
-  jobs: ['host', 'custom-publish-release / package / Package extension', 'custom-publish-release / container / build']
-    .map(name => ({name, conclusion: 'success'})),
-  artifacts: [{name: 'kio-vsix-123-2', id: 456, expired: false}]};
-assert.equal(validate(metadata).id, 456);
-for (const change of [
-  m => {m.release.immutable = false;}, m => {m.run.head_sha = 'c'.repeat(40);},
-  m => {m.run.repository.full_name = 'other/repo';}, m => {m.run.event = 'pull_request';},
-  m => {m.jobs[1].conclusion = 'skipped';}, m => {m.artifacts[0].expired = true;},
-  m => {m.artifacts[0].name = 'kio-vsix-123-1';},
-  m => {m.jobs.push({name: 'custom-publish-release / crate / publish', conclusion: 'success'});},
-]) { const invalid = structuredClone(metadata); change(invalid); assert.throws(() => validate(invalid)); }
 const expected = inputs({IMAGE_DIGEST: 'sha256:' + 'a'.repeat(64), SOURCE_SHA: 'b'.repeat(40), VSIX_SHA256: 'c'.repeat(64), VSIX_ARTIFACT_ID: '123'});
 const index = {digest: expected.digest, manifests: ['amd64', 'arm64'].map(architecture => ({digest: 'sha256:' + 'd'.repeat(64), platform: {os: 'linux', architecture}}))};
 const labels = {'org.opencontainers.image.source': 'https://github.com/jdevuyst/kio', 'org.opencontainers.image.revision': expected.source, 'io.kio.vsix.sha256': expected.vsix, 'io.kio.vsix.artifact-id': expected.artifact};

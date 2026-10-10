@@ -11,8 +11,7 @@ jobs:
   deploy:
     if: >-
       github.repository == 'jdevuyst/kio' &&
-      ((github.ref_type == 'tag' && fromJSON(inputs.plan).announcement_tag == github.ref_name) ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.workflow == 'Resume release'))
+      github.ref_type == 'tag' && fromJSON(inputs.plan).announcement_tag == github.ref_name
     runs-on: ubuntu-latest
     concurrency:
       group: pages

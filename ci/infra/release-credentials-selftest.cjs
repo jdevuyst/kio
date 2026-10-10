@@ -68,16 +68,26 @@ async function main() {
   }
 
   inspect(read, inventory);
-  for (const job of ['credentials', 'publish']) {
-    for (const {secret} of inventory) {
-      assert.throws(() => inspect(name => {
-        const text = read(name);
-        if (name !== '.github/workflows/release-recovery.yml') return text;
-        return text.replace(new RegExp('^  ' + job + ':\\n([\\s\\S]*?)(?=^  [a-z][a-z-]*:|$(?![\\s\\S]))', 'm'),
-          block => block.replace(`      ${secret}: \${{ secrets.${secret} }}\n`, ''));
-      }, inventory), new RegExp('recovery must explicitly forward ' + secret + ' to ' + job),
-      'each recovery caller must pass secrets even when other callers preserve the inventory');
-    }
+  for (const secret of inventory.map(entry => entry.secret)) {
+    const mapping = `      ${secret}: \u0024{{ secrets.${secret} }}\n`;
+    assert(read('.github/workflows/publish-release.yml').includes(mapping));
+    for (const replacement of ['', `      ${secret}: \u0024{{ secrets.GITHUB_TOKEN }}\n`])
+      assert.throws(() => inspect(name => name === '.github/workflows/publish-release.yml'
+        ? read(name).replace(mapping, replacement) : read(name), inventory), /forward/,
+      `publisher edge must forward ${secret}`);
+  }
+  for (const job of ['custom-release-credentials', 'custom-publish-release']) {
+    const text = read('.github/workflows/release.yml');
+    const block = text.match(new RegExp('^  ' + job + ':\\n[\\s\\S]*?(?=^  [\\w-]+:|$(?![\\s\\S]))', 'm'))[0];
+    assert(block.includes('    secrets: inherit\n'));
+    assert.throws(() => inspect(name => name === '.github/workflows/release.yml'
+      ? text.replace(block, block.replace('    secrets: inherit\n', '')) : read(name), inventory), /forward/,
+    `generated caller must forward credentials to ${job}`);
+  }
+  for (const {secret} of inventory) {
+    assert.throws(() => inspect(name => name === '.github/workflows/release-credentials.yml'
+      ? read(name).replace(`${secret}:\n        required: true`, `${secret}:\n        required: false`)
+      : read(name), inventory), new RegExp('preflight caller must require ' + secret));
   }
   assert.throws(() => inspect(read, inventory.slice(1)), /differ/);
   assert.throws(() => inspect(name => name === '.github/workflows/pages.yml' ? read(name) + '\n    env:\n      PAGES_PAT: ${{ secrets.ADDED_PAGES_PAT }}\n' : read(name), inventory), /differ/, 'website publisher secrets also require coverage');

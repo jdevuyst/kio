@@ -67,6 +67,12 @@ Do **not** use `{ignore}` as the default for examples that are inconvenient to s
 
 ## Blog posts
 
+Use [`review-blog-post`](../skills/review-blog-post/SKILL.md) before DCO sign-off
+of new or edited posts, and [`publish-website`](../skills/publish-website/SKILL.md)
+to coordinate publication checks, an authorized push and standalone Pages
+deployment. Review success must cover the final post contents, not an earlier
+draft; a website update does not require a Kio release.
+
 **Blog post bodies are the authorial exception.** The no-leak rule does not apply to hand-written `docs/blog/*.md` bodies, and a post may link to any tracked repository path, including agent guidance. A GitHub link to a repository file or directory must pin the target with a full commit object ID (`blob/<commit>/…` or `tree/<commit>/…`), never a branch or tag such as `main`. Blog post edits remain approval-gated by `AGENTS.md`.
 
 **Blog source uses straight quotation marks and apostrophes.** Use ASCII `"`

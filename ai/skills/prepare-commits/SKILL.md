@@ -22,6 +22,11 @@ unrelated work into their commits. Shared prerequisites may precede them in
 separate coherent commits; keep the sequence dependency-safe. Classify by the
 meaning of the change, not a line-count threshold or the number of checkpoints.
 
+Each blog post gets its own standalone publication commit. Include only that
+post and its directly required assets or harnesses, not other posts or unrelated
+release, implementation or documentation work. Revisions to a published post
+also stay separate from unrelated changes.
+
 Present a concrete old-to-new grouping, boundary, order and proposed messages before execution, identifying the major outcomes that receive standalone commits. Subjects are short and name salient features, breaks, fixes, optimizations or refactors; bodies add only necessary technical impact, rationale and validation. Never put session links, scratchpad/evidence paths, orchestration or private context in messages. Relevant public technical references and required attribution/metadata remain appropriate. Keep detailed authority/review receipts separately available to the reviewer. Preserve original author attribution and meaningful co-authorship rather than assigning all consolidated work to the operator.
 
 Identify branches/worktrees/tags and later tasks that depend on old commits; propose how their references and evidence remain usable. State the recovery archive, author/committer timestamp policy, verification plan and any uncertain merge/reorder boundary. Ask for explicit approval of this exact rewrite range/grouping/order/messages; until approved, return the proposal without creating commits, rewriting refs or changing worktrees. A proposal-only request ends here.

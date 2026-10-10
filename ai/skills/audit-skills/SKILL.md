@@ -33,10 +33,16 @@ inputs (also routed from `ai/topics/specs.md`) is owned by
 `audit-bundled-docs`. `audit-kio-guide` owns the portable authoring workflow and
 repository supplement; `audit-docs-drift` owns the offline learning path.
 
-The binary-first, container-gated release rule in AGENTS.md is checked by
+The irreversible-publication-last release rule in AGENTS.md is checked by
 `audit-github`'s publication dependency and artifact-identity procedure. The
-`release` skill owns live readiness, consumer evidence and selective recovery;
+`publish-release` skill owns live readiness, consumer evidence and selective recovery;
 static workflow validation alone does not establish a working publication.
+
+AGENTS.md's blog sign-off gate routes through `review-blog-post` and `push-it`.
+Verify that both require successful review of final post contents before
+sign-off, not merely a green website build or existing trailer.
+`review-commits` checks the available per-change review evidence; a static audit
+cannot reconstruct a missing historical review from the committed post alone.
 
 Cross-reference. For each load-bearing section:
 

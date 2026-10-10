@@ -5,9 +5,6 @@ on:
       image:
         type: string
         required: true
-      source-sha:
-        type: string
-        default: ''
 permissions:
   contents: read
 jobs:
@@ -17,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: ${{ inputs.source-sha || github.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Build and smoke-test website
         working-directory: website

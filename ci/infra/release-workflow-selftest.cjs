@@ -9,16 +9,18 @@ const actual = read('.github/workflows/release.yml');
 // not merely needs-edges that an always() job could bypass after a skip.
 const host = actual.match(/^  host:\n([\s\S]*?)(?=^  [\w-]+:)/m)[1];
 const condition = host.match(/^    if: (.*)$/m)[1];
-function evaluate(condition, overrides = {}) {
+function evaluate(condition, overrides = {}, cancelled = false) {
   const values = {'plan.result': 'success', 'plan.outputs.publishing': 'true',
     'custom-release-credentials.result': 'success', 'custom-release-credentials.outputs.verified': 'true',
     'build-local-artifacts.result': 'success', 'build-global-artifacts.result': 'success',
     'custom-prepare-release.result': 'success', 'custom-prepare-release.outputs.ready': 'true', ...overrides};
   const expression = condition.replace(/\$\{\{|\}\}/g, '').replace('always()', 'true')
+    .replace('cancelled()', JSON.stringify(cancelled))
     .replace(/needs\.([\w.-]+)/g, (_, key) => {assert(key in values, key); return JSON.stringify(values[key]);});
   return Function('return (' + expression + ')')();
 }
 assert.equal(evaluate(condition), true);
+assert.equal(evaluate(condition, {}, true), false, 'run cancellation must stop hosting even after every prerequisite succeeded');
 for (const job of ['plan', 'custom-release-credentials', 'build-local-artifacts', 'build-global-artifacts', 'custom-prepare-release'])
   for (const status of ['failure', 'cancelled', 'skipped'])
     assert.equal(evaluate(condition, {[job + '.result']: status}), false, job + '/' + status);

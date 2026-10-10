@@ -16,6 +16,11 @@ Verify that the range has coherent publication commits, concise accurate message
 
 Check DCO before spending the broad-gate budget. Every commit reaching a pull request or remote main must carry a real `Signed-off-by: Name <email>` trailer. If missing, stop and report the range and needed certification; ask for explicit sign-off authority and the real certifier's identity/agreement, rather than signing automatically. Only when that push-preparation authority is already explicit may the agent add the requested trailers, preserving authorship and authenticating the resulting range/tree. Never infer DCO authorization from a general push request or add it at ordinary local commit creation.
 
+Before signing commits that introduce or change blog posts, require a successful
+[`review-blog-post`](../review-blog-post/SKILL.md) result matching their final
+post contents and relevant compiler context. Resolve missing or stale review
+before sign-off; a pre-existing DCO trailer does not waive this gate.
+
 ## 2. Run the project check suite
 
 `sh ci/all.sh SAMPLE_IMPL` — the baseline broad local gate (AGENTS.md § Universal rules); escalate per [`ai/topics/local-ci.md`](../../topics/local-ci.md) § Local gate coverage when the pushed range warrants it (backend-sensitive codegen changes, golden changes). Abort on failure — do not push broken code.
@@ -31,7 +36,7 @@ Reauthenticate the destination and prepared/reviewed candidate; verify the exact
 Push only the resolved candidate to the explicitly requested remote/destination.
 No `--force`. An exact `--force-with-lease` requires a separately approved
 range/ref/dependent-consumer plan: either a shared development branch, or the
-unreleased release-preparation tip under [`release`](../release/SKILL.md)'s
+unreleased release-preparation tip under [`publish-release`](../publish-release/SKILL.md)'s
 recovery rules. The latter is allowed only before immutable publication and
 must preserve all earlier published main/release history. Recheck channel
 occupancy and certify changed content before that release-tip push.

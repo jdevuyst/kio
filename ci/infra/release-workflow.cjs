@@ -26,7 +26,7 @@ function augment(raw) {
   const host = result.match(/^  host:\n[\s\S]*?(?=^  [\w-]+:)/m)?.[0];
   assert(host?.includes('      - custom-prepare-release\n'), 'missing preparation prerequisite');
   assert(host.includes("always() && needs.plan.result == 'success'"), 'upstream host condition changed');
-  const condition = "    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.custom-release-credentials.result == 'success' && " + verified +
+  const condition = "    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && needs.custom-release-credentials.result == 'success' && " + verified +
     "needs.build-local-artifacts.result == 'success' && needs.build-global-artifacts.result == 'success' && needs.custom-prepare-release.result == 'success' && needs.custom-prepare-release.outputs.ready == 'true' }}";
   result = result.replace(host, host.replace('  host:\n    needs:\n', '  host:\n    name: Point of no return — publish immutable GitHub release\n    needs:\n      - custom-release-credentials\n')
     .replace(/^    # Only run.*\n/m, '    # Every preparation job must have executed successfully before publication.\n')

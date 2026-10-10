@@ -37,6 +37,17 @@ For each commit in the window:
 
 ## 3. Behavioral-contract authority
 
+Verify each blog post occupies its own publication commit, with only directly
+related assets or harnesses. Other posts and unrelated changes belong separately.
+
+For publication commits introducing or changing blog posts, verify that
+[`review-blog-post`](../review-blog-post/SKILL.md) succeeded on the final post
+contents before DCO sign-off.
+Check the review's content identity, compiler context and unresolved objective
+findings; do not infer review from a trailer or green site build. Missing review
+evidence blocks new sign-off/publication, not unrelated commits. Optional
+editorial suggestions may remain declined.
+
 This is the commit-range check for AGENTS.md § Universal rules — "Behavioral contracts cannot be rewritten retroactively."
 
 For every normative behavior delta in the window, record:

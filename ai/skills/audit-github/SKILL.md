@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # GitHub config audit
 
-Anchors: [`ai/topics/repo-layout.md`](../../topics/repo-layout.md)'s `.github/` and `ci/` entries, AGENTS.md's binary-first/container-gated release rule, and [`ai/topics/contributing.md`](../../topics/contributing.md)'s contribution-policy mirror set. This skill verifies those automation and policy contracts remain internally consistent.
+Anchors: [`ai/topics/repo-layout.md`](../../topics/repo-layout.md)'s `.github/` and `ci/` entries, AGENTS.md's irreversible-publication-last release rule, and [`ai/topics/contributing.md`](../../topics/contributing.md)'s contribution-policy mirror set. This skill verifies those automation and policy contracts remain internally consistent.
 
 ## 1. Workflow → script references
 
@@ -61,29 +61,44 @@ ai/topics/repo-layout.md commits to gating buckets under `ci/checks/` (`orchestr
 
 ## 5. Other workflows
 
-ai/topics/repo-layout.md names `ci.yml`, `devcontainer-publish.yml`, `pages.yml`, `markdown-link-check.yml`, `pr-auto-close.yml`, `pr-policy-check.yml`, `contrib-run.yml`, `stale.yml`, and the release/shared-publication workflows (`release.yml`, `release-credentials.yml`, `publish-release.yml`, `package-vscode.yml`, `devcontainer-candidate.yml`, `publish-crate.yml`, `publish-vscode.yml`). Confirm each exists and serves its documented purpose — repo-layout.md is the source of truth for this list; when it gains a workflow, refresh this enumeration alongside it. Flag any workflow not listed in ai/topics/repo-layout.md (might be fine, might be unreviewed).
+Compare every workflow with the inventory in ai/topics/repo-layout.md and confirm
+its actual purpose, triggers and lifecycle. Flag unlisted workflows and temporary
+recovery machinery retained after its stated purpose has ended.
 
 ### Publication dependencies and artifact identity
 
+- For release-workflow changes, including repairs and cleanup, verify the
+  `publish-release` independent-review gate: a non-author reviewer examined the
+  actual candidate, findings were resolved, and later changes received affected-
+  delta review. Automated checks and author self-review alone are insufficient;
+  missing evidence is a finding, not inferred clearance from a successful run.
 - Trace the non-publishing credential preflight from its manual and
   release callers to the actual `publish` environment. Only canonical trusted
   refs select that environment; PR execution never selects publisher secrets.
   Run the credential inventory guard and offline selftests. Added, removed or
   renamed publisher secrets must change the inventory, implemented verifier
   and actual workflow mapping together; compare targets with publishing
-  manifests. Treat ephemeral `GITHUB_TOKEN` separately through least-privileged
+  manifests. Verify secret scope and forwarding at every reusable-call edge;
+  selecting an environment does not forward repository secrets. Include a
+  missing-forwarding negative control, not only an inventory of secret names.
+  Treat ephemeral `GITHUB_TOKEN` separately through least-privileged
   workflow permissions. A token-presence check, public API response or package
   dry-run is not authentication; preserve the checker's stated scope limits,
   invalid-token negative control and failure-vs-outage distinction.
   Verify complete generated workflow freshness through `release-workflow.cjs`,
   not a partial changed-line comparison. Failed, cancelled and skipped preflight
   must block hosting despite the generated host's `always()` condition.
-- Trace actual `needs` edges through generated and reusable workflows:
-  successful binary hosting precedes the coordinator; inspected VSIX packaging
-  precedes candidate-image build, native acceptance and promotion; every
-  registry leaf depends on that success. Merely listing sibling publishers or
-  custom host jobs does not establish ordering. Failure-injection/graph tests
-  must cover build, acceptance and promotion failures.
+- Locate the first irreversible publication, including immutable GitHub release
+  assets, and verify that it is explicitly identified as the point of no return.
+  Trace actual `needs` edges and conditions through generated/reusable workflows:
+  binary builds, package checks, inspected VSIX, candidate-image native acceptance
+  and promotion, and website build/smoke must succeed before that boundary.
+  Registry publication follows successful binary hosting, and Pages deploys the
+  prepared website artifact. Merely gating registries does not protect earlier
+  publication. Failure/cancellation/skip controls must cover every prerequisite
+  and require actual execution witnesses where `always()` could bypass skips.
+  Keep external prerequisites, such as exact-source CI and human approval,
+  explicit in `publish-release` when the graph does not enforce them.
 - The image and editor registries consume one authenticated VSIX artifact ID
   and hash from the same source. Acceptance uses the built immutable image
   digest, and promotion reuses that digest without rebuilding. Both platform
@@ -102,9 +117,27 @@ ai/topics/repo-layout.md names `ci.yml`, `devcontainer-publish.yml`, `pages.yml`
   runtime state tree.
 - Reusable-workflow permission ceilings admit required package operations;
   individual jobs retain least privilege. Check canonical-repository/tag/plan
-  guards and environment-secret behavior. Recovery guidance targets the actual
+  guards, environment ref policies and secret forwarding. Release-tag website
+  deployment needs an environment that admits those tags; workflow permissions
+  alone do not establish readiness. Recovery guidance targets the actual
   failed registry leaf, preserving successful siblings, packages and candidate
   evidence after partial immutable publication.
+- Verify pre-boundary rollback is supported by receipts written before tag
+  mutation: prior digest/absence, candidate identity and a guard against replacing
+  subsequent publication. Cancel/drain and reconcile actual channel state before
+  retry or abort. Post-boundary recovery must not rewrite frozen source/tags or
+  rebuild payloads merely to retry a publisher. Cleanup preserves required
+  artifacts and useful local evidence, targets only authorized attempt resources,
+  and does not claim to erase provider-internal audit trails. Keep these rules
+  coherent across workflows, release instructions and channel documentation.
+- Recovery reports identify the publication boundary already crossed and the
+  remaining reversible actions, and whether existing artifacts can finish through
+  `Resume release` or a new version is required. Every run that performed an
+  irreversible publication retains its logs and exact automation commit in
+  history, even when a later step failed; further repairs use a new commit.
+  Successful recovery runs are retained too. Temporary code is removed by a
+  follow-up commit, not by rewriting away publication provenance. Cleanup
+  classifies actual channel effects, not only the overall run conclusion.
 
 ## 6. Linter configs
 

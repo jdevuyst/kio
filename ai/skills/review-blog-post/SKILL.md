@@ -158,3 +158,15 @@ Produce a per-post findings list. Make no edits to the `.md`. For each post:
 
 If a post has no objective findings, say so plainly rather than reaching for
 something to comment on.
+
+## Sign-off readiness
+
+A commit introducing or changing a post may receive DCO sign-off only after this
+review succeeds for its final text, code and harnesses. Report readiness
+explicitly: mechanical and Kiodoc checks pass, objective findings are resolved,
+and validation limits are disclosed. Optional editorial suggestions may be
+declined. Record the reviewed post's blob ID or content hash and compiler
+revision with the review result; later edits invalidate affected review/checks.
+An existing trailer is not proof of review. Successful review supplies neither
+DCO certification authority nor permission to edit, push or deploy.
+For publication, use [`publish-website`](../publish-website/SKILL.md).
