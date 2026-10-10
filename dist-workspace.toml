@@ -5,6 +5,8 @@ members = ["cargo:kio-rs/dist"]
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.32.0"
+# Exact generated CI freshness is checked by ci/infra/release-workflow.cjs.
+allow-dirty = ["ci"]
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
@@ -15,5 +17,6 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-musl", "x86_64-apple-d
 hosting = "github"
 # Registry publishers consume a successful binary release.
 github-release = "host"
-publish-jobs = ["./publish-crate", "./publish-vscode"]
-github-custom-job-permissions = { publish-crate = { contents = "read" }, publish-vscode = { contents = "read" } }
+plan-jobs = ["./release-credentials"]
+publish-jobs = ["./publish-release"]
+github-custom-job-permissions = { publish-release = { contents = "read", packages = "write" } }

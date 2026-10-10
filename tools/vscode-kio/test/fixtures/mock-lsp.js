@@ -90,7 +90,7 @@ function handle(msg) {
         capabilities: {
           textDocumentSync: { openClose: true, change: 0 },
         },
-        serverInfo: { name: "mock-lsp", version: "0.0.0" },
+        serverInfo: { name: "mock-lsp", version: require("../../package.json").version },
       },
     });
     return;

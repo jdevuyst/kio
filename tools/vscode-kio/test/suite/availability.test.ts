@@ -19,6 +19,8 @@ async function host(serverPath: string | null, control: string, options: {
   choice?: string;
   state?: Map<string, unknown>;
   holdStartupDeadlines?: boolean;
+  holdVersionDeadline?: boolean;
+  extensionVersion?: string;
 } = {}) {
   const extension = vscode.extensions.getExtension("kio-lang.kio")!;
   const bundle = path.join(extension.extensionPath, extension.packageJSON.main);
@@ -39,11 +41,12 @@ async function host(serverPath: string | null, control: string, options: {
   const startupChildren: childProcess.ChildProcess[] = [];
   const childProcessApi = Object.create(childProcess, {
     execFile: { value: (binary: string, args: string[], settings: childProcess.ExecFileOptions, callback: Parameters<typeof childProcess.execFile>[3]) => {
-      assert.deepStrictEqual(Array.from(args), ["--help"], "only the startup probe is controlled");
-      assert.strictEqual(settings.timeout, 5_000, "the probe deadline is held");
+      assert.ok(args.length === 1 && ["--help", "--version"].includes(args[0]), "only compiler probes are controlled");
+      assert.strictEqual(settings.timeout, args[0] === "--help" ? 5_000 : 2_000, "compiler probes have bounded deadlines");
       assert.ok(settings.signal, "the real probe cancellation signal is retained");
       probeSignals.push(settings.signal);
-      const child = childProcess.execFile(binary, args, { ...settings, timeout: 0 }, callback);
+      const holdDeadline = args[0] === "--help" ? options.holdStartupDeadlines : options.holdVersionDeadline;
+      const child = childProcess.execFile(binary, args, { ...settings, timeout: holdDeadline ? 0 : settings.timeout }, callback);
       startupChildren.push(child);
       return child;
     } },
@@ -108,7 +111,7 @@ async function host(serverPath: string | null, control: string, options: {
   vm.runInNewContext(fs.readFileSync(bundle, "utf8"), {
     module, exports: module.exports,
     require: (id: string) => id === "vscode" ? api
-      : options.holdStartupDeadlines && id === "node:child_process" ? childProcessApi : bundleRequire(id),
+      : (options.holdStartupDeadlines || options.holdVersionDeadline) && id === "node:child_process" ? childProcessApi : bundleRequire(id),
     process: Object.create(process, { env: { value: { ...process.env, ...options.environment, KIO_TEST_LSP_CONTROL: control } } }),
     Buffer, console, URL, TextDecoder, TextEncoder, Uint8Array, AbortController,
     setTimeout: options.holdStartupDeadlines ? startupSetTimeout : setTimeout,
@@ -119,7 +122,10 @@ async function host(serverPath: string | null, control: string, options: {
   const state = options.state ?? new Map<string, unknown>();
   let closing: Promise<void> | undefined;
   try {
-    await module.exports.activate({ extensionUri: extension.extensionUri, extension,
+    const installedExtension = options.extensionVersion === undefined ? extension : Object.create(extension, {
+      packageJSON: { value: { ...extension.packageJSON, version: options.extensionVersion } },
+    });
+    await module.exports.activate({ extensionUri: extension.extensionUri, extension: installedExtension,
       subscriptions, workspaceState: { get: (key: string) => state.get(key), update: async (key: string, value: unknown) => { state.set(key, value); } },
     });
   } catch (error) {
@@ -171,6 +177,156 @@ suite("Kio extension — availability and recovery", () => {
     await until(() => vscode.languages.getDiagnostics(document.uri).some((diagnostic) => diagnostic.source === "availability-fixture"), "recovered server publishes diagnostics");
     return document;
   }
+
+  test("startup failures retain the original error and identify version skew only as a possible cause", async () => {
+    fs.writeFileSync(control, JSON.stringify({ mode: "initialize-error", version: "0.4.0" }));
+    const running = await host(fixture, control, { extensionVersion: "0.6.0", environment: { KIO_BIN: path.join(directory, "unused-compiler") } });
+    try {
+      await until(() => running.notifications.length === 1, "enriched initialization failure");
+      const notification = running.notifications[0];
+      assert.match(notification.message, /injected initialization failure/);
+      assert.match(notification.message, /Compiler 0\.4\.0.*extension 0\.6\.0.*may be related/);
+      assert.ok(notification.actions.includes("Retry") && notification.actions.includes("Extension Versions"));
+      assert.strictEqual(fs.readFileSync(`${control}.versions`, "utf8").trim().split("\n").length, 1, "the selected executable is probed once");
+      assert.ok(!running.logs.join("\n").includes("user:secret"));
+    } finally { await running.close(); }
+  });
+
+  for (const versionProbe of ["unsupported", "malformed", "hang"]) {
+    test(`a ${versionProbe} version probe preserves the actual failure`, async () => {
+      fs.writeFileSync(control, JSON.stringify({ mode: "initialize-error", versionProbe }));
+      const running = await host(fixture, control, { extensionVersion: "0.6.0" });
+      try {
+        await until(() => running.notifications.length === 1, "original initialization failure survives optional probe");
+        assert.match(running.notifications[0].message, /injected initialization failure/);
+        assert.doesNotMatch(running.notifications[0].message, /may be related/);
+        if (versionProbe === "hang") {
+          const pid = Number(fs.readFileSync(`${control}.versions`, "utf8").trim());
+          assert.throws(() => process.kill(pid, 0), "bounded version probe is reaped");
+        }
+      } finally { await running.close(); }
+    });
+  }
+
+  test("a connected compiler two minor releases behind gets one advisory without losing diagnostics", async () => {
+    fs.writeFileSync(control, JSON.stringify({ mode: "healthy", version: "0.4.9" }));
+    const running = await host(fixture, control, { extensionVersion: "0.6.0", choice: "Dismiss for Session" });
+    try {
+      await documentWithDiagnostic(running);
+      await until(() => running.notifications.length === 1, "version advisory");
+      assert.strictEqual(running.notifications[0].severity, "Warning");
+      assert.match(running.notifications[0].message, /Language services remain connected/);
+      assert.match(running.logs.join("\n"), /Install Another Version.*disable Auto Update/);
+      assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Information);
+      assert.ok(!fs.existsSync(`${control}.versions`), "initialize serverInfo avoids an extra probe");
+      await running.commands.get("kio.restartLanguageServer")!();
+      await documentWithDiagnostic(running);
+      assert.strictEqual(running.notifications.length, 1, "the same installed/compiler pair does not repeat its advisory");
+    } finally { await running.close(); }
+  });
+
+  for (const [extensionVersion, version] of [
+    ["0.6.0", "0.5.0"], ["0.6.0", "0.7.0"], ["0.6.0", "0.6.0"],
+    ["0.6.0", "0.4.0-dev"], ["0.6.0-dev", "0.4.0"], ["1.6.0", "0.4.0"], ["0.6.0", "unrecognized"],
+  ]) {
+    test(`connected ${extensionVersion} / ${version} does not establish the advisory threshold`, async () => {
+      fs.writeFileSync(control, JSON.stringify({ mode: "healthy", version }));
+      const running = await host(fixture, control, { extensionVersion });
+      try {
+        await documentWithDiagnostic(running);
+        assert.strictEqual(running.notifications.length, 0);
+        assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Information);
+      } finally { await running.close(); }
+    });
+  }
+
+  test("missing initialize version uses the selected executable for a connected advisory", async () => {
+    fs.writeFileSync(control, JSON.stringify({ mode: "healthy", omitServerVersion: true, probeVersion: "0.4.0" }));
+    const running = await host(fixture, control, { extensionVersion: "0.6.0" });
+    try {
+      await documentWithDiagnostic(running);
+      await until(() => running.notifications.length === 1, "version probe advisory");
+      assert.match(running.notifications[0].message, /Compiler 0\.4\.0/);
+      assert.strictEqual(fs.readFileSync(`${control}.versions`, "utf8").trim().split("\n").length, 1);
+    } finally { await running.close(); }
+  });
+
+  test("an unsupported optional version probe leaves a connected server available", async () => {
+    fs.writeFileSync(control, JSON.stringify({ mode: "healthy", omitServerVersion: true, versionProbe: "unsupported" }));
+    const running = await host(fixture, control, { extensionVersion: "0.6.0" });
+    try {
+      await documentWithDiagnostic(running);
+      await until(() => fs.existsSync(`${control}.versions`), "optional version probe attempted");
+      assert.strictEqual(running.notifications.length, 0);
+      assert.strictEqual(running.statuses[0].severity, vscode.LanguageStatusSeverity.Information);
+    } finally { await running.close(); }
+  });
+
+  for (const [initialVersion, nextVersion] of [["0.6.0", "0.4.0"], ["0.4.0", "0.6.0"]]) {
+    test(`automatic respawn replaces version ${initialVersion} with ${nextVersion} when initialize omits it`, async () => {
+      fs.writeFileSync(control, JSON.stringify({ mode: "healthy", version: initialVersion }));
+      const running = await host(fixture, control, { extensionVersion: "0.6.0" });
+      try {
+        const document = await documentWithDiagnostic(running);
+        const firstPid = Number(fs.readFileSync(`${control}.starts`, "utf8").trim());
+        fs.writeFileSync(control, JSON.stringify({ mode: "request-error", omitServerVersion: true, probeVersion: nextVersion }));
+        process.kill(firstPid, "SIGKILL");
+        await until(() => vscode.languages.getDiagnostics(document.uri).some((diagnostic) => diagnostic.source === "availability-fixture" && diagnostic.code !== firstPid), "replacement server publishes diagnostics");
+        await until(() => fs.existsSync(`${control}.versions`), "replacement executable version is probed");
+        await vscode.commands.executeCommand("vscode.executeHoverProvider", document.uri, new vscode.Position(0, 1)).then(() => {}, () => {});
+        await until(() => running.statuses[0].text === "Kio: Request failed", "replacement request failure");
+        if (nextVersion === "0.4.0") {
+          await until(() => /Compiler 0\.4\.0/.test(running.statuses[0].detail ?? ""), "replacement version enriches request failure");
+          assert.strictEqual(running.notifications.length, 1, "replacement compiler receives its advisory");
+        } else {
+          assert.doesNotMatch(running.statuses[0].detail ?? "", /Compiler 0\.4\.0|may be related/);
+          assert.strictEqual(running.notifications.length, 1, "only the original compiler receives an advisory");
+        }
+      } finally { await running.close(); }
+    });
+  }
+
+  test("deactivation cancels and reaps a pending optional version probe", async () => {
+    fs.writeFileSync(control, JSON.stringify({ mode: "healthy", omitServerVersion: true, versionProbe: "hang" }));
+    const running = await host(fixture, control, { extensionVersion: "0.6.0", holdVersionDeadline: true });
+    try {
+      await until(() => fs.existsSync(`${control}.versions`), "optional version probe is pending");
+      const pid = Number(fs.readFileSync(`${control}.versions`, "utf8").trim());
+      assert.doesNotThrow(() => process.kill(pid, 0));
+      await running.close();
+      assert.throws(() => process.kill(pid, 0), "stop waits for optional probe cleanup");
+      assert.strictEqual(running.notifications.length, 0);
+    } finally {
+      for (const child of running.startupChildren) {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      }
+      await running.close();
+    }
+  });
+
+  test("protocol errors can carry possible version context without notification spam", async () => {
+    fs.writeFileSync(control, JSON.stringify({ mode: "request-error", version: "0.4.0" }));
+    const running = await host(fixture, control, { extensionVersion: "0.5.0" });
+    try {
+      const document = await documentWithDiagnostic(running);
+      await vscode.commands.executeCommand("vscode.executeHoverProvider", document.uri, new vscode.Position(0, 1)).then(() => {}, () => {});
+      await until(() => /may be related/.test(running.statuses[0].detail ?? ""), "protocol mismatch context");
+      assert.match(running.logs.join("\n"), /injected request failure/);
+      assert.strictEqual(running.notifications.length, 0);
+    } finally { await running.close(); }
+  });
+
+  test("communication failures use the initialized version and retain recovery actions", async () => {
+    fs.writeFileSync(control, JSON.stringify({ mode: "transport-error", version: "0.4.0" }));
+    const running = await host(fixture, control, { extensionVersion: "0.5.0" });
+    try {
+      await until(() => running.notifications.length === 1, "communication failure with version context");
+      assert.match(running.notifications[0].message, /connection failed repeatedly/);
+      assert.match(running.notifications[0].message, /Compiler 0\.4\.0.*may be related/);
+      assert.ok(running.notifications[0].actions.includes("Retry") && running.notifications[0].actions.includes("Show Output"));
+      assert.ok(!fs.existsSync(`${control}.versions`), "a known initialized version is reused");
+    } finally { await running.close(); }
+  });
 
   test("repeated crashes exhaust the client budget and stop notifying", async () => {
     fs.writeFileSync(control, JSON.stringify({ mode: "crash" }));

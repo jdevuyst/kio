@@ -20,6 +20,25 @@ function errorText(error: unknown): string {
   return safeText(`${candidate?.code ?? ""} ${candidate?.message ?? String(error)}`.trim());
 }
 
+function releaseVersion(value: unknown): number[] | undefined {
+  if (typeof value !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) return undefined;
+  const parts = value.split(".").map(Number);
+  return parts.every(Number.isSafeInteger) ? parts : undefined;
+}
+
+async function probeVersion(binary: string, signal: AbortSignal): Promise<string | undefined> {
+  let closed = Promise.resolve();
+  const result = new Promise<string | undefined>((resolve) => {
+    const child = execFile(binary, ["--version"], {
+      encoding: "utf8", env: process.env, timeout: 2_000, killSignal: "SIGKILL", maxBuffer: 16 * 1024, signal,
+    }, (error, stdout) => {
+      resolve(error ? undefined : /^kio\s+(\S+)\s*$/.exec(stdout)?.[1]);
+    });
+    closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
+  });
+  try { return await result; } catch { return undefined; } finally { await closed; }
+}
+
 function isFile(candidate: string): boolean {
   try { return fs.statSync(candidate).isFile(); } catch { return false; }
 }
@@ -102,6 +121,12 @@ class LanguageServer implements LspDisposable {
   private client?: KioClient;
   private clientState?: vscode.Disposable;
   private probe?: AbortController;
+  private versionAbort?: AbortController;
+  private versionProbe?: Promise<string | undefined>;
+  private compilerVersion?: string;
+  private selectedBinary?: string;
+  private advisedVersions = new Set<string>();
+  private runningGeneration = 0;
   private sequence = 0;
   private stopped = false;
   private pending = Promise.resolve();
@@ -134,6 +159,58 @@ class LanguageServer implements LspDisposable {
       title: severity === vscode.LanguageStatusSeverity.Error ? "Retry" : "Show Output" };
   }
 
+  private async detectedVersion(sequence: number): Promise<string | undefined> {
+    const generation = this.runningGeneration;
+    if (this.compilerVersion) return this.compilerVersion;
+    if (!this.selectedBinary) return undefined;
+    if (!this.versionProbe) {
+      const abort = new AbortController();
+      this.versionAbort = abort;
+      this.versionProbe = probeVersion(this.selectedBinary, abort.signal).then((version) => {
+        if (!this.stopped && sequence === this.sequence && generation === this.runningGeneration && !this.compilerVersion) this.compilerVersion = version;
+        return version;
+      }).finally(() => { if (this.versionAbort === abort) this.versionAbort = undefined; });
+    }
+    await this.versionProbe;
+    return generation === this.runningGeneration ? this.compilerVersion : undefined;
+  }
+
+  private mismatchDetail(detail: string, version: string | undefined): string {
+    const extension = this.context.extension.packageJSON.version;
+    if (!releaseVersion(extension) || !releaseVersion(version) || extension === version) return detail;
+    return `${detail} Compiler ${version} and installed extension ${extension} differ; this may be related. Update Kio or install a matching extension version.`;
+  }
+
+  private versionInstructions(): void {
+    this.log("To choose a matching extension, open its Extensions page, select Install Another Version from the gear menu, and disable Auto Update for this extension. Install Instructions opens the compiler installation guide; Open Settings selects kio.server.path.");
+  }
+
+  private async action(choice: string | undefined): Promise<void> {
+    if (choice === "Retry") await this.restart();
+    if (choice === "Show Output") this.output.show(true);
+    if (choice === "Open Settings") await vscode.commands.executeCommand("workbench.action.openSettings", "kio.server.path");
+    if (choice === "Install Instructions") await vscode.env.openExternal(vscode.Uri.parse("https://jdevuyst.github.io/kio/"));
+    if (choice === "Extension Versions") await vscode.commands.executeCommand("workbench.extensions.action.showExtensionsWithIds", [this.context.extension.id]);
+  }
+
+  private async adviseVersion(sequence: number): Promise<void> {
+    const generation = this.runningGeneration;
+    const version = await this.detectedVersion(sequence);
+    if (this.stopped || sequence !== this.sequence || generation !== this.runningGeneration || this.client?.state !== State.Running) return;
+    const extension = this.context.extension.packageJSON.version;
+    const installed = releaseVersion(extension);
+    const compiler = releaseVersion(version);
+    if (!installed || !compiler || installed[0] !== 0 || compiler[0] !== 0 || installed[1] < compiler[1] + 2) return;
+    const pair = `${extension}:${version}`;
+    if (this.advisedVersions.has(pair)) return;
+    this.advisedVersions.add(pair);
+    const message = `Compiler ${version} is at least two minor versions behind installed extension ${extension}. Language services remain connected. Update Kio or install a matching extension version.`;
+    this.log(message);
+    this.versionInstructions();
+    const choice = await vscode.window.showWarningMessage(message, "Install Instructions", "Extension Versions", "Open Settings", "Show Output", "Dismiss for Session");
+    if (!this.stopped && sequence === this.sequence) await this.action(choice);
+  }
+
   private failure(category: string, detail: string, missing = false): void {
     this.log(detail);
     if (this.notified.has(category)) return;
@@ -142,32 +219,47 @@ class LanguageServer implements LspDisposable {
       (missing && this.context.workspaceState.get<boolean>(MISSING_DISMISSED))) return;
     this.notified.add(category);
     const sequence = this.sequence;
-    const message = `Kio language services are unavailable. ${safeText(detail)} Highlighting remains available.`;
-    const actions = missing ? ["Install Instructions", "Open Settings", "Don't show again"]
-      : category === "configuration" ? ["Open Settings", "Retry", "Show Output", "Dismiss for Session"]
-      : ["Retry", "Show Output", "Dismiss for Session"];
-    const notify = missing ? vscode.window.showInformationMessage : vscode.window.showErrorMessage;
-    void notify(message, ...actions).then((choice) => {
-      if (this.stopped || sequence !== this.sequence) return;
-      if (choice === "Retry") void this.restart();
-      if (choice === "Show Output") this.output.show(true);
-      if (choice === "Open Settings") void vscode.commands.executeCommand("workbench.action.openSettings", "kio.server.path");
-      if (choice === "Install Instructions") void vscode.env.openExternal(vscode.Uri.parse("https://jdevuyst.github.io/kio/"));
-      if (choice === "Don't show again") void this.context.workspaceState.update(MISSING_DISMISSED, true);
-      if (choice === "Dismiss for Session") this.dismissed.add(category);
-    });
+    const generation = this.runningGeneration;
+    void this.detectedVersion(sequence).then((version) => {
+      if (this.stopped || sequence !== this.sequence || generation !== this.runningGeneration) return;
+      const enriched = this.mismatchDetail(detail, version);
+      if (enriched !== detail) {
+        this.show("Kio: Language services unavailable", enriched, vscode.LanguageStatusSeverity.Error);
+        this.log(enriched);
+        this.versionInstructions();
+      }
+      const message = `Kio language services are unavailable. ${safeText(enriched)} Highlighting remains available.`;
+      const actions = missing ? ["Install Instructions", "Open Settings", "Don't show again"]
+        : category === "configuration" ? ["Open Settings", "Retry", "Show Output", "Dismiss for Session"]
+        : ["Retry", "Show Output", "Dismiss for Session"];
+      if (enriched !== detail) {
+        for (const action of ["Install Instructions", "Extension Versions", "Open Settings"]) if (!actions.includes(action)) actions.push(action);
+      }
+      const notify = missing ? vscode.window.showInformationMessage : vscode.window.showErrorMessage;
+      return notify(message, ...actions).then(async (choice) => {
+        if (this.stopped || sequence !== this.sequence) return;
+        await this.action(choice);
+        if (choice === "Don't show again") void this.context.workspaceState.update(MISSING_DISMISSED, true);
+        if (choice === "Dismiss for Session") this.dismissed.add(category);
+      });
+    }).catch((error) => this.log(`reporting language-server failure: ${errorText(error)}`));
   }
 
   restart(): Promise<void> {
     if (this.stopped) return this.pending;
     const sequence = ++this.sequence;
     this.probe?.abort();
+    this.versionAbort?.abort();
     if (this.client?.state === State.Starting) void this.client.stop().catch(() => {});
     this.pending = this.pending.then(async () => {
       if (this.stopped || sequence !== this.sequence) return;
       await this.disposeClient();
+      await this.versionProbe;
       if (this.stopped || sequence !== this.sequence) return;
       this.notified.clear();
+      this.selectedBinary = undefined;
+      this.compilerVersion = undefined;
+      this.versionProbe = undefined;
       await this.start(sequence);
     }).catch((error) => {
       if (!this.stopped && sequence === this.sequence) this.failure("startup", errorText(error));
@@ -183,6 +275,7 @@ class LanguageServer implements LspDisposable {
       return;
     }
     this.log(`using ${resolution.source}: ${resolution.path}`);
+    this.selectedBinary = resolution.path;
     const probe = new AbortController();
     this.probe = probe;
     try { await probeServer(resolution.path, probe.signal); }
@@ -196,6 +289,12 @@ class LanguageServer implements LspDisposable {
     const clearDeadline = () => { clearTimeout(timer); timer = undefined; };
     const client: KioClient = new KioClient("kio", "Kio Language Server", async () => {
       if (!active() || client.stopping) throw new Error("Language-server startup was cancelled.");
+      ++this.runningGeneration;
+      this.versionAbort?.abort();
+      await this.versionProbe;
+      if (!active() || client.stopping) throw new Error("Language-server startup was cancelled.");
+      this.compilerVersion = undefined;
+      this.versionProbe = undefined;
       attemptRunning = false;
       const child = spawn(resolution.path, ["lsp"], { env: process.env, stdio: "pipe" });
       const exited = new Promise<void>((resolve) => {
@@ -258,16 +357,28 @@ class LanguageServer implements LspDisposable {
     };
     client.failedRequest = () => {
       if (!active() || !attemptRunning) return;
-      this.show("Kio: Request failed", "The server is connected, but a language request failed. See Kio LSP output.", vscode.LanguageStatusSeverity.Warning);
+      const detail = "The server is connected, but a language request failed. See Kio LSP output.";
+      const generation = this.runningGeneration;
+      this.show("Kio: Request failed", detail, vscode.LanguageStatusSeverity.Warning);
+      void this.detectedVersion(sequence).then((version) => {
+        if (active() && attemptRunning && generation === this.runningGeneration) {
+          const enriched = this.mismatchDetail(detail, version);
+          this.show("Kio: Request failed", enriched, vscode.LanguageStatusSeverity.Warning);
+          if (enriched !== detail) { this.log(enriched); this.versionInstructions(); }
+        }
+      }).catch((error) => this.log(`reporting request failure: ${errorText(error)}`));
     };
     this.clientState = client.onDidChangeState((event) => {
       if (!active()) return;
       if (event.newState === State.Running) {
         attemptRunning = true;
+        ++this.runningGeneration;
         clearDeadline();
         const version = client.initializeResult?.serverInfo?.version;
+        if (version) this.compilerVersion = version;
         this.show("Kio: Running", `Language server connected${version ? ` (${safeText(version)})` : ""}.`);
         this.log("language client started");
+        void this.adviseVersion(sequence).catch((error) => this.log(`reporting compiler version: ${errorText(error)}`));
       }
     });
     this.log(`starting language client (server: ${resolution.path}, source: ${resolution.source})`);
@@ -291,8 +402,9 @@ class LanguageServer implements LspDisposable {
     this.stopped = true;
     ++this.sequence;
     this.probe?.abort();
+    this.versionAbort?.abort();
     if (this.client?.state === State.Starting) void this.client.stop().catch(() => {});
-    this.pending = this.pending.then(() => this.disposeClient()).finally(() => {
+    this.pending = this.pending.then(async () => { await this.disposeClient(); await this.versionProbe; }).finally(() => {
       for (const subscription of this.subscriptions.splice(0)) subscription.dispose();
       void vscode.commands.executeCommand("setContext", "kio.languageServerSupported", false);
     });

@@ -271,6 +271,20 @@ body {
   margin: 22px auto 0;
 }
 
+.home-editor-links {
+  margin: 10px auto 0;
+  color: var(--vp-c-text-2);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  text-wrap: balance;
+}
+
+.home-editor-links a {
+  color: var(--vp-c-brand-1);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .home-install code {
   min-width: 0;
   overflow-x: auto;

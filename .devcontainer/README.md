@@ -38,16 +38,21 @@ no image to read `/opt/kio-extension/` from.
 
 ## Published-image acceptance
 
-Release preparation uses
+Release and monthly/manual image publication use
 `ci/infra/devcontainer-acceptance.sh` on a native Linux Docker host.
-This opt-in check pulls an immutable published image, creates a clean
+This check pulls an immutable published image, creates a clean
 checkout at the image's source revision, runs its configured lifecycle
 as `vscode`, and tests the installed baked VSIX in a real headless editor.
 It repeats the editor checks after reconnect and after refreshing to an
 explicit compiler commit. Removing the installed extension's executable
 must cause an activation failure; restoring it must restore the editor
 checks. It builds the compiler through the
-lifecycle hooks; it does not build an image or replacement VSIX.
+lifecycle hooks; it does not build an image or replacement VSIX. Publication
+tests the candidate by digest before promoting that same digest to its
+source-specific tag and advancing `latest`. A proven newer `latest` is retained
+when publishing an older accepted release; failure leaves it in place. The
+release coordinator then allows registry publication, reusing the inspected
+VSIX baked into the image.
 
 Install the official consumer CLI from the optional mise pins:
 
@@ -107,7 +112,7 @@ actually builds the Dockerfile. The other pulls the result.
 
 | | Triggered by | Produces | Consumed by |
 | --- | --- | --- | --- |
-| `.github/workflows/devcontainer-publish.yml` | monthly schedule or `workflow_dispatch` after image inputs change | A tagged Docker image at `ghcr.io/jdevuyst/kio-devcontainer` containing the core toolchain **and** a pre-built vscode-kio `kio.vsix` at `/opt/kio-extension/kio.vsix` | The Pages build job (via `container:`); local "Reopen in Container"; Codespaces (both regular launches and prebuilds, via the `image:` field in `devcontainer.json`) |
+| `.github/workflows/devcontainer-candidate.yml`, called by release publication or `devcontainer-publish.yml` | a release, monthly schedule or `workflow_dispatch` after image inputs change | An accepted Docker image at `ghcr.io/jdevuyst/kio-devcontainer` containing the core toolchain **and** the inspected vscode-kio `kio.vsix` at `/opt/kio-extension/kio.vsix` | The Pages build job (via `container:`); local "Reopen in Container"; Codespaces (both regular launches and prebuilds, via the `image:` field in `devcontainer.json`) |
 | Codespaces prebuild (configured in the UI — see below) | the path-filter list below, plus the schedule chosen in the UI | A Codespaces snapshot stored by GitHub's Codespaces service (not a Docker image) | Codespace launches |
 
 `devcontainer.json` references the published image via `"image":

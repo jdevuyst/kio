@@ -33,6 +33,11 @@ inputs (also routed from `ai/topics/specs.md`) is owned by
 `audit-bundled-docs`. `audit-kio-guide` owns the portable authoring workflow and
 repository supplement; `audit-docs-drift` owns the offline learning path.
 
+The binary-first, container-gated release rule in AGENTS.md is checked by
+`audit-github`'s publication dependency and artifact-identity procedure. The
+`release` skill owns live readiness, consumer evidence and selective recovery;
+static workflow validation alone does not establish a working publication.
+
 Cross-reference. For each load-bearing section:
 
 Backend quality/cost decisions in

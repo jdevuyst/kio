@@ -1,0 +1,44 @@
+name: Publish release
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  package:
+    if: >-
+      github.repository == 'jdevuyst/kio' && github.ref_type == 'tag' &&
+      startsWith(github.ref_name, 'releases/v') &&
+      fromJSON(inputs.plan).announcement_tag == github.ref_name
+    uses: ./.github/workflows/package-vscode.yml
+    with:
+      release-tag: ${{ github.ref_name }}
+  container:
+    needs: package
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/devcontainer-candidate.yml
+    with:
+      artifact-id: ${{ needs.package.outputs.artifact-id }}
+      sha256: ${{ needs.package.outputs.sha256 }}
+  crate:
+    needs: container
+    uses: ./.github/workflows/publish-crate.yml
+    with:
+      plan: ${{ inputs.plan }}
+    secrets:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  vscode:
+    needs: [package, container]
+    uses: ./.github/workflows/publish-vscode.yml
+    with:
+      plan: ${{ inputs.plan }}
+      artifact-id: ${{ needs.package.outputs.artifact-id }}
+      sha256: ${{ needs.package.outputs.sha256 }}
+    secrets:
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}

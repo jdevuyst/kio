@@ -1,0 +1,78 @@
+name: Package VS Code extension
+on:
+  workflow_call:
+    inputs:
+      release-tag:
+        type: string
+        default: ''
+    outputs:
+      artifact-id:
+        value: ${{ jobs.package.outputs.artifact-id }}
+      sha256:
+        value: ${{ jobs.package.outputs.sha256 }}
+permissions:
+  contents: read
+jobs:
+  package:
+    name: Package extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: node tree-sitter
+          cache: false
+
+      - name: Build the .vsix
+        working-directory: tools/vscode-kio
+        run: |
+          npm ci --no-fund --no-audit
+          npm run package
+
+      - name: Inspect the .vsix
+        id: inspect
+        working-directory: tools/vscode-kio
+        env:
+          RELEASE_TAG: ${{ inputs.release-tag }}
+        run: |
+          unzip -l kio.vsix
+          inspection=$(mktemp -d "$RUNNER_TEMP/kio-vsix.XXXXXX")
+          unzip -q kio.vsix -d "$inspection"
+          node - "$inspection" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const assert = require('node:assert/strict');
+          const root = path.join(process.argv[2], 'extension');
+          const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json')));
+          assert.equal(manifest.publisher, 'kio-lang');
+          assert.equal(manifest.name, 'kio');
+          if (process.env.RELEASE_TAG) assert.equal(process.env.RELEASE_TAG, 'releases/v' + manifest.version);
+          assert.equal(manifest.license, 'MIT OR Apache-2.0');
+          for (const file of ['dist/extension.js', 'syntaxes/kio.tmLanguage.json', 'language-configuration.json']) {
+            assert(fs.statSync(path.join(root, file)).size > 0);
+          }
+          for (const file of ['parsers/tree-sitter-kio.wasm', 'dist/web-tree-sitter.wasm']) {
+            assert.equal(fs.readFileSync(path.join(root, file)).subarray(0, 4).toString('hex'), '0061736d');
+          }
+          const license = fs.readFileSync(path.join(root, 'LICENSE.txt'), 'utf8');
+          assert(license.includes('MIT License') && license.includes('Apache License'));
+          for (const file of fs.readdirSync(process.argv[2], {recursive: true})) {
+            assert(!file.split(path.sep).some(part => ['.vscode', '.codex', '.claude', 'AGENTS.md', 'settings.json', '.env'].includes(part)));
+          }
+          NODE
+          echo "sha256=$(sha256sum kio.vsix | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        id: vsix
+        with:
+          name: kio-vsix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tools/vscode-kio/kio.vsix
+          if-no-files-found: error
+    outputs:
+      artifact-id: ${{ steps.vsix.outputs.artifact-id }}
+      sha256: ${{ steps.inspect.outputs.sha256 }}

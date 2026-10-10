@@ -643,9 +643,28 @@ re-resolves the current configuration, and a `kio.server.path` change requests
 a controlled restart. **Kio: Show Language Server Output** opens lifecycle and
 failure details. Repeated failures in one recovery episode do not repeat the
 same notification. Ordinary source diagnostics, expected request rejection, and
-compiler version differences do not trigger availability warnings; an
+compiler version differences do not make language services unavailable; an
 unexpected protocol/request failure can instead mark the connected status as
 unhealthy. Protocol tracing remains opt-in through `kio.trace.server`.
+
+On an actual startup, communication or protocol failure, detected differences
+between the selected compiler version and installed extension version may be
+reported as a possible cause. The original failure and recovery actions remain
+available; version differences alone do not diagnose incompatibility. Version
+detection uses initialization `serverInfo.version` when available, otherwise a
+bounded `--version` probe of the exact selected executable in the extension
+host. Unsupported, failed or unrecognized version probes add no failure.
+
+A connected released extension `0.M.x` with released compiler `0.N.x`, where
+`M >= N + 2`, receives a dismissible advisory once per version pair in an
+extension-host session. Connection and source diagnostics continue normally.
+Only plain numeric `major.minor.patch` releases participate in comparisons;
+prerelease, development and unrecognized strings establish no version skew
+policy. The comparison uses the installed extension, without checking online
+for a newer release. Guidance offers compiler installation instructions,
+compiler-path settings and output, or selecting a matching extension through
+VS Code **Install Another Version** and disabling that extension's **Auto
+Update**. The extension neither installs nor switches versions automatically.
 
 ## `kio repl [<selector>...]`
 

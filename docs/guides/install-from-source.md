@@ -74,12 +74,16 @@ its default is `off`, and verbose traces can include source text.
 
 ## Format on save
 
-To format `.kio` files automatically when you save, add this to your user settings:
+Open the Command Palette and choose **Preferences: Open User Settings (JSON)** to edit `settings.json`. For project-specific settings, choose **Preferences: Open Workspace Settings (JSON)** instead.
+
+To format Kio files automatically when saving, merge the following into `settings.json`. Keep your other settings; if `"[kio]"` already exists, add the two entries to that section.
 
 ```jsonc
-"[kio]": {
-  "editor.defaultFormatter": "kio-lang.kio",
-  "editor.formatOnSave": true
+{
+  "[kio]": {
+    "editor.defaultFormatter": "kio-lang.kio",
+    "editor.formatOnSave": true
+  }
 }
 ```
 

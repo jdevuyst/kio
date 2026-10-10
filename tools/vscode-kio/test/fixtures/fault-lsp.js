@@ -4,7 +4,13 @@
 const fs = require("node:fs");
 const controlPath = process.env.KIO_TEST_LSP_CONTROL;
 const control = controlPath ? JSON.parse(fs.readFileSync(controlPath, "utf8")) : {};
-if (process.argv.includes("--help")) {
+const installedVersion = require("../../package.json").version;
+if (process.argv.includes("--version")) {
+  if (controlPath) fs.appendFileSync(`${controlPath}.versions`, `${process.pid}\n`);
+  if (control.versionProbe === "hang") setInterval(() => {}, 1000);
+  else if (control.versionProbe === "unsupported") process.exit(2);
+  else process.stdout.write(control.versionProbe === "malformed" ? "unknown compiler\n" : `kio ${control.probeVersion ?? control.version ?? installedVersion}\n`);
+} else if (process.argv.includes("--help")) {
   if (controlPath) fs.appendFileSync(`${controlPath}.probes`, `${process.pid}\n`);
   if (control.mode === "probe-timeout") {
     setInterval(() => {}, 1000);
@@ -46,7 +52,7 @@ function handle(message) {
     } else {
       send({ id: message.id, result: {
         capabilities: { textDocumentSync: { openClose: true, change: 1 }, hoverProvider: true },
-        serverInfo: { name: "fault-lsp", version: control.version ?? "0.0.0" },
+        serverInfo: { name: "fault-lsp", ...(control.omitServerVersion ? {} : { version: control.version ?? installedVersion }) },
       } });
     }
   } else if (message.method === "initialized" && (control.mode === "crash" || (first && ["crash-once", "crash-then-hang"].includes(control.mode)))) {

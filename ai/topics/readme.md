@@ -9,6 +9,11 @@ Trigger: editing `README.md` or `website/.vitepress/theme/components/Landing.vue
 - **When a `ROADMAP.md` thread settles into a spec, consider adding a Features bullet** — but only for properties a passer-by would care about (type-system guarantees, design pillars, portability claims), not implementation details.
 - **Keep it brief.** README is an entry point, not a tutorial. Build instructions, worked examples, and reference material belong in `specs/`, `docs/`, or `test-data/poc/`.
 
+Listing READMEs give a concise capability overview, not an exhaustive inventory
+of commands or code actions. Keep capability and availability claims accurate
+when the artifact changes; detailed action lists belong in reference material.
+The README audit checks these claims without requiring every action to appear.
+
 ## Landing-page visual review
 
 Render landing-page changes and have an agent or user visually inspect the
@@ -18,3 +23,13 @@ Record the review and any remaining issues with the change's validation evidence
 A successful build, smoke test or DOM assertion does not establish that the
 page looks good. This visual gate is for the landing page, not ordinary README
 edits; protected exact-wording approval remains a separate requirement.
+
+## Editor marketplace links
+
+Derive extension listing identities from `publisher` and `name` in
+`tools/vscode-kio/package.json` and verify them against the actual published
+listings. When a publisher, extension name or distribution channel changes,
+sweep README/listing pages, the landing page, install guidance and generated
+installer messages together. Check that every link still reaches the intended
+extension, not merely a successful HTTP response. Keep protected wording
+approval intact. The website audit owns this cross-surface link check.

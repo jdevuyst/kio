@@ -199,6 +199,11 @@ function copyInstall(id: string) {
             <svg v-else viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M6 15V6a2 2 0 0 1 2-2h9" /></svg>
           </button>
         </div>
+        <p class="home-editor-links" data-reveal>
+          Editor extension:
+          <a href="https://marketplace.visualstudio.com/items?itemName=kio-lang.kio">Visual Studio Marketplace</a>
+          · <a href="https://open-vsx.org/extension/kio-lang/kio">Open VSX</a>
+        </p>
       </div>
     </section>
 

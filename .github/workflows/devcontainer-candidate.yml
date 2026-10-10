@@ -1,0 +1,133 @@
+name: Accepted Dev Container
+on:
+  workflow_call:
+    inputs:
+      artifact-id:
+        type: string
+        required: true
+      sha256:
+        type: string
+        required: true
+    outputs:
+      digest:
+        value: ${{ jobs.build.outputs.digest }}
+permissions:
+  contents: read
+# Shared by release and standalone publication, including acceptance and promotion.
+concurrency:
+  group: kio-devcontainer-publication
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        with:
+          artifact-ids: ${{ inputs.artifact-id }}
+          path: .devcontainer
+          merge-multiple: true
+      - name: Authenticate package
+        env:
+          VSIX_SHA256: ${{ inputs.sha256 }}
+        run: printf '%s  .devcontainer/kio.vsix\n' "$VSIX_SHA256" | sha256sum --check --strict
+      - uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4.0.0
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        id: build
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/jdevuyst/kio-devcontainer:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/jdevuyst/kio
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.kio.vsix.sha256=${{ inputs.sha256 }}
+            io.kio.vsix.artifact-id=${{ inputs.artifact-id }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: |
+            github_token=${{ github.token }}
+  accept:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        env:
+          MISE_ENV: optional
+        with:
+          version: 2026.6.14
+          install_args: node npm:@devcontainers/cli
+          cache: false
+      - name: Full native installed-editor acceptance
+        env:
+          IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+          VSIX_SHA256: ${{ inputs.sha256 }}
+          VSIX_ARTIFACT_ID: ${{ inputs.artifact-id }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: sh ci/infra/release-container-accept.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always()
+        with:
+          name: container-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kio-container-evidence/*
+          if-no-files-found: warn
+  promote:
+    needs: [build, accept]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+        with:
+          version: 2026.6.14
+          install_args: node
+          cache: false
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote accepted immutable index without rebuilding
+        env:
+          IMAGE_DIGEST: ${{ needs.build.outputs.digest }}
+          SOURCE_SHA: ${{ github.sha }}
+          VSIX_SHA256: ${{ inputs.sha256 }}
+          VSIX_ARTIFACT_ID: ${{ inputs.artifact-id }}
+        run: node ci/infra/release-container.cjs promote > "$RUNNER_TEMP/kio-container-promotion.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        with:
+          name: container-promotion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kio-container-promotion.json
+          if-no-files-found: error

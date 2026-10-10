@@ -6,7 +6,7 @@ allowed-tools: Read, Grep, Glob, Bash
 
 # GitHub config audit
 
-Anchors: [`ai/topics/repo-layout.md`](../../topics/repo-layout.md)'s `.github/` and `ci/` entries and [`ai/topics/contributing.md`](../../topics/contributing.md)'s contribution-policy mirror set. This skill verifies those automation and policy contracts remain internally consistent.
+Anchors: [`ai/topics/repo-layout.md`](../../topics/repo-layout.md)'s `.github/` and `ci/` entries, AGENTS.md's binary-first/container-gated release rule, and [`ai/topics/contributing.md`](../../topics/contributing.md)'s contribution-policy mirror set. This skill verifies those automation and policy contracts remain internally consistent.
 
 ## 1. Workflow → script references
 
@@ -20,7 +20,12 @@ For each `.github/workflows/*.yml`:
 - Account for generated-program count separately from corpus case sampling. Keep the dynamic-Prime verifier's smoke policy distinct from ordinary loader goldens and the loader POC, which follow their own corpus policies.
 - Tool provisioning covers every mandatory check's dependencies, including availability-driven host tools outside a runtime selection. A command or shim on `PATH` does not prove that the repository-pinned version is installed; trace the installation closure before the checks run.
 
-Conversely, every script under `ci/` should be reachable from `ci.yml`. Scripts under `reports/` are skill-driven (not invoked from any workflow today) and only need to be reachable from their corresponding `audit-*` skill under `ai/skills/`.
+Conversely, ordinary gating scripts under `ci/checks/` must be reachable from
+`ci.yml` through their owning gate. Release-only and opt-in consumer helpers
+under `ci/infra/` instead need an explicit owning workflow or skill route;
+they need not publish artifacts or launch containers during ordinary CI.
+Scripts under `reports/` are skill-driven and only need to be reachable from
+their corresponding `audit-*` skill under `ai/skills/`.
 
 ## 2. Contribution-policy mirror set
 
@@ -56,7 +61,50 @@ ai/topics/repo-layout.md commits to gating buckets under `ci/checks/` (`orchestr
 
 ## 5. Other workflows
 
-ai/topics/repo-layout.md names `ci.yml`, `devcontainer-publish.yml`, `pages.yml`, `markdown-link-check.yml`, `pr-auto-close.yml`, `pr-policy-check.yml`, `contrib-run.yml`, `stale.yml`, and the version-tag release channel (`release.yml`, `publish-crate.yml`, `publish-vscode.yml`). Confirm each exists and serves its documented purpose — repo-layout.md is the source of truth for this list; when it gains a workflow, refresh this enumeration alongside it. Flag any workflow not listed in ai/topics/repo-layout.md (might be fine, might be unreviewed).
+ai/topics/repo-layout.md names `ci.yml`, `devcontainer-publish.yml`, `pages.yml`, `markdown-link-check.yml`, `pr-auto-close.yml`, `pr-policy-check.yml`, `contrib-run.yml`, `stale.yml`, and the release/shared-publication workflows (`release.yml`, `release-credentials.yml`, `publish-release.yml`, `package-vscode.yml`, `devcontainer-candidate.yml`, `publish-crate.yml`, `publish-vscode.yml`). Confirm each exists and serves its documented purpose — repo-layout.md is the source of truth for this list; when it gains a workflow, refresh this enumeration alongside it. Flag any workflow not listed in ai/topics/repo-layout.md (might be fine, might be unreviewed).
+
+### Publication dependencies and artifact identity
+
+- Trace the non-publishing credential preflight from its manual and
+  release callers to the actual `publish` environment. Only canonical trusted
+  refs select that environment; PR execution never selects publisher secrets.
+  Run the credential inventory guard and offline selftests. Added, removed or
+  renamed publisher secrets must change the inventory, implemented verifier
+  and actual workflow mapping together; compare targets with publishing
+  manifests. Treat ephemeral `GITHUB_TOKEN` separately through least-privileged
+  workflow permissions. A token-presence check, public API response or package
+  dry-run is not authentication; preserve the checker's stated scope limits,
+  invalid-token negative control and failure-vs-outage distinction.
+  Verify complete generated workflow freshness through `release-workflow.cjs`,
+  not a partial changed-line comparison. Failed, cancelled and skipped preflight
+  must block hosting despite the generated host's `always()` condition.
+- Trace actual `needs` edges through generated and reusable workflows:
+  successful binary hosting precedes the coordinator; inspected VSIX packaging
+  precedes candidate-image build, native acceptance and promotion; every
+  registry leaf depends on that success. Merely listing sibling publishers or
+  custom host jobs does not establish ordering. Failure-injection/graph tests
+  must cover build, acceptance and promotion failures.
+- The image and editor registries consume one authenticated VSIX artifact ID
+  and hash from the same source. Acceptance uses the built immutable image
+  digest, and promotion reuses that digest without rebuilding. Both platform
+  manifests carry truthful source/payload provenance; native execution evidence
+  establishes only the platform actually exercised.
+- Monthly/manual publication shares the same acceptance path. Failed
+  candidates never replace `latest`. Shared publication concurrency and
+  source-ancestry checks prevent an older candidate replacing a proven newer
+  image; a successfully accepted release may publish its source-specific tag
+  while retaining newer `latest`, recording both identities.
+- Native acceptance retains its real installed-editor/lifecycle/refresh and
+  negative controls; missing prerequisites fail rather than silently reduce
+  the test. Hosted-runner preparation must preserve the candidate's identity
+  and avoid local/self-hosted destructive cleanup. Evidence uploads use a
+  reviewed allowlist, not an entire checkout, profile, credential directory or
+  runtime state tree.
+- Reusable-workflow permission ceilings admit required package operations;
+  individual jobs retain least privilege. Check canonical-repository/tag/plan
+  guards and environment-secret behavior. Recovery guidance targets the actual
+  failed registry leaf, preserving successful siblings, packages and candidate
+  evidence after partial immutable publication.
 
 ## 6. Linter configs
 

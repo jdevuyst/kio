@@ -3,6 +3,9 @@ name: Publish crate
 
 on:
   workflow_call:
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: false
     inputs:
       plan:
         required: true

@@ -79,6 +79,7 @@ Two READMEs are **listing pages** for a package registry / marketplace, not repo
 - **Only what the platform doesn't already render.** crates.io and the Marketplace surface `homepage`, `repository`, and `license` from the manifest (`Cargo.toml` / `package.json`) in their own chrome. A listing README that repeats them — a "see the website / GitHub" paragraph, a license restatement beyond the conventional one-liner — is redundant; flag it. The README carries the one thing the manifest can't: a real sentence about what the artifact is.
 - **Describe the artifact; don't half-explain the language.** A listing README says what *this* package is (the crate is the `kio` compiler / CLI; the extension is editor support) and links out for the rest. An arbitrary subset of language features or guarantees — "why just these three?" — is a finding. Usage the artifact itself genuinely needs is fine: the extension's Features / Requirements / Settings describe the extension, not the language.
 - **No install re-hosting on the crate page.** The crate README does not duplicate the website's cross-platform install guide (`curl | sh`); its audience installs via cargo, and `homepage` already points at the full story.
+- **Capability overview, not an action catalogue.** Check listed capabilities and availability requirements against the current implementation and relevant contracts. Do not require every supported command or code action to be listed. An inaccurate or overbroad claim is a finding; omitting an individual action from this overview is not.
 
 ## How to report
 

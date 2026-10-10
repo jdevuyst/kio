@@ -71,6 +71,17 @@ and DOM assertions are not substitutes for this review; report missing visual
 evidence explicitly. This does not require a rendered review of ordinary README
 edits or authorize changing protected wording.
 
+## 11. Editor marketplace links
+
+Read `publisher` and `name` from `tools/vscode-kio/package.json`; compare
+marketplace links across README/listing pages, the landing page, install
+guidance and any generated installer messages. Follow
+[`ai/topics/readme.md`](../../topics/readme.md) § Editor marketplace links:
+verify the destinations identify the published extension, and report stale
+identities or channels. When network access is unavailable, distinguish local
+identity consistency from unverified live destinations. Do not silently edit
+protected wording to repair a link.
+
 ## How to report
 
 Group findings into:
