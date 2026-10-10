@@ -1,0 +1,14 @@
+signature app v(1);
+
+v(1) {
+  breaking {
+    add {
+      module main {
+        host fn tick();
+        host fn discard[A](value: A)[B];
+        pub fn run();
+        pub pure fn generic[A]
+      }
+    }
+  }
+}

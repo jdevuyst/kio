@@ -1,0 +1,8 @@
+module main;
+fn first((x: . // first slot
+, y: .)) { x }
+fn local() {
+  let .(x: ., y: .) // after pattern
+  = ((), ());
+  x
+}

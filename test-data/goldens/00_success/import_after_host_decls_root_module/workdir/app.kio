@@ -2,6 +2,6 @@ module app;
 
 host type S role(str);
 
-host fn print(s: S) -> .;
+host fn print(s: S);
 
 host fn upper(s: S) -> S;

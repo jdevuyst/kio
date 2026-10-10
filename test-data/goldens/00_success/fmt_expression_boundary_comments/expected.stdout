@@ -1,0 +1,63 @@
+module main;
+
+fn prefix(label: .) {
+  (
+    io.print
+    // before arguments
+    )(label)
+}
+
+fn returned() {
+  (
+    bounce(())
+    // before next call
+    )()
+}
+
+fn statement() {
+  (
+    io.print(())
+    // before separator
+    );
+  ()
+}
+
+fn terminal() {
+  io.print(())
+  // before final separator
+}
+
+fn binding() {
+  let value =
+    (
+      io.print(())
+      // before binding separator
+      );
+  value
+}
+
+fn nested() {
+  (
+    bounce(())
+    // inner callee
+
+    // outer callee
+    )()
+}
+
+fn last() {
+  f(
+  // before last-call arguments
+
+  // before written argument
+  , value
+  // after written argument
+  ).<inserted
+}
+
+fn first() {
+  f(
+  // before first-call arguments
+  , value
+  ).<<inserted
+}

@@ -29,7 +29,7 @@ host type String role(str);
 host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
 pub fn body() {
   __INSERT_CODE_HERE__
@@ -54,7 +54,7 @@ host type String role(str);
 host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
 __INSERT_CODE_HERE__
 -->
@@ -94,7 +94,7 @@ module hello;
 
 host type String role(str);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 ```kio {@tutorial_module}
@@ -174,7 +174,7 @@ two fixed builtin block imports are idempotent.
 
 `fn name(args) -> Return { body }` defines a function. `pub` before `fn` makes the function visible to other modules — and, when the module is bridged, to the package surface, which is how the hello-world's `main` reaches the host. Without `pub`, the function is module-private.
 
-For an ordinary module-level `fn`, leaving out the return annotation fixes its result to unit (`.`); the body must produce unit rather than determine a different result type. A `host fn` still writes its result type.
+For a named `fn` or `host fn`, leaving out the return annotation fixes its result to unit (`.`). An ordinary function's body must produce unit rather than determine a different result type.
 
 Same idea for `type`, `literal`, `newtype`, and `labels`: `pub` makes them visible; declarations without `pub` are module-private. The package's `bridge` block exposes only the `pub` items of the modules it matches; non-`pub` items stay internal regardless.
 
@@ -261,7 +261,7 @@ module hello;
 
 host type String role(str);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 `host type String role(str);` says "the host supplies a type, this module will call it `String`, and string literals checked against it produce values of that type." `role(str)` says that this declared type accepts Kio string literals; the host binding supplies its representation.
@@ -286,7 +286,7 @@ host fn add(p0: Int, p1: Int) -> Int;
 
 host fn int_to_string(p0: Int) -> String;
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 The package file admits that module's surface by listing it in `bridge`:
@@ -343,7 +343,7 @@ A function is a `fn` at module level (or a `fn` expression inline).
 fn double(n: Int) -> Int { add(n, n) }
 ```
 
-Parameters are `name: Type` pairs; a written return type follows `->`. The `double` example writes `-> Int` because it does not return unit. A block is one or more statements separated by `;`, ending in a trailing expression whose value is the block's value.
+Parameters are `name: Type` pairs; a written return type follows `->`. An omitted return type on a named `fn` or `host fn` means unit (`.`). The `double` example writes `-> Int` because it does not return unit. A block is one or more statements separated by `;`, ending in a trailing expression whose value is the block's value.
 
 ### let bindings
 
@@ -551,7 +551,7 @@ host type String role(str);
 host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
 labels Greeting = { hello : String, goodbye : String };
 
@@ -572,7 +572,7 @@ host type String role(str);
 host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
 labels Greeting = { hello : String, goodbye : String };
 
@@ -696,7 +696,7 @@ host type String role(str);
 host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
 fn id[A](x: A) -> A { x }
 

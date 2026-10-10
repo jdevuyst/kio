@@ -8,7 +8,7 @@ v(1) {
         host fn archived(head: Str, value: Str | Str) -> (Str | Str) | Str;
         host fn archived_grouped(pair: Str & Str) -> Str;
         pub fn echo(s: Str) -> Str;
-        host fn log(p0: Str) -> .;
+        host fn log(p0: Str);
         host fn open() -> Str
       }
     }

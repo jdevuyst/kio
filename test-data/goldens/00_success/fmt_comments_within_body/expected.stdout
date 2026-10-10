@@ -60,7 +60,7 @@ fn k() -> I32 & I32 {
 
 newtype Box[A][B] : A & B { constructor mk_box; projector get_box }
 
-fn type_arg_comments() -> . {
+fn type_arg_comments() {
   let _ =
     mk_box(
     // type arg a
@@ -141,7 +141,7 @@ fn k() -> I32 & I32 {
 
 newtype Box[A][B] : A & B { constructor mk_box; projector get_box }
 
-fn type_arg_comments() -> . {
+fn type_arg_comments() {
   let _ =
     mk_box(
     // type arg a

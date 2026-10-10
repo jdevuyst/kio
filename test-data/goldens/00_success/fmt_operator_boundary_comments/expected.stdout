@@ -1,10 +1,10 @@
 module operator_comments;
 
-pure fn pick(x: ., y: .) -> . { x }
+pure fn pick(x: ., y: .) { x }
 
 op _ <+> _ { impl pick }
 
-fn example() -> . {
+fn example() {
   .() {
     // inside operand
     ()

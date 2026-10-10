@@ -1,0 +1,34 @@
+module main;
+
+/// Function documentation.
+pub // marker_1
+pure // marker_2
+fn // marker_3
+f() { () }
+
+/// Host documentation.
+host // marker_4
+fn // marker_5
+h // marker_6
+( // marker_7
+value // marker_8
+: // marker_9
+. // marker_10
+, other: . // marker_11
+);
+
+equiv // marker_12
+equal() // marker_13
+{ (); () }
+
+/// Labels documentation.
+pub // marker_14
+labels { ready: . };
+
+/// Forward documentation.
+pub // marker_15
+type {forward} = {ready};
+
+/// Literal documentation.
+pub // marker_16
+literal answer = 42;

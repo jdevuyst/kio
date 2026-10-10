@@ -50,8 +50,12 @@ module logger;
 
 host type String role(str);
 
-host fn print(s: String) -> .;
+host fn print(s: String);
 ```
+
+Omitting a named function's return type means unit (`.`), for both `host fn`
+and ordinary `fn` declarations. Write `host fn print(s: String);` for a host
+capability that returns unit; write `-> Type` when it returns another type.
 
 ```kio {file}
 // logger/main.kio
@@ -110,7 +114,7 @@ host type Array[T];
 
 host fn array_make_empty[T]() -> Array(T);
 
-host fn array_push[T](a: Array(T), v: T) -> .;
+host fn array_push[T](a: Array(T), v: T);
 
 host fn array_get[T](a: Array(T), i: I32) -> T;
 ```
@@ -151,7 +155,7 @@ host fn add_i32(p0: I32, p1: I32) -> I32;
 
 host fn array_make_filled[T](n: I32, fill: T) -> Array(T);
 
-host fn array_set[T](a: Array(T), i: I32, v: T) -> .;
+host fn array_set[T](a: Array(T), i: I32, v: T);
 
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 

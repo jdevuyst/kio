@@ -614,7 +614,7 @@ bridge { app; app/**; }
 // app.kio
 module app;
 host type Str role(str);
-host fn print(s: Str) -> .;
+host fn print(s: Str);
 ```
 
 ```kio

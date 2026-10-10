@@ -674,6 +674,14 @@ Each layer below scopes by a different dimension. Pick the narrowest knob that s
 - **Run each new or changed emission case exactly** — use `sh ci/checks/orchestrators/emissions-tests.sh --impls=FULL_IMPL_MATRIX -- '^<backend>/<case>$'`. The backend-first layout makes the case single-backend by construction; exact filtering keeps the case axis narrow.
 - **Reach for `--prime-only`** when the change touches Kio'-grammar surface (parser, lexer, the verifier). Only IS_KIO_PRIME-marked cases run.
 - **Scope the generative batch** — `sh ci/all.sh SAMPLE_IMPL --gen-count=<N>` overrides the generative-tests orchestrator's default generated-program count. The flag is forwarded as `--count=<N>`, so `sh ci/checks/orchestrators/generative-tests.sh --count=<N>` is the direct equivalent. `--gen-seed=<N>` forwards a deterministic seed as `--seed=<N>` for reproducing or pinning generated cases.
+
+  The separate `fmt-comment-conservation.sh --count=<N> --seed=<N>` gate
+  generates unmutated programs and checks comments before and after canonical
+  formatting. Its Rust test target `fmt_comment_conservation` consumes the raw
+  batch through internal `KIO_DEBUG_FMT_RAW_GENERATED_DIR` and
+  `KIO_DEBUG_FMT_RAW_SEED` variables; the orchestrator supplies both before any
+  formatting pass. It also checks the exact ordered IDs of comments inserted
+  on canonical source lines.
   When `checks/orchestrators/generative-tests` fails under `ci/all.sh`, the failed-task diagnostics repeat the `kio-gen: seed = <N>`, `kio-gen: count = <N>`, and `kio-gen: prime-only = <bool>` lines. Reproduce the batch with `sh ci/all.sh SAMPLE_IMPL --gen-seed=<N> --gen-count=<N>` or directly with `sh ci/checks/orchestrators/generative-tests.sh --seed=<N> --count=<N>`. For a single case, use the case name and implementation from the `FAIL [<impl>] <case>` line with the direct orchestrator command, for example `sh ci/checks/orchestrators/generative-tests.sh --impls=<impl> --seed=<N> --count=<N> -- <case>`.
 - **Choose top-level implementation coverage explicitly** — `ci/all.sh` accepts exactly one implementation-coverage choice before or after its options:
   - `sh ci/all.sh SAMPLE_IMPL` — forwards `--impls=SAMPLE_IMPL` to every orchestrator that supports it (`golden-tests`, `emissions-tests`, `generative-tests`, `poc-tests`, `castle-tests`). Each case runs on one of its applicable impls, picked at random per run; an emission case has only its bucket's backend target.

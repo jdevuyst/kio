@@ -15,7 +15,7 @@ pub labels { original: . };
 
 pub type {field} = {original};
 
-pub fn field() -> . { () }
+pub fn field() { () }
 
 pure fn build_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }
 
@@ -25,8 +25,8 @@ fn local() -> Num { truth }
 
 fn shadow(truth: Num) -> Num { truth }
 
-fn let_shadow() -> . { let truth = (); truth }
+fn let_shadow() { let truth = (); truth }
 
-fn bang() -> . { build!(()) }
+fn bang() { build!(()) }
 
-fn splice() -> . { ().>build! }
+fn splice() { ().>build! }

@@ -30,7 +30,7 @@ host type String role(str);
 
 host type Bool role(bool);
 
-host fn print_i32(value: I32) -> .;
+host fn print_i32(value: I32);
 
 pure fn id[A](value: A) -> A { value }
 
@@ -54,4 +54,4 @@ fn kio_gen_observed() -> I32 {
   )
 }
 
-pub fn main() -> . { print_i32(kio_gen_observed()) }
+pub fn main() { print_i32(kio_gen_observed()) }

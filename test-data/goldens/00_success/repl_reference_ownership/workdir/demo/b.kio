@@ -21,6 +21,6 @@ pub elab build : . -> . { impl build_impl }
 
 fn local() -> Num { truth }
 
-fn bang() -> . { build!(()) }
+fn bang() { build!(()) }
 
 fn label() -> Original { {field=} }

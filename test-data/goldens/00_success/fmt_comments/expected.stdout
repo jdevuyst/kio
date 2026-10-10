@@ -11,10 +11,10 @@ fn id[A](x: A) -> A { x }
 //
 // First entry of an enclosing run.
 //
-fn empty_runs() -> . { () }
+fn empty_runs() { () }
 
 /// Function documentation remains attached.
-fn header_paragraph() -> . {
+fn header_paragraph() {
   // Return contract.
 
   // Body explanation.
@@ -24,21 +24,23 @@ fn header_paragraph() -> . {
   ()
 }
 
-fn header_without_body_comments() -> . {
+fn header_without_body_comments() {
   // Return contract stays adjacent.
   ()
 }
 
-fn empty_call() -> . {
+fn empty_call() {
   last(
   // Inside the call.
   )
 }
 
-fn empty_unit() -> . {
+fn empty_unit() {
   (
   // Inside Unit.
+
   // Between empty components.
+
   // Before Unit closes.
   )
 }
@@ -48,7 +50,7 @@ fn empty_signature(
 )(
 // Second signature group.
 , x: .
-) -> . { x }
+) { x }
 
 type Pair[A][B] = .;
 
@@ -59,15 +61,17 @@ fn parameter(
   , .
   , .
   )
-) -> . { x }
+) { x }
 
-fn return_order()
+fn return_order() -> (
   // Before the arrow.
+
   // Before the return type.
-  -> Pair(
+  Pair(
   // Inside the return type.
   , .
   , .
+  )
   ) {
   // Before the body.
 
@@ -75,26 +79,29 @@ fn return_order()
   ()
 }
 
-fn grouped() -> . {
+fn grouped() {
   let x = ();
   x
   // Inner grouping.
+
   // Outer grouping.
+
   // Enclosing block.
 }
 
-fn grouped_argument() -> . {
+fn grouped_argument() {
   id(
   , .
   , last(
     // Inner call.
     )
   // Grouped argument.
+
   // Outer call.
   )
 }
 
-fn computed_callee() -> . {
+fn computed_callee() {
   (
     last
     // Grouped callee.
@@ -104,7 +111,7 @@ fn computed_callee() -> . {
 }
 
 // Trailing item.
-fn last() -> . { () }
+fn last() { () }
 module main;
 
 // Header note for the import block.
@@ -118,10 +125,10 @@ fn id[A](x: A) -> A { x }
 //
 // First entry of an enclosing run.
 //
-fn empty_runs() -> . { () }
+fn empty_runs() { () }
 
 /// Function documentation remains attached.
-fn header_paragraph() -> . {
+fn header_paragraph() {
   // Return contract.
 
   // Body explanation.
@@ -131,21 +138,23 @@ fn header_paragraph() -> . {
   ()
 }
 
-fn header_without_body_comments() -> . {
+fn header_without_body_comments() {
   // Return contract stays adjacent.
   ()
 }
 
-fn empty_call() -> . {
+fn empty_call() {
   last(
   // Inside the call.
   )
 }
 
-fn empty_unit() -> . {
+fn empty_unit() {
   (
   // Inside Unit.
+
   // Between empty components.
+
   // Before Unit closes.
   )
 }
@@ -155,7 +164,7 @@ fn empty_signature(
 )(
 // Second signature group.
 , x: .
-) -> . { x }
+) { x }
 
 type Pair[A][B] = .;
 
@@ -166,15 +175,17 @@ fn parameter(
   , .
   , .
   )
-) -> . { x }
+) { x }
 
-fn return_order()
+fn return_order() -> (
   // Before the arrow.
+
   // Before the return type.
-  -> Pair(
+  Pair(
   // Inside the return type.
   , .
   , .
+  )
   ) {
   // Before the body.
 
@@ -182,26 +193,29 @@ fn return_order()
   ()
 }
 
-fn grouped() -> . {
+fn grouped() {
   let x = ();
   x
   // Inner grouping.
+
   // Outer grouping.
+
   // Enclosing block.
 }
 
-fn grouped_argument() -> . {
+fn grouped_argument() {
   id(
   , .
   , last(
     // Inner call.
     )
   // Grouped argument.
+
   // Outer call.
   )
 }
 
-fn computed_callee() -> . {
+fn computed_callee() {
   (
     last
     // Grouped callee.
@@ -211,4 +225,4 @@ fn computed_callee() -> . {
 }
 
 // Trailing item.
-fn last() -> . { () }
+fn last() { () }

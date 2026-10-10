@@ -1,0 +1,11 @@
+module main;
+
+/// Function documentation.
+fn f() // first paragraph
+// continuing line
+//
+// same block, second paragraph
+
+// next block
+-> . { // body block
+() }

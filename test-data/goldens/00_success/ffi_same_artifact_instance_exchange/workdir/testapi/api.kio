@@ -6,7 +6,7 @@ host fn pack[T](value: T) -> t.Box(T);
 
 host fn unpack[T](value: t.Box(T)) -> T;
 
-host fn mark(value: t.Number) -> .;
+host fn mark(value: t.Number);
 
 pub newtype Hidden : t.Number { constructor hide; projector reveal }
 

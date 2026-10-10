@@ -7,4 +7,4 @@ equiv standard_path_failure() {
   2(I32)
 }
 
-pub fn main() -> . { print("should not run\n"(String)) }
+pub fn main() { print("should not run\n"(String)) }

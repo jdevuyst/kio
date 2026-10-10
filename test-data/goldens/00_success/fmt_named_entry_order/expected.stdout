@@ -12,6 +12,7 @@ build {
     html "out/docs"
 
     // docs tail
+
     // docs close
   };
 
@@ -20,10 +21,12 @@ build {
     namespace "example"
 
     // target tail
+
     // target close
   }
 
   // cache tail
+
   // build close
 }
 
@@ -31,6 +34,7 @@ bridge {
   fmt_named_entry_order/**
 
   // bridge tail
+
   // bridge close
 }
 // build outer
@@ -38,6 +42,7 @@ module fmt_named_entry_order/main;
 
 varop [* *] {
   // fold tail
+
   // varop close
   foldl step base; finalize finish
 }
@@ -45,6 +50,7 @@ varop [* *] {
 // varop outer
 elab make : . {
   // capture tail
+
   // elab close
   captures (first, second); impl run
 }
@@ -54,12 +60,14 @@ newtype Box : . {
   constructor create;
   projector read
   // constructor tail
+
   // newtype close
   }
 
 // newtype outer
 op _ + _ {
   // implementation tail
+
   // op close
   impl step
 }
@@ -72,6 +80,7 @@ source {
   ref "main"
 
   // source tail
+
   // source close
 }
 
@@ -88,6 +97,7 @@ resolved {
   sig "digest"
 
   // resolved tail
+
   // resolved close
 }
 // resolved outer
@@ -111,6 +121,7 @@ v(2) {
         pub constructor make;
         pub projector read
         // member tail
+
         // member close
         }
     }
@@ -126,6 +137,7 @@ v(2) {
     add {
       api.Fresh
       // reference tail
+
       // add close
     };
     modify {
@@ -136,10 +148,12 @@ v(2) {
     remove {
       api.Gone
       // removed tail
+
       // removed close
     }
   }
   // with tail
+
   // version close
 }
 // version outer

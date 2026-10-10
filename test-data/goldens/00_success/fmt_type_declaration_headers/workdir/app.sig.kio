@@ -1,0 +1,12 @@
+signature app v(1);
+
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        /// Public newtype documentation.
+        pub newtype T : . { pub constructor make; pub projector take }
+      }
+    }
+  }
+}

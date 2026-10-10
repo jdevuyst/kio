@@ -2,7 +2,7 @@ module producer;
 
 host type Count role(i32);
 
-host fn consume(value: Count) -> .;
+host fn consume(value: Count);
 
 pub fn literal() -> Count { 1(Count) }
 

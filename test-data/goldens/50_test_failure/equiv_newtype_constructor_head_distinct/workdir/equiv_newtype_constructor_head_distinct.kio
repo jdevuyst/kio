@@ -2,7 +2,7 @@ module equiv_newtype_constructor_head_distinct;
 
 host type T;
 
-host fn observe[A](value: A) -> .;
+host fn observe[A](value: A);
 
 newtype Left : T { constructor wrap; projector unwrap }
 

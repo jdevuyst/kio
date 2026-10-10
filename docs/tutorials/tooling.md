@@ -17,7 +17,7 @@ bridge {
 module main;
 
 host type String role(str);
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 host fn string_concat(p0: String, p1: String) -> String;
 
 __INSERT_CODE_HERE__
@@ -85,9 +85,9 @@ module main;
 
 host type String role(str);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
-pub fn main() -> . { print("hello from Kio\n"(String)) }
+pub fn main() { print("hello from Kio\n"(String)) }
 ```
 
 A `host type` / `host fn` is a capability the **host** provides: the package declares the shape it needs and the host supplies the implementation when it loads the package. `pub` marks `main` as part of the package's exported surface. That is all the language you need to follow the rest of this tutorial.

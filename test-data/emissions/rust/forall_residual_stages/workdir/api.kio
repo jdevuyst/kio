@@ -2,7 +2,7 @@ module api;
 
 host type I32 role(i32);
 
-host fn mark(value: I32) -> .;
+host fn mark(value: I32);
 
 pub fn produce() -> [A][B] (A -> B) -> A -> B {
   .[A] {

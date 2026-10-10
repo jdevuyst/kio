@@ -540,7 +540,7 @@ can translate the storage token at the public boundary.
 ```kio
 // module app
 host type Array[T];
-host fn array_push[T](a: Array(T), v: T) -> .;
+host fn array_push[T](a: Array(T), v: T);
 ```
 
 emits
@@ -1312,7 +1312,7 @@ module hello;
 host type I32 role(i32);
 host type String role(str);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 host fn int_to_string(p0: I32) -> String;
 ```
 

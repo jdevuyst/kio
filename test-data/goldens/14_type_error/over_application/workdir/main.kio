@@ -6,4 +6,4 @@ newtype B : . { pub constructor mk_b; pub projector un_b }
 
 fn f(x: A) { let _ = x; () }
 
-fn caller(a: A, b: B) -> . { f(a, b) }
+fn caller(a: A, b: B) { f(a, b) }

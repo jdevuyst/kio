@@ -85,18 +85,16 @@ use crate::span::Span;
 // ---- Doc-comment attachment -----------------------------------------------
 
 /// A contiguous run of `///` doc-comment lines attached to a top-level
-/// definition or to the module itself. The payload is the *joined text*
-/// of the lines (each line's `///` prefix and one optional leading space
-/// already stripped by the lexer). Lines are separated by `\n` in the
-/// stored value; a blank doc-comment line is stored as an empty segment.
+/// definition or to the module itself. The payload keeps one string per
+/// source line, with each `///` prefix and one optional leading space
+/// already stripped by the lexer. A blank doc-comment line is an empty string.
 ///
 /// Markdown / Kiodoc directive parsing is **not** done at this layer —
 /// this is raw text. Later Kiodoc sessions will consume and validate the
 /// payload.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DocComment {
-    /// The joined text of the doc-comment lines, one per `\n`. Each
-    /// element is the payload of one `/// …` line (leading `///` and
+    /// Each element is the payload of one `/// …` source line (leading `///` and
     /// one optional space already stripped).
     pub lines: Vec<String>,
     /// Source span covering the entire doc-comment block, from the
@@ -118,7 +116,7 @@ impl DelimitedTrivia {
     }
 }
 
-/// Erasing punctuation joins its adjacent gaps, not their newline counts.
+/// Join fragments of one source trivia run without adding their edge newlines.
 pub(crate) fn append_source_trivia(
     before: &mut Vec<crate::pass::lexer::Trivia>,
     after: Vec<crate::pass::lexer::Trivia>,
@@ -136,6 +134,32 @@ pub(crate) fn append_source_trivia(
     before.truncate(before.len() - left);
     before.extend(std::iter::repeat_n(Trivia::Newline, left.max(right)));
     before.extend(after.into_iter().skip(right));
+}
+
+/// Relocation can bring comments from distinct token gaps into one slot.
+/// Preserve that block boundary without splitting the lines within either run.
+/// Documentation boundaries retain their existing attachment discipline.
+pub(crate) fn append_relocated_trivia(
+    before: &mut Vec<crate::pass::lexer::Trivia>,
+    after: Vec<crate::pass::lexer::Trivia>,
+) {
+    use crate::pass::lexer::Trivia;
+    let left_comment = before.iter().rev().find(|t| !matches!(t, Trivia::Newline));
+    let right_comment = after.iter().find(|t| !matches!(t, Trivia::Newline));
+    if matches!(left_comment, Some(Trivia::LineComment { .. }))
+        && matches!(right_comment, Some(Trivia::LineComment { .. }))
+    {
+        let trailing = before
+            .iter()
+            .rev()
+            .take_while(|t| matches!(t, Trivia::Newline))
+            .count();
+        before.extend(std::iter::repeat_n(
+            Trivia::Newline,
+            2usize.saturating_sub(trailing),
+        ));
+    }
+    append_source_trivia(before, after);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1168,18 +1192,12 @@ pub trait Phase: Sized {
         + serde::Serialize
         + serde::de::DeserializeOwned;
 
-    /// Witness for `FnDef.ret_elided` — the surface-only flag
-    /// recording whether the user wrote `-> .` explicitly or
-    /// elided the return-type annotation. `bool` at [`Surface`] /
-    /// [`Desugared`] / [`Lowered`] where the formatter still
-    /// needs to round-trip the user's spelling; `()` at [`Prime`]
-    /// and [`Enriched`] where the back-end consumes Kio'-shape
-    /// alone (every surviving fn type carries an explicit return
-    /// type). [`PhaseBridge`] handles the value at conversion
-    /// time — sideways transitions preserve the bool, the
-    /// [`Lowered`] → [`Prime`] transition discards it, and the
-    /// [`Prime`] → [`Surface`] embed reconstructs the canonical
-    /// `false` (always write out `-> .`).
+    /// Witness for `FnDef.ret_elided`: source consumers distinguish a
+    /// written return annotation from the declaration's Unit default.
+    /// This is `bool` through [`Lowered`] and `()` from [`Prime`], whose
+    /// AST always carries the result type. Embedding back into [`Surface`]
+    /// supplies `false`; the formatter independently omits a comment-free
+    /// direct Unit annotation under the canonical style rules.
     type FnDefRetElided: Clone
         + std::fmt::Debug
         + PartialEq
@@ -1313,9 +1331,8 @@ impl PhaseBridge<Purity> for () {
 // Defaulting bridges used when a later phase no longer stores a field. The
 // canonical default is the conservative spelling-independent value.
 impl PhaseBridge<()> for bool {
-    /// `false` = "the user wrote the return type explicitly."
-    /// Kio' has no `-> .` elision, so the embed always renders
-    /// the return.
+    /// The embedded AST retains its explicit result type; canonical
+    /// formatting chooses whether its annotation needs to be printed.
     fn bridge(_: ()) -> Self {
         false
     }
@@ -1358,8 +1375,9 @@ pub struct Meta<P: Phase> {
     /// leading run has no other home); at every later phase it
     /// collapses to `()` like [`Self::leading_trivia`]. Only the
     /// bounded set of container positions the formatter knows about
-    /// — block / `do` bodies, comma-list closers, label braces, and
-    /// the module/file end — populate it; every other node leaves it
+    /// — block / `do` bodies, type groups, comma-list closers, label braces, and
+    /// the module/file end — populate it. Compact host-type and literal-alias
+    /// headers also use this slot for their interior comments; every other node leaves it
     /// at its default. The pretty-printer reads it to keep a trailing
     /// or dangling comment from being dropped on a `kio fmt`
     /// round-trip.
@@ -1949,6 +1967,15 @@ pub struct RecGroup<P: Phase = Surface> {
     pub loop_path: Vec<PathSegment>,
     pub members: Vec<FnDef<P, ()>>,
     pub meta: Meta<P>,
+    #[serde(default)]
+    pub source_trivia: Option<Box<RecHeaderTrivia>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RecHeaderTrivia {
+    pub leading: Vec<crate::pass::lexer::Trivia>,
+    pub closing: Vec<crate::pass::lexer::Trivia>,
+    pub after: Vec<crate::pass::lexer::Trivia>,
 }
 
 /// A capability-free recursive scope for type declarations. Unlike
@@ -2878,14 +2905,11 @@ pub struct FnDef<P: Phase = Surface, PurityField = <P as Phase>::FnPurity> {
     /// value group is one callable layer.
     pub sig: Signature<P>,
     pub ret: Type<P>,
-    /// Whether the source elided the `-> .` return-type
-    /// annotation (the one optional type position in Kio, per
-    /// language.md § Function definitions). When elided, `ret`
-    /// carries a synthetic [`Type::Unit`] so downstream phases
-    /// can treat the two spellings uniformly; the [`Surface`]
-    /// formatter consults the `bool` to round-trip the original
-    /// source shape. Narrows to `()` at [`Prime`] / [`Enriched`] —
-    /// see [`Phase::FnDefRetElided`].
+    /// Whether the source omitted the named function's result annotation.
+    /// An omitted annotation supplies a synthetic [`Type::Unit`] in `ret`;
+    /// source consumers retain the omission fact through [`Lowered`].
+    /// Canonical formatting also omits an uncommented written direct Unit.
+    /// Narrows to `()` at [`Prime`]; see [`Phase::FnDefRetElided`].
     pub ret_elided: P::FnDefRetElided,
     pub body: P::FnBody,
     pub meta: Meta<P>,
@@ -3568,6 +3592,14 @@ pub struct ParamPattern {
     pub span: Span,
     pub match_id: NodeId,
     pub numbered: Option<NumberedBinding>,
+    #[serde(default)]
+    pub source_trivia: Option<Box<ParamPatternTrivia>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ParamPatternTrivia {
+    pub elem_leading: Vec<Vec<crate::pass::lexer::Trivia>>,
+    pub closing: Vec<crate::pass::lexer::Trivia>,
 }
 
 /// Written family ownership is consumed before operator expansion can create
@@ -4350,6 +4382,8 @@ pub struct HostFn<P: Phase = Surface> {
     pub name: String,
     pub params: Vec<HostFnParam<P>>,
     pub param_groups: Vec<SignatureGroupKind>,
+    #[serde(default)]
+    pub source_trivia: P::SourceSignatureTrivia,
     pub ret: Type<P>,
     pub meta: Meta<P>,
     /// Doc-comment attached to this host function declaration, if any.
@@ -4423,6 +4457,7 @@ pub fn host_fn_from_groups<P: Phase>(
         name,
         params,
         param_groups,
+        source_trivia: Default::default(),
         ret,
         meta,
         doc,
@@ -5071,6 +5106,7 @@ pub enum Expr<P: Phase = Surface> {
         occurrence: P::ExpressionOccurrence,
         kind: ElaboratorKind,
         call: ElaboratorCall<P>,
+        source_trivia: P::SourceDelimitedTrivia,
         meta: Meta<P>,
         ext: P::ExprElab,
     },
@@ -7146,6 +7182,7 @@ where
             })
             .collect(),
         param_groups: h.param_groups.clone(),
+        source_trivia: Default::default(),
         ret: convert_type::<P, Q>(&h.ret),
         meta: convert_meta(&h.meta),
         doc: h.doc.clone(),
@@ -7504,6 +7541,79 @@ impl<P: Phase> Item<P> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn relocated_comment_runs_keep_internal_paragraphs_and_separate_blocks() {
+        use super::{append_relocated_trivia, append_source_trivia};
+        use crate::pass::lexer::Trivia;
+        use crate::span::Span;
+
+        let comment = |text: &str| Trivia::LineComment {
+            text: text.to_owned(),
+            span: Span::new(0, 1),
+        };
+        let doc = Trivia::DocCommentLine {
+            text: "documentation".to_owned(),
+            span: Span::new(1, 2),
+        };
+        let first = vec![
+            comment("first"),
+            Trivia::Newline,
+            comment("continuation"),
+            Trivia::Newline,
+            comment(""),
+            Trivia::Newline,
+            comment("paragraph"),
+        ];
+        let second = vec![
+            Trivia::Newline,
+            comment("second"),
+            Trivia::Newline,
+            Trivia::Newline,
+            comment("existing block"),
+        ];
+        let mut joined = first.clone();
+        append_relocated_trivia(&mut joined, second.clone());
+        let mut expected = first.clone();
+        expected.extend([Trivia::Newline, Trivia::Newline]);
+        expected.extend(second.into_iter().skip(1));
+        assert_eq!(joined, expected);
+
+        for (left, right, separator) in [(0, 0, 2), (1, 1, 2), (2, 1, 2), (3, 4, 4)] {
+            let mut before = vec![comment("left")];
+            before.extend(std::iter::repeat_n(Trivia::Newline, left));
+            let mut after = vec![Trivia::Newline; right];
+            after.push(comment("right"));
+            append_relocated_trivia(&mut before, after);
+            let mut expected = vec![comment("left")];
+            expected.extend(std::iter::repeat_n(Trivia::Newline, separator));
+            expected.push(comment("right"));
+            assert_eq!(before, expected);
+        }
+
+        for (before, after) in [
+            (Vec::new(), first.clone()),
+            (first.clone(), Vec::new()),
+            (
+                vec![comment("ordinary"), Trivia::Newline],
+                vec![doc.clone()],
+            ),
+            (vec![doc, Trivia::Newline], vec![comment("ordinary")]),
+        ] {
+            let mut expected = before.clone();
+            append_source_trivia(&mut expected, after.clone());
+            let mut actual = before;
+            append_relocated_trivia(&mut actual, after);
+            assert_eq!(actual, expected);
+        }
+
+        let mut fragments = vec![comment("first"), Trivia::Newline];
+        append_source_trivia(&mut fragments, vec![Trivia::Newline, comment("second")]);
+        assert_eq!(
+            fragments,
+            vec![comment("first"), Trivia::Newline, comment("second")]
+        );
+    }
+
     #[test]
     fn source_comment_owners_roundtrip_and_erase_at_lowering() {
         use super::{Expr, Item, Module};

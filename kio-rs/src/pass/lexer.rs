@@ -55,6 +55,12 @@ pub struct Token {
 /// `Module<Enriched>`, whose `LeadingTrivia` collapses to `()` — but
 /// the derive needs to satisfy a generic bound, so the per-phase
 /// instantiation is uniform.
+///
+/// Keep comment kind, source order and block boundaries until the consuming
+/// context can interpret them. An empty `//` is a paragraph within an ordinary
+/// comment block; a physical blank line separates blocks. Flattening those into
+/// joined text loses information needed by formatting, documentation, hover and
+/// terminal rendering, whose presentation separators can differ.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Trivia {
     /// `// …` line comment. `text` is the comment's content with the

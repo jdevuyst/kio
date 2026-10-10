@@ -1586,6 +1586,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
                 name: h.name.clone(),
                 params,
                 param_groups: h.param_groups.clone(),
+                source_trivia: Default::default(),
                 ret: self.walk_type(&h.ret)?,
                 meta: convert_meta(&h.meta),
                 doc: h.doc.clone(),

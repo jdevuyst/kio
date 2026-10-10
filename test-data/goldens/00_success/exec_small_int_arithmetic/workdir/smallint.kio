@@ -6,7 +6,7 @@ host type I8 role(i8);
 
 host type U16 role(u16);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
 host fn i8_to_string(p0: I8) -> String;
 

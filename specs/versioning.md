@@ -261,7 +261,7 @@ v(1) {
     add {
       module app {
         host type Str role(str);
-        host fn print(p0: Str) -> .;
+        host fn print(p0: Str);
       }
     }
   }
@@ -271,7 +271,7 @@ v(2) {
   nonbreaking {
     add {
       module app {
-        pub fn greet(p0: Str) -> .;
+        pub fn greet(p0: Str);
       }
     }
   }
@@ -331,7 +331,7 @@ the author recorded when sealing it with `kio sig commit -m "..."`:
 /// Add the `greet` export; drop the unused `debug` host hook.
 v(2) {
   nonbreaking {
-    add { module app { pub fn greet(p0: Str) -> . ; } }
+    add { module app { pub fn greet(p0: Str); } }
   }
 }
 ```
@@ -361,7 +361,7 @@ section:
 add {
   module util/io {
     host type Str role(str);
-    host fn write(p0: Str) -> .;
+    host fn write(p0: Str);
   }
 }
 ```
@@ -452,6 +452,9 @@ Declarations inside a module section are post-elaboration **Kio'**:
   compile-time evaluation. No other signature-file declaration admits
   `pure`: host functions are runtime requirements, and `type` / `newtype`
   declarations have no purity.
+
+  An omitted result annotation on either a body-less export `fn` or a
+  `host fn` means `.`. Explicit `-> .` records the same contract.
 
   An ordinary export need not have a value group; a `host fn` import still
   does. The recorded `fn nil[A] -> List(A)` and

@@ -2,4 +2,4 @@ module demo/main;
 
 host type Text role(str);
 
-host fn emit(value: Text) -> .;
+host fn emit(value: Text);

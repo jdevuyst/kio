@@ -3829,9 +3829,9 @@ mod tests {
                 "pub varop [* *] { foldr choose empty }",
             ),
             ("arithmetic.{field}", "pub type {field} = {original};"),
-            ("arithmetic.field", "pub fn field() -> ."),
-            ("arithmetic.op", "pub fn op() -> ."),
-            ("arithmetic.varop", "pub fn varop() -> ."),
+            ("arithmetic.field", "pub fn field()"),
+            ("arithmetic.op", "pub fn op()"),
+            ("arithmetic.varop", "pub fn varop()"),
         ] {
             assert_eq!(
                 cmd_signature(&s, query, Palette::plain()),
@@ -5043,12 +5043,9 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         assert!(!terse.contains("rec fn"), "got:\n{terse}");
 
         let verbose = cmd_ls(&s, Some("pkg/a"), true, Palette::plain());
+        assert!(verbose.contains("fn first(value: .)"), "got:\n{verbose}");
         assert!(
-            verbose.contains("fn first(value: .) -> ."),
-            "got:\n{verbose}"
-        );
-        assert!(
-            verbose.contains("pub fn second(value: .) -> ."),
+            verbose.contains("pub fn second(value: .)"),
             "got:\n{verbose}"
         );
         assert!(!verbose.contains("rec(loop)"), "got:\n{verbose}");
@@ -5929,12 +5926,12 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         let names = NameSet::from_session(&session);
         let scope = AstScopeProvider::new(&names);
         for (view, expected) in [
-            ("signature", "pub pure fn item(value: .) -> ."),
+            ("signature", "pub pure fn item(value: .)"),
             (
                 "source",
-                "/// Root item.\npub pure fn item(value: .) -> . { value }",
+                "/// Root item.\npub pure fn item(value: .) { value }",
             ),
-            ("doc", "Root item.\n\npub pure fn item(value: .) -> ."),
+            ("doc", "Root item.\n\npub pure fn item(value: .)"),
             ("which", "list.item"),
             ("type", "list.item : . -> ."),
             ("pure", "pure"),

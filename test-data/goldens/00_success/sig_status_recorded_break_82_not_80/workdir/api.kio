@@ -1,5 +1,5 @@
 module api;
 
-pub fn alpha() -> . { () }
+pub fn alpha() { () }
 
-pub fn beta() -> . { () }
+pub fn beta() { () }

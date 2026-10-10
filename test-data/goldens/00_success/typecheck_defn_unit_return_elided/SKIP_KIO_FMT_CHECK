@@ -1,0 +1,3 @@
+This acceptance fixture deliberately compares omitted and explicit Unit return
+annotations. Formatting canonically omits the explicit annotation and would
+remove that control; formatter round-trip tests cover the canonical form.

@@ -1799,6 +1799,7 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
 
     fn visit_expr_elaborator(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::Elaborator {
+            source_trivia: _,
             occurrence: _,
             kind,
             call,
@@ -1825,6 +1826,7 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
             },
         };
         Ok(Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind,
             call,
@@ -2453,6 +2455,7 @@ impl LabelElabVisitor<'_> {
         Ok(Expr::Elaborator {
             occurrence: Default::default(),
             kind: ElaboratorKind::Filtered,
+            source_trivia: Default::default(),
             call: ElaboratorCall::FieldUpdate {
                 // Zero-width: this receiver is minted here, not written by the
                 // user. Giving it the record literal's own span made it claim

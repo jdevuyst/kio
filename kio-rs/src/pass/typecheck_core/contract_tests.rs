@@ -244,6 +244,7 @@ fn bodyless_recursive_member_headers_reuse_the_existing_validator() {
     let projected = project(&lowered[0].1);
     let mut headers = RecGroup::<Contract> {
         loop_path: group.loop_path.clone(),
+        source_trivia: None,
         members: projected
             .items
             .into_iter()

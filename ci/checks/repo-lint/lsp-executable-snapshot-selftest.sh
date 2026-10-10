@@ -20,6 +20,8 @@ cp "$REPO_ROOT/ci/checks/orchestrators/lsp-tests.sh" \
   "$fake_repo/ci/checks/orchestrators/"
 cp "$REPO_ROOT/ci/checks/hygiene/kio-rs.sh" "$fake_repo/ci/checks/hygiene/"
 mkdir -p "$fake_repo/kio-rs/src/backends/js"
+cp "$REPO_ROOT/README.md" "$fake_repo/README.md"
+cp "$REPO_ROOT/ci/infra/check-readme-examples.sh" "$fake_repo/ci/infra/"
 cp "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.js" \
   "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.test.mjs" \
   "$fake_repo/kio-rs/src/backends/js/"

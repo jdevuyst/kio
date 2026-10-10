@@ -41,28 +41,33 @@ if [ -f SKIP_KIO_FMT_CHECK ] || [ ! -d workdir ]; then
 fi
 
 if [ "${KIO_TEST_UPDATE:-0}" = 1 ]; then
-  "$KIO_BIN" fmt workdir >/dev/null 2>&1 || :
-  exit 0
+  output=$("$KIO_BIN" fmt workdir 2>&1)
+  status=$?
+  invocation='kio fmt'
+else
+  output=$("$KIO_BIN" fmt --check workdir 2>&1)
+  status=$?
+  invocation='kio fmt --check'
 fi
 
-dirty=$("$KIO_BIN" fmt --check workdir 2>/dev/null)
-status=$?
-
 case "$status" in
-  0)
+  0|11)
     exit 0
     ;;
   60)
-    if [ -n "$dirty" ]; then
+    if [ -n "$output" ]; then
       # shellcheck disable=SC2016 # backticks are literal in the user message
-      printf 'fmt-canonical: non-canonical source files (run `kio fmt workdir` to fix):\n%s\n' "$dirty" >&2
+      printf 'fmt-canonical: non-canonical source files (run `kio fmt workdir` to fix):\n%s\n' "$output" >&2
     else
-      printf 'fmt-canonical: kio fmt --check exited 60 with no dirty paths reported\n' >&2
+      printf 'fmt-canonical: %s exited 60 with no dirty paths reported\n' "$invocation" >&2
     fi
     exit 1
     ;;
   *)
-    # Parse error or other — out of scope for canonical check.
-    exit 0
+    printf 'fmt-canonical: %s workdir exited %s\n' "$invocation" "$status" >&2
+    if [ -n "$output" ]; then
+      printf '%s\n' "$output" >&2
+    fi
+    exit 1
     ;;
 esac

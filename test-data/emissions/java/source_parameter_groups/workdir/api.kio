@@ -14,7 +14,7 @@ host fn import_grouped(pair: Pair) -> B;
 
 host fn import_callback(step: Pair -> B, pair: Pair) -> B;
 
-host fn note(text: B) -> .;
+host fn note(text: B);
 
 pub fn first(left: A, right: B) -> B { import_split(left, right) }
 
@@ -33,7 +33,7 @@ pub fn callback(step: Pair -> B, pair: Pair) -> B { import_callback(step, pair) 
 
 pub fn echo_callback(step: Pair -> B) -> Pair -> B { step }
 
-pub fn direct_unit(value: .) -> . { value }
+pub fn direct_unit(value: .) { value }
 
 pub fn generic[T](value: T) -> T { value }
 

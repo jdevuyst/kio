@@ -36,7 +36,7 @@ cd "$scratch/pkg" || exit
 
 KIO_DEBUG_ENRICHED_CACHE=1 "$KIO_BIN" build "$KIO_TARGET" 2>cold.err
 
-perl -0pi -e 's/pub fn fb\(\) -> \. \{ \(\) \}/pub fn fb() -> . { let _ = (); () }/' b.kio
+perl -0pi -e 's/pub fn fb\(\) \{ \(\) \}/pub fn fb() { let _ = (); () }/' b.kio
 KIO_DEBUG_ENRICHED_CACHE=1 "$KIO_BIN" build "$KIO_TARGET" 2>edit.err
 
 printf 'cold cache log:\n'

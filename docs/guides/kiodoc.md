@@ -137,7 +137,7 @@ snippets with `{@NAME}`:
 <!--kio {harness=demo placeholder="__SNIPPET__"}
 module demo/main;
 
-fn id(x: .) -> . { x }
+fn id(x: .) { x }
 
 __SNIPPET__
 -->
@@ -160,7 +160,7 @@ inside the surrounding module:
 /// let value = id(());
 /// value
 /// ```
-fn id(x: .) -> . { x }
+fn id(x: .) { x }
 ````
 
 Editor completion inside this fence uses the surrounding module, just like

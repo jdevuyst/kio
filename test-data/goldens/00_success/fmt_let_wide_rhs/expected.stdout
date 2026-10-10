@@ -1,14 +1,14 @@
 module main;
 
-fn flat_short() -> . { let x = (); x }
+fn flat_short() { let x = (); x }
 
-fn wide_plain() -> . {
+fn wide_plain() {
   let result =
     call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta);
   result
 }
 
-fn wide_in_chain() -> . {
+fn wide_in_chain() {
   let a = ();
   let big_result =
     call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta);
@@ -17,15 +17,15 @@ fn wide_in_chain() -> . {
 }
 module main;
 
-fn flat_short() -> . { let x = (); x }
+fn flat_short() { let x = (); x }
 
-fn wide_plain() -> . {
+fn wide_plain() {
   let result =
     call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta);
   result
 }
 
-fn wide_in_chain() -> . {
+fn wide_in_chain() {
   let a = ();
   let big_result =
     call_with_long_name_to_push_over_a_hundred_columns(arg_alpha, arg_beta, arg_gamma, arg_delta);

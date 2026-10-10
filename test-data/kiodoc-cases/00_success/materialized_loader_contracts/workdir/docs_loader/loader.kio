@@ -11371,7 +11371,6 @@ fn parse_source_signature(
 , subject: String
 , recursive_scope: . | Recursive_type_scope
 , require_value_group: Bool
-, implicit_unit: Bool
 ) -> Canonical_signature_result {
   let context =
     mk_type_context(modules, types, module, host_header_decl_pos(header), recursive_scope);
@@ -11381,6 +11380,17 @@ fn parse_source_signature(
   , .(state: Host_signature_state) {
       match! Host_signature_state.get(state) {
         .(remaining: Toks, env: Type_env, reversed_stages: Canonical_stages) {
+          let needs_value_group =
+            if! require_value_group {
+              match! un_canonical_stages(reversed_stages) {
+                (
+                , .(_stage: Canonical_stage, _rest: Canonical_stages) { .f(Bool) }
+                , .(_empty: .) { .t(Bool) }
+                )
+              }
+            } else {
+              .f(Bool)
+            };
           match! parse_host_binders(remaining) {
             (
             , .(done: Host_binders_done) {
@@ -11426,24 +11436,14 @@ fn parse_source_signature(
                                         }
                                       , .(_no_arrow: .) {
                                           if! toks_empty(after_group) {
-                                            if! implicit_unit {
-                                              widen_sum!(
-                                              , finish_signature(
-                                                , stages
-                                                , canonical_binders_nil()
-                                                , canonical_unit()
-                                                )
-                                              , Host_signature_state | Canonical_signature_result
+                                            widen_sum!(
+                                            , finish_signature(
+                                              , stages
+                                              , canonical_binders_nil()
+                                              , canonical_unit()
                                               )
-                                            } else {
-                                              widen_sum!(
-                                              , signature_diag(
-                                                , subject
-                                                , "expected `->` and a return type after the final value group"(String)
-                                                )
-                                              , Host_signature_state | Canonical_signature_result
-                                              )
-                                            }
+                                            , Host_signature_state | Canonical_signature_result
+                                            )
                                           } else if! sig_head_is(after_group, 91(I32)) {
                                             widen_sum!(
                                             , {host_signature_state = (
@@ -11482,7 +11482,7 @@ fn parse_source_signature(
                               }
                             )
                           }
-                        } else if! require_value_group {
+                        } else if! needs_value_group {
                           widen_sum!(
                           , signature_diag(subject, "expected a value-parameter group"(String))
                           , Host_signature_state | Canonical_signature_result
@@ -11507,26 +11507,16 @@ fn parse_source_signature(
                               )
                             }
                           , .(_no_arrow: .) {
-                              if! implicit_unit {
-                                if! toks_empty(at_group) {
-                                  widen_sum!(
-                                  , finish_type_only_result(
-                                    , subject
-                                    , reversed_stages
-                                    , binders
-                                    , canonical_unit()
-                                    )
-                                  , Host_signature_state | Canonical_signature_result
+                              if! toks_empty(at_group) {
+                                widen_sum!(
+                                , finish_type_only_result(
+                                  , subject
+                                  , reversed_stages
+                                  , binders
+                                  , canonical_unit()
                                   )
-                                } else {
-                                  widen_sum!(
-                                  , signature_diag(
-                                    , subject
-                                    , "expected a value group or `->` after type parameters"(String)
-                                    )
-                                  , Host_signature_state | Canonical_signature_result
-                                  )
-                                }
+                                , Host_signature_state | Canonical_signature_result
+                                )
                               } else {
                                 widen_sum!(
                                 , signature_diag(
@@ -11568,7 +11558,6 @@ fn derive_hostfn_header(modules: Modules, types: Host_types, module: Module, hea
   , host_signature_subject(mk_host_id(module_name(module), host_header_name(header)))
   , no_recursive_type_scope()
   , .t(Bool)
-  , .f(Bool)
   ) {
     (
     , .(signature: Canonical_signature) {
@@ -14187,7 +14176,6 @@ fn canonical_export_signature(
   , subject
   , no_recursive_type_scope()
   , .f(Bool)
-  , .t(Bool)
   ) {
     (
     , .(signature: Canonical_signature) {

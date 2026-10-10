@@ -370,7 +370,7 @@ module.exports = grammar({
     host_fn_head: ($) => seq($._host_fn_body, $.separator_semicolon),
     _host_fn_body: ($) => seq(
       $.keyword_fn, alias($._identifier_like, $.entity_name_function),
-      $.fn_signature, $._fn_return_type,
+      $.fn_signature, optional($._fn_return_type),
     ),
 
     keyword_package: ($) => kw("package"),

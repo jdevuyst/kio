@@ -1,14 +1,14 @@
 module demo/ops;
 
-pub fn choose(left: ., right: .) -> . { left }
+pub fn choose(left: ., right: .) { left }
 
-pub fn empty() -> . { () }
+pub fn empty() { () }
 
-pub fn op() -> . { () }
+pub fn op() { () }
 
-pub fn varop() -> . { () }
+pub fn varop() { () }
 
-pub fn field() -> . { () }
+pub fn field() { () }
 
 pub labels { original: . };
 
@@ -25,8 +25,8 @@ pub op _ (=) _ { impl choose }
 /// Fold a bracketed sequence.
 pub varop [* *] { foldr choose empty }
 
-pub fn local() -> . { () + () }
+pub fn local() { () + () }
 
-pub fn fn() -> . { () }
+pub fn fn() { () }
 
-pub fn pub() -> . { () }
+pub fn pub() { () }

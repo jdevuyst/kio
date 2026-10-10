@@ -36,7 +36,7 @@ host type String role(str);
 host type Bool role(bool);
 host fn int_to_string(p0: Int) -> String;
 host fn string_concat(p0: String, p1: String) -> String;
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 
 __INSERT_CODE_HERE__
 -->

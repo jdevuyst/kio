@@ -6,8 +6,8 @@ host type Input;
 
 host fn condition(x: Input) -> Bool;
 
-host fn foo() -> .;
+host fn foo();
 
-host fn bar() -> .;
+host fn bar();
 
-host fn baz() -> .;
+host fn baz();

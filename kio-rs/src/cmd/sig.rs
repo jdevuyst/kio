@@ -3155,10 +3155,10 @@ v(2) {
         let sealed = fs::read_to_string(&history_path).expect("read sealed history");
         assert!(sealed.starts_with("signature app v(2);"), "{sealed}");
         for expected in [
-            "pub pure fn direct[A] -> .",
-            "pub fn delayed[A]() -> .",
-            "pub fn adjacent[A][B] -> .",
-            "pub fn mixed[A](value: .)[B] -> .",
+            "pub pure fn direct[A]",
+            "pub fn delayed[A]()",
+            "pub fn adjacent[A][B]",
+            "pub fn mixed[A](value: .)[B]",
         ] {
             assert!(sealed.contains(expected), "missing {expected:?}:\n{sealed}");
         }
@@ -3176,7 +3176,7 @@ v(2) {
         assert!(updated.starts_with("signature app v(3);"), "{updated}");
         let sealed_version = sealed.split_once('\n').unwrap().1.trim();
         assert!(updated.contains(sealed_version), "{updated}");
-        assert!(updated.contains("pub fn delayed[A] -> ."), "{updated}");
+        assert!(updated.contains("pub fn delayed[A]\n"), "{updated}");
         assert_eq!(parse(&updated).versions.len(), 2);
         assert_eq!(run(SigCommand::Log, ExitCode::Success).stdout, updated);
     }

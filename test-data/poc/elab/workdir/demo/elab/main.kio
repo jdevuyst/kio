@@ -85,7 +85,7 @@ fn derive_string_rule() -> String { "derive explicit: ok\n" }
 
 fn derive_expected_rule() -> String { "derive expected: ok\n" }
 
-fn derive_unit_rule() -> . { () }
+fn derive_unit_rule() { () }
 
 fn derive_unit_parameter_rule(_unit: .) -> String { "derive unit parameter: ok\n" }
 

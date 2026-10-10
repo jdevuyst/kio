@@ -29,6 +29,40 @@ Use that argument to choose the affected surface area:
 
 For syntax touching row forms, labels, field access/update, imports, dispatch, or inference, state the open-world argument explicitly before implementing the rule.
 
+## Canonical formatting, not spelling preservation
+
+The formatter chooses the canonical form in `specs/style.md`; it is not a
+source-spelling round-tripper. Do not retain redundant syntax merely because
+the author wrote it or because a parser flag remembers it. Distinguish accepted
+input from canonical output: alternative spellings covered by a normalization
+rule must converge to its chosen spelling. A missing or conflicting substantive
+canonicalization rule needs a contract decision, not a preservation test that
+silently settles the policy; this does not make unspecified layout details
+approval-gated.
+
+Canonicalization preserves meaning, comment text and ownership. Keep syntax
+that carries parsing, binding, typing, evaluation, or documentation meaning,
+and respect explicitly specified spelling and layout distinctions, including
+the style contract's blank-line and comment-paragraph preservation. Do not infer that all
+semantically equivalent programs must print identically or erase annotations
+whose redundancy would require typechecking to establish. When shortening a
+construct, account for trivia on the removed tokens and children; a shorter
+result is not correct if it drops a comment.
+
+Comment-conservation tests must exercise original input before canonicalization
+and legal boundaries inside constructs, including tokens removed by shortening.
+Injecting only into already formatted lines misses those ownership paths.
+
+Test each normalization with deliberately different accepted inputs and the
+same exact expected output, plus load-bearing and comment-bearing controls.
+Also check reparsing and idempotence. Neither idempotence nor formatting the
+existing corpus proves that the canonical choice is right. For rewrites that
+erase or regroup syntax, verify the affected meaning before and after through
+appropriate parser, type/signature, or execution assertions. Audit tests that
+preserve source spelling against the contract, rather than treating existing
+expectations as authority. Reuse these checks at the affected CLI, LSP and
+Kiodoc boundaries; keep published-example coverage explicit.
+
 ## Actionable diagnostics and native fixes
 
 When adding or changing a diagnostic that proposes a source correction, assess

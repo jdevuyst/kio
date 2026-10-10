@@ -1,0 +1,33 @@
+package // package name
+pkg // package terminator
+;
+
+build // build opener
+{
+  cache // cache value
+  (// cache interior
+  );
+
+  docs // docs opener
+  {
+    md // md value
+    "do" // string chunk
+    "cs";
+    support // support value
+    "support";
+    md_out // md_out value
+    "out/md/";
+    html // html value
+    "out/html/"
+  };
+
+  target rust {
+    out // target value
+    "out/rust/"
+  }
+}
+
+bridge // bridge opener
+{
+  main
+}

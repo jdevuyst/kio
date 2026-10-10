@@ -1,0 +1,3 @@
+This parser-acceptance fixture deliberately contains an explicit Unit result
+type as well as a Unit value. Canonical formatting removes the result type;
+formatter round-trip tests cover that canonicalization separately.

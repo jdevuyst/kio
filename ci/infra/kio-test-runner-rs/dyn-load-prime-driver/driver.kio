@@ -94,13 +94,13 @@ host fn protocol_entry_module() -> String;
 
 // Abort the outer host runner with a nonzero runtime status. Driver/loader
 // failures are infrastructure failures, not successful guest output.
-host fn runner_failure(message: String) -> .;
+host fn runner_failure(message: String);
 
 // Observable I/O bodies required by the already-supported `testapi-io`
 // protocol but not needed by the driver package itself.
-host fn protocol_eprint(message: String) -> .;
+host fn protocol_eprint(message: String);
 
-host fn protocol_exit(status: I32) -> .;
+host fn protocol_exit(status: I32);
 
 // The selected shared protocol's exact host contract. The runner projects
 // `RunnerProtocol::contract()` into these indexed accessors; this driver
@@ -1116,7 +1116,7 @@ fn str_line[P](surf: Surface(P), r: P | Diag) -> String {
 }
 
 // export-namespace-roundtrip: `answer()` then `echo("namespace-utils")`.
-fn script_namespace[P](surf: Surface(P)) -> . {
+fn script_namespace[P](surf: Surface(P)) {
   print(i32_line(surf, call_export(surf, "testapi/main.answer"(String), surf.?{unit_in})));
   print(str_line(
   , surf
@@ -1126,7 +1126,7 @@ fn script_namespace[P](surf: Surface(P)) -> . {
 
 // export-callback-roundtrip: `apply_twice((n) => n + 3, 10)` then
 // `make_step(4)` applied to `5`.
-fn script_callback[P](surf: Surface(P)) -> . {
+fn script_callback[P](surf: Surface(P)) {
   match! surf.?{hostfn_in}(cb_add3_descriptor()) {
     (
     , .(cb: P) {
@@ -1153,7 +1153,7 @@ fn script_callback[P](surf: Surface(P)) -> . {
 }
 
 // export-module-roundtrip: `api.tag()`, `api.value()`, `api.echo(...)`.
-fn script_module[P](surf: Surface(P)) -> . {
+fn script_module[P](surf: Surface(P)) {
   print(str_line(surf, call_export(surf, "testapi/api.tag"(String), surf.?{unit_in})));
   print(i32_line(surf, call_export(surf, "testapi/api.value"(String), surf.?{unit_in})));
   print(str_line(
@@ -1165,7 +1165,7 @@ fn script_module[P](surf: Surface(P)) -> . {
 // export-multi-label-roundtrip: `say({A: 42, B: "shown\n"})`, round-trip
 // `{A: 88, B: "99"}` through `echo_pair`, then `A.mk(111)` through
 // `echo_a` and `A.get`.
-fn script_multilabel[P](surf: Surface(P)) -> . {
+fn script_multilabel[P](surf: Surface(P)) {
   let say_result =
     call_export(
     , surf
@@ -1227,7 +1227,7 @@ fn script_multilabel[P](surf: Surface(P)) -> . {
 
 // export-poly-roundtrip: `poly_echo` at a string and an i32, then
 // `keep_left("left", 99)`.
-fn script_poly[P](surf: Surface(P)) -> . {
+fn script_poly[P](surf: Surface(P)) {
   // Each universal binder is an erased Unit stage on the ordinary Surface.
   let poly_string =
     apply_result(
@@ -1256,7 +1256,7 @@ fn script_poly[P](surf: Surface(P)) -> . {
 
 // export-nested-product-roundtrip: `make("nest", 7, 9)` and the three
 // leaves of the returned nested product.
-fn script_nested_product[P](surf: Surface(P)) -> . {
+fn script_nested_product[P](surf: Surface(P)) {
   let nested_product_result =
     call_export(
     , surf
@@ -1309,7 +1309,7 @@ fn script_nested_product[P](surf: Surface(P)) -> . {
 
 // The compound-input script observes values only through Surface operations.
 // Host call events are emitted by the two exact capabilities above.
-fn compound_input_value[P](r: P | Diag, consume: P -> .) -> . {
+fn compound_input_value[P](r: P | Diag, consume: P -> .) {
   match! r {
     (
     , .(v: P) { consume(v) }
@@ -1318,13 +1318,13 @@ fn compound_input_value[P](r: P | Diag, consume: P -> .) -> . {
   }
 }
 
-fn compound_input_pair[P](surf: Surface(P), value: P, consume: (P & P) -> .) -> . {
+fn compound_input_pair[P](surf: Surface(P), value: P, consume: (P & P) -> .) {
   match! surf.?{pair_out}(value) {
     (consume, .(d: Diag) { runner_failure(diag_line("compound pair — "(String), d)) })
   }
 }
 
-fn compound_input_inner[P](surf: Surface(P), value: P) -> . {
+fn compound_input_inner[P](surf: Surface(P), value: P) {
   compound_input_pair(
   , surf
   , value
@@ -1335,7 +1335,7 @@ fn compound_input_inner[P](surf: Surface(P), value: P) -> . {
   )
 }
 
-fn compound_input_outer[P](surf: Surface(P), value: P) -> . {
+fn compound_input_outer[P](surf: Surface(P), value: P) {
   compound_input_pair(
   , surf
   , value
@@ -1346,7 +1346,7 @@ fn compound_input_outer[P](surf: Surface(P), value: P) -> . {
   )
 }
 
-fn compound_input_arm[P](surf: Surface(P), value: P, expected_left: Bool, consume: P -> .) -> . {
+fn compound_input_arm[P](surf: Surface(P), value: P, expected_left: Bool, consume: P -> .) {
   match! surf.?{sum_is_left}(value) {
     (
     , .(is_left: Bool) {
@@ -1368,7 +1368,7 @@ fn compound_input_arm[P](surf: Surface(P), value: P, expected_left: Bool, consum
   }
 }
 
-fn script_compound_input_once[P](surf: Surface(P)) -> . {
+fn script_compound_input_once[P](surf: Surface(P)) {
   let print_pair =
     .(value: P) {
       compound_input_pair(
@@ -1480,12 +1480,12 @@ fn script_compound_input_once[P](surf: Surface(P)) -> . {
 
 // export-newtype-scalar-roundtrip: `bump(Wrap(7))` — the newtype erases,
 // so the payload rides as the i32.
-fn script_newtype_scalar[P](surf: Surface(P)) -> . {
+fn script_newtype_scalar[P](surf: Surface(P)) {
   print(i32_line(surf, call_export(surf, "testapi/main.bump"(String), surf.?{i32_in}(7(I32)))))
 }
 
 // export-newtype-sum-roundtrip: `first_or(0, pack(7, "hi"))`.
-fn script_newtype_sum[P](surf: Surface(P)) -> . {
+fn script_newtype_sum[P](surf: Surface(P)) {
   let pack_result =
     call_export(
     , surf
@@ -1511,7 +1511,7 @@ fn script_newtype_sum[P](surf: Surface(P)) -> . {
 
 // export-curried-facade: `pick("ku")("rz")` then `last(1)(2, 3)` — one
 // application per value group.
-fn script_curried[P](surf: Surface(P)) -> . {
+fn script_curried[P](surf: Surface(P)) {
   let pick_result = call_export(surf, "testapi/main.pick"(String), surf.?{str_in}("ku"(String)));
   match! pick_result {
     (
@@ -1536,7 +1536,7 @@ fn script_curried[P](surf: Surface(P)) -> . {
 // export-type-roundtrip: the exported newtype's members —
 // `Pair.mk_pair(("export-type-left", "export-type-right"))` then
 // `Pair.un_pair` back to the two components.
-fn script_type_roundtrip[P](surf: Surface(P)) -> . {
+fn script_type_roundtrip[P](surf: Surface(P)) {
   let pair_mk_result =
     call_export(
     , surf
@@ -1581,7 +1581,7 @@ fn script_type_roundtrip[P](surf: Surface(P)) -> . {
   }
 }
 
-fn unsupported_protocol_script() -> . {
+fn unsupported_protocol_script() {
   runner_failure("dyn-load-prime driver: unsupported protocol script\n"(String))
 }
 
@@ -1715,7 +1715,7 @@ fn script_opaque_compound[P](surf: Surface(P)) {
 
 // Keep these script adapters aligned with the canonical support inventory
 // in src/shared/protocol.rs, which the coverage lint consumes.
-fn dispatch_script[P](surf: Surface(P), proto: String) -> . {
+fn dispatch_script[P](surf: Surface(P), proto: String) {
   if! string_eq(proto, "export-namespace-roundtrip"(String)) {
     script_namespace(surf)
   } else if! string_eq(proto, "export-callback-roundtrip"(String)) {
@@ -1764,7 +1764,7 @@ fn instantiate_protocol(im: Image) -> Loaded | Diag {
 }
 
 // Instantiate the package against the selected exact protocol and call no export.
-fn construct_protocol(im: Image) -> . {
+fn construct_protocol(im: Image) {
   match! un_inst(instantiate_protocol(im)) {
     (
     , .(_handle: Loaded) { () }
@@ -1774,7 +1774,7 @@ fn construct_protocol(im: Image) -> . {
 }
 
 // Invoke `main` through the selected protocol's exact surface.
-fn run_protocol_main(im: Image) -> . {
+fn run_protocol_main(im: Image) {
   match! un_inst(instantiate_protocol(im)) {
     (
     , .(handle: Loaded) {
@@ -1800,7 +1800,7 @@ fn run_protocol_main(im: Image) -> . {
 
 // Instantiate the image against the protocol adapter inventory and matching
 // runtime capabilities, then run the selected script over the opened surface.
-fn run_protocol_script(im: Image, proto: String) -> . {
+fn run_protocol_script(im: Image, proto: String) {
   match! un_inst(instantiate_protocol(im)) {
     (
     , .(handle: Loaded) {
@@ -1813,7 +1813,7 @@ fn run_protocol_script(im: Image, proto: String) -> . {
 
 /// Loads the guest image the runner supplies, then follows the exact shared
 /// protocol's load, construct, main, or export-script execution mode.
-pub fn main() -> . {
+pub fn main() {
   let src = read_guest_image();
   match! un_load_outcome(load_package(src)) {
     (

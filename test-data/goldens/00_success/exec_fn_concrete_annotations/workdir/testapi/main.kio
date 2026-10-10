@@ -11,7 +11,7 @@ import testapi/io(print);
 // and the surface-to-Kio' drop of those annotations.
 fn apply(f: String -> String, x: String) -> String { f(x) }
 
-pub fn main() -> . {
+pub fn main() {
   // Concrete `: T` and `-> R` annotations. Both must be erased
   // before the AST reaches Kio', because the Kio' grammar's Fn
   // production has no value-param annotations and no return-type

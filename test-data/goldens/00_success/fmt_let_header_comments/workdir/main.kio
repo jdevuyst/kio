@@ -1,0 +1,7 @@
+module main;
+fn first() { let // binder
+value // equals
+= (); value }
+fn discard() { let // wildcard
+_ // discard equals
+= (); () }

@@ -6,9 +6,9 @@ fn make() -> Ready { {ready=} }
 
 fn echo(ready: .) -> Ready { {ready} }
 
-fn empty() -> . { () }
+fn empty() { () }
 
-fn read(r: Ready) -> . { r.?{ready}; () }
+fn read(r: Ready) { r.?{ready}; () }
 
 fn write(r: Ready) -> Ready { r.!{ready=} }
 

@@ -5,4 +5,4 @@ import lib/detail(pick);
 import testapi(String);
 import testapi/io(print);
 
-pub fn main() -> . { print(pick("file-header round-trips\n"(String))) }
+pub fn main() { print(pick("file-header round-trips\n"(String))) }

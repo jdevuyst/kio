@@ -8,4 +8,4 @@ pure fn implementation(ct: __Comptime__, _later_value: __Checked_term__) -> __Ch
 
 elab demo : . -> . { captures later; impl implementation }
 
-host fn later() -> .;
+host fn later();

@@ -14,9 +14,9 @@ host fn extract[A](value: Box(A)) -> A;
 
 host fn inspect(value: Count) -> Count;
 
-host fn created() -> .;
+host fn created();
 
-host fn tick() -> .;
+host fn tick();
 
 pub newtype Secret : Number & Count { constructor hide; projector reveal }
 

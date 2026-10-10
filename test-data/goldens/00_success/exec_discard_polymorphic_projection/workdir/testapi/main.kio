@@ -1,8 +1,8 @@
 module testapi/main;
 
-host fn observe(_unit: .) -> .;
+host fn observe(_unit: .);
 
-host fn consume(_unit: .) -> .;
+host fn consume(_unit: .);
 
 newtype Receiver : [A][B] A -> A { constructor mk; projector get }
 

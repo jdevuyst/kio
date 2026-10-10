@@ -137,8 +137,8 @@ fn print_source_derivation_results() {
     ".;\n"(String)
   ));
   print(source_result_line(
-  , "missing host return arrow: "(String)
-  , "module malformed;\nhost fn missing();\n"(String)
+  , "omitted host result: "(String)
+  , "module unit_default;\nhost fn effect();\n"(String)
   ));
   print(source_result_line(
   , "unterminated declaration type binders: "(String)

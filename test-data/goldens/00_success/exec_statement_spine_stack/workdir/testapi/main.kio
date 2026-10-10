@@ -3,7 +3,7 @@ module testapi/main;
 import testapi(String);
 import testapi/io(print);
 
-fn segment(next: . -> .) -> . {
+fn segment(next: . -> .) {
   print(".");
   print(".");
   print(".");

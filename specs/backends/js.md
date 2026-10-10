@@ -635,7 +635,7 @@ bridge {
 module hello;
 
 host type String role(str);
-host fn print(s: String) -> .;
+host fn print(s: String);
 ```
 
 ```kio

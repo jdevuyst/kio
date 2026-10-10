@@ -127,8 +127,8 @@ statement whose value is discarded (the typer requires `e : .`; use
 `let _ = e;` to discard a non-unit value deliberately). Same shape as the
 surface after surface-only local annotations have been erased — see
 [language.md § Blocks and local bindings](language.md#blocks-and-local-bindings).
-A top-level `fn`'s `-> Type` return-type annotation may be elided, in which case
-the return type defaults to `.` (see
+A top-level `fn` or `host fn` may omit its `-> Type` return-type annotation,
+in which case the return type defaults to `.` (see
 [language.md § Function definitions](language.md#function-definitions)).
 
 A Kio' dot-lambda's written value-parameter and return-type annotations are
@@ -139,8 +139,8 @@ value-parameter annotation because its expected function type supplies that
 slot. In synthesis mode, value parameters must otherwise be concrete, except
 that the same application node may use its value arguments to supply whole
 missing slots when the literal is its direct callee. An absent anonymous-lambda
-return annotation reads its type from the body; only an absent top-level `fn`
-return defaults to `.`. Every other type position — top-level binding
+return annotation reads its type from the body; an absent top-level `fn` or
+`host fn` return defaults to `.`. Every other type position — top-level binding
 signatures, `newtype` bodies, `match!` clause parameters — is grammatically
 mandatory and takes no `_`.
 

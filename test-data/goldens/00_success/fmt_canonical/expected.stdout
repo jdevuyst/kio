@@ -26,31 +26,25 @@ type Func = (A & B) -> C;
 
 type Func_zero = . -> A;
 
-fn unit_value() -> . { () }
+fn unit_value() { () }
 
 pub fn id[A](x: A) -> A { x }
 
 fn intermixed[A](x: A)[B](y: B) -> A { x }
 
-fn use_call(s: String) -> . { print(s) }
+fn use_call(s: String) { print(s) }
 
-fn use_let_simple() -> . { let x = (); x }
+fn use_let_simple() { let x = (); x }
 
-fn use_fn_simple() -> . {
+fn use_fn_simple() {
   .(x) { print(x) }("hi"(String))
 }
 
-fn dotted_callee() -> . { Box.mk_box(String, "hi"(String)) }
+fn dotted_callee() { Box.mk_box(String, "hi"(String)) }
 
-fn mixed_args() -> . { id(String, "hi"(String)) }
+fn mixed_args() { id(String, "hi"(String)) }
 
-fn literals() -> . {
-  let s = "hi"(String);
-  let n = 42(I32);
-  let f = 3.14(F64);
-  let b = .t(Bool);
-  ()
-}
+fn literals() { let s = "hi"(String); let n = 42(I32); let f = 3.14(F64); let b = .t(Bool); () }
 module fmt_canonical/main;
 
 import __intrinsics__;
@@ -79,28 +73,22 @@ type Func = (A & B) -> C;
 
 type Func_zero = . -> A;
 
-fn unit_value() -> . { () }
+fn unit_value() { () }
 
 pub fn id[A](x: A) -> A { x }
 
 fn intermixed[A](x: A)[B](y: B) -> A { x }
 
-fn use_call(s: String) -> . { print(s) }
+fn use_call(s: String) { print(s) }
 
-fn use_let_simple() -> . { let x = (); x }
+fn use_let_simple() { let x = (); x }
 
-fn use_fn_simple() -> . {
+fn use_fn_simple() {
   .(x) { print(x) }("hi"(String))
 }
 
-fn dotted_callee() -> . { Box.mk_box(String, "hi"(String)) }
+fn dotted_callee() { Box.mk_box(String, "hi"(String)) }
 
-fn mixed_args() -> . { id(String, "hi"(String)) }
+fn mixed_args() { id(String, "hi"(String)) }
 
-fn literals() -> . {
-  let s = "hi"(String);
-  let n = 42(I32);
-  let f = 3.14(F64);
-  let b = .t(Bool);
-  ()
-}
+fn literals() { let s = "hi"(String); let n = 42(I32); let f = 3.14(F64); let b = .t(Bool); () }

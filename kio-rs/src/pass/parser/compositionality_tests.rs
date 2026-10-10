@@ -692,7 +692,7 @@ fn normalize_topology(value: &mut serde_json::Value) {
             for (key, child) in map {
                 match key.as_str() {
                     "ext" | "access_ext" | "match_id" | "temp_name" | "id" | "prefix_explicit"
-                    | "elided" | "semicolon" => {
+                    | "elided" | "ret_elided" | "semicolon" => {
                         *child = serde_json::Value::Null;
                     }
                     "leading_trivia" | "trailing_trivia" | "leading" | "trailing"

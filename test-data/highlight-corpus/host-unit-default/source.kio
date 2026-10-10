@@ -1,0 +1,7 @@
+module source;
+
+host fn tick();
+host fn consume[A](value: A)[B];
+host fn callback() -> . -> .;
+
+pub fn run() { tick() }

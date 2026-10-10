@@ -755,7 +755,7 @@ module tutorial_intro/main;
 
 import tutorial_intro(add);
 
-pub fn main() -> . { let _ = add(1, 1); () }
+pub fn main() { let _ = add(1, 1); () }
 ```
 ````
 
@@ -938,7 +938,7 @@ module tutorial_example;
 host type I32 role(i32);
 host type String role(str);
 host fn add(a: I32, b: I32) -> I32;
-host fn print(s: String) -> .;
+host fn print(s: String);
 
 __INSERT_CODE_HERE__
 ```
@@ -1248,7 +1248,7 @@ bridge {
 module kiodoc;
 
 host type S role(str);
-host fn print(p0: S) -> .;
+host fn print(p0: S);
 
 __INSERT_CODE_HERE__
 ```
@@ -1258,13 +1258,13 @@ A document later can introduce one piece at a time:
 
 ````markdown
 ```kio {@running}
-fn greet(name: S) -> . { print(name) }
+fn greet(name: S) { print(name) }
 ```
 
 prose between members…
 
 ```kio {@running}
-pub fn main() -> . { greet("world\n") }
+pub fn main() { greet("world\n") }
 ```
 ````
 

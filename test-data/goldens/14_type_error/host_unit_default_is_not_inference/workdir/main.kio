@@ -1,0 +1,5 @@
+module main;
+
+host fn result();
+
+pub fn main() -> ! { result() }

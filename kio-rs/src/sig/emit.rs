@@ -276,7 +276,31 @@ impl SignatureRenderer {
         let mut items: Vec<SigItem<Surface>> = section
             .items
             .iter()
-            .map(super::project_signature_item)
+            .map(|item| {
+                let mut projected = super::project_signature_item(item);
+                if self.trivia {
+                    match (&mut projected, item) {
+                        (SigItem::Newtype(projected), SigItem::Newtype(source)) => {
+                            projected.doc = source.doc.clone();
+                        }
+                        (SigItem::TypeRecGroup(projected), SigItem::TypeRecGroup(source)) => {
+                            for (projected, source) in
+                                projected.members.iter_mut().zip(&source.members)
+                            {
+                                if let (
+                                    TypeRecMember::Newtype(projected),
+                                    TypeRecMember::Newtype(source),
+                                ) = (projected, source)
+                                {
+                                    projected.doc = source.doc.clone();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                projected
+            })
             .collect();
         let projected_imports = super::record::imports_needed_by(&items, section.imports.clone());
         let mut imports: Vec<&Import> = projected_imports.iter().collect();
@@ -385,9 +409,9 @@ impl SignatureRenderer {
             SigItem::TypeAlias(a) => {
                 crate::pretty::pretty_item_block_entry(&Item::TypeAlias(a.clone()))
             }
-            SigItem::Newtype(n) => crate::pretty::pretty_item_block_entry(&Item::Newtype(
-                super::project_newtype_declaration(n.clone()),
-            )),
+            SigItem::Newtype(n) => {
+                crate::pretty::pretty_item_block_entry(&Item::Newtype(n.clone()))
+            }
             SigItem::TypeRecGroup(group) => {
                 crate::pretty::pretty_item_block_entry(&Item::TypeRecGroup(group.clone()))
             }
@@ -454,6 +478,7 @@ fn omit_type_trivia(ty: &mut crate::ast::Type<Surface>) {
 
 fn omit_host_fn_trivia(function: &mut crate::ast::HostFn<Surface>) {
     function.doc = None;
+    function.source_trivia = None;
     omit_meta_trivia(&mut function.meta);
     for param in &mut function.params {
         if let crate::ast::HostFnParam::Value(param) = param {
@@ -594,12 +619,13 @@ mod tests {
         let rendered = emit_signature_file(&parsed);
         let reparsed = crate::pass::parser::parse_signature_file(&rendered, None).unwrap();
         assert_eq!(rendered, emit_signature_file(&reparsed));
+        assert!(!rendered.contains("-> ."), "{rendered}");
         for expected in [
-            "pub pure fn direct[A] -> .",
-            "pub fn delayed[A]() -> .",
-            "pub fn adjacent[A][B] -> .",
+            "pub pure fn direct[A]",
+            "pub fn delayed[A]()",
+            "pub fn adjacent[A][B]",
             "pub fn mixed[A](value: A)[B] -> A",
-            "host fn required[A]() -> .",
+            "host fn required[A]()",
         ] {
             assert!(
                 rendered.contains(expected),

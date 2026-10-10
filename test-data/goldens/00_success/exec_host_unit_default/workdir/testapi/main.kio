@@ -1,0 +1,8 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+fn invoke(action: String -> ., message: String) { action(message) }
+
+pub fn main() { invoke(print, "host Unit default\n"(String)) }

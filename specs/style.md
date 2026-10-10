@@ -71,6 +71,13 @@ Comments between a closing brace and a continuation label stay at that block bou
 
 Trailing whitespace at end of line is dropped.
 
+**Unit results on named declarations.** The formatter omits a direct `-> .`
+result annotation on an ordinary `fn`, `host fn`, or body-less signature-file
+export `fn`, unless the annotation carries comments. This preserves the
+declaration's Unit default. Named type aliases, function-valued results such
+as `-> A -> .`, function types, and anonymous-function annotations retain
+their written result types.
+
 ## Declaration modifiers
 
 When an ordinary module-body `fn` carries both `pub` and `pure`, `kio fmt` emits `pub pure` in that order, regardless of the source order. No other declaration admits `pure`. A scope restriction stays bound to `pub` with no inner spaces — `pub(a/b)` — and precedes `pure`: `kio fmt` emits `pub(a/b) pure fn f(...)`. Every singleton recursive modifier follows visibility: `pub rec newtype`, `pub rec labels`, and `pub rec(loop) fn`. A one-member braced `rec(loop)` function group formats to its singleton shorthand for private, scoped, and public members alike. A capability-free type group always keeps its bare `rec { ... }` braces; it contains at least two members and has no singleton shorthand or group-level visibility.
@@ -493,7 +500,12 @@ Comment text is preserved by the lexer's trivia model: each meaningful token car
 
 The precise indentation and line placement of a relocated comment is part of the canonical style's long tail; `kio`'s implementation is normative for the placement choices the spec under-specifies.
 
-When ordinary comments from a named function's header move to the beginning of its body, one blank line separates them from an existing body-leading comment paragraph. A comment immediately above an otherwise uncommented expression remains adjacent to that expression. Documentation attachment is unchanged.
+When relocation brings ordinary comments from distinct token gaps together,
+one blank line separates their blocks. Lines already in one comment block
+stay together, including empty `//` lines separating its paragraphs; existing
+physical blank lines remain block boundaries. A comment immediately above an
+otherwise uncommented expression remains adjacent to that expression.
+Documentation attachment is unchanged.
 
 ## Numeric and string literal canonicalization
 
@@ -541,7 +553,7 @@ Within an expression body, comments preserve through a `kio fmt` round-trip at t
 - **Trailing the last item / at end of file** — a comment after the last top-level item, before end of file, emits at column 0 below the body, separated by one blank line like a top-level item.
 
 ```kio
-fn f[A](v: A) -> . {
+fn f[A](v: A) {
   // above the let
   let x =
     // between = and value

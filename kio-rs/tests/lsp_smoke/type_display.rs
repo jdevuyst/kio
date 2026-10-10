@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn lsp_host_unit_default_retains_function_types() {
+    let dir = TempDir::new("host-unit-default");
+    dir.write_pkg_root_package();
+    let source = "module pkg/test;\n\
+host fn implicit();\n\
+host fn explicit() -> .;\n\
+host fn staged()[A];\n\
+pub fn run() {\n\
+  let first = implicit;\n\
+  let second = explicit;\n\
+  let third = staged;\n\
+  first(); second(); third((), .)\n\
+}\n";
+    let uri = path_to_file_uri(&dir.write("pkg/test.kio", source));
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    open_and_wait_for_analysis(&mut lsp, &uri, source);
+    for (use_site, expected) in [
+        ("implicit;", ". -> ."),
+        ("explicit;", ". -> ."),
+        ("staged;", ". -> [A] ."),
+    ] {
+        let (line, character) = source_position(source, source.find(use_site).unwrap());
+        let hover = wait_for_hover(&mut lsp, &uri, line, character);
+        assert_eq!(hover_type(&hover), expected, "{use_site}: {hover}");
+    }
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
 fn lsp_type_only_values_recover_and_preserve_binding_types() {
     let dir = TempDir::new("type-only-values");
     dir.write_pkg_root_package();

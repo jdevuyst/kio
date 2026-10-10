@@ -2,6 +2,6 @@ module main;
 
 host type Str role(str);
 
-host fn emit(p0: Str) -> .;
+host fn emit(p0: Str);
 
 fn unused() { () }

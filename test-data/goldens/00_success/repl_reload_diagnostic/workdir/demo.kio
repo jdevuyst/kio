@@ -1,5 +1,5 @@
 module demo;
 
-pub fn helper() -> . { () }
+pub fn helper() { () }
 
-pub fn run() -> . { helper() }
+pub fn run() { helper() }

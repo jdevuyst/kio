@@ -2,7 +2,7 @@ module api;
 
 host type Number role(i32);
 
-host fn invoked() -> .;
+host fn invoked();
 
 pub newtype Hidden : Number { constructor hide; projector reveal }
 

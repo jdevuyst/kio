@@ -146,6 +146,16 @@ ai/topics/implementation.md: "The kio-prime binary is wired into the CI golden r
 
 Formatter canonicality is covered by the per-construct `fmt_*` golden family (each construct has its own small golden, so per-PR drift in a construct's canonical form is visible directly) plus `ci/checks/per-case/fmt-canonical.sh`, which asserts every tracked `src/` `.kio` file is at `kio fmt`'s fixed point each PR. When § 1's `specs/style.md` pass turns up a canonicalization rule with no exerciser in the `fmt_*` corpus, that is a single-layer / zero-layer gap to flag here.
 
+Apply the [canonical-formatting guidance](../../topics/language-surface-tooling.md#canonical-formatting-not-spelling-preservation)
+when assessing that evidence. Idempotence proves a fixed point, not the right
+canonical choice or preserved meaning. Require paired spellings for specified
+normalizations and comment-bearing controls on removed syntax. Inspect the
+generative comment test's injection domain: comments only on canonical line
+ends do not cover first-pass loss or token-interior ownership. Verify actual
+README and website snippets have typechecking and canonical-format checks;
+Markdown lint alone is not either check. Intentional parse-error fixtures may
+be skipped for formatting, but crashes and other unexpected failures may not.
+
 Kio-family file-kind parity is a cross-layer contract. Enumerate the source of truth in `kio-rs/src/file_kind.rs` and `KioFileKind` in `kio-rs/src/ast.rs`, then verify each file kind is covered by `kio fmt` routing/tests, `kio doc` `variant=KIND` parser tests, `specs/cli.md` / `specs/kiodoc.md` / `specs/style.md` where applicable, `kio debug tokens` plus `test-data/highlight-corpus/`, TextMate/tree-sitter grammars, LSP formatting tests, and VS Code extension fixtures. A hard-coded module/package subset in any of those surfaces is a finding unless the file kind is explicitly irrelevant to that surface and the reason follows from the surface boundary.
 
 Walk the layers and look for behaviors that fall through:

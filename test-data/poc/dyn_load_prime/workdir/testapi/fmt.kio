@@ -12,4 +12,4 @@ host fn string_to_int(p0: String) -> I32 | .;
 
 host fn bool_to_string(p0: Bool) -> String;
 
-host fn print_i32(p0: I32) -> .;
+host fn print_i32(p0: I32);

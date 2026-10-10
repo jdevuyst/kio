@@ -5,7 +5,7 @@ import elab/match(match);
 
 host type Bool role(bool);
 
-host fn sink(value: Bool) -> .;
+host fn sink(value: Bool);
 
 pub fn choose(value: . | Bool, detail: . | Bool) -> Bool {
   match! value {

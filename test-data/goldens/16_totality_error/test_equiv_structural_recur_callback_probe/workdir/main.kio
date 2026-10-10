@@ -3,7 +3,7 @@ module main;
 import __comptime__;
 
 // The negative edge invokes the captured callback, not a fresh helper.
-pure fn reject(ct: __Comptime__) -> . {
+pure fn reject(ct: __Comptime__) {
   __structural_recur__(
   , ct
   , .

@@ -8,4 +8,4 @@ host fn i32_to_string(p0: Int) -> String;
 
 host fn bool_to_string(p0: Bool) -> String;
 
-host fn print_i32(p0: Int) -> .;
+host fn print_i32(p0: Int);

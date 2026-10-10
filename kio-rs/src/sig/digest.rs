@@ -219,6 +219,10 @@ mod tests {
             assert_ne!(digest(left), digest(right), "{left} versus {right}");
         }
         for (left, right) in [
+            ("host fn f();", "host fn f() -> .;"),
+            ("pub fn f();", "pub fn f() -> .;"),
+            ("pub fn f[A];", "pub fn f[A] -> .;"),
+            ("host fn f()[A];", "host fn f()[A] -> .;"),
             (
                 "pub fn f[A] -> A -> A;",
                 "pub fn f[Value] -> Value -> Value;",

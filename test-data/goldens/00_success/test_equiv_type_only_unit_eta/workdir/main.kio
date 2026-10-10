@@ -1,8 +1,8 @@
 module main;
 
-host fn first() -> .;
+host fn first();
 
-host fn second() -> .;
+host fn second();
 
 type Unit_alias = .;
 

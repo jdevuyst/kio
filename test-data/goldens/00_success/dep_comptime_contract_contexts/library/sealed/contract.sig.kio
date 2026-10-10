@@ -6,7 +6,7 @@ v(1) {
       module api {
         import __comptime__;
         host fn old(value: __Type__) -> Comptime_bool;
-        pub fn keep() -> .
+        pub fn keep()
       }
     }
   }

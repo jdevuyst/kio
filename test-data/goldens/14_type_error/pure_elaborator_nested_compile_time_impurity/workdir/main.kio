@@ -2,4 +2,4 @@ module main;
 
 import outer(outer);
 
-fn main() -> . { outer!() }
+fn main() { outer!() }

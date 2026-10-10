@@ -95,7 +95,7 @@ module greeter;
 
 host type String role(str);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 ```java
@@ -168,7 +168,7 @@ bridge {
 module greeter;
 
 host type String role(str);
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 `greeter/main.kio` imports it and exports `main`:

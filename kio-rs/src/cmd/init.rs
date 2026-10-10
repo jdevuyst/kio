@@ -160,8 +160,8 @@ fn main_source() -> String {
     concat!(
         "module main;\n\n",
         "host type String role(str);\n\n",
-        "host fn print(p0: String) -> .;\n\n",
-        "pub fn main() -> . { print(\"hello from Kio\\n\"(String)) }\n",
+        "host fn print(p0: String);\n\n",
+        "pub fn main() { print(\"hello from Kio\\n\"(String)) }\n",
     )
     .to_owned()
 }

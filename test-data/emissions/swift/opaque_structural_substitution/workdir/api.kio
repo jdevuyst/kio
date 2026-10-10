@@ -14,9 +14,9 @@ host fn pack[T](value: T) -> Box(T);
 
 host fn consume(number: Number, flag: Flag) -> Number;
 
-host fn type_stage() -> .;
+host fn type_stage();
 
-host fn value_stage() -> .;
+host fn value_stage();
 
 fn relay[T](boxed: Box(T)) -> T { unbox(boxed) }
 

@@ -2,4 +2,4 @@ module b;
 
 import a(helper);
 
-pub fn run() -> . { helper() }
+pub fn run() { helper() }

@@ -8,18 +8,18 @@ fn literal_use() -> Num { truth }
 
 fn shadow(truth: Num) -> Num { truth }
 
-fn bang() -> . { build!(()) }
+fn bang() { build!(()) }
 
-fn splice() -> . { ().>build! }
+fn splice() { ().>build! }
 
 fn label_use() -> Original { {field=} }
 
 fn qualified() -> second.Original { {second.field=} }
 
-fn value_use() -> . { first.field() }
+fn value_use() { first.field() }
 
 fn update(row: Original) -> Original { row.!{field=} }
 
-fn access(row: Original) -> . { row.?{field} }
+fn access(row: Original) { row.?{field} }
 
-fn row_let(row: Original) -> . { let .({field as payload}) = row; payload }
+fn row_let(row: Original) { let .({field as payload}) = row; payload }

@@ -344,6 +344,7 @@ pub trait SurfaceToDesugared {
 
     fn visit_expr_elaborator(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::Elaborator {
+            source_trivia: _,
             occurrence: _,
             kind,
             call,
@@ -398,6 +399,7 @@ pub trait SurfaceToDesugared {
             },
         };
         Ok(Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind,
             call,
@@ -1005,6 +1007,7 @@ pub trait SurfaceToDesugared {
             name,
             params,
             param_groups,
+            source_trivia: _,
             ret,
             meta: Meta { span, .. },
             doc,
@@ -1017,6 +1020,7 @@ pub trait SurfaceToDesugared {
             name,
             params,
             param_groups,
+            source_trivia: (),
             ret: self.walk_type(ret)?,
             meta: Meta::new(span),
             doc,

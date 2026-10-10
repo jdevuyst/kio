@@ -2,4 +2,4 @@ module app;
 
 pub newtype Box : . { pub constructor mk_box; pub projector un_box }
 
-host fn accept(b: Box) -> .;
+host fn accept(b: Box);

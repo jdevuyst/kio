@@ -22,26 +22,26 @@ references to `op _ + _`:
   demo/main:4:44  in module demo/main
   demo/main:8:18  in fn use
   demo/ops:19:5  in op _ + _
-  demo/ops:28:26  in fn local
+  demo/ops:28:21  in fn local
 references to `varop [* *]`:
   demo/main:4:65  in module demo/main
   demo/main:11:3  in fn use
   demo/ops:26:5  in varop [* *]
 pub type {field} = {original};
-pub fn field() -> .
+pub fn field()
 references to `{field}`:
   demo/main:4:79  in module demo/main
-  demo/main:14:28  in fn label_use
-  demo/main:14:38  in fn label_use
+  demo/main:14:23  in fn label_use
+  demo/main:14:33  in fn label_use
   demo/ops:16:11  in type {field}
 references to `fn`:
-  demo/main:18:40  in fn keyword_use
+  demo/main:18:35  in fn keyword_use
   demo/ops:30:8  in fn fn
 references to `pub`:
-  demo/main:18:57  in fn keyword_use
+  demo/main:18:52  in fn keyword_use
   demo/ops:32:8  in fn pub
-pub fn op() -> .
-pub fn varop() -> .
+pub fn op()
+pub fn varop()
 invalid declaration selector `demo/ops.op _ + _`: a qualified operator selector requires parentheses: module.(op _ + _)
 invalid declaration selector `demo/ops.(choose)`: a qualified selector's outer parentheses are only for `op` or `varop`
 invalid declaration selector `demo/ops.(op _ + _, choose)`: expected `)` after the operator selector

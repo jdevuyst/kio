@@ -457,7 +457,7 @@ mod tests {
     fn formats_harnessed_module_snippet() {
         let source = "```kio {harness=main placeholder=\"__INSERT__\"}\nbridge {\n  kiodoc;\n}\n\nmodule kiodoc;\n\nhost type S role(str);\nhost fn print(p0: S) -> .;\n\n__INSERT__\n```\n\n```kio {@main}\npub fn greet()->.{print(\"hi\\n\")}\n```\n";
         let out = format_md(source).expect("format document");
-        assert!(out.contains("pub fn greet() -> . { print(\"hi\\n\") }"));
+        assert!(out.contains("pub fn greet() { print(\"hi\\n\") }"));
     }
 
     #[test]
@@ -548,9 +548,7 @@ fn show(value: Name)->String{value}
         let again = format_md(&out).expect("format document again");
         assert_eq!(again, out);
         assert!(
-            out.contains(
-                "import kiodoc(S, print);\n\npub fn greet() -> . { print(\"hi\\n\") }\n```"
-            )
+            out.contains("import kiodoc(S, print);\n\npub fn greet() { print(\"hi\\n\") }\n```")
         );
     }
 }

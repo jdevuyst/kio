@@ -31,7 +31,9 @@ use crate::ast::{
     TypeParam, TypeRecGroup, TypeRecMember, UfcsFlavor, UserElaboratorDef, VariadicOperator,
     Visibility,
 };
-use crate::ast::{DelimitedTrivia, SignatureTrivia, SignatureTriviaPosition, append_source_trivia};
+use crate::ast::{
+    DelimitedTrivia, SignatureTrivia, SignatureTriviaPosition, append_relocated_trivia,
+};
 use crate::error::{Error, Fix, FixEdit};
 use crate::pass::lexer::{Token, TokenKind, Trivia};
 use crate::pass::tree_skeleton::{SkeletonCursor, SkeletonFile, SkeletonNode};
@@ -41,6 +43,7 @@ use rayon::prelude::*;
 
 type SigBlockEntries<T> = (Vec<T>, Vec<SigItemRef>, Vec<Trivia>);
 type ParsedCallArgs = (Vec<CallArg>, u32, Option<Box<DelimitedTrivia>>);
+type ParsedLabelList<T> = (Vec<T>, u32, Option<Box<DelimitedTrivia>>);
 type ParsedLeftSplice = (
     Vec<PathSegment>,
     Span,
@@ -66,8 +69,49 @@ fn inject_meta_trivia(meta: &mut crate::ast::Meta<crate::ast::Surface>, mut triv
     if trivia.is_empty() {
         return;
     }
-    trivia.append(&mut meta.leading_trivia);
+    append_relocated_trivia(&mut trivia, std::mem::take(&mut meta.leading_trivia));
     meta.leading_trivia = trivia;
+}
+
+fn prepend_signature_trivia(source: &mut Option<Box<SignatureTrivia>>, mut leading: Vec<Trivia>) {
+    if !leading
+        .iter()
+        .any(|trivia| matches!(trivia, Trivia::LineComment { .. }))
+    {
+        return;
+    }
+    let source = source.get_or_insert_with(Default::default);
+    if let Some(anchor) = source
+        .anchors
+        .iter_mut()
+        .find(|anchor| anchor.group == 0 && anchor.position == SignatureTriviaPosition::BeforeGroup)
+    {
+        append_relocated_trivia(&mut leading, std::mem::take(&mut anchor.trivia));
+        anchor.trivia = leading;
+    } else {
+        source.push(0, SignatureTriviaPosition::BeforeGroup, leading);
+    }
+}
+
+fn prepend_rec_header_trivia(
+    source: &mut Option<Box<crate::ast::RecHeaderTrivia>>,
+    mut leading: Vec<Trivia>,
+) {
+    if !leading
+        .iter()
+        .any(|trivia| matches!(trivia, Trivia::LineComment { .. }))
+    {
+        return;
+    }
+    let source = source.get_or_insert_with(|| {
+        Box::new(crate::ast::RecHeaderTrivia {
+            leading: Vec::new(),
+            closing: Vec::new(),
+            after: Vec::new(),
+        })
+    });
+    append_relocated_trivia(&mut leading, std::mem::take(&mut source.leading));
+    source.leading = leading;
 }
 
 fn comment_span(trivia: &Trivia) -> Option<Span> {
@@ -191,14 +235,13 @@ fn remove_type_comments(ty: &mut Type, moved: &std::collections::HashSet<Span>) 
 /// declaration.
 fn internal_item_comments(children: &[SkeletonNode]) -> Vec<Trivia> {
     fn collect_token(token: &Token, saw_first: &mut bool, comments: &mut Vec<Trivia>) {
-        if std::mem::replace(saw_first, true) {
-            comments.extend(
-                token
-                    .leading_trivia
-                    .iter()
-                    .filter(|trivia| comment_span(trivia).is_some())
-                    .cloned(),
-            );
+        if std::mem::replace(saw_first, true)
+            && token
+                .leading_trivia
+                .iter()
+                .any(|trivia| comment_span(trivia).is_some())
+        {
+            append_relocated_trivia(comments, token.leading_trivia.clone());
         }
     }
 
@@ -238,16 +281,20 @@ fn retain_compact_declaration_comments(item: &mut Item, children: &[SkeletonNode
         let declaration_end = item.meta().span.end;
         let comments = internal_item_comments(children)
             .into_iter()
-            .filter(|trivia| comment_span(trivia).is_some_and(|span| span.end <= declaration_end))
+            .filter(|trivia| comment_span(trivia).is_none_or(|span| span.end <= declaration_end))
             .collect::<Vec<_>>();
         let moved = comments.iter().filter_map(comment_span).collect();
         if let Item::Elaborator(elaborator, _) = item {
             remove_type_comments(&mut elaborator.call_ty, &moved);
         }
         match item {
-            Item::Op(op, _) => op.body_trivia.extend(comments),
-            Item::VariadicOperator(fold, _) => fold.body_trivia.extend(comments),
-            Item::Elaborator(elaborator, _) => elaborator.body_trivia.extend(comments),
+            Item::Op(op, _) => append_relocated_trivia(&mut op.body_trivia, comments),
+            Item::VariadicOperator(fold, _) => {
+                append_relocated_trivia(&mut fold.body_trivia, comments)
+            }
+            Item::Elaborator(elaborator, _) => {
+                append_relocated_trivia(&mut elaborator.body_trivia, comments)
+            }
             _ => unreachable!("only compact declarations reach this branch"),
         }
     }
@@ -426,7 +473,7 @@ fn prepend_import_leading(u: &mut Import, mut leading: Vec<Trivia>) {
     if u.leading_trivia.is_empty() {
         u.leading_trivia = leading;
     } else {
-        leading.append(&mut u.leading_trivia);
+        append_relocated_trivia(&mut leading, std::mem::take(&mut u.leading_trivia));
         u.leading_trivia = leading;
     }
 }
@@ -558,7 +605,7 @@ fn set_item_doc(item: &mut Item, doc: Option<DocComment>, leading: &[Trivia]) {
         Item::HostType(h) => h.doc = doc,
         Item::HostFn(h) => h.doc = doc,
         Item::RecGroup(g, _) => {
-            if g.members.len() == 1 {
+            if g.members.len() == 1 && doc.is_some() {
                 g.members[0].doc = doc;
             }
         }
@@ -626,6 +673,7 @@ struct LabelPathParts {
     full_span: Span,
     last: String,
     last_span: Span,
+    interstitial: Vec<Trivia>,
 }
 
 /// Opaque consumer-declared operator grammar for parsing a standalone expression in a
@@ -1138,6 +1186,7 @@ struct ItemModifiers {
     /// Set when the leading `host` contextual keyword introduced a
     /// `host type` / `host fn` declaration.
     host: bool,
+    header_trivia: Vec<Trivia>,
 }
 
 struct TypeAliasHeader {
@@ -1188,6 +1237,7 @@ impl ItemModifiers {
             vis_span: None,
             purity: Purity::Impure,
             host: false,
+            header_trivia: Vec::new(),
         }
     }
 }
@@ -2238,22 +2288,45 @@ impl<'a> Parser<'a> {
         while matches!(self.peek(), Some(TokenKind::Comma)) {
             self.advance();
             any = true;
-            pending.extend(self.peek_leading_trivia());
+            append_relocated_trivia(pending, self.peek_leading_trivia());
         }
         any
     }
 
-    /// Append only the comment trivia from `run` to `into`, dropping
-    /// newlines. Inter-token comments are hoisted to their owning
-    /// construct; boundary comments keep a dedicated structural slot.
+    /// Hoist one token gap without flattening its comment paragraphs.
+    /// Newline-only gaps do not create comment blocks.
     fn collect_comments_into(run: Vec<Trivia>, into: &mut Vec<Trivia>) {
-        for t in run {
-            if matches!(
+        if run.iter().any(|t| {
+            matches!(
                 t,
                 Trivia::LineComment { .. } | Trivia::DocCommentLine { .. }
-            ) {
-                into.push(t);
+            )
+        }) {
+            append_relocated_trivia(into, run);
+        }
+    }
+
+    fn collect_line_comments(cursor: &mut SkeletonCursor<'_>, end: u32, into: &mut Vec<Trivia>) {
+        while let Some(token) = cursor.peek_token() {
+            if token.span.start >= end {
+                break;
             }
+            if token
+                .leading_trivia
+                .iter()
+                .any(|trivia| matches!(trivia, Trivia::LineComment { .. }))
+            {
+                append_relocated_trivia(
+                    into,
+                    token
+                        .leading_trivia
+                        .iter()
+                        .filter(|trivia| !matches!(trivia, Trivia::DocCommentLine { .. }))
+                        .cloned()
+                        .collect(),
+                );
+            }
+            cursor.advance();
         }
     }
 
@@ -2265,10 +2338,23 @@ impl<'a> Parser<'a> {
     fn skip_semicolon_separators(&mut self) -> Vec<Trivia> {
         let mut trivia = Vec::new();
         while matches!(self.peek(), Some(TokenKind::Semicolon)) {
-            trivia.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut trivia, self.peek_leading_trivia());
             self.advance();
         }
         trivia
+    }
+
+    fn expect_expression_semicolon(
+        &mut self,
+        value: &mut Expr,
+        expected: &str,
+    ) -> Result<(), Error> {
+        append_relocated_trivia(
+            &mut value.meta_mut().trailing_trivia,
+            self.peek_leading_trivia(),
+        );
+        self.expect_kind(TokenKind::Semicolon, expected)?;
+        Ok(())
     }
 
     fn declaration_end(&mut self, end: DeclarationEnd, expected: &str) -> Result<u32, Error> {
@@ -2330,7 +2416,7 @@ impl<'a> Parser<'a> {
         }
         let mut trivia = self.optional_outer_semicolon();
         if repeated {
-            trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut trivia, self.skip_semicolon_separators());
         }
         Ok(trivia)
     }
@@ -2357,7 +2443,7 @@ impl<'a> Parser<'a> {
         let mut span = tok.span;
         while matches!(self.peek(), Some(TokenKind::StrLit(_))) {
             if let Some(trivia) = interior_trivia.as_mut() {
-                trivia.extend(self.peek_leading_trivia());
+                append_relocated_trivia(trivia, self.peek_leading_trivia());
             }
             let next = self.advance();
             let TokenKind::StrLit(more) = next.kind else {
@@ -2382,8 +2468,12 @@ impl<'a> Parser<'a> {
     /// Per [`grammar.md` § Package files](../../../../specs/grammar.md#package-files).
     /// The caller validates which of these kinds the specific field
     /// accepts. The returned span covers the value tokens.
-    fn parse_block_field_value(&mut self) -> Result<(crate::ast::BlockFieldValue, Span), Error> {
-        match self.peek() {
+    fn parse_block_field_value(
+        &mut self,
+        leading_trivia: &mut Vec<Trivia>,
+    ) -> Result<(crate::ast::BlockFieldValue, Span), Error> {
+        let mut comments = self.cursor.clone();
+        let parsed = match self.peek() {
             Some(TokenKind::StrLit(_)) => {
                 let (value, span) = self.read_str_literal();
                 Ok((BlockFieldValue::Str(value), span))
@@ -2418,7 +2508,9 @@ impl<'a> Parser<'a> {
                 "expected a field value — the unit literal `()`, a string literal, \
                  a number, a boolean, or a bare word",
             )),
-        }
+        }?;
+        Self::collect_line_comments(&mut comments, parsed.1.end, leading_trivia);
+        Ok(parsed)
     }
 
     fn parse_block_field_head(
@@ -2426,12 +2518,12 @@ impl<'a> Parser<'a> {
         mut leading_trivia: Vec<Trivia>,
         validate_key_name: bool,
     ) -> Result<ParsedBlockFieldHead, Error> {
-        leading_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         let (key, key_span) = self.expect_ident()?;
         if validate_key_name {
             Self::validate_value_name(&key, key_span)?;
         }
-        let (value, value_span) = self.parse_block_field_value()?;
+        let (value, value_span) = self.parse_block_field_value(&mut leading_trivia)?;
         Ok(ParsedBlockFieldHead {
             key,
             key_span,
@@ -2718,6 +2810,7 @@ impl<'a> Parser<'a> {
             return Err(error);
         }
         let module_kw_span = self.expect_ident_named("module")?;
+        let mut header_comments = self.cursor.clone();
         let path = self.module_path_in(true)?;
         if matches!(self.peek(), Some(TokenKind::Ident(_))) {
             let mut last_name_end = None;
@@ -2758,6 +2851,7 @@ impl<'a> Parser<'a> {
         let semi_end = self
             .expect_kind(TokenKind::Semicolon, "`;` after the module header")?
             .end;
+        Self::collect_line_comments(&mut header_comments, semi_end, &mut module_leading);
         if let Some(tooling) = &mut self.tooling {
             tooling.facts.module_path = Some(path.clone());
         }
@@ -2833,8 +2927,10 @@ impl<'a> Parser<'a> {
         // trailing-after-item or end-of-file comment survives the
         // round-trip.
         meta.trailing_trivia = outer_trivia;
-        meta.trailing_trivia
-            .extend(std::mem::take(&mut self.file_trailing_trivia));
+        append_relocated_trivia(
+            &mut meta.trailing_trivia,
+            std::mem::take(&mut self.file_trailing_trivia),
+        );
         let module = Module {
             path,
             imports,
@@ -3123,12 +3219,13 @@ impl<'a> Parser<'a> {
             return Err(self.err_here("`pure` is valid only on ordinary `fn` declarations"));
         }
         if mode == ItemParseMode::Lazy && !modifiers.host && self.peek_ident_named("fn") {
-            let d = self.fn_item_deferred(
+            let mut d = self.fn_item_deferred(
                 modifiers.vis,
                 modifiers.purity,
                 item_start,
                 SignaturePolicy::TypeOrValue,
             )?;
+            prepend_signature_trivia(&mut d.sig.source_trivia, modifiers.header_trivia);
             Ok(ParsedLazyItem {
                 outer_trivia: Vec::new(),
                 item: Item::FnDef(d),
@@ -3141,6 +3238,7 @@ impl<'a> Parser<'a> {
                     modifiers.vis,
                     modifiers.vis_span,
                     item_start,
+                    modifiers.header_trivia,
                 )?,
                 deferred: None,
             })
@@ -3192,9 +3290,11 @@ impl<'a> Parser<'a> {
         policy: SignaturePolicy,
     ) -> Result<FnDef<Surface, PurityField>, Error> {
         self.expect_ident_named("fn")?;
+        let name_trivia = self.peek_leading_trivia();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
-        let sig = self.signature(policy)?;
+        let mut sig = self.signature(policy)?;
+        prepend_signature_trivia(&mut sig.source_trivia, name_trivia);
         let (ret, ret_elided) = if self.at_sym_prefix("->") {
             self.expect_fn_arrow()?;
             (self.type_expr()?, false)
@@ -3229,6 +3329,7 @@ impl<'a> Parser<'a> {
 
     fn equiv_deferred(&mut self, start: u32) -> Result<crate::ast::Equiv, Error> {
         self.expect_ident_named("equiv")?;
+        let leading = self.peek_leading_trivia();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         let sig = if self.peek_starts_signature_group() {
@@ -3237,12 +3338,14 @@ impl<'a> Parser<'a> {
             Signature::new(Vec::new())
         };
         let body_span = self.skip_lazy_body_group("`{` after `equiv` head")?;
+        let mut meta = Meta::new(Span::new(start, body_span.end));
+        meta.leading_trivia = leading;
         Ok(crate::ast::Equiv {
             name,
             name_span,
             sig,
             terms: Vec::new(),
-            meta: Meta::new(Span::new(start, body_span.end)),
+            meta,
         })
     }
 
@@ -3302,9 +3405,11 @@ impl<'a> Parser<'a> {
 
     /// Parse a `build { ... }` block, consuming its keyword and braces.
     fn build_block(&mut self) -> Result<BuildBlock, Error> {
-        let leading_trivia = self.peek_leading_trivia();
+        let mut leading_trivia = self.peek_leading_trivia();
         let kw_span = self.expect_ident_named("build")?;
-        self.expect_kind(TokenKind::LBrace, "`{` to open the `build` block")?;
+        let mut header_comments = self.cursor.clone();
+        let open = self.expect_kind(TokenKind::LBrace, "`{` to open the `build` block")?;
+        Self::collect_line_comments(&mut header_comments, open.end, &mut leading_trivia);
         let mut block = self.build_block_body()?;
         let close = self.expect_kind(TokenKind::RBrace, "`}` to close the `build` block")?;
         block.span = Span::new(kw_span.start, close.end);
@@ -3330,7 +3435,7 @@ impl<'a> Parser<'a> {
             .is_some_and(|tooling| tooling.cursor.is_some());
         loop {
             let mut field_trivia = std::mem::take(&mut pending_separator_trivia);
-            field_trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut field_trivia, self.skip_semicolon_separators());
             let before = self.cursor.consumed();
             let parsed: Result<Option<u32>, Error> = (|| {
                 let Some(field) = self.next_named_entry(
@@ -3401,7 +3506,10 @@ impl<'a> Parser<'a> {
                 }
                 Err(error) => return Err(error),
             }
-            pending_separator_trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(
+                &mut pending_separator_trivia,
+                self.skip_semicolon_separators(),
+            );
         }
         if let Some(context) = self
             .tooling
@@ -3425,7 +3533,7 @@ impl<'a> Parser<'a> {
         Ok(BuildBlock {
             leading_trivia: Vec::new(),
             trailing_trivia: {
-                pending_separator_trivia.extend(self.peek_leading_trivia());
+                append_relocated_trivia(&mut pending_separator_trivia, self.peek_leading_trivia());
                 pending_separator_trivia
             },
             cache,
@@ -3444,9 +3552,11 @@ impl<'a> Parser<'a> {
         &mut self,
         mut leading_trivia: Vec<Trivia>,
     ) -> Result<crate::ast::BuildBlockDocs, Error> {
-        leading_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         let kw_span = self.expect_ident_named("docs")?;
-        self.expect_kind(TokenKind::LBrace, "`{` to open the `docs` block")?;
+        let mut header_comments = self.cursor.clone();
+        let open = self.expect_kind(TokenKind::LBrace, "`{` to open the `docs` block")?;
+        Self::collect_line_comments(&mut header_comments, open.end, &mut leading_trivia);
         let mut md: Option<String> = None;
         let mut md_leading_trivia: Vec<Trivia> = Vec::new();
         let mut support: Vec<String> = Vec::new();
@@ -3458,7 +3568,7 @@ impl<'a> Parser<'a> {
         let mut pending_separator_trivia: Vec<Trivia> = Vec::new();
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let mut key_trivia = std::mem::take(&mut pending_separator_trivia);
-            key_trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut key_trivia, self.skip_semicolon_separators());
             self.docs_field_keywords(md.is_some(), md_out.is_some(), html.is_some());
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 pending_separator_trivia = key_trivia;
@@ -3517,7 +3627,7 @@ impl<'a> Parser<'a> {
             }
         }
         self.docs_field_keywords(md.is_some(), md_out.is_some(), html.is_some());
-        pending_separator_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending_separator_trivia, self.peek_leading_trivia());
         let close = self.expect_kind(TokenKind::RBrace, "`}`")?;
         let Some(md) = md else {
             return Err(self.err(
@@ -3551,9 +3661,9 @@ impl<'a> Parser<'a> {
 
     /// Parse a cache path or explicit disabled-cache unit value.
     fn cache_decl(&mut self, mut leading_trivia: Vec<Trivia>) -> Result<BuildBlockCache, Error> {
-        leading_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         let kw_span = self.expect_ident_named("cache")?;
-        let (value, value_span) = self.parse_block_field_value()?;
+        let (value, value_span) = self.parse_block_field_value(&mut leading_trivia)?;
         let mut cache = match value {
             BlockFieldValue::Str(path) => BuildBlockCache::Path {
                 path,
@@ -3583,7 +3693,7 @@ impl<'a> Parser<'a> {
         mut leading_trivia: Vec<Trivia>,
         headers: &mut Vec<(String, Span)>,
     ) -> Result<TargetBlock, Error> {
-        leading_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         let start = self.peek_span().start;
         let _kw_span = self.expect_ident_named("target")?;
         // Both forms begin with the backend; only the pair has a distinct
@@ -3597,26 +3707,26 @@ impl<'a> Parser<'a> {
         }
         let named = matches!(self.peek(), Some(TokenKind::LParen));
         if named {
-            leading_trivia.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
             self.advance();
         }
-        leading_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         let (backend, backend_span) = self.target_id(if named {
             CursorSlot::TargetBackend
         } else {
             CursorSlot::TargetId
         })?;
         let (name, name_span) = if named {
-            leading_trivia.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
             self.cursor_choices(CursorSlot::Grammar, &[]);
             self.expect_kind(TokenKind::Comma, "`,` after the target backend")?;
-            leading_trivia.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
             self.cursor_choices(CursorSlot::Grammar, &[]);
             if !matches!(self.peek(), Some(TokenKind::StrLit(_))) {
                 return Err(self.err_here("expected a string-literal target name"));
             }
             let (name, name_span) = self.read_str_literal_parts(Some(&mut leading_trivia));
-            leading_trivia.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
             self.cursor_choices(CursorSlot::Grammar, &[]);
             self.expect_kind(TokenKind::RParen, "`)` after the target name")?;
             (Some(name), name_span)
@@ -3630,14 +3740,14 @@ impl<'a> Parser<'a> {
         {
             headers.push((name.as_ref().unwrap_or(&backend).clone(), name_span));
         }
-        leading_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         self.expect_kind(TokenKind::LBrace, "`{`")?;
         let mut entries = Vec::new();
         let mut pending_separator_trivia: Vec<Trivia> = Vec::new();
         self.target_field_cursor(&backend, &entries);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let mut entry_trivia = std::mem::take(&mut pending_separator_trivia);
-            entry_trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut entry_trivia, self.skip_semicolon_separators());
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 pending_separator_trivia = entry_trivia;
                 break;
@@ -3646,7 +3756,7 @@ impl<'a> Parser<'a> {
             pending_separator_trivia = self.block_separator(true, false, &[])?;
             self.target_field_cursor(&backend, &entries);
         }
-        pending_separator_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending_separator_trivia, self.peek_leading_trivia());
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         Ok(TargetBlock {
             trailing_trivia: pending_separator_trivia,
@@ -3756,13 +3866,14 @@ impl<'a> Parser<'a> {
     pub(super) fn package_file(&mut self, stem: Option<&str>) -> Result<PackageFile, Error> {
         self.cursor_choices(CursorSlot::Grammar, &["package"]);
         let start = self.peek_span().start;
-        let header_leading = self.peek_leading_trivia();
+        let mut header_leading = self.peek_leading_trivia();
         if !self.peek_ident_named("package") {
             return Err(self.err_here(
                 "a `.pkg.kio` file must begin with a `package <name>;` directive whose `<name>` is the filename stem",
             ));
         }
         self.expect_ident_named("package")?;
+        let mut header_comments = self.cursor.clone();
         let (name, name_span) = self.expect_binder()?;
         crate::naming::validate_source_name(&name, crate::naming::NameRole::Package, name_span)?;
         if let Some(expected) = stem
@@ -3776,6 +3887,7 @@ impl<'a> Parser<'a> {
         let header_end = self
             .expect_kind(TokenKind::Semicolon, "`;` after the package header")?
             .end;
+        Self::collect_line_comments(&mut header_comments, header_end, &mut header_leading);
 
         let mut build = None;
         let mut bridge = None;
@@ -3812,14 +3924,20 @@ impl<'a> Parser<'a> {
             match field {
                 "build" => {
                     let mut block = self.build_block()?;
-                    pending.append(&mut block.leading_trivia);
+                    append_relocated_trivia(
+                        &mut pending,
+                        std::mem::take(&mut block.leading_trivia),
+                    );
                     block.leading_trivia = std::mem::take(&mut pending);
                     last_end = block.span.end;
                     build = Some(block);
                 }
                 "bridge" => {
                     let mut block = self.bridge_block()?;
-                    pending.append(&mut block.leading_trivia);
+                    append_relocated_trivia(
+                        &mut pending,
+                        std::mem::take(&mut block.leading_trivia),
+                    );
                     block.leading_trivia = std::mem::take(&mut pending);
                     last_end = block.span.end;
                     bridge = Some(block);
@@ -3831,8 +3949,7 @@ impl<'a> Parser<'a> {
         let mut meta: Meta<crate::ast::Surface> = Meta::new(Span::new(start, last_end));
         meta.leading_trivia = header_leading;
         meta.trailing_trivia = pending;
-        meta.trailing_trivia
-            .extend(self.file_trailing_trivia.clone());
+        append_relocated_trivia(&mut meta.trailing_trivia, self.file_trailing_trivia.clone());
         Ok(PackageFile {
             name,
             build,
@@ -3891,7 +4008,7 @@ impl<'a> Parser<'a> {
         self.cursor_choices(CursorSlot::Grammar, &["v"]);
         while self.peek_ident_named("v") {
             let mut block = self.sig_version_block()?;
-            pending.append(&mut block.leading_trivia);
+            append_relocated_trivia(&mut pending, std::mem::take(&mut block.leading_trivia));
             block.leading_trivia = std::mem::take(&mut pending);
             pending = self.optional_outer_semicolon();
             last_end = block.span.end;
@@ -3979,8 +4096,7 @@ impl<'a> Parser<'a> {
         let mut meta: Meta<crate::ast::Surface> = Meta::new(Span::new(start, last_end));
         meta.leading_trivia = header_leading;
         meta.trailing_trivia = pending;
-        meta.trailing_trivia
-            .extend(self.file_trailing_trivia.clone());
+        append_relocated_trivia(&mut meta.trailing_trivia, self.file_trailing_trivia.clone());
         Ok(SignatureFile {
             pkg,
             version,
@@ -4200,7 +4316,7 @@ impl<'a> Parser<'a> {
             match field {
                 "source" => {
                     let mut block = self.source_block()?;
-                    pending.append(&mut block.leading_trivia);
+                    append_relocated_trivia(&mut pending, std::mem::take(&mut block.leading_trivia));
                     block.leading_trivia = std::mem::take(&mut pending);
                     pending = self.optional_outer_semicolon();
                     last_end = block.span.end;
@@ -4208,14 +4324,14 @@ impl<'a> Parser<'a> {
                 }
                 "rehost" => {
                     let mut decl = self.rehost_statement()?;
-                    pending.append(&mut decl.leading_trivia);
+                    append_relocated_trivia(&mut pending, std::mem::take(&mut decl.leading_trivia));
                     decl.leading_trivia = std::mem::take(&mut pending);
                     last_end = decl.span.end;
                     rehost.push(decl);
                 }
                 "retype" => {
                     let mut decl = self.retype_statement()?;
-                    pending.append(&mut decl.leading_trivia);
+                    append_relocated_trivia(&mut pending, std::mem::take(&mut decl.leading_trivia));
                     decl.leading_trivia = std::mem::take(&mut pending);
                     last_end = decl.span.end;
                     retype.push(decl);
@@ -4234,8 +4350,7 @@ impl<'a> Parser<'a> {
         let mut meta: Meta<crate::ast::Surface> = Meta::new(Span::new(start, last_end));
         meta.leading_trivia = header_leading;
         meta.trailing_trivia = pending;
-        meta.trailing_trivia
-            .extend(self.file_trailing_trivia.clone());
+        append_relocated_trivia(&mut meta.trailing_trivia, self.file_trailing_trivia.clone());
         Ok(DependencyFile {
             name,
             source,
@@ -4397,7 +4512,7 @@ impl<'a> Parser<'a> {
         let mut field_leading_trivia = std::collections::BTreeMap::new();
         let mut pending = Vec::new();
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            pending.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut pending, self.skip_semicolon_separators());
             self.resolved_field_keywords(
                 url.is_some(),
                 git_ref.is_some(),
@@ -4451,7 +4566,7 @@ impl<'a> Parser<'a> {
             commit.is_some(),
             sig.is_some(),
         );
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         let close_end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         let resolved_span = Span::new(resolved_span_start, close_end);
         let outer_trivia = self.optional_outer_semicolon();
@@ -4483,8 +4598,7 @@ impl<'a> Parser<'a> {
         let mut meta: Meta<crate::ast::Surface> = Meta::new(Span::new(start, close_end));
         meta.leading_trivia = header_leading;
         meta.trailing_trivia = outer_trivia;
-        meta.trailing_trivia
-            .extend(self.file_trailing_trivia.clone());
+        append_relocated_trivia(&mut meta.trailing_trivia, self.file_trailing_trivia.clone());
         Ok(LockFile {
             field_leading_trivia,
             resolved_leading_trivia,
@@ -4536,7 +4650,7 @@ impl<'a> Parser<'a> {
         let mut pending_separator_trivia: Vec<Trivia> = Vec::new();
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let mut key_trivia = std::mem::take(&mut pending_separator_trivia);
-            key_trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut key_trivia, self.skip_semicolon_separators());
             self.source_field_keywords(path.is_some(), git.is_some(), git_ref.is_some());
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 pending_separator_trivia = key_trivia;
@@ -4597,7 +4711,7 @@ impl<'a> Parser<'a> {
             }
         }
         self.source_field_keywords(path.is_some(), git.is_some(), git_ref.is_some());
-        pending_separator_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending_separator_trivia, self.peek_leading_trivia());
         let close_end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         let block_span = Span::new(kw_span.start, close_end);
 
@@ -4753,14 +4867,17 @@ impl<'a> Parser<'a> {
             match field {
                 "with" => {
                     with_leading_trivia = std::mem::take(&mut pending);
-                    with_leading_trivia.extend(self.peek_leading_trivia());
+                    append_relocated_trivia(&mut with_leading_trivia, self.peek_leading_trivia());
                     let (sections, trailing) = self.sig_with_block()?;
                     with = Some(sections);
                     with_trailing_trivia = trailing;
                 }
                 "breaking" | "nonbreaking" => {
                     let mut section = self.sig_change_set(field)?;
-                    pending.append(&mut section.leading_trivia);
+                    append_relocated_trivia(
+                        &mut pending,
+                        std::mem::take(&mut section.leading_trivia),
+                    );
                     section.leading_trivia = std::mem::take(&mut pending);
                     if field == "breaking" {
                         breaking = Some(section);
@@ -4777,7 +4894,7 @@ impl<'a> Parser<'a> {
                 "a `v(<N>) { … }` block needs at least one of `breaking { … }` / `nonbreaking { … }` (empty sections are omitted, not empty blocks)",
             ));
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         let end = self
             .expect_kind(TokenKind::RBrace, "`}` closing the `v(<N>)` block")?
             .end;
@@ -4830,24 +4947,24 @@ impl<'a> Parser<'a> {
             match field {
                 "add" => {
                     add_leading_trivia = std::mem::take(&mut pending);
-                    add_leading_trivia.extend(self.peek_leading_trivia());
+                    append_relocated_trivia(&mut add_leading_trivia, self.peek_leading_trivia());
                     add = Some(self.sig_operation_block("add")?);
                 }
                 "modify" => {
                     modify_leading_trivia = std::mem::take(&mut pending);
-                    modify_leading_trivia.extend(self.peek_leading_trivia());
+                    append_relocated_trivia(&mut modify_leading_trivia, self.peek_leading_trivia());
                     modify = Some(self.sig_operation_block("modify")?);
                 }
                 "remove" => {
                     remove_leading_trivia = std::mem::take(&mut pending);
-                    remove_leading_trivia.extend(self.peek_leading_trivia());
+                    append_relocated_trivia(&mut remove_leading_trivia, self.peek_leading_trivia());
                     remove = Some(self.sig_remove_block()?);
                 }
                 _ => unreachable!("named-entry dispatch selected a change bucket"),
             }
             pending = self.block_separator(false, false, &["add", "modify", "remove"])?;
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         let end = self
             .expect_kind(TokenKind::RBrace, "`}` closing the change section")?
             .end;
@@ -4895,13 +5012,13 @@ impl<'a> Parser<'a> {
         let mut pending = self.leading_block_separator(false)?;
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let mut section = self.sig_module_section(true)?;
-            pending.append(&mut section.leading_trivia);
+            append_relocated_trivia(&mut pending, std::mem::take(&mut section.leading_trivia));
             section.leading_trivia = std::mem::take(&mut pending);
             sections.push(section);
             pending = self.block_separator(false, false, &["module"])?;
             self.cursor_choices(CursorSlot::Grammar, &["module"]);
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         self.expect_kind(TokenKind::RBrace, "`}` closing `with`")?;
         if sections.is_empty() {
             return Err(self.err_here("`with { … }` needs at least one `module` section"));
@@ -4927,19 +5044,22 @@ impl<'a> Parser<'a> {
                 && matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
             {
                 let mut section = self.sig_module_section(false)?;
-                pending.append(&mut section.leading_trivia);
+                append_relocated_trivia(&mut pending, std::mem::take(&mut section.leading_trivia));
                 section.leading_trivia = std::mem::take(&mut pending);
                 sections.push(section);
             } else {
                 let mut reference = self.sig_item_ref()?;
-                pending.append(&mut reference.leading_trivia);
+                append_relocated_trivia(
+                    &mut pending,
+                    std::mem::take(&mut reference.leading_trivia),
+                );
                 reference.leading_trivia = std::mem::take(&mut pending);
                 refs.push(reference);
             }
             pending = self.block_separator(false, false, &[])?;
             self.cursor_choices(CursorSlot::ModulePath, &["module"]);
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         self.expect_kind(TokenKind::RBrace, "`}` closing the block")?;
         if sections.is_empty() && refs.is_empty() {
             return Err(self.err_here(format!(
@@ -4999,7 +5119,7 @@ impl<'a> Parser<'a> {
             pending = self.block_separator(false, false, heads)?;
             self.declaration_keywords(context, &ItemModifiers::impure_private(), items.is_empty());
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         let end = self
             .expect_kind(TokenKind::RBrace, "`}` closing the module section")?
             .end;
@@ -5078,7 +5198,11 @@ impl<'a> Parser<'a> {
             let start = self.peek_span().start;
             return if self.peek_ident_named("type") {
                 self.expect_ident_named("type")?;
-                let host_type = self.host_type_rest_in(start, DeclarationEnd::BlockEntry)?;
+                let host_type = self.host_type_rest_in(
+                    start,
+                    DeclarationEnd::BlockEntry,
+                    modifiers.header_trivia,
+                )?;
                 if host_type.owned {
                     return Err(self.err(
                         host_type.meta.span,
@@ -5088,15 +5212,17 @@ impl<'a> Parser<'a> {
                 Ok(SigItem::HostType(host_type))
             } else if self.peek_ident_named("fn") {
                 self.expect_ident_named("fn")?;
-                self.host_fn_rest_in(start, DeclarationEnd::BlockEntry)
-                    .map(SigItem::HostFn)
+                let mut host = self.host_fn_rest_in(start, DeclarationEnd::BlockEntry)?;
+                prepend_signature_trivia(&mut host.source_trivia, modifiers.header_trivia);
+                Ok(SigItem::HostFn(host))
             } else {
                 Err(self.err_here("expected `type` or `fn` after `host`"))
             };
         }
         if self.peek_ident_named("fn") {
-            self.sig_export_fn(modifiers.vis.is_pub(), modifiers.purity)
-                .map(SigItem::ExportFn)
+            let mut export = self.sig_export_fn(modifiers.vis.is_pub(), modifiers.purity)?;
+            prepend_signature_trivia(&mut export.function.source_trivia, modifiers.header_trivia);
+            Ok(SigItem::ExportFn(export))
         } else if self.peek_ident_named("type") {
             if modifiers.purity.is_pure() {
                 return Err(self.err_here("`pure` is valid only on ordinary `fn` declarations"));
@@ -5131,12 +5257,14 @@ impl<'a> Parser<'a> {
         let owner = self.peek_span();
         let start = owner.start;
         self.expect_ident_named("fn")?;
+        let name_trivia = self.peek_leading_trivia();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
-        let groups = self.host_fn_param_groups(SignaturePolicy::TypeOrValue)?;
-        self.expect_fn_arrow()?;
-        let ret = self.with_host_type_parameters(owner, &groups, Self::type_expr)?;
+        let (groups, mut source_trivia) =
+            self.host_fn_param_groups(SignaturePolicy::TypeOrValue)?;
+        prepend_signature_trivia(&mut source_trivia, name_trivia);
+        let ret = self.host_fn_return_type(owner, &groups)?;
         // A `{` here is a function body — illegal in a signature file,
         // which records signatures only. Give the sig-context
         // diagnostic rather than the bare "expected `;`".
@@ -5146,16 +5274,15 @@ impl<'a> Parser<'a> {
             ));
         }
         let semi_end = self.syntax_end;
-        Ok(SigExportFn {
-            purity,
-            function: crate::ast::host_fn_from_groups(
-                name,
-                groups,
-                ret,
-                Meta::new(Span::new(start, semi_end)),
-                None,
-            ),
-        })
+        let mut function = crate::ast::host_fn_from_groups(
+            name,
+            groups,
+            ret,
+            Meta::new(Span::new(start, semi_end)),
+            None,
+        );
+        function.source_trivia = source_trivia;
+        Ok(SigExportFn { purity, function })
     }
 
     /// `remove { module <path> { <name>; … } … }` — a braced run of
@@ -5172,19 +5299,22 @@ impl<'a> Parser<'a> {
                 && matches!(self.peek_at(1), Some(TokenKind::Ident(_)))
             {
                 let mut section = self.sig_remove_module()?;
-                pending.append(&mut section.leading_trivia);
+                append_relocated_trivia(&mut pending, std::mem::take(&mut section.leading_trivia));
                 section.leading_trivia = std::mem::take(&mut pending);
                 modules.push(section);
             } else {
                 let mut reference = self.sig_item_ref()?;
-                pending.append(&mut reference.leading_trivia);
+                append_relocated_trivia(
+                    &mut pending,
+                    std::mem::take(&mut reference.leading_trivia),
+                );
                 reference.leading_trivia = std::mem::take(&mut pending);
                 refs.push(reference);
             }
             pending = self.block_separator(false, false, &[])?;
             self.cursor_choices(CursorSlot::ModulePath, &["module"]);
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         self.expect_kind(TokenKind::RBrace, "`}` closing `remove`")?;
         if modules.is_empty() && refs.is_empty() {
             return Err(
@@ -5226,7 +5356,7 @@ impl<'a> Parser<'a> {
         let mut names = Vec::new();
         let mut pending = self.leading_block_separator(false)?;
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            pending.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut pending, self.peek_leading_trivia());
             let (name, name_span) = self.expect_ident()?;
             Self::validate_removed_name(&name, name_span)?;
             names.push(SigRemoveName {
@@ -5236,7 +5366,7 @@ impl<'a> Parser<'a> {
             });
             pending = self.block_separator(false, false, &[])?;
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         let end = self
             .expect_kind(TokenKind::RBrace, "`}` closing the module section")?
             .end;
@@ -5277,19 +5407,21 @@ impl<'a> Parser<'a> {
     /// globs. Each glob is a `/`-separated run of literal-IDENT / `*` /
     /// `**` segments.
     fn bridge_block(&mut self) -> Result<BridgeBlock, Error> {
-        let leading_trivia = self.peek_leading_trivia();
+        let mut leading_trivia = self.peek_leading_trivia();
         let start = self.expect_ident_named("bridge")?.start;
-        self.expect_kind(TokenKind::LBrace, "`{`")?;
+        let mut header_comments = self.cursor.clone();
+        let open = self.expect_kind(TokenKind::LBrace, "`{`")?;
+        Self::collect_line_comments(&mut header_comments, open.end, &mut leading_trivia);
         let mut globs = Vec::new();
         let mut pending = self.leading_block_separator(false)?;
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let mut glob = self.bridge_glob()?;
-            pending.append(&mut glob.leading_trivia);
+            append_relocated_trivia(&mut pending, std::mem::take(&mut glob.leading_trivia));
             glob.leading_trivia = std::mem::take(&mut pending);
             globs.push(glob);
             pending = self.block_separator(false, false, &[])?;
         }
-        pending.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut pending, self.peek_leading_trivia());
         let trailing = pending;
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         let mut trailing_trivia = Vec::new();
@@ -5361,11 +5493,17 @@ impl<'a> Parser<'a> {
     /// (see [`HostType::owned`]) but selects no alternate facade. Rust renders
     /// every `role(str)` occurrence by value, and other backends likewise give
     /// the block no runtime meaning.
-    fn host_type_rest(&mut self, start: u32) -> Result<HostType, Error> {
-        self.host_type_rest_in(start, DeclarationEnd::Outer)
+    fn host_type_rest(&mut self, start: u32, leading: Vec<Trivia>) -> Result<HostType, Error> {
+        self.host_type_rest_in(start, DeclarationEnd::Outer, leading)
     }
 
-    fn host_type_rest_in(&mut self, start: u32, end: DeclarationEnd) -> Result<HostType, Error> {
+    fn host_type_rest_in(
+        &mut self,
+        start: u32,
+        end: DeclarationEnd,
+        mut header_trivia: Vec<Trivia>,
+    ) -> Result<HostType, Error> {
+        let mut header_cursor = self.cursor.clone();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_type_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Type);
@@ -5397,12 +5535,17 @@ impl<'a> Parser<'a> {
             false
         };
         let semi_end = self.declaration_end(end, "`;` after the host type declaration")?;
+        Self::collect_line_comments(&mut header_cursor, semi_end, &mut header_trivia);
+        let mut meta = Meta::new(Span::new(start, semi_end));
+        // The compact header's comments print between `host type` and its
+        // name, after any attached declaration documentation.
+        meta.trailing_trivia = header_trivia;
         Ok(HostType {
             name,
             type_params,
             role,
             owned,
-            meta: Meta::new(Span::new(start, semi_end)),
+            meta,
             doc: None,
         })
     }
@@ -5459,41 +5602,91 @@ impl<'a> Parser<'a> {
 
     fn host_fn_rest_in(&mut self, start: u32, end: DeclarationEnd) -> Result<HostFn, Error> {
         let owner = self.peek_span();
+        let name_trivia = self.peek_leading_trivia();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
-        let groups = self.host_fn_param_groups(SignaturePolicy::ValueRequired)?;
-        self.expect_fn_arrow()?;
-        let ret = self.with_host_type_parameters(owner, &groups, Self::type_expr)?;
+        let (groups, mut source_trivia) =
+            self.host_fn_param_groups(SignaturePolicy::ValueRequired)?;
+        prepend_signature_trivia(&mut source_trivia, name_trivia);
+        let ret = self.host_fn_return_type(owner, &groups)?;
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             return Err(self
                 .err_here("a `host fn` declares a function supplied by the host, not a Kio function body")
                 .with_help("end the host function signature with `;`; use an ordinary `fn` to define a Kio body"));
         }
+        let trailing = if matches!(end, DeclarationEnd::Outer) {
+            self.peek_leading_trivia()
+        } else {
+            Vec::new()
+        };
         let semi_end = self.declaration_end(end, "`;` after the host function declaration")?;
-        Ok(crate::ast::host_fn_from_groups(
-            name,
-            groups,
-            ret,
-            Meta::new(Span::new(start, semi_end)),
-            None,
-        ))
+        let mut meta = Meta::new(Span::new(start, semi_end));
+        meta.trailing_trivia = trailing;
+        let mut host = crate::ast::host_fn_from_groups(name, groups, ret, meta, None);
+        host.source_trivia = source_trivia;
+        Ok(host)
+    }
+
+    fn host_fn_return_type(
+        &mut self,
+        owner: Span,
+        groups: &[HostFnParamGroup],
+    ) -> Result<Type, Error> {
+        if self.at_sym_prefix("->") {
+            let mut leading = Vec::new();
+            Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
+            self.expect_fn_arrow()?;
+            Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
+            let mut ret = self.with_host_type_parameters(owner, groups, Self::type_expr)?;
+            append_relocated_trivia(
+                &mut leading,
+                std::mem::take(&mut ret.meta_mut().leading_trivia),
+            );
+            ret.meta_mut().leading_trivia = leading;
+            Ok(ret)
+        } else {
+            let start = self.peek_span().start;
+            Ok(Type::Unit {
+                meta: Meta::new(Span::new(start, start)),
+            })
+        }
     }
 
     fn host_fn_param_groups(
         &mut self,
         policy: SignaturePolicy,
-    ) -> Result<Vec<HostFnParamGroup>, Error> {
+    ) -> Result<(Vec<HostFnParamGroup>, Option<Box<SignatureTrivia>>), Error> {
         let owner = self.peek_span();
         let mut groups = Vec::new();
+        let mut source_trivia = SignatureTrivia::default();
+        let mut canonical_offset = 0;
         while self.peek_starts_signature_group() {
-            if self.peek_starts_type_param() {
-                groups.push(HostFnParamGroup::Type(self.type_param_group()?));
+            let mut trivia = SignatureTrivia::default();
+            trivia.push(
+                0,
+                SignatureTriviaPosition::BeforeGroup,
+                self.peek_leading_trivia(),
+            );
+            let group = if self.peek_starts_type_param() {
+                HostFnParamGroup::Type(self.type_param_group_with_trivia(Some(&mut trivia))?)
             } else {
-                let params =
+                let (params, closing) =
                     self.with_host_type_parameters(owner, &groups, Self::host_fn_value_group)?;
-                groups.push(HostFnParamGroup::Value(params));
-            }
+                trivia.push(0, SignatureTriviaPosition::InsideClose, closing);
+                HostFnParamGroup::Value(params)
+            };
+            source_trivia
+                .anchors
+                .extend(trivia.anchors.into_iter().map(|mut anchor| {
+                    anchor.group += canonical_offset;
+                    anchor
+                }));
+            canonical_offset += match &group {
+                HostFnParamGroup::Type(params) => params.len(),
+                HostFnParamGroup::Value(_) => 1,
+            };
+            groups.push(group);
         }
         if groups.is_empty() {
             return Err(self.err_here("expected a host function parameter group"));
@@ -5507,7 +5700,7 @@ impl<'a> Parser<'a> {
                 self.err_here("host function signatures require an explicit value group `()`")
             );
         }
-        Ok(groups)
+        Ok((groups, source_trivia.into_source()))
     }
 
     fn with_host_type_parameters<T>(
@@ -5527,13 +5720,17 @@ impl<'a> Parser<'a> {
         )
     }
 
-    fn host_fn_value_group(&mut self) -> Result<Vec<HostFnValueParam>, Error> {
+    fn host_fn_value_group(&mut self) -> Result<(Vec<HostFnValueParam>, Vec<Trivia>), Error> {
         self.expect_kind(TokenKind::LParen, "`(`")?;
-        self.skip_commas();
+        let mut pending = self.peek_leading_trivia();
+        self.skip_commas_with_trivia(&mut pending);
         let mut params = Vec::new();
         while !matches!(self.peek(), Some(TokenKind::RParen)) {
-            params.push(self.host_fn_value_param()?);
-            let saw_comma = self.skip_commas();
+            let mut param = self.host_fn_value_param()?;
+            inject_meta_trivia(&mut param.meta, std::mem::take(&mut pending));
+            params.push(param);
+            pending = self.peek_leading_trivia();
+            let saw_comma = self.skip_commas_with_trivia(&mut pending);
             if matches!(self.peek(), Some(TokenKind::RParen)) {
                 break;
             }
@@ -5542,7 +5739,7 @@ impl<'a> Parser<'a> {
             }
         }
         self.expect_kind(TokenKind::RParen, "`)`")?;
-        Ok(params)
+        Ok((params, pending))
     }
 
     fn host_fn_value_param(&mut self) -> Result<HostFnValueParam, Error> {
@@ -5554,13 +5751,21 @@ impl<'a> Parser<'a> {
                 let (name, name_span) = self.expect_ident()?;
                 Self::validate_value_name(&name, name_span)?;
                 self.record_source_name(name_span, SourceNameRole::Parameter);
+                let mut punctuation = self.peek_leading_trivia();
                 self.expect_sym(":", "`:`")?;
-                let ty = self.type_expr()?;
+                append_relocated_trivia(&mut punctuation, self.peek_leading_trivia());
+                let mut ty = self.type_expr()?;
+                append_relocated_trivia(
+                    &mut punctuation,
+                    std::mem::take(&mut ty.meta_mut().leading_trivia),
+                );
                 let ty_end = ty.span().end;
+                let mut meta = Meta::new(Span::new(start, ty_end));
+                meta.leading_trivia = punctuation;
                 Ok(HostFnValueParam {
                     name: Some(name),
                     ty,
-                    meta: Meta::new(Span::new(start, ty_end)),
+                    meta,
                 })
             }
             _ => Err(self.err_here("expected named host function parameter `name: Type`")),
@@ -5797,7 +6002,7 @@ impl<'a> Parser<'a> {
                         .as_mut()
                         .map(ImportItem::leading_trivia_mut)
                         .unwrap_or(&mut trailing_trivia);
-                    trivia.append(&mut pending_item_trivia);
+                    append_relocated_trivia(trivia, std::mem::take(&mut pending_item_trivia));
                     Self::collect_import_comments(&mut comments, self.peek_span().start, trivia);
                     if matches!(self.peek(), Some(TokenKind::RParen)) {
                         items.extend(item);
@@ -5824,7 +6029,10 @@ impl<'a> Parser<'a> {
                 if items.is_empty() && self.recover_import_errors.is_none() {
                     return Err(self.err_here("expected at least one imported item"));
                 }
-                trailing_trivia.append(&mut pending_item_trivia);
+                append_relocated_trivia(
+                    &mut trailing_trivia,
+                    std::mem::take(&mut pending_item_trivia),
+                );
                 self.expect_kind(TokenKind::RParen, "`)` closing the import list")?;
                 Self::collect_import_comments(
                     &mut comments,
@@ -5990,6 +6198,8 @@ impl<'a> Parser<'a> {
     }
 
     fn item_modifiers_in(&mut self, context: DeclarationContext) -> Result<ItemModifiers, Error> {
+        let mut header_cursor = self.cursor.clone();
+        header_cursor.advance();
         let mut modifiers = ItemModifiers::impure_private();
         loop {
             self.declaration_keywords(context, &modifiers, false);
@@ -6076,6 +6286,11 @@ impl<'a> Parser<'a> {
             }
             break;
         }
+        Self::collect_line_comments(
+            &mut header_cursor,
+            self.peek_span().end,
+            &mut modifiers.header_trivia,
+        );
         Ok(modifiers)
     }
 
@@ -6094,8 +6309,8 @@ impl<'a> Parser<'a> {
         }
         let module = matches!(context, DeclarationContext::Module);
         let type_group = matches!(context, DeclarationContext::TypeGroup { .. });
-        if (modifiers.purity.is_pure() && modifiers.host)
-            || (modifiers.host && matches!(modifiers.vis, Visibility::PublicIn(_)))
+        if (modifiers.host
+            && (modifiers.purity.is_pure() || matches!(modifiers.vis, Visibility::PublicIn(_))))
             || (type_group && (modifiers.purity.is_pure() || modifiers.host))
         {
             self.cursor_choices(CursorSlot::Grammar, &[]);
@@ -6168,10 +6383,13 @@ impl<'a> Parser<'a> {
             let start = self.peek_span().start;
             return if self.peek_ident_named("type") {
                 self.expect_ident_named("type")?;
-                self.host_type_rest(start).map(Item::HostType)
+                self.host_type_rest(start, modifiers.header_trivia)
+                    .map(Item::HostType)
             } else if self.peek_ident_named("fn") {
                 self.expect_ident_named("fn")?;
-                self.host_fn_rest(start).map(Item::HostFn)
+                let mut host = self.host_fn_rest(start)?;
+                prepend_signature_trivia(&mut host.source_trivia, modifiers.header_trivia);
+                Ok(Item::HostFn(host))
             } else {
                 Err(self.err_here("expected `type` or `fn` after `host`"))
             };
@@ -6179,7 +6397,11 @@ impl<'a> Parser<'a> {
         if self.peek_ident_named("fn") {
             self.fn_item(modifiers).map(Item::FnDef)
         } else if self.peek_ident_named("rec") {
-            self.rec_group_item(modifiers.vis.clone(), modifiers.vis_span)
+            self.rec_group_item(
+                modifiers.vis.clone(),
+                modifiers.vis_span,
+                modifiers.header_trivia,
+            )
         } else if self.peek_ident_named("type") {
             if self.peek_kind_at(1, &TokenKind::LBrace) {
                 self.label_forward(modifiers)
@@ -6188,7 +6410,7 @@ impl<'a> Parser<'a> {
                 self.type_alias(modifiers).map(Item::TypeAlias)
             }
         } else if self.peek_ident_named("literal") {
-            self.literal_alias(modifiers.vis)
+            self.literal_alias(modifiers)
                 .map(|literal| Item::LiteralAlias(literal, ()))
         } else if self.peek_ident_named("newtype") {
             self.newtype(modifiers).map(Item::Newtype)
@@ -6447,33 +6669,71 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn rec_loop_header(
+        &mut self,
+    ) -> Result<(Vec<PathSegment>, Option<Box<crate::ast::RecHeaderTrivia>>), Error> {
+        let mut leading = self.peek_leading_trivia();
+        self.expect_kind(TokenKind::LParen, "`(` after `rec`")?;
+        let mut path_tokens = self.cursor.clone();
+        let (path, _) = self.value_path_segments()?;
+        Self::validate_reference_value_path_leaf(&path)?;
+        while let Some(token) = path_tokens.peek_token() {
+            if token.span.start >= self.peek_span().start {
+                break;
+            }
+            append_relocated_trivia(&mut leading, token.leading_trivia.clone());
+            path_tokens.advance();
+        }
+        let closing = self.peek_leading_trivia();
+        self.expect_kind(TokenKind::RParen, "`)` after `rec(...)`")?;
+        let after = self.peek_leading_trivia();
+        let source_trivia = leading
+            .iter()
+            .chain(&closing)
+            .chain(&after)
+            .any(|trivia| matches!(trivia, Trivia::LineComment { .. }))
+            .then(|| {
+                Box::new(crate::ast::RecHeaderTrivia {
+                    leading,
+                    closing,
+                    after,
+                })
+            });
+        Ok((path, source_trivia))
+    }
+
     fn rec_group_item(
         &mut self,
         leading_vis: Visibility,
         leading_vis_span: Option<Span>,
+        mut header_trivia: Vec<Trivia>,
     ) -> Result<Item, Error> {
         let start = self.peek_span().start;
         let rec_span = self.expect_ident_named("rec")?;
         self.cursor_choices(CursorSlot::Grammar, &["newtype", "labels"]);
         if self.peek_ident_named("newtype") {
+            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.newtype(ItemModifiers {
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
                     host: false,
+                    header_trivia,
                 })
             })?;
             declaration.rec_span = Some(rec_span);
             return Ok(Item::Newtype(declaration));
         }
         if self.peek_ident_named("labels") {
+            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.labels(ItemModifiers {
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
                     host: false,
+                    header_trivia,
                 })
             })?;
             declaration.rec_span = Some(rec_span);
@@ -6489,10 +6749,8 @@ impl<'a> Parser<'a> {
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             return self.type_rec_group_after_rec(start, leading_vis, leading_vis_span, true);
         }
-        self.expect_kind(TokenKind::LParen, "`(` after `rec`")?;
-        let (loop_path, _) = self.value_path_segments()?;
-        Self::validate_reference_value_path_leaf(&loop_path)?;
-        self.expect_kind(TokenKind::RParen, "`)` after `rec(...)`")?;
+        let (loop_path, mut source_trivia) = self.rec_loop_header()?;
+        prepend_rec_header_trivia(&mut source_trivia, header_trivia);
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             if leading_vis.is_pub() {
                 return Err(self.err_here(
@@ -6504,14 +6762,14 @@ impl<'a> Parser<'a> {
                 .as_ref()
                 .is_some_and(|tooling| tooling.collect_roles)
             {
-                return self.rec_group_with_tooling(start, loop_path);
+                return self.rec_group_with_tooling(start, loop_path, source_trivia);
             }
             self.advance();
             let mut members = Vec::new();
             let mut pending = self.leading_block_separator(false)?;
             while !matches!(self.peek(), Some(TokenKind::RBrace)) {
                 let mut leading = std::mem::take(&mut pending);
-                leading.extend(self.peek_leading_trivia());
+                append_relocated_trivia(&mut leading, self.peek_leading_trivia());
                 let doc = extract_doc_comment(&mut leading);
                 let mut member = self.rec_group_member_fn(Visibility::Private)?;
                 member.doc = doc;
@@ -6519,7 +6777,7 @@ impl<'a> Parser<'a> {
                 members.push(member);
                 pending = self.block_separator(false, false, &["pub", "fn", "pure"])?;
             }
-            pending.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut pending, self.peek_leading_trivia());
             let end = self
                 .expect_kind(TokenKind::RBrace, "`}` closing `rec(...)` group")?
                 .end;
@@ -6532,6 +6790,7 @@ impl<'a> Parser<'a> {
             return Ok(Item::RecGroup(
                 RecGroup {
                     loop_path,
+                    source_trivia,
                     members,
                     meta: {
                         let mut meta = Meta::new(Span::new(start, end));
@@ -6547,6 +6806,7 @@ impl<'a> Parser<'a> {
         Ok(Item::RecGroup(
             RecGroup {
                 loop_path,
+                source_trivia,
                 members: vec![member],
                 meta: Meta::new(Span::new(start, end)),
             },
@@ -6558,6 +6818,7 @@ impl<'a> Parser<'a> {
         &mut self,
         start: u32,
         loop_path: Vec<PathSegment>,
+        source_trivia: Option<Box<crate::ast::RecHeaderTrivia>>,
     ) -> Result<Item, Error> {
         self.advance();
         let scope = self.begin_scope_region(ScopeOwnerKind::RecursiveGroup, None);
@@ -6581,9 +6842,9 @@ impl<'a> Parser<'a> {
             self.cursor_choices(CursorSlot::Grammar, &["pub", "fn"]);
             while !matches!(self.peek(), Some(TokenKind::RBrace)) {
                 let mut leading = std::mem::take(&mut pending);
-                leading.extend(self.peek_leading_trivia());
+                append_relocated_trivia(&mut leading, self.peek_leading_trivia());
                 let doc = extract_doc_comment(&mut leading);
-                let (modifiers, header) = match self
+                let (modifiers, mut header) = match self
                     .rec_member_modifiers(Visibility::Private)
                     .and_then(|modifiers| {
                         self.function_header(SignaturePolicy::ValueRequired)
@@ -6592,6 +6853,7 @@ impl<'a> Parser<'a> {
                     Ok(parsed) => parsed,
                     Err(error) => return Err(first_error.unwrap_or(error)),
                 };
+                prepend_signature_trivia(&mut header.sig.source_trivia, modifiers.header_trivia);
                 if interval.is_some() {
                     names.push(PathSegment::new(header.name.clone(), header.name_span));
                     polymorphic |= header
@@ -6621,7 +6883,7 @@ impl<'a> Parser<'a> {
                 pending = self.block_separator(false, false, &["pub", "fn", "pure"])?;
                 self.cursor_choices(CursorSlot::Grammar, &["pub", "fn"]);
             }
-            pending.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut pending, self.peek_leading_trivia());
             let end = self
                 .expect_kind(TokenKind::RBrace, "`}` closing `rec(...)` group")?
                 .end;
@@ -6637,6 +6899,7 @@ impl<'a> Parser<'a> {
             Ok(Item::RecGroup(
                 RecGroup {
                     loop_path,
+                    source_trivia,
                     members,
                     meta: {
                         let mut meta = Meta::new(Span::new(start, end));
@@ -6672,27 +6935,32 @@ impl<'a> Parser<'a> {
         leading_vis: Visibility,
         leading_vis_span: Option<Span>,
         start: u32,
+        mut header_trivia: Vec<Trivia>,
     ) -> Result<Item, Error> {
         let rec_span = self.expect_ident_named("rec")?;
         if self.peek_ident_named("newtype") {
+            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.newtype(ItemModifiers {
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
                     host: false,
+                    header_trivia,
                 })
             })?;
             declaration.rec_span = Some(rec_span);
             return Ok(Item::Newtype(declaration));
         }
         if self.peek_ident_named("labels") {
+            append_relocated_trivia(&mut header_trivia, self.peek_leading_trivia());
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.labels(ItemModifiers {
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
                     host: false,
+                    header_trivia,
                 })
             })?;
             declaration.rec_span = Some(rec_span);
@@ -6708,10 +6976,8 @@ impl<'a> Parser<'a> {
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             return self.type_rec_group_after_rec(start, leading_vis, leading_vis_span, true);
         }
-        self.expect_kind(TokenKind::LParen, "`(` after `rec`")?;
-        let (loop_path, _) = self.value_path_segments()?;
-        Self::validate_reference_value_path_leaf(&loop_path)?;
-        self.expect_kind(TokenKind::RParen, "`)` after `rec(...)`")?;
+        let (loop_path, mut source_trivia) = self.rec_loop_header()?;
+        prepend_rec_header_trivia(&mut source_trivia, header_trivia);
         if matches!(self.peek(), Some(TokenKind::LBrace)) {
             if leading_vis.is_pub() {
                 return Err(self.err_here(
@@ -6723,7 +6989,7 @@ impl<'a> Parser<'a> {
             let mut pending = self.leading_block_separator(false)?;
             while !matches!(self.peek(), Some(TokenKind::RBrace)) {
                 let mut leading = std::mem::take(&mut pending);
-                leading.extend(self.peek_leading_trivia());
+                append_relocated_trivia(&mut leading, self.peek_leading_trivia());
                 let doc = extract_doc_comment(&mut leading);
                 let member_start = self.peek_span().start;
                 let mut member =
@@ -6733,7 +6999,7 @@ impl<'a> Parser<'a> {
                 members.push(member);
                 pending = self.block_separator(false, false, &["pub", "fn", "pure"])?;
             }
-            pending.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut pending, self.peek_leading_trivia());
             let end = self
                 .expect_kind(TokenKind::RBrace, "`}` closing `rec(...)` group")?
                 .end;
@@ -6746,6 +7012,7 @@ impl<'a> Parser<'a> {
             return Ok(Item::RecGroup(
                 RecGroup {
                     loop_path,
+                    source_trivia,
                     members,
                     meta: {
                         let mut meta = Meta::new(Span::new(start, end));
@@ -6762,6 +7029,7 @@ impl<'a> Parser<'a> {
         Ok(Item::RecGroup(
             RecGroup {
                 loop_path,
+                source_trivia,
                 members: vec![member],
                 meta: Meta::new(Span::new(start, end)),
             },
@@ -6858,7 +7126,7 @@ impl<'a> Parser<'a> {
                     (self.cursor.clone(), next)
                 });
             let mut leading = std::mem::take(&mut pending);
-            leading.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut leading, self.peek_leading_trivia());
             // A plain comment between two members can describe either side;
             // unlike `///`, it has no declaration attachment in the grammar.
             // Keep parsing/formatting it, but withhold structural move/split
@@ -6964,7 +7232,7 @@ impl<'a> Parser<'a> {
             );
         }
         let mut close_leading = pending;
-        close_leading.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut close_leading, self.peek_leading_trivia());
         let trailing_comment_span = trivia_comment_span(&close_leading);
         let close_brace_span =
             self.expect_kind(TokenKind::RBrace, "`}` closing bare `rec` type group")?;
@@ -7041,6 +7309,8 @@ impl<'a> Parser<'a> {
         leading_vis: Visibility,
         start: u32,
     ) -> Result<FnDef<Surface, ()>, Error> {
+        let mut header_cursor = self.cursor.clone();
+        header_cursor.advance();
         let mut vis = leading_vis;
         if self.peek_ident_named("pub") {
             if vis.is_pub() {
@@ -7055,7 +7325,11 @@ impl<'a> Parser<'a> {
         if !self.peek_ident_named("fn") {
             return Err(self.err_here("expected `fn` or visibility-modified `fn` after `rec(...)`"));
         }
-        self.fn_item_deferred(vis, (), start, SignaturePolicy::ValueRequired)
+        let mut header_trivia = Vec::new();
+        Self::collect_line_comments(&mut header_cursor, self.peek_span().end, &mut header_trivia);
+        let mut member = self.fn_item_deferred(vis, (), start, SignaturePolicy::ValueRequired)?;
+        prepend_signature_trivia(&mut member.sig.source_trivia, header_trivia);
+        Ok(member)
     }
 
     fn rec_group_member_fn(
@@ -7068,10 +7342,12 @@ impl<'a> Parser<'a> {
             .as_ref()
             .is_some_and(|tooling| tooling.collect_roles)
         {
-            let header = self.function_header(SignaturePolicy::ValueRequired)?;
+            let mut header = self.function_header(SignaturePolicy::ValueRequired)?;
+            prepend_signature_trivia(&mut header.sig.source_trivia, modifiers.header_trivia);
             return self.function_body(modifiers.vis, (), header);
         }
-        let header = self.function_header(SignaturePolicy::ValueRequired)?;
+        let mut header = self.function_header(SignaturePolicy::ValueRequired)?;
+        prepend_signature_trivia(&mut header.sig.source_trivia, modifiers.header_trivia);
         let owner = header.body_open;
         let polymorphic = header
             .sig
@@ -7112,6 +7388,8 @@ impl<'a> Parser<'a> {
     }
 
     fn rec_member_modifiers(&mut self, leading_vis: Visibility) -> Result<ItemModifiers, Error> {
+        let mut header_cursor = self.cursor.clone();
+        header_cursor.advance();
         let mut vis = leading_vis;
         self.cursor_choices_from(
             CursorSlot::Grammar,
@@ -7133,11 +7411,14 @@ impl<'a> Parser<'a> {
         if !self.peek_ident_named("fn") {
             return Err(self.err_here("expected `fn` or visibility-modified `fn` after `rec(...)`"));
         }
+        let mut header_trivia = Vec::new();
+        Self::collect_line_comments(&mut header_cursor, self.peek_span().end, &mut header_trivia);
         Ok(ItemModifiers {
             vis,
             vis_span: None,
             purity: Purity::Impure,
             host: false,
+            header_trivia,
         })
     }
 
@@ -7153,9 +7434,10 @@ impl<'a> Parser<'a> {
     /// Parse a `literal` declaration:
     ///
     ///   `pub? literal name = <bare-literal> ;`
-    fn literal_alias(&mut self, vis: Visibility) -> Result<LiteralAlias, Error> {
+    fn literal_alias(&mut self, modifiers: ItemModifiers) -> Result<LiteralAlias, Error> {
         let start = self.peek_span().start;
         self.expect_ident_named("literal")?;
+        let mut header_cursor = self.cursor.clone();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.expect_sym("=", "`=`")?;
@@ -7163,11 +7445,14 @@ impl<'a> Parser<'a> {
         let semi_end = self
             .expect_kind(TokenKind::Semicolon, "`;` after the literal declaration")?
             .end;
+        let mut meta = Meta::new(Span::new(start, semi_end));
+        meta.trailing_trivia = modifiers.header_trivia;
+        Self::collect_line_comments(&mut header_cursor, semi_end, &mut meta.trailing_trivia);
         Ok(LiteralAlias {
-            vis,
+            vis: modifiers.vis,
             name,
             value,
-            meta: Meta::new(Span::new(start, semi_end)),
+            meta,
             doc: None,
         })
     }
@@ -7620,6 +7905,7 @@ impl<'a> Parser<'a> {
     fn equiv(&mut self) -> Result<crate::ast::Equiv, Error> {
         let start = self.peek_span().start;
         self.expect_ident_named("equiv")?;
+        let leading = self.peek_leading_trivia();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
@@ -7628,17 +7914,23 @@ impl<'a> Parser<'a> {
         } else {
             Signature::new(Vec::new())
         };
+        let body_leading = self.peek_leading_trivia();
         self.expect_kind(TokenKind::LBrace, "`{` after `equiv` head")?;
         let scope = self.begin_body_scope(Some(&sig));
         let result = self.equiv_terms(start);
         self.finish_body_scope(scope, None);
-        let (terms, close_end) = result?;
+        let (mut terms, close_end) = result?;
+        if let Some(first) = terms.first_mut() {
+            inject_meta_trivia(&mut first.meta, body_leading);
+        }
+        let mut meta = Meta::new(Span::new(start, close_end));
+        meta.leading_trivia = leading;
         Ok(crate::ast::Equiv {
             name,
             name_span,
             sig,
             terms,
-            meta: Meta::new(Span::new(start, close_end)),
+            meta,
         })
     }
 
@@ -7647,12 +7939,12 @@ impl<'a> Parser<'a> {
         let mut pending_separator_trivia: Vec<crate::pass::lexer::Trivia> = Vec::new();
         loop {
             let mut term_trivia = std::mem::take(&mut pending_separator_trivia);
-            term_trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut term_trivia, self.skip_semicolon_separators());
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 // Comment dangling before the closing `}` — stash on
                 // the last arm's trailing slot so it survives. The
                 // `}`'s own leading trivia holds it; merge it in.
-                term_trivia.extend(self.peek_leading_trivia());
+                append_relocated_trivia(&mut term_trivia, self.peek_leading_trivia());
                 if let Some(last) = terms.last_mut() {
                     set_trailing_trivia(&mut last.meta, term_trivia);
                 }
@@ -7665,7 +7957,7 @@ impl<'a> Parser<'a> {
                      `.() { ... }()`",
                 ));
             }
-            term_trivia.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut term_trivia, self.peek_leading_trivia());
             let term_start = self.peek_span().start;
             let body = self.expr()?;
             let body_end = body.span().end;
@@ -7709,16 +8001,19 @@ impl<'a> Parser<'a> {
     }
 
     fn fn_item(&mut self, modifiers: ItemModifiers) -> Result<FnDef, Error> {
-        let header = self.function_header(SignaturePolicy::TypeOrValue)?;
+        let mut header = self.function_header(SignaturePolicy::TypeOrValue)?;
+        prepend_signature_trivia(&mut header.sig.source_trivia, modifiers.header_trivia);
         self.function_body(modifiers.vis, modifiers.purity, header)
     }
 
     fn function_header(&mut self, policy: SignaturePolicy) -> Result<FunctionHeader, Error> {
         let owner = self.expect_ident_named("fn")?;
+        let name_trivia = self.peek_leading_trivia();
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
         self.record_source_name(name_span, SourceNameRole::Function);
-        let sig = self.signature(policy)?;
+        let mut sig = self.signature(policy)?;
+        prepend_signature_trivia(&mut sig.source_trivia, name_trivia);
         let (ret, hoisted) = self.function_return_type(owner, &sig)?;
         let ret_elided = ret.is_none();
         let ret = ret.unwrap_or_else(|| {
@@ -7763,8 +8058,8 @@ impl<'a> Parser<'a> {
                 }),
                 Self::type_expr,
             )?;
-            if !early.is_empty() && type_has_boundary_comments(&ret, false) {
-                append_source_trivia(
+            if !early.is_empty() && type_has_boundary_comments(&ret, true) {
+                append_relocated_trivia(
                     &mut early,
                     std::mem::take(&mut ret.meta_mut().leading_trivia),
                 );
@@ -7792,24 +8087,10 @@ impl<'a> Parser<'a> {
             sig,
             ret,
             ret_elided,
-            mut hoisted,
+            hoisted,
             body_open: _,
         } = header;
         let (mut body, body_close_end) = self.block_body_with_signature(Some(&sig))?;
-        // Prepend the hoisted return-type comments to the body's leading
-        // run. A paragraph boundary keeps the header run distinct from
-        // comments belonging to the first body expression.
-        if hoisted
-            .iter()
-            .any(|trivia| matches!(trivia, Trivia::LineComment { .. }))
-            && body
-                .meta()
-                .leading_trivia
-                .iter()
-                .any(|trivia| matches!(trivia, Trivia::LineComment { .. }))
-        {
-            hoisted.extend([Trivia::Newline, Trivia::Newline]);
-        }
         inject_leading_trivia(&mut body, hoisted);
         Ok(FnDef {
             vis,
@@ -7847,7 +8128,7 @@ impl<'a> Parser<'a> {
                 "`;` after the label forwarding declaration",
             )?
             .end;
-        let mut body_trivia = Vec::new();
+        let mut body_trivia = modifiers.header_trivia;
         while let Some(token) = content_cursor.advance() {
             Self::collect_comments_into(token.leading_trivia, &mut body_trivia);
             if token.span.end == end {
@@ -7881,14 +8162,28 @@ impl<'a> Parser<'a> {
         end: DeclarationEnd,
     ) -> Result<TypeAlias, Error> {
         let owner = self.peek_span();
+        let mut header_cursor = self.cursor.clone();
+        let mut body_leading = modifiers.header_trivia.clone();
+        // The enclosing declaration owns trivia before `type`; the alias
+        // body owns comments inside its otherwise compact header.
+        header_cursor.advance();
         let header = self.type_alias_header()?;
+        let body_start = self.peek_span().start;
+        while let Some(token) = header_cursor.peek_token() {
+            if token.span.start >= body_start {
+                break;
+            }
+            Self::collect_comments_into(token.leading_trivia.clone(), &mut body_leading);
+            header_cursor.advance();
+        }
+        append_relocated_trivia(&mut body_leading, self.peek_leading_trivia());
         let TypeAliasHeader {
             start,
             name,
             name_span,
             type_params,
         } = header;
-        let body = self.with_type_parameters(
+        let mut body = self.with_type_parameters(
             owner,
             ScopeOwnerKind::Declaration,
             &type_params,
@@ -7907,6 +8202,13 @@ impl<'a> Parser<'a> {
                 parser.type_expr()
             },
         )?;
+        inject_meta_trivia(body.meta_mut(), body_leading);
+        if matches!(end, DeclarationEnd::Outer) {
+            append_relocated_trivia(
+                &mut body.meta_mut().trailing_trivia,
+                self.peek_leading_trivia(),
+            );
+        }
         let semi_end = self.declaration_end(end, "`;` after the type alias")?;
         let editable_start = modifiers.vis_span.map_or(start, |span| span.start);
         Ok(TypeAlias {
@@ -7944,7 +8246,16 @@ impl<'a> Parser<'a> {
 
     fn newtype(&mut self, modifiers: ItemModifiers) -> Result<Newtype, Error> {
         let owner = self.peek_span();
+        let mut header_cursor = self.cursor.clone();
+        header_cursor.advance();
+        let mut payload_leading = modifiers.header_trivia.clone();
         let header = self.newtype_header()?;
+        Self::collect_line_comments(
+            &mut header_cursor,
+            self.peek_span().start,
+            &mut payload_leading,
+        );
+        append_relocated_trivia(&mut payload_leading, self.peek_leading_trivia());
         let NewtypeHeader {
             start,
             name,
@@ -7952,13 +8263,17 @@ impl<'a> Parser<'a> {
             type_params,
             existential_params,
         } = header;
-        let payload = self.with_type_parameters(
+        let mut payload = self.with_type_parameters(
             owner,
             ScopeOwnerKind::Declaration,
             type_params.iter().chain(&existential_params),
             Self::type_expr,
         )?;
-
+        inject_meta_trivia(payload.meta_mut(), payload_leading);
+        append_relocated_trivia(
+            &mut payload.meta_mut().trailing_trivia,
+            self.peek_leading_trivia(),
+        );
         self.expect_kind(TokenKind::LBrace, "`{`")?;
         let mut constructor: Option<TypeMember> = None;
         let mut projector: Option<TypeMember> = None;
@@ -7967,13 +8282,15 @@ impl<'a> Parser<'a> {
         self.newtype_member_choices(false, false, true);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let mut member_trivia = std::mem::take(&mut pending_separator_trivia);
-            member_trivia.extend(self.skip_semicolon_separators());
+            append_relocated_trivia(&mut member_trivia, self.skip_semicolon_separators());
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 // Comment dangling between a trailing `;` run and `}`.
                 members_trailing = member_trivia;
                 break;
             }
-            member_trivia.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut member_trivia, self.peek_leading_trivia());
+            let mut member_cursor = self.cursor.clone();
+            member_cursor.advance();
             self.newtype_member_choices(constructor.is_some(), projector.is_some(), true);
             let (member_vis, vis_span) = self.parse_visibility_prefix()?;
             self.newtype_member_choices(constructor.is_some(), projector.is_some(), false);
@@ -7992,6 +8309,7 @@ impl<'a> Parser<'a> {
             if matches!(kw.as_str(), "constructor" | "projector") {
                 self.record_source_name(member_span, SourceNameRole::Function);
             }
+            Self::collect_line_comments(&mut member_cursor, member_span.end, &mut member_trivia);
             let member = TypeMember {
                 vis: member_vis,
                 name: member_name,
@@ -8034,8 +8352,11 @@ impl<'a> Parser<'a> {
         // the last member; when the last member's `;` is directly
         // followed by the comment + `}`, the loop exits on the `while`
         // guard and this is the sole capture point.)
-        members_trailing.extend(std::mem::take(&mut pending_separator_trivia));
-        members_trailing.extend(self.peek_leading_trivia());
+        append_relocated_trivia(
+            &mut members_trailing,
+            std::mem::take(&mut pending_separator_trivia),
+        );
+        append_relocated_trivia(&mut members_trailing, self.peek_leading_trivia());
         self.expect_kind(TokenKind::RBrace, "`}`")?;
         let semi_end = self.syntax_end;
 
@@ -8127,7 +8448,15 @@ impl<'a> Parser<'a> {
     ) -> Result<Labels, Error> {
         let owner = self.peek_span();
         let visible_until = self.declaration_scope_end();
+        let mut header_cursor = self.cursor.clone();
+        header_cursor.advance();
         let header = self.labels_header()?;
+        let mut header_trivia = modifiers.header_trivia;
+        Self::collect_line_comments(
+            &mut header_cursor,
+            self.peek_span().start,
+            &mut header_trivia,
+        );
         let LabelsHeader {
             start,
             type_alias_name,
@@ -8146,13 +8475,26 @@ impl<'a> Parser<'a> {
                 .with_help("write `labels Foo = {a: A} | {b: B};`"));
         }
         while type_alias_name.is_some() && self.at_sym("|") {
+            let leading = self.peek_leading_trivia();
             self.advance();
-            arms.push(self.with_type_parameters(
+            let mut arm = self.with_type_parameters(
                 owner,
                 ScopeOwnerKind::Declaration,
                 &type_alias_params,
                 |parser| parser.labels_arm(visible_until),
-            )?);
+            )?;
+            if let Some(first) = arm.entries.first_mut() {
+                inject_meta_trivia(&mut first.meta, leading);
+            }
+            arms.push(arm);
+        }
+        if let Some(first) = arms.first_mut().and_then(|arm| arm.entries.first_mut()) {
+            inject_meta_trivia(&mut first.meta, header_trivia);
+        }
+        if matches!(end, DeclarationEnd::Outer)
+            && let Some(last) = arms.last_mut().and_then(|arm| arm.entries.last_mut())
+        {
+            append_relocated_trivia(&mut last.meta.trailing_trivia, self.peek_leading_trivia());
         }
         let semi_end = self.declaration_end(end, "`;` after the labels declaration")?;
         let entries: Vec<LabelEntry> = arms
@@ -8218,11 +8560,12 @@ impl<'a> Parser<'a> {
 
     fn labels_arm(&mut self, visible_until: u32) -> Result<LabelsArm, Error> {
         let start = self.peek_span().start;
+        let mut pending_trivia = self.peek_leading_trivia();
         self.expect_kind(TokenKind::LBrace, "`{`")?;
         let mut entries: Vec<LabelEntry> = Vec::new();
         let mut first_error = None;
         let mut seen: std::collections::HashMap<String, Span> = std::collections::HashMap::new();
-        let mut pending_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
         self.skip_commas_with_trivia(&mut pending_trivia);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
             let leading = std::mem::take(&mut pending_trivia);
@@ -8294,7 +8637,11 @@ impl<'a> Parser<'a> {
     }
 
     fn label_entry(&mut self) -> Result<LabelEntry, Error> {
+        let mut header_cursor = self.cursor.clone();
+        header_cursor.advance();
         let header = self.label_entry_header()?;
+        let mut header_trivia = Vec::new();
+        Self::collect_line_comments(&mut header_cursor, self.peek_span().end, &mut header_trivia);
         let LabelEntryHeader {
             name,
             name_span,
@@ -8350,13 +8697,15 @@ impl<'a> Parser<'a> {
             ));
         }
         let payload_end = payload.span().end;
+        let mut meta = Meta::new(Span::new(name_span.start, payload_end));
+        meta.leading_trivia = header_trivia;
         Ok(LabelEntry {
             name,
             name_span,
             type_params,
             existential_params,
             payload,
-            meta: Meta::new(Span::new(name_span.start, payload_end)),
+            meta,
         })
     }
 
@@ -8430,7 +8779,7 @@ impl<'a> Parser<'a> {
         while matches!(self.peek(), Some(TokenKind::Comma)) {
             self.advance();
             if trivia.is_some() {
-                append_source_trivia(&mut pending, self.peek_leading_trivia());
+                append_relocated_trivia(&mut pending, self.peek_leading_trivia());
             }
         }
         if self.at_type_param_close() {
@@ -8446,7 +8795,7 @@ impl<'a> Parser<'a> {
             let star_count = self.consume_leading_stars();
             if let Some(trivia) = &mut trivia {
                 if star_count > 0 {
-                    append_source_trivia(&mut pending, self.peek_leading_trivia());
+                    append_relocated_trivia(&mut pending, self.peek_leading_trivia());
                 }
                 trivia.push(
                     params.len(),
@@ -8479,7 +8828,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 saw_comma = true;
                 if trivia.is_some() {
-                    append_source_trivia(&mut pending, self.peek_leading_trivia());
+                    append_relocated_trivia(&mut pending, self.peek_leading_trivia());
                 }
             }
             if self.at_type_param_close() {
@@ -8645,7 +8994,7 @@ impl<'a> Parser<'a> {
                 self.fn_value_param()?
             };
             let mut leading = leading;
-            append_source_trivia(&mut leading, std::mem::take(&mut param.meta.leading_trivia));
+            append_relocated_trivia(&mut leading, std::mem::take(&mut param.meta.leading_trivia));
             param.meta.leading_trivia = leading;
             params.push(param);
             pending_trivia = self.peek_leading_trivia();
@@ -8689,7 +9038,7 @@ impl<'a> Parser<'a> {
         }
         let mut punctuation = self.peek_leading_trivia();
         self.expect_sym(":", "`:`")?;
-        append_source_trivia(&mut punctuation, self.peek_leading_trivia());
+        append_relocated_trivia(&mut punctuation, self.peek_leading_trivia());
         // As-pattern at top: `name : (<pat-elems>)`.
         if matches!(self.peek(), Some(TokenKind::LParen)) && self.peek_paren_starts_param_pattern()
         {
@@ -8748,7 +9097,7 @@ impl<'a> Parser<'a> {
         if self.at_sym(":") {
             let mut punctuation = self.peek_leading_trivia();
             self.advance();
-            append_source_trivia(&mut punctuation, self.peek_leading_trivia());
+            append_relocated_trivia(&mut punctuation, self.peek_leading_trivia());
             if matches!(self.peek(), Some(TokenKind::LParen))
                 && self.peek_paren_starts_param_pattern()
             {
@@ -8866,11 +9215,16 @@ impl<'a> Parser<'a> {
     /// [`Self::peek_paren_starts_param_pattern`]).
     fn param_pattern_tuple(&mut self, parameter_owner: bool) -> Result<ParamPattern, Error> {
         let start = self.expect_kind(TokenKind::LParen, "`(`")?.start;
-        self.skip_commas();
+        let mut pending_trivia = self.peek_leading_trivia();
+        self.skip_commas_with_trivia(&mut pending_trivia);
         let mut elems: Vec<ParamPatternElem> = Vec::new();
+        let mut elem_leading = Vec::new();
         while !matches!(self.peek(), Some(TokenKind::RParen)) {
-            elems.push(self.param_pattern_elem(parameter_owner)?);
-            let saw_comma = self.skip_commas();
+            let mut leading = std::mem::take(&mut pending_trivia);
+            elems.push(self.param_pattern_elem(parameter_owner, &mut leading)?);
+            elem_leading.push(leading);
+            pending_trivia = self.peek_leading_trivia();
+            let saw_comma = self.skip_commas_with_trivia(&mut pending_trivia);
             if matches!(self.peek(), Some(TokenKind::RParen)) {
                 break;
             }
@@ -8878,6 +9232,17 @@ impl<'a> Parser<'a> {
                 return Err(self.err_here("expected `,` or `)`"));
             }
         }
+        let source_trivia = elem_leading
+            .iter()
+            .flatten()
+            .chain(&pending_trivia)
+            .any(|trivia| matches!(trivia, Trivia::LineComment { .. }))
+            .then(|| {
+                Box::new(crate::ast::ParamPatternTrivia {
+                    elem_leading,
+                    closing: pending_trivia,
+                })
+            });
         let end = self.expect_kind(TokenKind::RParen, "`)`")?.end;
         let span = Span::new(start, end);
         if elems.is_empty() {
@@ -8892,6 +9257,7 @@ impl<'a> Parser<'a> {
             span,
             match_id,
             numbered: None,
+            source_trivia,
         })
     }
 
@@ -8901,7 +9267,11 @@ impl<'a> Parser<'a> {
     /// positions where the surrounding context pins the type (a
     /// lambda literal, a `match!` clause). For top-level fn definitions
     /// the typer rejects `_` slots that no context resolves.
-    fn param_pattern_elem(&mut self, parameter_owner: bool) -> Result<ParamPatternElem, Error> {
+    fn param_pattern_elem(
+        &mut self,
+        parameter_owner: bool,
+        leading: &mut Vec<Trivia>,
+    ) -> Result<ParamPatternElem, Error> {
         // Nested bare tuple: `(...)`. We commit here because the
         // outer caller has already verified we're inside a pattern.
         if matches!(self.peek(), Some(TokenKind::LParen)) {
@@ -8940,7 +9310,9 @@ impl<'a> Parser<'a> {
                 },
             });
         }
+        append_relocated_trivia(leading, self.peek_leading_trivia());
         self.expect_sym(":", "`:`")?;
+        append_relocated_trivia(leading, self.peek_leading_trivia());
         // Nested as-pattern: `name : (<pat-elems>)`. Disambiguate from
         // a parenthesized type by peeking inside.
         if matches!(self.peek(), Some(TokenKind::LParen)) && self.peek_paren_starts_param_pattern()
@@ -8967,7 +9339,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn unary_bind_from_pattern(pat: &ParamPattern) -> Option<(String, Span, Option<Type>)> {
+    fn unary_bind_from_pattern(
+        pat: &ParamPattern,
+        leading: &mut Vec<Trivia>,
+    ) -> Option<(String, Span, Option<Type>)> {
         let [
             ParamPatternElem::Bind {
                 name,
@@ -8978,11 +9353,27 @@ impl<'a> Parser<'a> {
         else {
             return None;
         };
-        let ty = if matches!(ty, Type::Infer { .. }) && ty.span() == *name_span {
+        let mut ty = if matches!(ty, Type::Infer { .. }) && ty.span() == *name_span {
             None
         } else {
             Some(ty.clone())
         };
+        if let Some(trivia) = &pat.source_trivia {
+            let elem_leading = trivia.elem_leading[0].clone();
+            match &mut ty {
+                Some(ty) => {
+                    inject_meta_trivia(ty.meta_mut(), elem_leading);
+                    append_relocated_trivia(
+                        &mut ty.meta_mut().trailing_trivia,
+                        trivia.closing.clone(),
+                    );
+                }
+                None => {
+                    append_relocated_trivia(leading, elem_leading);
+                    append_relocated_trivia(leading, trivia.closing.clone());
+                }
+            }
+        }
         Some((name.clone(), *name_span, ty))
     }
 
@@ -9014,8 +9405,7 @@ impl<'a> Parser<'a> {
                      write `(A & B) -> R` or `(A | B) -> R`",
                 ));
             }
-            self.expect_fn_arrow()?;
-            let ret = self.type_expr_with_chain(false)?;
+            let ret = self.type_arrow_return()?;
             let ret_end = ret.span().end;
             let span = Span::new(lhs.span().start, ret_end);
             return Ok(Type::synth_function(vec![lhs], ret, span));
@@ -9026,13 +9416,21 @@ impl<'a> Parser<'a> {
     fn type_arrow_expr(&mut self) -> Result<Type, Error> {
         let lhs = self.type_atom()?;
         if self.at_sym_prefix("->") {
-            self.expect_fn_arrow()?;
-            let ret = self.type_expr_with_chain(false)?;
+            let ret = self.type_arrow_return()?;
             let ret_end = ret.span().end;
             let span = Span::new(lhs.span().start, ret_end);
             return Ok(Type::synth_function(vec![lhs], ret, span));
         }
         Ok(lhs)
+    }
+
+    fn type_arrow_return(&mut self) -> Result<Type, Error> {
+        let mut leading = self.peek_leading_trivia();
+        self.expect_fn_arrow()?;
+        append_relocated_trivia(&mut leading, self.peek_leading_trivia());
+        let mut ret = self.type_expr_with_chain(false)?;
+        inject_meta_trivia(ret.meta_mut(), leading);
+        Ok(ret)
     }
 
     /// Parse a type chain expression, including bare same-operator
@@ -9049,15 +9447,20 @@ impl<'a> Parser<'a> {
     /// phase able to distinguish the two shapes.
     fn type_chain_expr(&mut self) -> Result<(Type, bool), Error> {
         // Optional leading-operator run (the multi-line layout).
+        let mut leading_trivia = Vec::new();
         let (leading_kind, leading_span) = match self.peek() {
             Some(t) if is_amp_chain_sep(t) => {
                 let start = self.peek_span().start;
-                let end = self.skip_amp_chain_ops().unwrap_or(start);
+                let initial_trivia = self.peek_leading_trivia().len();
+                let (trivia, end) = self.type_chain_separator_trivia(ChainKind::Amp);
+                leading_trivia.extend(trivia.into_iter().skip(initial_trivia));
                 (Some(ChainKind::Amp), Some(Span::new(start, end)))
             }
             Some(t) if is_pipe_chain_sep(t) => {
                 let start = self.peek_span().start;
-                let end = self.skip_pipe_chain_ops().unwrap_or(start);
+                let initial_trivia = self.peek_leading_trivia().len();
+                let (trivia, end) = self.type_chain_separator_trivia(ChainKind::Pipe);
+                leading_trivia.extend(trivia.into_iter().skip(initial_trivia));
                 (Some(ChainKind::Pipe), Some(Span::new(start, end)))
             }
             _ => (None, None),
@@ -9075,19 +9478,22 @@ impl<'a> Parser<'a> {
                      e.g., `A & (B | C)` or `(A & B) | C`",
                 ));
             }
-            return Ok((
-                match kind {
-                    ChainKind::Amp => Type::Unit {
-                        meta: Meta::new(leading_span.expect("leading product chain has a span")),
-                    },
-                    ChainKind::Pipe => Type::Bottom {
-                        meta: Meta::new(leading_span.expect("leading sum chain has a span")),
-                    },
+            let mut identity = match kind {
+                ChainKind::Amp => Type::Unit {
+                    meta: Meta::new(leading_span.expect("leading product chain has a span")),
                 },
-                true,
-            ));
+                ChainKind::Pipe => Type::Bottom {
+                    meta: Meta::new(leading_span.expect("leading sum chain has a span")),
+                },
+            };
+            inject_meta_trivia(identity.meta_mut(), leading_trivia);
+            return Ok((identity, true));
         }
-        let first = self.type_arrow_expr()?;
+        if leading_kind.is_some() {
+            append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
+        }
+        let mut first = self.type_arrow_expr()?;
+        inject_meta_trivia(first.meta_mut(), leading_trivia);
 
         // Determine chain operator: from leading run if seen, else
         // from the next token. No chain → return atom.
@@ -9116,10 +9522,15 @@ impl<'a> Parser<'a> {
                 ChainKind::Pipe => next.is_some_and(is_amp_chain_sep),
             };
             if is_match {
-                let leading = self.type_chain_separator_trivia(chain_kind);
+                let (mut leading, _) = self.type_chain_separator_trivia(chain_kind);
                 if !self.peek_starts_type_atom() {
+                    append_relocated_trivia(
+                        &mut chain.last_mut().unwrap().meta_mut().trailing_trivia,
+                        leading,
+                    );
                     break;
                 }
+                append_relocated_trivia(&mut leading, self.peek_leading_trivia());
                 let mut operand = self.type_atom()?;
                 inject_meta_trivia(operand.meta_mut(), leading);
                 chain.push(operand);
@@ -9164,22 +9575,22 @@ impl<'a> Parser<'a> {
         end
     }
 
-    fn type_chain_separator_trivia(&mut self, kind: ChainKind) -> Vec<Trivia> {
+    fn type_chain_separator_trivia(&mut self, kind: ChainKind) -> (Vec<Trivia>, u32) {
         let mut cursor = self.cursor.clone();
-        match kind {
+        let end = match kind {
             ChainKind::Amp => self.skip_amp_chain_ops(),
             ChainKind::Pipe => self.skip_pipe_chain_ops(),
-        };
+        }
+        .expect("type-chain separator parser starts on a separator");
         let mut leading = Vec::new();
         while let Some(token) = cursor.peek_token() {
             if token.span.start >= self.peek_span().start {
                 break;
             }
-            leading.extend(token.leading_trivia.clone());
+            append_relocated_trivia(&mut leading, token.leading_trivia.clone());
             cursor.advance();
         }
-        leading.extend(self.peek_leading_trivia());
-        leading
+        (leading, end)
     }
 
     fn skip_pipe_chain_ops(&mut self) -> Option<u32> {
@@ -9284,6 +9695,8 @@ impl<'a> Parser<'a> {
         // module segments are `/`-separated and the final type name
         // is reached with `.`. A bare `TypeName` is a local type.
         let first_span = self.peek_span();
+        let mut path_cursor = self.cursor.clone();
+        path_cursor.advance();
         let segments = self.type_path_segments()?;
         for qualifier in segments.iter().take(segments.len().saturating_sub(1)) {
             Self::validate_value_name(&qualifier.name, qualifier.span)?;
@@ -9296,15 +9709,21 @@ impl<'a> Parser<'a> {
             .last()
             .map(|s| s.span.end)
             .unwrap_or(first_span.end);
-        let (args, end) = if matches!(self.peek(), Some(TokenKind::LParen)) {
+        let mut leading = Vec::new();
+        let (args, end, trailing) = if matches!(self.peek(), Some(TokenKind::LParen)) {
+            Self::collect_line_comments(&mut path_cursor, self.peek_span().end, &mut leading);
             self.type_arg_list()?
         } else {
-            (Vec::new(), span_end)
+            Self::collect_line_comments(&mut path_cursor, span_end, &mut leading);
+            (Vec::new(), span_end, Vec::new())
         };
+        let mut meta = Meta::new(Span::new(first_span.start, end));
+        meta.leading_trivia = leading;
+        meta.trailing_trivia = trailing;
         Ok(Type::Path {
             segments,
             args,
-            meta: Meta::new(Span::new(first_span.start, end)),
+            meta,
         })
     }
 
@@ -9313,7 +9732,7 @@ impl<'a> Parser<'a> {
     /// `meta.leading_trivia` (so the pretty-printer reads it from
     /// the inner node). Returns the argument list and the end
     /// byte-offset of the closing paren.
-    fn type_arg_list(&mut self) -> Result<(Vec<Type>, u32), Error> {
+    fn type_arg_list(&mut self) -> Result<(Vec<Type>, u32, Vec<Trivia>), Error> {
         self.expect_kind(TokenKind::LParen, "`(`")?;
         let mut args = Vec::new();
         let mut pending_trivia = self.peek_leading_trivia();
@@ -9335,17 +9754,22 @@ impl<'a> Parser<'a> {
         // Last type-arg's trailing / dangling comment run before the
         // `)` — stash on the last arg's trailing slot so the formatter
         // keeps it across the round-trip.
-        let closing_trivia = std::mem::take(&mut pending_trivia);
+        let mut closing_trivia = std::mem::take(&mut pending_trivia);
         if let Some(last) = args.last_mut() {
-            set_trailing_trivia(last.meta_mut(), closing_trivia);
+            append_relocated_trivia(
+                &mut last.meta_mut().trailing_trivia,
+                std::mem::take(&mut closing_trivia),
+            );
         }
         let end = self.expect_kind(TokenKind::RParen, "`)`")?.end;
-        Ok((args, end))
+        Ok((args, end, closing_trivia))
     }
 
     fn type_prefix_signature(&mut self) -> Result<Type, Error> {
         let owner = self.peek_span();
         let start = owner.start;
+        let mut header_cursor = self.cursor.clone();
+        header_cursor.advance();
         let mut params = Vec::new();
         while self.peek_starts_type_param() {
             params.extend(self.type_param_group()?);
@@ -9353,8 +9777,16 @@ impl<'a> Parser<'a> {
         if self.at_sym_prefix("->") {
             return Err(self.err_here("type-binder run must be followed by a body type"));
         }
-        let body =
+        let mut body_leading = Vec::new();
+        Self::collect_line_comments(
+            &mut header_cursor,
+            self.peek_span().start,
+            &mut body_leading,
+        );
+        append_relocated_trivia(&mut body_leading, self.peek_leading_trivia());
+        let mut body =
             self.with_type_parameters(owner, ScopeOwnerKind::Type, &params, Self::type_expr)?;
+        inject_meta_trivia(body.meta_mut(), body_leading);
         let body_end = body.span().end;
         let span = Span::new(start, body_end);
         let mut acc = body;
@@ -9388,7 +9820,7 @@ impl<'a> Parser<'a> {
             ChainKind::Amp => is_amp_chain_sep,
             ChainKind::Pipe => is_pipe_chain_sep,
         }));
-        let mut leading = self.type_chain_separator_trivia(kind);
+        let (mut leading, _) = self.type_chain_separator_trivia(kind);
         // The chain has at least two items: `first` plus what follows
         // the first operator. Accept any number of chain-op tokens
         // (each all-`&` / all-`|` `SymbolRun` counts as one
@@ -9403,8 +9835,13 @@ impl<'a> Parser<'a> {
             // We've just consumed one or more chain ops. If we've
             // landed on the closer, the trailing run terminates.
             if matches!(self.peek(), Some(TokenKind::RParen)) {
+                append_relocated_trivia(
+                    &mut chain.last_mut().unwrap().meta_mut().trailing_trivia,
+                    leading,
+                );
                 break;
             }
+            append_relocated_trivia(&mut leading, self.peek_leading_trivia());
             let mut operand = self.type_atom()?;
             inject_meta_trivia(operand.meta_mut(), leading);
             chain.push(operand);
@@ -9421,7 +9858,7 @@ impl<'a> Parser<'a> {
                 ChainKind::Pipe => next.is_some_and(is_amp_chain_sep),
             };
             if is_match {
-                leading = self.type_chain_separator_trivia(kind);
+                (leading, _) = self.type_chain_separator_trivia(kind);
             } else if is_other {
                 return Err(self.err_here(
                     "mixing `&` and `|` requires explicit parentheses; \
@@ -9440,11 +9877,55 @@ impl<'a> Parser<'a> {
     /// - `(T | U [| V …])` → right-folded sum chain.
     fn type_paren(&mut self) -> Result<Type, Error> {
         let group = self.cursor.remaining_current_frame().first();
-        self.type_paren_inner().map_err(|error| {
+        let mut ty = self.type_paren_inner().map_err(|error| {
             group
                 .and_then(|group| value_shaped_type_error(group, &error))
                 .unwrap_or(error)
-        })
+        })?;
+        if let Some(SkeletonNode::Group {
+            children,
+            close: Some(close),
+            ..
+        }) = group
+        {
+            fn token(node: &SkeletonNode) -> &Token {
+                match node {
+                    SkeletonNode::Leaf(token) | SkeletonNode::Group { open: token, .. } => token,
+                }
+            }
+            let separator = |node: &SkeletonNode| {
+                matches!(node, SkeletonNode::Leaf(Token {
+                    kind: TokenKind::SymbolRun(run), ..
+                }) if run.bytes().all(|byte| byte == b'&')
+                    || run.bytes().all(|byte| byte == b'|'))
+            };
+            let prefix = children.iter().take_while(|node| separator(node)).count();
+            let mut leading = Vec::new();
+            for node in children.iter().take(prefix + 1) {
+                append_relocated_trivia(&mut leading, token(node).leading_trivia.clone());
+            }
+            let mut trailing = Vec::new();
+            if prefix < children.len() {
+                append_relocated_trivia(&mut trailing, close.leading_trivia.clone());
+            } else {
+                append_relocated_trivia(&mut leading, close.leading_trivia.clone());
+            }
+            let grouped = if ty.span().end > close.span.end {
+                let Type::Function { param, .. } = &mut ty else {
+                    unreachable!("a type group consumes its following arrow as a function domain")
+                };
+                param.as_mut()
+            } else {
+                &mut ty
+            };
+            append_relocated_trivia(
+                &mut leading,
+                std::mem::take(&mut grouped.meta_mut().leading_trivia),
+            );
+            grouped.meta_mut().leading_trivia = leading;
+            append_relocated_trivia(&mut grouped.meta_mut().trailing_trivia, trailing);
+        }
+        Ok(ty)
     }
 
     fn type_paren_inner(&mut self) -> Result<Type, Error> {
@@ -9572,8 +10053,7 @@ impl<'a> Parser<'a> {
             Some(TokenKind::RParen) => {
                 self.advance();
                 if self.at_sym_prefix("->") {
-                    self.expect_fn_arrow()?;
-                    let ret = self.type_expr_with_chain(false)?;
+                    let ret = self.type_arrow_return()?;
                     let ret_end = ret.span().end;
                     Ok(Type::synth_function(
                         vec![first],
@@ -9609,8 +10089,7 @@ impl<'a> Parser<'a> {
                     ChainKind::Pipe => fold_sum_chain(chain, Span::new(outer_start, end)),
                 };
                 if self.at_sym_prefix("->") {
-                    self.expect_fn_arrow()?;
-                    let ret = self.type_expr_with_chain(false)?;
+                    let ret = self.type_arrow_return()?;
                     let ret_end = ret.span().end;
                     Ok(Type::synth_function(
                         vec![folded],
@@ -9670,10 +10149,15 @@ impl<'a> Parser<'a> {
                 ChainKind::Pipe => next.is_some_and(is_amp_chain_sep),
             };
             if is_match {
-                let leading = self.type_chain_separator_trivia(kind);
+                let (mut leading, _) = self.type_chain_separator_trivia(kind);
                 if matches!(self.peek(), Some(TokenKind::RParen)) {
+                    append_relocated_trivia(
+                        &mut chain.last_mut().unwrap().meta_mut().trailing_trivia,
+                        leading,
+                    );
                     break;
                 }
+                append_relocated_trivia(&mut leading, self.peek_leading_trivia());
                 let mut operand = self.type_atom()?;
                 inject_meta_trivia(operand.meta_mut(), leading);
                 chain.push(operand);
@@ -10647,10 +11131,10 @@ impl<'a> Parser<'a> {
                     .iter()
                     .any(|trivia| comment_span(trivia).is_some())
             {
-                operand
-                    .meta_mut()
-                    .trailing_trivia
-                    .extend(token.leading_trivia.iter().cloned());
+                append_relocated_trivia(
+                    &mut operand.meta_mut().trailing_trivia,
+                    token.leading_trivia.clone(),
+                );
             }
             self.advance();
         }
@@ -10851,7 +11335,11 @@ impl<'a> Parser<'a> {
                     {
                         self.record_source_name(callee.span, SourceNameRole::FunctionReference);
                     }
-                    let (args, end, source_trivia) = self.call_arg_list(Some(&e))?;
+                    append_relocated_trivia(
+                        &mut e.meta_mut().trailing_trivia,
+                        self.peek_leading_trivia(),
+                    );
+                    let (args, end, source_trivia) = self.call_arg_list(Some(&e), Vec::new())?;
                     if args.is_empty()
                         && self.peek_left_call_splice_flavor().is_some()
                         && matches!(&e, Expr::Path { .. })
@@ -10875,8 +11363,12 @@ impl<'a> Parser<'a> {
                 }
                 Some(k) if k.is_sym(".?") && matches!(self.peek_at(1), Some(TokenKind::LBrace)) => {
                     let start = e.span().start;
+                    Self::collect_comments_into(
+                        self.peek_leading_trivia(),
+                        &mut e.meta_mut().trailing_trivia,
+                    );
                     self.advance();
-                    let (labels, end) = self.field_access_label_list()?;
+                    let (labels, end, source_trivia) = self.field_access_label_list()?;
                     let id = self.fresh_node_id();
                     e = Expr::Elaborator {
                         occurrence: Default::default(),
@@ -10885,14 +11377,19 @@ impl<'a> Parser<'a> {
                             receiver: Box::new(e),
                             labels,
                         },
+                        source_trivia,
                         meta: Meta::new(Span::new(start, end)),
                         ext: id,
                     };
                 }
                 Some(k) if k.is_sym(".!") && matches!(self.peek_at(1), Some(TokenKind::LBrace)) => {
                     let start = e.span().start;
+                    Self::collect_comments_into(
+                        self.peek_leading_trivia(),
+                        &mut e.meta_mut().trailing_trivia,
+                    );
                     self.advance();
-                    let (updates, end) = self.field_update_label_list()?;
+                    let (updates, end, source_trivia) = self.field_update_label_list()?;
                     let id = self.fresh_node_id();
                     e = Expr::Elaborator {
                         occurrence: Default::default(),
@@ -10901,6 +11398,7 @@ impl<'a> Parser<'a> {
                             receiver: Box::new(e),
                             updates,
                         },
+                        source_trivia,
                         meta: Meta::new(Span::new(start, end)),
                         ext: id,
                     };
@@ -10920,7 +11418,7 @@ impl<'a> Parser<'a> {
                     // before this segment instead of dropping it.
                     let mut splice_comments = Vec::new();
                     Self::collect_comments_into(self.peek_leading_trivia(), &mut splice_comments);
-                    append_source_trivia(&mut e.meta_mut().trailing_trivia, splice_comments);
+                    append_relocated_trivia(&mut e.meta_mut().trailing_trivia, splice_comments);
                     self.advance(); // consume `.>` / `.>>`
                     let (segments, callee_span_end) = self.ufcs_callee_path()?;
                     let callee_span = Span::new(arrow_end, callee_span_end);
@@ -10945,7 +11443,8 @@ impl<'a> Parser<'a> {
                     let (args, end, source_trivia) =
                         if matches!(self.peek(), Some(TokenKind::LParen)) {
                             let list_start = self.peek_span().start;
-                            let (args, end, source_trivia) = self.call_arg_list(None)?;
+                            let (args, end, source_trivia) =
+                                self.call_arg_list(None, self.peek_leading_trivia())?;
                             if args.is_empty() {
                                 return Err(empty_ufcs_arg_list_error(Span::new(list_start, end)));
                             }
@@ -10989,8 +11488,10 @@ impl<'a> Parser<'a> {
                         context.call = None;
                     }
                     Self::validate_reference_value_path_leaf(&segments)?;
+                    let leading = self.peek_leading_trivia();
                     self.advance(); // consume `.<` / `.<<`
-                    let inserted = self.expr_tight_call_arg()?;
+                    let mut inserted = self.expr_tight_call_arg()?;
+                    inject_leading_trivia(&mut inserted, leading);
                     let end = inserted.span().end;
                     let id = self.fresh_node_id();
                     e = Expr::Ufcs {
@@ -11012,19 +11513,23 @@ impl<'a> Parser<'a> {
         Ok(e)
     }
 
-    fn field_access_label_list(&mut self) -> Result<(Vec<FieldAccessLabel>, u32), Error> {
+    fn field_access_label_list(&mut self) -> Result<ParsedLabelList<FieldAccessLabel>, Error> {
         let start = self.peek_span().start;
+        let mut pending_trivia = Vec::new();
+        Self::collect_comments_into(self.peek_leading_trivia(), &mut pending_trivia);
         self.expect_kind(TokenKind::LBrace, "`{`")?;
         let mut labels: Vec<FieldAccessLabel> = Vec::new();
-        let mut pending_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
         self.skip_commas_with_trivia(&mut pending_trivia);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let leading = std::mem::take(&mut pending_trivia);
+            let mut leading = std::mem::take(&mut pending_trivia);
             let LabelPathParts {
                 full: label,
                 full_span: label_span,
+                interstitial,
                 ..
             } = self.label_path_parts()?;
+            append_relocated_trivia(&mut leading, interstitial);
             let mut item = FieldAccessLabel {
                 label,
                 label_span,
@@ -11044,24 +11549,29 @@ impl<'a> Parser<'a> {
         }
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         let _ = start;
-        Ok((labels, end))
+        Ok((labels, end, DelimitedTrivia::from_closing(pending_trivia)))
     }
 
-    fn field_update_label_list(&mut self) -> Result<(Vec<FieldUpdateLabel>, u32), Error> {
+    fn field_update_label_list(&mut self) -> Result<ParsedLabelList<FieldUpdateLabel>, Error> {
         let start = self.peek_span().start;
+        let mut pending_trivia = Vec::new();
+        Self::collect_comments_into(self.peek_leading_trivia(), &mut pending_trivia);
         self.expect_kind(TokenKind::LBrace, "`{`")?;
         let mut updates: Vec<FieldUpdateLabel> = Vec::new();
-        let mut pending_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
         self.skip_commas_with_trivia(&mut pending_trivia);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let leading = std::mem::take(&mut pending_trivia);
+            let mut leading = std::mem::take(&mut pending_trivia);
             let LabelPathParts {
                 full: label,
                 full_span: label_span,
                 last,
                 last_span,
+                interstitial,
             } = self.label_path_parts()?;
+            append_relocated_trivia(&mut leading, interstitial);
             let value = if self.at_sym("=") {
+                Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
                 let eq_span = self.expect_sym("=", "`=`")?;
                 if matches!(
                     self.peek(),
@@ -11073,7 +11583,10 @@ impl<'a> Parser<'a> {
                         meta: Meta::new(eq_span),
                     }
                 } else {
-                    self.expr()?
+                    let leading_trivia = self.peek_leading_trivia();
+                    let mut value = self.expr()?;
+                    inject_leading_trivia(&mut value, leading_trivia);
+                    value
                 }
             } else {
                 Expr::Path {
@@ -11104,27 +11617,33 @@ impl<'a> Parser<'a> {
         }
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         let _ = start;
-        Ok((updates, end))
+        Ok((updates, end, DelimitedTrivia::from_closing(pending_trivia)))
     }
 
     fn row_let_entry_list(&mut self) -> Result<(Vec<RowLetEntry>, u32), Error> {
         let start = self.peek_span().start;
+        let mut pending_trivia = Vec::new();
+        Self::collect_comments_into(self.peek_leading_trivia(), &mut pending_trivia);
         self.expect_kind(TokenKind::LBrace, "`{`")?;
         let mut entries: Vec<RowLetEntry> = Vec::new();
         let mut locals: Vec<(String, Span)> = Vec::new();
-        let mut pending_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
         self.skip_commas_with_trivia(&mut pending_trivia);
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
-            let leading = std::mem::take(&mut pending_trivia);
+            let mut leading = std::mem::take(&mut pending_trivia);
             let LabelPathParts {
                 full: label,
                 full_span: label_span,
                 last,
                 last_span,
+                interstitial,
             } = self.label_path_parts()?;
+            append_relocated_trivia(&mut leading, interstitial);
             self.cursor_choices(CursorSlot::Grammar, &["as"]);
             let (local, local_span, alias_explicit) = if self.peek_ident_named("as") {
+                Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
                 self.expect_ident_named("as")?;
+                Self::collect_comments_into(self.peek_leading_trivia(), &mut leading);
                 let (name, span) = self.expect_ident()?;
                 Self::validate_value_name(&name, span)?;
                 self.record_source_name(span, SourceNameRole::Parameter);
@@ -11158,6 +11677,9 @@ impl<'a> Parser<'a> {
                 return Err(self.err_here("expected `,` or `}`"));
             }
         }
+        if let Some(last) = entries.last_mut() {
+            set_trailing_trivia(&mut last.meta, pending_trivia);
+        }
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
         if entries.is_empty() {
             return Err(self.err(
@@ -11173,10 +11695,15 @@ impl<'a> Parser<'a> {
     /// splice so `f.<x.>g` means `f(x).>g`. To pass a UFCS/splice
     /// expression as the inserted value, parenthesize it.
     fn expr_tight_call_arg(&mut self) -> Result<Expr, Error> {
+        let leading = self.peek_leading_trivia();
         let mut e = self.expr_primary()?;
         while matches!(self.peek(), Some(TokenKind::LParen)) {
             let start = e.span().start;
-            let (args, end, source_trivia) = self.call_arg_list(None)?;
+            append_relocated_trivia(
+                &mut e.meta_mut().trailing_trivia,
+                self.peek_leading_trivia(),
+            );
+            let (args, end, source_trivia) = self.call_arg_list(None, Vec::new())?;
             e = Expr::Call {
                 source_trivia,
                 occurrence: Default::default(),
@@ -11187,6 +11714,7 @@ impl<'a> Parser<'a> {
                 ext: (),
             };
         }
+        inject_leading_trivia(&mut e, leading);
         Ok(e)
     }
 
@@ -11204,7 +11732,7 @@ impl<'a> Parser<'a> {
             Expr::Path { segments, meta, .. } => Ok((segments, meta.span, Vec::new(), None)),
             Expr::Call {
                 callee,
-                args,
+                mut args,
                 meta,
                 source_trivia,
                 ..
@@ -11222,6 +11750,16 @@ impl<'a> Parser<'a> {
                             .unwrap_or_else(|| Span::new(callee_meta.span.end, meta.span.end));
                         return Err(empty_ufcs_arg_list_error(list_span));
                     }
+                    // The splice stores the path without its Meta; its nonempty
+                    // argument list keeps the preceding callee comments in order.
+                    let mut leading = callee_meta.leading_trivia;
+                    append_relocated_trivia(&mut leading, callee_meta.trailing_trivia);
+                    let first = args[0].meta_mut();
+                    append_relocated_trivia(
+                        &mut leading,
+                        std::mem::take(&mut first.leading_trivia),
+                    );
+                    first.leading_trivia = leading;
                     Ok((segments, callee_meta.span, args, source_trivia))
                 }
                 _ => Err(Error::parse(
@@ -11307,7 +11845,8 @@ impl<'a> Parser<'a> {
         Self::validate_value_name(&name.name, name.span)?;
         let (args, end_pos, source_trivia) = if matches!(self.peek(), Some(TokenKind::LParen)) {
             let list_start = self.peek_span().start;
-            let (args, end, source_trivia) = self.call_arg_list(None)?;
+            let (args, end, source_trivia) =
+                self.call_arg_list(None, self.peek_leading_trivia())?;
             if args.is_empty() {
                 return Err(empty_ufcs_arg_list_error(Span::new(list_start, end)));
             }
@@ -11344,7 +11883,7 @@ impl<'a> Parser<'a> {
         let explicit_list = self.peek_left_call_splice_flavor().is_none();
         let list_start = self.peek_span().start;
         let (args, mut end, source_trivia) = if explicit_list {
-            self.call_arg_list(None)?
+            self.call_arg_list(None, self.peek_leading_trivia())?
         } else {
             (Vec::new(), bang_span.end, None)
         };
@@ -11352,8 +11891,10 @@ impl<'a> Parser<'a> {
             if explicit_list && args.is_empty() {
                 return Err(empty_ufcs_arg_list_error(Span::new(list_start, end)));
             }
+            let leading = self.peek_leading_trivia();
             self.advance(); // consume `.<` / `.<<`
-            let inserted = self.expr_tight_call_arg()?;
+            let mut inserted = self.expr_tight_call_arg()?;
+            inject_leading_trivia(&mut inserted, leading);
             end = inserted.span().end;
             let id = self.fresh_node_id();
             return Ok(Expr::Ufcs {
@@ -11394,11 +11935,12 @@ impl<'a> Parser<'a> {
 
     fn let_value_binder(
         &mut self,
+        leading: &mut Vec<Trivia>,
     ) -> Result<(String, Span, Option<Type>, Option<ParamPattern>), Error> {
         Ok(if matches!(self.peek(), Some(TokenKind::LParen)) {
             let pat = self.param_pattern_tuple(false)?;
             self.reject_outer_pattern_annotation()?;
-            if let Some((name, name_span, ty)) = Self::unary_bind_from_pattern(&pat) {
+            if let Some((name, name_span, ty)) = Self::unary_bind_from_pattern(&pat, leading) {
                 (name, name_span, ty, None)
             } else {
                 let pat_span = pat.span;
@@ -11430,8 +11972,19 @@ impl<'a> Parser<'a> {
     /// call.
     fn parse_literal_annotation(&mut self) -> Result<Option<Type>, Error> {
         if matches!(self.peek(), Some(TokenKind::LParen)) {
+            let mut leading = self.peek_leading_trivia();
             self.expect_kind(TokenKind::LParen, "`(` opening a literal's type annotation")?;
-            let ty = self.type_expr()?;
+            append_relocated_trivia(&mut leading, self.peek_leading_trivia());
+            let mut ty = self.type_expr()?;
+            append_relocated_trivia(
+                &mut leading,
+                std::mem::take(&mut ty.meta_mut().leading_trivia),
+            );
+            ty.meta_mut().leading_trivia = leading;
+            append_relocated_trivia(
+                &mut ty.meta_mut().trailing_trivia,
+                self.peek_leading_trivia(),
+            );
             self.expect_kind(TokenKind::RParen, "`)` closing a literal's type annotation")?;
             Ok(Some(ty))
         } else {
@@ -11641,7 +12194,7 @@ impl<'a> Parser<'a> {
         if prefix_explicit {
             let list_start = self.peek_span().start;
             let list_leading = self.peek_leading_trivia();
-            let result = self.call_arg_list(None);
+            let result = self.call_arg_list(None, Vec::new());
             self.record_block_cursor(
                 &name,
                 head_span,
@@ -11671,7 +12224,7 @@ impl<'a> Parser<'a> {
             if let Some(last) = prefix.last_mut()
                 && let Some(trivia) = source_trivia
             {
-                append_source_trivia(&mut last.meta_mut().trailing_trivia, trivia.closing);
+                append_relocated_trivia(&mut last.meta_mut().trailing_trivia, trivia.closing);
             }
             if let Some(first) = prefix.first_mut() {
                 inject_leading_trivia(first, list_leading);
@@ -11785,7 +12338,7 @@ impl<'a> Parser<'a> {
                     leading: leading.clone(),
                     after_item: items.len().checked_sub(1),
                 });
-                pending.extend(leading);
+                append_relocated_trivia(&mut pending, leading);
                 self.advance();
             }
             // A new item may be inserted only at a separated boundary. The
@@ -11801,7 +12354,7 @@ impl<'a> Parser<'a> {
                 self.cursor_choices(CursorSlot::Value, &["recur", "let"]);
             }
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
-                pending.extend(self.peek_leading_trivia());
+                append_relocated_trivia(&mut pending, self.peek_leading_trivia());
                 let close = self.expect_kind(TokenKind::RBrace, "`}` closing neutral block")?;
                 for index in (0..items.len()).rev() {
                     let (prefix, rest) = items.split_at_mut(index + 1);
@@ -11839,7 +12392,7 @@ impl<'a> Parser<'a> {
                 items.push(item);
                 continue;
             }
-            pending.extend(self.peek_leading_trivia());
+            append_relocated_trivia(&mut pending, self.peek_leading_trivia());
             let mut value = self.expr()?;
             inject_leading_trivia(&mut value, std::mem::take(&mut pending));
             items.push(crate::ast::NeutralItem::Expression {
@@ -11862,7 +12415,8 @@ impl<'a> Parser<'a> {
             Existential(Vec<TypeParam>, String, Span, Option<ParamPattern>),
         }
         let (leading, start, dot) = self.consume_let_statement_intro()?;
-        pending.extend(leading);
+        append_relocated_trivia(&mut pending, leading);
+        let mut value_leading = Vec::new();
         let binder = if let Some(dot) = dot
             && matches!(self.peek(), Some(TokenKind::Ident(_)))
         {
@@ -11877,17 +12431,20 @@ impl<'a> Parser<'a> {
             && matches!(self.peek_at(1), Some(TokenKind::LBrace))
         {
             self.advance();
-            let (entries, _) = self.row_let_entry_list()?;
+            let (mut entries, _) = self.row_let_entry_list()?;
+            if let Some(last) = entries.last_mut() {
+                append_relocated_trivia(&mut last.meta.trailing_trivia, self.peek_leading_trivia());
+            }
             self.expect_kind(TokenKind::RParen, "`)` after the row pattern")?;
             Binder::Row(entries)
         } else if matches!(self.peek(), Some(TokenKind::LParen))
             && matches!(self.peek_at(1), Some(TokenKind::SymbolRun(run)) if run == "<")
         {
             self.advance();
-            let (types, name, span, pattern) = self.let_unpack_pattern()?;
+            let (types, name, span, pattern) = self.let_unpack_pattern(&mut value_leading)?;
             Binder::Existential(types, name, span, pattern)
         } else {
-            let (name, span, ty, pattern) = self.let_value_binder()?;
+            let (name, span, ty, pattern) = self.let_value_binder(&mut pending)?;
             Binder::Value(name, span, ty, pattern)
         };
         let bind = self.at_sym("<-");
@@ -11896,12 +12453,12 @@ impl<'a> Parser<'a> {
                 self.err_here("row and existential-opening patterns require a pure `=` let")
             );
         }
-        let mut value_leading = self.peek_leading_trivia();
+        append_relocated_trivia(&mut value_leading, self.peek_leading_trivia());
         self.expect_sym(
             if bind { "<-" } else { "=" },
             "`=` or `<-` after neutral binder",
         )?;
-        value_leading.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut value_leading, self.peek_leading_trivia());
         let mut value = self.expr()?;
         inject_leading_trivia(&mut value, value_leading);
         let separator_leading = self.peek_leading_trivia();
@@ -12097,6 +12654,7 @@ impl<'a> Parser<'a> {
     fn rec_call_expr(&mut self) -> Result<Expr, Error> {
         let start = self.peek_span().start;
         let keyword = self.expect_ident_role("recur", KeywordRole::Declaration)?;
+        let mut header_cursor = self.cursor.clone();
         let mut annotation_error = None;
         let parsed = (|| {
             let (modes, annotations) = if matches!(self.peek(), Some(TokenKind::LParen)) {
@@ -12114,7 +12672,14 @@ impl<'a> Parser<'a> {
                 ));
             }
             let (args, end, source_trivia) = if matches!(self.peek(), Some(TokenKind::LParen)) {
-                self.call_arg_list(None)?
+                let mut leading = Vec::new();
+                Self::collect_line_comments(
+                    &mut header_cursor,
+                    self.peek_span().start,
+                    &mut leading,
+                );
+                append_relocated_trivia(&mut leading, self.peek_leading_trivia());
+                self.call_arg_list(None, leading)?
             } else {
                 return Err(self.err_here("expected argument list after `recur` callee"));
             };
@@ -12481,7 +13046,7 @@ impl<'a> Parser<'a> {
         while matches!(self.peek(), Some(TokenKind::Comma)) {
             leading_comma = true;
             self.advance();
-            append_source_trivia(&mut pending_trivia, self.peek_leading_trivia());
+            append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
         }
         self.cursor_choices(CursorSlot::Value, &["recur"]);
         if matches!(self.peek(), Some(TokenKind::RParen)) {
@@ -12500,7 +13065,7 @@ impl<'a> Parser<'a> {
         while matches!(self.peek(), Some(TokenKind::Comma)) {
             saw_comma_after_first = true;
             self.advance();
-            append_source_trivia(&mut pending_trivia, self.peek_leading_trivia());
+            append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
             self.cursor_choices(CursorSlot::Value, &["recur"]);
         }
         // `(e)` — grouping; reduces to the inner expression. The
@@ -12516,13 +13081,13 @@ impl<'a> Parser<'a> {
             // trailing slot so it survives the grouping collapse.
             let mut first = first;
             let mut leading = first_trivia;
-            append_source_trivia(
+            append_relocated_trivia(
                 &mut leading,
                 std::mem::take(&mut first.meta_mut().leading_trivia),
             );
             first.meta_mut().leading_trivia = leading;
             let closing_trivia = std::mem::take(&mut pending_trivia);
-            append_source_trivia(&mut first.meta_mut().trailing_trivia, closing_trivia);
+            append_relocated_trivia(&mut first.meta_mut().trailing_trivia, closing_trivia);
             self.advance();
             return Ok(first);
         }
@@ -12555,7 +13120,7 @@ impl<'a> Parser<'a> {
         // along on `e`'s trailing slot so a `(x /* c */)` round-trips.
         let closing_trivia = std::mem::take(&mut pending_trivia);
         if let Some(last) = items.last_mut() {
-            append_source_trivia(&mut last.meta_mut().trailing_trivia, closing_trivia);
+            append_relocated_trivia(&mut last.meta_mut().trailing_trivia, closing_trivia);
         }
         let end = self.expect_kind(TokenKind::RParen, "`)`")?.end;
         if items.len() < 2 {
@@ -12648,8 +13213,11 @@ impl<'a> Parser<'a> {
         let mut label_end = first_span.end;
         let mut last = first;
         let mut last_span = first_span;
+        let mut interstitial = Vec::new();
         while self.at_sym(".") {
+            Self::collect_comments_into(self.peek_leading_trivia(), &mut interstitial);
             self.advance();
+            Self::collect_comments_into(self.peek_leading_trivia(), &mut interstitial);
             let (next, next_span) = self.expect_ident()?;
             Self::validate_value_name(&next, next_span)?;
             full_label.push('.');
@@ -12671,6 +13239,7 @@ impl<'a> Parser<'a> {
             full_span: Span::new(first_span.start, label_end),
             last,
             last_span,
+            interstitial,
         })
     }
 
@@ -12680,8 +13249,10 @@ impl<'a> Parser<'a> {
             full_span: label_span,
             last,
             last_span,
+            mut interstitial,
         } = self.label_path_parts()?;
         let value = if self.at_sym("=") {
+            Self::collect_comments_into(self.peek_leading_trivia(), &mut interstitial);
             let eq_span = self.expect_sym("=", "`=`")?;
             if matches!(
                 self.peek(),
@@ -12693,7 +13264,10 @@ impl<'a> Parser<'a> {
                     meta: Meta::new(eq_span),
                 }
             } else {
-                self.expr()?
+                let leading_trivia = self.peek_leading_trivia();
+                let mut value = self.expr()?;
+                inject_leading_trivia(&mut value, leading_trivia);
+                value
             }
         } else {
             Expr::Path {
@@ -12704,11 +13278,13 @@ impl<'a> Parser<'a> {
             }
         };
         let value_end = value.span().end;
+        let mut meta = Meta::new(Span::new(label_span.start, value_end));
+        inject_meta_trivia(&mut meta, interstitial);
         Ok(LabelValueLabel {
             label: full_label,
             label_span,
             value,
-            meta: Meta::new(Span::new(label_span.start, value_end)),
+            meta,
         })
     }
 
@@ -12803,7 +13379,7 @@ impl<'a> Parser<'a> {
         // the closer instead of dropping them.
         let closing_trivia = self.peek_leading_trivia();
         let end = self.expect_kind(TokenKind::RBrace, "`}`")?.end;
-        append_source_trivia(&mut body.meta_mut().trailing_trivia, closing_trivia);
+        append_relocated_trivia(&mut body.meta_mut().trailing_trivia, closing_trivia);
         Ok((body, end))
     }
 
@@ -12836,15 +13412,16 @@ impl<'a> Parser<'a> {
         // it's an expression statement; the block must continue. If
         // it's followed by `}`, it's the final expression.
         let mut value_leading_trivia = leading_separator_trivia;
-        value_leading_trivia.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
         let mut value = self.expr()?;
         if matches!(self.peek(), Some(TokenKind::Semicolon)) {
-            self.advance();
+            self.expect_expression_semicolon(&mut value, "`;` after the expression")?;
             let next_clause_trivia = self.skip_semicolon_separators();
             // `e;` at end of block is a final expression with an
             // optional trailing separator.
             if matches!(self.peek(), Some(TokenKind::RBrace)) {
                 self.cursor_choices(CursorSlot::Value, &["recur", "let"]);
+                append_relocated_trivia(&mut value.meta_mut().trailing_trivia, next_clause_trivia);
                 inject_leading_trivia(&mut value, value_leading_trivia);
                 return Ok(value);
             }
@@ -12875,10 +13452,13 @@ impl<'a> Parser<'a> {
         let mut leading_trivia = self.peek_leading_trivia();
         let start = self.peek_span().start;
         self.expect_ident_role("let", KeywordRole::Declaration)?;
-        if self.at_sym(".") && matches!(self.peek_at(1), Some(TokenKind::Ident(_))) {
-            leading_trivia.extend(self.peek_leading_trivia());
-        }
+        // Binder introducers have no metadata slot of their own; the statement
+        // owns comments before the name, dot, and outer pattern opener.
+        Self::collect_comments_into(self.peek_leading_trivia(), &mut leading_trivia);
         let dot = self.at_sym(".").then(|| self.advance().span);
+        if dot.is_some() && matches!(self.peek(), Some(TokenKind::LParen)) {
+            Self::collect_comments_into(self.peek_leading_trivia(), &mut leading_trivia);
+        }
         Ok((leading_trivia, start, dot))
     }
 
@@ -12913,6 +13493,7 @@ impl<'a> Parser<'a> {
                 stem,
                 classified: false,
             }),
+            source_trivia: None,
         })
     }
 
@@ -12956,14 +13537,10 @@ impl<'a> Parser<'a> {
         let mut pattern = self.numbered_pattern(dot)?;
         let mut value_leading = self.peek_leading_trivia();
         self.expect_sym("=", "`=` after the numbered binding")?;
-        value_leading.extend(self.peek_leading_trivia());
+        append_relocated_trivia(&mut value_leading, self.peek_leading_trivia());
         let mut value = self.expr()?;
         inject_leading_trivia(&mut value, value_leading);
-        value
-            .meta_mut()
-            .trailing_trivia
-            .extend(self.peek_leading_trivia());
-        self.expect_kind(TokenKind::Semicolon, "`;` after the numbered binding")?;
+        self.expect_expression_semicolon(&mut value, "`;` after the numbered binding")?;
         self.record_scope_prefix(|| ScopeSyntax::Binding {
             name: None,
             pattern: Some(pattern.clone()),
@@ -13047,11 +13624,9 @@ impl<'a> Parser<'a> {
             Self::validate_value_name(&name, name_span)?;
         }
         let ty = None;
+        let mut value_leading_trivia = self.peek_leading_trivia();
         self.expect_sym("=", "`=`")?;
-        // Capture trivia between `=` and the value expression so any
-        // comments authors place above the value survive the round-
-        // trip via the value's `meta.leading_trivia`.
-        let value_leading_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
         let mut value = self.expr()?;
         inject_leading_trivia(&mut value, value_leading_trivia);
         // `let X = E;` requires a terminating `;`. If the user
@@ -13063,7 +13638,7 @@ impl<'a> Parser<'a> {
                  followed by more statements)",
             ));
         }
-        self.expect_kind(TokenKind::Semicolon, "`;` after the let binding")?;
+        self.expect_expression_semicolon(&mut value, "`;` after the let binding")?;
         self.record_scope_prefix(|| ScopeSyntax::Binding {
             name: Some((name.clone(), name_span)),
             pattern: None,
@@ -13093,13 +13668,17 @@ impl<'a> Parser<'a> {
         start: u32,
         leading_trivia: Vec<Trivia>,
     ) -> Result<Expr, Error> {
-        let (entries, _) = self.row_let_entry_list()?;
+        let (mut entries, _) = self.row_let_entry_list()?;
+        if let Some(last) = entries.last_mut() {
+            append_relocated_trivia(&mut last.meta.trailing_trivia, self.peek_leading_trivia());
+        }
         self.expect_kind(TokenKind::RParen, "`)` after the row pattern")?;
+        let mut value_leading_trivia = self.peek_leading_trivia();
         self.expect_sym("=", "`=`")?;
-        let value_leading_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
         let mut value = self.expr()?;
         inject_leading_trivia(&mut value, value_leading_trivia);
-        self.expect_kind(TokenKind::Semicolon, "`;` after the row-let binding")?;
+        self.expect_expression_semicolon(&mut value, "`;` after the row-let binding")?;
         self.record_scope_prefix(|| ScopeSyntax::RowLet(entries.clone()));
         let body = self.block_body_continuation(block_start)?;
         let end = body.span().end;
@@ -13124,18 +13703,16 @@ impl<'a> Parser<'a> {
         &mut self,
         block_start: u32,
         start: u32,
-        leading_trivia: Vec<crate::pass::lexer::Trivia>,
+        mut leading_trivia: Vec<crate::pass::lexer::Trivia>,
     ) -> Result<Expr, Error> {
         let pattern = self.param_pattern_tuple(false)?;
         self.reject_outer_pattern_annotation()?;
+        let mut value_leading_trivia = self.peek_leading_trivia();
         self.expect_sym("=", "`=`")?;
-        let value_leading_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
         let mut value = self.expr()?;
         inject_leading_trivia(&mut value, value_leading_trivia);
-        self.expect_kind(
-            TokenKind::Semicolon,
-            "`;` after the destructuring let binding",
-        )?;
+        self.expect_expression_semicolon(&mut value, "`;` after the destructuring let binding")?;
         self.record_scope_prefix(|| ScopeSyntax::Binding {
             name: None,
             pattern: Some(pattern.clone()),
@@ -13143,7 +13720,9 @@ impl<'a> Parser<'a> {
         });
         let rest = self.block_body_continuation(block_start)?;
         let end = rest.span().end;
-        if let Some((name, name_span, ty)) = Self::unary_bind_from_pattern(&pattern) {
+        if let Some((name, name_span, ty)) =
+            Self::unary_bind_from_pattern(&pattern, &mut leading_trivia)
+        {
             return Ok(Expr::Let {
                 occurrence: Default::default(),
                 name,
@@ -13190,6 +13769,7 @@ impl<'a> Parser<'a> {
     /// returns exactly this shape under the curried CPS scheme.
     fn let_unpack_pattern(
         &mut self,
+        closing_trivia: &mut Vec<Trivia>,
     ) -> Result<(Vec<TypeParam>, String, Span, Option<ParamPattern>), Error> {
         let mut binders: Vec<TypeParam> = Vec::new();
         while self.at_sym("<") {
@@ -13223,6 +13803,7 @@ impl<'a> Parser<'a> {
                 }
                 (name, name_span, None)
             };
+        Self::collect_comments_into(self.peek_leading_trivia(), closing_trivia);
         self.expect_kind(TokenKind::RParen, "`)` after the existential pattern")?;
         Ok((binders, binder_name, binder_span, binder_pattern))
     }
@@ -13233,13 +13814,16 @@ impl<'a> Parser<'a> {
         start: u32,
         leading_trivia: Vec<Trivia>,
     ) -> Result<Expr, Error> {
-        let (binders, binder_name, binder_span, binder_pattern) = self.let_unpack_pattern()?;
+        let mut value_leading_trivia = Vec::new();
+        let (binders, binder_name, binder_span, binder_pattern) =
+            self.let_unpack_pattern(&mut value_leading_trivia)?;
+        append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
         self.expect_sym("=", "`=`")?;
-        let value_leading_trivia = self.peek_leading_trivia();
+        append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
         let mut value = self.expr()?;
         inject_leading_trivia(&mut value, value_leading_trivia);
-        self.expect_kind(
-            TokenKind::Semicolon,
+        self.expect_expression_semicolon(
+            &mut value,
             "`;` after the existential-opening let binding",
         )?;
         self.record_scope_prefix(|| ScopeSyntax::Binding {
@@ -13307,12 +13891,16 @@ impl<'a> Parser<'a> {
     /// merged forward, so the leading-comma multi-line layout
     /// (`( , a , b )`) and the inline form (`(a, b)`) both yield
     /// the same arg-trivia AST.
-    fn call_arg_list(&mut self, callee: Option<&Expr>) -> Result<ParsedCallArgs, Error> {
+    fn call_arg_list(
+        &mut self,
+        callee: Option<&Expr>,
+        mut pending_trivia: Vec<Trivia>,
+    ) -> Result<ParsedCallArgs, Error> {
         self.expect_kind(TokenKind::LParen, "`(`")?;
         let mut args = Vec::new();
-        // Pre-loop trivia run: comments between `(` and the first
-        // arg (or its leading comma).
-        let mut pending_trivia = self.peek_leading_trivia();
+        // A compact call head can transfer its comments into the list;
+        // expression callees and block prefixes keep their own trivia owner.
+        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
         self.skip_commas_with_trivia(&mut pending_trivia);
         if matches!(self.peek(), Some(TokenKind::RParen)) {
             self.call_argument_cursor(callee, false);

@@ -6,9 +6,9 @@ host type Str role(str);
 
 host type Owned_str role(str) { owned };
 
-host fn print(value: Str) -> .;
+host fn print(value: Str);
 
-host fn enqueue(value: Owned_str) -> .;
+host fn enqueue(value: Owned_str);
 
 host fn id[T](value: T) -> T;
 

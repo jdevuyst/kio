@@ -1,0 +1,12 @@
+empty: () -> .
+explicit: () -> .
+function result: () -> (. -> .)
+parameter: () -> .
+polymorphic: [#0] (#0) -> .
+curried: () -> () -> .
+trailing type group: () -> ([#0] .)
+explicit trailing type group: () -> ([#0] .)
+missing value group: rejected
+explicit missing value group: rejected
+missing result after arrow: rejected
+missing parameter type: rejected

@@ -1,0 +1,53 @@
+module main;
+
+fn right(input: .) {
+  input
+    .>staged(
+    // before arguments
+
+    // first argument
+    , String
+    , "value"
+    // closing
+    )
+}
+
+fn bang(input: .) {
+  input
+    .>>staged!(
+    // before bang arguments
+    , value
+    )
+}
+
+fn empty() {
+  e!(
+  // before empty arguments
+
+  // inside empty arguments
+  )
+}
+
+fn recursive() {
+  recur(poly) loop(
+  // before modes
+
+  // after mode
+
+  // before callee
+
+  // before recursive arguments
+  )
+}
+
+fn left() {
+  e!(
+  // before written arguments
+  , argument
+  ).<(
+    // before splice
+
+    // before inserted argument
+    value
+    )
+}

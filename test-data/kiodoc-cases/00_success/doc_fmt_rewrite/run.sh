@@ -20,5 +20,5 @@ grep -Fx input.md dirty.out >/dev/null
 "$KIO_BIN" doc fmt input.md
 "$KIO_BIN" doc fmt --check input.md
 
-grep -F 'pub fn greet() -> . { print("hi\n") }' input.md >/dev/null
+grep -F 'pub fn greet() { print("hi\n") }' input.md >/dev/null
 grep -F 'build {' input.md >/dev/null

@@ -2,6 +2,6 @@ module host;
 
 host type Bool role(bool);
 
-host fn foo() -> .;
+host fn foo();
 
-host fn bar() -> .;
+host fn bar();

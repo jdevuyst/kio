@@ -4,7 +4,7 @@ host type Int role(i32);
 
 host type Str role(str);
 
-host fn print(value: Str) -> .;
+host fn print(value: Str);
 
 host fn int_to_str(value: Int) -> Str;
 

@@ -1,0 +1,12 @@
+module main;
+
+rec(
+  loop
+  // loop boundary
+) fn f() {
+  // body boundary
+  ()
+}
+
+/// Member documentation.
+rec(loop) fn documented() { () }

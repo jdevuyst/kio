@@ -1,0 +1,44 @@
+module testapi/main;
+
+import elab/match(match);
+import host_descriptor(host_fn_signature);
+import loader(Hostfn, Hostfns, Lr_diag, Lr_image);
+import loader(hostfn_descriptor, image_hostfns, un_hostfns, un_load_outcome);
+import loader/scan(load_package);
+import testapi(String);
+import testapi/io(print);
+import testapi/text(string_concat);
+
+fn show(label: String, declaration: String) {
+  let source = string_concat("module api; "(String), declaration);
+  let result =
+    match! un_load_outcome(load_package(source)) {
+      (
+      , .(loaded: Lr_image) {
+          match! un_hostfns(image_hostfns(Lr_image.get(loaded))) {
+            (
+            , .(hostfn: Hostfn, _rest: Hostfns) { host_fn_signature(hostfn_descriptor(hostfn)) }
+            , .(_empty: .) { "missing host function"(String) }
+            )
+          }
+        }
+      , .(_diag: Lr_diag) { "rejected"(String) }
+      )
+    };
+  print(string_concat(label, string_concat(result, "\n"(String))))
+}
+
+pub fn main() {
+  show("empty: "(String), "host fn f();"(String));
+  show("explicit: "(String), "host fn f() -> .;"(String));
+  show("function result: "(String), "host fn f() -> (. -> .);"(String));
+  show("parameter: "(String), "host fn f(x: .);"(String));
+  show("polymorphic: "(String), "host fn f[A](x: A);"(String));
+  show("curried: "(String), "host fn f(x: .)(y: .);"(String));
+  show("trailing type group: "(String), "host fn f()[A];"(String));
+  show("explicit trailing type group: "(String), "host fn f()[A] -> .;"(String));
+  show("missing value group: "(String), "host fn f[A];"(String));
+  show("explicit missing value group: "(String), "host fn f[A] -> .;"(String));
+  show("missing result after arrow: "(String), "host fn f() ->;"(String));
+  show("missing parameter type: "(String), "host fn f(x);"(String))
+}

@@ -2,4 +2,4 @@ module main;
 
 newtype Hidden : . { constructor mk; projector un }
 
-host fn expose(value: Hidden) -> .;
+host fn expose(value: Hidden);

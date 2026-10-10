@@ -577,7 +577,7 @@ module greeter;
 
 host type String role(str);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 ```kio

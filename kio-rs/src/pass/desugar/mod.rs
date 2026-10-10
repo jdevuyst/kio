@@ -1008,6 +1008,7 @@ fn expand_row_let(
             ..
         } = entry;
         let access = Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind: ElaboratorKind::Access,
             call: ElaboratorCall::FieldAccess {
@@ -3375,6 +3376,7 @@ impl DesugarVisitor {
                     }
                 };
                 Ok(Expr::Elaborator {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     kind,
                     call,
@@ -4148,12 +4150,14 @@ impl DesugarVisitor {
             ),
             Expr::Elaborator {
                 occurrence: _,
+                source_trivia: _,
                 kind,
                 call,
                 meta,
                 ext,
             } => {
                 let expr = Expr::Elaborator {
+                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     kind,
                     call,
@@ -5910,6 +5914,7 @@ impl SurfaceToDesugared for DesugarVisitor {
         self.state.needs_intrinsics = true;
         let Expr::Elaborator {
             occurrence: _,
+            source_trivia: _,
             kind,
             call,
             meta: Meta { span, .. },
@@ -5963,6 +5968,7 @@ impl SurfaceToDesugared for DesugarVisitor {
             },
         };
         Ok(Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind,
             call,
@@ -7499,11 +7505,13 @@ fn rename_paths(
         },
         Expr::Elaborator {
             occurrence: _,
+            source_trivia: _,
             kind,
             call,
             meta,
             ext,
         } => Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind,
             call: rename_elaborator_call(call, renames),

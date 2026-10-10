@@ -1125,7 +1125,7 @@ impl Parser {
     }
 
     /// After consuming `host fn`:
-    /// `IDENT SignatureGroups '->' Type ';'`.
+    /// `IDENT SignatureGroups ('->' Type)? ';'`.
     ///
     /// A host function is signature-only — the host supplies the body
     /// — so the declaration ends at `;` with no block. Value parameters
@@ -1135,8 +1135,10 @@ impl Parser {
         let (name, span) = self.expect_ident_with_span("name after `host fn`")?;
         Self::validate_value_name(&name, span)?;
         self.signature_groups(true, true)?;
-        self.expect_arrow("`->` in `host fn`")?;
-        self.type_()?;
+        if self.at_arrow() {
+            self.expect_arrow("`->` in `host fn`")?;
+            self.type_()?;
+        }
         self.expect_kind(&TokenKind::Semicolon, "`;` ending `host fn`")?;
         Ok(())
     }
@@ -2437,12 +2439,13 @@ mod tests {
     }
 
     #[test]
-    fn host_fn_requires_arrow() {
-        // A `host fn` is signature-only and must declare its return
-        // type with `->`; the body-bearing `{ ... }` shape is not a
-        // host declaration.
+    fn host_fn_unit_default_still_rejects_a_body() {
+        ok("module m; host fn print(p0: String);");
+        ok("module m; host fn tick();");
+        ok("module m; host fn staged()[A];");
+        ok("module m; host fn staged[A](value: A)[B](other: B);");
         let m = err("module m; host fn print(p0: String) { () }");
-        assert!(m.contains("`->`"), "msg = {m}");
+        assert!(m.contains("`;`"), "msg = {m}");
     }
 
     #[test]

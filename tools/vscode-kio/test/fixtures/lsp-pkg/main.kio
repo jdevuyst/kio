@@ -2,6 +2,6 @@ module main;
 
 newtype Foo : . { pub constructor mk_foo; pub projector foo }
 
-fn helper(x: Foo) -> . { () }
+fn helper(x: Foo) { () }
 
-fn caller(y: .) -> . { helper(y) }
+fn caller(y: .) { helper(y) }

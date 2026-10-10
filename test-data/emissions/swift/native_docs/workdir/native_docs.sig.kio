@@ -4,7 +4,7 @@ v(1) {
   nonbreaking {
     add {
       module testapi/native {
-        host fn archived() -> .
+        host fn archived()
       }
     }
   }

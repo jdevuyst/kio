@@ -2,7 +2,7 @@ module inner;
 
 import __comptime__;
 
-host fn effect() -> .;
+host fn effect();
 
 pub type Effect = . -> .;
 

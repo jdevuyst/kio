@@ -15225,6 +15225,7 @@ mod tests {
             ext: (),
         };
         let access = |receiver| Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind: crate::ast::ElaboratorKind::Access,
             call: crate::ast::ElaboratorCall::FieldAccess {
@@ -15307,6 +15308,7 @@ mod tests {
         assert!(path_receiver_field_access(&access(path("surface"))));
         assert!(!path_receiver_field_access(&computed_receiver));
         let update = Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind: crate::ast::ElaboratorKind::Filtered,
             call: crate::ast::ElaboratorCall::FieldUpdate {

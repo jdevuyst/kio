@@ -1131,7 +1131,7 @@ fn lsp_code_action_resolve_add_stub_inserts_eof_stub() {
     assert_eq!(edits.len(), 1, "{resolved:?}");
     assert_eq!(
         edits[0].get("newText").and_then(Value::as_str),
-        Some("\n\nfn missing(arg0: .) -> . { () }\n")
+        Some("\n\nfn missing(arg0: .) { () }\n")
     );
     assert_ne!(
         edits[0]
@@ -1142,6 +1142,16 @@ fn lsp_code_action_resolve_add_stub_inserts_eof_stub() {
         Some(u32::MAX as u64),
         "add-stub must use a real EOF range"
     );
+
+    let repaired = apply_lsp_text_edits(source, edits);
+    let parsed = kio_lang::pass::parser::parse(&repaired).expect("applied stub parses");
+    let kio_lang::ast::Item::FnDef(stub) = parsed.items.last().expect("inserted declaration")
+    else {
+        panic!("inserted item must be a function");
+    };
+    assert_eq!(stub.name, "missing");
+    assert!(stub.ret_elided);
+    assert!(matches!(stub.ret, kio_lang::ast::Type::Unit { .. }));
 
     assert_eq!(lsp.shutdown(), 0);
 }
@@ -3923,7 +3933,7 @@ fn lsp_formatting_already_canonical_returns_empty() {
     let dir = TempDir::new("fmt-canonical");
     // Canonical form: blank line between module header and fn, fn body
     // on its own line if it fits inline, trailing newline.
-    let canonical = "module pkg/main;\n\nfn run() -> . { () }\n";
+    let canonical = "module pkg/main;\n\nfn run() { () }\n";
     let main_path = dir.write("pkg/main.kio", canonical);
     dir.write_pkg_root_package();
 

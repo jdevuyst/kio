@@ -4,9 +4,9 @@ import __intrinsics__;
 
 host fn stop(value: .) -> !;
 
-host fn discard(value: !) -> .;
+host fn discard(value: !);
 
-host fn inspect(value: . & !) -> .;
+host fn inspect(value: . & !);
 
 host fn branch(value: .) -> . | !;
 

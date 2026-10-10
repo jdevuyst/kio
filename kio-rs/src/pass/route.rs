@@ -5254,6 +5254,7 @@ fn canonicalize_host_fn_decl(
         name: h.name.clone(),
         params,
         param_groups,
+        source_trivia: Default::default(),
         ret: unfold_type_alias_type(&convert_type_for_abi(&h.ret), &scoped_env),
         meta: convert_meta(&h.meta),
         doc: h.doc.clone(),

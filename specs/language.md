@@ -233,7 +233,7 @@ consults ambient declarations, so adding an unrelated declaration to a module
 body cannot add an alternative, nominate a result producer, or change the
 common result.
 
-**Annotations at bindings.** Every top-level binding (`fn`, `host fn`, `host type`, `type`, `newtype`, `labels`) carries an explicit type — these are public-contract positions where the type is part of the declared interface. Top-level positions accept no inferred `_` placeholder; the type must be written out. The label-specific exact payload `name: _` is instead an explicit reference to an earlier label declaration, as specified in [Labels](#labels). The **one exception** for inference is a `fn`'s return-type annotation, which may be elided when it would be `-> .` (see [Function definitions](#function-definitions)). Local `let` bindings may annotate the binding pattern: the unary form is `let .(x: T) = e;`, and tuple destructuring and as-patterns write the type leaves inside the pattern. A fully concrete local binding pattern checks the RHS against the pattern-derived type. An untyped or partially typed binding pattern leaves the RHS in synthesis mode; written concrete leaves are verified after the RHS synthesizes. For every partial local form, a source `_` is first classified under the post-materialization annotation rule below; a hole beneath an annotation-local structural `forall` is rejected before the RHS relation is opened. There is no let-generalization: inference never synthesizes a `forall` on its own; if you want polymorphism, you write it (as a `fn` or as a polymorphic `fn` with explicit `<…>` type-parameter slots).
+**Annotations at bindings.** Every top-level binding (`fn`, `host fn`, `host type`, `type`, `newtype`, `labels`) carries an explicit type — these are public-contract positions where the type is part of the declared interface. Top-level positions accept no inferred `_` placeholder; the type must be written out. The label-specific exact payload `name: _` is instead an explicit reference to an earlier label declaration, as specified in [Labels](#labels). An omitted result annotation on `fn` or `host fn` means `.`; this is a fixed Unit default, not inference (see [Function definitions](#function-definitions)). Local `let` bindings may annotate the binding pattern: the unary form is `let .(x: T) = e;`, and tuple destructuring and as-patterns write the type leaves inside the pattern. A fully concrete local binding pattern checks the RHS against the pattern-derived type. An untyped or partially typed binding pattern leaves the RHS in synthesis mode; written concrete leaves are verified after the RHS synthesizes. For every partial local form, a source `_` is first classified under the post-materialization annotation rule below; a hole beneath an annotation-local structural `forall` is rejected before the RHS relation is opened. There is no let-generalization: inference never synthesizes a `forall` on its own; if you want polymorphism, you write it (as a `fn` or as a polymorphic `fn` with explicit `<…>` type-parameter slots).
 
 **Type-argument inference and the `_` placeholder.** A call site's type-argument list may contain `_` placeholders for type arguments to infer. When the application-local equality relation over value arguments, connected nested results, and any expected result determines the inferred type uniquely, the call is well-typed. The solution may be a monotype or a complete polytype already present as one closed type tree in that finite evidence. Inference never constructs a new `forall` tree or guesses where binders belong, and a polymorphic value does not unify with a proper subterm of a declared monomorphic parameter shape. Kio has no subtypes or implicit coercions in this relation. Unsolved binders and conflicting equalities are compile-time errors. `_` placeholders may be dropped from the call's syntactic surface; full elision is accepted for any binder count, with the same rule.
 
@@ -1104,7 +1104,7 @@ A module declares what it needs from the host with **`host type`** and **`host f
 module app;
 
 host type String role(str);
-host fn print(s: String) -> .;
+host fn print(s: String);
 ```
 
 ```kio
@@ -1913,8 +1913,8 @@ for this marked-staging boundary; ordinary calls and monomorphic lambdas retain
 their own inference rules.
 
 Top-level `fn` and `host fn` value-parameter types remain **mandatory**.
-`host fn` return types are mandatory too; an ordinary top-level `fn` alone may
-omit its return annotation to request the documented `.` default. These are
+Both declarations may omit their return annotation to request the `.` default;
+the result is never inferred from a named function's body. These are
 declaration-contract positions rather than anonymous-lambda inference sites.
 
 **Open-world.** Direct-callee completion reads only the literal lambda's

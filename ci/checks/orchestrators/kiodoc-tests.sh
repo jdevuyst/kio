@@ -108,6 +108,10 @@ build_corpus_tool_binary \
   --all-features --bins
 KIO_BIN="$ORCHESTRATOR_TMP/kio"
 
+# Public README examples use ordinary Markdown fences and complete modules.
+sh "$REPO_ROOT/ci/schedule.sh" --resource compiler -- \
+  sh "$REPO_ROOT/ci/infra/check-readme-examples.sh" "$REPO_ROOT/README.md" "$KIO_BIN"
+
 # Phase 1: goldens corpus.
 #
 # IMPL-LIST PARITY RULE — every test harness that defines a run-tests

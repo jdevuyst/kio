@@ -2,6 +2,6 @@ module testapi/io;
 
 import testapi(String);
 
-host fn print(value: String) -> .;
+host fn print(value: String);
 
 host fn read_ascii_line() -> String | .;

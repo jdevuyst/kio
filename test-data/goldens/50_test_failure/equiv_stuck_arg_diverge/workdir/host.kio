@@ -1,7 +1,7 @@
 module host;
 
-host fn f(x: .) -> .;
+host fn f(x: .);
 
-host fn a() -> .;
+host fn a();
 
-host fn b() -> .;
+host fn b();

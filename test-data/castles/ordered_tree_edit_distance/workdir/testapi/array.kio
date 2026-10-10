@@ -10,12 +10,12 @@ host fn array_len[T](values: Array(T)) -> I32;
 
 host fn array_get[T](values: Array(T), index: I32) -> T;
 
-host fn array_set[T](values: Array(T), index: I32, value: T) -> .;
+host fn array_set[T](values: Array(T), index: I32, value: T);
 
-host fn array_push[T](values: Array(T), value: T) -> .;
+host fn array_push[T](values: Array(T), value: T);
 
 host fn array_pop_back[T](values: Array(T)) -> T | .;
 
-host fn array_swap[T](values: Array(T), a: I32, b: I32) -> .;
+host fn array_swap[T](values: Array(T), a: I32, b: I32);
 
 host fn array_clone[T](values: Array(T)) -> Array(T);

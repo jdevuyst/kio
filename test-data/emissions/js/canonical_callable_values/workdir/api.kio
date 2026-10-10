@@ -12,7 +12,7 @@ host fn pack[T](value: T) -> Box(T);
 
 host fn host_hold[T](value: T) -> . -> T;
 
-host fn mark(code: Number) -> .;
+host fn mark(code: Number);
 
 host fn argument() -> Number;
 

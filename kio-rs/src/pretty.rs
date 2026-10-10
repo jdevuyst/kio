@@ -9,9 +9,10 @@
 //! the round-trip, with blank-line separation between paragraphs
 //! preserved and empty-`//` runs collapsed to one.
 //!
-//! **Idempotence is the contract**: for any source `s` that parses,
-//! `pretty(parse(s)) == pretty(parse(pretty(parse(s))))`. The unit
-//! tests at the bottom check this for every construct in the AST.
+//! Formatting preserves meaning and comments, follows the specified canonical
+//! rules, and reaches a fixpoint after one pass. Idempotence checks establish
+//! that fixpoint; output, structure, and comment assertions check the other
+//! obligations independently.
 //!
 //! ## Architecture
 //!
@@ -41,7 +42,7 @@ use crate::ast::{
     OpPart, PackageFile, RowLetEntry, Signature, SignatureGroupRef, SignatureParam, SourceBlock,
     SourceOrigin, Surface, TargetBlock, TargetEntry, Type, TypeAlias, TypeParam, VariadicOperator,
 };
-use crate::ast::{DelimitedTrivia, SignatureTriviaPosition, append_source_trivia};
+use crate::ast::{DelimitedTrivia, SignatureTriviaPosition, append_relocated_trivia};
 use crate::doc::{
     Doc, align, broken_comma_list, comma_list, concat, concat_all, empty, executable_block,
     flat_alt, group, hardline, join, line, nest, render, text,
@@ -124,14 +125,13 @@ pub fn pretty_item_signature(item: &Item) -> String {
     let doc = match &stripped {
         Item::FnDef(d) => doc_fn_def_header(d),
         Item::RecGroup(g, _) if g.members.len() == 1 => {
-            let loop_path = value_path_surface_str(&g.loop_path);
             let member = &g.members[0];
             let visibility = doc_vis(&member.vis);
             let mut rendered_member = member.clone();
             rendered_member.vis = crate::ast::Visibility::Private;
             concat_all([
                 visibility,
-                text(format!("rec({loop_path}) ")),
+                doc_rec_intro(g),
                 doc_fn_def_header(&rendered_member),
             ])
         }
@@ -319,7 +319,7 @@ fn doc_fn_def_header(d: &FnDef<Surface, impl FnPurityExt>) -> Doc {
     } else {
         empty()
     };
-    let ret_doc = if d.ret_elided {
+    let ret_doc = if d.ret_elided || can_omit_unit_return(&d.ret) {
         empty()
     } else {
         doc_function_return(&d.ret, true)
@@ -596,9 +596,50 @@ fn doc_item_entry(item: &Item) -> Doc {
     }
 }
 
-fn doc_rec_group(g: &crate::ast::RecGroup) -> Doc {
+fn doc_rec_intro(g: &crate::ast::RecGroup) -> Doc {
     let loop_path = value_path_surface_str(&g.loop_path);
-    if g.members.len() == 1 && !has_comments(g.meta.trailing_trivia.as_slice()) {
+    let Some(trivia) = &g.source_trivia else {
+        return text(format!("rec({loop_path}) "));
+    };
+    let header = if has_comments(&trivia.leading) || has_comments(&trivia.closing) {
+        let mut content = vec![
+            hardline(),
+            doc_inline_leading_trivia(&trivia.leading),
+            text(loop_path),
+        ];
+        if has_comments(&trivia.closing) {
+            content.extend([hardline(), doc_trailing_comments(&trivia.closing)]);
+        }
+        concat_all([
+            text("rec("),
+            nest(2, concat_all(content)),
+            hardline(),
+            text(")"),
+        ])
+    } else {
+        text(format!("rec({loop_path})"))
+    };
+    if has_comments(&trivia.after) {
+        concat_all([header, hardline(), doc_inline_leading_trivia(&trivia.after)])
+    } else {
+        concat(header, text(" "))
+    }
+}
+
+fn doc_rec_group(g: &crate::ast::RecGroup) -> Doc {
+    let outer_doc = (g.members.len() == 1)
+        .then(|| g.members[0].doc.as_ref())
+        .flatten()
+        .filter(|doc| doc.span.end <= g.meta.span.start);
+    let member_comments_follow_header = g.source_trivia.is_some()
+        && g.members.first().is_some_and(|member| {
+            (member.doc.is_some() && outer_doc.is_none())
+                || has_comments(&member.meta.leading_trivia)
+        });
+    if g.members.len() == 1
+        && !has_comments(g.meta.trailing_trivia.as_slice())
+        && !member_comments_follow_header
+    {
         let member = &g.members[0];
         let doc_prefix = member
             .doc
@@ -613,7 +654,7 @@ fn doc_rec_group(g: &crate::ast::RecGroup) -> Doc {
             doc_item_leading_trivia(member.meta.leading_trivia.as_slice()),
             doc_prefix,
             pubword,
-            text(format!("rec({loop_path}) ")),
+            doc_rec_intro(g),
             doc_fn_def(&rendered_member),
         ]);
     }
@@ -621,14 +662,20 @@ fn doc_rec_group(g: &crate::ast::RecGroup) -> Doc {
         .members
         .iter()
         .map(|member| {
+            let mut rendered_member = member.clone();
+            if outer_doc.is_some() {
+                rendered_member.doc = None;
+            }
             concat_all([
                 doc_item_leading_trivia(member.meta.leading_trivia.as_slice()),
-                doc_fn_def(member),
+                doc_fn_def(&rendered_member),
             ])
         })
         .collect();
     concat_all([
-        text(format!("rec({loop_path}) {{")),
+        outer_doc.map(doc_doc_comment).unwrap_or_else(empty),
+        doc_rec_intro(g),
+        text("{"),
         nest(
             2,
             concat(hardline(), join(concat(text(";"), hardline()), member_docs)),
@@ -691,7 +738,7 @@ fn doc_fn_def(d: &FnDef<Surface, impl FnPurityExt>) -> Doc {
     // fit inline breaks to the leading-operator multi-line shape.
     // The body block follows the broken return; its own group
     // makes its own break decision independently.
-    let ret_doc = if d.ret_elided {
+    let ret_doc = if d.ret_elided || can_omit_unit_return(&d.ret) {
         empty()
     } else {
         doc_function_return(&d.ret, true)
@@ -929,7 +976,16 @@ fn doc_literal_alias(a: &LiteralAlias) -> Doc {
     concat_all([
         doc_prefix,
         pubword,
-        text(format!("literal {} = ", a.name)),
+        text("literal"),
+        if has_comments(&a.meta.trailing_trivia) {
+            concat_all([
+                hardline(),
+                doc_inline_leading_trivia(&a.meta.trailing_trivia),
+            ])
+        } else {
+            text(" ")
+        },
+        text(format!("{} = ", a.name)),
         doc_literal_alias_value(&a.value),
     ])
 }
@@ -1336,47 +1392,78 @@ fn doc_existential_params(params: &[TypeParam]) -> Doc {
     text(parts.join(" "))
 }
 
+fn signature_boundary_trivia(
+    source: &Option<Box<crate::ast::SignatureTrivia>>,
+    index: usize,
+    position: SignatureTriviaPosition,
+) -> &[Trivia] {
+    source
+        .as_ref()
+        .and_then(|trivia| {
+            trivia
+                .anchors
+                .iter()
+                .find(|anchor| anchor.group == index && anchor.position == position)
+        })
+        .map_or(&[], |anchor| anchor.trivia.as_slice())
+}
+
+fn doc_signature_type_binder(tp: &TypeParam, opening: &[Trivia], closing: &[Trivia]) -> Doc {
+    if !has_comments(opening) && !has_comments(closing) {
+        return text(type_binder_text(tp));
+    }
+    let binder = type_binder_text(tp);
+    let mut inner = vec![
+        hardline(),
+        doc_inline_leading_trivia(opening),
+        text(binder[1..binder.len() - 1].to_owned()),
+    ];
+    if has_comments(closing) {
+        inner.extend([hardline(), doc_trailing_comments(closing)]);
+    }
+    inner.extend([hardline(), text("]")]);
+    concat(text("["), nest(2, concat_all(inner)))
+}
+
+fn doc_signature_group(group: Doc, before: &[Trivia]) -> Doc {
+    if has_comments(before) {
+        nest(
+            2,
+            concat_all([hardline(), doc_inline_leading_trivia(before), group]),
+        )
+    } else {
+        group
+    }
+}
+
 fn doc_signature(sig: &Signature) -> Doc {
     let groups = sig.canonical_groups();
     if groups.is_empty() {
         return text("()");
     }
-    let anchors = |index, position| -> &[Trivia] {
-        sig.source_trivia
-            .as_ref()
-            .and_then(|trivia| {
-                trivia
-                    .anchors
-                    .iter()
-                    .find(|anchor| anchor.group == index && anchor.position == position)
-            })
-            .map_or(&[], |anchor| anchor.trivia.as_slice())
-    };
     let mut parts = Vec::new();
     for (index, group) in groups.into_iter().enumerate() {
-        let before = anchors(index, SignatureTriviaPosition::BeforeGroup);
-        let opening = anchors(index, SignatureTriviaPosition::InsideOpen);
-        let closing = anchors(index, SignatureTriviaPosition::InsideClose);
+        let before = signature_boundary_trivia(
+            &sig.source_trivia,
+            index,
+            SignatureTriviaPosition::BeforeGroup,
+        );
+        let opening = signature_boundary_trivia(
+            &sig.source_trivia,
+            index,
+            SignatureTriviaPosition::InsideOpen,
+        );
+        let closing = signature_boundary_trivia(
+            &sig.source_trivia,
+            index,
+            SignatureTriviaPosition::InsideClose,
+        );
         let group_doc = match group {
             SignatureGroupRef::Type(params) => {
                 let [SignatureParam::Type(tp)] = params else {
                     unreachable!("canonical signature type group has one binder")
                 };
-                if has_comments(opening) || has_comments(closing) {
-                    let binder = type_binder_text(tp);
-                    let mut inner = vec![
-                        hardline(),
-                        doc_inline_leading_trivia(opening),
-                        text(binder[1..binder.len() - 1].to_owned()),
-                    ];
-                    if has_comments(closing) {
-                        inner.extend([hardline(), doc_trailing_comments(closing)]);
-                    }
-                    inner.extend([hardline(), text("]")]);
-                    concat(text("["), nest(2, concat_all(inner)))
-                } else {
-                    text(type_binder_text(tp))
-                }
+                doc_signature_type_binder(tp, opening, closing)
             }
             SignatureGroupRef::Value(params) => {
                 let docs = params.iter().map(doc_signature_param).collect();
@@ -1396,31 +1483,19 @@ fn doc_signature(sig: &Signature) -> Doc {
                 )
             }
         };
-        if has_comments(before) {
-            parts.push(nest(
-                2,
-                concat_all([hardline(), doc_inline_leading_trivia(before), group_doc]),
-            ));
-        } else {
-            parts.push(group_doc);
-        }
+        parts.push(doc_signature_group(group_doc, before));
     }
     concat_all(parts)
 }
 
+fn can_omit_unit_return(ty: &Type) -> bool {
+    matches!(ty, Type::Unit { .. })
+        && !has_comments(&ty.meta().leading_trivia)
+        && !has_comments(&ty.meta().trailing_trivia)
+}
+
 fn doc_function_return(ty: &Type, chain_layout: bool) -> Doc {
-    let leading = &ty.meta().leading_trivia;
-    if has_comments(leading) {
-        nest(
-            2,
-            concat_all([
-                hardline(),
-                doc_inline_leading_trivia(leading),
-                text("-> "),
-                doc_type(ty),
-            ]),
-        )
-    } else if chain_layout {
+    if chain_layout {
         doc_chain_body_layout(ty, doc_type(ty), " -> ", " ->", empty(), empty())
     } else {
         concat(text(" -> "), doc_type(ty))
@@ -1472,7 +1547,16 @@ fn doc_signature_param(p: &SignatureParam) -> Doc {
 /// when its enclosing list does.
 fn doc_param_pattern_tuple(pat: &crate::ast::ParamPattern) -> Doc {
     let elems: Vec<Doc> = pat.elems.iter().map(doc_param_pattern_elem).collect();
-    comma_list(text("("), elems, text(")"))
+    match &pat.source_trivia {
+        Some(trivia) => doc_comma_list_with_trivia(
+            text("("),
+            elems,
+            &trivia.elem_leading,
+            &trivia.closing,
+            text(")"),
+        ),
+        None => comma_list(text("("), elems, text(")")),
+    }
 }
 
 fn doc_param_pattern_elem(e: &crate::ast::ParamPatternElem) -> Doc {
@@ -1570,7 +1654,10 @@ fn flatten_chain(t: &Type, op: ChainOp) -> Vec<&Type> {
 /// - A function-type or `Forall` child of any chain:
 ///   `(A -> B) | C` — without surrounding parens, the arrow
 ///   would reparse as the chain's tail.
-fn doc_type_chain_child(t: &Type, parent_op: ChainOp) -> Doc {
+fn doc_type_chain_child(t: &Type, parent_op: ChainOp, leading: &[Trivia]) -> Doc {
+    if has_comments(leading) || has_comments(&t.meta().trailing_trivia) {
+        return doc_type_with_boundary_trivia(t, leading, &t.meta().trailing_trivia);
+    }
     let needs_parens = matches!(
         (t, parent_op),
         (Type::Product { .. }, _)
@@ -1579,9 +1666,9 @@ fn doc_type_chain_child(t: &Type, parent_op: ChainOp) -> Doc {
             | (Type::Forall { .. }, _)
     );
     if needs_parens {
-        concat_all([text("("), doc_type(t), text(")")])
+        concat_all([text("("), doc_type_core(t), text(")")])
     } else {
-        doc_type(t)
+        doc_type_core(t)
     }
 }
 
@@ -1613,7 +1700,17 @@ fn doc_chain_inner(items: Vec<&Type>, op: ChainOp, paren_broken: bool) -> Doc {
     debug_assert!(items.len() >= 2);
     let docs: Vec<Doc> = items
         .iter()
-        .map(|item| doc_type_chain_child(item, op))
+        .enumerate()
+        .map(|(index, item)| {
+            // Later operands own comments on their preceding separator;
+            // the first operand has no such boundary outside its grouping.
+            let leading = if index == 0 {
+                item.meta().leading_trivia.as_slice()
+            } else {
+                &[]
+            };
+            doc_type_chain_child(item, op, leading)
+        })
         .collect();
     let flat = join(text(op.separator()), docs.clone());
     let has_trivia = items.iter().any(|item| {
@@ -1623,22 +1720,13 @@ fn doc_chain_inner(items: Vec<&Type>, op: ChainOp, paren_broken: bool) -> Doc {
     let mut first = true;
     for (item, doc) in items.into_iter().zip(docs) {
         if !first {
-            broken = concat(broken, hardline());
-        }
-        broken = concat_all([
-            broken,
-            doc_inline_leading_trivia(&item.meta().leading_trivia),
-            text(op.prefix()),
-            doc,
-        ]);
-        if has_comments(&item.meta().trailing_trivia) {
             broken = concat_all([
                 broken,
                 hardline(),
-                doc_trailing_comments(&item.meta().trailing_trivia),
-                hardline(),
+                doc_inline_leading_trivia(&item.meta().leading_trivia),
             ]);
         }
+        broken = concat_all([broken, text(op.prefix()), doc]);
         first = false;
     }
     let broken = if paren_broken {
@@ -1667,7 +1755,7 @@ fn doc_type_bare_position(t: &Type) -> Doc {
             let items = flatten_chain(t, ChainOp::Pipe);
             doc_chain_paren_when_broken(items, ChainOp::Pipe)
         }
-        _ => doc_type(t),
+        _ => doc_type_core(t),
     }
 }
 
@@ -1676,6 +1764,9 @@ fn collect_forall_prefix(mut cur: &Type) -> (Vec<&TypeParam>, &Type) {
     while let Type::Forall { param, body, .. } = cur {
         params.push(param);
         cur = body.as_ref();
+        if has_comments(&cur.meta().leading_trivia) || has_comments(&cur.meta().trailing_trivia) {
+            break;
+        }
     }
     (params, cur)
 }
@@ -1704,32 +1795,51 @@ fn doc_forall_type(t: &Type) -> Doc {
 }
 
 fn doc_type(t: &Type) -> Doc {
+    doc_type_with_boundary_trivia(t, &t.meta().leading_trivia, &t.meta().trailing_trivia)
+}
+
+fn doc_type_with_boundary_trivia(t: &Type, leading: &[Trivia], trailing: &[Trivia]) -> Doc {
+    let body = doc_type_core(t);
+    if !has_comments(leading) && !has_comments(trailing) {
+        return body;
+    }
+    let mut inner = vec![hardline(), doc_inline_leading_trivia(leading), body];
+    if has_comments(trailing) {
+        inner.extend([hardline(), doc_trailing_comments(trailing)]);
+    }
+    inner.extend([hardline(), text(")")]);
+    concat(text("("), nest(2, concat_all(inner)))
+}
+
+fn doc_type_core(t: &Type) -> Doc {
     match t {
         Type::Path { segments, args, .. } => {
             let head = text(type_path_surface_str(segments));
             if args.is_empty() {
                 head
             } else {
-                let inner = args.iter().map(doc_type).collect::<Vec<_>>();
+                let inner = args.iter().map(doc_type_core).collect::<Vec<_>>();
                 let args_trivia: Vec<Vec<crate::pass::lexer::Trivia>> = args
                     .iter()
                     .map(|a| a.meta().leading_trivia.clone())
                     .collect();
-                let last_trailing = args
-                    .last()
-                    .map(|a| a.meta().trailing_trivia.as_slice())
-                    .unwrap_or(&[]);
+                let args_trailing = args
+                    .iter()
+                    .map(|a| a.meta().trailing_trivia.clone())
+                    .collect::<Vec<_>>();
                 // Expression-shape (use-site) type-application
                 // argument list: stays single-line if it fits within
                 // the 100-column budget, otherwise breaks into A1.
                 concat(
                     head,
-                    doc_comma_list_with_trivia(
+                    doc_comma_list_with_boundaries(
                         text("("),
                         inner,
                         &args_trivia,
-                        last_trailing,
+                        &args_trailing,
+                        &[],
                         text(")"),
+                        false,
                     ),
                 )
             }
@@ -1950,10 +2060,16 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                 text("}"),
             )
         }
-        Expr::Elaborator { call, .. } => match call {
-            ElaboratorCall::FieldAccess { receiver, labels } => doc_field_access(receiver, labels),
+        Expr::Elaborator {
+            call,
+            source_trivia,
+            ..
+        } => match call {
+            ElaboratorCall::FieldAccess { receiver, labels } => {
+                doc_field_access(receiver, labels, delimited_closing(source_trivia))
+            }
             ElaboratorCall::FieldUpdate { receiver, updates } => {
-                doc_field_update(receiver, updates)
+                doc_field_update(receiver, updates, delimited_closing(source_trivia))
             }
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
@@ -1990,8 +2106,8 @@ fn doc_expr_layout(e: &Expr) -> Doc {
             ] = prefix.as_slice()
             {
                 let mut trivia = meta.leading_trivia.clone();
-                append_source_trivia(&mut trivia, delimited_closing(source_trivia).to_vec());
-                append_source_trivia(&mut trivia, meta.trailing_trivia.clone());
+                append_relocated_trivia(&mut trivia, delimited_closing(source_trivia).to_vec());
+                append_relocated_trivia(&mut trivia, meta.trailing_trivia.clone());
                 parts.push(doc_comma_list_with_trivia(
                     text("("),
                     Vec::new(),
@@ -2784,10 +2900,34 @@ fn doc_expr_for_call_splice_arg(e: &Expr) -> Doc {
             | Expr::Tuple { .. }
             | Expr::LabelValue { .. }
     );
-    doc_expr_grouped_boundary(e, !bare, true, true)
+    doc_expr_grouped_boundary(e, !bare || call_splice_arg_starts_with_dot(e), true, true)
 }
 
-fn doc_field_access(receiver: &Expr, labels: &[FieldAccessLabel]) -> Doc {
+// A dot-led call head would fuse with the preceding `.<` or `.<<` token.
+fn call_splice_arg_starts_with_dot(expr: &Expr) -> bool {
+    match expr {
+        Expr::FnExpr { .. } | Expr::FnPlaceholder { .. } | Expr::BoolLit { .. } => true,
+        Expr::Call { callee, .. } => {
+            !call_callee_needs_parens(callee)
+                && !has_comments(&callee.meta().leading_trivia)
+                && !has_comments(&callee.meta().trailing_trivia)
+                && call_splice_arg_starts_with_dot(callee)
+        }
+        Expr::Elaborator { call, .. } => {
+            let receiver = match call {
+                ElaboratorCall::FieldAccess { receiver, .. }
+                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
+            };
+            !matches!(receiver.as_ref(), Expr::OpChain { .. })
+                && !has_comments(&receiver.meta().leading_trivia)
+                && !has_comments(&receiver.meta().trailing_trivia)
+                && call_splice_arg_starts_with_dot(receiver)
+        }
+        _ => false,
+    }
+}
+
+fn doc_field_access(receiver: &Expr, labels: &[FieldAccessLabel], closing: &[Trivia]) -> Doc {
     let label_docs: Vec<Doc> = labels
         .iter()
         .map(|label| text(label.label.clone()))
@@ -2796,23 +2936,13 @@ fn doc_field_access(receiver: &Expr, labels: &[FieldAccessLabel]) -> Doc {
         .iter()
         .map(|label| label.meta.leading_trivia.clone())
         .collect();
-    let last_trailing = labels
-        .last()
-        .map(|label| label.meta.trailing_trivia.as_slice())
-        .unwrap_or(&[]);
     concat(
         doc_expr_for_postfix_receiver(receiver),
-        doc_comma_list_with_trivia(
-            text(".?{"),
-            label_docs,
-            &label_trivia,
-            last_trailing,
-            text("}"),
-        ),
+        doc_comma_list_with_trivia(text(".?{"), label_docs, &label_trivia, closing, text("}")),
     )
 }
 
-fn doc_field_update(receiver: &Expr, updates: &[FieldUpdateLabel]) -> Doc {
+fn doc_field_update(receiver: &Expr, updates: &[FieldUpdateLabel], closing: &[Trivia]) -> Doc {
     let update_docs: Vec<Doc> = updates
         .iter()
         .map(|update| doc_label_payload(&update.label, &update.value))
@@ -2821,29 +2951,27 @@ fn doc_field_update(receiver: &Expr, updates: &[FieldUpdateLabel]) -> Doc {
         .iter()
         .map(|update| update.meta.leading_trivia.clone())
         .collect();
-    let last_trailing = updates
-        .last()
-        .map(|update| update.meta.trailing_trivia.as_slice())
-        .unwrap_or(&[]);
     concat(
         doc_expr_for_postfix_receiver(receiver),
-        doc_comma_list_with_trivia(
-            text(".!{"),
-            update_docs,
-            &update_trivia,
-            last_trailing,
-            text("}"),
-        ),
+        doc_comma_list_with_trivia(text(".!{"), update_docs, &update_trivia, closing, text("}")),
     )
 }
 
 fn doc_label_payload(label: &str, value: &Expr) -> Doc {
-    if matches!(value, Expr::Unit { .. }) {
+    let boundary_comments =
+        has_comments(&value.meta().leading_trivia) || has_comments(&value.meta().trailing_trivia);
+    if !boundary_comments
+        && matches!(value, Expr::Unit { source_trivia, .. }
+            if !has_comments(delimited_closing(source_trivia)))
+    {
         text(format!("{label}="))
-    } else if expr_is_bare_label_payload(label, value) {
+    } else if !boundary_comments && expr_is_bare_label_payload(label, value) {
         text(label.to_owned())
     } else {
-        concat(text(format!("{label} = ")), doc_expr(value))
+        concat(
+            text(format!("{label} = ")),
+            doc_expr_grouped_boundary(value, false, true, true),
+        )
     }
 }
 
@@ -2884,10 +3012,20 @@ fn doc_neutral_let_binder(
             }
         }
         None => match ty {
-            Some(ty) => concat_all([text(format!(".({name}: ")), doc_type(ty), text(")")]),
+            Some(ty) => doc_annotated_let_binder(name, ty),
             None => text(name.to_owned()),
         },
     }
+}
+
+fn doc_annotated_let_binder(name: &str, ty: &Type) -> Doc {
+    doc_comma_list_with_trivia(
+        text(".("),
+        vec![concat(text(format!("{name}: ")), doc_type_core(ty))],
+        &[ty.meta().leading_trivia.clone()],
+        &ty.meta().trailing_trivia,
+        text(")"),
+    )
 }
 
 /// Pretty-print a `let` binding. Leading trivia (comments captured
@@ -2930,7 +3068,7 @@ fn doc_let(
     }
     if let Some(pat) = pattern {
         return doc_let_pattern(
-            &pat.elems,
+            pat,
             if name.starts_with("__pat_let_") {
                 None
             } else {
@@ -2943,7 +3081,7 @@ fn doc_let(
         );
     }
     let binder = match ty {
-        Some(ty) => concat_all([text(format!("let .({name}: ")), doc_type(ty), text(") =")]),
+        Some(ty) => concat_all([text("let "), doc_annotated_let_binder(name, ty), text(" =")]),
         None => text(format!("let {name} =")),
     };
     doc_let_with(
@@ -3015,15 +3153,14 @@ fn doc_row_let_entry(entry: &RowLetEntry) -> Doc {
 }
 
 fn doc_let_pattern(
-    elems: &[crate::ast::ParamPatternElem],
+    pattern: &crate::ast::ParamPattern,
     as_pattern_name: Option<&str>,
     value: &Expr,
     body: &Expr,
     leading_trivia: &[Trivia],
     trailing_trivia: &[Trivia],
 ) -> Doc {
-    let elem_docs: Vec<Doc> = elems.iter().map(doc_param_pattern_elem).collect();
-    let pattern_doc = comma_list(text("("), elem_docs, text(")"));
+    let pattern_doc = doc_param_pattern_tuple(pattern);
     let binder_doc = match as_pattern_name {
         None => concat(text("."), pattern_doc),
         Some(name) => concat_all([text(format!(".({name}: ")), pattern_doc, text(")")]),
@@ -3183,7 +3320,7 @@ fn doc_expr_with_own_meta_trivia(e: &Expr) -> Doc {
 fn doc_expr_with_outer_trivia(e: &Expr, outer: &[Trivia]) -> Doc {
     let leading = e.meta().leading_trivia.as_slice();
     let mut trailing = e.meta().trailing_trivia.clone();
-    append_source_trivia(&mut trailing, outer.to_vec());
+    append_relocated_trivia(&mut trailing, outer.to_vec());
     match e {
         Expr::Let {
             name,
@@ -3309,11 +3446,11 @@ fn doc_comma_list_with_boundaries(
     let mut annotated_items = Vec::new();
     let mut pending = Vec::new();
     for (i, (item, trivia)) in items.iter().zip(item_trivia).enumerate() {
-        append_source_trivia(&mut pending, trivia.clone());
+        append_relocated_trivia(&mut pending, trivia.clone());
         annotated_items.push((doc_inline_leading_trivia(&pending), item.clone()));
         pending = item_tails.get(i).cloned().unwrap_or_default();
     }
-    append_source_trivia(&mut pending, closing.to_vec());
+    append_relocated_trivia(&mut pending, closing.to_vec());
     broken_comma_list(
         open,
         annotated_items,
@@ -3381,7 +3518,7 @@ fn doc_comment_run(trivia: &[Trivia], context: CommentRunContext) -> Doc {
         CommentRunContext::ItemLeading => (true, true, true),
         CommentRunContext::InlineLeading => (false, true, true),
         CommentRunContext::Trailing => (false, true, false),
-        CommentRunContext::ImportLeading => (false, false, true),
+        CommentRunContext::ImportLeading => (false, true, true),
     };
     let mut parts: Vec<Doc> = Vec::new();
     let mut last_was_empty_comment = false;
@@ -3438,6 +3575,12 @@ const STRING_CHUNK_TARGET: usize = 72;
 /// bare literal; `(Type)` — no inner padding — when annotated.
 fn doc_literal_annotation(annotation: &Option<Type>) -> Doc {
     match annotation {
+        Some(ty)
+            if has_comments(&ty.meta().leading_trivia)
+                || has_comments(&ty.meta().trailing_trivia) =>
+        {
+            doc_type(ty)
+        }
         Some(ty) => concat(concat(text("("), doc_type(ty)), text(")")),
         None => text(""),
     }
@@ -3797,7 +3940,21 @@ fn append_block_trailing(body: Option<Doc>, trailing: &[Trivia]) -> Option<Doc> 
 
 fn doc_host_type(h: &HostType) -> Doc {
     let doc_prefix = h.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
-    let head = text(format!("host type {}", h.name));
+    let head = if has_comments(&h.meta.trailing_trivia) {
+        concat(
+            text("host type"),
+            nest(
+                2,
+                concat_all([
+                    hardline(),
+                    doc_inline_leading_trivia(&h.meta.trailing_trivia),
+                    text(h.name.clone()),
+                ]),
+            ),
+        )
+    } else {
+        text(format!("host type {}", h.name))
+    };
     let params = if h.type_params.is_empty() {
         empty()
     } else {
@@ -3819,7 +3976,23 @@ fn doc_bodyless_fn(h: &HostFn, prefix: &str) -> Doc {
     let doc_prefix = h.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
     let head = text(format!("{prefix}{}", h.name));
     let params = doc_host_fn_signature(h);
-    concat_all([doc_prefix, head, params, text(" -> "), doc_type(&h.ret)])
+    let ret = if can_omit_unit_return(&h.ret) {
+        empty()
+    } else {
+        doc_function_return(&h.ret, false)
+    };
+    let trailing = if has_comments(&h.meta.trailing_trivia) {
+        concat_all([
+            nest(
+                2,
+                concat(hardline(), doc_trailing_comments(&h.meta.trailing_trivia)),
+            ),
+            hardline(),
+        ])
+    } else {
+        empty()
+    };
+    concat_all([doc_prefix, head, params, ret, trailing])
 }
 
 fn doc_host_fn_signature(h: &HostFn) -> Doc {
@@ -3828,21 +4001,58 @@ fn doc_host_fn_signature(h: &HostFn) -> Doc {
         return text("()");
     }
     let mut parts = Vec::new();
-    for group in groups {
-        match group {
-            crate::ast::HostFnGroupRef::Type(params) => {
-                for param in params {
-                    let HostFnParam::Type(tp) = param else {
-                        unreachable!("host fn type group contains only type params")
-                    };
-                    parts.push(text(type_binder_text(tp)));
-                }
-            }
+    for (index, group) in groups.into_iter().enumerate() {
+        let before = signature_boundary_trivia(
+            &h.source_trivia,
+            index,
+            SignatureTriviaPosition::BeforeGroup,
+        );
+        let opening =
+            signature_boundary_trivia(&h.source_trivia, index, SignatureTriviaPosition::InsideOpen);
+        let closing = signature_boundary_trivia(
+            &h.source_trivia,
+            index,
+            SignatureTriviaPosition::InsideClose,
+        );
+        let group_doc = match group {
+            crate::ast::HostFnGroupRef::Type(params) => concat_all(params.iter().map(|param| {
+                let HostFnParam::Type(tp) = param else {
+                    unreachable!("host fn type group contains only type params")
+                };
+                doc_signature_type_binder(tp, opening, closing)
+            })),
             crate::ast::HostFnGroupRef::Value(params) => {
                 let docs: Vec<Doc> = params.iter().map(doc_host_fn_def_param).collect();
-                parts.push(comma_list(text("("), docs, text(")")));
+                let leading: Vec<_> = params
+                    .iter()
+                    .map(|param| match param {
+                        HostFnParam::Value(value) => value.meta.leading_trivia.clone(),
+                        HostFnParam::Type(_) => {
+                            unreachable!("host fn value group contains only value params")
+                        }
+                    })
+                    .collect();
+                let trailing: Vec<_> = params
+                    .iter()
+                    .map(|param| match param {
+                        HostFnParam::Value(value) => value.meta.trailing_trivia.clone(),
+                        HostFnParam::Type(_) => {
+                            unreachable!("host fn value group contains only value params")
+                        }
+                    })
+                    .collect();
+                doc_comma_list_with_boundaries(
+                    text("("),
+                    docs,
+                    &leading,
+                    &trailing,
+                    closing,
+                    text(")"),
+                    false,
+                )
             }
-        }
+        };
+        parts.push(doc_signature_group(group_doc, before));
     }
     concat_all(parts)
 }
@@ -3989,12 +4199,12 @@ fn target_entry_order(e: &TargetEntry) -> (u8, &str) {
 }
 
 // =========================================================================
-// Tests — pretty-printer round-trips for every AST construct.
+// Tests — canonical output, preserved structure and comments, and fixpoints.
 //
 // Property: parse → pretty → parse → pretty produces the same string
-// as parse → pretty (i.e., pretty is idempotent under parse). This
-// proves that pretty's output is a canonical form for parse-equivalent
-// inputs without needing to compare AST structures across spans.
+// as parse → pretty (i.e., pretty is idempotent under parse). Exact output
+// and structure/comment assertions separately pin the canonical style and
+// conservation rules; a stable output alone establishes only a fixpoint.
 // =========================================================================
 
 #[cfg(test)]
@@ -4015,7 +4225,7 @@ mod tests {
             rec { ; type Left = Right; newtype Right : Left { constructor make; projector take }; };";
         let formatted = roundtrip(source);
         for expected in [
-            "fn id(x: .) -> . { x }\n",
+            "fn id(x: .) { x }\n",
             "newtype Box : . { constructor make; projector take }\n",
             "op _ + _ { impl add }\n",
             "varop [% %] { foldl step initial; finalize finish }\n",
@@ -4023,7 +4233,7 @@ mod tests {
             "host type Text role(str) { owned };",
             "type Alias = .;",
             "labels Choice = { left: . } | { right: . };",
-            "fn first(x: .) -> . { x };\n",
+            "fn first(x: .) { x };\n",
             "type Left = Right;\n",
         ] {
             assert!(
@@ -4113,7 +4323,7 @@ mod tests {
             "{formatted}"
         );
         assert!(
-            formatted.find("fn run() -> . { () }").unwrap()
+            formatted.find("fn run() { () }").unwrap()
                 < formatted.find("// before final token").unwrap()
         );
     }
@@ -4328,7 +4538,7 @@ import a as a;
             "{formatted}"
         );
         assert!(
-            formatted.contains("// opening selection\n// zebra comment\n, zebra"),
+            formatted.contains("// opening selection\n\n// zebra comment\n, zebra"),
             "{formatted}"
         );
         assert!(
@@ -4364,11 +4574,11 @@ import p( // opening selection
 "#;
         let formatted = roundtrip(source);
         assert!(
-            formatted.contains("import p(\n// next slot\n// alpha\n, alpha"),
+            formatted.contains("import p(\n// next slot\n\n// alpha\n, alpha"),
             "{formatted}"
         );
         assert!(
-            formatted.contains("// opening selection\n// zebra\n, zebra"),
+            formatted.contains("// opening selection\n\n// zebra\n, zebra"),
             "{formatted}"
         );
         assert!(formatted.contains("\n// dangling\n);"), "{formatted}");
@@ -4429,7 +4639,7 @@ import p( // opening selection
     }
 
     /// Assert that `pretty(parse(src))` is idempotent under `parse → pretty`.
-    /// Returns the canonical form (the first pretty-print output) for
+    /// Returns the first pretty-print output for
     /// inspection by callers that want to make further claims about it.
     fn roundtrip(src: &str) -> String {
         let m1 = parse(src).unwrap_or_else(|e| panic!("parse failed for {src:?}: {e:?}"));
@@ -4682,6 +4892,247 @@ import p( // opening selection
         );
     }
 
+    fn parsed_structure(source: &str) -> serde_json::Value {
+        source_structure(&parse(source).unwrap())
+    }
+
+    fn source_structure(ast: &impl serde::Serialize) -> serde_json::Value {
+        fn normalize(value: &mut serde_json::Value) {
+            match value {
+                serde_json::Value::Object(fields) => {
+                    if fields.len() == 2
+                        && fields.contains_key("start")
+                        && fields.contains_key("end")
+                    {
+                        fields.insert("start".to_owned(), 0.into());
+                        fields.insert("end".to_owned(), 0.into());
+                        return;
+                    }
+                    fields.retain(|key, _| {
+                        !matches!(
+                            key.as_str(),
+                            "meta"
+                                | "span"
+                                | "source_trivia"
+                                | "source_layout"
+                                | "ret_elided"
+                                | "trivia"
+                                | "separators"
+                                | "leading"
+                                | "trailing"
+                                | "id"
+                                | "ext"
+                                | "match_id"
+                        ) && !key.ends_with("_span")
+                            && !key.ends_with("_trivia")
+                    });
+                    for child in fields.values_mut() {
+                        normalize(child);
+                    }
+                }
+                serde_json::Value::Array(items) => {
+                    for child in items {
+                        normalize(child);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut value = serde_json::to_value(ast).unwrap();
+        normalize(&mut value);
+        value
+    }
+
+    #[test]
+    fn let_header_comments_survive_ordinary_and_neutral_bindings() {
+        let source = include_str!(
+            "../../test-data/goldens/00_success/fmt_let_header_comments/workdir/main.kio"
+        );
+        let expected = include_str!(
+            "../../test-data/goldens/00_success/fmt_let_header_comments/expected.stdout"
+        );
+        assert_eq!(roundtrip(source), expected);
+        assert_eq!(parsed_structure(source), parsed_structure(expected));
+
+        for name in ["value", "_"] {
+            let source = format!(
+                "module m; fn f() {{ let // binder\n{name} // connector\n= \
+                 // value\n(); () }}"
+            );
+            let expected = format!(
+                "module m;\n\nfn f() {{\n  // binder\n  let {name} =\n    \
+                 // connector\n\n    // value\n    ();\n  ()\n}}\n"
+            );
+            assert_eq!(roundtrip(&source), expected);
+            assert_eq!(parsed_structure(&source), parsed_structure(&expected));
+            assert_eq!(
+                roundtrip(&format!("module m; fn f() {{ let {name} = (); () }}")),
+                format!("module m;\n\nfn f() {{ let {name} = (); () }}\n")
+            );
+
+            for connective in ["=", "<-"] {
+                let source = format!(
+                    "module m; fn f() {{ do! bind {{ let // binder\n{name} \
+                     // connector\n{connective} // value\n(); () }} }}"
+                );
+                let expected = format!(
+                    "module m;\n\nfn f() {{\n  do! bind {{\n    // binder\n    \
+                     let {name} {connective} // connector\n\n    // value\n    \
+                     ();\n    ()\n  }}\n}}\n"
+                );
+                assert_eq!(roundtrip(&source), expected);
+                assert_eq!(parsed_structure(&source), parsed_structure(&expected));
+                assert_eq!(
+                    roundtrip(&format!(
+                        "module m; fn f() {{ do! bind {{ let {name} {connective} (); () }} }}"
+                    )),
+                    format!(
+                        "module m;\n\nfn f() {{\n  do! bind {{ let {name} {connective} (); () }}\n}}\n"
+                    )
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn let_header_comments_around_dot_patterns_survive() {
+        for intro in ["let // binder\n.", "let . // binder\n"] {
+            let source = format!("module m; fn f() {{ {intro}(first, second) = packet; first }}");
+            let expected = "module m;\n\nfn f() {\n  // binder\n  \
+                            let .(first, second) = packet;\n  first\n}\n";
+            assert_eq!(roundtrip(&source), expected);
+            assert_eq!(parsed_structure(&source), parsed_structure(expected));
+
+            for connective in ["=", "<-"] {
+                let source = format!(
+                    "module m; fn f() {{ do! bind {{ {intro}(first, second) \
+                     {connective} packet; first }} }}"
+                );
+                let expected = format!(
+                    "module m;\n\nfn f() {{\n  do! bind {{\n    // binder\n    \
+                     let .(first, second) {connective} packet;\n    first\n  }}\n}}\n"
+                );
+                assert_eq!(roundtrip(&source), expected);
+                assert_eq!(parsed_structure(&source), parsed_structure(&expected));
+            }
+        }
+    }
+
+    #[test]
+    fn pattern_opener_and_existential_closer_comments_stay_ordered() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, comment)| comment.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for pattern in [
+            "(first, second)",
+            "(single)",
+            "(single: .)",
+            "({field})",
+            "(<Hidden> packet // closing\n)",
+            "(<Hidden> (first: Hidden, second: . // inner closing\n) // closing\n)",
+        ] {
+            for (prefix, suffix) in [("", ""), ("do! bind {", "}")] {
+                let source = format!(
+                    "module m; fn f() {{ {prefix} let // before dot\n. \
+                     // before opener\n{pattern} // equals\n= // value\npacket; () {suffix} }}"
+                );
+                let formatted = roundtrip(&source);
+                assert_eq!(
+                    comments(&source),
+                    comments(&formatted),
+                    "{source}\n{formatted}"
+                );
+                assert_eq!(parsed_structure(&source), parsed_structure(&formatted));
+            }
+        }
+
+        for source in [
+            "module m; fn f() { . // signature opener\n(pair: (x: ., y: .)) { x } }",
+            "module m; fn f() { . // signature opener\n(// pattern opener\n(x: ., y: .)) { x } }",
+            "module m; fn f() { . // type opener\n[A] // value opener\n(value: A) { value } }",
+        ] {
+            let formatted = roundtrip(source);
+            assert_eq!(
+                comments(source),
+                comments(&formatted),
+                "{source}\n{formatted}"
+            );
+            assert_eq!(parsed_structure(source), parsed_structure(&formatted));
+        }
+    }
+
+    #[test]
+    fn pattern_comments_survive_all_binding_consumers() {
+        fn comments(source: &str) -> Vec<String> {
+            let (tokens, trailing) = crate::pass::lexer::lex_with_trailing(source).unwrap();
+            tokens
+                .into_iter()
+                .flat_map(|token| token.leading_trivia)
+                .chain(trailing)
+                .filter_map(|trivia| match trivia {
+                    Trivia::LineComment { text, .. } | Trivia::DocCommentLine { text, .. } => {
+                        Some(text)
+                    }
+                    Trivia::Newline => None,
+                })
+                .collect()
+        }
+
+        for pattern in [
+            "(// first\nx // colon\n: // annotation\n. // comma\n, \
+             // next\nwhole // named colon\n: // inner opener\n(\
+             // inner first\na: _, b: . // inner close\n), \
+             (// bare first\nc: ., _: . // bare close\n) // outer close\n)",
+            "(// singleton first\nx // singleton colon\n: \
+             // singleton type\nBox(// type argument\n. \
+             // type close\n) // singleton close\n)",
+            "(// inferred first\nx // inferred close\n)",
+            "(// explicit first\nx: _ // explicit close\n)",
+            "(// leading comma\n, // repeated comma\n, x: . \
+             // trailing comma\n, // final close\n)",
+        ] {
+            for source in [
+                format!("module m; fn example({pattern}) {{ () }}"),
+                format!("module m; fn example(whole: {pattern}) {{ () }}"),
+                format!("module m; equiv example({pattern}) {{ (); () }}"),
+                format!("module m; fn example() {{ .({pattern}) {{ () }} }}"),
+                format!(
+                    "module m; fn example() {{ let .{pattern} // after pattern\n= value; () }}"
+                ),
+                format!("module m; fn example() {{ do! m {{ let .{pattern} = value; () }} }}"),
+                format!("module m; fn example() {{ do! m {{ let .{pattern} <- value; () }} }}"),
+                format!("module m; fn example() {{ let .(<Hidden> {pattern}) = value; () }}"),
+                format!(
+                    "module m; fn example() {{ do! m {{ let .(<Hidden> {pattern}) = value; () }} }}"
+                ),
+            ] {
+                // A bare single name after `whole:` denotes a type, not a pattern.
+                if pattern.contains("inferred first")
+                    && (source.contains("example(whole:") || source.contains("<Hidden>"))
+                {
+                    continue;
+                }
+                let formatted = roundtrip(&source);
+                assert_eq!(
+                    comments(&source),
+                    comments(&formatted),
+                    "{source}\n{formatted}"
+                );
+                assert_eq!(
+                    parsed_structure(&source),
+                    parsed_structure(&formatted),
+                    "{source}\n{formatted}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn pattern_disambiguating_written_inference_annotations_are_preserved() {
         let printed = roundtrip(
@@ -4854,14 +5305,14 @@ import p( // opening selection
              pub varop [* *] { foldr append empty; }; \
              rec(loop) pub fn g() -> . { () }",
         );
-        assert!(pp.contains("pub pure fn f() -> ."));
+        assert!(pp.contains("pub pure fn f() {"));
         assert!(pp.contains("pub type T = .;"));
         assert!(pp.contains("pub newtype N : ."));
         assert!(pp.contains("pub labels L ="));
         assert!(pp.contains("pub elab checked :"));
         assert!(pp.contains("pub op _ + _ { impl plus }"));
         assert!(pp.contains("pub varop [* *] { foldr append empty }"));
-        assert!(pp.contains("pub rec(loop) fn g() -> ."));
+        assert!(pp.contains("pub rec(loop) fn g() {"));
     }
 
     #[test]
@@ -5052,15 +5503,15 @@ elab demo : Box(
         for (source, expected) in [
             (
                 "module x/y; rec(loop) { fn local() -> . { () } }",
-                "rec(loop) fn local() -> .",
+                "rec(loop) fn local() {",
             ),
             (
                 "module x/y; rec(loop) { pub(x) fn scoped() -> . { () } }",
-                "pub(x) rec(loop) fn scoped() -> .",
+                "pub(x) rec(loop) fn scoped() {",
             ),
             (
                 "module x/y; rec(loop) { pub fn exported() -> . { () } }",
-                "pub rec(loop) fn exported() -> .",
+                "pub rec(loop) fn exported() {",
             ),
         ] {
             let pp = roundtrip(source);
@@ -5076,7 +5527,7 @@ elab demo : Box(
             "module x/y; rec(loop) pub(x) fn f() -> . { () }",
         ] {
             let pp = roundtrip(source);
-            assert!(pp.contains("pub(x) rec(loop) fn f() -> ."), "got:\n{pp}");
+            assert!(pp.contains("pub(x) rec(loop) fn f() {"), "got:\n{pp}");
         }
     }
 
@@ -5086,7 +5537,7 @@ elab demo : Box(
             .expect("fixture parses");
         assert_eq!(
             pretty_item_signature(&module.items[0]),
-            "pub(x) rec(loop) fn f(value: .) -> ."
+            "pub(x) rec(loop) fn f(value: .)"
         );
     }
 
@@ -5161,16 +5612,45 @@ elab demo : Box(
 
     #[test]
     fn fn_def_elided_unit_return_round_trips() {
-        // language.md § Function definitions: `.> ()` may be omitted.
-        // The pretty printer must NOT re-emit the elided arrow, so the
-        // source round-trips byte-for-byte.
         roundtrip("module x; fn say_hi() { () }");
     }
 
     #[test]
-    fn fn_def_explicit_unit_return_round_trips() {
-        // The dual: an explicit `-> .` must come back out as `-> .`.
-        roundtrip("module x; fn say_hi() -> . { () }");
+    fn named_unit_results_are_canonical_defaults() {
+        let pp = roundtrip("module x; host fn print(s: String) -> .; fn say_hi() -> . { () }");
+        assert!(pp.contains("host fn print(s: String);"), "{pp}");
+        assert!(pp.contains("fn say_hi() { () }"), "{pp}");
+        assert!(!pp.contains("->"), "{pp}");
+    }
+
+    #[test]
+    fn unit_default_does_not_collapse_function_results_or_lambda_annotations() {
+        let pp = roundtrip(
+            "module x; type Unit = .; host fn factory() -> . -> .; fn alias() -> Unit { () } fn factory() -> . -> . { .(value: .) -> . { value } }",
+        );
+        assert!(pp.contains("host fn factory() -> . -> .;"), "{pp}");
+        assert!(pp.contains("fn alias() -> Unit"), "{pp}");
+        assert!(pp.contains("fn factory() -> . -> ."), "{pp}");
+        assert!(pp.contains(".(value: .) -> ."), "{pp}");
+    }
+
+    #[test]
+    fn host_unit_result_comments_survive_formatting() {
+        for source in [
+            "module x; host fn tick() // arrow\n -> .;",
+            "module x; host fn tick() -> // result\n .;",
+            "module x; host fn tick() -> . // end\n;",
+            "module x; host fn tick() // end\n;",
+        ] {
+            let pp = roundtrip(source);
+            for comment in ["// arrow", "// result", "// end"] {
+                assert_eq!(
+                    pp.matches(comment).count(),
+                    source.matches(comment).count(),
+                    "{pp}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -5597,6 +6077,216 @@ elab demo : Box(
     }
 
     #[test]
+    fn label_declaration_headers_preserve_comments() {
+        let source = include_str!(
+            "../../test-data/goldens/00_success/fmt_label_declaration_comments/workdir/main.kio"
+        );
+        let expected = include_str!(
+            "../../test-data/goldens/00_success/fmt_label_declaration_comments/expected.stdout"
+        );
+        assert_eq!(roundtrip(source), expected);
+        assert_eq!(parsed_structure(source), parsed_structure(expected));
+
+        for declaration in [
+            "labels // 1\n{ field // 2\n: // 3\n. } // 4\n;",
+            "pub labels // 1\nChoice // 2\n[// 3\nA // 4\n] // 5\n= // 6\n{ first // 7\n[// 8\nB // 9\n] // 10\n< // 11\nHidden // 12\n> // 13\n: // 14\n(B & Hidden) // 15\n} // 16\n| // 17\n{ second: // 18\n_ // 19\n} // 20\n;",
+            "rec labels // 1\n{ list[A] // 2\n: // 3\n(. | (A & List(A))) };",
+            "rec { /// Labels documentation.\npub labels // 1\nChoice = // 2\n{ field // 3\n: // 4\n. }; }",
+        ] {
+            let source = format!("module m; {declaration}");
+            let printed = roundtrip(&source);
+            let comments = |text: &str| {
+                let (tokens, trailing) = crate::pass::lexer::lex_with_trailing(text).unwrap();
+                tokens
+                    .into_iter()
+                    .flat_map(|token| token.leading_trivia)
+                    .chain(trailing)
+                    .filter_map(|trivia| match trivia {
+                        Trivia::LineComment { text, .. } => Some(text),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&printed),
+                "{source}"
+            );
+            if declaration.contains("second:") {
+                assert!(
+                    printed.contains("second: _"),
+                    "reuse marker stays ungrouped: {printed}"
+                );
+            }
+            let lazy = crate::pass::parser::parse_lazy(&source)
+                .unwrap()
+                .force_all()
+                .unwrap();
+            assert_eq!(pretty_module(&lazy), printed);
+        }
+    }
+
+    #[test]
+    fn label_payload_comments_survive_shortening_and_expression_boundaries() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, text)| text.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for owner in ["", "row.!"] {
+            for payload in [
+                "(// before unit\n)",
+                "(() // after unit\n)",
+                "// before unit\n()",
+                "(// before shorthand\nready)",
+                "(ready // after shorthand\n)",
+                "// before shorthand\nready",
+                "// before value\nother",
+                "(other // after value\n)",
+                "(// before value\nother // after value\n)",
+                "((// before inner\nother // after inner\n) // after outer\n)",
+                "(call(// call argument\nother) // after call\n)",
+                "(.() { // function body\n() } // after function\n)",
+                "{nested = (// nested unit\n)}",
+            ] {
+                for (prefix, suffix) in [("", ""), ("", ", next = ()"), ("first = (), ", "")] {
+                    let source = format!(
+                        "module x; fn f() {{ {owner}{{{prefix}ready = {payload}{suffix}}} }}"
+                    );
+                    let printed = roundtrip(&source);
+                    assert_eq!(comments(&printed), comments(&source), "{source}\n{printed}");
+                    assert_eq!(
+                        parsed_structure(&printed),
+                        parsed_structure(&source),
+                        "comments changed the payload structure: {source}\n{printed}",
+                    );
+                }
+            }
+            for (payload, expected) in [
+                ("()", "ready="),
+                ("ready", "ready"),
+                ("other", "ready = other"),
+                ("qualified.ready", "ready = qualified.ready"),
+            ] {
+                let source = format!("module x; fn f() {{ {owner}{{ready = {payload}}} }}");
+                assert!(roundtrip(&source).contains(&format!("{owner}{{{expected}}}")));
+            }
+            let source = format!("module x; fn f() {{ {owner}{{qualified.ready = ready}} }}");
+            assert!(roundtrip(&source).contains(&format!("{owner}{{qualified.ready}}")));
+        }
+    }
+
+    #[test]
+    fn label_access_and_row_let_keep_closing_comments() {
+        for entries in ["ready", "ready, other", "ready,"] {
+            for body in [
+                format!("row.?{{{entries} // close\n}}"),
+                format!("let .({{{entries} // close\n}}) = row; ready"),
+            ] {
+                let source = format!("module x; fn f() {{ {body} }}");
+                let printed = roundtrip(&source);
+                assert_eq!(
+                    printed.matches("// close").count(),
+                    1,
+                    "{source}\n{printed}"
+                );
+                assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+            }
+        }
+    }
+
+    #[test]
+    fn empty_label_lists_keep_inside_and_outside_comments_distinct() {
+        for operator in ["?", "!"] {
+            let expression = format!("row.{operator}{{ // inside\n}}");
+            for body in [
+                expression.clone(),
+                format!("({expression} // outside\n)"),
+                format!("({expression} // outside\n).?{{ready}}"),
+                format!("call({expression})"),
+                format!("{{nested = {expression}}}"),
+            ] {
+                let source = format!("module x; fn f() {{ {body} }}");
+                let printed = roundtrip(&source);
+                assert_eq!(
+                    printed.matches("// inside").count(),
+                    1,
+                    "{source}\n{printed}"
+                );
+                assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+                let open = printed.find(&format!(".{operator}{{")).unwrap();
+                let close = open + printed[open..].find('}').unwrap();
+                let inside = printed.find("// inside").unwrap();
+                assert!(open < inside && inside < close, "{source}\n{printed}");
+                if source.contains("// outside") {
+                    assert_eq!(printed.matches("// outside").count(), 1);
+                    assert!(
+                        close < printed.find("// outside").unwrap(),
+                        "{source}\n{printed}"
+                    );
+                }
+            }
+            let source = format!("module x; fn f() {{ row.{operator}{{}} }}");
+            assert!(roundtrip(&source).contains(&format!("row.{operator}{{}}")));
+        }
+    }
+
+    #[test]
+    fn label_header_comments_hoist_once_in_source_order() {
+        let path = "m // before dot\n. // before segment\nready";
+        for body in [
+            format!("{{{path} // before equals\n= other}}"),
+            format!("row.!{{{path} // before equals\n= other}}"),
+            format!("row.?{{{path} // closing\n}}"),
+            format!("let .({{{path} // before as\nas // after as\nx // closing\n}}) = row; x"),
+        ] {
+            let source = format!("module x; fn f() {{ {body} }}");
+            let printed = roundtrip(&source);
+            let comments = |source: &str| {
+                source
+                    .lines()
+                    .filter_map(|line| line.split_once("//").map(|(_, text)| text.trim()))
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+        }
+    }
+
+    #[test]
+    fn field_splice_and_row_let_boundaries_keep_comments_in_order() {
+        let binding = "let .({ready // inner close\n} // outer close\n) // equals\n= row; ready";
+        let mut bodies = vec![binding.to_owned(), format!("flow! {{ {binding} }}")];
+        for operator in ["?", "!"] {
+            for fields in ["", "ready"] {
+                bodies.push(format!(
+                    "row // receiver\n.{operator} // opener\n{{{fields} // closer\n}}"
+                ));
+            }
+        }
+        bodies.push("row // first receiver\n.? // first opener\n{ready} // next receiver\n.! // next opener\n{ready}".to_owned());
+        for body in bodies {
+            let source = format!("module x; fn f() {{ {body} }}");
+            let printed = roundtrip(&source);
+            let comments = |source: &str| {
+                source
+                    .lines()
+                    .filter_map(|line| line.split_once("//").map(|(_, text)| text.trim()))
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+        }
+    }
+
+    #[test]
     fn labels_recursive_round_trip() {
         roundtrip("module x; rec labels { list[A] : (. | (A & List(A))) };");
     }
@@ -5607,6 +6297,149 @@ elab demo : Box(
             "module x; rec { pub type A = B; pub newtype B : A { pub constructor mk_b; pub projector un_b; }; }",
         );
         assert!(formatted.contains("rec {\n  pub type A = B;"));
+    }
+
+    #[test]
+    fn declaration_headers_and_host_signatures_preserve_comments() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, text)| text.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for source in [
+            include_str!("../../test-data/goldens/00_success/fmt_declaration_header_comments/workdir/main.kio").to_owned(),
+            "module m; /// Function docs.\npure // purity\npub // before scope\n( // scope open\nm // scope close\n) // before fn\nfn // before name\nf // before params\n() { () }".to_owned(),
+            "module m; rec(loop) { /// Member docs.\npub // visibility\nfn // name\nf() { () } }".to_owned(),
+            "module m; /// Recursive docs.\npub // visibility\nrec(loop) fn // name\nf() { () }".to_owned(),
+            "module m; equiv // name\ne[ // binder\nA](x: A) // body\n{ x; x }".to_owned(),
+            "module m; equiv e() // body\n{ (); () }".to_owned(),
+            "module m; /// Host docs.\nhost pub // modifier\nfn f[ // leading comma\n, A // first binder\n, // repeated comma\n, B, // trailing comma\n] // empty group\n( // inside empty\n) // next group\n[C](value: C) -> C;".to_owned(),
+            "module m; host fn f( // leading\n, value // colon\n: // type\n. // first comma\n, // repeated\n, next: . , // trailing\n);".to_owned(),
+            "module m; host fn f[ // opening\n* // kind\nF // closing\n]( // empty\n);".to_owned(),
+            "module m; /// Labels docs.\npub // modifier\nrec labels List = {nil: .} | {cons: List};".to_owned(),
+            "module m; /// Literal docs.\npub // modifier\nliteral // name\nanswer // equals\n= // value\n42 // terminator\n;".to_owned(),
+        ] {
+            let printed = roundtrip(&source);
+            assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed), "{source}\n{printed}");
+            let lazy = crate::pass::parser::parse_lazy(&source).unwrap().force_all().unwrap();
+            assert_eq!(pretty_module(&lazy), printed);
+            let tooling = crate::pass::parser::probe_tooling(&source, Some(crate::ast::KioFileKind::Module), None, None);
+            let Some(crate::pass::parser::ToolingSyntax::Module(module)) = tooling.syntax else {
+                panic!("tooling parse failed: {source}");
+            };
+            assert_eq!(pretty_module(&module), printed, "{source}");
+        }
+        for declaration in [
+            "pub pure fn f() { () }",
+            "host fn f[A][B](value: A) -> B;",
+            "pub literal answer = 42;",
+        ] {
+            assert_eq!(
+                roundtrip(&format!("module m; {declaration}")),
+                format!("module m;\n\n{declaration}\n")
+            );
+        }
+    }
+
+    #[test]
+    fn bodyless_signature_comments_leave_contract_digest_unchanged() {
+        for declaration in [
+            "/// Export docs.\npub // visibility\npure // purity\nfn // name\nf[ // first\n,A // separator\n,,B, // close\n] // empty\n( // inside\n)[C](value // colon\n: // type\nC // close value\n) -> C;",
+            "/// Host docs.\nhost // modifier\nfn // name\nf[ // first\n,A // separator\n,,B, // close\n] // empty\n( // inside\n)[C](value // colon\n: // type\nC // close value\n) -> C;",
+            "pub // modifier\nfn f[ // binder\nA];",
+        ] {
+            let source = format!(
+                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration} }} }} }} }}"
+            );
+            let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
+            let printed = crate::sig::emit_signature_file(&parsed);
+            let reparsed = crate::pass::parser::parse_signature_file(&printed, None).unwrap();
+            assert_eq!(printed, crate::sig::emit_signature_file(&reparsed));
+            assert_eq!(source_structure(&parsed), source_structure(&reparsed));
+            let comments = |source: &str| {
+                source
+                    .lines()
+                    .filter_map(|line| {
+                        line.split_once("//")
+                            .map(|(_, text)| text.trim().to_owned())
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+            let original = crate::sig::replay(&parsed).unwrap();
+            let formatted = crate::sig::replay(&reparsed).unwrap();
+            assert_eq!(
+                crate::sig::contract_digest(&original.current),
+                crate::sig::contract_digest(&formatted.current)
+            );
+            let uncommented = source
+                .lines()
+                .map(|line| line.split_once("//").map_or(line, |(code, _)| code))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let plain = crate::pass::parser::parse_signature_file(&uncommented, None).unwrap();
+            let plain_contract = crate::sig::replay(&plain).unwrap();
+            assert_eq!(
+                crate::sig::contract_digest(&original.current),
+                crate::sig::contract_digest(&plain_contract.current)
+            );
+            #[cfg(all(feature = "cli", feature = "surface"))]
+            assert_eq!(
+                crate::sig::emit_signature_comparison(&parsed),
+                crate::sig::emit_signature_comparison(&plain)
+            );
+        }
+    }
+
+    #[test]
+    fn recursive_function_header_comments_round_trip() {
+        let header = "rec // after rec\n(// after open\nprovider \
+            // before dot\n. // after dot\nloop // before close\n) // after close\n";
+        for declaration in [
+            format!("{header}fn f() {{ // first body\n() }}"),
+            format!("pub(m) {header}fn f() {{ // first body\n() }}"),
+            format!("{header}{{ fn f() {{ // first body\n() }} }}"),
+            format!("{header}{{ // member boundary\nfn f() {{ // first body\n() }} }}"),
+            format!("{header}{{ /// Member documentation.\nfn f() {{ // first body\n() }} }}"),
+            format!(
+                "{header}{{ fn f() {{ // first body\n() }}; fn g() {{ // second body\n() }} }}"
+            ),
+        ] {
+            let source = format!("module m; {declaration}");
+            let formatted = roundtrip(&source);
+            let mut previous = 0;
+            for comment in source
+                .lines()
+                .filter_map(|line| line.split_once("//").map(|(_, text)| text.trim_end()))
+            {
+                let comment = format!("//{comment}");
+                assert_eq!(formatted.matches(&comment).count(), 1, "{formatted}");
+                let position = formatted.find(&comment).unwrap();
+                assert!(position >= previous, "{formatted}");
+                previous = position;
+            }
+            assert_eq!(parsed_structure(&source), parsed_structure(&formatted));
+            let lazy = crate::pass::parser::parse_lazy(&source)
+                .unwrap()
+                .force_all()
+                .unwrap();
+            assert_eq!(pretty_module(&lazy), formatted);
+            let tooling = crate::pass::parser::probe_tooling(
+                &source,
+                Some(crate::ast::KioFileKind::Module),
+                None,
+                None,
+            );
+            let Some(crate::pass::parser::ToolingSyntax::Module(module)) = tooling.syntax else {
+                panic!("tooling parse failed");
+            };
+            assert_eq!(pretty_module(&module), formatted);
+        }
     }
 
     #[test]
@@ -5836,6 +6669,453 @@ elab demo : Box(
             pp.contains("(A -> B) | C"),
             "expected function parens preserved, got:\n{pp}"
         );
+    }
+
+    #[test]
+    fn grouped_type_comments_survive_all_type_positions() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, comment)| comment.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for ty in [
+            "(// first\n. // last\n)",
+            "(// first\nA // last\n)",
+            "(// first\n! // last\n)",
+            "(// first\n& // second\n& // last\n)",
+            "(// first\n| // second\n| // last\n)",
+            "(// first\nA & B // last\n)",
+            "(// first\n& // second\nA & B // third\n& // last\n)",
+            "(// first\nA -> B // last\n)",
+            "(// first\n[A] A -> A // last\n)",
+            "(// first\n(// second\nA // third\n) // last\n)",
+            "(A // first\n&.)",
+            "(A // first\n|.)",
+            "(// first\n&. // last\n)",
+            "(// first\n|. // last\n)",
+        ] {
+            for declaration in [
+                format!("fn f() -> {ty} {{ () }}"),
+                format!("host fn f() -> {ty};"),
+                format!("type T = {ty};"),
+                format!("type T = {ty} -> .;"),
+                format!("type T = . -> {ty};"),
+                format!("type T = Pair({ty}, .);"),
+                format!("type T = Pair(., {ty});"),
+                format!("fn f(value: {ty}) {{ () }}"),
+                format!("fn f() {{ g({ty}) }}"),
+                format!("type T = ({ty} & .);"),
+                format!("type T = (. & {ty});"),
+                format!("newtype T : {ty} {{ constructor make; projector take }}"),
+            ] {
+                let source = format!("module x; {declaration}");
+                let printed = roundtrip(&source);
+                assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+                assert_eq!(
+                    parsed_structure(&source),
+                    parsed_structure(&printed),
+                    "type structure changed: {source}\n{printed}"
+                );
+            }
+        }
+        assert_eq!(
+            roundtrip("module x; fn f() -> ((.)) { () }"),
+            roundtrip("module x; fn f() { () }")
+        );
+        assert_eq!(
+            roundtrip("module x; type T = ((A));"),
+            roundtrip("module x; type T = A;")
+        );
+    }
+
+    #[test]
+    fn bare_type_chain_boundary_comments_survive() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, comment)| comment.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for op in ["&", "|"] {
+            for chain in [
+                format!("{op} // first\nA"),
+                format!("{op} // first\n{op} // last\nA"),
+                format!("{op} // first\n{op}"),
+                format!("A // first\n{op}"),
+                format!("A // first\n{op} // last\n{op}"),
+                format!("{op} // first\nA // second\n{op} B // third\n{op} // last\n{op}"),
+                format!("{op} // first\n.{op}"),
+                format!("{op} // final\n"),
+                format!("A {op} // final\n"),
+                format!("{op} // first\n{op} // final\n"),
+            ] {
+                for ty in [chain.clone(), format!("({chain})")] {
+                    for declaration in [
+                        format!("type T = {ty};"),
+                        format!("host fn f() -> {ty};"),
+                        format!("fn f(value: {ty}) {{ () }}"),
+                        format!("type T = Pair({ty}, .);"),
+                        format!("type T = Pair(., {ty});"),
+                    ] {
+                        let source = format!("module x; {declaration}");
+                        let printed = roundtrip(&source);
+                        assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+                        assert_eq!(
+                            parsed_structure(&source),
+                            parsed_structure(&printed),
+                            "type structure changed: {source}\n{printed}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn type_expression_boundary_comments_survive() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, comment)| comment.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for ty in [
+            "[// first\nA // second\n] // last\nA",
+            "[A] // first\n[B] // last\nA -> B",
+            "[* // first\nF, // second\nA // third\n] // last\nF(A)",
+            "[A] (// first\n[B] B // last\n)",
+            "A // first\n-> // last\nB",
+            "(A) // first\n-> // last\nB",
+            "(A & B) // first\n-> // last\nC",
+            "A -> [// first\nB] // last\nB",
+            "Box // first\n(// second\nA // last\n)",
+            "Box(// first\n, // last\n)",
+            "module_path // first\n/nested // last\n.Type",
+            "Box([A] // first\nA -> // last\nA)",
+        ] {
+            for declaration in [
+                format!("type T = {ty};"),
+                format!("type T = Box({ty});"),
+                format!("fn f(value: {ty}) {{ () }}"),
+                format!("host fn f(value: {ty});"),
+                format!("host fn f() -> {ty};"),
+                format!("newtype T : {ty} {{ constructor make; projector take }}"),
+            ] {
+                let source = format!("module x; {declaration}");
+                let printed = roundtrip(&source);
+                assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+                assert_eq!(
+                    parsed_structure(&source),
+                    parsed_structure(&printed),
+                    "{source}\n{printed}"
+                );
+            }
+        }
+        assert_eq!(
+            roundtrip("module x; type T = Box();"),
+            roundtrip("module x; type T = Box;")
+        );
+        assert_eq!(
+            roundtrip("module x; type T = [A,B] ((A)) -> B;"),
+            roundtrip("module x; type T = [A][B] A -> B;")
+        );
+    }
+
+    #[test]
+    fn type_declaration_header_comments_survive() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, comment)| comment.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for declaration in [
+            "host type // first\nT // last\n;",
+            "pub // first\nhost // second\ntype // third\nT // last\n;",
+            "host type T // first\n[// second\nA // third\n] // last\n;",
+            "host type T // first\nrole // second\n(// third\nstr // fourth\n) // last\n;",
+            "host type T role(str) // first\n{ // second\nowned // third\n} // last\n;",
+            "newtype // first\nT // second\n[A] // third\n: // fourth\nA // last\n{ constructor make; projector take }",
+            "pub // first\nnewtype T[// second\nA // third\n] <// fourth\nB // fifth\n> // sixth\n: // seventh\n(A & B) // last\n{ constructor make; projector take }",
+            "newtype T : . { pub // first\nconstructor // second\nmake; pub // third\nprojector // last\ntake }",
+            "newtype T : . { pub(// first\nx // second\n) // third\nconstructor // fourth\nmake; projector // last\ntake }",
+        ] {
+            let source = format!("module x;\n/// Type documentation.\n{declaration}");
+            let printed = roundtrip(&source);
+            assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&printed),
+                "{source}\n{printed}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "surface")]
+    fn signature_type_declaration_comments_survive() {
+        for declaration in [
+            "host type // first\nT // second\nrole(// third\nstr // last\n)",
+            "host type T[// first\nA // last\n]",
+            "pub newtype // first\nT : // second\n. // third\n{ pub // fourth\nconstructor // fifth\nmake; pub projector // last\ntake }",
+            "type T = [// first\nA] A // second\n-> // last\nA",
+        ] {
+            let source = format!(
+                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{\n/// Type documentation.\n{declaration}\n}} }} }} }}"
+            );
+            let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
+            let printed = crate::sig::emit_signature_file(&parsed);
+            let comments = |source: &str| {
+                source
+                    .lines()
+                    .filter_map(|line| {
+                        line.split_once("//")
+                            .map(|(_, comment)| comment.trim().to_owned())
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+            let reparsed = crate::pass::parser::parse_signature_file(&printed, None).unwrap();
+            assert_eq!(printed, crate::sig::emit_signature_file(&reparsed));
+            let before = crate::sig::replay(&parsed).unwrap();
+            let after = crate::sig::replay(&reparsed).unwrap();
+            assert_eq!(
+                crate::sig::contract_digest(&before.current),
+                crate::sig::contract_digest(&after.current)
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(all(feature = "surface", feature = "cli"))]
+    fn signature_recursive_newtype_docs_survive_projection() {
+        let source = "signature app v(1); v(1) { with { module api {\n\
+            rec {\n\
+            /// First member.\n\
+            pub newtype A : . | B { pub constructor make_a; pub projector take_a };\n\
+            /// Second member.\n\
+            pub newtype B : . | A { pub constructor make_b; pub projector take_b }\n\
+            } } }; nonbreaking { add { api.A; api.B } } }";
+        let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
+        let printed = crate::sig::emit_signature_file(&parsed);
+        assert_eq!(printed.matches("/// First member.").count(), 1, "{printed}");
+        assert_eq!(
+            printed.matches("/// Second member.").count(),
+            1,
+            "{printed}"
+        );
+        assert!(
+            printed.find("/// First member.").unwrap()
+                < printed.find("/// Second member.").unwrap(),
+            "{printed}"
+        );
+        let reparsed = crate::pass::parser::parse_signature_file(&printed, None).unwrap();
+        assert_eq!(printed, crate::sig::emit_signature_file(&reparsed));
+        let comparison = crate::sig::emit_signature_comparison(&parsed);
+        assert!(!comparison.contains("///"), "{comparison}");
+        assert_eq!(comparison, crate::sig::emit_signature_comparison(&reparsed));
+        let before = crate::sig::replay(&parsed).unwrap();
+        let after = crate::sig::replay(&reparsed).unwrap();
+        assert_eq!(
+            crate::sig::contract_digest(&before.current),
+            crate::sig::contract_digest(&after.current)
+        );
+    }
+
+    #[test]
+    #[cfg(all(feature = "surface", feature = "cli"))]
+    fn signature_newtype_docs_do_not_restore_private_facts() {
+        let declaration = "/// Public documentation.\n\
+            pub newtype T <Hidden> : Hidden {\n\
+            // private constructor comment\nconstructor secret;\n\
+            // private projector comment\nprojector secret_out }";
+        let module = parse(&format!("module api; {declaration}")).unwrap();
+        let Item::Newtype(newtype) = &module.items[0] else {
+            panic!("fixture declares a newtype");
+        };
+        let projected = crate::sig::project_newtype_declaration(newtype.clone());
+        assert!(projected.doc.is_none());
+        assert!(projected.existential_params.is_empty());
+        assert!(matches!(projected.payload, Type::Unit { .. }));
+        assert_eq!(projected.constructor.name, "sig_private_constructor");
+        assert_eq!(projected.projector.name, "sig_private_projector");
+        assert!(projected.constructor.leading_trivia.is_empty());
+        assert!(projected.projector.leading_trivia.is_empty());
+
+        let source = format!(
+            "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration} }} }} }} }}"
+        );
+        let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
+        let printed = crate::sig::emit_signature_file(&parsed);
+        assert_eq!(
+            printed.matches("/// Public documentation.").count(),
+            1,
+            "{printed}"
+        );
+        for omitted in [
+            "Hidden",
+            "secret",
+            "private constructor comment",
+            "private projector comment",
+        ] {
+            assert!(!printed.contains(omitted), "{printed}");
+        }
+        let comparison = crate::sig::emit_signature_comparison(&parsed);
+        assert!(!comparison.contains("//"), "{comparison}");
+        let reparsed = crate::pass::parser::parse_signature_file(&printed, None).unwrap();
+        assert_eq!(printed, crate::sig::emit_signature_file(&reparsed));
+        assert_eq!(comparison, crate::sig::emit_signature_comparison(&reparsed));
+        let before = crate::sig::replay(&parsed).unwrap();
+        let after = crate::sig::replay(&reparsed).unwrap();
+        assert_eq!(
+            crate::sig::contract_digest(&before.current),
+            crate::sig::contract_digest(&after.current)
+        );
+    }
+
+    #[test]
+    fn type_alias_header_and_body_boundary_comments_survive() {
+        let comments = |source: &str| {
+            source
+                .lines()
+                .filter_map(|line| {
+                    line.split_once("//")
+                        .map(|(_, comment)| comment.trim().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        for declaration in [
+            "type // first\nT = A;",
+            "type T // first\n= A;",
+            "type T = // first\nA;",
+            "type T = // first\n& A;",
+            "type T = // first\n|;",
+            "type T = // first\n(// second\nA // last\n);",
+            "type T // first\n[A] // last\n= A;",
+            "type T[// first\n* // second\nF, // third\nA // last\n] = F(A);",
+            "pub // first\ntype // second\nT // third\n[A] // fourth\n= // fifth\nA // last\n;",
+            "type T = // first\n[A] A -> A;",
+            "type T = // first\nmodule_path.A;",
+        ] {
+            for source in [
+                format!("module x;\n/// Alias documentation.\n{declaration}"),
+                format!("module x; rec {{\n/// Alias documentation.\n{declaration}\n}}"),
+            ] {
+                let printed = roundtrip(&source);
+                assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+                assert_eq!(
+                    parsed_structure(&source),
+                    parsed_structure(&printed),
+                    "type structure changed: {source}\n{printed}"
+                );
+            }
+        }
+        assert_eq!(
+            roundtrip("module x; type T[,,*F,, A,,] = (F(A));"),
+            roundtrip("module x; type T[*F][A] = F(A);")
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "surface")]
+    fn signature_alias_header_comments_survive() {
+        let source = "signature app v(1); v(1) { nonbreaking { add { module api {\n\
+            /// Alias documentation.\n\
+            pub // first\ntype // second\nT[// third\nA // fourth\n] // fifth\n= // last\nA;\n\
+            } } } }";
+        let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
+        let printed = crate::sig::emit_signature_file(&parsed);
+        let mut previous = 0;
+        for comment in [
+            "/// Alias documentation.",
+            "// first",
+            "// second",
+            "// third",
+            "// fourth",
+            "// fifth",
+            "// last",
+        ] {
+            assert_eq!(printed.matches(comment).count(), 1, "{printed}");
+            let offset = printed.find(comment).unwrap();
+            assert!(offset >= previous, "{printed}");
+            previous = offset;
+        }
+        let reparsed = crate::pass::parser::parse_signature_file(&printed, None).unwrap();
+        assert_eq!(printed, crate::sig::emit_signature_file(&reparsed));
+        let before = crate::sig::replay(&parsed).unwrap();
+        let after = crate::sig::replay(&reparsed).unwrap();
+        assert_eq!(
+            crate::sig::contract_digest(&before.current),
+            crate::sig::contract_digest(&after.current)
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "surface")]
+    fn grouped_signature_return_comments_survive() {
+        for declaration in ["pub fn exported", "host fn supplied"] {
+            let source = format!(
+                "signature app v(1); v(1) {{ nonbreaking {{ add {{ module api {{ {declaration}() -> (// before result\n. // after result\n); }} }} }} }}"
+            );
+            let parsed = crate::pass::parser::parse_signature_file(&source, None).unwrap();
+            let printed = crate::sig::emit_signature_file(&parsed);
+            for comment in ["// before result", "// after result"] {
+                assert_eq!(printed.matches(comment).count(), 1, "{printed}");
+            }
+            assert!(printed.contains("->"), "{printed}");
+            let reparsed = crate::pass::parser::parse_signature_file(&printed, None).unwrap();
+            assert_eq!(printed, crate::sig::emit_signature_file(&reparsed));
+            let before = crate::sig::replay(&parsed).unwrap();
+            let after = crate::sig::replay(&reparsed).unwrap();
+            assert_eq!(
+                crate::sig::contract_digest(&before.current),
+                crate::sig::contract_digest(&after.current)
+            );
+        }
+    }
+
+    #[test]
+    fn type_chain_later_operand_comments_keep_separator_ownership() {
+        for op in ["&", "|"] {
+            let source = format!("module x; type T = A // next operand\n{op} B;");
+            let printed = roundtrip(&source);
+            assert_eq!(
+                printed,
+                format!("module x;\n\ntype T =\n  {op} A\n  // next operand\n  {op} B\n  ;\n")
+            );
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+
+            for ty in [
+                format!("(// first operand\nA) {op} B"),
+                format!("A {op} (// second operand\nB // operand end\n)"),
+            ] {
+                let source = format!("module x; type T = {ty};");
+                let printed = roundtrip(&source);
+                let comments = |text: &str| {
+                    text.lines()
+                        .filter_map(|line| {
+                            line.split_once("//")
+                                .map(|(_, comment)| comment.trim().to_owned())
+                        })
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+                assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+            }
+        }
     }
 
     #[test]
@@ -6099,6 +7379,76 @@ elab demo : Box(
     }
 
     #[test]
+    fn literal_annotation_comments_keep_order_and_structure() {
+        for literal in ["915", "9.15", "\"value\"", ".t", ".f"] {
+            for annotation in [
+                "// 1\n( // 2\nTarget // 3\n)",
+                "// 1\n(( // 2\nTarget // 3\n) // 4\n)",
+            ] {
+                let source = format!("module x; fn f() {{ ({literal} {annotation}).>>id }}");
+                let printed = roundtrip(&source);
+                let comments = |text: &str| {
+                    text.lines()
+                        .filter_map(|line| {
+                            line.find("//").map(|start| line[start..].trim().to_owned())
+                        })
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(comments(&source), comments(&printed), "{source}\n{printed}");
+                assert_eq!(
+                    parsed_structure(&source),
+                    parsed_structure(&printed),
+                    "{source}"
+                );
+            }
+        }
+        let source = "module x; fn f() { 915 // before\n(I16) }";
+        assert_eq!(
+            roundtrip(source),
+            "module x;\n\nfn f() {\n  915(\n    // before\n    I16\n    )\n}\n"
+        );
+        let source = "module x; fn f() { 915 // before\n( // inside\nI16) }";
+        assert_eq!(
+            roundtrip(source),
+            "module x;\n\nfn f() {\n  915(\n    // before\n\n    // inside\n    I16\n    )\n}\n"
+        );
+    }
+
+    #[test]
+    fn left_splice_called_dot_forms_keep_required_grouping() {
+        for splice in [".<", ".<<"] {
+            for argument in [
+                ".() { () }()",
+                ".[A](x: A) { x }(., ())",
+                ".x. { x1 }(())",
+                ".t(Bool)(())",
+                ".() { .() { () } }()()",
+                "(.() { () } // callee\n)()",
+                "(.() { () }.?{field})(())",
+                "(.() { () }.!{field = value})(())",
+            ] {
+                let source = format!("module x; fn f() {{ fit!(id{splice}({argument})) }}");
+                let printed = roundtrip(&source);
+                assert_eq!(
+                    parsed_structure(&source),
+                    parsed_structure(&printed),
+                    "{source}\n{printed}"
+                );
+            }
+            let source = format!("module x; fn f() {{ id{splice}(.() {{ () }}()) }}");
+            assert_eq!(
+                roundtrip(&source),
+                format!("module x;\n\nfn f() {{\n  id{splice}(.() {{ () }}())\n}}\n")
+            );
+            let source = format!("module x; fn f() {{ id{splice}(g()()) }}");
+            assert_eq!(
+                roundtrip(&source),
+                format!("module x;\n\nfn f() {{ id{splice}g()() }}\n")
+            );
+        }
+    }
+
+    #[test]
     fn operator_right_splice_receiver_keeps_required_grouping() {
         let output = roundtrip(
             "module x; \
@@ -6263,7 +7613,7 @@ elab demo : Box(
             ),
             (
                 "fn f() -> // header\n. // before body\n{ // body\n() }",
-                "  // header\n  // before body\n\n  // body\n  ()\n",
+                "  // header\n\n  // before body\n\n  // body\n  ()\n",
             ),
             (
                 "fn f() -> // header\n. { // body\n\n\n// paragraph\n() }",
@@ -6278,9 +7628,7 @@ elab demo : Box(
             let out = roundtrip(&source);
             assert_eq!(
                 out,
-                format!(
-                    "module x;\n\n/// Attached documentation.\nfn f() -> . {{\n{expected_body}}}\n"
-                ),
+                format!("module x;\n\n/// Attached documentation.\nfn f() {{\n{expected_body}}}\n"),
             );
         }
     }
@@ -6302,11 +7650,11 @@ elab demo : Box(
             ),
             (
                 "fn f() { ( // first\n, // second\n, // last\n) }",
-                "fn f() {\n  (\n  // first\n  // second\n  // last\n  )\n}",
+                "fn f() {\n  (\n  // first\n\n  // second\n\n  // last\n  )\n}",
             ),
             (
                 "fn f() { g( // first\n, // second\n, // last\n) }",
-                "fn f() {\n  g(\n  // first\n  // second\n  // last\n  )\n}",
+                "fn f() {\n  g(\n  // first\n\n  // second\n\n  // last\n  )\n}",
             ),
             (
                 "fn f() { g( // first\n())( // second\n) }",
@@ -6326,15 +7674,15 @@ elab demo : Box(
             ),
             (
                 "fn f( // leading\nx // colon\n: // type\n. // trailing\n) { x }",
-                "fn f(\n// leading\n// colon\n// type\n, x: .\n// trailing\n) { x }",
+                "fn f(\n// leading\n\n// colon\n\n// type\n, x: .\n// trailing\n) { x }",
             ),
             (
                 "fn f() // arrow\n-> // return type\nPair( // first type\n., // second type\n.) // body opener\n{ // body note\n() }",
-                "fn f()\n  // arrow\n  // return type\n  -> Pair(\n  // first type\n  , .\n  // second type\n  , .\n  ) {\n  // body opener\n\n  // body note\n  ()\n}",
+                "fn f() -> (\n  // arrow\n\n  // return type\n  Pair(\n  // first type\n  , .\n  // second type\n  , .\n  )\n  ) {\n  // body opener\n\n  // body note\n  ()\n}",
             ),
             (
                 "fn f() { .() // arrow\n-> // return type\n. // body opener\n{ // body note\n() } }",
-                "fn f() {\n  .() -> . {\n    // arrow\n    // return type\n    // body opener\n    // body note\n    ()\n  }\n}",
+                "fn f() {\n  .() -> . {\n    // arrow\n\n    // return type\n\n    // body opener\n\n    // body note\n    ()\n  }\n}",
             ),
         ] {
             let printed = roundtrip(&format!("module x; {source}"));
@@ -6351,11 +7699,11 @@ elab demo : Box(
         for (source, expected) in [
             (
                 "fn f(){ let a=(); ((a // inner\n) // outer\n) // block\n}",
-                "fn f() {\n  let a = ();\n  a\n  // inner\n  // outer\n  // block\n}",
+                "fn f() {\n  let a = ();\n  a\n  // inner\n\n  // outer\n\n  // block\n}",
             ),
             (
                 "fn f(){ ((a // inner\n) // outer\n) // block\n}",
-                "fn f() {\n  a\n  // inner\n  // outer\n  // block\n}",
+                "fn f() {\n  a\n  // inner\n\n  // outer\n\n  // block\n}",
             ),
             (
                 "fn f(){ (a // inner\n\n) // outer\n}",
@@ -6383,7 +7731,7 @@ elab demo : Box(
             ),
             (
                 "fn f(){ (g() // inner\n) // step\n.>use }",
-                "fn f() {\n  g()\n    // inner\n    // step\n    .>use\n}",
+                "fn f() {\n  g()\n    // inner\n\n    // step\n    .>use\n}",
             ),
             (
                 "fn f(){ let a=(g() // value\n); a }",
@@ -6396,6 +7744,200 @@ elab demo : Box(
                 format!("module x;\n\n{expected}\n"),
                 "source: {source}"
             );
+        }
+    }
+
+    #[test]
+    fn relocated_comment_blocks_preserve_paragraphs_and_documentation() {
+        for (source, expected) in [
+            (
+                include_str!(
+                    "../../test-data/goldens/00_success/fmt_relocated_comment_blocks/workdir/main.kio"
+                ),
+                include_str!(
+                    "../../test-data/goldens/00_success/fmt_relocated_comment_blocks/expected.stdout"
+                ),
+            ),
+            (
+                include_str!(
+                    "../../test-data/goldens/00_success/fmt_comment_paragraphs/workdir/main.kio"
+                ),
+                include_str!(
+                    "../../test-data/goldens/00_success/fmt_comment_paragraphs/expected.stdout"
+                ),
+            ),
+        ] {
+            assert_eq!(roundtrip(source), expected);
+            assert_eq!(parsed_structure(source), parsed_structure(expected));
+        }
+
+        // Distinct source gaps become distinct blocks; multiple lines already
+        // sharing one gap remain together, including an empty comment line.
+        for declaration in [
+            "type // first\nT = // second\n.;",
+            "host // first\nfn // second\nf();",
+            "fn f() { (g // first\n) // second\n() }",
+            "fn f() { row.?{m // first\n. // second\nfield} }",
+            "type T = A // first\n-> // second\nB;",
+            "import // first\nm // second\nas alias;",
+            "op _ + // first\n_ { impl // second\nadd }",
+        ] {
+            let source = format!("module m; {declaration}");
+            let printed = roundtrip(&source);
+            let lines: Vec<_> = printed.lines().map(str::trim).collect();
+            let first = lines.iter().position(|line| *line == "// first").unwrap();
+            assert_eq!(
+                &lines[first..first + 3],
+                &["// first", "", "// second"],
+                "{printed}"
+            );
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+        }
+        for comments in [
+            "// first\n// second\n",
+            "// first\n//\n// second\n",
+            "// first\n\n// second\n",
+        ] {
+            let source = format!("module m; type T = {comments}.;");
+            let printed = roundtrip(&source);
+            let normalized = printed
+                .lines()
+                .map(str::trim)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(normalized.contains(comments.trim_end()), "{printed}");
+            assert_eq!(parsed_structure(&source), parsed_structure(&printed));
+        }
+        assert_eq!(
+            roundtrip("module m; fn f() { // only block\n() }"),
+            "module m;\n\nfn f() {\n  // only block\n  ()\n}\n"
+        );
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn redundant_file_terminators_preserve_comment_blocks() {
+        for (filename, source) in [
+            ("main.kio", "module main; fn f() { () }"),
+            ("app.pkg.kio", "package app; build { cache (); }"),
+            ("lib.dep.kio", "dependency lib; source { path \".\"; }"),
+            (
+                "lib.lock.kio",
+                "lock lib; resolved { git \"u\"; ref \"r\"; commit \"c\"; sig \"s\"; }",
+            ),
+            (
+                "app.sig.kio",
+                "signature app v(1); v(1) { nonbreaking { add { module api { pub fn f(); } } } }",
+            ),
+        ] {
+            let source = format!("{source} // before terminator\n; // after terminator\n");
+            let printed = crate::cmd::fmt::format_source(filename, &source).unwrap();
+            assert!(
+                printed.ends_with("// before terminator\n\n// after terminator\n"),
+                "{filename}\n{printed}"
+            );
+            assert_eq!(
+                crate::cmd::fmt::format_source(filename, &printed).unwrap(),
+                printed,
+                "{filename}"
+            );
+        }
+    }
+
+    #[test]
+    fn expression_suffix_comments_preserve_call_stages_and_statement_ownership() {
+        for source in [
+            "fn f(){ io.print // 1\n(label) }",
+            "fn f(){ bounce(()) // 1\n() }",
+            "fn f(){ use.<bounce // 1\n(()) }",
+            "fn f(){ g // 1\n(a).<x }",
+            "fn f(){ g // 1\n(a).<<x }",
+            "fn f(){ ( // 1\ng // 2\n) // 3\n( // 4\na // 5\n).<x }",
+            "fn f(){ ( // 1\ng // 2\n) // 3\n( // 4\na // 5\n).<<x }",
+            "fn f(){ (bounce(()) // 1\n) // 2\n() }",
+            "fn f(){ (bounce(()) // 1\n\n) // 2\n() }",
+            "fn f(){ g() // 1\n; // 2\nh() // 3\n; // 4\n() }",
+            "fn f(){ g() // 1\n; // 2\n; // 3\n}",
+            "fn f(){ let x = g() // 1\n; // 2\nx }",
+            "fn f(){ let _ = g() // 1\n; () }",
+            "fn f(){ let .(x: .) = g() // 1\n; x }",
+            "fn f(){ let .(x, y) = g() // 1\n; x }",
+            "fn f(){ let .({field as x}) = g() // 1\n; x }",
+            "fn f(){ let .(<Hidden> payload) = g() // 1\n; payload }",
+            "fn f(){ let .x. = g() // 1\n; x1 }",
+        ] {
+            let source = format!("module x; {source}");
+            let printed = roundtrip(&source);
+            let comments = |text: &str| {
+                text.lines()
+                    .filter_map(|line| line.find("//").map(|start| line[start..].trim().to_owned()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(comments(&printed), comments(&source), "{source}\n{printed}");
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&printed),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn call_head_comments_preserve_arguments_and_recursive_modes() {
+        for source in [
+            "fn f(){ x.>g // 1\n(A, y) }",
+            "fn f(){ x.>>g // 1\n( // 2\ny // 3\n) }",
+            "fn f(){ x.>g! // 1\n(y) }",
+            "fn f(){ x.>>g! // 1\n( // 2\ny // 3\n) }",
+            "fn f(){ g! // 1\n(y) }",
+            "fn f(){ g! // 1\n( // 2\n) }",
+            "fn f(){ g! // 1\n(y).<x }",
+            "fn f(){ g! // 1\n(y).<<x }",
+            "fn f(){ recur g // 1\n(y) }",
+            "fn f(){ recur g // 1\n( // 2\n) }",
+            "fn f(){ recur // 1\ng(y) }",
+            "fn f(){ recur // 1\n(poly // 2\n) // 3\ng // 4\n() }",
+            "fn f(){ recur( // 1\npoly // 2\n, // 3\ncont // 4\n) // 5\ng(y) }",
+            "fn f(){ g.< // 1\n(x) }",
+            "fn f(){ g.<< // 1\n(x) }",
+            "fn f(){ g!.< // 1\n(x) }",
+            "fn f(){ g!.<< // 1\n(x) }",
+            "fn f(){ g // 1\n.< // 2\n(x) }",
+            "fn f(){ g(y) // 1\n.<< // 2\n(x) }",
+            "fn f(){ g! // 1\n.< // 2\n(x) }",
+            "fn f(){ g!(y) // 1\n.<< // 2\n(x) }",
+            "fn f(){ g.< // 1\n( // 2\nh // 3\n)(x) }",
+            "fn f(){ g // 1\n( // 2\nx // 3\n) }",
+            "fn f(){ g! // 1\n(x) { () } }",
+        ] {
+            let source = format!("module x; {source}");
+            let printed = roundtrip(&source);
+            let comments = |text: &str| {
+                text.lines()
+                    .filter_map(|line| line.find("//").map(|start| line[start..].trim().to_owned()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(comments(&printed), comments(&source), "{source}\n{printed}");
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&printed),
+                "{source}"
+            );
+        }
+        assert_eq!(
+            roundtrip("module x; fn f(){ x.>g // before\n( // inside\ny) }"),
+            "module x;\n\nfn f() {\n  x\n    .>g(\n    // before\n\n    // inside\n    , y\n    )\n}\n"
+        );
+        assert_eq!(
+            roundtrip("module x; fn f(){ g // before\n.< // after\n(x) }"),
+            "module x;\n\nfn f() {\n  g.<(\n    // before\n\n    // after\n    x\n    )\n}\n"
+        );
+        for source in [
+            "x.>g // comment\n()",
+            "x.>>g! // comment\n()",
+            "g! // comment\n().<x",
+        ] {
+            assert!(parse(&format!("module x; fn f(){{ {source} }}")).is_err());
         }
     }
 
@@ -6454,7 +7996,7 @@ elab demo : Box(
             ),
             (
                 "module m;\n//\n//\n\n// paragraph\nimport z as z;\n// first import\nimport a as a;\n".to_owned(),
-                "module m;\n\n// first import\nimport a as a;\n//\n// paragraph\nimport z as z;\n",
+                "module m;\n\n// first import\nimport a as a;\n//\n\n// paragraph\nimport z as z;\n",
             ),
             (
                 "module m;\nfn f() {\n///\n/// ignored\n() }\n".to_owned(),
@@ -6531,6 +8073,98 @@ pub fn main() -> . { print("Hello, world!") }"#,
     #[test]
     fn package_empty() {
         package_roundtrip("");
+    }
+
+    #[test]
+    fn module_header_comments_keep_path_and_documentation() {
+        let source = "// file note\n/// Module documentation.\nmodule // keyword\napp // slash\n/ // segment\nmain // terminator\n;\n/// Function documentation.\nfn f() { () }";
+        let printed = roundtrip(source);
+        assert_eq!(parsed_structure(source), parsed_structure(&printed));
+        let mut previous = 0;
+        for comment in ["file note", "keyword", "slash", "segment", "terminator"] {
+            let marker = format!("// {comment}\n");
+            assert_eq!(printed.matches(&marker).count(), 1, "{printed}");
+            let position = printed.find(&marker).unwrap();
+            assert!(position >= previous, "{printed}");
+            previous = position;
+        }
+        assert!(
+            printed.contains("/// Module documentation.\nmodule app/main;"),
+            "{printed}"
+        );
+        assert!(
+            printed.contains("/// Function documentation.\nfn f()"),
+            "{printed}"
+        );
+    }
+
+    #[test]
+    fn package_header_and_config_value_comments_survive() {
+        use crate::pass::parser::parse_package_file;
+        for cache in ["\"out/cache/\"", "(// cache interior\n)"] {
+            let source = format!(
+                "package // package name\npkg // package terminator\n;\n\
+                 build // build opener\n{{\n\
+                   cache // cache value\n{cache};\n\
+                   docs // docs opener\n{{\n\
+                     md // md value\n\"do\" // string chunk\n\"cs\";\n\
+                     support // support value\n\"support\";\n\
+                     md_out // md_out value\n\"out/md/\";\n\
+                     html // html value\n\"out/html/\"\n\
+                   }};\n\
+                   target rust {{ out // target value\n\"out/rust/\" }}\n\
+                 }}\n\
+                 bridge // bridge opener\n{{ main }}"
+            );
+            let before = parse_package_file(&source, Some("pkg")).unwrap();
+            let printed = pretty_package_file(&before);
+            let after = parse_package_file(&printed, Some("pkg")).unwrap();
+            assert_eq!(printed, pretty_package_file(&after));
+            assert_eq!(source_structure(&before), source_structure(&after));
+            let (tokens, _) = crate::pass::lexer::lex_with_trailing(&source).unwrap();
+            let mut previous = 0;
+            for comment in tokens.into_iter().flat_map(|token| token.leading_trivia) {
+                if let Trivia::LineComment { text, .. } = comment {
+                    let marker = format!("//{text}\n");
+                    assert_eq!(printed.matches(&marker).count(), 1, "{printed}");
+                    let position = printed.find(&marker).unwrap();
+                    assert!(position >= previous, "{printed}");
+                    previous = position;
+                }
+            }
+            assert!(printed.contains("md \"docs\";"), "{printed}");
+        }
+    }
+
+    #[test]
+    fn config_value_comments_follow_their_reordered_keys() {
+        let printed = package_roundtrip(
+            "build { target rust { namespace // namespace value\n\"demo\"; \
+             out // output value\n\"out/rust/\" }; cache // cache value\n(); }",
+        );
+        let markers = [
+            "// cache value\n  cache ();",
+            "// output value\n    out \"out/rust/\";",
+            "// namespace value\n    namespace \"demo\"",
+        ];
+        let mut previous = 0;
+        for marker in markers {
+            assert_eq!(printed.matches(marker).count(), 1, "{printed}");
+            let position = printed.find(marker).unwrap();
+            assert!(position >= previous, "{printed}");
+            previous = position;
+        }
+        let dependency = dependency_roundtrip(
+            "dependency local; source { path // dependency path\n\"../other.pkg.kio\" }",
+        );
+        assert!(
+            dependency.contains("// dependency path\n  path \"../other.pkg.kio\""),
+            "{dependency}"
+        );
+        let lock = lock_roundtrip(
+            "lock local; resolved { git // git value\n\"repo\"; ref \"main\"; commit \"revision\"; sig \"digest\" }",
+        );
+        assert!(lock.contains("// git value\n  git \"repo\";"), "{lock}");
     }
 
     #[test]
@@ -7108,7 +8742,7 @@ fn f() -> . {
     #[test]
     fn final_block_semicolon_canonicalizes_away() {
         let pp = roundtrip("module x; fn f() -> . { (); }");
-        assert!(pp.contains("fn f() -> . { () }"), "got:\n{pp}");
+        assert!(pp.contains("fn f() { () }"), "got:\n{pp}");
         assert!(!pp.contains("();"), "got:\n{pp}");
     }
 
@@ -7721,7 +9355,7 @@ fn f() -> . {
         // The body is on its own line at +2 indent, closing `}`
         // at column 0.
         assert!(
-            pp.contains("fn f() -> . {\n  "),
+            pp.contains("fn f() {\n  "),
             "expected `{{` at end of line then body at +2 indent; got:\n{pp}"
         );
         assert!(

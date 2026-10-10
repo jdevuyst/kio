@@ -4,9 +4,9 @@ host type Number role(i32);
 
 host type Unused;
 
-host fn selection() -> .;
+host fn selection();
 
-host fn invocation() -> .;
+host fn invocation();
 
 pub newtype Box[A] : A { pub constructor make; projector open }
 

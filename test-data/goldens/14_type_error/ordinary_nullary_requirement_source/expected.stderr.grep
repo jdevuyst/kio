@@ -1,2 +1,2 @@
 provider.kio:
-pub fn tick\(\) -> \.
+pub fn tick\(\)

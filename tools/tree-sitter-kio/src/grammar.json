@@ -3779,8 +3779,16 @@
           "name": "fn_signature"
         },
         {
-          "type": "SYMBOL",
-          "name": "_fn_return_type"
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "_fn_return_type"
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         }
       ]
     },

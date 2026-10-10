@@ -29,7 +29,8 @@ The language is designed to be:
 module hello;
 
 host type String role(str);
-host fn print(str: String) -> .;
+
+host fn print(str: String);
 
 pub fn main() { print("hello from Kio\n") }
 ```
@@ -51,6 +52,8 @@ irm https://jdevuyst.github.io/kio/install.ps1 | iex
 ```
 
 Prefer to build it yourself? `cargo install kio-lang --bin kio`. Prebuilt archives and checksums for every platform are on the [releases page](https://github.com/jdevuyst/kio/releases).
+
+Get the Kio editor extension from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=kio-lang.kio) or [Open VSX](https://open-vsx.org/extension/kio-lang/kio).
 
 ## Language Features
 
@@ -77,12 +80,12 @@ Prefer to build it yourself? `cargo install kio-lang --bin kio`. Prebuilt archiv
 
 ## Documentation
 
-- [KIO-FOR-AGENTS.md](KIO-FOR-AGENTS.md) — instructions for AI agents writing Kio in any project.
-- [`docs/`](docs/) — pedagogical material: tutorials, guides, host integrations.
-- [`specs/`](specs/) — authoritative contracts.
-- [`DESIGN.md`](DESIGN.md) — language goals and design rationale.
-- [`test-data/poc/`](test-data/poc/) — reference modules you can drop into your own package.
-- [`ROADMAP.md`](ROADMAP.md) — in-flight design threads.
+- [Guides and tutorials](docs/) — learn and use Kio.
+- [Writing Kio with AI](KIO-FOR-AGENTS.md) — guidance for coding agents.
+- [Reference libraries and examples](test-data/poc/) — reusable modules and worked examples.
+- [Language specifications](specs/) — authoritative contracts.
+- [Design rationale](DESIGN.md) — goals and design decisions.
+- [Roadmap](ROADMAP.md) — proposed language and tooling improvements.
 
 ## Development Setup
 

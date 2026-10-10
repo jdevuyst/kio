@@ -13,18 +13,18 @@ references to `proof`:
   demo/a:9:7  in equiv proof
 references to `build`:
   demo/a:22:10  in elaborator build
-  demo/a:30:18  in fn bang
-  demo/a:32:24  in fn splice
+  demo/a:30:13  in fn bang
+  demo/a:32:19  in fn splice
   demo/main:4:30  in module demo/main
-  demo/main:11:18  in fn bang
-  demo/main:13:24  in fn splice
+  demo/main:11:13  in fn bang
+  demo/main:13:19  in fn splice
 references to `{field}`:
   demo/a:16:11  in type {field}
   demo/main:4:45  in module demo/main
   demo/main:15:31  in fn label_use
   demo/main:21:46  in fn update
-  demo/main:23:39  in fn access
-  demo/main:25:41  in fn row_let
+  demo/main:23:34  in fn access
+  demo/main:25:36  in fn row_let
 references to `{field}`:
   demo/b:16:11  in type {field}
   demo/b:26:27  in fn label
@@ -33,7 +33,7 @@ no references to `field` in loaded modules
 no references to `proof` in loaded modules
 references to `field`:
   demo/a:18:8  in fn field
-  demo/main:19:29  in fn value_use
+  demo/main:19:24  in fn value_use
 `proof` is declared by several modules:
   demo/a.proof
   demo/b.proof

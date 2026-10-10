@@ -2,7 +2,7 @@ module test_equiv_validates_elaborated_pure_body/main;
 
 import test_equiv_validates_elaborated_pure_body/elaborators(effect_call);
 
-pure fn bad() -> . { effect_call!() }
+pure fn bad() { effect_call!() }
 
 equiv unrelated() {
   ();

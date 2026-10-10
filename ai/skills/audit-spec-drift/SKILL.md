@@ -63,6 +63,26 @@ This isn't a line-by-line diff — focus on shape: missing productions, ambiguou
 - If the formatter has knobs the spec doesn't mention, flag it.
 - Enumerate every Kio-family file kind from `kio-rs/src/file_kind.rs` and `KioFileKind` in `kio-rs/src/ast.rs`. Each kind should either have formatter routing plus style/spec coverage, or a spec-stated reason formatting is irrelevant. Hard-coded module/package-only lists in `kio fmt`, LSP formatting, highlighters, IDE plugins, Kiodoc variants, or docs are drift unless the omitted kind is outside that surface by construction.
 
+Apply [`language-surface-tooling.md` § Canonical formatting, not spelling
+preservation](../../topics/language-surface-tooling.md#canonical-formatting-not-spelling-preservation):
+
+- Inventory source-spelling flags and preservation branches. For each, identify
+  the load-bearing syntax, comment ownership, or explicit style rule that
+  requires preservation. Accepted input alone does not justify retaining
+  redundant syntax; a test pinning that retention is evidence, not authority.
+  Report unresolved canonical choices separately from implementation defects.
+- Require convergence witnesses for canonicalization rules: distinct accepted
+  input spellings produce one exact expected result. Idempotence and a green
+  corpus-format check do not establish this. Check meaning and comments before
+  and after rewrites, including trivia on removed wrappers and shortened
+  payloads, and controls where apparently redundant syntax is load-bearing.
+- Trace actual CI coverage for published snippets and affected CLI, LSP and
+  Kiodoc formatting paths. Distinguish typechecking, canonicality and Markdown
+  linting; enumerate excluded or ignored examples. Unexpected formatter
+  failures must fail the check, not be classified as intentionally nonparsing
+  fixtures. Do not silently rewrite protected or hand-written public content
+  to clear a finding.
+
 ## 6. Surface and Prime semantics
 
 `specs/language.md`, `specs/prime.md`, and `specs/formal/elaboration.md` describe what typechecks and what doesn't. Check the typer (`typecheck_core`, `typecheck_full`, `prime::typer`) against:

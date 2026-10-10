@@ -31,7 +31,7 @@ module kiodoc;
 import sequence(do);
 
 host type String role(str);
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 host fn string_concat(p0: String, p1: String) -> String;
 
 __INSERT_CODE_HERE__

@@ -1,3 +1,3 @@
 module host;
 
-host fn foo(u: .) -> .;
+host fn foo(u: .);

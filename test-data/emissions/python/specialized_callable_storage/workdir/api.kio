@@ -6,7 +6,7 @@ host type Box[T];
 
 host fn pack[T](value: T) -> Box(T);
 
-host fn invoked() -> .;
+host fn invoked();
 
 pub newtype N : Number { pub constructor wrap; pub projector unwrap }
 

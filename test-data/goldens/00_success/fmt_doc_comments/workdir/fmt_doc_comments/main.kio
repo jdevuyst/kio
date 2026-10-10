@@ -2,7 +2,7 @@
 module fmt_doc_comments/main;
 
 /// Docs for fn.
-fn hello(s: String) -> . { print(s) }
+fn hello(s: String) { print(s) }
 
 /// Docs for alias.
 type Alias = String;
@@ -14,10 +14,10 @@ newtype Wrapped : String { constructor mk_wrapped; projector un_wrapped }
 labels T = { f: String };
 
 /// Pub fn with doc.
-pub fn greet(s: String) -> . { print(s) }
+pub fn greet(s: String) { print(s) }
 
 /// Docs for op.
 op ! _ { impl hello }
 
 // A regular line comment — not a doc-comment.
-fn no_doc() -> . { () }
+fn no_doc() { () }

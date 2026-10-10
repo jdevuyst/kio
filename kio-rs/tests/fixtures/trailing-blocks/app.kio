@@ -2,14 +2,14 @@ module app;
 
 import provider(Box, box_bind, box_pure, enter, packet, sequence, two);
 
-pub fn run() -> . {
+pub fn run() {
   enter! {
     let local = packet! { () };
     local
   }
 }
 
-pub fn branch() -> . {
+pub fn branch() {
   two! { () } fallback { () }
 }
 

@@ -415,7 +415,7 @@ module greeter;
 host type Str role(str);
 host type Output;
 host fn stdout() -> Output;
-host fn print(output: Output, s: Str) -> .;
+host fn print(output: Output, s: Str);
 ```
 
 `greeter/main.kio`:

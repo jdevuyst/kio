@@ -1,5 +1,5 @@
 module a;
 
-host fn _c() -> .;
+host fn _c();
 
 pub fn call() { _c() }

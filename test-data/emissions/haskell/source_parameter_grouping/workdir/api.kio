@@ -10,7 +10,7 @@ host fn first[A][B](left: A, right: B) -> A & B;
 
 host fn second[A][B](pair: A & B) -> A & B;
 
-host fn mark(note: Text) -> .;
+host fn mark(note: Text);
 
 pub fn split[A][B](left: A, right: B) -> A & B { first(left, right) }
 

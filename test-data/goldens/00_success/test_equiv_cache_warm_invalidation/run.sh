@@ -12,12 +12,12 @@ KIO_DEBUG_EQUIV_CACHE=1 "$KIO_BIN" test >cold.out 2>cold.err
 KIO_DEBUG_EQUIV_CACHE=1 "$KIO_BIN" test >warm.out 2>warm.err
 cmp cold.out warm.out >/dev/null
 
-perl -0pi -e 's/fn a\(\) -> \. \{ \(\) \}/fn a() -> . { let _ = (); () }/' m.kio
+perl -0pi -e 's/fn a\(\) \{ \(\) \}/fn a() { let _ = (); () }/' m.kio
 KIO_DEBUG_EQUIV_CACHE=1 "$KIO_BIN" test >edit.out 2>edit.err
 "$KIO_BIN" test --no-cache >edit-cold.out 2>edit-cold.err
 cmp edit.out edit-cold.out >/dev/null
 
-perl -0pi -e 's/fn hidden\(\) -> \. \{ \(\) \}/fn hidden() -> . { let _ = (); () }/' helper_provider.kio
+perl -0pi -e 's/fn hidden\(\) \{ \(\) \}/fn hidden() { let _ = (); () }/' helper_provider.kio
 KIO_DEBUG_EQUIV_CACHE=1 "$KIO_BIN" test >helper-edit.out 2>helper-edit.err
 "$KIO_BIN" test --no-cache >helper-edit-cold.out 2>helper-edit-cold.err
 cmp helper-edit.out helper-edit-cold.out >/dev/null

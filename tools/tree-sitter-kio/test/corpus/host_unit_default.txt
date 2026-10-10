@@ -1,0 +1,50 @@
+================================================================================
+host Unit result default
+================================================================================
+module m;
+host fn tick();
+host fn consume[A](value: A)[B];
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (host_decl
+    (keyword_host)
+    (host_fn_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen)))
+      (separator_semicolon)))
+  (host_decl
+    (keyword_host)
+    (host_fn_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen))
+        (type_param_group
+          (bracket_lbracket)
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket)))
+      (separator_semicolon))))

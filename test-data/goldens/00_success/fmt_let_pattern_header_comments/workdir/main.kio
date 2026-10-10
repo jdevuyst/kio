@@ -1,0 +1,9 @@
+module main;
+fn tuple(packet: . & .) { let . // tuple opener
+(first, second) = packet; first }
+fn singleton() { let . // singleton opener
+(value) = (); value }
+fn opening(packed: [R] ([Hidden] Hidden -> R) -> R) { let . // existential opener
+(<Hidden> packet // pattern close
+) // existential equals
+= packed; () }

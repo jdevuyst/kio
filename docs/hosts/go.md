@@ -130,7 +130,7 @@ module greeter;
 
 host type String role(str);
 
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 ```go
@@ -470,7 +470,7 @@ bridge {
 module greeter;
 
 host type String role(str);
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 ```
 
 `greeter/main.kio`:

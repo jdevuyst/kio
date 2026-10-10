@@ -2,7 +2,7 @@ module equiv_application_skeleton_distinct;
 
 host type T;
 
-host fn observe[A](value: A) -> .;
+host fn observe[A](value: A);
 
 equiv partial_and_flat_application_distinct(f: T -> T -> T, left: T, right: T) {
   observe(f(left));

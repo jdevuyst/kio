@@ -113,7 +113,7 @@ module app;
 
 host type String role(str);
 host type Token;
-host fn print(s: String) -> .;
+host fn print(s: String);
 ```
 
 `host type` / `host fn` are signature-only declarations — no body; the host

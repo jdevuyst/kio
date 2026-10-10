@@ -38,7 +38,7 @@ fn use_do(x: I32) -> I32 {
   }
 }
 
-fn last() -> . { () }
+fn last() { () }
 
 // trailing after the final item
 module main;
@@ -81,6 +81,6 @@ fn use_do(x: I32) -> I32 {
   }
 }
 
-fn last() -> . { () }
+fn last() { () }
 
 // trailing after the final item

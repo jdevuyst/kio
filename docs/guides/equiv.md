@@ -20,7 +20,7 @@ import __intrinsics__;
 import control(scope);
 
 host type String role(str);
-host fn print(value: String) -> .;
+host fn print(value: String);
 
 __INSERT_CODE_HERE__
 -->

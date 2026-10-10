@@ -8,7 +8,7 @@ v(1) {
         host type Legacy[A][B];
         host type Scalar;
         host type Transformer[A][B];
-        pub fn unit() -> .
+        pub fn unit()
       }
     }
   }

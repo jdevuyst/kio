@@ -1,6 +1,6 @@
 module api;
 
-host fn mark() -> .;
+host fn mark();
 
 host type Box[T];
 

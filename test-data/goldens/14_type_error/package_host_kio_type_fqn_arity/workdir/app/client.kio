@@ -2,4 +2,4 @@ module app/client;
 
 import app(Box, String);
 
-host fn accept(b: Box(String)) -> .;
+host fn accept(b: Box(String));

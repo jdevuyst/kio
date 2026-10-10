@@ -216,6 +216,7 @@ where
             name: d.name.clone(),
             params,
             param_groups: d.sig.groups.clone(),
+            source_trivia: Default::default(),
             ret: crate::ast::convert_type::<P, Surface>(&d.ret),
             meta: crate::ast::convert_meta(&d.meta),
             doc: None,

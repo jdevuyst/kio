@@ -7637,6 +7637,7 @@ mod tests {
                 meta: meta(),
             })],
             param_groups: vec![crate::ast::SignatureGroupKind::Value { len: 1 }],
+            source_trivia: (),
             ret,
             meta: meta(),
             doc: None,

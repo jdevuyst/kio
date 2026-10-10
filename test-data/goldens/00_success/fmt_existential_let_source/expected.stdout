@@ -1,6 +1,6 @@
 module main;
 
-fn opened() -> . {
+fn opened() {
   // opening
   let .(<Hidden> payload) =
     // source
@@ -9,12 +9,12 @@ fn opened() -> . {
   payload
 }
 
-fn explicit() -> . {
+fn explicit() {
   // authored call
   rhs(_, .[Hidden](payload) { payload })
 }
 
-fn typed() -> . {
+fn typed() {
   // typed opening
   let .(<Hidden> (left: _, right: _)) =
     // typed source
@@ -23,6 +23,6 @@ fn typed() -> . {
   left
 }
 
-fn explicit_pattern() -> . {
+fn explicit_pattern() {
   rhs(_, .[Hidden]((left: Hidden, right: Hidden)) { left })
 }

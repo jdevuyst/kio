@@ -87,7 +87,7 @@ See [`run`](../render_pkg.md#item-render_5fpkg-run) for the entry point.
 This package exposes a single bridge entry point, [`run`](render_pkg.md#item-render_5fpkg-run).
 
 The host supplies [`emit`](render_pkg.md#item-render_5fpkg-emit) for output. Its signature:
-`host fn emit(value: S) -> .;`.
+`host fn emit(value: S);`.
 
 - Step one.
 - Step two.
@@ -128,13 +128,13 @@ fn echo(x: S) -> S { x }
 
 <h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
 
-<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
 
 Prints a line to the host.
 
 <h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
 
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span></code></pre>
 
 The package's public entry point.
 
@@ -154,7 +154,7 @@ A two-component product of `A` values.
 
 <h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
 
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span></code></pre>
 
 Discards its argument and returns unit.
 
@@ -186,13 +186,13 @@ Discards its argument and returns unit.
 
 <h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
 
-<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
 
 Prints a line to the host.
 
 <h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
 
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span></code></pre>
 
 The package's public entry point.
 
@@ -262,7 +262,7 @@ Small utilities used elsewhere in the package.
 
 <h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
 
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span></code></pre>
 
 Discards its argument and returns unit.
 
@@ -391,7 +391,7 @@ Discards its argument and returns unit.
 <main>
 <h1>Getting started</h1>
 <p>This package exposes a single bridge entry point, <a href="render_pkg.html#item-render_5fpkg-run"><code>run</code></a>.</p>
-<p>The host supplies <a href="render_pkg.html#item-render_5fpkg-emit"><code>emit</code></a> for output. Its signature: <code>host fn emit(value: S) -&gt; .;</code>.</p>
+<p>The host supplies <a href="render_pkg.html#item-render_5fpkg-emit"><code>emit</code></a> for output. Its signature: <code>host fn emit(value: S);</code>.</p>
 <ul>
 <li>Step one.</li>
 <li>Step two.</li>
@@ -441,10 +441,10 @@ Discards its argument and returns unit.
 <h3 id="item-render_5fpkg-S"><code>S</code> <span class="item-kind">host type</span></h3>
 <pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">S</span> <span class="kio-keyword-declaration">role</span><span class="kio-punctuation-bracket">(</span><span class="kio-keyword-declaration">str</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
 <h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
-<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
 <p>Prints a line to the host.</p>
 <h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span></code></pre>
 <p>The package's public entry point.</p>
 <h3 id="item-render_5fpkg_2fmain-identity"><code>identity</code> <span class="item-kind">fn</span></h3>
 <pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">identity</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-entity-name-type">A</span></code></pre>
@@ -454,7 +454,7 @@ Discards its argument and returns unit.
 <pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">Pair</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span> <span class="kio-operator-builtin">=</span> <span class="kio-entity-name-type">A</span> <span class="kio-operator-builtin">&amp;</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-separator">;</span></code></pre>
 <p>A two-component product of <code>A</code> values.</p>
 <h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span></code></pre>
 <p>Discards its argument and returns unit.</p>
 </main>
 </div>
@@ -496,10 +496,10 @@ Discards its argument and returns unit.
 <h3 id="item-render_5fpkg-S"><code>S</code> <span class="item-kind">host type</span></h3>
 <pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">type</span> <span class="kio-entity-name-type">S</span> <span class="kio-keyword-declaration">role</span><span class="kio-punctuation-bracket">(</span><span class="kio-keyword-declaration">str</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
 <h3 id="item-render_5fpkg-emit"><code>emit</code> <span class="item-kind">host fn</span></h3>
-<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span><span class="kio-punctuation-separator">;</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">host</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">emit</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">value</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">S</span><span class="kio-punctuation-bracket">)</span><span class="kio-punctuation-separator">;</span></code></pre>
 <p>Prints a line to the host.</p>
 <h3 id="item-render_5fpkg-run"><code>run</code> <span class="item-kind">fn</span></h3>
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">run</span><span class="kio-punctuation-bracket">(</span><span class="kio-punctuation-bracket">)</span></code></pre>
 <p>The package's public entry point.</p>
 </main>
 </div>
@@ -586,7 +586,7 @@ Discards its argument and returns unit.
 <h1>Module <code>render_pkg/sub/util</code></h1>
 <p>Small utilities used elsewhere in the package.</p>
 <h3 id="item-render_5fpkg_2fsub_2futil-drop"><code>drop</code> <span class="item-kind">fn</span></h3>
-<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span> <span class="kio-operator-builtin">-&gt;</span> <span class="kio-punctuation-separator">.</span></code></pre>
+<pre class="sig"><code><span class="kio-keyword-declaration">pub</span> <span class="kio-keyword-declaration">fn</span> <span class="kio-entity-name-function">drop</span><span class="kio-punctuation-bracket">[</span><span class="kio-variable-parameter">A</span><span class="kio-punctuation-bracket">]</span><span class="kio-punctuation-bracket">(</span><span class="kio-variable-parameter">x</span><span class="kio-operator-builtin">:</span> <span class="kio-entity-name-type">A</span><span class="kio-punctuation-bracket">)</span></code></pre>
 <p>Discards its argument and returns unit.</p>
 </main>
 </div>

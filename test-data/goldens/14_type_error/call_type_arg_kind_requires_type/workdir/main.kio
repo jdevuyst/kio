@@ -2,6 +2,6 @@ module main;
 
 newtype Box[A] : A { constructor mk_box; projector un_box }
 
-host fn phantom[A]() -> .;
+host fn phantom[A]();
 
 fn bad() { phantom(Box) }

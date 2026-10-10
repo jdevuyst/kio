@@ -1,5 +1,5 @@
 module core;
 
-pub fn gamma() -> . { () }
+pub fn gamma() { () }
 
-pub fn delta() -> . { () }
+pub fn delta() { () }

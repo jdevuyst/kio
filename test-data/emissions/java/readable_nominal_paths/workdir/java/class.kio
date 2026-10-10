@@ -2,4 +2,4 @@ module java/class;
 
 pub newtype Token : . { pub constructor make_token; pub projector read_token }
 
-pub fn java() -> . { () }
+pub fn java() { () }

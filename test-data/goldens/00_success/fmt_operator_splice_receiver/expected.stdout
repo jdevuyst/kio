@@ -6,6 +6,6 @@ op - __ { impl prefix_impl }
 
 varop [% %] { foldr form_push form_empty }
 
-fn normal_splice() -> . { (- form_value).>context_callee }
+fn normal_splice() { (- form_value).>context_callee }
 
-fn variadic_splice() -> . { ([% form_left, form_right %]).>context_callee }
+fn variadic_splice() { ([% form_left, form_right %]).>context_callee }

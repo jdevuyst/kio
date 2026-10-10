@@ -818,7 +818,7 @@ mod tests {
             "greet: {greet}"
         );
         assert!(
-            greet.contains("pub fn shout(p0: Str) -> . { _rehost_hahcgphggggo.shout(p0) }"),
+            greet.contains("pub fn shout(p0: Str) { _rehost_hahcgphggggo.shout(p0) }"),
             "greet: {greet}"
         );
         // The cross-module `import types(Str)` stays put — the alias is

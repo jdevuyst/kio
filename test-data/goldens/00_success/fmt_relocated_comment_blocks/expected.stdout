@@ -1,0 +1,15 @@
+module main;
+
+/// Type documentation.
+type T = (
+  // header block
+
+  // payload block
+  .
+  );
+
+fn f() { () }
+
+// before terminator
+
+// after terminator

@@ -1,10 +1,10 @@
 module main;
 
-fn flat_short() -> . { let r = receiver.>f(x).>g(y).>h(z); r }
+fn flat_short() { let r = receiver.>f(x).>g(y).>h(z); r }
 
-fn bare_zero_arg() -> . { let r = receiver.>bare; r }
+fn bare_zero_arg() { let r = receiver.>bare; r }
 
-fn bare_forms() -> . {
+fn bare_forms() {
   receiver.>call;
   receiver.>>call;
   call.<receiver;
@@ -22,7 +22,7 @@ fn bare_forms() -> . {
   ()
 }
 
-fn wide_chain() -> . {
+fn wide_chain() {
   let r =
     some_long_receiver_expression_value
       .>first_step_with_a_long_name(arg_one, arg_two)
@@ -31,7 +31,7 @@ fn wide_chain() -> . {
   r
 }
 
-fn wide_args_in_segment() -> . {
+fn wide_args_in_segment() {
   let r =
     receiver
       .>one(x)
@@ -46,11 +46,11 @@ fn wide_args_in_segment() -> . {
 }
 module main;
 
-fn flat_short() -> . { let r = receiver.>f(x).>g(y).>h(z); r }
+fn flat_short() { let r = receiver.>f(x).>g(y).>h(z); r }
 
-fn bare_zero_arg() -> . { let r = receiver.>bare; r }
+fn bare_zero_arg() { let r = receiver.>bare; r }
 
-fn bare_forms() -> . {
+fn bare_forms() {
   receiver.>call;
   receiver.>>call;
   call.<receiver;
@@ -68,7 +68,7 @@ fn bare_forms() -> . {
   ()
 }
 
-fn wide_chain() -> . {
+fn wide_chain() {
   let r =
     some_long_receiver_expression_value
       .>first_step_with_a_long_name(arg_one, arg_two)
@@ -77,7 +77,7 @@ fn wide_chain() -> . {
   r
 }
 
-fn wide_args_in_segment() -> . {
+fn wide_args_in_segment() {
   let r =
     receiver
       .>one(x)

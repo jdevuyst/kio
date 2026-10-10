@@ -1,5 +1,5 @@
 module helper_provider;
 
-fn hidden() -> . { () }
+fn hidden() { () }
 
 pub fn exposed() { hidden() }

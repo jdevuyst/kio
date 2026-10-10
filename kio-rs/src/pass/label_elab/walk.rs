@@ -298,6 +298,7 @@ pub trait DesugaredToLowered {
 
     fn visit_expr_elaborator(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::Elaborator {
+            source_trivia: _,
             occurrence: _,
             kind,
             call,
@@ -352,6 +353,7 @@ pub trait DesugaredToLowered {
             },
         };
         Ok(Expr::Elaborator {
+            source_trivia: Default::default(),
             occurrence: Default::default(),
             kind,
             call,
@@ -807,6 +809,7 @@ pub trait DesugaredToLowered {
             name,
             params,
             param_groups,
+            source_trivia: _,
             ret,
             meta: Meta { span, .. },
             doc,
@@ -819,6 +822,7 @@ pub trait DesugaredToLowered {
             name,
             params,
             param_groups,
+            source_trivia: (),
             ret: self.walk_type(ret)?,
             meta: Meta::new(span),
             doc,

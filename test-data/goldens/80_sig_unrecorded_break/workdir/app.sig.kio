@@ -4,7 +4,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        pub fn serve() -> .
+        pub fn serve()
       }
     }
   }

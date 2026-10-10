@@ -2,4 +2,4 @@ module testapi/io;
 
 import testapi(String);
 
-host fn print(message: String) -> .;
+host fn print(message: String);

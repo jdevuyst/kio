@@ -90,7 +90,7 @@ host type Bool role(bool);
 host type I32 role(i32);
 pub type Int = I32;
 host type String role(str);
-host fn print(p0: String) -> .;
+host fn print(p0: String);
 host fn int_to_string(p0: I32) -> String;
 host fn add(p0: I32, p1: I32) -> I32;
 
@@ -105,7 +105,7 @@ import optics(compose_lens, fst_lens, snd_lens, view);
 host type I32 role(i32);
 host type String role(str);
 host fn sample_outer() -> (I32 & String) & I32;
-host fn say_str(value: String) -> .;
+host fn say_str(value: String);
 
 op _ ^ _ { impl view }
 op __ ** _ { impl compose_lens }

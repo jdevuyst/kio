@@ -2,4 +2,4 @@ module host;
 
 host type T;
 
-host fn effect(x: T) -> .;
+host fn effect(x: T);

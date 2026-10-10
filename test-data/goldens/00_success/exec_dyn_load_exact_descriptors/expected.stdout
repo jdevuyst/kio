@@ -6,7 +6,7 @@ later local host type in host function signature: dyn_load_prime: malformed host
 alias reaching later local host type: dyn_load_prime: malformed host function `later_alias.consume`: dyn_load_prime: cannot resolve exact type `Number`: no type binding has that spelling
 earlier local host function: accepted
 later local host function: dyn_load_prime: malformed image — module `later_function`, fn `call`: unbound name `ping` at line 2, column 22
-missing host return arrow: dyn_load_prime: malformed host function `malformed.missing`: expected `->` and a return type after the final value group
+omitted host result: accepted
 unterminated declaration type binders: dyn_load_prime: malformed image — unterminated type-binder group at line 2, column 14
 unterminated lambda type binders: dyn_load_prime: malformed image — module `bad`, fn `broken`: unterminated type-binder group in a lambda at line 2, column 25
 type-only lambda: accepted

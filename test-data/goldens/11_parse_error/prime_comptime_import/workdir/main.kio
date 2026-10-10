@@ -2,4 +2,4 @@ module main;
 
 import __comptime__;
 
-fn f() -> . { () }
+fn f() { () }

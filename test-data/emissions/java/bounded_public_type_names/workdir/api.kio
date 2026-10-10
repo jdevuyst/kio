@@ -25,9 +25,9 @@ host fn sum(value: Alpha | Bravo | Charlie | Delta | Echo | Foxtrot) -> | Alpha
 | Echo
 | Foxtrot;
 
-host fn short(value: [A] A -> A) -> .;
+host fn short(value: [A] A -> A);
 
-host fn apply_polymorphic_identity_with_a_deliberately_long_public_name(value: [A] A -> A) -> .;
+host fn apply_polymorphic_identity_with_a_deliberately_long_public_name(value: [A] A -> A);
 
 host fn dependent30(value: [A] (& A
 & A
@@ -58,7 +58,7 @@ host fn dependent30(value: [A] (& A
 & A
 & A
 & A
-& A) -> A) -> .;
+& A) -> A);
 
 host fn dependent128(value: [A] (& A
 & A
@@ -187,4 +187,4 @@ host fn dependent128(value: [A] (& A
 & A
 & A
 & A
-& A) -> A) -> .;
+& A) -> A);

@@ -122,7 +122,7 @@ host type F32    role(f32);
 host type F64    role(f64);
 host type String role(str);
 host type Bool   role(bool);
-host fn print_i32(value: I32) -> .;
+host fn print_i32(value: I32);
 ";
 
 /// Render a package-level `bridge` block with semicolons between module roots.

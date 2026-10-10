@@ -2,4 +2,4 @@ module testapi/io;
 
 import testapi as api;
 
-host fn print(value: api.String) -> .;
+host fn print(value: api.String);

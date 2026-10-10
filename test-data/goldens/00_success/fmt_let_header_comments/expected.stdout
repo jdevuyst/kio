@@ -1,0 +1,17 @@
+module main;
+
+fn first() {
+  // binder
+  let value =
+    // equals
+    ();
+  value
+}
+
+fn discard() {
+  // wildcard
+  let _ =
+    // discard equals
+    ();
+  ()
+}

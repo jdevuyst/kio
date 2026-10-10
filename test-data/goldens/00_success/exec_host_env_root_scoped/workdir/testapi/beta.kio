@@ -2,6 +2,6 @@ module testapi/beta;
 
 import testapi(I32);
 
-host fn print(p0: I32) -> .;
+host fn print(p0: I32);
 
 fn unused() { () }

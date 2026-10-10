@@ -18,7 +18,7 @@ module kiodoc;
 import spine_elaborators(reorder_prod);
 
 host type String role(str);
-host fn print(value: String) -> .;
+host fn print(value: String);
 
 __INSERT_CODE_HERE__
 -->

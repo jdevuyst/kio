@@ -10477,6 +10477,29 @@ fn ok() -> . { () }
     }
 
     #[test]
+    fn host_fn_omitted_result_is_unit() {
+        for source in [
+            "module x; host fn tick();",
+            "module x; host fn discard[A](value: A);",
+            "module x; host fn staged(value: .)[A];",
+            "module x; host fn staged[A](value: A)[B](other: B);",
+        ] {
+            let m = p(source);
+            let Item::HostFn(h) = host_items(&m)[0] else {
+                panic!("expected host function");
+            };
+            assert!(matches!(h.ret, Type::Unit { .. }), "{source}");
+            let lazy = parse_lazy(source).expect("lazy host signature");
+            let Item::HostFn(h) = &lazy.module().items[0] else {
+                panic!("expected lazy host function");
+            };
+            assert!(matches!(h.ret, Type::Unit { .. }), "{source}");
+        }
+        assert!(p_err("module x; host fn tick() { () }").contains("supplied by the host"));
+        assert!(p_err("module x; host fn discard(value);").contains("expected"));
+    }
+
+    #[test]
     fn host_fn_named_param() {
         let m = p("module x; host fn print(s: String) -> .;");
         match host_items(&m)[0] {
@@ -11314,7 +11337,7 @@ v(1) {
         assert!(export.purity.is_pure());
 
         let emitted = crate::sig::emit_signature_file(&file);
-        assert!(emitted.contains("pub pure fn f() -> .\n      }"));
+        assert!(emitted.contains("pub pure fn f()\n      }"));
         let reparsed = sig(&emitted);
         let SigItem::ExportFn(export) =
             &reparsed.versions[0].nonbreaking.as_ref().unwrap().add[0].items[0]

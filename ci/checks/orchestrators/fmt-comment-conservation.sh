@@ -5,20 +5,19 @@
 # The contract (specs/style.md § Comments): a `//` comment is legal
 # anywhere and is *never dropped* by `kio fmt` — faithful at
 # boundaries, hoisted otherwise, and source order is preserved across
-# any hoist. This check enforces that property generatively, the way
-# decision 2 of the fix is meant to be enforced (a test, not a runtime
-# guard):
+# any hoist. This check exercises that property on generated programs:
 #
 #   1. Generate a small batch of programs with kio-gen.
-#   2. For each `*.kio` file, canonicalise it with `kio fmt` (so the
+#   2. Run filename-aware Rust tests that insert comments at raw lexer
+#      token boundaries before any canonicalization.
+#   3. For each `*.kio` file, canonicalise it with `kio fmt` (so the
 #      injection lands on clean token-boundary lines), then append a
 #      globally sequential `// comment<N>` to (nearly) every line.
-#   3. Run `kio fmt` on the injected file.
-#   4. Extract the `comment<N>` markers from the output and assert
+#   4. Run `kio fmt` on the injected file.
+#   5. Extract the `comment<N>` markers from the output and assert
 #      ALL injected markers are present AND appear in strictly
-#      increasing order. The in-order check is the strong part: it
-#      catches drops *and* reordering, so the interstitial-hoist
-#      fallback can never leapfrog a comment.
+#      increasing order with exactly the injected IDs. This
+#      catches drops, replacements and reordering at the injected positions.
 #
 # A `//` comment runs to end-of-line, and it is appended *last* on its
 # line, so it can't swallow following tokens. Kio has no multi-line
@@ -27,9 +26,9 @@
 # A post-injection PARSE failure is a finding (the formatter must
 # accept a comment anywhere a comment is legal), not a skip.
 #
-# This drives the `kio` and `kio-gen` binaries directly over an
-# on-disk batch — it is not a `cargo test` and not the run-tests.sh
-# exec/exit-code path; kio-gen is used only as a diverse program
+# This drives `kio`, `kio-gen`, and a focused Rust test over an
+# on-disk batch, outside the run-tests.sh exec/exit-code path;
+# kio-gen is used only as a diverse program
 # source. `ci/all.sh` auto-discovers this bucket, so placing the
 # script here gates it. Sibling of generative-tests.sh.
 #
@@ -103,13 +102,19 @@ build_corpus_tool_binary \
 [ -x "$KIO_GEN_BIN" ] || { printf 'fmt-comment-conservation: kio-gen binary missing at %s\n' "$KIO_GEN_BIN" >&2; exit 2; }
 
 if [ -n "$SEED" ]; then
-  "$KIO_GEN_BIN" --output "$batch" --count "$COUNT" --seed "$SEED" >/dev/null
+  "$KIO_GEN_BIN" --output "$batch" --count "$COUNT" --seed "$SEED" --valid-fraction 1.0 >/dev/null
 else
   SEED=$(awk 'BEGIN { srand(); print int(rand() * 2147483647) }')
-  "$KIO_GEN_BIN" --output "$batch" --count "$COUNT" --seed "$SEED" >/dev/null
+  "$KIO_GEN_BIN" --output "$batch" --count "$COUNT" --seed "$SEED" --valid-fraction 1.0 >/dev/null
 fi
 
 printf 'fmt-comment-conservation: count=%s seed=%s\n' "$COUNT" "$SEED"
+
+(
+  cd "$REPO_ROOT/kio-rs"
+  KIO_DEBUG_FMT_RAW_GENERATED_DIR="$batch" KIO_DEBUG_FMT_RAW_SEED="$SEED" \
+    sh "$REPO_ROOT/ci/cargo.sh" test --all-features --test fmt_comment_conservation
+)
 
 failures=0
 checked=0
@@ -120,14 +125,26 @@ check_file() {
   file=$1
   start_n=$2
 
-  # 1. Canonicalise so the injection lands on clean lines. A file that
-  #    doesn't even format cleanly is out of scope for this property
-  #    (the generator can emit deliberate error cases); skip it.
-  if ! "$KIO_BIN" fmt - <"$file" >"$file.canon" 2>/dev/null; then
-    rm -f "$file.canon"
-    echo 0
-    return 0
-  fi
+  # 1. Canonicalise so the injection lands on clean lines. Deliberate
+  #    generator parse errors are outside this property; other failures
+  #    remain findings even when another file formats successfully.
+  status=0
+  "$KIO_BIN" fmt - <"$file" >"$file.canon" 2>"$file.err" || status=$?
+  case "$status" in
+    0) ;;
+    11)
+      rm -f "$file.canon" "$file.err"
+      echo 0
+      return 0
+      ;;
+    *)
+      printf 'fmt-comment-conservation: FAIL (initial formatter exited %s) %s\n' "$status" "$file" >&2
+      sed 's/^/  /' "$file.err" >&2 || :
+      rm -f "$file.canon" "$file.err"
+      echo "-1"
+      return 0
+      ;;
+  esac
 
   # 2. Append a globally sequential `// comment<N>` to each non-blank
   #    line. Blank lines are left alone (a `// comment` on its own
@@ -154,17 +171,16 @@ check_file() {
     return 0
   fi
 
-  # 4. Extract marker numbers in output order and assert all present,
-  #    strictly increasing. grep -o pulls each `comment<N>` token; the
-  #    awk pass checks the count and the monotonic order.
+  # 4. Exact IDs detect replacement with a different monotonic sequence,
+  #    as well as drops, duplicates and reordering.
   markers=$(grep -oE 'comment[0-9]+' "$file.reformatted" | sed 's/comment//')
   result=$(printf '%s\n' "$markers" | START="$start_n" EXPECT="$injected_count" FILE="$file" awk '
-    BEGIN { prev = -1; count = 0; ok = 1 }
+    BEGIN { count = 0; ok = 1 }
     /^[0-9]+$/ {
       v = $1 + 0
       count++
-      if (v <= prev) { printf "order-violation at marker %d (after %d) in %s\n", v, prev, ENVIRON["FILE"] > "/dev/stderr"; ok = 0 }
-      prev = v
+      expected = ENVIRON["START"] + count - 1
+      if (v != expected) { printf "marker mismatch in %s: expected %d, found %d\n", ENVIRON["FILE"], expected, v > "/dev/stderr"; ok = 0 }
     }
     END {
       expect = ENVIRON["EXPECT"] + 0

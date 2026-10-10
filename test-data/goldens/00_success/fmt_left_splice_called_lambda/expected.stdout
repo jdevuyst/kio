@@ -1,0 +1,9 @@
+module main;
+
+fn last() {
+  fit!(id.<(.() { () }()))
+}
+
+fn first() {
+  fit!(id.<<(.() { () }()))
+}

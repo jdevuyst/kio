@@ -1,0 +1,23 @@
+module main;
+
+fn tuple(packet: . & .) {
+  // tuple opener
+  let .(first, second) = packet;
+  first
+}
+
+fn singleton() {
+  // singleton opener
+  let value = ();
+  value
+}
+
+fn opening(packed: [R] ([Hidden] Hidden -> R) -> R) {
+  // existential opener
+  let .(<Hidden> packet) =
+    // pattern close
+
+    // existential equals
+    packed;
+  ()
+}

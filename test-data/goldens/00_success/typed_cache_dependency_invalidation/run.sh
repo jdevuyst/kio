@@ -49,10 +49,10 @@ key_for() {
 # harness's run-scoped cross-package typed-cache root.
 KIO_DEBUG_TYPED_CACHE_ROOT='' KIO_DEBUG_TYPED_CACHE=1 KIO_DEBUG_WRITE_TYPED_CACHE=1 "$KIO_BIN" check 2>cold.err
 
-perl -0pi -e 's/pub fn run\(\) -> \. \{ helper\(\) \}/pub fn run() -> . { let _ = (); helper() }/' b.kio
+perl -0pi -e 's/pub fn run\(\) \{ helper\(\) \}/pub fn run() { let _ = (); helper() }/' b.kio
 KIO_DEBUG_TYPED_CACHE_ROOT='' KIO_DEBUG_TYPED_CACHE=1 KIO_DEBUG_WRITE_TYPED_CACHE=1 "$KIO_BIN" check 2>edit_b.err
 
-perl -0pi -e 's/pub fn helper\(\) -> \. \{ \(\) \}/pub fn helper2() -> . { () }\n\npub fn helper() -> . { helper2() }/' a.kio
+perl -0pi -e 's/pub fn helper\(\) \{ \(\) \}/pub fn helper2() { () }\n\npub fn helper() { helper2() }/' a.kio
 KIO_DEBUG_TYPED_CACHE_ROOT='' KIO_DEBUG_TYPED_CACHE=1 KIO_DEBUG_WRITE_TYPED_CACHE=1 "$KIO_BIN" check 2>edit_a.err
 
 cold_a=$(key_for cold.err a)

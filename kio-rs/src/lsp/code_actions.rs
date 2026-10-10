@@ -922,7 +922,7 @@ fn resolve_add_stub(mut action: CodeAction, data: &serde_json::Value) -> CodeAct
         .map(|i| format!("arg{i}: ."))
         .collect::<Vec<_>>()
         .join(", ");
-    let text = format!("\n\nfn {name}({params}) -> . {{ () }}\n");
+    let text = format!("\n\nfn {name}({params}) {{ () }}\n");
     let versions = document_versions(&uri, document_version(data));
     action.edit = Some(workspace_edit_from_changes(
         HashMap::from([(

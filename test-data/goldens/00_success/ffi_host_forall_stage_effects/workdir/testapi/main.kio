@@ -2,7 +2,7 @@ module testapi/main;
 
 host fn produce(_unit: .) -> [A] .;
 
-host fn observe(_unit: .) -> .;
+host fn observe(_unit: .);
 
 fn ignore(_value: [A] .) { () }
 
