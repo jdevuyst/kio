@@ -7164,6 +7164,7 @@ impl<'a> Parser<'a> {
         leading_vis_span: Option<Span>,
         surface: bool,
     ) -> Result<Item, Error> {
+        let mut opening_trivia = self.peek_leading_trivia();
         let open_brace_span = self.expect_kind(TokenKind::LBrace, "`{` after `rec`")?;
         let scope = self.begin_scope_region(ScopeOwnerKind::RecursiveGroup, None);
         if let Some((owner, _)) = scope
@@ -7181,7 +7182,7 @@ impl<'a> Parser<'a> {
                 syntax: ScopeSyntax::RecursiveTypes(Vec::new()),
             });
         }
-        let result = self.type_rec_group_body(
+        let mut result = self.type_rec_group_body(
             start,
             leading_vis,
             leading_vis_span,
@@ -7189,6 +7190,10 @@ impl<'a> Parser<'a> {
             open_brace_span,
         );
         self.finish_body_scope(scope, None);
+        if let Ok(Item::TypeRecGroup(group)) = &mut result {
+            opening_trivia.extend(std::mem::take(&mut group.meta.trailing_trivia));
+            group.meta.trailing_trivia = opening_trivia;
+        }
         result
     }
 

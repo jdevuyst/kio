@@ -707,7 +707,31 @@ fn doc_type_rec_group(g: &crate::ast::TypeRecGroup) -> Doc {
         };
         concat_all([leading, declaration])
     });
-    let trailing = g.meta.trailing_trivia.as_slice();
+    // Delimiter trivia stays on its side of the opening brace: hoisting an
+    // interior `///` before `rec` would turn it into group documentation.
+    let boundary_trivia = g.meta.trailing_trivia.as_slice();
+    let opening_end = g.open_brace_span.map_or(0, |open| {
+        boundary_trivia
+            .iter()
+            .rposition(|trivia| match trivia {
+                Trivia::LineComment { span, .. } | Trivia::DocCommentLine { span, .. } => {
+                    span.end <= open.start
+                }
+                Trivia::Newline => false,
+            })
+            .map_or(0, |index| index + 1)
+    });
+    let (opening, trailing) = boundary_trivia.split_at(opening_end);
+    let intro = if has_comments(opening) {
+        concat_all([
+            text("rec"),
+            hardline(),
+            doc_item_leading_trivia(opening),
+            text("{"),
+        ])
+    } else {
+        text("rec {")
+    };
     let trailing = if has_comments(trailing) {
         concat(hardline(), doc_item_leading_trivia(trailing))
     } else {
@@ -715,7 +739,7 @@ fn doc_type_rec_group(g: &crate::ast::TypeRecGroup) -> Doc {
     };
     concat_all([
         doc_prefix,
-        text("rec {"),
+        intro,
         nest(
             2,
             concat(hardline(), join(concat(text(";"), hardline()), members)),

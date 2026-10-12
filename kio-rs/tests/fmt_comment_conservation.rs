@@ -197,6 +197,22 @@ fn raw_generated_sources_conserve_sparse_seeded_comments() {
 }
 
 #[test]
+fn recursive_type_group_openers_conserve_comments() {
+    for (filename, source) in [
+        (
+            "m.kio",
+            "module m; rec // kio_fmt_raw_1\n{ type A = B; newtype B : A { constructor make; projector take }; // kio_fmt_raw_2\n}",
+        ),
+        (
+            "m.sig.kio",
+            "signature m v(1); v(1) { with { module m { rec // kio_fmt_raw_1\n{ type A = B; newtype B : A { constructor make; projector take }; // kio_fmt_raw_2\n} } }; nonbreaking { add { m.A; m.B; } } }",
+        ),
+    ] {
+        assert_conserved(filename, source, &[1, 2], true);
+    }
+}
+
+#[test]
 fn rewriting_boundaries_conserve_locally_ordered_comments() {
     for body in [
         "rec(loop // kio_fmt_raw_1\n) fn f() { // kio_fmt_raw_2\n() }",

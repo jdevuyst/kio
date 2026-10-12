@@ -1,6 +1,6 @@
 {
   "name": "tree-sitter-kio",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "license": "MIT OR Apache-2.0",
   "description": "Tree-sitter grammar for Kio",
   "main": "bindings/node",

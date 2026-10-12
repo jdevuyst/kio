@@ -442,7 +442,7 @@ dependencies = [
 
 [[package]]
 name = "kio"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "blake3",
  "flate2",
@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "kio-lang"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "blake3",
  "crossbeam-channel",

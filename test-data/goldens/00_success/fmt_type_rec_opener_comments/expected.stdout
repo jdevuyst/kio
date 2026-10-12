@@ -1,0 +1,16 @@
+module main;
+
+// Before the group.
+/// Group documentation.
+rec
+// Opening boundary.
+/// Interior note, not group documentation.
+// After the interior note.
+{
+  // Before the first member.
+  /// Alias documentation.
+  type A = B;
+  newtype B : A { constructor make; projector take }
+  // Before the closing brace.
+
+}

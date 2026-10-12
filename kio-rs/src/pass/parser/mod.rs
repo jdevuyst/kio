@@ -5167,6 +5167,72 @@ fn ok() -> . { () }
     }
 
     #[test]
+    fn recursive_type_group_opener_comments_keep_documentation_ownership() {
+        for outer_doc in ["", "/// Group documentation.\n"] {
+            for opener in [
+                "// opening boundary\n",
+                "/// Interior note.\n",
+                "// first\n//\n//\n// paragraph\n\n/// Interior note.\n// last\n",
+            ] {
+                let source = format!(
+                    "module x;\n{outer_doc}rec {opener}{{\n/// Alias documentation.\ntype A = B; newtype B : A {{ constructor make; projector take }}; // closing boundary\n}}",
+                );
+                let parsed = parse(&source).expect("recursive group");
+                assert_eq!(parse_lazy(&source).unwrap().force_all().unwrap(), parsed);
+                let tooling = super::probe_tooling(
+                    &source,
+                    Some(crate::ast::KioFileKind::Module),
+                    None,
+                    None,
+                );
+                assert!(tooling.parse_error.is_none());
+                let formatted = crate::pretty::pretty_module(&parsed);
+                let reparsed = parse(&formatted).expect("formatted group");
+                assert_eq!(crate::pretty::pretty_module(&reparsed), formatted);
+                let Item::TypeRecGroup(before) = &parsed.items[0] else {
+                    panic!("expected type group")
+                };
+                let Item::TypeRecGroup(after) = &reparsed.items[0] else {
+                    panic!("expected formatted type group")
+                };
+                assert_eq!(
+                    before.doc.as_ref().map(|doc| &doc.lines),
+                    after.doc.as_ref().map(|doc| &doc.lines),
+                );
+                let crate::ast::TypeRecMember::TypeAlias(before_alias) = &before.members[0] else {
+                    panic!("expected alias")
+                };
+                let crate::ast::TypeRecMember::TypeAlias(after_alias) = &after.members[0] else {
+                    panic!("expected formatted alias")
+                };
+                assert_eq!(
+                    before_alias.doc.as_ref().map(|doc| &doc.lines),
+                    after_alias.doc.as_ref().map(|doc| &doc.lines),
+                );
+                let rec = formatted.find("rec").unwrap();
+                let brace = formatted.find('{').unwrap();
+                for comment in opener
+                    .lines()
+                    .filter(|line| *line != "//" && !line.is_empty())
+                {
+                    assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
+                    let position = formatted.find(comment).unwrap();
+                    assert!(rec < position && position < brace, "{formatted}");
+                }
+                if opener.contains("//\n//\n") {
+                    assert!(formatted.contains("// first\n//\n// paragraph\n\n/// Interior note."));
+                }
+                let layout = before.source_layout.as_ref().unwrap();
+                let closing = layout.trailing_comment_span.unwrap();
+                assert_eq!(
+                    &source[closing.start as usize..closing.end as usize],
+                    "// closing boundary",
+                );
+            }
+        }
+    }
+
+    #[test]
     fn recursive_type_group_retains_prefix_owned_source_layout() {
         let source = concat!(
             "module x; rec {\n",

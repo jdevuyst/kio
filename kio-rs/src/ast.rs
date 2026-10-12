@@ -1377,7 +1377,9 @@ pub struct Meta<P: Phase> {
     /// bounded set of container positions the formatter knows about
     /// — block / `do` bodies, type groups, comma-list closers, label braces, and
     /// the module/file end — populate it. Compact host-type and literal-alias
-    /// headers also use this slot for their interior comments; every other node leaves it
+    /// headers also use this slot for their interior comments. Type groups
+    /// retain opening-delimiter trivia here too, distinguished by their
+    /// `open_brace_span`; every other node leaves it
     /// at its default. The pretty-printer reads it to keep a trailing
     /// or dangling comment from being dropped on a `kio fmt`
     /// round-trip.

@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "kio-ci-scheduler"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "libc",
  "windows",
@@ -148,7 +148,7 @@ dependencies = [
 
 [[package]]
 name = "kio-test-runner-rs"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "blake3",
  "fs2",

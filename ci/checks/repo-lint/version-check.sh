@@ -14,6 +14,7 @@
 #   - ci/infra/kio-test-runner-rs/Cargo.toml
 #   - tools/tree-sitter-kio/package.json
 #   - tools/tree-sitter-kio/tree-sitter.json (metadata.version field)
+#   - tools/tree-sitter-kio/src/parser.c (generated TSLanguage metadata)
 #   - tools/vscode-kio/package.json
 #   - tools/textmate-kio/kio.tmLanguage.json (top-level "version" field)
 #   - ci/infra/highlight-agreement-js/package.json
@@ -38,7 +39,7 @@
 #
 # Adding a new mirror = appending a (file, extractor) record below.
 # `extractor` is a sed script that prints exactly the version string
-# from one line in the file.
+# from the file.
 #
 # Pinned-version manifest (NOT a mirror of the repo version):
 #   - kio-rs/fuzz/Cargo.toml — the cargo-fuzz harness is `publish = false`
@@ -88,6 +89,7 @@ ci/infra/kio-prime-check-rs/Cargo.toml${TAB}/^version *= *\"/{s/.*\"\\(.*\\)\".*
 ci/infra/kio-test-runner-rs/Cargo.toml${TAB}/^version *= *\"/{s/.*\"\\(.*\\)\".*/\\1/p;q;}
 tools/tree-sitter-kio/package.json${TAB}/^  \"version\":/{s/.*\"version\" *: *\"\\([^\"]*\\)\".*/\\1/p;q;}
 tools/tree-sitter-kio/tree-sitter.json${TAB}/^    \"version\":/{s/.*\"version\" *: *\"\\([^\"]*\\)\".*/\\1/p;q;}
+tools/tree-sitter-kio/src/parser.c${TAB}/^[[:space:]]*\\.major_version = /{N;N;s/^[[:space:]]*\\.major_version = \\([0-9][0-9]*\\),\\n[[:space:]]*\\.minor_version = \\([0-9][0-9]*\\),\\n[[:space:]]*\\.patch_version = \\([0-9][0-9]*\\),.*/\\1.\\2.\\3/p;q;}
 tools/vscode-kio/package.json${TAB}/^  \"version\":/{s/.*\"version\" *: *\"\\([^\"]*\\)\".*/\\1/p;q;}
 tools/textmate-kio/kio.tmLanguage.json${TAB}/^  \"version\":/{s/.*\"version\" *: *\"\\([^\"]*\\)\".*/\\1/p;q;}
 ci/infra/highlight-agreement-js/package.json${TAB}/^  \"version\":/{s/.*\"version\" *: *\"\\([^\"]*\\)\".*/\\1/p;q;}
