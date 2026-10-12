@@ -1,8 +1,6 @@
 package beta;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

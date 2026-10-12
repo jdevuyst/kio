@@ -1,12 +1,10 @@
 # Case study: dynamic loading (`dyn_load_prime`)
 
-This page is a faithful read-through of the dynamic-loading proof-of-concept
-package at
-[`test-data/poc/dyn_load_prime/`](../../test-data/poc/dyn_load_prime/). That
-package is executable and `kio test`-checked, with the harness building and running it
-across supported targets under CI-selected coverage. It is *ground truth*: every type, function, and
-`equiv` law shown here exists in the package exactly as written, and the
-program below is the one its `main` runs.
+This case study follows the
+[`dyn_load_prime` package](../../test-data/poc/dyn_load_prime/), a loader and
+interpreter written in Kio. Its runnable example loads a guest package and
+calls its exported functions; the source quotations and laws below come from
+that package.
 
 `dyn_load_prime` demonstrates that runtime loading of a pre-compiled Kio
 package needs **no new language, package, or build feature**: the loader is
@@ -48,6 +46,8 @@ loader split across focused modules:
 - The loader library is split across `token` / `chars` / `lex`
   (lexing), `prime` (the Kio' term representation), `value` (the
   interpreter's runtime values), `result` (the evaluator outcome types),
+  `host_descriptor` (the exact host identities, type metadata, and function
+  signatures used by adapter inventories and callbacks),
   `parse` (term parsing and scope resolution), `eval` (the CEK evaluator), `marshal`
   (higher-order call-result adaptation), `hostrec` (the standard `call`,
   `make_lit`, and `test_bool` capabilities), `loader` (resolved images,
@@ -246,8 +246,9 @@ pub type Surface[P] =
 Each label is a parameterized operation type — `lookup` resolves an
 export by (optionally module-qualified) name, `apply` / `apply_fuel`
 apply a loaded closure (with the default or an explicit evaluation
-budget), the `*_in` / `*_out` pairs marshal unit, i32, f64, string, and
-bool values in and out, `pair_in` / `pair_out` build and split loaded
+budget), `unit_in` supplies the loaded unit value, the `*_in` / `*_out`
+pairs marshal i32, f64, string, and bool values in and out,
+`pair_in` / `pair_out` build and split loaded
 products, `left_in` / `right_in` / `sum_is_left` / `sum_payload` inject
 into and project out of loaded sums, `hostfn_in` looks up an exact
 host-function descriptor and answers a guest-callable value or a diagnostic

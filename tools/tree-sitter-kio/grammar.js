@@ -92,6 +92,8 @@ module.exports = grammar({
     [$._local_let_pattern, $.incomplete_numbered_binding],
     [$.build_block],
     [$.elaborator_body],
+    [$.callable_path],
+    [$.callable_path, $.elaborator_impl_clause],
     [$._expression_atom, $.block_call],
     [$.expression_arguments, $.unit_expression],
     [$.expression_arguments, $.grouped_expression],
@@ -319,7 +321,7 @@ module.exports = grammar({
     target_block: ($) => seq(
       alias(kw("target"), $.keyword_declaration), choice(
         $.target_name,
-        seq($.bracket_lparen, $.target_name, $.separator_comma, repeat1($.string_literal), $.bracket_rparen),
+        seq($.bracket_lparen, $.target_name, $.separator_comma, $._config_string_value, $.bracket_rparen),
       ),
       semicolonBody($, separated($.config_field, repeat1($.separator_semicolon)), { runs: true, empty: true }),
     ),
@@ -328,7 +330,12 @@ module.exports = grammar({
     _source_config_field: ($) => configField($, ["path", "git", "ref"]),
     _resolved_config_field: ($) => configField($, ["git", "ref", "path", "commit", "sig"]),
     _docs_config_field: ($) => configField($, ["md", "support", "md_out", "html"]),
-    _field_value: ($) => choice($.unit_expression, $.string_literal, $.number_literal, $.identifier),
+    _field_value: ($) => choice($._config_scalar, $.number_literal),
+    _config_scalar: ($) => choice($.unit_expression, $._config_string, $.identifier, $.grouped_config_value),
+    _config_string: ($) => repeat1($.string_literal),
+    _config_string_value: ($) => choice($._config_string, $.grouped_config_string),
+    grouped_config_string: ($) => seq($.bracket_lparen, $._config_string_value, $.bracket_rparen),
+    grouped_config_value: ($) => seq($.bracket_lparen, $._config_scalar, $.bracket_rparen),
     bridge_block: ($) => seq(
       $.keyword_bridge,
       semicolonBody($, separated($.bridge_glob, $.separator_semicolon), { empty: true }),
@@ -589,7 +596,9 @@ module.exports = grammar({
       ),
 
     recursive_capability: ($) =>
-      prec.dynamic(10, seq($.bracket_lparen, $.expression_path, $.bracket_rparen)),
+      prec.dynamic(10, seq($.bracket_lparen, $._capability_value, $.bracket_rparen)),
+    _capability_value: ($) => choice($.expression_path, $.grouped_capability_value),
+    grouped_capability_value: ($) => seq($.bracket_lparen, $._capability_value, $.bracket_rparen),
 
     expression_block: ($) => choice($._complete_expression_block, $.incomplete_expression_block),
     _complete_expression_block: ($) => seq(
@@ -686,7 +695,7 @@ module.exports = grammar({
     )),
     block_prefix_ufcs: ($) => choice(
       prec.right(20, seq($._block_prefix_atom, alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
-        choice($.call_callee, $.elaborator_name), optional($._call_args_group))),
+        choice($._ufcs_callable, $.elaborator_name), optional($._call_args_group))),
       prec.left(20, seq(choice($.call_callee, $.elaborator_name), optional($._call_args_group),
         alias($._left_ufcs_arrow, $.operator_arrow_ufcs), $._block_prefix_atom)),
     ),
@@ -934,7 +943,7 @@ module.exports = grammar({
           seq(
             $._expression_atom,
             alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
-            choice($.call_callee, $.elaborator_name),
+            choice($._ufcs_callable, $.elaborator_name),
             optional($._call_args_group),
           ),
         ),
@@ -948,6 +957,9 @@ module.exports = grammar({
           ),
         ),
       ),
+
+    _ufcs_callable: ($) => choice($.call_callee, $.grouped_ufcs_callable),
+    grouped_ufcs_callable: ($) => seq($.bracket_lparen, $._ufcs_callable, $.bracket_rparen),
 
     _right_ufcs_arrow: ($) => token(prec(2, choice(".>", ".>>"))),
     _left_ufcs_arrow: ($) => token(prec(2, choice(".<", ".<<"))),
@@ -1130,7 +1142,7 @@ module.exports = grammar({
       semicolonBody($, seq(
         repeat(choice($.comment_doc, $.comment_line)),
         alias(token(prec(3, "impl")), $.keyword_declaration),
-        $.callable_path,
+        $._callable_value,
         repeat(choice($.comment_doc, $.comment_line)),
       )),
 
@@ -1159,14 +1171,14 @@ module.exports = grammar({
           token(prec(3, choice("foldl", "foldr", "foldl1", "foldr1"))),
           $.keyword_declaration,
         ),
-        $.callable_path,
-        $.callable_path,
+        $._callable_value,
+        $._callable_value,
         repeat(choice($.comment_doc, $.comment_line)),
       ),
     _variadic_finalize_clause: ($) =>
       seq(
         alias(token(prec(3, "finalize")), $.keyword_declaration),
-        $.callable_path,
+        $._optional_callable_value,
         repeat(choice($.comment_doc, $.comment_line)),
       ),
 
@@ -1202,7 +1214,7 @@ module.exports = grammar({
           $.plain_value_path,
           seq(
             $.bracket_lparen,
-            optional(sep1($.plain_value_path, $.separator_comma)),
+            optional(sep1($._capture_value, $.separator_comma)),
             optional($.separator_comma),
             $.bracket_rparen,
           ),
@@ -1214,7 +1226,7 @@ module.exports = grammar({
       seq(
         alias(token(prec(3, "impl")), $.keyword_declaration),
         choice(
-          $.callable_path,
+          $._callable_value,
           seq(
             repeat($._callable_path_comment),
             $.bracket_lparen,
@@ -1222,7 +1234,7 @@ module.exports = grammar({
             alias(token(prec(3, "fills")), $.keyword_declaration),
             repeat($._callable_path_comment),
             $.bracket_rparen,
-            $.callable_path,
+            $._callable_value,
           ),
         ),
       ),
@@ -1233,21 +1245,26 @@ module.exports = grammar({
         repeat(seq($.separator_dot, alias($._callable_path_segment, $.identifier))),
       ),
 
+    _capture_value: ($) => choice($.plain_value_path, $.grouped_capture_value),
+    grouped_capture_value: ($) => seq($.bracket_lparen, $._capture_value, $.bracket_rparen),
+    _callable_value: ($) => choice($.callable_path, $.grouped_callable_value),
+    grouped_callable_value: ($) => seq($.bracket_lparen, $._callable_value, $.bracket_rparen),
+    _optional_callable_value: ($) => choice($.callable_path, $.unit_expression, $.grouped_optional_callable_value),
+    grouped_optional_callable_value: ($) => seq($.bracket_lparen, $._optional_callable_value, $.bracket_rparen),
+
     callable_path: ($) =>
-      prec.right(
-        seq(
-          repeat($._callable_path_comment),
-          repeat(
-            seq(
-              alias($._callable_path_segment, $.identifier),
-              repeat($._callable_path_comment),
-              $.separator_dot,
-              repeat($._callable_path_comment),
-            ),
+      seq(
+        repeat($._callable_path_comment),
+        repeat(
+          seq(
+            alias($._callable_path_segment, $.identifier),
+            repeat($._callable_path_comment),
+            $.separator_dot,
+            repeat($._callable_path_comment),
           ),
-          alias($._callable_path_segment, $.entity_name_function),
-          repeat($._callable_path_comment),
         ),
+        alias($._callable_path_segment, $.entity_name_function),
+        repeat($._callable_path_comment),
       ),
 
     _callable_path_comment: ($) =>
@@ -1256,7 +1273,7 @@ module.exports = grammar({
         $.comment_line,
       ),
 
-    _callable_path_segment: ($) => $._identifier_like,
+    _callable_path_segment: ($) => choice($._identifier_like, token(prec(3, "fills"))),
     _fn_return_type: ($) =>
       prec.right(seq($.operator_arrow_type, $._type)),
     fn_signature: ($) =>

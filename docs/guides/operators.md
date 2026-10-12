@@ -22,7 +22,8 @@ __INSERT_CODE_HERE__
 
 ## Define and use an operator
 
-With a host-provided `Int` and `add`, define a binary operator like this:
+With a host-provided `Int` declared with `role(i32)` and an
+`add: (Int & Int) -> Int` operation, define a binary operator like this:
 
 ```kio {@module}
 fn add_int(a: Int, b: Int) -> Int { add(a, b) }
@@ -37,6 +38,8 @@ function's arguments in written order. The body contains one `impl` target:
 a function name, an imported path such as `math.add`, or a newtype member such
 as `List.cons`. Put any argument reordering or other adaptation in a named
 helper; calls and inline lambdas cannot be `impl` targets.
+Parentheses around the whole target are transparent: `impl ((math.add))`
+selects the same function as `impl math.add`. Formatting removes that grouping.
 
 Declare local targets before the operator, and the operator before functions
 that use its syntax. Import a target from another module through a selective
@@ -70,7 +73,10 @@ operators bind to their operand, so `- a + b` means `add(neg(a), b)`.
 
 ## Multi-token patterns
 
-A pattern can contain several symbols and operands:
+A pattern can contain several symbols and operands. This example also uses a
+host `Bool` with `role(bool)` and `if!` from the
+[elaborator library](using-libraries.md#the-elaborator-library); with that
+dependency named `elab`, import it as `import elab/control(if);`:
 
 ```kio {@module}
 fn cond[A](c: Bool, t: A, e: A) -> A {
@@ -120,6 +126,11 @@ the same visibility requirement.
 Import the complete pattern, including its slot kinds, quotation, and grouping:
 `import math(op _ + __);`. For example, the dictionary library exports `=>`
 as a pair-building operator:
+
+Inside the dictionary package, imports name its local `dict` module, as
+below. To consume it as a dependency named `dict`, follow the
+[collection-library setup](using-libraries.md#collection-and-value-libraries)
+and use `import dict/dict(op _ => _);` instead.
 
 ```kio {}
 module entry_example;

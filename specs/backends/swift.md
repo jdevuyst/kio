@@ -114,10 +114,7 @@ This marker and this page are how a host learns the module name to build
 the package under and `import`. This is a **contract by documentation**:
 a Swift compiler does not read the marker, so the host's build
 configuration must set `-module-name <Ns>` (or name its SwiftPM target
-`<Ns>`) to match it. The corpus harness supplies that configured artifact
-identity to the kio test runner independently; the runner does not inspect
-emitted source to rediscover it and passes the supplied namespace to
-`swiftc -module-name`.
+`<Ns>`) to match it.
 
 The namespace **defaults** to the title-word-cased Kio package name
 (Swift's UpperCamelCase module convention): package `greeter` → module
@@ -516,7 +513,9 @@ type's Swift realization is:
   protocol has a generic `specialize<T>(_: T.Type)` requirement returning
   that same residual. Its implementation can perform effects at that stage,
   retain state in the returned carrier or closure, and advance another binder
-  only when requested. No witness argument is added to a host-function method.
+  only when requested. These metatype arguments select native generics;
+  they are not Kio value parameters or host-supplied representation codecs
+  ([`README.md` § 2](README.md#2-type-erasure-at-the-ffi)).
 
 The `ffi.swift` `typealias`es name each boundary slot's Swift type stably
 (`Env_<member>_arg<i>`, `Env_<member>_ret`, `Exp_<member>_…`, a function

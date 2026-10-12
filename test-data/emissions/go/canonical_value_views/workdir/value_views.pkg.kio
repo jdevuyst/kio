@@ -1,8 +1,6 @@
 package value_views;
 
 build {
-  cache ();
-
   target go {
     out "out/go/"
   }

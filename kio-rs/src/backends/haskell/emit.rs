@@ -607,6 +607,28 @@ mod facade_tests {
     }
 
     #[test]
+    fn public_callable_facades_retain_monad_specialization_unfoldings() {
+        let native = render(
+            "module api; \
+             host fn tick() -> .; \
+             pub fn direct() -> . { () } \
+             pub fn effectful() -> . { tick() } \
+             pub newtype Box[A] : A { pub constructor mk; pub projector un; };",
+        )
+        .expect("native facade unfoldings");
+        for wrapper in [
+            super::export_wrapper_name("api", "direct"),
+            super::export_wrapper_name("api", "effectful"),
+            super::export_newtype_wrapper_name("api", "Box", "mk"),
+            super::export_newtype_wrapper_name("api", "Box", "un"),
+        ] {
+            assert!(native.contains(&format!("{{-# INLINABLE {wrapper} #-}}\n{wrapper} ::")));
+        }
+        assert_eq!(native.matches("{-# INLINABLE ").count(), 4);
+        assert!(!native.contains("{-# INLINE "));
+    }
+
+    #[test]
     fn live_host_type_provenance_suppresses_a_retained_deprecation_pragma() {
         let package = routed_package_files_with_bridge(
             &[("api.kio", "module api; host type Restored;")],
@@ -786,17 +808,19 @@ v(2) {
                 .lines()
                 .find(|line| line.starts_with(&format!("{name} _pkg")))
                 .unwrap_or_else(|| panic!("missing `{function}` module equation"));
-            let annotation = equation.find(&expected_type).unwrap_or_else(|| {
-                panic!("rank-N projected callee lacks its exact type: {equation}")
+            let projection = equation.find("case (k_source) of").unwrap_or_else(|| {
+                panic!("fixture did not emit a raw tuple projection: {equation}")
             });
+            let annotation = projection
+                + equation[projection..]
+                    .find(&expected_type)
+                    .unwrap_or_else(|| {
+                        panic!("rank-N projected callee lacks its exact type: {equation}")
+                    });
             let visible_argument = annotation
                 + equation[annotation..].find(" @").unwrap_or_else(|| {
                     panic!("type annotation does not precede application: {equation}")
                 });
-            let projection = equation.find("case (k_source) of").unwrap_or_else(|| {
-                panic!("fixture did not emit a raw tuple projection: {equation}")
-            });
-
             assert!(projection < annotation, "{equation}");
             assert!(annotation < visible_argument, "{equation}");
         }
@@ -920,7 +944,7 @@ v(2) {
     }
 
     #[test]
-    fn generic_sum_boundaries_preserve_identity_and_required_callable_conversion() {
+    fn generic_sum_boundaries_demand_payloads_and_convert_callable_slots() {
         let emitted = render(
             "module api; \
              host fn choose[A][B](step: . -> (A | B)) -> A | B; \
@@ -938,8 +962,13 @@ v(2) {
         };
         let unchanged = equation("roundtrip");
         assert!(unchanged.contains("host__api__choose"), "{unchanged}");
-        assert!(!unchanged.contains("case"), "{unchanged}");
-        assert!(!unchanged.contains("__hfr"), "{unchanged}");
+        assert!(unchanged.contains("case"), "{unchanged}");
+        assert!(unchanged.contains("`seq`"), "{unchanged}");
+        assert_eq!(
+            unchanged.matches("host__api__choose").count(),
+            1,
+            "{unchanged}"
+        );
         let converted = equation("converted");
         assert!(converted.contains("case"), "{converted}");
         assert!(converted.contains("__hfd"), "{converted}");
@@ -977,16 +1006,18 @@ v(2) {
             .find(|line| line.starts_with(&format!("{callback} _pkg")))
             .expect("prepared callback export equation");
         let concrete = standard_hs("(forall (t_a :: %KIND%.Type). m (t_a -> m t_a), ())");
-        let inward = visible_parenthesized_type_application(
-            callback_equation,
-            "(arg0) >>= \\__hfr0 -> kioPure @",
+        let marker = ">>= \\__hfr0 -> kioPure @";
+        let lifts = callback_equation
+            .match_indices(marker)
+            .map(|(index, _)| {
+                visible_parenthesized_type_application(&callback_equation[index..], marker)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            lifts,
+            [concrete.as_str(), concrete.as_str()],
+            "prepared callback inward and outward exact lifts: {callback_equation}"
         );
-        assert_eq!(inward, concrete, "prepared callback inward lift");
-        let outward = visible_parenthesized_type_application(
-            callback_equation,
-            "((__er) ()) >>= \\__hfr0 -> kioPure @",
-        );
-        assert_eq!(outward, concrete, "prepared callback outward lift");
 
         let host_value = module_fn("api", "host_value");
         let host_value_equation = emitted
@@ -1099,6 +1130,68 @@ v(2) {
             )),
             "{nested}"
         );
+    }
+
+    #[test]
+    fn generic_host_calls_check_demand_under_the_declared_schema() {
+        let emitted = render(
+            "module api; \
+             host fn invoke[A](step: A -> A, value: A) -> A; \
+             host fn keep[*F][A](value: F(A)) -> F(A); \
+             host fn obtain[A](_value: A) -> [B] B -> B; \
+             host fn observe() -> .; \
+             pub fn anonymous() { invoke(., .(value) { value }, observe()) } \
+             pub fn opaque[*G][T](value: G(T)) -> G(T) { keep(G, T, value) } \
+             pub fn returned() -> [B] B -> B { obtain(., ()) }",
+        )
+        .expect("generic host-call schemas");
+        let equation = |name: &str| {
+            let prefix = format!("{} _pkg", module_fn("api", name));
+            emitted
+                .lines()
+                .find(|line| line.starts_with(&prefix))
+                .expect("module equation")
+        };
+        let anonymous = equation("anonymous");
+        let signature = anonymous.find(":: forall").expect("local schema signature");
+        let schema = anonymous[..signature]
+            .rfind("let {")
+            .expect("local whole-call schema");
+        assert!(anonymous[..schema].contains("kioEval"), "{anonymous}");
+        assert!(
+            anonymous[..schema].contains("host__api__observe"),
+            "{anonymous}"
+        );
+        assert_eq!(
+            anonymous.matches("host__api__observe").count(),
+            1,
+            "{anonymous}"
+        );
+        assert_eq!(
+            anonymous.matches("host__api__invoke").count(),
+            1,
+            "{anonymous}"
+        );
+        assert!(
+            anonymous[schema..].contains(&standard_hs(
+                ":: forall (t_a :: %KIND%.Type). (t_a -> m t_a) -> t_a -> m t_a"
+            )),
+            "{anonymous}"
+        );
+        assert!(
+            anonymous[schema..].contains("(pkgHost _pkg) @t_a"),
+            "{anonymous}"
+        );
+        let opaque = equation("opaque");
+        assert!(opaque.contains(&standard_hs(
+            ":: forall (t_f :: %KIND%.Type -> %KIND%.Type) (t_a :: %KIND%.Type). (t_f t_a) -> m (t_f t_a)"
+        )), "{opaque}");
+        assert!(opaque.contains("(pkgHost _pkg) @t_f @t_a"), "{opaque}");
+        assert!(opaque.contains("@t_g @t_t"), "{opaque}");
+        let returned = equation("returned");
+        assert!(returned.contains(&standard_hs(
+            ":: forall (t_a :: %KIND%.Type). t_a -> m (forall (t_b :: %KIND%.Type). m (t_b -> m t_b))"
+        )), "{returned}");
     }
 
     #[test]
@@ -1234,6 +1327,30 @@ v(2) {
             )),
             "{body}"
         );
+    }
+
+    #[test]
+    fn strict_pure_residual_argument_keeps_the_inner_forall_annotation() {
+        let emitted = render(
+            "module api; \
+             fn staged[A](_left: A)[B][C](_middle: B, right: C) -> C { right } \
+             pub fn run() { staged((), (), ()) }",
+        )
+        .expect("render strict residual argument");
+        let caller = module_fn("api", "run");
+        let body = emitted
+            .lines()
+            .find(|line| line.starts_with(&format!("{caller} _pkg =")))
+            .expect("caller body");
+        let residual = body
+            .split_once(" `seq` ")
+            .expect("supplied argument is demanded before returning the residual")
+            .1;
+        assert!(residual.starts_with("(((\\ @t_b ->"), "{body}");
+        let expected = standard_hs(
+            ":: forall (t_b :: %KIND%.Type). m (forall (t_c :: %KIND%.Type). m ((t_b, t_c) -> m t_c))",
+        );
+        assert!(residual.contains(&expected), "{body}");
     }
 
     #[test]
@@ -1797,13 +1914,13 @@ v(2) {
             .lines()
             .find(|line| line.starts_with("export__api__ordinary _pkg"))
             .expect("ordinary sum wrapper");
+        assert_eq!(ordinary.matches("(arg0)").count(), 1, "{ordinary}");
+        assert_eq!(ordinary.matches("case ").count(), 2, "{ordinary}");
+        assert_eq!(ordinary.matches("`seq`").count(), 4, "{ordinary}");
         assert_eq!(
-            ordinary,
-            format!(
-                "{} _pkg arg0 = pure ({} _pkg arg0)",
-                export_wrapper("api", "ordinary"),
-                module_fn("api", "ordinary")
-            )
+            ordinary.matches(&module_fn("api", "ordinary")).count(),
+            1,
+            "{ordinary}"
         );
     }
 

@@ -1,8 +1,6 @@
 package bound_partial;
 
 build {
-  cache ();
-
   target ts {
     out "out/ts/"
   }

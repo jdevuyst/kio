@@ -1,8 +1,6 @@
 package exec_tuple_projection_effect_order;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

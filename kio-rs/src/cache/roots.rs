@@ -38,7 +38,7 @@ fn explicit_cache_root(parsed_pkg: &ParsedPackage) -> Option<PathBuf> {
         .package_file
         .build
         .as_ref()?;
-    match &build.cache {
+    match build.cache.as_ref()? {
         BuildBlockCache::Path { path, .. } => Some(
             crate::cache::package_check::resolve_cache_root(&parsed_pkg.root_dir, path),
         ),
@@ -73,17 +73,11 @@ mod tests {
                     build: cache.map(|cache| crate::ast::BuildBlock {
                         leading_trivia: Vec::new(),
                         trailing_trivia: Vec::new(),
-                        cache: match cache {
-                            Some(path) => BuildBlockCache::Path {
-                                path: path.to_owned(),
-                                span: Span::new(0, 0),
-                                leading_trivia: Vec::new(),
-                            },
-                            None => BuildBlockCache::Disabled {
-                                span: Span::new(0, 0),
-                                leading_trivia: Vec::new(),
-                            },
-                        },
+                        cache: cache.map(|path| BuildBlockCache::Path {
+                            path: path.to_owned(),
+                            span: Span::new(0, 0),
+                            leading_trivia: Vec::new(),
+                        }),
                         targets: Vec::new(),
                         docs: None,
                         span: Span::new(0, 0),

@@ -220,6 +220,14 @@ If practical output requires a different representation, investigate that before
 acceptance. An exotic target is not an automatic exemption: stop and present
 the costs and alternatives, including not adding the backend, for a user decision.
 
+### Lazy-target evaluation check
+
+For a lazy host or emitted lazy representation, follow
+[Strict evaluation on lazy targets](../../topics/emit.md#strict-evaluation-on-lazy-targets).
+Trace body and facade demand, and obtain bounded pure-data retention evidence
+alongside effect-order checks. An optimized-only pass or ordered IO alone does
+not establish the required evaluation behavior.
+
 ### Generated call-depth check
 
 Follow [Generated call depth](../../topics/emit.md#generated-call-depth) in

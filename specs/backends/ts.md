@@ -477,10 +477,10 @@ TypeScript is in the `typed-dynamic` family, whose HKT strategy is the
 **natural-exact skin**
 ([`README.md` § Higher-kinded types](README.md#higher-kinded-types)). The
 runtime remains the JS backend's byte-identical, type-erased `.js`: an
-application `F(A)` has no extra runtime representation, lift / project remain
-identity, and no type witness is passed at runtime
+application `F(A)` adds no runtime representation or type witness
 ([`js.md` § Higher-kinded types](js.md#higher-kinded-types)). The `.d.ts`
-preserves the constructor relation structurally:
+preserves the constructor relation structurally; values still use the JS
+backend's documented structural and nominal boundary representations:
 
 ```ts
 export interface <Handle>TypeLambda<Args extends readonly unknown[]> {

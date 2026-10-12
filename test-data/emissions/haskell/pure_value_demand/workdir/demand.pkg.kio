@@ -1,0 +1,12 @@
+package demand;
+
+build {
+  target haskell {
+    out "out/haskell/";
+    namespace "PureDemand"
+  }
+}
+
+bridge {
+  api
+}

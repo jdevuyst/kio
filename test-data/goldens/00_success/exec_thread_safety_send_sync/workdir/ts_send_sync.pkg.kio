@@ -21,7 +21,7 @@ build {
 
   target rust {
     out "out/rust/";
-    thread_safety "send_sync"
+    thread_safety send_sync
   };
 
   target go {

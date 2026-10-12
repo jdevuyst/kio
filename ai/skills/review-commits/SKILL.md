@@ -47,6 +47,20 @@ Check the review's content identity, compiler context and unresolved objective
 findings; do not infer review from a trailer or green site build. Missing review
 evidence blocks new sign-off/publication, not unrelated commits. Optional
 editorial suggestions may remain declined.
+The final-content review includes all links and published-release correspondence
+for ordinary repository file/directory links. A valid hash or local tag alone
+does not establish that verification.
+
+For changes to an existing post, compare its prior published contents with the
+final revision and inspect intervening diffs where needed. Apply
+[`docs.md` § Blog posts](../../topics/docs.md#blog-posts): unannounced language
+and format corrections or small visible code/API updates must preserve meaning;
+formatting-subject edits can be substantive. Bigger substantive changes need a
+visible notice giving their date and brief nature. Check exact-text approval
+for post, harness and notice changes from the available authority record;
+neither a small diff nor an added notice grants editing authority. Report
+unavailable history or approval evidence explicitly. Route broader historical
+communication concerns to `audit-blog-history`.
 
 This is the commit-range check for AGENTS.md § Universal rules — "Behavioral contracts cannot be rewritten retroactively."
 

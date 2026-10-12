@@ -1,0 +1,292 @@
+================================================================================
+configuration grouping preserves unit scalar
+================================================================================
+package app;
+build { cache ((())) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (cache_declaration
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+configuration grouping preserves string fields and target pair
+================================================================================
+package app;
+build {
+  cache (("build/cache"));
+  docs { md (("guide.md")); support ("support"); md_out ("out/md"); html (("out/html")) };
+  target (rust, (("r" "s"))) { out (("out/rust")); thread_safety ((())) };
+  target ts { out ("out/ts"); namespace (("App")) }
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (cache_declaration
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (string_literal)
+            (bracket_rparen))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (docs_block
+        (keyword_declaration)
+        (bracket_lbrace)
+        (config_field
+          (keyword_declaration)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (string_literal)
+              (bracket_rparen))
+            (bracket_rparen)))
+        (separator_semicolon)
+        (config_field
+          (keyword_declaration)
+          (grouped_config_value
+            (bracket_lparen)
+            (string_literal)
+            (bracket_rparen)))
+        (separator_semicolon)
+        (config_field
+          (keyword_declaration)
+          (grouped_config_value
+            (bracket_lparen)
+            (string_literal)
+            (bracket_rparen)))
+        (separator_semicolon)
+        (config_field
+          (keyword_declaration)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (string_literal)
+              (bracket_rparen))
+            (bracket_rparen)))
+        (bracket_rbrace))
+      (separator_semicolon)
+      (target_block
+        (keyword_declaration)
+        (bracket_lparen)
+        (target_name
+          (identifier))
+        (separator_comma)
+        (grouped_config_string
+          (bracket_lparen)
+          (grouped_config_string
+            (bracket_lparen)
+            (string_literal)
+            (string_literal)
+            (bracket_rparen))
+          (bracket_rparen))
+        (bracket_rparen)
+        (bracket_lbrace)
+        (config_field
+          (identifier)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (string_literal)
+              (bracket_rparen))
+            (bracket_rparen)))
+        (separator_semicolon)
+        (config_field
+          (identifier)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (unit_expression
+                (bracket_lparen)
+                (bracket_rparen))
+              (bracket_rparen))
+            (bracket_rparen)))
+        (bracket_rbrace))
+      (separator_semicolon)
+      (target_block
+        (keyword_declaration)
+        (target_name
+          (identifier))
+        (bracket_lbrace)
+        (config_field
+          (identifier)
+          (grouped_config_value
+            (bracket_lparen)
+            (string_literal)
+            (bracket_rparen)))
+        (separator_semicolon)
+        (config_field
+          (identifier)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (string_literal)
+              (bracket_rparen))
+            (bracket_rparen)))
+        (bracket_rbrace))
+      (bracket_rbrace))))
+
+================================================================================
+configuration grouping preserves dependency source fields
+================================================================================
+dependency helper;
+source {
+  git (("https://example.com/libraries.git"));
+  ref ((("main")));
+  path ( // lookup
+    (())
+  )
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (dependency_file
+    (keyword_dependency)
+    (identifier)
+    (separator_semicolon)
+    (source_block
+      (keyword_source)
+      (bracket_lbrace)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (string_literal)
+            (bracket_rparen))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (string_literal)
+              (bracket_rparen))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (comment_line)
+          (grouped_config_value
+            (bracket_lparen)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+configuration grouping preserves dependency resolution fields
+================================================================================
+lock helper;
+resolved {
+  git (("https://example.com/libraries.git"));
+  ref ("main");
+  commit (("abc"));
+  sig ((("digest")));
+  path ((()))
+}
+--------------------------------------------------------------------------------
+
+(source_file
+  (lock_file
+    (keyword_lock)
+    (identifier)
+    (separator_semicolon)
+    (resolved_block
+      (keyword_resolved)
+      (bracket_lbrace)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (string_literal)
+            (bracket_rparen))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (string_literal)
+          (bracket_rparen)))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (string_literal)
+            (bracket_rparen))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (string_literal)
+              (bracket_rparen))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (config_field
+        (keyword_declaration)
+        (grouped_config_value
+          (bracket_lparen)
+          (grouped_config_value
+            (bracket_lparen)
+            (unit_expression
+              (bracket_lparen)
+              (bracket_rparen))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (bracket_rbrace))))

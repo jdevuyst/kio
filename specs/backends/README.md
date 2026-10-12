@@ -118,17 +118,18 @@ are:
   type-erased dynamic module representation.
 
 Native kinds, native rank-N payloads, static declaration skins, and body
-erasure are independent axes. Erasure does not add public term-level type
-arguments; it does not prescribe whether generated private adapters need
-representation evidence to construct exact native values. Such evidence
+erasure are independent axes. Erasure adds no runtime Kio type values or
+host-supplied representation codecs to carry polymorphic type arguments.
+Swift's native generic selectors are
+specified in [§ 2](#2-type-erasure-at-the-ffi). Erasure does not prescribe
+whether generated private adapters need representation evidence to construct
+exact native values. Such evidence
 provides no Kio typecase and cannot be recovered by inspecting opaque host
 values. An exact skin preserves the public type relation, while a native-HKT
 backend threads Kio's explicit dictionary values directly (Kio has no typeclasses — see
 [§ Higher-kinded types](#higher-kinded-types)). See that section and
 [§ Polymorphic newtype payloads](#polymorphic-newtype-payloads) for the
 per-strategy detail.
-
-Additional families are added here when a backend page that needs them lands. Conformance audits read this table at run time, so adding a family is a README edit, not an audit-code change.
 
 A per-backend page **either** does what its family's shared idioms prescribe **or** carries an explicit, mutual-cited divergence in how its host realizes them. A family divergence remains permissible only while the backend implements the full Kio contract; it cannot excuse an unsupported or degraded Kio feature or serve as a per-backend limitation. A family gains a detail page under `specs/backends/families/<name>.md` when it has two or more shipping members and shared idioms start to repeat across per-backend pages; absent one, the per-backend pages reference cross-cutting properties from this README directly.
 
@@ -161,10 +162,19 @@ inherits the host language's threading model unchanged.
 
 Polymorphic items — `[A]`-quantified exports, host fns with rank-N value
 parameters, and function values flowing in either direction — do not add
-term-level type arguments to the FFI. A `fn run[A](cfg: Config(A)) -> A`
-still exposes only `cfg` as a runtime argument. A typed backend maps a direct
-declaration binder to its host language's generic surface where one exists;
-an erased backend removes the type choice entirely.
+runtime Kio type values or host-supplied representation codecs to carry their
+type arguments across the FFI. A
+`fn run[A](cfg: Config(A)) -> A` has only `cfg` as its Kio value argument.
+A typed backend maps a direct declaration binder to its host language's
+generic surface where one exists; JavaScript removes the type choice entirely.
+
+Swift's generic surface includes the metatype selectors specified in
+[`swift.md`](swift.md#host-record-contract): these select an already-declared
+native generic parameter and are additional Swift arguments, not Kio value
+parameters or representation codecs. A named method uses `asKioType<i>:` for
+a generic absent from its native value parameters and result. A rank-N
+carrier's `specialize(asKioType:)` selects one binder and returns the exact
+residual value; selecting that type still advances the callable stage.
 
 This is **representation erasure**, not evaluation-stage erasure. Inside the
 package, each Kio `Forall` is still one ordered abstraction/application stage.
@@ -175,8 +185,9 @@ same-typed values remain substitutable regardless of where their real work
 occurs. A type-erased backend represents those stages with hidden calls. A
 native-HKT backend may represent them with native type abstraction followed by
 an action returning the next stage. Boundary adapters pure-lift work-free stages,
-preserve computation at its actual stage, and expose no term-level type
-argument in the public ABI.
+preserve computation at its actual stage, and introduce no runtime Kio type
+value or host-supplied representation codec to carry type arguments in the
+public ABI.
 Haskell's concrete visible-type-application and sequencing spelling is
 specified in [`haskell.md`](haskell.md).
 
@@ -352,13 +363,6 @@ readable component join and exact fallback frame in their respective host
 syntaxes. Java is the other current member of the capability cohort and uses
 its exact declaration frame for every adapter, as specified on its backend
 page.
-
-The same descriptor — `host_types` / `host_fns` (each carrying its
-declaring module's path) plus the per-host-type bound-intent set —
-drives every backend's host-trait emission. The descriptor is built by
-scanning the bridged modules' `pub host` items. Adding a new backend adds
-a renderer that consumes the descriptor; it does not add a module scan of
-its own.
 
 ### 9. Call-by-value evaluation order
 

@@ -4,7 +4,7 @@ This file is the canonical grammar contract for Kio. The prose specs reference i
 
 It is organized in three layers; the Kio' grammar is syntactically nested inside the full Kio surface:
 
-1. **[Kio' grammar](#kio-grammar)** — the strict subset of Kio that the `IS_KIO_PRIME` corpus marker asserts about a source file. This is what [`prime.md`](prime.md) commits to; codegen runs against this subset.
+1. **[Kio' grammar](#kio-grammar)** — the strict subset of Kio specified by [`prime.md`](prime.md); codegen runs against this subset.
 2. **[Kio surface extensions](#kio-surface-extensions)** — everything the full surface ([`language.md`](language.md)) adds on top of Kio'. Each surface form desugars to Kio' (or runs an elaborator pass that elaborates to Kio') before reaching codegen; see the prose pages for the per-form desugaring.
 3. **[Package files](#package-files)** — the package-root file shapes, described in [`package.md`](package.md). A package file (`<name>.pkg.kio`) is an independent file shape: it starts with `package <name>;`, admits optional `build` and `bridge { … }` blocks in either order; the latter contains module-path globs that select which modules form the package's host boundary. There is no separate build-file shape. A dependency-declaration file (`<local>.dep.kio`) is a second package-root file shape: it starts with `dependency <local>;` and names one cross-package dependency. A dependency lock file (`<local>.lock.kio`) starts with `lock <local>;` and pins the commit a remote `git` dependency's `ref` resolved to.
 
@@ -68,7 +68,7 @@ The Kio' grammar covers the **regular-module** file shape — every `*.kio` file
 
 **Comment markers require trailing whitespace.** A comment marker — `//` (line comment) or `///` (doc-comment line) — must be followed immediately by whitespace, end-of-line, or end-of-file. A non-whitespace character flush against the marker is a lex error: `//foo`, `///bar`, and `//=` are all rejected, with no exception for alphanumeric or underscore characters. In particular a fourth slash (`////`, `////////`) is rejected — four or more slashes are **not** a section ruler. This reserves the whole `//…` operator family (`//!`, `//?`, `//=`, …) for future syntax (see [§ Lexical structure (Kio surface)](#lexical-structure-kio-surface) for the matching `op`-pattern reservation).
 
-**Doc-comment lines (`///`).** A line whose first non-whitespace characters are `///` followed by whitespace, end-of-line, or end-of-file is a doc-comment line. It is lexer trivia (like `//`) but carries its payload to the parser. Doc-comment lines attach to the immediately following top-level declaration (see `DocAttached` in [§ Productions (Kio')](#productions-kio)); a `///` block before an `import` clause is a parse error.
+**Doc-comment lines (`///`).** A line whose first non-whitespace characters are `///` followed by whitespace, end-of-line, or end-of-file is a doc-comment line. It is lexer trivia (like `//`) but carries its payload to the parser. Doc-comment lines attach to the immediately following top-level declaration (see the `DocBlock?` prefix of `Item` in [§ Productions (Kio')](#productions-kio)); a `///` block before an `import` clause is a parse error.
 
 ### Productions (Kio')
 
@@ -200,7 +200,7 @@ FnExpr            ::= '.' FnSignature ('->' Type)? Block
 - `RecursiveNewtype` is the singleton recursive-data spelling. Its `rec` follows visibility (`pub rec newtype`); a self-recursive newtype requires it, while a marker on an acyclic newtype is rejected as redundant. An ordinary `Newtype` has no own-head or later-declaration scope.
 - `TypeRecGroup` is capability-free and has no group-level visibility. It contains at least two ordinary `type` / `newtype` members, with visibility and doc comments attached to each member. The complete member heads are in scope throughout the group. Static validation requires the written group to be exactly one genuinely mutual cyclic component and requires every alias cycle to cross a `newtype` boundary; a one-member, acyclic, multi-component, or alias-only group is rejected. A member does not repeat the singleton `rec` marker.
 - The keyword `'fn'` leads only item declarations. Ordinary declarations and dot-led anonymous functions require at least one type or value group: `fn value[A] { … }` and `.[A] { … }` are admitted alongside `fn value() { … }` and `.() { … }`. No value group is implied by a type-only signature. `host fn`, `RecFnDef`, and a written `Equiv` signature instead use `ValueSignature`, which requires at least one value group. Expression position does not reserve `fn`.
-- A module's `import` clauses all precede its items in one flat run (`ModuleDecl Import* Item*`); there is no `import`-block split. `import m(X);` creates a `→ m` import edge wherever it sits. See [`language.md` § Module cycles](language.md#module-cycles).
+- A module's `import` clauses all precede its items in one flat run (`ModuleDecl Import* Item*`); there is no `import`-block split. `import m(X);` creates a `→ m` import edge wherever it sits. See the module-cycle rule in [`language.md` § Module system](language.md#module-system).
 - `HostType` and `HostFn` are opaque, signature-only **host declarations** — a `host type` is a nominal type the host supplies, a `host fn` a function whose body the host supplies. They are ordinary module items (not a special block), are always public, and obey ordinary lexical scoping: another module reaches a `host` item through a plain `import`, exactly like any other `pub` item. `host` is a contextual keyword (see § Contextual keywords above). A `host type`'s optional `role(...)` annotation records its literal-admission metadata (see [`language.md` § Literals](language.md#literals)); `role(bool)` also participates in [condition-type selection](language.md#conditionals). `TypeParamList` and `RoleAnnotation` are individually syntactic components, but host type parameters must be unstarred kind-`*` binders and are semantically mutually exclusive with `RoleAnnotation`: a role-bearing `host type` has no type parameters. Violating either restriction is a type error. The optional `{ owned }` block remains accepted and formatted for source compatibility, but selects no alternate representation: the Rust backend renders every `role(str)` facade in owned form at every occurrence (see [`backends/rust.md`](backends/rust.md)). A `host fn`'s value parameters carry the same named, annotated `SignatureParam` shape as an ordinary `FnDef`, and an omitted `-> Type` result defaults to `.`. This is a fixed Unit default, not inference. `pub host` / `host pub` are admitted but redundant — there is no private host item. Host items are part of Kio': they appear in the boundary AST and reduce as opaque primitives. Which modules' host items reach the host is selected by the package file's `bridge` block (see [§ Package files](#package-files)).
 
 The `IS_KIO_PRIME` corpus marker (see [`test-data/README.md`](../test-data/README.md)) asserts that every regular-module file in a case parses against the Kio' productions above. The corpus check `ci/checks/orchestrators/golden-tests.sh` verifies acceptance via the standalone `kio-prime-check` tool under [`ci/infra/kio-prime-check-rs/`](../ci/infra/kio-prime-check-rs/).
@@ -214,7 +214,7 @@ Kind              ::= '*'                                 (* the kind of ordinar
                     | '*' '→' Kind                        (* a type-level function, right-associative *)
 ```
 
-So `*` is the kind of a fully-applied type (`String`, `(A | B)`, `Box(A)`), `*→*` is the kind of an arity-1 constructor (`Box`, `List`, a `[*F]` binder), `*→*→*` is the kind of an arity-2 constructor (`Either`, `Result`, a `[**G]` binder), and so on. The chain is right-associative: `*→*→*` parses as `*→(*→*)`. There are **no kind variables** and **no higher-order kinds** — the domain of every arrow is `*`, never another arrow. This keeps the kind language a closed, finite, structurally-decidable lattice (see [`prime.md` § Kio' as Church-style fragment of System F-ω](prime.md#kio-as-church-style-fragment-of-system-f-ω)).
+So `*` is the kind of a fully-applied type (`String`, `(A | B)`, `Box(A)`), `*→*` is the kind of an arity-1 constructor (`Box`, `List`, a `[*F]` binder), `*→*→*` is the kind of an arity-2 constructor (`Either`, `Result`, a `[**G]` binder), and so on. The chain is right-associative: `*→*→*` parses as `*→(*→*)`. There are **no kind variables** and **no higher-order kinds** — the domain of every arrow is `*`, never another arrow. Each kind is a finite chain, and equality is decided by comparing those chains structurally (see [`prime.md` § Kio' as Church-style fragment of System F-ω](prime.md#kio-as-church-style-fragment-of-system-f-ω)).
 
 The **binder-annotation surface** encodes a kind as a run of leading `*` characters before the binder name inside a `TypeBinderGroup`. The star count `n` is the number of arrows:
 
@@ -280,22 +280,25 @@ LiteralAliasValue ::= INT_LIT | FLOAT_LIT | STR_LIT | BoolLit
 ElaboratorItem ::= Vis? 'elab' IDENT ':' Type ElaboratorBody
 ElaboratorBody ::= '{' SemiEntries<ElaboratorEntry> '}'
 ElaboratorEntry ::= ElaboratorCaptures | ElaboratorImpl | TrailingBlockDecl
-ElaboratorImpl ::= 'impl' ValuePath
-                 | 'impl' '(' 'fills' ')' ValuePath
-ElaboratorCaptures ::= 'captures' (CapturePath | '(' CapturePath (',' CapturePath)* ','? ')')
+ElaboratorImpl ::= 'impl' GroupedValuePath
+                 | 'impl' '(' 'fills' ')' GroupedValuePath
+ElaboratorCaptures ::= 'captures' (GroupedCapturePath | '(' GroupedCapturePath (',' GroupedCapturePath)* ','? ')')
 TrailingBlockDecl ::= 'trailing' BlockExposure IDENT?
 BlockExposure  ::= 'product' | 'thunk' | 'sequence'
 CapturePath    ::= IDENT ('.' IDENT)*
+GroupedCapturePath ::= CapturePath | '(' GroupedCapturePath ')'
+GroupedValuePath ::= ValuePath | '(' GroupedValuePath ')'
+OptionalCallable ::= ValuePath | '(' ')' | '(' OptionalCallable ')'
 
-RecItem        ::= Vis? 'rec' '(' ValuePath ')' RecFnDef                 (* exact one-member braced expansion; at most one visibility total — before `rec` (fmt-canonical) or on the fn *)
-                 | 'rec' '(' ValuePath ')' '{' SemiEntries<RecFnDef> '}' (* grouping braces carry no visibility; each member does *)
+RecItem        ::= Vis? 'rec' '(' GroupedValuePath ')' RecFnDef                 (* exact one-member braced expansion; at most one visibility total — before `rec` (fmt-canonical) or on the fn *)
+                 | 'rec' '(' GroupedValuePath ')' '{' SemiEntries<RecFnDef> '}' (* grouping braces carry no visibility; each member does *)
 RecFnDef       ::= Vis? 'fn' IDENT ValueSignature ('->' Type)? Block
 
 TypeRecMember += DocBlock? Vis? 'labels' LabelsBody
 
 Op             ::= Vis? 'op' OpBody
 OpBody         ::= OpPattern '{' SemiEntries<OpEntry> '}'                 (* fixed arity only *)
-OpEntry        ::= 'impl' ValuePath                                      (* exactly once *)
+OpEntry        ::= 'impl' GroupedValuePath                               (* exactly once *)
 OpPattern      ::= OpPatternStep+                                       (* must include >= 1 FixedOpToken *)
 OpPatternStep  ::= OpPart
                     | '(' OpPart+ ')'                                      (* lenient-grouping marker; doesn't nest *)
@@ -308,11 +311,11 @@ VaropOpen         ::= OpToken                                               (* o
 VaropClose        ::= OpToken                                               (* reverse OPEN and replace each `[` with `]` *)
 VariadicOperator ::= Vis? 'varop' VaropHead VariadicBody
 VariadicBody      ::= '{' SemiEntries<VariadicEntry> '}'
-VariadicEntry     ::= VariadicPrimary | 'finalize' ValuePath
-VariadicPrimary   ::= 'foldl' ValuePath ValuePath      (* step, nullary base *)
-                   | 'foldr' ValuePath ValuePath      (* step, nullary base *)
-                   | 'foldl1' ValuePath ValuePath     (* step, unary first-element seed *)
-                   | 'foldr1' ValuePath ValuePath     (* step, unary last-element seed *)
+VariadicEntry     ::= VariadicPrimary | 'finalize' OptionalCallable
+VariadicPrimary   ::= 'foldl' GroupedValuePath GroupedValuePath      (* step, nullary base *)
+                   | 'foldr' GroupedValuePath GroupedValuePath      (* step, nullary base *)
+                   | 'foldl1' GroupedValuePath GroupedValuePath     (* step, unary first-element seed *)
+                   | 'foldr1' GroupedValuePath GroupedValuePath     (* step, unary last-element seed *)
 
 Equiv             ::= 'equiv' IDENT ValueSignature?
                     '{' ';'* Expr (';'+ Expr)+ ';'* '}'                       (* N >= 2 arms *)
@@ -325,6 +328,13 @@ order of trailing-block entries declares block order. The first descriptor is
 unlabelled; every subsequent descriptor has a distinct value-shaped label.
 The variadic body has exactly one primary clause and at most one finalizer,
 in either order; different primary modes are mutually exclusive.
+Grouping a named reference is transparent and may repeat. Required callable
+fields still require a name; `finalize ()` explicitly selects the same absence
+as omitting that optional field. An explicit absence still counts as a field
+for duplicate detection. Captures retain their nonempty-list requirement.
+Immediately after `impl`, exact `(fills)` is the scheduling marker only when
+another callable target follows; `impl (fills)` alone names the ordinary
+callable `fills`. Grouping introduces no calls, lambdas, or evaluated values.
 `foldl` and `foldr` accept an empty literal and invoke a
 nullary base; `foldl1` and `foldr1` require an element and seed from the first
 or last element respectively. Each element is one ordinary expression. The
@@ -402,7 +412,7 @@ A bare `IDENT` or `'_'` (no `: T`) is equivalent to `IDENT : _` / `'_' : _` — 
 
 A `ParamPatternTuple` always carries at least one `ParamPatternElem`; the unary case `(a: A)` is admissible (single-slot product) and shares its leading-`(` and per-element shape with the n-ary form.
 
-Within a value group, `SignatureParam` / `FnSignatureParam` and `ParamPatternElem` each disambiguate from their leading token: `(` is a tuple pattern (bare top, or nested elem); `_` is a wildcard slot; an `IDENT` is followed by either `:` `Type` (regular annotation), `:` `ParamPatternTuple` (as-pattern), or (in the `FnSignatureParam` case) nothing (un-annotated). At the surrounding signature level, `[` starts a single-binder type group and `(` starts a value group. The disambiguation between `IDENT ':' Type` and `IDENT ':' ParamPatternTuple` is one-token lookahead past the `:`: a following `(` whose contents begin with `IDENT ':'` or `'_' ':'` or `(` is a `ParamPatternTuple`; anything else parses as `Type`.
+Within a value group, `SignatureParam` / `FnSignatureParam` and `ParamPatternElem` each disambiguate from their leading token: `(` is a tuple pattern (bare top, or nested elem); `_` is a wildcard slot; an `IDENT` is followed by either `:` `Type` (regular annotation), `:` `ParamPatternTuple` (as-pattern), or (in the `FnSignatureParam` case) nothing (un-annotated). At the surrounding signature level, `[` starts a type-binder group and `(` starts a value group. A type-binder group may contain comma-separated binders; canonical formatting uses adjacent singleton groups. The disambiguation between `IDENT ':' Type` and `IDENT ':' ParamPatternTuple` is one-token lookahead past the `:`: a following `(` whose contents begin with `IDENT ':'` or `'_' ':'` or `(` is a `ParamPatternTuple`; anything else parses as `Type`.
 
 The form `ParamPatternTuple ':' Type` — pinning an outer annotation onto a destructuring pattern — is **not** admissible. The pattern's slot types already constitute the product type; an outer annotation would be redundant. Parsers reject the form with a pointer to the corresponding `IDENT ':' ParamPatternTuple` (if the user meant the as-pattern) or to the bare `ParamPatternTuple` (if the user meant the destructuring alone).
 
@@ -568,7 +578,7 @@ ExprSuffix += DotSpliceSuffix | OperatorTail
 ExprPostfix += LeftCallSplice ExprSuffix*
 
 DotSpliceSuffix   ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
-DotSpliceCallee   ::= IDENT ('.' IDENT)* | IDENT '!'                          (* path; plain function or T.member; or bang-call elaborator *)
+DotSpliceCallee   ::= GroupedValuePath | IDENT '!'                          (* path; plain function or T.member; or bang-call elaborator *)
 LeftCallSplice    ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
 LeftSpliceCallee  ::= LeftSplicePathCallee
                    | IDENT '!' NonemptyCallArgList?
@@ -617,7 +627,7 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
 - A braced label-value prefix is parenthesized, as in `outer!({field = value}) { body }`.
 - `rec(loop)` items and `recur` calls are surface-only. Groups lower to state-packet `newtype`, ordinary `fn`, closure, and call forms before Kio'; generated packets use `rec newtype` or one minimal bare `rec { ... }` type group when their payload graph is cyclic. `rec labels` likewise preserves genuine recursive components through those ordinary Kio' declarations. The capability-free data forms are not recursive-function syntax. A recursive function call uses `recur`; `poly` marks a type-changing call, `cont` marks a non-tail call, and `escape` marks a call captured across an ordinary closure boundary. `escape` entails `cont`; both may be written, while canonical formatting omits the entailed `cont`. Each annotation must satisfy the contextual rules in [`language.md` § Recursive functions](language.md#recursive-functions).
 - The parser recognizes `OperatorTail` only after parsing an `Expr`; `PrefixOpExpr` matches before parsing an `Expr` when the next op-token run begins a pattern registered in the prefix keyspace (per [`language.md` § Operators](language.md#operators)). An item's expression scope contains exactly imported operators and local `op` or `varop` declarations preceding that item, including when a function or recursive-group body is parsed lazily. A leading fixed-operator token that does not begin a registered prefix pattern is a parse error. Variadic delimiter recognition is structural; its binding is checked during resolution and lowering. An independent lexer-level carve-out applies to `-` on a numeric literal: the lexer (not the parser) consumes the `-` as part of `Literal` when (a) the `-` sits **flush against an ASCII digit** and (b) the prior token is not expression-ending. Identifiers, literals, `)`, and `}` end expressions; start-of-file and every `OpToken`, including `]`, are expression-starting. A flush `-N` after an op-token therefore fuses into a negative literal (`1 + -2` is `add(1, -2)`). A numbered placeholder reference is an ordinary identifier, so `x1 - 2` and `x1 -2` use the same expression-ending rule as other value names. Whitespace in `- 40` keeps the `-` separate. The same rule applies to float-shaped literals.
-- A surface program that parses against the Kio' productions but not the Kio surface productions (i.e., one that uses no surface forms beyond what Kio' admits) is the same source either way — the surface grammar is a strict superset.
+- A program that parses against the Kio' productions also parses against the full Kio grammar with the same meaning. It needs none of the additional surface productions; the full grammar is a strict superset.
 - **Parser-contextual structural peeling.** The maximal-run lexer may absorb `->`, `>`, `!`, `[`, or `]` into a longer `SymbolRun`. At a grammar position that requires one of those structural delimiters, the parser peels that leading prefix and leaves the residual as the next token. Forall binder parsing is therefore compact across kind stars and adjacent groups (`[*F]`, `[A][*F]`, `.[*F]`). The dot-splice tokens `'.>'`, `'.>>'`, `'.<'`, and `'.<<'` remain exact greedy runs. No fused-run carving happens at user-`op`, operator-expression, or operator-import positions; those consume each maximal run whole.
 - **`NeutralBind` vs user-defined `<-` op.** The `<-` token remains an ordinary operator token in expressions. Only a `let`-led binder inside a neutral block treats it as a structural connective. Ordinary function and lambda blocks accept only `=` after a let binder. A selected sequence exposure admits `<-`; product and thunk exposures reject it during block validation. No context-sensitive lexing or provider lookup decides the parse.
 
@@ -655,7 +665,7 @@ Notes:
 - After the required header, a package file admits at most one `build` block and at most one `bridge` block, in either order. Other entries, including a stray `env` / `export`, are parse errors.
 - A package file declares no host items and no `import` clauses. The host boundary lives in modules: a module declares what it needs from the host with `host type` / `host fn` items and what it offers with ordinary `pub` items (see [§ Productions (Kio')](#productions-kio)). The package file only names, with module globs, which modules participate.
 - `BridgeBlock` is a `;`-separated list of module-path globs spelled the same way a `ModulePath` is, extended with `*` (matches one path segment) and `**` (matches a whole subtree, zero or more segments) following shell glob semantics. It selects **modules**; from each matched module, every `pub host` item becomes a host requirement (the env — what the host must supply), every other public callable becomes a host-invocable entry (an export), and public type declarations contribute the type surface those signatures use. A plain-public `newtype` contributes its nominal type; its constructor and projector contribute independent host operations only when the corresponding member is also plain `pub`. A private or `pub(path)` outer newtype contributes no host surface regardless of its member markers. Entries keep their module namespace; there is no rename. A glob that matches no module is a build error. The module-completeness and type-closure rules that keep the exposed contract self-contained are stated in [`package.md` § The bridge block](package.md#the-bridge-block).
-- `pub` is not admissible on package-file items; the package file has no items beyond `bridge` globs.
+- `pub` is not admissible on package-file entries. Only the optional `build` and `bridge` blocks follow the required package header.
 
 ### Build block
 
@@ -668,7 +678,7 @@ CacheDecl         ::= 'cache' BlockFieldValue
 DocsDecl          ::= 'docs' '{' SemiRunEntries<DocsKey> '}'
 DocsKey           ::= ('md' | 'support' | 'md_out' | 'html') BlockFieldValue
 TargetBlock       ::= 'target' TargetHeader '{' SemiRunEntries<TargetKey> '}'
-TargetHeader      ::= BackendId | '(' BackendId ',' STR_LIT ')'
+TargetHeader      ::= BackendId | '(' BackendId ',' ConfigString ')'
 BackendId         ::= IDENT ('-' IDENT)*                                       (* a bare kebab-case backend id, e.g. rust, js, kio-prime *)
 TargetKey         ::= IDENT BlockFieldValue
 ```
@@ -676,19 +686,23 @@ TargetKey         ::= IDENT BlockFieldValue
 Notes:
 
 - The leading tokens `build`, `cache`, `docs`, and `target` are contextual keywords inside the build block; elsewhere in a package file they are ordinary identifiers unless another production gives them meaning.
-- The `CacheDecl` is **optional** and may appear at most once, anywhere among the build entries. When **omitted** its value defaults to `()` (caching disabled); `kio fmt` inserts the `cache ()` entry, followed by `;` only when another build entry follows (see [`style.md`](style.md)). A `STR_LIT` cache value names a filesystem path (relative to the package root, or absolute); `()` opts caching out. A `cache` value that is neither a `STR_LIT` nor `()` is a parse error.
-- The `DocsDecl` is **optional**, declared at most once, anywhere among the build entries. Its keys are unordered: `md` is required; `support` is repeatable; `md_out` and `html` are optional and may each appear at most once. Every `DocsKey` value is a `STR_LIT` filesystem path. See [`package.md` § Build target files](package.md#build-target-files).
+- The `CacheDecl` is **optional** and may appear at most once, anywhere among the build entries. Omission and `cache ()` both disable caching; formatting preserves either spelling (see [`style.md`](style.md)). A `ConfigString` cache value names a filesystem path (relative to the package root, or absolute). Any other value kind is a parse error.
+- The `DocsDecl` is **optional**, declared at most once, anywhere among the build entries. Its keys are unordered: `md` is required; `support` is repeatable; `md_out` and `html` are optional and may each appear at most once. Every `DocsKey` accepts a `ConfigString` filesystem path; the optional fields also accept `ConfigUnit`, selecting the same output path as omission. See [`package.md` § Build target files](package.md#build-target-files).
 - A `BackendId` is a **bare identifier** naming a backend (`rust`, `js`, `kio-prime`, …). The hyphen-folding lets a kebab-cased backend id like `kio-prime` spell as a single id; each `-` and the following `IDENT` must be flush. In a bare header, the backend spelling is also the target name. A paired header supplies a distinct string name: `target (js, "web")`. The pair is backend first and is not an expression. Target names must be unique within the block, including collisions between bare and paired headers; duplicates are a build error (exit code `40`). Different names may select the same backend. Unknown backends are build errors, not parse errors.
-- Every target-key *value* is a `STR_LIT` unless the backend spec states otherwise. Unknown keys are a build error.
+- Host-target `namespace` accepts `ConfigString` or `ConfigUnit`; the latter selects the same package-derived namespace as omission. Rust's `thread_safety` accepts the bare choices `send`, `sync`, `send_sync`, or `ConfigUnit`, with transparent grouping around a choice. Strings are rejected for `thread_safety`. All other target-key values are `ConfigString`. Unknown keys and unknown named choices are build errors.
 
 The build block's field-value grammar:
 
 ```ebnf
-BlockFieldValue   ::= '(' ')' | STR_LIT | NUM_LIT | IDENT       (* . | string | number | bare word; true/false lex as IDENT *)
+BlockFieldValue   ::= '(' ')' | STR_LIT | NUM_LIT | IDENT | '(' BlockFieldValue ')'
+ConfigString      ::= STR_LIT | '(' ConfigString ')'
+ConfigUnit        ::= '(' ')' | '(' ConfigUnit ')'
 NUM_LIT           ::= INT_LIT | FLOAT_LIT
 ```
 
 A field value is the unit literal `()`, a string literal, a number literal, or a bare word — booleans arrive as the bare words `true` / `false`, which lex as `IDENT`. Each field validates which of these kinds it accepts.
+Repeated grouping is transparent and does not expand a field's accepted value
+kinds. Commas, calls, and operators are not part of this scalar grammar.
 
 ### Dependency file (`*.dep.kio`)
 
@@ -700,7 +714,7 @@ DependencyEntry   ::= SourceBlock | RehostStmt | RetypeStmt
 DependencyDecl    ::= 'dependency' IDENT ';'                    (* IDENT = filename stem = dependency local name; lowercase value name *)
 
 SourceBlock       ::= 'source' '{' SemiRunEntries<SourceField> '}' ';'?
-SourceField       ::= ('path' | 'git' | 'ref') STR_LIT
+SourceField       ::= ('path' | 'git' | 'ref') ConfigString | 'path' ConfigUnit
 RehostStmt        ::= 'rehost' ModulePath 'to' ModulePath ';'   (* rebind the first module's host items onto the second (consumer) module *)
 RetypeStmt        ::= 'retype' RetypePath 'to' RetypePath ';'   (* remap the first module's newtypes onto the second's same-named newtypes *)
 RetypePath        ::= ModulePath ( '.' IDENT )?                 (* trailing `.Name` (a TYPE name) selects one newtype; same name on both sides *)
@@ -715,6 +729,7 @@ Notes:
 - The **`git`** key is a `STR_LIT` clone URL (`file://`, `https://`, `git@…`, …) and the **`ref`** key is a `STR_LIT` revision designator git resolves uniformly — a branch name, a tag, or a commit SHA. Both keys are required when either appears; a `git` without a `ref`, a `ref` without a `git`, an empty value, a duplicate, or a non-string value is a parse error.
 - With `git` and `ref`, **`path`** instead selects an exact package manifest relative to the checkout. It is a unique `STR_LIT` using relative `/`-separated syntax: rooted paths, drive-qualified paths (including `C:relative`), and backslashes are parse errors. `.` and `..` components are syntactically admitted; lookup, file-kind and resolved checkout-containment checks are dependency errors, as specified in [`package.md` § Dependency files](package.md#dependency-files).
 - Any key other than `path`, `git`, and `ref` is rejected as unknown.
+- A Git source's `path ()` is equivalent to omitting `path`; a local source requires a string path. Grouping is admitted around each string or unit value. The formatter preserves omission and explicit `path ()` without performing discovery.
 - A **`rehost`** statement is `rehost <from> to <to>;`, where `<from>` and `<to>` are each a `/`-separated module path with no trailing item. `<from>` names a re-rooted dependency module (its leading segment is the dependency's local name); `<to>` names a consumer module that provides replacements for `<from>`'s host items. A dependency file may carry any number of `rehost` statements in any order relative to `source` and `retype`; their source order is not significant (the formatter sorts them). The rebinding semantics — rewriting `<from>`'s `host` items in place into forwarding aliases / wrappers onto `<to>` during materialization — are in [`package.md` § Dependency files](package.md#dependency-files).
 - A **`retype`** statement is `retype <from> to <to>;`, where `<from>` and `<to>` are each a `/`-separated module path optionally followed by a trailing `.<Name>` selecting one `newtype` (a **TYPE** name). The trailing `.<Name>`, when present, must appear on **both** sides with the **same** name (the per-type form); omitting it on both sides remaps every `newtype` under the module. `<from>` names a re-rooted dependency module (leading segment = the dependency's local name); `<to>` names the counterpart module — another dependency's module or one of the consumer's own — holding the same-named `newtype`s. A dependency file may carry any number of `retype` statements in any order relative to `source` and `rehost`; their source order is not significant (the formatter sorts them, after the `rehost` group). Those statements must select pairwise-disjoint exact source newtypes: after expanding a module-form statement over the newtypes its source module actually declares, no exact `(module, newtype name)` may be selected again by another module-form or per-type statement, even when the second statement names the same target. The remap semantics — removing `<from>`'s matched `newtype`s and importing the same names from `<to>` during materialization, gated on a same-named, structurally-congruent counterpart — are in [`package.md` § Dependency files](package.md#dependency-files).
 
@@ -727,17 +742,17 @@ LockFile          ::= LockDecl ResolvedBlock
 LockDecl          ::= 'lock' IDENT ';'                          (* IDENT = filename stem = dependency local name; lowercase value name *)
 
 ResolvedBlock     ::= 'resolved' '{' SemiRunEntries<ResolvedKey> '}' ';'?
-ResolvedKey       ::= 'git'    STR_LIT                          (* the clone URL the lock pins *)
-                    | 'ref'    STR_LIT                          (* the revision designator requested *)
-                    | 'path'   STR_LIT                          (* optional repository-relative package manifest *)
-                    | 'commit' STR_LIT                          (* the commit SHA the ref resolved to *)
-                    | 'sig'    STR_LIT                          (* the dependency's contract-surface digest at the commit *)
+ResolvedKey       ::= 'git'    ConfigString                     (* the clone URL the lock pins *)
+                    | 'ref'    ConfigString                     (* the revision designator requested *)
+                    | 'path'   (ConfigString | ConfigUnit)      (* optional repository-relative package manifest *)
+                    | 'commit' ConfigString                     (* the commit SHA the ref resolved to *)
+                    | 'sig'    ConfigString                     (* the dependency's contract-surface digest at the commit *)
 ```
 
 Notes:
 
 - The file must begin with a `lock <local>;` directive whose `<local>` is the filename stem (for example, `foobar.lock.kio` begins `lock foobar;`). A missing directive or a name that does not match the stem is a parse error. `lock` is a file-shape keyword, a sibling of `dependency`; it is recognized only in this leading position.
-- The `resolved` block declares the required `git`, `ref`, `commit`, and `sig` keys and an optional `path`, each a `STR_LIT`, in any order. A duplicate key, a missing required key, a non-string value, or any other key is a parse error. `path` has the same relative-syntax rules as a Git source's selector. Anything after the `resolved` block is a parse error.
+- The `resolved` block declares the required `git`, `ref`, `commit`, and `sig` keys and an optional `path` in any order. Values are grouped or ungrouped strings, with `path ()` equivalent to omitting `path`. A duplicate key, a missing required key, another value kind, or any other key is a parse error. A string `path` has the same relative-syntax rules as a Git source's selector. Anything after the `resolved` block is a parse error.
 - The `sig` value is the dependency's contract-surface digest at the pinned commit (see [`versioning.md` § Git-dependency contract gate](versioning.md#git-dependency-contract-gate)); it is opaque to the grammar — any `STR_LIT`.
 
 ### Signature file (`*.sig.kio`)

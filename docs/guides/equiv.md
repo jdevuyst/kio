@@ -1,13 +1,18 @@
 # Testing with `equiv`
 
 An `equiv` declaration is a compile-time claim that two or more Kio
-expressions have equivalent residual normal forms. `kio test` typechecks the
-package, partially evaluates every arm without running a host, and compares
-the results. The declaration contributes nothing to emitted package code.
+expressions simplify to the same result. `kio test` typechecks the package,
+simplifies each expression as far as it can without executing host functions,
+and compares what remains. The declaration contributes nothing to emitted
+package code.
 
-Use `equiv` for language-level laws and focused regression claims. Use an
-executable golden or host test when the behavior depends on actual I/O,
+Use `equiv` for laws about your functions, such as an identity or a newtype
+round trip. Use a runtime test in your host when the behavior depends on I/O,
 mutation, a backend's emitted representation, or other host-runtime details.
+
+The examples assume a host-provided `String` and `print` operation. The
+`scope!` used for local statements is an imported library elaborator; see
+[Using libraries](using-libraries.md#the-elaborator-library) for its setup.
 
 <!--kio {harness=equiv placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -54,20 +59,22 @@ equiv local_work[A](value: A) {
 `equiv` has no `pub` form and cannot be called as a value. Its name exists only
 so test output can identify the claim.
 
-## The discharge model
+## How the check works
 
 For each claim, `kio test` works on the fully checked and elaborated Kio' terms:
 
 1. Each value parameter becomes a fresh opaque symbolic atom shared by every
    arm; type parameters are erased.
-2. Each arm is partially evaluated with Kio's β- and ι-reductions.
-3. Evaluation stops at a residual normal form wherever an opaque parameter or
-   host operation prevents further reduction.
-4. The residuals are compared up to α-equivalence, η-equivalence, and
-   structural equality of opaque applications.
+2. Kio simplifies function calls, local bindings, product projections, known
+   sum branches, and newtype wrap/unwrap pairs.
+3. What remains when a symbolic parameter or host operation blocks further
+   simplification is called a **residual normal form**.
+4. Kio compares those results, allowing bound parameters to have different
+   names and recognizing wrappers that simply reconstruct the same value.
+   Host calls compare by the called function and their argument structure.
 
-Kio' is strongly normalizing and confluent, so discharge terminates and does
-not depend on which sensible reduction order an implementation chooses.
+Core simplification terminates, and its result does not depend on the order
+of valid simplification steps. It does not need a host implementation.
 
 ### Fresh symbolic parameters
 
@@ -156,7 +163,10 @@ Rather than getting stuck at `__either__`, the evaluator creates a symbolic
 case split, evaluates both handlers with fresh payload atoms, and compares the
 branches structurally. Nested eliminations distribute through that split.
 
-The double-swap law therefore discharges for every `A | B` value:
+The double-swap law therefore passes for every `A | B` value. This example
+uses the core sum operations, brought into scope with the module-level
+`import __intrinsics__;`: `__either__` selects a branch, while `__left__` and
+`__right__` construct the corresponding sum arms.
 
 ```kio {@equiv}
 fn swap[A][B](value: A | B) -> B | A {

@@ -1,0 +1,11 @@
+module testapi/main;
+
+import testapi/io as io;
+import testapi/iter as iter;
+
+rec(iter.loop_reentry) fn retained() -> . -> . {
+  io.print("construct\n");
+  .() { let _again = recur(escape) retained(); io.print("invoke\n") }
+}
+
+pub fn main() { let callback = retained(); io.print("ready\n"); callback(); callback() }

@@ -172,12 +172,13 @@ Properties:
   side channel. An implementation that caches build artifacts must fold the
   changelog's content hash into the artifact cache key — otherwise a changelog
   edit silently serves a stale artifact.
-- **Excluded from `*.kio` walks.** The artifact's name ends in `.kio` because
-  its contents *are* Kio' syntax, but it is a changelog, not a module. Every
-  command that walks a package's `*.kio` files (check, build, fmt, doc, …)
-  excludes `<pkg>.sig.kio`; treating it as a module would fail the
+- **Excluded from module discovery.** The artifact uses Kio' declaration
+  syntax inside its own changelog file shape, not a regular module. Commands
+  that discover source modules exclude `<pkg>.sig.kio` from that inventory;
+  treating it as a module would fail the
   module-name-coherence rules ([`package.md` § Module-Name
-  Rules](package.md#module-name-rules)).
+  Rules](package.md#module-name-rules)). `kio fmt` recognizes signature files
+  and canonicalizes them through their [own file grammar](#changelog-grammar).
 - **No stored metadata.** The changelog records *what changed at each version*
   and an optional commit message (§ The version-block doc slot) — nothing more.
   In particular it stores **no seal date / time**: git already records when a
@@ -196,6 +197,11 @@ its retained historical declaration does not make it a valid `modify` target. Th
 *active* env and export surfaces — what the compatibility relation compares,
 and what a host implements against — are the replay's result, never a stored
 duplicate.
+
+Each version-local `with` block supplies an immutable **context epoch**: the
+complete declarations and imports used to interpret that version's recursive
+types. A name's most recent change and its current context may come from
+different versions, because unchanged members still need the group's new scope.
 
 For a version with `with`, replay first validates that complete version-local
 declaration context, advances unchanged peers to the new context epoch, and
@@ -416,7 +422,8 @@ Each `with` module section carries the exact `import` clauses needed by its
 retained declarations. Its names are version-local: replay never imports a
 group from a later version or reconstructs one from ambient module
 declarations. A fresh Kio' parse validates the complete group, including one
-genuine SCC, an acyclic alias-only subgraph, strict positivity, and ordinary
+genuine strongly connected component (SCC: every member depends transitively
+on every other member), an acyclic alias-only subgraph, strict positivity, and ordinary
 import resolution. An operation FQN selects only the exact declaration in
 that context; it cannot resolve through an expression, local alias, or
 unqualified candidate search.
@@ -555,10 +562,7 @@ instead:
 kio sig: `app` has no compatibility changelog yet — `kio sig commit` seals the first version
 ```
 
-so the first-time path is reachable without reading the docs. (There is no
-build-time nudge for a sig-less package; discoverability lives in that friendly
-line and in this spec — see § Build-time staleness warning.) The mutating work
-is in subcommands:
+The mutating work is in subcommands:
 
 - **`kio sig stage`** — reconcile the source with the current draft, recording a
   **compatible** delta. The draft is **recomputed as the diff between the last
@@ -683,12 +687,11 @@ deliberately narrow and quiet:
 - a merely **nonbreaking** unrecorded drift is **silent** (it is not a
   correctness concern — only `kio sig status` reports it, as exit `81`).
 
-The warning is **advisory and non-load-bearing**: it never changes the build's
-exit code or output. This is required by open-world — a package without a sig
-builds **identically** to one with a sig, so the changelog can be adopted (or
-dropped) without changing what `kio build` emits. `kio sig status` remains the
-**authoritative, exit-coded CI gate**; the build-time warning is only a nudge so
-an unrecorded break is hard to miss during ordinary iteration.
+The warning is **advisory**: reporting it does not change the command's exit
+code or emitted artifacts. This does not make the changelog artifact-neutral:
+backends that re-emit deprecated host items still consume its history as a
+[build input](#the-signature-artifact-pkgsigkio). `kio sig status` remains the
+**authoritative, exit-coded CI gate** for unrecorded contract changes.
 
 ### Package scope
 

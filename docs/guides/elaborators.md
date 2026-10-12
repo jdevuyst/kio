@@ -5,8 +5,11 @@ typechecked and returns a checked Kio' term to substitute at that call site.
 The declaration defines the source-level call shape; an implementation
 function programs against reflected types and already-checked arguments.
 
-This tutorial builds a small identity elaborator, then expands the pieces an
-elaborator author needs for structural code generation.
+This guide introduces a small identity elaborator and explains the declaration
+and reflection rules. Start with the [language tutorial](../tutorials/language.md)
+for ordinary functions, generic types, sums, and imports. For a complete package
+that generates and tests lets, lambdas, calls, type walks, fills, and blocks,
+follow [Building and testing elaborators](elaborator-authoring.md).
 
 ## A complete checked elaborator
 
@@ -195,6 +198,12 @@ an ABI-shaped function instead. Calls, inline lambdas, and slash-qualified
 package paths such as
 `library/helpers.checked_impl` are rejected in the field.
 
+You can group the whole implementation path or any capture name in parentheses,
+including nested groups. Formatting removes the redundant groups. After `impl`,
+`(fills)` selects the fills schedule only when another target follows:
+`impl(fills) (checked_impl)` uses that schedule, while `impl (fills)` names an
+ordinary function called `fills`.
+
 The path follows ordinary expression source order: a same-module ordinary
 function, host function, or recursive-group member must appear first. The same
 is true of the newtype or identity-alias head used to qualify a constructor or
@@ -227,6 +236,8 @@ For each bang call, the typer first applies the normal call rules: explicit
 type arguments, `_` placeholders, value arguments, and an expected result type
 all constrain those slots. The implementation's private parameter types do
 not change call completion, grouping, partial application, or UFCS placement.
+An exposed arrow or `forall` continues the public call type; parentheses
+around a result type do not create a private implementation boundary.
 It then calls the implementation with:
 
 1. a leading `__Comptime__` proof;
@@ -328,9 +339,9 @@ anchor. If the destination is already known, every candidate checks it. If it
 is open, any candidate whose result is independently determined may establish
 or refine it, and all other candidates must agree. A conflict or a group with
 no determining candidate fails as a non-directional common-result problem. The
-returned checked result does not implicitly fill an open marked target. Because
-the group is exactly the finite authenticated transcript, adding an ambient
-declaration cannot change it.
+returned checked result does not implicitly fill an open marked target. Only
+the relations you append participate; unrelated declarations cannot change
+the group's result.
 
 `__term_specialize__(ct, term, pattern, target)` specializes a provisional
 term's explicit leading type binders by exact structural matching, not
@@ -338,13 +349,12 @@ subtyping or containment, without changing fill state. Its three
 arms are a specialized checked term, unit for a normal structural mismatch,
 and diagnostic text for malformed or underdetermined input.
 
-During marked header staging, the resolved canonical product intrinsic exposes
-its two value operands because its intrinsic classification and exact
-`[A][B](A, B) -> (A & B)` scheme prove their one-to-one order. The compiler still
-completes that original call exactly once. An ordinary function with the same
-type remains one opaque value: its body may reorder, duplicate, or discard the
-arguments. This is a resolved builtin boundary, not behavior attached to a
-user-spellable function name.
+When a marked argument is an explicit tuple, its components' headers are
+available separately. A call to the core product constructor `__pair__` works
+the same way. An ordinary function call remains one value even if it returns
+the same product type: the function may reorder, duplicate, or discard its
+arguments, so its result does not expose the original argument headers. This
+inspection does not evaluate a source argument twice.
 
 ## Reflected types and checked terms
 
@@ -393,6 +403,15 @@ module kiodoc;
 import __comptime__;
 
 __INSERT_CODE_HERE__
+
+pure fn make_identity_impl(ct: __Comptime__, typ: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  let identity = identity_term(ct, typ);
+  __term_call__(ct, __term_type__(ct, identity), identity, value)
+}
+
+elab make_identity : [A] A -> A { impl make_identity_impl }
+
+pure fn exercise(value: .) -> . { make_identity!(value) }
 -->
 
 ```kio {@elaborator_helper}
@@ -407,6 +426,11 @@ pure fn identity_term(ct: __Comptime__, typ: __Type__) -> __Checked_term__ {
 the callback. If `fn_type` is not a one-parameter function with the callback's
 result type, construction cannot yield a valid term. `__term_call__` applies
 the same discipline to a callee and argument packet.
+
+The checked example invokes this helper through an elaborator that constructs
+an application of the generated function. The
+[worked construction lesson](elaborator-authoring.md#construct-a-let-a-lambda-and-a-call)
+shows the implementation, caller, and behavior test together.
 
 Use `__term_type__(ct, term)` to inspect a checked argument's exact type.
 Prefer the supplied folds over reflected products, sums, arguments, arities,
@@ -457,46 +481,41 @@ pure fn checked_impl(
   , ct: __Comptime__
   , i32_type: __Type__
   , id_i32_term: __Checked_term__
-  , source: __Type__
   , value: __Checked_term__
-  , target: __Type__ | .
-  ) -> __Checked_term__ { value }
+  ) -> __Checked_term__ {
+  let one = __type_arity_succ__(ct, __type_arity_zero__(ct));
+  let fn_type = __type_arrow__(ct, i32_type, one, i32_type);
+  __term_call__(ct, fn_type, id_i32_term, value)
+}
 
 __INSERT_CODE_HERE__
+
+pure fn exercise(value: I32) -> I32 { checked!(value) }
 -->
 
 ```kio {@captures}
-pub elab checked : [Source] Source -> [Target] Target { captures (I32, id_i32); impl checked_impl }
+pub elab checked : I32 -> I32 { captures (I32, id_i32); impl checked_impl }
 ```
 
 The capture list prepends implementation parameters in exactly that order. A
 captured type contributes a quoted `__Type__`; a captured value contributes a
 quoted `__Checked_term__`. Capturing does not execute the declaration during
 elaboration, so host types and host functions may be captured for insertion
-into generated runtime code. The corresponding ABI starts:
+into generated runtime code. Here the implementation builds a call to the
+captured `id_i32` and the checked example invokes `checked!` on an `I32` value.
+Its ABI is:
 
-<!--kio {harness=capture_abi placeholder="__INSERT_CODE_HERE__"}
-module guide/capture_abi;
-
-import __comptime__;
-
-__INSERT_CODE_HERE__
--->
-
-```kio {@capture_abi}
+```text
 pure fn checked_impl(
 , ct: __Comptime__
 , i32_type: __Type__
 , id_i32_term: __Checked_term__
-, source: __Type__
 , value: __Checked_term__
-, target: __Type__ | .
-) -> __Checked_term__ { value }
+) -> __Checked_term__
 ```
 
-This illustrative body returns the reflected source term. It validates the
-ABI shape, not an arbitrary source-to-target coercion; the real body depends
-on the elaborator's purpose.
+For a complete captured polymorphic function and an invoked type application,
+see [the template lesson](elaborator-authoring.md#reuse-an-ordinary-polymorphic-function-as-a-template).
 
 Captures are explicit dependency injection for generated code. Their visibility
 must be at least that of the elaborator because generated code may retain them.
@@ -548,59 +567,58 @@ followed by the current fuel and input. Every path must return the same
 
 The evaluator measures the root fuel and checks every recursive callback:
 
-- the next fuel must have a recursive measure strictly below both the current
-  measure and the stored root measure; evaluator-created callbacks maintain
-  `current ≤ root`, while both bounds are checked independently for a callback
-  constructed directly through the evaluator API;
+- the next fuel must be strictly smaller than the current fuel and the
+  initial fuel; passing the same-sized value is rejected even if it is a
+  different object or contains a reflected handle;
 - the helper's three operands and the callback's two operands may be written
   as flattened arguments or as one right-folded product packet;
-- after all call operands are evaluated, every fresh invocation uses the
-  initial fuel measure and starts an independent callback root, including
-  nested calls through the same helper and higher-order use;
-- saved callbacks retain their immutable bounds after the creating invocation
-  returns, and sibling applications do not consume each other's bounds;
-- on a callback edge, equal-measure fuel is rejected regardless of value
-  identity, representation, or whether it contains a projected handle;
+- each fresh invocation starts its own descent from its initial fuel,
+  including nested or higher-order calls;
+- a saved recursive callback keeps its original bounds. Calling it on one
+  branch does not reduce the fuel available to a sibling branch;
 - unit, literals, finite constructor trees with measurable children,
   structurally determined reflection handles, checked terms, arities, and
   diagnostic text are measurable;
-- an initial projected type uses its authenticated alias-unfolded structural
-  carrier as a conservative lower bound; its exact scoped snapshot is
-  retained for whole-handle reflection and fills, while an unknown outer
-  carrier is not measurable and a direct projected value used for recursion
-  must be complete;
-- when an ordinary finite constructor carries a projected field, a known outer
-  structure gives that field the same conservative size in both measurements;
-  an unknown outer field still makes the constructor unmeasurable;
+- a reflected type with a known outer structure can supply an initial size
+  even if some parts remain open. The measure unfolds aliases and counts only
+  established structure; reflection and fills still see the original scoped
+  type. An unknown outer structure cannot supply fuel, and a projected value
+  passed directly to the recursive callback must be complete;
+- a finite constructor containing a projected field uses that field's known
+  outer structure consistently in its size. An unknown outer field makes the
+  whole constructor unmeasurable;
 - a determined child can remain measurable even when its parent is open;
 - closures, opaque atoms, stuck terms, case splits, and recursive callbacks are
   not valid fuel.
 
-Unmeasurable initial or recursive fuel, a callback that does not strictly
-descend from its current fuel or stay below its stored root is a totality failure
-(exit code `16`), with root/current/next measures included when available. If
-both callback bounds fail, the diagnostic reports the current edge; the
-root-specific diagnostic applies only when the current edge descends but the
-root bound fails. Once an evaluated edge fails, an enclosing let, sequence,
-callback, or ordinary function cannot discard the failure; that compile-time
-evaluation reports its first totality failure. This check is what permits
-recursive elaborator code without weakening compile-time termination.
+Unmeasurable fuel or a non-descending callback is a totality failure (exit code
+`16`). The diagnostic includes initial, current, and next measures when
+available so you can find the failing edge. Ignoring the callback's result
+does not erase the failure: compile-time evaluation reports its first failed
+edge. The size check permits recursive elaborator code while ensuring that
+every recursive path terminates.
 
-The generated [Builtin modules](builtin-modules.md#structural_recur) reference
-contains the complete helper scheme and a checked countdown example.
+The [reflected product walk](elaborator-authoring.md#walk-an-actual-reflected-product-tree)
+shows shrinking type fuel separately from generated-term state, with an invoked
+transformation and a rejected non-descending edge. The generated
+[Builtin modules](builtin-modules.md) reference contains the
+complete helper scheme and a checked countdown example.
 
 ## From implementation to Kio'
 
-Successful evaluation returns one checked term (and, in marked mode, a fill
-context consumed by the typer). The typer records the completed term in a
-boundary-local elaboration table; substitution swaps it for the bang call at
-the Lowered → Prime boundary. The assembled package is then validated as
-standalone Kio', including each ordinary function's retained `pure` promise.
-Neither the bang syntax, implementation mode, reflected values, fill context,
-transcript, executable compile-time implementation, nor hidden typer state
-crosses that boundary. Backends receive only ordinary, validated Kio'.
+Successful evaluation returns one checked term (and, in marked mode, the fill
+context used to finish the call's typing). That term replaces the bang call.
+The compiler then checks the resulting package as standalone Kio', including
+the caller's `pure` promise. This second check ensures that generated code
+obeys the same rules as handwritten core code.
 
-For reusable implementations, read the checked
+Reflection, fills, and the elaborator action run only at compile time.
+Compilation continues from ordinary, validated Kio' code, without a runtime
+invocation of the elaborator. To inspect that result, follow
+[Debugging with Kio'](debugging-with-kio-prime.md).
+
+For an authoring and verification progression, use
+[Building and testing elaborators](elaborator-authoring.md). For reusable implementations, read the checked
 [`elab` library](using-libraries.md#the-elaborator-library) alongside this
-tutorial. The exhaustive helper contracts remain in
+guide. The exhaustive helper contracts remain in
 [Builtin modules](builtin-modules.md).

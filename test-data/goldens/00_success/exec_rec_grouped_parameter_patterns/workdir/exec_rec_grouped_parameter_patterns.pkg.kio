@@ -1,8 +1,6 @@
 package exec_rec_grouped_parameter_patterns;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

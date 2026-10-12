@@ -46,7 +46,7 @@ jobs:
           cache: false
       - name: Verify packaged crate without publishing
         working-directory: kio-rs
-        run: sh ../ci/cargo.sh publish --dry-run --locked
+        run: sh ../ci/package-kio.sh publish --dry-run --locked
   website:
     needs: container
     uses: ./.github/workflows/build-release-site.yml

@@ -1,8 +1,6 @@
 package later_newtype_member_from_function_body;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

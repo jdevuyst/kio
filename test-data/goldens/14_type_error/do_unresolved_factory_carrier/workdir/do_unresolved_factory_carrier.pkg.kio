@@ -1,8 +1,6 @@
 package do_unresolved_factory_carrier;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

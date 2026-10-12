@@ -72,6 +72,17 @@ is `ci/all.sh SAMPLE_IMPL`; changed behavioral goldens need exact anchored
 full-matrix coverage. A release alone does not justify a repository-wide full
 implementation matrix. Run the version and license checks as well.
 
+Package and publish `kio-lang` through
+`sh ci/package-kio.sh package|publish <Cargo flags>` from the repository root.
+This shared entry regenerates the ignored manual snapshot before Cargo's file
+inventory and guards tracked manual sources plus Cargo's exact packaged source
+inventory. Only its two fresh ignored manual files receive a dirty exception;
+Cargo's recorded source metadata is not rewritten.
+Inspect the actual `.crate` manual contents against canonical source bytes and
+verify a Git-free, sibling-free build. Ordinary checkout builds require no
+manual preparation. The helper does not grant publication authority or alter
+the preparation-before-immutable-publication order.
+
 Record the candidate's full commit ID, version, intended tag and channels, source
 tree, and artifact provenance in an untracked release receipt. Subsequent source
 changes require a new candidate and renewed affected verification.

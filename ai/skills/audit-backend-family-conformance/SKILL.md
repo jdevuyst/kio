@@ -22,6 +22,11 @@ under [`emit.md` § Backend quality and implementation cost](../../topics/emit.m
 Keep semantic conformance distinct from adoption of a speed technique; compare
 shared owners and actual consumers rather than requiring identical mechanisms.
 
+For lazy hosts or emitted lazy representations, include body and facade demand
+under [Strict evaluation on lazy targets](../../topics/emit.md#strict-evaluation-on-lazy-targets).
+Do not infer pure-evaluation conformance from ordered effects or a family label;
+keep lawful optimization and unintended retention distinct.
+
 ## 1. Family declaration
 
 For each `specs/backends/*.md` other than `README.md`, check:

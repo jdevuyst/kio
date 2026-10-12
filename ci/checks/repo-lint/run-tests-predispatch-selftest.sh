@@ -35,7 +35,13 @@ finish() {
   if [ "$finish_status" -eq 0 ] &&
      [ "${async_status:-0}" -ne 0 ] &&
      [ "${KIO_TEST_CLEANUP_MUTANT:-}" != swallow-status ]; then finish_status=$async_status; fi
-  finish_result=${KIO_TEST_CLEANUP_RESULT_DIR:-}; rm -rf "$scratch"
+  finish_result=${KIO_TEST_CLEANUP_RESULT_DIR:-}
+  if [ "${abort_cleanup_unproven:-0}" = 1 ]; then
+    printf 'run-tests-predispatch-selftest: preserved fixture state at %s after unproven extinction\n' \
+      "$scratch" >&2
+  else
+    rm -rf "$scratch"
+  fi
   if [ -n "$finish_result" ]; then
     printf '%s\n' "$finish_status" >"$finish_result/final-status"
     printf 'cleanup-complete\n' >>"$finish_result/events"
@@ -156,6 +162,64 @@ cat >"$scratch/bin/scheduler-must-not-run" <<'EOF'
 exit 97
 EOF
 
+cat >"$scratch/bin/ordering-scheduler" <<'EOF'
+#!/bin/sh
+set -eu
+if [ "${1:-}" != supervise ]; then
+  exec "$KIO_TEST_REAL_SCHEDULER_BIN" "$@"
+fi
+shift
+ordering_stdin_closed=
+if [ "${1:-}" = --stdin-closed ]; then ordering_stdin_closed=1; shift; fi
+[ "${1:-}" = --drained-marker ] && [ -n "${2:-}" ] &&
+  [ "${3:-}" = --cancel-file ] && [ -n "${4:-}" ] || exit 2
+ordering_drained=$2 ordering_cancel=$4
+shift 4
+[ "${1:-}" = -- ] || exit 2
+shift
+ordering_result=$KIO_TEST_ABORT_RESULT_DIR
+ordering_supervisor=
+ordering_stage() { printf '%s\n' "$1" >"$ordering_result/supervisor-stage"; }
+ordering_cleanup() {
+  trap '' HUP INT TERM
+  trap - EXIT
+  : >"$ordering_result/release"
+  : >"$ordering_result/native-cancel"
+  [ -z "$ordering_supervisor" ] || wait "$ordering_supervisor" 2>/dev/null || :
+}
+trap ordering_cleanup EXIT
+trap '' HUP INT TERM
+# A private cancellation channel lets ordering depend on explicit release;
+# the native supervisor still establishes extinction of the entire tree.
+(
+  [ -z "$ordering_stdin_closed" ] || exec 0<&-
+  KIO_CI_SCHEDULER_BIN=$KIO_TEST_REAL_SCHEDULER_BIN
+  export KIO_CI_SCHEDULER_BIN
+  exec sh "$KIO_TEST_REAL_SCHEDULE" --supervise \
+    --drained-marker "$ordering_result/native-drained" \
+    --cancel-file "$ordering_result/native-cancel" -- "$@"
+) &
+ordering_supervisor=$!
+ordering_stage waiting-for-cancel
+ordering_waited=0
+while [ ! -f "$ordering_cancel" ]; do
+  ordering_waited=$((ordering_waited + 1))
+  [ "$ordering_waited" -lt 30 ] || exit 1
+  sleep 1
+done
+ordering_stage cancel-observed
+printf 'scheduler-cancel\n' >>"$ordering_result/events"
+: >"$ordering_result/release"
+ordering_stage waiting-for-native-drain
+wait "$ordering_supervisor" 2>/dev/null || :
+ordering_supervisor=
+[ -f "$ordering_result/native-drained" ] || exit 1
+ordering_stage drained
+printf 'scheduler-drained\n' >>"$ordering_result/events"
+: >"$ordering_drained"
+trap - EXIT
+EOF
+
 cat >"$scratch/bin/kio-a" <<'EOF'
 #!/bin/sh
 [ -z "${KIO_TEST_KIO_CALL_LOG:-}" ] || printf '%s\n' "$*" >>"$KIO_TEST_KIO_CALL_LOG"
@@ -190,13 +254,9 @@ if [ -n "${KIO_TEST_ABORT_RESULT_DIR:-}" ] &&
     : >"$abort_result/descendant-complete"
     exit 0
   }
-  trap abort_complete HUP INT TERM
+  trap '' HUP INT TERM
   : >"$abort_result/entered"
-  abort_waited=0
-  abort_release_after=${KIO_TEST_ABORT_AUTO_RELEASE_AFTER:-15}
   while [ ! -f "$abort_result/release" ]; do
-    abort_waited=$((abort_waited + 1))
-    [ "$abort_waited" -lt "$abort_release_after" ] || : >"$abort_result/release"
     sleep 1
   done
   abort_complete
@@ -549,7 +609,7 @@ printf '0\n' >"$scratch/bad/invalid/expected.exit"
 
 chmod +x "$scratch/bin/find" "$scratch/bin/grep" "$scratch/bin/xargs" \
   "$scratch/bin/od" \
-  "$scratch/bin/scheduler-must-not-run" \
+  "$scratch/bin/scheduler-must-not-run" "$scratch/bin/ordering-scheduler" \
   "$scratch/bin/kio-a" "$scratch/bin/kio-b" \
   "$scratch/bin/runner" "$scratch/bin/parallel-gate"
 
@@ -640,7 +700,9 @@ run_harness() {
   PATH="$scratch/bin:$PATH" \
     KIO_CI_SCHEDULE=DISABLE \
     KIO_CI_PROGRESS_FD='' KIO_CI_TASK_NAME='' \
-    KIO_CI_SCHEDULER_BIN="$test_scheduler_bin" \
+    KIO_CI_SCHEDULER_BIN="${KIO_TEST_ABORT_SCHEDULER_BIN:-$test_scheduler_bin}" \
+    KIO_TEST_REAL_SCHEDULER_BIN="$test_scheduler_bin" \
+    KIO_TEST_REAL_SCHEDULE="$REPO_ROOT/ci/schedule.sh" \
     KIO_DEBUG_PROGRESS_INTERVAL=0 \
     KIO_TEST_FIND_LOG="$rh_find_log" \
     KIO_TEST_REAL_FIND="$real_find" \
@@ -662,7 +724,6 @@ run_harness() {
     KIO_TEST_FAIL_CASE="${KIO_TEST_FAIL_CASE:-}" \
     KIO_TEST_NAMED_CHECK_LOG="${KIO_TEST_NAMED_CHECK_LOG:-}" \
     KIO_TEST_ABORT_RESULT_DIR="${KIO_TEST_ABORT_RESULT_DIR:-}" \
-    KIO_TEST_ABORT_AUTO_RELEASE_AFTER="${KIO_TEST_ABORT_AUTO_RELEASE_AFTER:-}" \
     KIO_TEST_HARNESS_PID_FILE="${KIO_TEST_HARNESS_PID_FILE:-}" \
     RUSTC_WRAPPER='' RUSTC_WORKSPACE_WRAPPER='' \
     CARGO_BUILD_RUSTC_WRAPPER='' CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER='' \
@@ -670,6 +731,7 @@ run_harness() {
     /bin/sh -c '
       [ -z "${KIO_TEST_HARNESS_PID_FILE:-}" ] ||
         printf "%s\n" "$$" >"$KIO_TEST_HARNESS_PID_FILE"
+      [ "${KIO_TEST_ABORT_STDIN_CLOSED:-0}" != 1 ] || exec 0<&-
       exec /bin/sh "$@"
     ' sh "$RUN_TESTS_SH" \
       --cases-dir="${KIO_TEST_CASES_DIR:-$scratch/cases}" \
@@ -756,7 +818,16 @@ prepare_mutant_ci() {
 run_abort_supervisor_mutant() {
   rasm_mode=$1
   prepare_mutant_ci "abort-$rasm_mode"
-  cp "$RUN_TESTS_SH" "$mutant_run_tests"
+  # Worker receipts let rescue wait for the status-writing tail after the
+  # runner exits, even when this mutation has removed tree supervision.
+  awk '
+    { print }
+    $0 == "if [ \"${1:-}\" = \"--__worker\" ]; then" {
+      print "  printf '\''%s\\n'\'' \"$$\" >>\"$KIO_TEST_ABORT_RESULT_DIR/worker-pids\""
+      matched++
+    }
+    END { if (matched != 1) exit 1 }
+  ' "$RUN_TESTS_SH" >"$mutant_run_tests" || return 1
   rm "$mutant_ci/schedule.sh"
   cat >"$mutant_ci/schedule.sh" <<'EOF'
 #!/bin/sh
@@ -779,16 +850,36 @@ EOF
   rasm_original=$RUN_TESTS_SH
   RUN_TESTS_SH=$mutant_run_tests
   KIO_TEST_ABORT_SUPERVISOR_MUTANT=$rasm_mode
-  KIO_TEST_ABORT_AUTO_RELEASE_AFTER=2
   KIO_TEST_REAL_SCHEDULE=$REPO_ROOT/ci/schedule.sh
-  export KIO_TEST_ABORT_SUPERVISOR_MUTANT KIO_TEST_ABORT_AUTO_RELEASE_AFTER \
-    KIO_TEST_REAL_SCHEDULE
+  export KIO_TEST_ABORT_SUPERVISOR_MUTANT KIO_TEST_REAL_SCHEDULE
   rasm_status=0
-  run_abort_reap_case TERM 143 || rasm_status=$?
+  run_abort_reap_case TERM 143 ordering >"$scratch/abort-$rasm_mode.log" 2>&1 ||
+    rasm_status=$?
   RUN_TESTS_SH=$rasm_original
-  unset KIO_TEST_ABORT_SUPERVISOR_MUTANT KIO_TEST_ABORT_AUTO_RELEASE_AFTER \
-    KIO_TEST_REAL_SCHEDULE
-  return "$rasm_status"
+  unset KIO_TEST_ABORT_SUPERVISOR_MUTANT KIO_TEST_REAL_SCHEDULE
+  rasm_expected_root=present rasm_expected_state=state-present
+  if [ "$rasm_mode" = early-marker ]; then
+    rasm_expected_root=absent rasm_expected_state=state-missing
+  fi
+  if [ "$rasm_status" -ne 0 ] && [ "$rarc_status" -eq 143 ] &&
+     [ "$rarc_helper_status" -eq 0 ] && [ "$rarc_signal_sent" = present ] &&
+     [ "$rarc_descendant_live" = alive ] &&
+     [ "$rarc_root_state" = "$rasm_expected_root" ] &&
+     [ "$rarc_cleanup_valid" -eq 1 ] &&
+     [ -s "$rarc_result/worker-pids" ] &&
+     [ "$(wc -l <"$rarc_result/worker-pids" | tr -d ' ')" = \
+       "$(cat "$rarc_result/expected-worker-count")" ] &&
+     grep -Fqx "$rasm_expected_state" "$rarc_result/descendant-state" &&
+     grep -Fq 'descendant still alive at harness return' "$rarc_result/failures" &&
+     grep -Fq 'descendant completion marker missing' "$rarc_result/failures" &&
+     grep -Fqx 'signal-sent=present descendant-complete=missing descendant-state=missing' \
+       "$rarc_result/snapshot"; then
+    return 0
+  fi
+  cat "$scratch/abort-$rasm_mode.log" >&2
+  printf 'run-tests-predispatch-selftest: abort supervisor mutation %s lacked its causal failure\n' \
+    "$rasm_mode" >&2
+  return 1
 }
 
 run_cleanup_case() {
@@ -829,32 +920,100 @@ wait_for_abort_path() {
   wfap_waited=0
   while [ ! -e "$wfap_path" ]; do
     wfap_waited=$((wfap_waited + 1))
-    [ "$wfap_waited" -lt 15 ] || return 1
+    [ "$wfap_waited" -lt 30 ] || return 1
     sleep 1
   done
+}
+
+wait_for_abort_extinction() {
+  wfae_pid=$1
+  wfae_waited=0
+  while kill -0 "$wfae_pid" 2>/dev/null; do
+    wfae_waited=$((wfae_waited + 1))
+    [ "$wfae_waited" -lt 30 ] || break
+    sleep 1
+  done
+  ! kill -0 "$wfae_pid" 2>/dev/null && return 0
+  printf 'run-tests-predispatch-selftest: %s %s: rescue cleanup killing unresponsive fixture PID %s\n' \
+    "$rarc_mode" "$rarc_signal" "$wfae_pid" >&2
+  kill -KILL "$wfae_pid" 2>/dev/null || :
+  wfae_waited=0
+  while kill -0 "$wfae_pid" 2>/dev/null; do
+    wfae_waited=$((wfae_waited + 1))
+    [ "$wfae_waited" -lt 30 ] || { abort_cleanup_unproven=1; break; }
+    sleep 1
+  done
+  return 1
 }
 
 run_abort_reap_case() {
   rarc_signal=$1
   rarc_expected_status=$2
-  rarc_result=$scratch/abort-reap-$rarc_signal
+  rarc_mode=${3:-ordering}
+  case "$rarc_mode" in ordering|forced) ;; *) return 2 ;; esac
+  rarc_result=$scratch/abort-reap-$rarc_mode-$rarc_signal
   rm -rf "$rarc_result"
   mkdir -p "$rarc_result"
   : >"$rarc_result/events"
+  : >"$rarc_result/failures"
+  [ -z "${KIO_TEST_ABORT_SUPERVISOR_MUTANT:-}" ] ||
+    : >"$rarc_result/unproven-workers"
 
   (
+    trap '
+      if [ ! -f "$rarc_result/signal-sent" ]; then
+        : >"$rarc_result/release"
+        if [ -f "$rarc_result/harness-pid" ]; then
+          kill -s TERM "$(cat "$rarc_result/harness-pid")" 2>/dev/null || :
+        fi
+        if [ -f "$rarc_result/dispatcher-pid" ]; then
+          kill -s TERM "$(cat "$rarc_result/dispatcher-pid")" 2>/dev/null || :
+        fi
+      fi
+    ' EXIT
+    printf 'waiting-for-harness\n' >"$rarc_result/helper-stage"
     wait_for_abort_path "$rarc_result/harness-pid" || exit 1
+    printf 'waiting-for-dispatcher\n' >"$rarc_result/helper-stage"
     wait_for_abort_path "$rarc_result/dispatcher-pid" || exit 1
+    printf 'waiting-for-descendant\n' >"$rarc_result/helper-stage"
     wait_for_abort_path "$rarc_result/entered" || exit 1
-    kill -s "$rarc_signal" "$(cat "$rarc_result/harness-pid")"
-    # The repaired wrapper can reap the dispatcher between the controlling
-    # signal and this causal current-base nudge. A vanished dispatcher is the
-    # desired post-fix outcome.
-    kill -s TERM "$(cat "$rarc_result/dispatcher-pid")" 2>/dev/null || :
+    if [ -n "${KIO_TEST_ABORT_SUPERVISOR_MUTANT:-}" ]; then
+      printf 'waiting-for-worker-registration\n' >"$rarc_result/helper-stage"
+      rarc_helper_root=$(cat "$rarc_result/run-root")
+      rarc_expected_workers=$(wc -l <"$rarc_helper_root/units.keys" | tr -d ' ')
+      printf '%s\n' "$rarc_expected_workers" >"$rarc_result/expected-worker-count"
+      rarc_registration_waited=0
+      while [ "$(wc -l <"$rarc_result/worker-pids" | tr -d ' ')" != "$rarc_expected_workers" ]; do
+        rarc_registration_waited=$((rarc_registration_waited + 1))
+        if [ "$rarc_registration_waited" -ge 30 ]; then
+          : >"$rarc_result/unproven-workers"
+          exit 1
+        fi
+        sleep 1
+      done
+      rm "$rarc_result/unproven-workers"
+    fi
+    printf 'sending-signal\n' >"$rarc_result/helper-stage"
+    kill -s "$rarc_signal" "$(cat "$rarc_result/harness-pid")" || exit 1
+    # Broken supervision must return before rescue release to expose the
+    # held descendant; normal ordering lets the entire tree drain naturally.
+    if [ -n "${KIO_TEST_ABORT_SUPERVISOR_MUTANT:-}" ]; then
+      kill -s TERM "$(cat "$rarc_result/dispatcher-pid")" 2>/dev/null || :
+    fi
     : >"$rarc_result/signal-sent"
+    printf 'waiting-for-harness-return\n' >"$rarc_result/helper-stage"
+    if ! wait_for_abort_path "$rarc_result/harness-returned"; then
+      printf 'harness-return-timeout\n' >"$rarc_result/helper-stage"
+      : >"$rarc_result/release"
+      exit 1
+    fi
+    printf 'harness-return-observed\n' >"$rarc_result/helper-stage"
   ) &
   rarc_helper_pid=$!
 
+  KIO_TEST_ABORT_SCHEDULER_BIN=$test_scheduler_bin
+  [ "$rarc_mode" != ordering ] ||
+    KIO_TEST_ABORT_SCHEDULER_BIN=$scratch/bin/ordering-scheduler
   set +e
   KIO_TEST_ABORT_RESULT_DIR=$rarc_result \
   KIO_TEST_HARNESS_PID_FILE=$rarc_result/harness-pid \
@@ -863,41 +1022,107 @@ run_abort_reap_case() {
       '^bucket/(b_rust|c_both)$'
   rarc_status=$?
   set -e
-  if wait "$rarc_helper_pid"; then rarc_helper_status=0
-  else rarc_helper_status=$?; fi
-
   printf 'harness-return\n' >>"$rarc_result/events"
+  : >"$rarc_result/harness-returned"
   rarc_run_root=$(cat "$rarc_result/run-root" 2>/dev/null || :)
   rarc_descendant_pid=$(cat "$rarc_result/descendant-pid" 2>/dev/null || :)
+  rarc_root_state=absent
+  [ -z "$rarc_run_root" ] || [ ! -e "$rarc_run_root" ] || rarc_root_state=present
+  rarc_descendant_live=unrecorded
+  if [ -n "$rarc_descendant_pid" ]; then
+    rarc_descendant_live=extinct
+    ! kill -0 "$rarc_descendant_pid" 2>/dev/null || rarc_descendant_live=alive
+  fi
+  rarc_complete=missing rarc_descendant_state=missing
+  if [ -f "$rarc_result/descendant-complete" ]; then
+    rarc_complete=present
+    rarc_descendant_state=$(cat "$rarc_result/descendant-state" 2>/dev/null || :)
+  fi
+  cp "$rarc_result/events" "$rarc_result/events-at-return"
+  if wait "$rarc_helper_pid"; then rarc_helper_status=0
+  else rarc_helper_status=$?; fi
+  rarc_signal_sent=missing
+  [ ! -f "$rarc_result/signal-sent" ] || rarc_signal_sent=present
+  {
+    printf 'mode=%s signal=%s status=%s expected=%s\n' \
+      "$rarc_mode" "$rarc_signal" "$rarc_status" "$rarc_expected_status"
+    printf 'helper-status=%s helper-stage=%s supervisor-stage=%s\n' \
+      "$rarc_helper_status" \
+      "$(cat "$rarc_result/helper-stage" 2>/dev/null || :)" \
+      "$(cat "$rarc_result/supervisor-stage" 2>/dev/null || :)"
+    printf 'signal-sent=%s descendant-complete=%s descendant-state=%s\n' \
+      "$rarc_signal_sent" "$rarc_complete" "$rarc_descendant_state"
+    printf 'descendant-pid=%s descendant=%s run-root=%s run-root-state=%s\n' \
+      "$rarc_descendant_pid" "$rarc_descendant_live" "$rarc_run_root" "$rarc_root_state"
+    printf 'harness-pid=%s dispatcher-pid=%s worker-pids=%s\n' \
+      "$(cat "$rarc_result/harness-pid" 2>/dev/null || :)" \
+      "$(cat "$rarc_result/dispatcher-pid" 2>/dev/null || :)" \
+      "$(if [ -f "$rarc_result/worker-pids" ]; then
+           tr '\n' ' ' <"$rarc_result/worker-pids"
+         fi)"
+    printf 'events at harness return:\n'
+    cat "$rarc_result/events-at-return"
+  } >"$rarc_result/snapshot"
   rarc_valid=1
-  if [ "$rarc_status" -ne "$rarc_expected_status" ] ||
-     [ "$rarc_helper_status" -ne 0 ] ||
-     [ ! -f "$rarc_result/signal-sent" ] ||
-     [ ! -f "$rarc_result/descendant-complete" ] ||
-     ! grep -Fqx state-present "$rarc_result/descendant-state" 2>/dev/null ||
-     [ -z "$rarc_run_root" ] || [ -e "$rarc_run_root" ] ||
-     [ -z "$rarc_descendant_pid" ] ||
-     kill -0 "$rarc_descendant_pid" 2>/dev/null ||
-     ! printf 'descendant-complete\nharness-return\n' |
-       diff -u - "$rarc_result/events" >/dev/null; then
+  abort_check_failed() {
+    printf 'run-tests-predispatch-selftest: %s %s: %s\n' \
+      "$rarc_mode" "$rarc_signal" "$1" >>"$rarc_result/failures"
     rarc_valid=0
+  }
+  [ "$rarc_status" -eq "$rarc_expected_status" ] || abort_check_failed 'wrong harness status'
+  [ "$rarc_helper_status" -eq 0 ] || abort_check_failed 'signal helper failed'
+  [ "$rarc_signal_sent" = present ] || abort_check_failed 'signal-sent marker missing'
+  [ -n "$rarc_run_root" ] || abort_check_failed 'run root was not recorded'
+  [ "$rarc_root_state" = absent ] || abort_check_failed 'run state still exists at harness return'
+  [ "$rarc_descendant_live" != unrecorded ] || abort_check_failed 'descendant PID was not recorded'
+  [ "$rarc_descendant_live" != alive ] || abort_check_failed 'descendant still alive at harness return'
+  if [ "$rarc_mode" = ordering ]; then
+    [ "$rarc_complete" = present ] || abort_check_failed 'descendant completion marker missing'
+    [ "$rarc_descendant_state" = state-present ] || abort_check_failed 'descendant did not record state-present'
+    printf 'scheduler-cancel\ndescendant-complete\nscheduler-drained\nharness-return\n' \
+      >"$rarc_result/expected-events"
+  else
+    [ "$rarc_complete" = missing ] || abort_check_failed 'held ignoring descendant completed without forced termination'
+    printf 'harness-return\n' >"$rarc_result/expected-events"
+  fi
+  diff -u "$rarc_result/expected-events" "$rarc_result/events-at-return" \
+    >"$rarc_result/event-order.diff" || abort_check_failed 'unexpected event order'
+  if [ "$rarc_valid" -ne 1 ]; then
+    cat "$rarc_result/failures" "$rarc_result/snapshot" \
+      "$rarc_result/event-order.diff" "$rarc_result/harness.log" >&2
   fi
 
-  # A failing implementation can leave the held fixture behind. Release and
-  # observe it before reporting the causal failure so the self-test itself
-  # never leaks a process.
+  # Freeze the verdict before rescue release, which lets mutations finish.
   : >"$rarc_result/release"
-  wait_for_abort_path "$rarc_result/descendant-complete" || rarc_valid=0
-  rarc_waited=0
-  while [ -n "$rarc_descendant_pid" ] &&
-        kill -0 "$rarc_descendant_pid" 2>/dev/null; do
-    rarc_waited=$((rarc_waited + 1))
-    [ "$rarc_waited" -lt 15 ] || { rarc_valid=0; break; }
-    sleep 1
-  done
-  [ -z "$rarc_run_root" ] || rm -rf "$rarc_run_root"
+  rarc_cleanup_valid=1
+  if [ -f "$rarc_result/unproven-workers" ]; then
+    abort_cleanup_unproven=1
+    rarc_cleanup_valid=0
+  fi
+  rarc_dispatcher_pid=$(cat "$rarc_result/dispatcher-pid" 2>/dev/null || :)
+  if [ -n "$rarc_dispatcher_pid" ]; then
+    wait_for_abort_extinction "$rarc_dispatcher_pid" || rarc_cleanup_valid=0
+  fi
+  # Registration completes before signaling; dispatcher extinction then
+  # makes the inventory final, including any worker tail after runner exit.
+  {
+    [ -z "$rarc_descendant_pid" ] || printf '%s\n' "$rarc_descendant_pid"
+    [ ! -f "$rarc_result/worker-pids" ] || cat "$rarc_result/worker-pids"
+  } | sort -u >"$rarc_result/rescue-pids"
+  while IFS= read -r rarc_rescue_pid; do
+    wait_for_abort_extinction "$rarc_rescue_pid" || rarc_cleanup_valid=0
+  done <"$rarc_result/rescue-pids"
+  if [ "$rarc_cleanup_valid" -ne 1 ]; then
+    printf 'run-tests-predispatch-selftest: %s %s: rescue cleanup could not observe descendant extinction\n' \
+      "$rarc_mode" "$rarc_signal" >&2
+    rarc_valid=0
+  fi
+  if [ "${abort_cleanup_unproven:-0}" != 1 ]; then
+    [ -z "$rarc_run_root" ] || rm -rf "$rarc_run_root"
+  fi
   KIO_TEST_ABORT_RESULT_DIR=
   KIO_TEST_HARNESS_PID_FILE=
+  KIO_TEST_ABORT_SCHEDULER_BIN=
   [ "$rarc_valid" -eq 1 ]
 }
 
@@ -908,15 +1133,12 @@ if [ -n "${KIO_TEST_ABORT_ONLY_SIGNAL:-}" ]; then
     TERM) abort_only_status=143 ;;
     *) exit 2 ;;
   esac
-  run_abort_reap_case "$KIO_TEST_ABORT_ONLY_SIGNAL" "$abort_only_status" &&
-    exit 0
-  cat "$rarc_result/harness.log" >&2
-  exit 1
+  run_abort_reap_case "$KIO_TEST_ABORT_ONLY_SIGNAL" "$abort_only_status" \
+    "${KIO_TEST_ABORT_ONLY_MODE:-ordering}"
+  exit 0
 fi
 if [ -n "${KIO_TEST_ABORT_MUTANT_ONLY:-}" ]; then
-  if run_abort_supervisor_mutant "$KIO_TEST_ABORT_MUTANT_ONLY"; then
-    exit 1
-  fi
+  run_abort_supervisor_mutant "$KIO_TEST_ABORT_MUTANT_ONLY"
   exit 0
 fi
 
@@ -2423,19 +2645,12 @@ fi
 for abort_case in $abort_cases; do
   abort_signal=${abort_case%%:*}
   abort_status=${abort_case#*:}
-  run_abort_reap_case "$abort_signal" "$abort_status" || {
-    cat "$rarc_result/harness.log" >&2
-    printf 'run-tests-predispatch-selftest: %s abort returned before its worker subtree was quiescent\n' \
-      "$abort_signal" >&2
-    exit 1
-  }
+  for abort_mode in ordering forced; do
+    run_abort_reap_case "$abort_signal" "$abort_status" "$abort_mode" || exit 1
+  done
 done
 for abort_mutant in missing-supervision early-marker; do
-  if run_abort_supervisor_mutant "$abort_mutant"; then
-    printf 'run-tests-predispatch-selftest: abort supervisor mutation %s escaped\n' \
-      "$abort_mutant" >&2
-    exit 1
-  fi
+  run_abort_supervisor_mutant "$abort_mutant" || exit 1
 done
 
 for cleanup_mode in natural HUP TERM; do

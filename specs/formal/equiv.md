@@ -36,7 +36,7 @@ The partial evaluator applies the small-step rules from [`prime.md`](prime.md) �
 β-SeqUnit                      (`(); rest` expression-statement collapse)
 ι-LeftEither, ι-RightEither    (sum eliminator with known injection)
 ι-Fst, ι-Snd                   (product projection with known pair)
-ι-Newtype                      (newtype unwrap-of-wrap)
+ι-Newtype, ι-NewtypeExists      (direct and existential-CPS newtype projection)
 ```
 
 (See [`prime.md`](prime.md) § 3 for full rule statements.)
@@ -56,11 +56,20 @@ These reduction rules recognize Boolean literal syntax. They work because `.t` /
 
 ### 2.3. `__absurd__`
 
-`__absurd__` has no reduction rule. The bottom type `!` has no values, so no reducible application of `__absurd__` can arise in a closed well-typed term that comes from `equiv`-discharge. (A host call `host : -> !` *can* appear under `__absurd__` in source, but the host call is opaque — see § 2.4 — and `__absurd__` applied to a stuck host call stays stuck. This is the right behavior: `__absurd__` doesn't claim anything about what the host's never-returning function "computes," so leaving the construct stuck preserves the structural-equality discipline of § 4.)
+`__absurd__` has no head-reduction rule because `!` has no introduction
+value to eliminate. Its operand may still reduce under the compatible
+closure. A bottom-typed atom or opaque host computation remains neutral,
+and `__absurd__` applied to that residual remains stuck. The evaluator does
+not execute a host operation to obtain a bottom value; it compares the
+remaining structure under § 4.
 
 ### 2.4. Host calls are opaque atoms
 
-A host item `h` from a `host fn` participates in typing but does not reduce under partial evaluation. Two derivations of the same closed well-typed term share the same residual host-call structure: same head, same recursively-equivalent argument list. The partial evaluator therefore treats every host call as a leaf atom keyed by the host item's fully-qualified path.
+A host item `h` from a `host fn` participates in typing but has no reduction
+rule for the host operation itself. Its arguments are still partially
+evaluated. The result is a structural residual application whose head is the
+host item's identity and whose arguments are residual terms, not a leaf that
+forgets or prevents reduction of those arguments.
 
 Concretely:
 
@@ -73,7 +82,7 @@ This is by design: the host boundary is opaque ([`../language.md`](../language.m
 
 ### 2.5. Reduction strategy
 
-**The normal-form strategy doesn't matter after totality observation succeeds.** Kio' is strongly normalizing (per [`prime.md`](prime.md) § 5) and confluent (β + ι reductions on a System F presentation with `newtype`-mediated recursion form a confluent rewrite system; see Pierce 2002 § 23 for the standard argument). For an arm whose evaluation observes no § 2.7 fault, every reduction strategy reaches the same residual normal form.
+**The normal-form strategy doesn't matter after totality observation succeeds.** Kio' is strongly normalizing (per [`prime.md`](prime.md) § 5) and confluent under its compatible β + ι reduction relation. For an arm whose evaluation observes no § 2.7 fault, every reduction strategy reaches the same residual normal form.
 
 Totality observation is an error effect around that pure reduction relation, not another residual or rewrite rule. It follows strict call-by-value evaluation contexts: a binding initializer is evaluated before its body; the left side of a sequence before its continuation; and a computed callee and its value arguments, from left to right, before application. After their handler values have been evaluated, a known conditional or sum elimination applies only the selected closure. Constructing the unselected closure does not enter its body. An opaque sum applies both handlers under § 2.6; an opaque conditional retains both closures, which a later α- or η-equivalence probe in § 4 may apply. The first structural-recursion fault reached by those contexts is the absorbing outcome of the enclosing public evaluation or equality operation, even if a later β- or ι-step could discard the value that exposed it.
 
@@ -166,7 +175,7 @@ __pair__(__fst__(p), __snd__(p))  ≃  p     (η for products)
 __either__(s, __left__, __right__)  ≃  s   (η for sums)
 ```
 
-Any of these can be applied in either direction during NF comparison; the implementation may β/η-normalize before comparing. (η-equivalence is preserved under reduction in System F + sums + products with η laws — see Pierce 2002 § 23.)
+Any of these can be applied in either direction during NF comparison; the implementation may β/η-normalize before comparing. These η laws are part of the residual-equivalence relation, in addition to the reduction rules in § 2.
 
 Function comparison is pointwise over the semantic domain of one value group,
 not over the source binder partition used to spell that group. For a product
@@ -247,18 +256,23 @@ Both arms reduce to `()`. NF-equivalent. ✓
 ### 5.2. Pass — η-equivalence
 
 ```kio
-equiv eta {
-  .(x) { f(x) };
+equiv eta[A][B](f: A -> B) {
+  .(x: A) { f(x) };
   f
 }
 ```
 
-(With `f` an opaque atom — say a host call.) The first arm reduces to `λx. Stuck(f, [x])`; η on the closure yields `Stuck(f, [])` ≃ the second. ✓
+The parameter `f` denotes the same fresh opaque atom in both arms. Each arm
+synthesizes `A -> B`; the lambda's written `x: A` annotation supplies its
+parameter type without relying on the other arm. Pointwise comparison applies
+both functions to the same fresh argument atom, yielding `Stuck(f, [x])` on
+each side. Thus `λx. f(x) ≃ f`; a bare `f` is not an empty application
+`Stuck(f, [])`. ✓
 
 ### 5.3. Fail — different stuck shapes
 
 ```kio
-equiv neq_stuck {
+equiv neq_stuck[A](f: . -> A, g: . -> A) {
   f(());
   g(())
 }
@@ -280,7 +294,7 @@ The runner binds `v` to a fresh atom `a₀` (shared across both arms). Arm 1 red
 ### 5.5. Fail — parametric equiv that distinguishes positions
 
 ```kio
-equiv distinct(v: a, w: a) {
+equiv distinct[A](v: A, w: A) {
   v;
   w
 }
@@ -316,4 +330,4 @@ The else-arm closures differ (`Stuck(bar, [])` vs `Stuck(baz, [])`). Inequivalen
 
 - [`prime.md`](prime.md) — Kio' typing rules, reduction, type safety, SN, decidability. The reduction rules in § 3 of this page reuse the rules from `prime.md` § 3.
 - The `equiv` discharge sees the **elaborated** calls — the typer substitutes every elaborator bang-call (the reference coercion palettes, `match!`, `derive!`) at the `Lowered → Prime` boundary, so only the ordinary intrinsic glue they expand to reaches the partial evaluator. The per-library soundness arguments for those expansions live with the executable POC ([`../../docs/poc/elab.md`](../../docs/poc/elab.md), [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not in this formal directory.
-- Pierce 2002 § 23 — confluence of β + ι in System F with iso-recursive `newtype` boundaries; the basis for § 2.5's "strategy doesn't matter" claim.
+- Pierce 2002, *Types and Programming Languages*, chapters 11, 20, and 23 — background on products and sums, iso-recursive types, and System F, respectively. The Kio-specific reduction and residual-equivalence rules are stated on this page and in `prime.md`; the textbook is not a proof of their combined implementation.

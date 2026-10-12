@@ -1,8 +1,6 @@
 package max_flow_cut_planner;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

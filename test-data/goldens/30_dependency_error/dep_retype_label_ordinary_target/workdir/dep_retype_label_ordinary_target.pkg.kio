@@ -1,8 +1,6 @@
 package dep_retype_label_ordinary_target;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

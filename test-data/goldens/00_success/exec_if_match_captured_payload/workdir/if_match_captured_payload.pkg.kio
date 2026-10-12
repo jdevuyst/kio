@@ -1,8 +1,6 @@
 package if_match_captured_payload;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

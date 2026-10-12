@@ -1,8 +1,6 @@
 package demo;
 
 build {
-  cache ();
-
   target ts {
     out "out/ts/"
   }

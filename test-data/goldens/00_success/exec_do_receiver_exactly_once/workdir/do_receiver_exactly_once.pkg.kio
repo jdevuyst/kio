@@ -1,8 +1,6 @@
 package do_receiver_exactly_once;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

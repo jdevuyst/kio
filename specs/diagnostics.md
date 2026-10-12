@@ -50,8 +50,7 @@ A diagnostic carries:
 
 The **primary span** and **message** are mandatory; every other field
 is optional and defaults to empty. A minimal diagnostic is exactly the
-`{primary span, message}` pair — the shape every Kio diagnostic had
-before this contract, now the floor rather than the ceiling.
+`{primary span, message}` pair.
 
 A **fix** is distinct from **help**. Help is prose the user reads; a fix
 is a structured edit a tool can apply. The `did you mean <name>?` shape
@@ -159,13 +158,12 @@ N |     <a source line carrying a secondary label>
   = suggestion: replace with `<replacement>`
 ```
 
-Rules:
+The following conventions describe the recommended rendering, not additional
+cross-implementation structured-content requirements:
 
 - The **header** is `path:line:col: message`, with `line`/`col`
   1-based, the column counting Unicode scalar values (a multibyte
-  character is one column). This single line is the stable spine every
-  earlier Kio diagnostic already emitted; the snippet and trailer below
-  it are additive.
+  character is one column).
 - Each **source-line block** prints the gutter (`` ` N | ` ``) followed
   by the source line, then an underline row (`` `   | ` `` gutter, spaces
   to the span start, then a run of carets). The **primary** span underlines

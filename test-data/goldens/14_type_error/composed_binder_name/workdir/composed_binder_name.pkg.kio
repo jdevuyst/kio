@@ -1,8 +1,6 @@
 package composed_binder_name;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

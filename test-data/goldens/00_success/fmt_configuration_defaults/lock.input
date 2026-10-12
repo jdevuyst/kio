@@ -1,0 +1,3 @@
+lock pkg;
+resolved { sig ("digest"); path ( // discovered
+  ()); commit (("sha")); git "https://example.invalid/pkg.git"; ref ("main") }

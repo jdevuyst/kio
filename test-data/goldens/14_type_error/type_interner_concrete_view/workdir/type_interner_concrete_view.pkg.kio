@@ -1,8 +1,6 @@
 package type_interner_concrete_view;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

@@ -43,4 +43,4 @@ jobs:
         working-directory: kio-rs
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: sh ../ci/cargo.sh publish --locked  # zizmor: ignore[use-trusted-publishing]
+        run: sh ../ci/package-kio.sh publish --locked  # zizmor: ignore[use-trusted-publishing]

@@ -320,10 +320,26 @@ impl ScopeProvider for AstScopeProvider<'_> {
                 candidate: Candidate {
                     label: keyword.to_owned(),
                     kind: CandidateKind::Keyword,
-                    description: None,
+                    description: crate::scope_walk::tooling_keyword_description(&probe, keyword),
                     match_indices: fm.indices,
                 },
             });
+        }
+        if let Some(field) = crate::scope_walk::tooling_config_value_field(&probe) {
+            for choice in field.value_choices() {
+                let Some(fm) = language_match(prefix, &choice) else {
+                    continue;
+                };
+                scored.push(ScoredCandidate {
+                    score: fm.score,
+                    candidate: Candidate {
+                        label: choice,
+                        kind: CandidateKind::Keyword,
+                        description: Some(field.value_description()),
+                        match_indices: fm.indices,
+                    },
+                });
+            }
         }
         let fallback_operators;
         let operators = if let Some(operators) = &self.names.expression_operators {
@@ -456,7 +472,7 @@ impl AstScopeProvider<'_> {
             && context.path.is_none()
             && matches!(
                 context.slot,
-                CursorSlot::Value | CursorSlot::Type | CursorSlot::Argument
+                CursorSlot::Value | CursorSlot::Type | CursorSlot::Argument | CursorSlot::Capture
             )
         {
             let fallback_bindings;
@@ -489,7 +505,7 @@ impl AstScopeProvider<'_> {
                             candidate.kind,
                             ScopeKind::Type | ScopeKind::TypeParameter | ScopeKind::Module
                         ),
-                        CursorSlot::Argument => true,
+                        CursorSlot::Argument | CursorSlot::Capture => true,
                         _ => unreachable!("only identifier contexts have outer bindings"),
                     })
                     .cloned(),

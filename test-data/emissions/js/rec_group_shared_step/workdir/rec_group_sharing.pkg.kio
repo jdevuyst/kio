@@ -1,8 +1,6 @@
 package rec_group_sharing;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

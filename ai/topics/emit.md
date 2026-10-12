@@ -195,6 +195,38 @@ stage, or permits skipping a required effectful host conversion or adapter call.
 A declaration's `pure`
 marker is not a blanket conversion exemption.
 
+### Strict evaluation on lazy targets
+
+Apply the shared [evaluation-order contract](../../specs/backends/README.md#9-call-by-value-evaluation-order)
+to the computation as well as its effect trace. For a lazy host or an emitted
+lazy representation, trace demand through callees and arguments, bindings,
+products and selected sum payloads, branch selection, closures, executing type
+stages, and both directions of facade conversion. An action's completion or
+forcing an outer constructor does not establish that its Kio-valued fields
+have been evaluated. A declaration's `pure` marker alone is not an effect proof.
+
+Distinguish an effect-order violation, a lawful optimization of total pure
+work, and unnecessary retention of inputs by deferred computation. Correct
+final values and ordered effects alone do not rule out the last. Conversely,
+eliminating unused pure work is not itself a strictness defect. Follow known
+Kio structure, not arbitrary host storage: do not recursively force opaque host
+payloads, execute function bodies when constructing their values, or introduce
+runtime type validation as a strictness repair.
+
+Reuse comparable retained evidence while its source, representation, profile
+and workload assumptions hold. Otherwise obtain bounded evidence at the affected
+demand boundary. Supply valid, already
+evaluated inputs; release the host's own input roots; compare a control with
+the same preparation. Where collection statistics are available, inspect live
+retention while the result remains reachable, then after demanding its fields
+and dropping it. Peak process memory alone cannot attribute retention. Check
+the ordinary supported build profile as well as relevant optimized output;
+optimization hiding a defect does not repair the ordinary path. Record what
+was source-traced versus executed. Keep resource measurements separate from
+deterministic regression assertions; no exact cross-backend memory identity or
+automatic whole-corpus memory campaign is implied. Reuse shared semantic facts
+and check peers by their actual evaluation mechanism, not their family label.
+
 ### Generated call depth
 
 Review host-stack growth beyond explicit recursion: ordinary binding and
@@ -728,7 +760,13 @@ qualified by that namespace. The implementation has one home per concern:
   Go uses package-qualified `Package`, `Host` and `New`. Keep namespace
   validation tied to actual host restrictions and collisions, not obsolete
   member-name derivations.
-- The `namespace` build-block key is recognized by every backend arm in [`kio-rs/src/cmd/build.rs`](../../kio-rs/src/cmd/build.rs) (duplicate check, the backend's validation, default from the package name — the go arm is the template a new backend copies).
+- [`BuildTarget`](../../kio-rs/src/build_target.rs) owns the target field catalog
+  and dispatches namespace derivation and validation. Its shared
+  `namespace_override` treats omission or written Unit as no override and
+  validates explicit strings. Build dispatch and output planning derive the
+  current package default when no override is present; a new backend extends
+  the catalog and policy table,
+  not a copied field parser in each build arm.
 - Runtime-support content is a function of emitter version, documented
   representation-affecting target options, and namespace binding: the support
   file's namespace-bearing header line is substituted per package, everything

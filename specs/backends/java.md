@@ -140,8 +140,9 @@ Greeter<String> pkg = Greeter.create(new Stdout());
 pkg.greeter.KioModule_main.main();
 ```
 
-A package that has neither host fns nor live or retained host-type bindings
-additionally has a host-less `<Handle>.create()` overload.
+A package that has neither live host fns nor live host-type bindings
+additionally has a host-less `<Handle>.create()` overload. Retained signature
+history does not create a current host requirement.
 
 Construction validates the host record and evaluates no package code;
 each export runs when called. Instantiating twice yields two

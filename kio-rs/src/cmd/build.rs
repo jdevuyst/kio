@@ -850,23 +850,18 @@ fn js_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Js
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     for entry in &target.entries {
         match BuildTarget::Js.key(&entry.key) {
             Some("out") => {
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_js_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
@@ -932,7 +927,7 @@ fn js_backend(
         .clone();
     let ns: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_js_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Js.default_namespace(&pkg_name));
 
     // The recover → optimize → route → annotate prefix is backend-agnostic
     // and computed once for the whole build (see `SharedRoutedPackage`); on
@@ -1007,23 +1002,18 @@ fn ts_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Ts
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     for entry in &target.entries {
         match BuildTarget::Ts.key(&entry.key) {
             Some("out") => {
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_js_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
@@ -1087,7 +1077,7 @@ fn ts_backend(
         .clone();
     let ns: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_js_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Ts.default_namespace(&pkg_name));
 
     let recovered_routed = routed.get();
 
@@ -1177,23 +1167,18 @@ fn go_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Go
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     for entry in &target.entries {
         match BuildTarget::Go.key(&entry.key) {
             Some("out") => {
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_go_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
@@ -1253,7 +1238,7 @@ fn go_backend(
         .clone();
     let ns: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_go_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Go.default_namespace(&pkg_name));
 
     let recovered_root = routed.get();
 
@@ -1319,23 +1304,18 @@ fn python_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Python
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     for entry in &target.entries {
         match BuildTarget::Python.key(&entry.key) {
             Some("out") => {
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_python_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
@@ -1389,7 +1369,7 @@ fn python_backend(
 
     let ns: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_python_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Python.default_namespace(&pkg_name));
     let recovered_routed = routed.get();
 
     let emit_start = Instant::now();
@@ -1468,23 +1448,18 @@ fn java_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Java
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     for entry in &target.entries {
         match BuildTarget::Java.key(&entry.key) {
             Some("out") => {
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_java_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
@@ -1544,7 +1519,7 @@ fn java_backend(
         .clone();
     let namespace_str: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_java_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Java.default_namespace(&pkg_name));
     let recovered_routed = routed.get();
 
     let sig = match &sig_content {
@@ -1622,23 +1597,18 @@ fn swift_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Swift
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     for entry in &target.entries {
         match BuildTarget::Swift.key(&entry.key) {
             Some("out") => {
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_swift_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
@@ -1699,7 +1669,7 @@ fn swift_backend(
 
     let ns: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_swift_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Swift.default_namespace(&pkg_name));
 
     let recovered_root = routed.get();
 
@@ -1773,23 +1743,18 @@ fn haskell_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Haskell
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     for entry in &target.entries {
         match BuildTarget::Haskell.key(&entry.key) {
             Some("out") => {
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_haskell_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
@@ -1850,7 +1815,7 @@ fn haskell_backend(
 
     let ns: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_haskell_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Haskell.default_namespace(&pkg_name));
 
     let recovered_root = routed.get();
 
@@ -2187,7 +2152,7 @@ fn kio_prime_backend(
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
             _ => {
                 let other = &entry.key;
@@ -2354,13 +2319,19 @@ fn emit_kio_prime_module_cached(
     Ok(source)
 }
 
-/// Rust backend. Emits a self-contained Cargo crate under `out`,
-/// per the contract in `specs/backends/rust.md` and the per-slice
-/// scope in `kio-rs/src/backends/rust/emit.rs`. The `namespace`
-/// build-block key sets the Cargo crate name — the root the emitter's
-/// branded facade names (the package handle, host-contract trait, and
-/// factory) derive from; it defaults to the kio package name when
-/// absent.
+fn rust_thread_safety(
+    value: &crate::ast::BlockFieldValue,
+) -> Result<backends::rust::ThreadSafety, BackendError> {
+    match value {
+        crate::ast::BlockFieldValue::Unit => Ok(backends::rust::ThreadSafety::RcLocal),
+        crate::ast::BlockFieldValue::Word(value) => {
+            backends::rust::ThreadSafety::parse(value).map_err(BackendError::Build)
+        }
+        _ => unreachable!("the parser validates the thread_safety field kind"),
+    }
+}
+
+/// Emit a self-contained Rust crate under the configured output and namespace.
 fn rust_backend(
     cwd: &Path,
     target: &TargetBlock,
@@ -2375,7 +2346,9 @@ fn rust_backend(
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
     let package_label = build_timing::package_label(root_package.package());
     let mut out_dir: Option<&str> = None;
-    let mut namespace: Option<&str> = None;
+    let namespace = BuildTarget::Rust
+        .namespace_override(target)
+        .map_err(BackendError::Build)?;
     // The `thread_safety` build-block key. Absent ⇒ the historical
     // single-threaded `Rc<dyn …>` default; the three opt-in values
     // (`send` / `sync` / `send_sync`) select the `Arc`-flavored shape.
@@ -2383,7 +2356,11 @@ fn rust_backend(
     // `specs/package.md` § Per-target keys ("the backend validates
     // keys and values"). An unknown value is an input error (a bad
     // build-block value), surfaced as `BackendError::Build`.
-    let mut thread_safety = backends::rust::ThreadSafety::RcLocal;
+    let default_thread_safety = BuildTarget::Rust
+        .field("thread_safety")
+        .and_then(|field| field.default_value())
+        .expect("the Rust thread_safety field has a default");
+    let mut thread_safety = rust_thread_safety(&default_thread_safety)?;
     let mut thread_safety_set = false;
     for entry in &target.entries {
         match BuildTarget::Rust.key(&entry.key) {
@@ -2391,16 +2368,9 @@ fn rust_backend(
                 if out_dir.is_some() {
                     return Err(BackendError::Build("duplicate key `out`".to_owned()));
                 }
-                out_dir = Some(entry.value.as_str());
+                out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {
-                if namespace.is_some() {
-                    return Err(BackendError::Build("duplicate key `namespace`".to_owned()));
-                }
-                backends::namespace::validate_rust_namespace(&entry.value)
-                    .map_err(BackendError::Build)?;
-                namespace = Some(entry.value.as_str());
-            }
+            Some("namespace") => {}
             None if entry.key == "crate_name" => {
                 return Err(BackendError::Build(
                     "unknown key `crate_name` for the `rust` backend — renamed to \
@@ -2414,8 +2384,7 @@ fn rust_backend(
                         "duplicate key `thread_safety`".to_owned(),
                     ));
                 }
-                thread_safety = backends::rust::ThreadSafety::parse(&entry.value)
-                    .map_err(BackendError::Build)?;
+                thread_safety = rust_thread_safety(&entry.value)?;
                 thread_safety_set = true;
             }
             _ => {
@@ -2484,7 +2453,7 @@ fn rust_backend(
     let pkg_name: String = pick_rust_package_name(root_package.package())?;
     let crate_name: String = namespace
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| backends::namespace::default_rust_namespace(&pkg_name));
+        .unwrap_or_else(|| BuildTarget::Rust.default_namespace(&pkg_name));
 
     let setup_ms = build_timing::elapsed_ms(setup_start);
 
@@ -2589,6 +2558,24 @@ mod tests {
     }
 
     #[test]
+    fn rust_thread_safety_named_choices_and_unit_follow_the_field_catalog() {
+        let field = BuildTarget::Rust.field("thread_safety").unwrap();
+        for value in field.named_choices {
+            assert!(
+                rust_thread_safety(&crate::ast::BlockFieldValue::Word((*value).to_owned())).is_ok()
+            );
+        }
+        assert_eq!(
+            rust_thread_safety(&crate::ast::BlockFieldValue::Unit).ok(),
+            Some(backends::rust::ThreadSafety::RcLocal)
+        );
+        assert!(matches!(
+            rust_thread_safety(&crate::ast::BlockFieldValue::Word("unknown".to_owned())),
+            Err(BackendError::Build(_))
+        ));
+    }
+
+    #[test]
     fn selected_output_plan_preserves_names_backends_namespaces_and_access_paths() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().canonicalize().unwrap();
@@ -2643,6 +2630,27 @@ mod tests {
     }
 
     #[test]
+    fn selected_output_plan_derives_unit_namespace_from_current_package() {
+        let dir = tempfile::tempdir().unwrap();
+        for backend in ["ts", "python"] {
+            for setting in ["", "; namespace ()", "; namespace \"pinned\""] {
+                for name in ["before", "after"] {
+                    let manifest = dir.path().join(format!("{name}.pkg.kio"));
+                    fs::write(&manifest, format!("package {name}; build {{ target {backend} {{ out \"out\"{setting} }} }}")).unwrap();
+                    let plan = selected_output_plan(dir.path(), backend).unwrap();
+                    let expected = if setting.contains('"') {
+                        "pinned"
+                    } else {
+                        name
+                    };
+                    assert_eq!(plan[0].namespace.as_deref(), Some(expected));
+                    fs::remove_file(manifest).unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
     fn selected_output_plan_rejects_conflicts_and_invalid_typed_namespaces() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = dir.path().join("app.pkg.kio");
@@ -2650,6 +2658,9 @@ mod tests {
             "package app; build { target ts { out \"api.kio\" } }",
             "package app; build { target ts { out \"out\"; namespace \"bad-name\" } }",
             "package app; build { target ts { out \"out\"; namespace \"a\"; namespace \"b\" } }",
+            "package app; build { target ts { out \"out\"; namespace (); namespace () } }",
+            "package app; build { target ts { out \"out\"; namespace (); namespace \"a\" } }",
+            "package app; build { target ts { out \"out\"; namespace \"a\"; namespace () } }",
             "package app; build { target ts { out \"out\"; out \"other\" } }",
         ] {
             fs::write(&manifest, source).unwrap();
@@ -3124,10 +3135,7 @@ v(2) {
         let bf = BuildBlock {
             leading_trivia: Vec::new(),
             trailing_trivia: Vec::new(),
-            cache: crate::ast::BuildBlockCache::Disabled {
-                span: crate::span::Span { start: 0, end: 0 },
-                leading_trivia: Vec::new(),
-            },
+            cache: None,
             docs: None,
             targets: vec![target("js"), target("kio-prime")],
             span: crate::span::Span { start: 0, end: 0 },
@@ -3140,10 +3148,7 @@ v(2) {
         let bf = BuildBlock {
             leading_trivia: Vec::new(),
             trailing_trivia: Vec::new(),
-            cache: crate::ast::BuildBlockCache::Disabled {
-                span: crate::span::Span { start: 0, end: 0 },
-                leading_trivia: Vec::new(),
-            },
+            cache: None,
             docs: None,
             targets: vec![target("js"), target("kio-prime"), target("js")],
             span: crate::span::Span { start: 0, end: 0 },

@@ -24,12 +24,21 @@ Do not expand the bundle roots or rewrite source during extraction to conceal
 an offline gap. The source trees remain canonical, never hand-maintained copies.
 
 Checkout builds regenerate their indexed per-file tar.gz payload from current
-tracked sources. The crate-local snapshot supports source-package builds
-without Git or sibling directories. Refresh it from `kio-rs/` with
-`sh ../ci/cargo.sh run --example pack_manual -- --write`; use `--check` to detect
-staleness. Regenerate after integrated docs changes, not merely before stacking
-them. Build inputs must detect add/edit/rename/remove without invalidating
-unrelated semantic compiler caches.
+tracked sources in private build output, without a preparation step. The
+crate-local `manual/index.tsv` and `manual/payload.tar.gz-concat` are generated,
+Git-ignored packaging inputs, not maintained source. From the repository root,
+use `sh ci/package-kio.sh package --locked` or the same helper's `publish`
+command with the intended Cargo flags. It regenerates those inputs before
+Cargo inventories the crate and rejects dirty tracked manual sources. Cargo
+classifies the explicitly included ignored outputs as dirty, so the helper
+requires tracked crate files to be unchanged and authenticates Cargo's exact
+source inventory as tracked regular files without symlink ancestors before
+allowing that generated pair; it rejects alternate package/manifest selection.
+Cargo records its genuine dirty status in source-package metadata. CI validates the actual source archive against
+the canonical inventory and original bytes. Packaged crates build from that
+complete snapshot without Git, sibling directories, or preparation. Build
+inputs detect add/edit/rename/remove without invalidating unrelated semantic
+compiler caches.
 
 [`audit-bundled-docs`](../skills/audit-bundled-docs/SKILL.md) owns bundle,
 package, freshness, offline access, and size evidence. Website checks retain
@@ -40,7 +49,14 @@ path and the portable guide's navigation into it.
 
 **Internal links must set accurate expectations.** When one document under `docs/` describes another document it links to, the description, destination, and any reading order around that link must agree about what the destination contains, who it is for, and when it should be read. None of those is automatically authoritative: resolve a mismatch by making the documentation truthful and the standalone learning path coherent. When a destination's scope, audience, or prerequisites change, review every document that describes or sequences it; a changed description or sequence may instead reveal that the destination needs revision. Do not fix a mismatch merely by weakening or deleting a meaningful description: first preserve the useful coverage or routing obligation somewhere appropriate, then re-evaluate the linking document's own explanation, prerequisites, and order. Apply the obligation according to each document's role: catalogs and routing pages direct readers accurately, sequences preserve prerequisite order, and standalone pages fulfill their advertised scope. The resulting structure must not overstate coverage, omit a prerequisite, or send a reader to the wrong kind of material.
 
-**Tutorials are read top-to-bottom by someone new and are sequenced.** Each section builds on the prior. The reader's mental model grows as they progress.
+**Tutorials are read top-to-bottom by someone new and are sequenced.** State
+the learner's goal and prerequisites, then build understanding or a useful task
+through consecutive `## Chapter N — Title` sections starting at 1. Explain or
+link prerequisites before relying on them.
+Keep reference catalogues, migrations, and narrow troubleshooting in guides,
+with links from the relevant learning step. Compiler regression scenarios do
+not become tutorials merely by adding chapters. When consolidating a page,
+preserve its useful learning obligation and update incoming routes.
 
 **Guides are topic-organized and consumed by someone who already knows the language.** Each guide stands alone; readers come for the specific topic and leave without needing to read the others. A guide either introduces the prerequisites needed for its topic or links to the place in the learning path that does.
 
@@ -51,11 +67,27 @@ path and the portable guide's navigation into it.
 
 **Audience: developers without a PLT background.** Default to plain English. Programming-language-theory jargon — "residual normal form", "β-reduction", "let-unfolding", "fn-call inlining", "partial evaluation", "discharge", "type scheme", "rank-N", "open-world monotonicity", and the like — is appropriate in `specs/`, where the audience reads the formal contract. In `docs/` it raises the floor on who can read the material without giving them an exit. Prefer the plain-English description ("the REPL simplifies as far as it can"); when a technical term is load-bearing, introduce it inline and link to wherever it's defined. The audience is someone using Kio to write a program, not someone working on the compiler.
 
+**Write for human readers.** A page explains its subject for someone doing its
+advertised task, with a clear purpose, connected explanations, and usable
+examples or steps. Notes to self, AI-to-AI handoffs, unexplained shorthand, and
+maintenance bookkeeping do not replace that explanation. Technical detail
+belongs when the intended reader needs it; advanced guides and case studies
+retain their precision and introduce terms according to their prerequisites.
+
 **Relevance is part of altitude, not just readability.** Prose can clear the plain-English bar and still be wrong for `docs/` when it answers a question the reader never asked — the test is *why should a user care?* A host guide (`docs/hosts/<lang>.md`) is for someone embedding Kio in one language: it must not editorialize about where its backend sits among Kio's backend families, contrast it against other backends' internal machinery (erasure, brand markers, carrier walks), or narrate compiler-internal structure the reader has no referent for. What a host author needs is *what they see and do at the boundary*; where the backend sits in the taxonomy is a link to [`specs/backends/README.md`](../../specs/backends/README.md) § Language families, never editorial prose.
 
 **Host guides do not version or grade backends.** A shipping backend is presumed to implement the full Kio contract, so `docs/hosts/<lang>.md` carries no backend-specific version, maturity tier, “experimental” label, or “may evolve” banner. It does carry exactly one `Host API stability: evolving|stable` field immediately below the title, formatted like the backend pages and matching the corresponding backend spec, followed by an adjacent link to [`specs/backends/README.md` § Host API stability](../../specs/backends/README.md#host-api-stability). That field is compatibility policy, not a quality or conformance grade. If a concrete known caveat affects that host, state it in a top banner that matches the corresponding `specs/backends/<lang>.md` banner. Name the actual breakage and the host action it requires; a vague warning is not a caveat.
 
 Snippets in `docs/` use **Kiodoc**: GitHub-flavored Markdown plus a small set of fence-attribute directives for runnable / validatable Kio snippets. The directive contract is specified in [`specs/kiodoc.md`](../../specs/kiodoc.md); the `kio doc` subcommand (see [`specs/cli.md`](../../specs/cli.md) § `kio doc`) validates every non-`{ignore}` `kio` fence in `docs/` on every CI run, gating merges on snippet failures.
+
+**Examples make their relevant dependencies visible.** In tutorials, guides,
+case studies, and host guides, helpers and setup essential to understanding an
+example or reproducing its advertised task must be visible or directly linked,
+with prerequisites introduced before use. Hidden Kiodoc harnesses may supply
+incidental validation scaffolding, such as package headers or capabilities
+already explained to the reader; they must not hide semantic helper definitions
+or replace a missing explanation. Clearly labeled illustrative fragments may
+omit unrelated setup. Individual snippets need not be standalone programs.
 
 `kio doc` validates only the `kio` fences. The **host-language** fences on a `docs/hosts/<lang>.md` page — the `java` / `go` / `swift` / … code a host author copies — are owned by [`ci/checks/orchestrators/host-docs-snippets.sh`](../../ci/checks/orchestrators/host-docs-snippets.sh). For each page it materializes the page's own example package from its `{file}` / file-backed-harness fences and `kio build`s it. Static host consumers compile or type-check against the fresh facade, using only scaffolding the page shows; documented structural illustrations check against self-contained harnesses. JavaScript fences receive syntax checks, and the complete worked host executes against the fresh artifact with output and public Unit-result assertions. Python fences receive syntax checks; facade-importing fences also receive strict Pyright checks against the emitted stubs, and the unique complete typed-host fence executes against the runtime with an exact greeting assertion. Stub-only type imports stay behind `TYPE_CHECKING` with postponed annotations; import/load fragments are not executed. These checks retain facade-symbol drift detection without claiming runtime coverage for compile-only snippets. Missing core tools or Pyright fail; absent optional shard toolchains produce explicit skips. Editing a `docs/hosts/` page's host snippets, or the facade an emitter emits, puts that check on the hook; each page's `kio` fences must therefore also assemble into one buildable package (a `{file}` support set plus a file-backed-harness `main`, not `{ignore}`).
 
@@ -74,6 +106,36 @@ deployment. Review success must cover the final post contents, not an earlier
 draft; a website update does not require a Kio release.
 
 **Blog post bodies are the authorial exception.** The no-leak rule does not apply to hand-written `docs/blog/*.md` bodies, and a post may link to any tracked repository path, including agent guidance. A GitHub link to a repository file or directory must pin the target with a full commit object ID (`blob/<commit>/…` or `tree/<commit>/…`), never a branch or tag such as `main`. Blog post edits remain approval-gated by `AGENTS.md`.
+
+Before signing off a new or edited post, verify every link. Ordinary repository
+file and directory links must pin the exact commit of a published release;
+retain the full commit URL, with the release version as readable context.
+Links whose subject is a commit, diff, issue or pull request are not file links.
+A local release tag alone does not prove publication. This sign-off requirement
+does not mandate retroactive edits to unchanged posts. The review records link
+destinations, anchors and publication evidence; unavailable checks remain
+unresolved, not successful. See `review-blog-post` for the verification procedure.
+For a moving-ref content link, the reviewer offers the exact full-commit link
+from the latest published tagged release, names that version, and warns when
+the linked content has changed since then. Replacement still needs exact-text
+approval and renewed affected review.
+
+**Existing posts retain their communicated meaning.** Later commits must not
+make substantial silent edits. Language and formatting corrections, including
+`kio fmt` changes, may remain unannounced only when they preserve meaning.
+Formatting is substantive when the post describes those formatting principles.
+Small visible code/API updates, such as adding, dropping or renaming a field,
+may remain unannounced when they preserve the example's meaning and the post's
+claims; line count alone does not establish that. Bigger substantive revisions
+require a clear notice in the post giving the edit date and briefly describing
+its nature. The notice does not erase historical claims or replace an explicit
+correction when one is needed. Every post or hidden-harness edit, including
+the notice, still needs exact-text approval; this classification grants no
+blanket editing authority. Preserve the author's voice and hand-written body,
+review the final contents before DCO sign-off, and keep each post's publication
+commit separate. `review-blog-post` and `review-commits` check proposed changes;
+`audit-blog-history` checks available intra-post history as well as the sequence
+of posts.
 
 **Blog source uses straight quotation marks and apostrophes.** Use ASCII `"`
 and `'` rather than curly quotation marks or apostrophes (U+2018–U+2019,

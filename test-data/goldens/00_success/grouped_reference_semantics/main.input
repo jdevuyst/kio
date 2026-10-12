@@ -1,0 +1,16 @@
+module main;
+type Bool = [A] (A & A) -> A;
+fn left[A](a: A, _b: A) -> A { a }
+fn right[A](_a: A, b: A) -> A { b }
+fn pick_left(a: Bool, _b: Bool) -> Bool { a }
+fn pick_right(_a: Bool, b: Bool) -> Bool { b }
+fn base() -> Bool { right }
+fn force_right(_value: Bool) -> Bool { right }
+op _ + _ { impl ((pick_left)) }
+varop [[ ]] { foldl ((pick_right)) ((base)); finalize ((())) }
+newtype Box: ((Bool)) { constructor make; projector get }
+equiv group_op { left + right; left }
+equiv group_fold { [[right, left]]; left }
+equiv group_fold_empty { [[ ]]; right }
+equiv group_splice { left.>((force_right)); right }
+equiv newtype_type { Box.get(Box.make(left)); left }

@@ -1,8 +1,6 @@
 package retention;
 
 build {
-  cache ();
-
   target java {
     out "out/java/"
   }

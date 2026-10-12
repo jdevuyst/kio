@@ -170,14 +170,53 @@ pub(crate) fn tooling_keywords(probe: &ToolingProbe<'_>) -> Vec<&'static str> {
         words.extend(
             target
                 .keys()
-                .iter()
-                .copied()
                 .filter(|key| !context.fields.iter().any(|written| written == key)),
         );
     }
     words.sort_unstable();
     words.dedup();
     words
+}
+
+/// Field descriptions follow the parser-selected owner, not the word's spelling alone.
+#[cfg(feature = "lsp")]
+pub(crate) fn tooling_keyword_description(
+    probe: &ToolingProbe<'_>,
+    keyword: &str,
+) -> Option<String> {
+    Some(tooling_keyword_field(probe, keyword)?.value_description())
+}
+
+#[cfg(feature = "lsp")]
+pub(crate) fn tooling_keyword_field(
+    probe: &ToolingProbe<'_>,
+    keyword: &str,
+) -> Option<crate::config_fields::ConfigField> {
+    if probe.facts.suppression.is_some() {
+        return None;
+    }
+    let cursor = probe.facts.cursor.as_ref()?;
+    if let Some(owner) = cursor.config_owner {
+        owner.field(keyword)
+    } else if cursor.slot == CursorSlot::TargetField {
+        cursor
+            .target
+            .as_ref()
+            .and_then(|context| crate::build_target::BuildTarget::from_id(&context.id))
+            .and_then(|target| target.field(keyword))
+    } else {
+        None
+    }
+}
+
+#[cfg(feature = "lsp")]
+pub(crate) fn tooling_config_value_field(
+    probe: &ToolingProbe<'_>,
+) -> Option<crate::config_fields::ConfigField> {
+    if probe.facts.suppression.is_some() {
+        return None;
+    }
+    probe.facts.cursor.as_ref()?.config_value
 }
 
 fn recursive_owner<'a>(
@@ -212,7 +251,7 @@ pub(crate) fn tooling_candidates(probe: &ToolingProbe<'_>) -> Vec<Candidate> {
     match cursor.slot {
         CursorSlot::Value => namespace_candidates(probe, offset, Namespace::Value),
         CursorSlot::Type => namespace_candidates(probe, offset, Namespace::Type),
-        CursorSlot::Argument => {
+        CursorSlot::Argument | CursorSlot::Capture => {
             let mut result = namespace_candidates(probe, offset, Namespace::Value);
             result.extend(namespace_candidates(probe, offset, Namespace::Type));
             result

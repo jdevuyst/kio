@@ -1,8 +1,6 @@
 package foreign_values;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

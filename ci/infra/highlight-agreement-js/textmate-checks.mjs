@@ -92,6 +92,51 @@ fixture("newtype wrong parents", "module members;\nfn constructor(projector: .) 
   ["fn constructor", "constructor", functionName], ["projector:", "projector", identifier],
   ["role(", "role", functionName], ["; constructor", "constructor", identifier],
 ]);
+fixture("named configuration choices and optional Unit scalars", 'package modes;\nbuild { docs { md "docs"; md_out ((())); html (()) }; target rust { out "out/rust"; namespace ((())); thread_safety ((send_sync)) } }', [
+  ["md_out ((()))", "md_out", keyword], ["md_out ((()))", "(", "punctuation.bracket.kio"],
+  ["html (())", "html", keyword], ["namespace ((()))", "namespace", identifier],
+  ["namespace ((()))", "(", "punctuation.bracket.kio"], ["((send_sync))", "send_sync", identifier],
+  ["((send_sync))", "(", "punctuation.bracket.kio"],
+]);
+fixture("grouped package configuration scalars", 'package app;\nbuild { cache ((())); docs { md (("guide.md")); support ("support"); md_out ("out/md"); html (("out/html")) }; target (rust, (("r" "s"))) { out (("out/rust")); thread_safety ((())) } }', [
+  ["cache ((()))", "cache", keyword], ["cache ((()))", "(", "punctuation.bracket.kio"],
+  ["md ((\"guide.md\"))", "md", keyword], ['"guide.md"', "guide.md", "string.quoted.double.kio"],
+  ["support (", "support", keyword], ["md_out (", "md_out", keyword], ["html ((", "html", keyword],
+  ["target (rust", "target", keyword], ['"r" "s"', "r", "string.quoted.double.kio"],
+  ['"s")))', "s", "string.quoted.double.kio"], ["out ((", "out", identifier],
+  ["thread_safety ((()))", "thread_safety", identifier],
+]);
+fixture("grouped dependency configuration scalars", 'dependency helper;\nsource { git (("https://example.com/libraries.git")); ref ((("main"))); path ( // lookup\n (())\n) }', [
+  ["source {", "source", keyword], ["git ((", "git", keyword], ["ref (((", "ref", keyword],
+  ["path (", "path", keyword], ["path (", "(", "punctuation.bracket.kio"],
+  ['"main"', "main", "string.quoted.double.kio"],
+  [" (())", "(", "punctuation.bracket.kio"],
+]);
+fixture("grouped lock configuration scalars", 'lock helper;\nresolved { git (("https://example.com/libraries.git")); ref ("main"); commit (("abc")); sig ((("digest"))); path ((())) }', [
+  ["resolved {", "resolved", keyword], ["git ((", "git", keyword], ["ref (", "ref", keyword],
+  ["commit ((", "commit", keyword], ["sig (((", "sig", keyword], ["path ((", "path", keyword],
+  ['"digest"', "digest", "string.quoted.double.kio"], ["path ((", "(", "punctuation.bracket.kio"],
+]);
+fixture("grouped callable reference fields", 'module m;\nop _ + _ { impl ((ops.add)) }\nvarop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nelab form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }', [
+  ["impl ((ops", "impl", keyword], ["ops.add", "add", identifier],
+  ["foldl ((", "foldl", keyword], ["foldl ((", "(", "punctuation.bracket.kio"],
+  ["ops.join", "join", identifier], ["ops.empty", "empty", identifier],
+  ["finalize ((()))", "finalize", keyword], ["finalize ((()))", "(", "punctuation.bracket.kio"],
+  ["captures ((", "captures", keyword], ["((Type))", "Type", identifier],
+  ["helpers.run", "run", identifier], ["host.drive", "drive", identifier],
+  ["(host.drive))", "(", "punctuation.bracket.kio"], [") fn", ")", "punctuation.bracket.kio"],
+  ["helpers.keep", "keep", identifier],
+]);
+fixture("standalone grouped fills is a callable", 'module m;\nelab form: . -> . { impl (fills) }', [["(fills)", "fills", identifier]]);
+fixture("nested grouped fills is a callable", 'module m;\nelab form: . -> . { impl ((fills)) }', [["((fills))", "fills", identifier]]);
+fixture("fills marker precedes grouped callable", 'module m;\nelab form: . -> . { impl (fills) ((helpers.run)) }', [
+  ["(fills)", "fills", keyword], ["helpers.run", "run", identifier],
+]);
+for (const comment of ["", " // shared"]) {
+  const prefix = `module m;\nelab form: . -> . { impl (fills)${comment}`;
+  fixture(`fills later-line marker${comment}`, `${prefix}\n helpers.run }`, [[`(fills)${comment}`, "fills", null]]);
+  fixture(`fills later-line callable${comment}`, `${prefix}\n }`, [[`(fills)${comment}`, "fills", null]]);
+}
 fixture("package fields", 'package cache;\nbuild { cache (); docs { md "a.md"; } target js { target "out"; docs "d"; cache "c"; } }\nbridge { cache/docs/target; }', [
   ["package cache", "cache", identifier], ["cache ()", "cache", keyword], ["docs {", "docs", keyword],
   ["target js", "target", keyword], ['target "out"', "target", identifier],

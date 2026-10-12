@@ -210,8 +210,8 @@ diagnostic appends:
 Intra-doc reference resolution is structurally deterministic: a name
 resolves if and only if it appears in the scope at the time `kio doc
 check` runs. Adding new declarations to a module body enables previously
-unresolvable references but never changes the outcome for references that
-already resolved or already failed. This preserves the
+unresolvable references but does not invalidate an already resolved reference
+or retarget it to an unrelated declaration. This preserves the
 open-world monotonicity guarantee described in
 [`language.md` § Open-world design](language.md#open-world-design).
 
@@ -220,10 +220,10 @@ open-world monotonicity guarantee described in
 Three directives embed live code into Kiodoc prose. They form the
 **named-item query trio** — three fixed views of one named item; the
 REPL exposes the same three as the `:signature` / `:source` / `:type`
-meta-commands ([`cli.md`](cli.md) § `kio repl`), under one keyword
-vocabulary, one argument syntax, and one renderer per view shared
-across the two surfaces. The surfaces differ only by sigil: `@` in
-Kiodoc prose, `:` at the REPL prompt.
+meta-commands ([`cli.md`](cli.md) § `kio repl`), with the same keyword
+vocabulary and declaration views. Kiodoc uses the reference-resolution rules
+below; REPL commands use their own declaration selectors and expression
+categories. Their operands are not interchangeable.
 
 - `` [`@signature term`] `` — **inline.** When rendered, inlines the
   resolved item's pretty-printed declaration header at the directive's
@@ -274,9 +274,9 @@ Rules:
 - **Markdown inline/reference links are skipped.** `` [`@signature foo`](url) ``
   is a Markdown inline link and not validated as a directive.
 
-The space-separated `keyword term` argument shape is identical to the
-`kio repl` meta-commands' `:KEYWORD term`; after the `@` / `:` sigil,
-the two surfaces' directive syntax is the same.
+The space-separated `keyword term` shape resembles the REPL's
+`:KEYWORD term`, but Kiodoc's enclosing brackets/backticks and term-resolution
+rules remain distinct from the REPL input grammar.
 
 ### Directive keywords
 
@@ -716,8 +716,25 @@ Markdown file and is not rewritten by `kio doc fmt`.
 
 ## Patterns
 
-In the examples below, assume a harness named `main` has been
-declared earlier in the document.
+The patterns below use this block-position harness, declared before its
+referencing snippets. Its host capabilities describe the expected operations;
+checking does not execute them:
+
+````markdown
+```kio {harness=main placeholder="__INSERT_CODE_HERE__"}
+module tutorial_example;
+
+host type Int role(i32);
+host type String role(str);
+host fn add(a: Int, b: Int) -> Int;
+host fn print(value: Int);
+host fn warn(message: String);
+
+pub fn example() {
+  __INSERT_CODE_HERE__
+}
+```
+````
 
 ### Snippet only
 
@@ -725,35 +742,25 @@ A `kio` fenced block, compiled within the referenced harness.
 
 ````markdown
 ```kio {@main}
-let x = 1 + 1
+let x = add(1, 1);
+print(x)
 ```
 ````
 
 ### Standalone snippet
 
-A snippet that is itself a complete standalone program — a package
-declaration with its `bridge { … }` block followed by the
-module(s) it admits, in one block. `{}` (the empty
-attribute list, with no `@NAME` and no `ignore`) marks the snippet
-as standalone; the body is fed to `kio check` as-is.
+A standalone module needs no named harness. `{}` (the empty attribute list,
+with no `@NAME` and no `ignore`) makes this choice explicit. Package files
+use `variant=package`; a package and several modules use separate
+[document-scoped file fences](#document-scoped-files), not concatenated headers.
 
 ````markdown
 ```kio {}
-package tutorial_intro;
-
-bridge {
-  tutorial_intro;
-  tutorial_intro/**;
-}
-
 module tutorial_intro;
 
 host type I32 role(i32);
+
 host fn add(a: I32, b: I32) -> I32;
-
-module tutorial_intro/main;
-
-import tutorial_intro(add);
 
 pub fn main() { let _ = add(1, 1); () }
 ```
@@ -771,7 +778,7 @@ a skipped package-file fragment.
 
 ````markdown
 ```kio {ignore}
-List<Int>     // type fragment, not a runnable program
+List(Int)     // type fragment, not a complete module
 ```
 ````
 
@@ -779,11 +786,26 @@ List<Int>     // type fragment, not a runnable program
 
 A snippet can show placeholder prose while compiling replacement
 text. The `placeholder=JSON_OBJECT` value maps exact visible text
-to exact validation text. Multiple mappings are supported.
+to exact validation text. Multiple mappings are supported. This top-level
+example uses a separate harness because ordinary function declarations cannot
+appear inside the `main` harness's function body:
 
 ````markdown
-```kio {@main placeholder={"...":"dummy_code()","???":"fallback()"}}
+```kio {harness=items placeholder="__INSERT_CODE_HERE__"}
+module placeholder_example;
+
+host type String role(str);
+fn dummy_code() -> String { "example" }
+fn fallback() -> String { "fallback" }
+
+__INSERT_CODE_HERE__
+```
+````
+
+````markdown
+```kio {@items placeholder={"...":"dummy_code()","???":"fallback()"}}
 fn first() -> String { ... }
+
 fn second() -> String { ??? }
 ```
 ````
@@ -801,7 +823,7 @@ intervene.
 
 ````markdown
 ```kio {@main stdout}
-print (1 + 1)
+print(add(1, 1))
 ```
 
 The program prints:
@@ -811,8 +833,9 @@ The program prints:
 ```
 ````
 
-The website renders the pair as code → output with a Run button on
-the snippet. `kio doc check` enforces the pair's structure.
+`kio doc check` enforces the pair's structure; it does not execute the snippet
+or compare its output. Rendered documentation displays the code and the
+author-provided output fence without a per-snippet Run button.
 
 ### Snippet expected to fail check
 
@@ -822,20 +845,23 @@ committing to specific message text. The runner asserts
 [`exit-codes.md`](exit-codes.md)).
 
 ````markdown
-```kio {@main check_exit_code=22}
-let .(x: Int) = "not a number"
+```kio {@main check_exit_code=14}
+let .(x: Int) = "not a number";
+()
 ```
 ````
 
 ### Snippet + expected stderr
 
-Composes `check_exit_code=N` with `stderr` to assert both the
-failure category *and* the exact diagnostic text in a paired
-`{stderr}` fence. `kio doc check` enforces the pairing.
+Composes `check_exit_code=N` with `stderr` to assert the failure category
+and record an expected diagnostic in a paired `{stderr}` fence. `kio doc check`
+enforces the pairing but does not compare diagnostic text. The text below is
+illustrative wording, not a portable message assertion.
 
 ````markdown
-```kio {@main check_exit_code=22 stderr}
-let .(x: Int) = "not a number"
+```kio {@main check_exit_code=14 stderr}
+let .(x: Int) = "not a number";
+()
 ```
 
 Producing:
@@ -854,8 +880,8 @@ renderers and other consumers.
 
 ````markdown
 ```kio {@main stdout stderr}
-print (1 + 1)
-warn "deprecated"
+print(add(1, 1));
+warn("deprecated")
 ```
 
 ```text {stdout}
@@ -869,33 +895,40 @@ deprecation warning: ...
 
 ### REPL session
 
-A single `kio-repl` fenced block where lines starting with the
-prompt `>>>` (followed by a space) are input and the rest is
-expected output. Convention borrowed from Python doctest, IPython,
-GHCi tutorials. `kio doc check` treats `kio-repl` fences as opaque
-prose.
+A `kio-repl` fence can display an illustrative inspector transcript.
+`kio doc check` treats it as opaque prose: it neither submits the input to a
+REPL nor checks the output. The website renders the transcript as text, not
+editable inputs. See [the REPL contract](cli.md#kio-repl-selector)
+for supported queries and commands.
+
+For example, save this module as `repl_example.kio` and run `kio repl` from
+its directory:
+
+```kio {}
+module repl_example;
+
+pure fn identity[A](value: A) -> A { value }
+```
+
+The transcript omits the current-module line above each `kio>` prompt:
 
 ````markdown
 ```kio-repl
->>> 1 + 1
-2
->>> let x = 5
->>> x * 2
-10
+kio> :load repl_example
+loaded repl_example
+kio> :type identity
+identity : [A] A -> A
+kio> :normalize identity(())
+()
 ```
 ````
 
-CI feeds each input line through a REPL and asserts the in-between
-output. The website renders each `>>>` line as an editable input
-that re-runs on change.
-
 ## Harness
 
-The harness is the program skeleton — a package declaration with
-its `bridge { … }` block, the module(s) carrying the host
-declarations and any shared definitions, and a declared placeholder
-marking where the snippet drops in. A document can declare one or
-more.
+An ordinary harness is a module template with host declarations or shared definitions
+and a declared placeholder marking where the snippet drops in. A document may
+declare several harnesses. Multi-file examples use
+[file-backed harnesses](#document-scoped-files).
 
 ### Declaration (visible)
 
@@ -906,19 +939,15 @@ once. Each named harness must be unique within the document —
 redeclaring a name is a runner error.
 
 ````markdown
-```kio {harness=main placeholder="__INSERT_CODE_HERE__"}
-package tutorial_example;
-
-bridge {
-  tutorial_example;
-}
-
+```kio {harness=arithmetic placeholder="__INSERT_CODE_HERE__"}
 module tutorial_example;
 
-host type I32 role(i32);
-host fn add(a: I32, b: I32) -> I32;
+host type Int role(i32);
+host fn add(a: Int, b: Int) -> Int;
 
-__INSERT_CODE_HERE__
+pub fn example() {
+  __INSERT_CODE_HERE__
+}
 ```
 ````
 
@@ -927,12 +956,6 @@ capabilities:
 
 ````markdown
 ```kio {harness=with_io placeholder="__INSERT_CODE_HERE__"}
-package tutorial_example;
-
-bridge {
-  tutorial_example;
-}
-
 module tutorial_example;
 
 host type I32 role(i32);
@@ -940,7 +963,9 @@ host type String role(str);
 host fn add(a: I32, b: I32) -> I32;
 host fn print(s: String);
 
-__INSERT_CODE_HERE__
+pub fn example() {
+  __INSERT_CODE_HERE__
+}
 ```
 ````
 
@@ -951,19 +976,15 @@ GitHub readers by wrapping it in an HTML comment using the form
 `<!--LANG {attrs}\n<body>\n-->`:
 
 ```
-<!--kio {harness=main placeholder="__INSERT_CODE_HERE__"}
-package tutorial_example;
-
-bridge {
-  tutorial_example;
-}
-
+<!--kio {harness=arithmetic_hidden placeholder="__INSERT_CODE_HERE__"}
 module tutorial_example;
 
 host type I32 role(i32);
 host fn add(a: I32, b: I32) -> I32;
 
-__INSERT_CODE_HERE__
+pub fn example() {
+  __INSERT_CODE_HERE__
+}
 -->
 ```
 
@@ -980,24 +1001,27 @@ A snippet picks its runner mode by what its attribute list
 contains:
 
 ````markdown
-```kio {@main}
-add(1, 1)                      // wrap in harness "main"
+```kio {@arithmetic}
+// Wrap in harness "arithmetic".
+let _ = add(1, 1);
+()
 ```
 
 ```kio {@with_io}
-print("hi")                    // wrap in harness "with_io"
+// Wrap in harness "with_io".
+print("hi")
 ```
 
 ```kio {}
-package tutorial_intro;     // {} = standalone; snippet is its own complete program
-bridge { tutorial_intro; }
 module tutorial_intro;
+
 host type I32 role(i32);
+
 host fn add(a: I32, b: I32) -> I32;
 ```
 
 ```kio {ignore}
-List<Int>                      // skip entirely
+List(Int)                      // skip entirely
 ```
 ````
 
@@ -1241,10 +1265,6 @@ validates — not each member independently.
 
 ````markdown
 ```kio {harness=running placeholder="__INSERT_CODE_HERE__" accumulate}
-bridge {
-  kiodoc;
-}
-
 module kiodoc;
 
 host type S role(str);
@@ -1346,9 +1366,12 @@ import utils/list_ops(fold);
 A file-backed harness is substituted as a real Kio file at the
 path inferred from its own header. A snippet referencing it
 validates the substituted harness file together with the document's
-`file` fences. If the assembled file set uses a package root but no
-matching `<pkg>.pkg.kio` was supplied, the runner supplies
-an empty package file for that package.
+`file` fences. These files belong to one scratch package even when their
+module paths have different first segments. A supplied package file is
+used as that package's manifest; otherwise, the runner supplies one.
+Module namespaces do not create additional package files. As in an
+ordinary package, supplying multiple package files at the scratch root
+is an error.
 
 File-backed harnesses are independent per snippet. They may use
 snippet-level `placeholder=JSON_OBJECT` and `check_exit_code=N`
@@ -1399,7 +1422,7 @@ package hello;
 
 bridge {
   hello;
-  hello/**;
+  hello/**
 }
 ```
 ````

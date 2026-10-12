@@ -1306,9 +1306,9 @@ package source; build { docs { md "guide.md" html "guide.html" } }
         (bracket_lbrace)
         (config_field
           (keyword_declaration)
-          (string_literal))
-        (ERROR
-          (entity_name_label)
+          (string_literal)
+          (ERROR
+            (entity_name_label))
           (string_literal))
         (bracket_rbrace))
       (bracket_rbrace))))
@@ -1329,9 +1329,9 @@ dependency helper; source { git "https://example.com/helper" ref "main" }
       (bracket_lbrace)
       (config_field
         (keyword_declaration)
-        (string_literal))
-      (ERROR
-        (entity_name_label)
+        (string_literal)
+        (ERROR
+          (entity_name_label))
         (string_literal))
       (bracket_rbrace))))
 

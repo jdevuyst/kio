@@ -1212,6 +1212,7 @@ mod tests {
 
     fn source_with_path(path: Option<&str>) -> GitSource {
         GitSource {
+            absent_path_leading_trivia: None,
             url: "repo".to_owned(),
             url_span: Span::new(10, 14),
             url_leading_trivia: Vec::new(),

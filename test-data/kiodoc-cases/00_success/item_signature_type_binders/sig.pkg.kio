@@ -1,8 +1,6 @@
 package sig;
 
 build {
-  cache ();
-
   docs {
     md ".";
     html "out/"

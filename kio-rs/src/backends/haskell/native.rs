@@ -807,13 +807,15 @@ impl<'a> NativeCtx<'a> {
 
         // Named first-order wrappers give GHC's impredicative inference a
         // stable type-application point when an action returns a rank-N
-        // value. They are the ordinary monadic operations and are not
-        // exported.
+        // value. Demand belongs inside the executing monadic stage: forcing
+        // an action while retaining a native forall must not run its body.
         let mut module_fns = String::from(
             "\nkioBind :: forall a m b. Monad m => m a -> (a -> m b) -> m b\n\
              kioBind = (>>=)\n\n\
+             kioEval :: forall a m b. Monad m => a -> (a -> m b) -> m b\n\
+             kioEval value next = pure () >>= \\() -> seq @a value (next value)\n\n\
              kioPure :: forall a m. Monad m => a -> m a\n\
-             kioPure = pure\n",
+             kioPure value = kioEval @a value (pure @m @a)\n",
         );
         for (name, module_key, f) in &fns {
             module_fns.push('\n');
@@ -1632,14 +1634,15 @@ impl<'a> NativeCtx<'a> {
                 continue;
             }
             let module = site.id().module_segments().join("/");
-            match site.id().owner() {
-                BoundaryFacadeSiteOwner::HostFunction { .. } => {}
+            let (wrapper, declaration, doc) = match site.id().owner() {
+                BoundaryFacadeSiteOwner::HostFunction { .. } => continue,
                 BoundaryFacadeSiteOwner::ExportedFunction { name } => {
                     let function = self.exported_function_declaration(&module, name);
-                    pieces.push((
+                    (
+                        export_wrapper_name(&module, name),
                         self.render_fn_export(&module, function)?,
                         function.doc.as_ref(),
-                    ));
+                    )
                 }
                 BoundaryFacadeSiteOwner::NewtypeConstructor { newtype, member } => {
                     let declaration = self.types.newtype_declaration(&module, newtype);
@@ -1647,14 +1650,15 @@ impl<'a> NativeCtx<'a> {
                         declaration.constructor.name, *member,
                         "prepared Haskell constructor identity matches its exact declaration"
                     );
-                    pieces.push((
+                    (
+                        export_newtype_wrapper_name(&module, newtype, member),
                         self.render_newtype_member_export(
                             &module,
                             declaration,
                             &declaration.constructor,
                         )?,
                         None,
-                    ));
+                    )
                 }
                 BoundaryFacadeSiteOwner::NewtypeProjector { newtype, member } => {
                     let declaration = self.types.newtype_declaration(&module, newtype);
@@ -1662,16 +1666,20 @@ impl<'a> NativeCtx<'a> {
                         declaration.projector.name, *member,
                         "prepared Haskell projector identity matches its exact declaration"
                     );
-                    pieces.push((
+                    (
+                        export_newtype_wrapper_name(&module, newtype, member),
                         self.render_newtype_member_export(
                             &module,
                             declaration,
                             &declaration.projector,
                         )?,
                         None,
-                    ));
+                    )
                 }
-            }
+            };
+            // Retain the facade unfolding so the host can specialize demand
+            // sequencing to its concrete monad across the module boundary.
+            pieces.push((format!("{{-# INLINABLE {wrapper} #-}}\n{declaration}"), doc));
         }
         Ok(super::emit::render_documented_declarations(pieces))
     }
@@ -1777,6 +1785,7 @@ impl<'a> NativeCtx<'a> {
         // Unit source parameter becomes no public argument. Product patterns
         // bind the original semantic slots within one public tuple argument.
         let mut natives = Vec::new();
+        let mut native_binds = String::new();
         let mut public_offset = 0usize;
         let mut source_groups = param_groups.iter();
         for stage in entry.stages() {
@@ -1818,7 +1827,8 @@ impl<'a> NativeCtx<'a> {
                         let parts = Type::right_spine_product(raw_ty);
                         assert_eq!(parts.len(), range.len());
                         let converted = parts
-                            .into_iter()
+                            .iter()
+                            .copied()
                             .zip(range)
                             .map(|(part, slot_index)| {
                                 conv.convert_host_boundary_at(
@@ -1833,10 +1843,25 @@ impl<'a> NativeCtx<'a> {
                                 )
                             })
                             .collect::<Result<Vec<_>, _>>()?;
-                        nest_tuple_value(&converted)
+                        conv.strict_boundary_tuple(
+                            &parts,
+                            &converted,
+                            HaskellHostConversionContext::root(FfiDir::In, &type_params, module),
+                        )?
                     }
                 };
-                natives.push(native);
+                let id = format!("__ea{}", natives.len());
+                let rank_n = conv.boundary_rank_n_type(
+                    raw_ty,
+                    None,
+                    HaskellHostConversionContext::root(FfiDir::In, &type_params, module),
+                )?;
+                native_binds.push_str(&render_native_pure_bind_prefix(
+                    &native,
+                    &id,
+                    rank_n.as_deref(),
+                ));
+                natives.push(id);
             }
             public_offset += slots.len();
         }
@@ -1892,12 +1917,12 @@ impl<'a> NativeCtx<'a> {
             // A `()` return crosses unchanged; run for effects, return `m ()`.
             let call = match effect {
                 Effect::Effectful => call,
-                Effect::Pure => format!("pure ({call})"),
+                Effect::Pure => format!("kioPure ({call})"),
             };
             out.push_str(&format!(
                 "{wrapper} :: forall {forall}. {context} => {handle} h m{params_sig} -> m ()\n"
             ));
-            out.push_str(&format!("{wrapper} _pkg{params_bind} = do\n"));
+            out.push_str(&format!("{wrapper} _pkg{params_bind} = {native_binds}do\n"));
             out.push_str(&format!("      _ <- {call}\n"));
             out.push_str("      pure ()\n");
         } else {
@@ -1943,7 +1968,9 @@ impl<'a> NativeCtx<'a> {
                 "{wrapper} :: forall {forall}. {context} => {handle} h m{params_sig} -> m {}\n",
                 paren_ty(&ret_boundary)
             ));
-            out.push_str(&format!("{wrapper} _pkg{params_bind} = {body}\n"));
+            out.push_str(&format!(
+                "{wrapper} _pkg{params_bind} = {native_binds}{body}\n"
+            ));
         }
         Ok(out)
     }
@@ -2009,7 +2036,8 @@ impl<'a> NativeCtx<'a> {
                 let parts = Type::right_spine_product(raw_ty);
                 assert_eq!(parts.len(), range.len());
                 let converted = parts
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .zip(range)
                     .map(|(part, index)| {
                         converter.convert_host_boundary_at(
@@ -2020,7 +2048,11 @@ impl<'a> NativeCtx<'a> {
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                nest_tuple_value(&converted)
+                converter.strict_boundary_tuple(
+                    &parts,
+                    &converted,
+                    HaskellHostConversionContext::root(FfiDir::In, scope, module),
+                )?
             }
         };
         Ok((
@@ -2093,13 +2125,19 @@ impl<'a> NativeCtx<'a> {
                     .iter()
                     .map(|arg| format!(" {arg}"))
                     .collect::<String>();
+                let rank_n = converter.boundary_rank_n_type(
+                    &d.payload,
+                    None,
+                    HaskellHostConversionContext::root(FfiDir::In, &all_params, module),
+                )?;
+                let bind =
+                    render_native_pure_bind_prefix(&native_payload, "__ep", rank_n.as_deref());
                 return Ok(format!(
                     "{wrapper} :: forall {forall}. {context} => {} h m{params_sig} -> m {}\n\
-                     {wrapper} _pkg{params_bind} = pure (({} ({})) :: {})\n",
+                     {wrapper} _pkg{params_bind} = {bind}kioPure (({} (__ep)) :: {})\n",
                     self.handle,
                     paren_ty(&carrier),
                     existential.hs_name,
-                    native_payload,
                     carrier,
                     forall = hs_forall_params(&all_params, self.shapes.standard_names()),
                 ));
@@ -2242,6 +2280,33 @@ impl<'a> NativeCtx<'a> {
                     internal_leaf,
                     self.shapes.standard_names(),
                 );
+                let leaf_adapter = leaf_adapter
+                    .map(|arguments| -> Result<_, EmitError> {
+                        let mut binds = String::new();
+                        let mut values = Vec::with_capacity(arguments.len());
+                        for (index, (argument, (boundary, ty))) in
+                            arguments.iter().zip(&public_slot_types).enumerate()
+                        {
+                            let id = format!("__ex_arg{index}");
+                            let rank_n = converter.boundary_rank_n_type(
+                                ty,
+                                Some(boundary),
+                                HaskellHostConversionContext::root(
+                                    FfiDir::Out,
+                                    &all_params,
+                                    module,
+                                ),
+                            )?;
+                            binds.push_str(&render_native_pure_bind_prefix(
+                                argument,
+                                &id,
+                                rank_n.as_deref(),
+                            ));
+                            values.push(id);
+                        }
+                        Ok((binds, values))
+                    })
+                    .transpose()?;
                 let adapter = render_staged_forall_adapter(
                     &d.existential_params,
                     "arg1",
@@ -2250,7 +2315,7 @@ impl<'a> NativeCtx<'a> {
                     self.shapes.standard_names(),
                     &|continuation| match &leaf_adapter {
                         None => format!("({continuation})"),
-                        Some(arguments) => {
+                        Some((binds, arguments)) => {
                             let arguments =
                                 super::facade::source_parameters(payload_layout, arguments)
                                     .iter()
@@ -2260,7 +2325,7 @@ impl<'a> NativeCtx<'a> {
                             if arguments.is_empty() {
                                 format!("(\\__payload -> ({continuation}))")
                             } else {
-                                format!("(\\__payload -> ({continuation}) {arguments})")
+                                format!("(\\__payload -> {binds}({continuation}) {arguments})")
                             }
                         }
                     },
@@ -2306,7 +2371,14 @@ impl<'a> NativeCtx<'a> {
             if member.name == d.constructor.name {
                 let (param_tys, arg_names, native_payload) = self
                     .render_newtype_source_facade(entry, &d.payload, &converter, &scope, module)?;
-                let wrapped = carrier_ctor_call(&carrier.hs_name, "_pkg", &native_payload);
+                let wrapped = carrier_ctor_call(&carrier.hs_name, "_pkg", "__ep");
+                let rank_n = converter.boundary_rank_n_type(
+                    &d.payload,
+                    None,
+                    HaskellHostConversionContext::root(FfiDir::In, &scope, module),
+                )?;
+                let bind =
+                    render_native_pure_bind_prefix(&native_payload, "__ep", rank_n.as_deref());
                 let params_sig = param_tys
                     .iter()
                     .map(|ty| format!(" -> {}", paren_ty(ty)))
@@ -2317,7 +2389,7 @@ impl<'a> NativeCtx<'a> {
                     .collect::<String>();
                 return Ok(format!(
                     "{wrapper} :: forall {forall}. {context} => {} h m{params_sig} -> m {}\n\
-                     {wrapper} _pkg{params_bind} = pure ({})\n",
+                     {wrapper} _pkg{params_bind} = {bind}kioPure ({})\n",
                     self.handle,
                     paren_ty(&carrier_ty),
                     wrapped,
@@ -2621,11 +2693,14 @@ impl NativeExprEmitter<'_> {
                 ))
             }
             Expr::EnrichedTuple { items, .. } => {
+                let mut binds = String::new();
                 let mut parts = Vec::new();
                 for it in items {
-                    parts.push(self.emit_pure(it)?);
+                    let (binding, value) = self.emit_pure_value_binding(it)?;
+                    binds.push_str(&binding);
+                    parts.push(value);
                 }
-                Ok(nest_tuple_value(&parts))
+                Ok(format!("({binds}{})", nest_tuple_value(&parts)))
             }
             Expr::EnrichedProject {
                 target,
@@ -2665,8 +2740,8 @@ impl NativeExprEmitter<'_> {
                 variants,
                 ..
             } => {
-                let p = self.emit_pure(payload)?;
-                Ok(sum_inject(&p, *variant, *variants))
+                let (binds, p) = self.emit_pure_value_binding(payload)?;
+                Ok(format!("({binds}{})", sum_inject(&p, *variant, *variants)))
             }
             // N-arm match on a right-nested `Either` chain → nested `case`.
             Expr::EnrichedMatch {
@@ -2738,8 +2813,8 @@ impl NativeExprEmitter<'_> {
             }
             // A direct closure-param call `step(x)` inside a dict op.
             Expr::LowClosureCall { name, args, .. } => {
-                let arg = self.emit_call_arg(args, Effect::Pure)?;
-                Ok(format!("({} {arg})", hs_local(name)))
+                let (binds, arg) = self.emit_pure_call_arg(args)?;
+                Ok(format!("({binds}{} {arg})", hs_local(name)))
             }
             // A pure module call. `box_functor()` is nullary; the derived
             // transformer stack calls dict-building fns with value args
@@ -2829,7 +2904,6 @@ impl NativeExprEmitter<'_> {
                 if self.is_pure_expr(value) {
                     let v = self.emit_pure(value)?;
                     let rank_n_type = self.rank_n_let_type(value)?;
-                    let shadows = self.locals.iter().any(|local| local == name);
                     let prior = self.bind_local_ty(name, value);
                     let projection_priors = self.take_projection_aliases(name);
                     self.locals.push(name.clone());
@@ -2838,13 +2912,9 @@ impl NativeExprEmitter<'_> {
                     self.restore_projection_aliases(projection_priors);
                     self.unbind_local_ty(name, prior);
                     let b = b?;
-                    Ok(render_native_pure_let(
-                        &hs_local(name),
-                        rank_n_type.as_deref(),
-                        &v,
-                        &b,
-                        shadows,
-                    ))
+                    let bind =
+                        render_native_pure_bind_prefix(&v, &hs_local(name), rank_n_type.as_deref());
+                    Ok(format!("({bind}{b})"))
                 } else {
                     let v = self.emit_effectful(value)?;
                     let rank_n_type = self.rank_n_let_type(value)?;
@@ -2858,8 +2928,7 @@ impl NativeExprEmitter<'_> {
                     let b = b?;
                     let id = hs_local(name);
                     let bind = render_native_effectful_bind_prefix(&v, &id, rank_n_type.as_deref());
-                    let forced = render_native_strict_force(&id, rank_n_type.as_deref(), &b);
-                    Ok(format!("({bind}{forced})"))
+                    Ok(format!("({bind}{b})"))
                 }
             }
             Expr::Seq { value, body, .. } => {
@@ -2868,8 +2937,7 @@ impl NativeExprEmitter<'_> {
                 let id = self.fresh_var();
                 let b = self.emit_effectful(body)?;
                 let bind = render_native_effectful_bind_prefix(&v, &id, rank_n_type.as_deref());
-                let forced = render_native_strict_force(&id, rank_n_type.as_deref(), &b);
-                Ok(format!("({bind}{forced})"))
+                Ok(format!("({bind}{b})"))
             }
             Expr::LowHostCall {
                 name,
@@ -3025,7 +3093,7 @@ impl NativeExprEmitter<'_> {
             } => {
                 let (binds, payload) = self.emit_value_binding(payload)?;
                 Ok(format!(
-                    "({binds}pure ({}))",
+                    "({binds}kioPure ({}))",
                     sum_inject(&payload, *variant, *variants)
                 ))
             }
@@ -3052,7 +3120,7 @@ impl NativeExprEmitter<'_> {
             } => {
                 let (binds, p) = self.emit_value_binding(payload)?;
                 let built = self.build_newtype_ctor(newtype, type_args, &p)?;
-                Ok(format!("({binds}pure ({built}))"))
+                Ok(format!("({binds}kioPure ({built}))"))
             }
             // A carrier projection whose target reaches a host effect:
             // sequence the target, unwrap, lift.
@@ -3116,7 +3184,7 @@ impl NativeExprEmitter<'_> {
                     binds.push_str(&b);
                     parts.push(v);
                 }
-                Ok(format!("({binds}pure {})", nest_tuple_value(&parts)))
+                Ok(format!("({binds}kioPure {})", nest_tuple_value(&parts)))
             }
             other => Err(EmitError::unsupported(format!(
                 "Haskell native body: effectful expr node falls outside the native path scope: {}",
@@ -3126,21 +3194,41 @@ impl NativeExprEmitter<'_> {
     }
 
     /// Evaluate an argument-position sub-expression to a native **value**,
-    /// returning a `>>=`-bind prefix (empty when the sub-expression is
-    /// pure) and the value text. An effectful sub-expression has its `m`
-    /// sequenced into a fresh binder; a pure one renders inline.
+    /// returning a strict, once-only binding prefix and its value binder.
+    /// Pure computations are demanded inside the executing monadic stage;
+    /// effectful results are demanded in their existing bind continuation.
     fn emit_value_binding(&mut self, expr: &Expr<Routed>) -> Result<(String, String), EmitError> {
+        let v = self.fresh_var();
+        let rank_n_type = self.rank_n_let_type(expr)?;
         if self.is_pure_expr(expr) {
-            Ok((String::new(), paren_expr(&self.emit_pure(expr)?)))
+            let value = self.emit_pure(expr)?;
+            Ok((
+                render_native_pure_bind_prefix(&value, &v, rank_n_type.as_deref()),
+                v,
+            ))
         } else {
             let m = self.emit_effectful(expr)?;
-            let v = self.fresh_var();
-            let rank_n_type = self.rank_n_let_type(expr)?;
             Ok((
                 render_native_effectful_bind_prefix(&m, &v, rank_n_type.as_deref()),
                 v,
             ))
         }
+    }
+
+    /// Demand a pure operand once before the enclosing pure computation.
+    /// Produced structures apply this to their immediate fields, so demand
+    /// follows Kio construction rather than traversing opaque host values.
+    fn emit_pure_value_binding(
+        &mut self,
+        expr: &Expr<Routed>,
+    ) -> Result<(String, String), EmitError> {
+        let value = self.emit_pure(expr)?;
+        let id = self.fresh_var();
+        let rank_n = self.rank_n_let_type(expr)?;
+        Ok((
+            render_native_pure_let_prefix(&id, rank_n.as_deref(), &value),
+            id,
+        ))
     }
 
     fn emit_type_application(
@@ -3195,7 +3283,7 @@ impl NativeExprEmitter<'_> {
 
         match callee_effect {
             Effect::Effectful => Ok(format!("({binds}{call})")),
-            Effect::Pure => Ok(format!("({binds}pure ({call}))")),
+            Effect::Pure => Ok(format!("({binds}kioPure ({call}))")),
         }
     }
 
@@ -3317,13 +3405,16 @@ impl NativeExprEmitter<'_> {
         let scheme_scope: Vec<TypeParam> = fn_type_params(sig).into_iter().cloned().collect();
         let module = Some(module_path);
         let member = host_field_name(module_path, name);
-        // Each host-call value-argument is evaluated to its native value
-        // first; an effectful argument (one reaching another host call)
-        // sequences its `m` before the call, a pure one renders inline.
+        // Evaluate each host-call argument before converting its prepared
+        // boundary slots, retaining source order and sharing each value.
         // A compound argument is then converted from the native-internal
         // representation to the typed boundary family application the host
         // record field expects, recursively adapting nominal slots.
         let mut binds = String::new();
+        let mut operand_binds = String::new();
+        let mut operands = Vec::new();
+        let mut schema_args = Vec::new();
+        let mut schema_arg_types = Vec::new();
         let mut call_args = Vec::new();
         let mut source_arg_index = 0usize;
         let mut source_groups = param_groups.iter();
@@ -3345,20 +3436,22 @@ impl NativeExprEmitter<'_> {
                     .unwrap_or_else(|| unreachable!("a typed Routed host parameter has no type"));
                 let argument = &args[source_arg_index];
                 source_arg_index += 1;
-                let (binding, value) = if generic
-                    && matches!(param_ty, Type::Function { .. })
-                    && let Expr::FnExpr {
-                        sig, ret_ty, body, ..
-                    } = argument
-                {
-                    (
-                        String::new(),
-                        self.emit_closure(sig, ret_ty.as_ref(), body)?,
-                    )
+                let (binding, value) = self.emit_value_binding(argument)?;
+                let value = if generic {
+                    operand_binds.push_str(&binding);
+                    operands.push(value);
+                    let parameter = self.fresh_var();
+                    schema_args.push(parameter.clone());
+                    schema_arg_types.push(self.ctx.render_direct_generic_type(
+                        param_ty,
+                        &scheme_scope,
+                        module,
+                    )?);
+                    parameter
                 } else {
-                    self.emit_value_binding(argument)?
+                    binds.push_str(&binding);
+                    value
                 };
-                binds.push_str(&binding);
                 let range = source.facade_slots();
                 match source.adapter() {
                     CallableSourceParamAdapter::UnitValue => {
@@ -3373,7 +3466,18 @@ impl NativeExprEmitter<'_> {
                             &value,
                             HaskellHostConversionContext::root(FfiDir::Out, &scheme_scope, module),
                         )?;
-                        call_args.push(paren_expr(&converted));
+                        let id = self.fresh_var();
+                        let rank_n = self.boundary_rank_n_type(
+                            param_ty,
+                            Some(slots[slot_index].boundary()),
+                            HaskellHostConversionContext::root(FfiDir::Out, &scheme_scope, module),
+                        )?;
+                        binds.push_str(&render_native_pure_bind_prefix(
+                            &converted,
+                            &id,
+                            rank_n.as_deref(),
+                        ));
+                        call_args.push(id);
                     }
                     CallableSourceParamAdapter::RightNest => {
                         let parts = Type::right_spine_product(param_ty);
@@ -3391,7 +3495,22 @@ impl NativeExprEmitter<'_> {
                                     module,
                                 ),
                             )?;
-                            call_args.push(paren_expr(&converted));
+                            let id = self.fresh_var();
+                            let rank_n = self.boundary_rank_n_type(
+                                part,
+                                Some(slots[slot_index].boundary()),
+                                HaskellHostConversionContext::root(
+                                    FfiDir::Out,
+                                    &scheme_scope,
+                                    module,
+                                ),
+                            )?;
+                            binds.push_str(&render_native_pure_bind_prefix(
+                                &converted,
+                                &id,
+                                rank_n.as_deref(),
+                            ));
+                            call_args.push(id);
                         }
                     }
                 }
@@ -3406,12 +3525,23 @@ impl NativeExprEmitter<'_> {
             format!(" {}", call_args.join(" "))
         };
         let mut call = format!("{member} (pkgHost _pkg)");
-        for type_arg in type_args {
-            let type_arg = self.ctx.render_visible_type_argument(
-                type_arg,
-                &self.type_params,
-                Some(self.module_key),
-            )?;
+        let rendered_type_args = type_args
+            .iter()
+            .map(|type_arg| {
+                self.ctx.render_visible_type_argument(
+                    type_arg,
+                    &self.type_params,
+                    Some(self.module_key),
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let call_type_args = if generic {
+            assert_eq!(scheme_scope.len(), rendered_type_args.len());
+            hs_tyvars(&scheme_scope)
+        } else {
+            rendered_type_args.clone()
+        };
+        for type_arg in call_type_args {
             call.push_str(" @");
             call.push_str(&paren_ty(&type_arg));
         }
@@ -3425,12 +3555,60 @@ impl NativeExprEmitter<'_> {
             "__hr",
             HaskellHostConversionContext::root(FfiDir::In, &scheme_scope, module),
         )?;
-        if converted == "__hr" {
-            return Ok(format!("({binds}{call})"));
+        let body = if converted == "__hr" {
+            format!("{binds}{call}")
+        } else {
+            let lifted = if generic {
+                self.render_boundary_pure_value_at(
+                    ret_ty,
+                    entry.returned().boundary(),
+                    &converted,
+                    HaskellHostConversionContext::root(FfiDir::In, &scheme_scope, module),
+                )?
+            } else {
+                let rank_n_type = self.render_rank_n_type(value_ty)?;
+                render_native_pure_value(&converted, rank_n_type.as_deref())
+            };
+            format!("{binds}({call}) >>= \\__hr -> {lifted}")
+        };
+        if !generic {
+            return Ok(format!("({body})"));
         }
-        let rank_n_type = self.render_rank_n_type(value_ty)?;
-        let lifted = render_native_pure_value(&converted, rank_n_type.as_deref());
-        Ok(format!("({binds}({call}) >>= \\__hr -> {lifted})"))
+
+        // Check conversion and demand under the declared schema before any
+        // impredicative substitution. A per-slot let or bind hides the
+        // instantiated polytype from GHC's Quick Look inference otherwise.
+        let helper = self.fresh_var();
+        let quantified = scheme_scope
+            .iter()
+            .map(|param| {
+                super::skin::kinded_haskell_binder(param, self.ctx.shapes.standard_names())
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ret = self
+            .ctx
+            .render_direct_generic_type(ret_ty, &scheme_scope, module)?;
+        let params = schema_arg_types
+            .iter()
+            .map(|ty| format!("{} -> ", paren_ty(ty)))
+            .collect::<String>();
+        let parameters = schema_args
+            .iter()
+            .map(|arg| format!(" {arg}"))
+            .collect::<String>();
+        let mut applied = helper.clone();
+        for type_arg in rendered_type_args {
+            applied.push_str(&format!(" @{}", paren_ty(&type_arg)));
+        }
+        for operand in operands {
+            applied.push_str(&format!(" {operand}"));
+        }
+        Ok(format!(
+            "({operand_binds}let {{ {helper} :: forall {quantified}. {params}m {}; \
+             {helper}{parameters} = ({body}) }} in {applied})",
+            paren_ty(&ret),
+        ))
     }
 
     /// Convert a value between the native-internal representation (tuples /
@@ -3617,7 +3795,8 @@ impl NativeExprEmitter<'_> {
                         context.module,
                     )?,
                 };
-                let applied = format!("((({expr}) :: {source_ty}) @{type_var})");
+                let source = format!("__hforall{}", context.depth);
+                let applied = format!("(({source}) @{type_var})");
                 let bind = render_native_effectful_bind_prefix(
                     &applied,
                     &value_var,
@@ -3657,9 +3836,47 @@ impl NativeExprEmitter<'_> {
                         }
                     }
                 };
-                Ok(format!(
-                    "((\\ @{} -> {bind}pure ({})) :: {})",
-                    type_var, converted, target_ty
+                let target_body_ty =
+                    if self
+                        .ctx
+                        .native_type_contains_forall(body, &nested, context.module)
+                    {
+                        Some(match context.direction {
+                            FfiDir::In => self.ctx.render_direct_generic_type(
+                                body,
+                                &nested,
+                                context.module,
+                            )?,
+                            FfiDir::Out => {
+                                if let (Some(boundary), Some(public_body)) = (boundary, public_body)
+                                {
+                                    self.ctx.shapes.boundary_alias_haskell_type_in(
+                                        &self.ctx.facade,
+                                        boundary,
+                                        public_body,
+                                        &nested,
+                                        context.module,
+                                    )?
+                                } else {
+                                    self.ctx.shapes.boundary_haskell_type_scoped_in(
+                                        body,
+                                        &nested,
+                                        context.module,
+                                    )?
+                                }
+                            }
+                        })
+                    } else {
+                        None
+                    };
+                let lifted = render_native_pure_value(&converted, target_body_ty.as_deref());
+                let converted = format!("((\\ @{type_var} -> {bind}{lifted}) :: {target_ty})");
+                Ok(render_native_pure_let(
+                    &source,
+                    Some(&source_ty),
+                    expr,
+                    &converted,
+                    false,
                 ))
             }
             Type::Product { .. } => self.convert_host_product(ty, boundary, expr, context),
@@ -3756,11 +3973,21 @@ impl NativeExprEmitter<'_> {
         value: &str,
         context: HaskellHostConversionContext<'_, '_>,
     ) -> Result<String, EmitError> {
+        let target = self.boundary_rank_n_type(ty, Some(boundary), context)?;
+        Ok(render_native_pure_value(value, target.as_deref()))
+    }
+
+    fn boundary_rank_n_type(
+        &self,
+        ty: &Type<Routed>,
+        boundary: Option<&BoundaryId>,
+        context: HaskellHostConversionContext<'_, '_>,
+    ) -> Result<Option<String>, EmitError> {
         if !self
             .ctx
             .native_type_contains_forall(ty, context.scheme_scope, context.module)
         {
-            return Ok(render_native_pure_value(value, None));
+            return Ok(None);
         }
         let target = match context.direction {
             FfiDir::In => {
@@ -3768,6 +3995,13 @@ impl NativeExprEmitter<'_> {
                     .render_direct_generic_type(ty, context.scheme_scope, context.module)?
             }
             FfiDir::Out => {
+                let Some(boundary) = boundary else {
+                    return self
+                        .ctx
+                        .shapes
+                        .boundary_haskell_type_scoped_in(ty, context.scheme_scope, context.module)
+                        .map(Some);
+                };
                 let public_ty = self.ctx.facade.boundary_type(boundary).unwrap_or_else(|| {
                     unreachable!(
                         "an exact Haskell boundary path has no prepared public type: {boundary:?}"
@@ -3781,7 +4015,31 @@ impl NativeExprEmitter<'_> {
                 )?
             }
         };
-        Ok(render_native_pure_value(value, Some(&target)))
+        Ok(Some(target))
+    }
+
+    /// Construct a domain from already-converted fields. This is a
+    /// value builder, not the tuple spelling shared with lambda patterns.
+    fn strict_boundary_tuple(
+        &self,
+        parts: &[&Type<Routed>],
+        values: &[String],
+        context: HaskellHostConversionContext<'_, '_>,
+    ) -> Result<String, EmitError> {
+        assert_eq!(parts.len(), values.len());
+        let mut binds = String::new();
+        let mut bound = Vec::with_capacity(values.len());
+        for (index, (ty, value)) in parts.iter().zip(values).enumerate() {
+            let id = format!("__ht{}_{}", context.depth, index);
+            let rank_n = self.boundary_rank_n_type(ty, None, context)?;
+            binds.push_str(&render_native_pure_let_prefix(
+                &id,
+                rank_n.as_deref(),
+                value,
+            ));
+            bound.push(id);
+        }
+        Ok(format!("({binds}{})", nest_tuple_value(&bound)))
     }
 
     /// Convert a product slot-by-slot while retaining the shared right-nested
@@ -3796,6 +4054,7 @@ impl NativeExprEmitter<'_> {
         let slots = Type::right_spine_product(ty);
         let n = slots.len();
         let bound = format!("__hp{}", context.depth);
+        let mut binds = String::new();
         let mut elems = Vec::with_capacity(n);
         for (i, slot) in slots.iter().enumerate() {
             let nested = boundary.map(|boundary| {
@@ -3803,15 +4062,23 @@ impl NativeExprEmitter<'_> {
                     i.try_into().expect("product slot index fits u32"),
                 ))
             });
-            elems.push(self.convert_host_boundary_planned_in(
+            let converted = self.convert_host_boundary_planned_in(
                 slot,
                 nested.as_ref(),
                 &tuple_proj(&bound, i, n),
                 context.nested(),
-            )?);
+            )?;
+            let id = format!("__hp{}_{}", context.depth, i);
+            let rank_n = self.boundary_rank_n_type(slot, nested.as_ref(), context.nested())?;
+            binds.push_str(&render_native_pure_let_prefix(
+                &id,
+                rank_n.as_deref(),
+                &converted,
+            ));
+            elems.push(id);
         }
         Ok(format!(
-            "(let {{ {bound} = ({expr}) }} in {})",
+            "(let {{ {bound} = ({expr}) }} in {binds}{})",
             nest_tuple_value(&elems)
         ))
     }
@@ -3835,7 +4102,6 @@ impl NativeExprEmitter<'_> {
         let mut target_types = Vec::new();
         let mut converted = Vec::new();
         let mut cases = String::new();
-        let mut changed = false;
         for (k, slot) in slots.iter().enumerate() {
             let nested = boundary.map(|boundary| {
                 boundary.nested(BoundaryStep::Slot(
@@ -3848,7 +4114,6 @@ impl NativeExprEmitter<'_> {
                 &bound,
                 context.nested(),
             )?;
-            changed |= conv != bound;
             if rank_n {
                 let native = self.ctx.render_direct_generic_type(
                     slot,
@@ -3886,11 +4151,8 @@ impl NativeExprEmitter<'_> {
             cases.push_str(&format!(
                 "{} -> {}; ",
                 either_pattern(k, n, &bound),
-                either_inject(k, n, &conv)
+                render_native_pure_let("__hs", None, &conv, &either_inject(k, n, "__hs"), false)
             ));
-        }
-        if !changed {
-            return Ok(expr.to_owned());
         }
         if rank_n {
             // Raw case patterns instantiate an impredicative arm too early.
@@ -3902,12 +4164,14 @@ impl NativeExprEmitter<'_> {
                     nest_either_type(&target_types[index + 1..]),
                 ];
                 let inject = |arm, value: &str| {
-                    super::emit::raw_sum_expr(
+                    let id = format!("__hs{}_{}_{arm}", context.depth, index);
+                    let injected = super::emit::raw_sum_expr(
                         &target_pair,
                         arm,
-                        &format!("({value})"),
+                        &id,
                         self.ctx.shapes.standard_names(),
-                    )
+                    );
+                    render_native_pure_let(&id, Some(&target_pair[arm]), value, &injected, false)
                 };
                 mapped = super::emit::typed_either(
                     (
@@ -3932,6 +4196,25 @@ impl NativeExprEmitter<'_> {
     /// argument/result shapes and bridges the native tupled value group to
     /// the boundary's curried field spelling.
     fn convert_host_function(
+        &self,
+        ty: &Type<Routed>,
+        boundary: Option<&BoundaryId>,
+        expr: &str,
+        context: HaskellHostConversionContext<'_, '_>,
+    ) -> Result<String, EmitError> {
+        let bound = format!("__hfun{}", context.depth);
+        let rank_n = self.boundary_rank_n_type(ty, boundary, context.flipped())?;
+        let converted = self.convert_host_function_value(ty, boundary, &bound, context)?;
+        Ok(render_native_pure_let(
+            &bound,
+            rank_n.as_deref(),
+            expr,
+            &converted,
+            false,
+        ))
+    }
+
+    fn convert_host_function_value(
         &self,
         ty: &Type<Routed>,
         boundary: Option<&BoundaryId>,
@@ -3972,7 +4255,7 @@ impl NativeExprEmitter<'_> {
             } else {
                 let retbind = format!("__hfr{}", context.depth);
                 let ret_conv = self.convert_host_boundary_in(ret, &retbind, context.nested())?;
-                format!("{body} >>= \\{retbind} -> pure ({ret_conv})")
+                format!("{body} >>= \\{retbind} -> kioPure ({ret_conv})")
             };
             return Ok(match context.direction {
                 FfiDir::Out => body,
@@ -3988,7 +4271,7 @@ impl NativeExprEmitter<'_> {
         let native_arg = if legs_trivial {
             // No re-key: the native tuple param is the boundary params nested
             // directly (one value group = one nested-binary tuple).
-            nest_tuple_value(&params)
+            self.strict_boundary_tuple(&param_tys, &params, leg_context)?
         } else {
             let mut converted_params = Vec::with_capacity(param_tys.len());
             for (i, pty) in param_tys.iter().enumerate() {
@@ -3998,9 +4281,12 @@ impl NativeExprEmitter<'_> {
                     leg_context,
                 )?);
             }
-            nest_tuple_value(&converted_params)
+            self.strict_boundary_tuple(&param_tys, &converted_params, leg_context)?
         };
-        let applied = format!("(({expr}) {native_arg})");
+        let domain = format!("__hf_arg{}", context.depth);
+        let rank_n = self.boundary_rank_n_type(param, None, leg_context)?;
+        let bind = render_native_pure_bind_prefix(&native_arg, &domain, rank_n.as_deref());
+        let applied = format!("({bind}({expr}) {domain})");
         let lam = params.join(" ");
         if legs_trivial {
             return Ok(format!("(\\{lam} -> {applied})"));
@@ -4008,7 +4294,7 @@ impl NativeExprEmitter<'_> {
         let retbind = format!("__hfr{}", context.depth);
         let ret_conv = self.convert_host_boundary_in(ret, &retbind, context.nested())?;
         Ok(format!(
-            "(\\{lam} -> {applied} >>= \\{retbind} -> pure ({ret_conv}))"
+            "(\\{lam} -> {applied} >>= \\{retbind} -> kioPure ({ret_conv}))"
         ))
     }
 
@@ -4065,7 +4351,8 @@ impl NativeExprEmitter<'_> {
                             let parts = Type::right_spine_product(source_ty);
                             assert_eq!(parts.len(), range.len());
                             let converted = parts
-                                .into_iter()
+                                .iter()
+                                .copied()
                                 .zip(range)
                                 .map(|(part, index)| {
                                     let nested = boundary.nested(BoundaryStep::CallbackArg(
@@ -4079,15 +4366,22 @@ impl NativeExprEmitter<'_> {
                                     )
                                 })
                                 .collect::<Result<Vec<_>, _>>()?;
-                            nest_tuple_value(&converted)
+                            self.strict_boundary_tuple(&parts, &converted, leg_context)?
                         }
                     };
                     source_values.push(source_value);
                 }
-                format!("(({expr}) {})", nest_tuple_value(&source_values))
+                let native_domain =
+                    self.strict_boundary_tuple(&source_types, &source_values, leg_context)?;
+                let domain_id = format!("__hfa{}", context.depth);
+                let rank_n = self.boundary_rank_n_type(param, None, leg_context)?;
+                let bind =
+                    render_native_pure_bind_prefix(&native_domain, &domain_id, rank_n.as_deref());
+                format!("({bind}({expr}) {domain_id})")
             }
             FfiDir::In => {
                 let native_domain = format!("__hfd{}", context.depth);
+                let mut binds = String::new();
                 let mut facade_values = Vec::with_capacity(layout.facade_slot_count());
                 for (source_index, (source_ty, source)) in
                     source_types.iter().zip(layout.source_params()).enumerate()
@@ -4108,12 +4402,21 @@ impl NativeExprEmitter<'_> {
                             let nested = boundary.nested(BoundaryStep::CallbackArg(
                                 index.try_into().expect("callback slot index fits u32"),
                             ));
-                            facade_values.push(self.convert_host_boundary_planned_in(
+                            let converted = self.convert_host_boundary_planned_in(
                                 source_ty,
                                 Some(&nested),
                                 &source_value,
                                 leg_context,
-                            )?);
+                            )?;
+                            let id = format!("__hfa{}_{}", context.depth, index);
+                            let rank_n =
+                                self.boundary_rank_n_type(source_ty, Some(&nested), leg_context)?;
+                            binds.push_str(&render_native_pure_bind_prefix(
+                                &converted,
+                                &id,
+                                rank_n.as_deref(),
+                            ));
+                            facade_values.push(id);
                         }
                         CallableSourceParamAdapter::RightNest => {
                             let parts = Type::right_spine_product(source_ty);
@@ -4124,7 +4427,7 @@ impl NativeExprEmitter<'_> {
                                 let nested = boundary.nested(BoundaryStep::CallbackArg(
                                     index.try_into().expect("callback slot index fits u32"),
                                 ));
-                                facade_values.push(self.convert_host_boundary_planned_in(
+                                let converted = self.convert_host_boundary_planned_in(
                                     part,
                                     Some(&nested),
                                     &tuple_proj(
@@ -4133,7 +4436,16 @@ impl NativeExprEmitter<'_> {
                                         source.facade_slots().len(),
                                     ),
                                     leg_context,
-                                )?);
+                                )?;
+                                let id = format!("__hfa{}_{}", context.depth, index);
+                                let rank_n =
+                                    self.boundary_rank_n_type(part, Some(&nested), leg_context)?;
+                                binds.push_str(&render_native_pure_bind_prefix(
+                                    &converted,
+                                    &id,
+                                    rank_n.as_deref(),
+                                ));
+                                facade_values.push(id);
                             }
                         }
                     }
@@ -4170,7 +4482,7 @@ impl NativeExprEmitter<'_> {
                     )?;
                     format!("{applied} >>= \\{retbind} -> {lifted}")
                 };
-                return Ok(format!("(\\{native_domain} -> {body})"));
+                return Ok(format!("(\\{native_domain} -> {binds}{body})"));
             }
         };
 
@@ -4282,20 +4594,26 @@ impl NativeExprEmitter<'_> {
         payload: &Expr<Routed>,
         effect: Effect,
     ) -> Result<String, EmitError> {
+        debug_assert!(effect == Effect::Pure);
+        let (binds, p) = self.emit_pure_value_binding(payload)?;
         if let Some(c) = self.ctx.carrier_for(newtype, module_path) {
-            let p = self.emit(payload, effect)?;
             // A nullary transparent carrier is runtime-identity: the
             // constructor is the payload itself (no wrap).
             if !c.opaque {
-                return Ok(paren_expr(&p));
+                return Ok(format!("({binds}{p})"));
             }
-            return Ok(carrier_ctor_call(&c.hs_name, "_pkg", &p));
+            return Ok(format!(
+                "({binds}{})",
+                carrier_ctor_call(&c.hs_name, "_pkg", &p)
+            ));
         }
         if let Some(e) = self.ctx.existential_for(newtype, module_path) {
             // The GADT data constructor seals the existential witnesses by
             // construction; the payload is a pure value computation.
-            let p = self.emit_pure(payload)?;
-            return Ok(self.build_existential_ctor(e, type_args, &p));
+            return Ok(format!(
+                "({binds}{})",
+                self.build_existential_ctor(e, type_args, &p)
+            ));
         }
         Err(EmitError::unsupported(format!(
             "Haskell native body: newtype ctor `{newtype}` is neither carrier nor existential"
@@ -4438,7 +4756,7 @@ impl NativeExprEmitter<'_> {
         arity: usize,
     ) -> Result<String, EmitError> {
         let (binds, selected) = self.emit_effectful_projected_value(target, index, arity)?;
-        Ok(format!("({binds}pure ({selected}))"))
+        Ok(format!("({binds}kioPure ({selected}))"))
     }
 
     fn emit_effectful_field_get(
@@ -4450,7 +4768,7 @@ impl NativeExprEmitter<'_> {
     ) -> Result<String, EmitError> {
         let (binds, selected) = self.emit_effectful_projected_value(target, index, arity)?;
         let field = self.build_field_get(target_ty, index, arity, &selected)?;
-        Ok(format!("({binds}pure ({field}))"))
+        Ok(format!("({binds}kioPure ({field}))"))
     }
 
     fn emit_effectful_projected_value(
@@ -4523,6 +4841,7 @@ impl NativeExprEmitter<'_> {
             .map(|index| format!("__hf{index}"))
             .collect();
         let mut call_args = Vec::new();
+        let mut binds = String::new();
         let mut value_stage_index = 0usize;
         for stage in entry.stages() {
             let HaskellCallableHeadStage::Value {
@@ -4561,7 +4880,18 @@ impl NativeExprEmitter<'_> {
                             &value,
                             HaskellHostConversionContext::root(FfiDir::Out, &scheme_scope, module),
                         )?;
-                        call_args.push(paren_expr(&converted));
+                        let id = self.fresh_var();
+                        let rank_n = self.boundary_rank_n_type(
+                            param_ty,
+                            Some(slots[slot_index].boundary()),
+                            HaskellHostConversionContext::root(FfiDir::Out, &scheme_scope, module),
+                        )?;
+                        binds.push_str(&render_native_pure_bind_prefix(
+                            &converted,
+                            &id,
+                            rank_n.as_deref(),
+                        ));
+                        call_args.push(id);
                     }
                     CallableSourceParamAdapter::RightNest => {
                         let parts = Type::right_spine_product(param_ty);
@@ -4579,7 +4909,22 @@ impl NativeExprEmitter<'_> {
                                     module,
                                 ),
                             )?;
-                            call_args.push(paren_expr(&converted));
+                            let id = self.fresh_var();
+                            let rank_n = self.boundary_rank_n_type(
+                                part,
+                                Some(slots[slot_index].boundary()),
+                                HaskellHostConversionContext::root(
+                                    FfiDir::Out,
+                                    &scheme_scope,
+                                    module,
+                                ),
+                            )?;
+                            binds.push_str(&render_native_pure_bind_prefix(
+                                &converted,
+                                &id,
+                                rank_n.as_deref(),
+                            ));
+                            call_args.push(id);
                         }
                     }
                 }
@@ -4619,6 +4964,7 @@ impl NativeExprEmitter<'_> {
             format!("({call}) >>= \\__hfr -> {lifted}")
         };
 
+        body = format!("({binds}{body})");
         let mut value_index = 0usize;
         let mut stage_binders = Vec::new();
         for stage in native_call_stages(sig) {
@@ -4650,18 +4996,24 @@ impl NativeExprEmitter<'_> {
         sig: &crate::ast::Signature<Routed>,
         value_ty: Option<&Type<Routed>>,
     ) -> Result<String, EmitError> {
+        let mut binds = String::new();
         let mut call = self.render_direct_module_head(fname, type_args)?;
         for arg in args {
+            let (binding, value) = self.emit_pure_value_binding(arg)?;
+            binds.push_str(&binding);
             call.push(' ');
-            call.push_str(&paren_expr(&self.emit_pure(arg)?));
+            call.push_str(&value);
         }
         let residual = residual_module_call_stages(sig, type_args.len(), args.is_empty());
         if residual.is_empty() {
-            Ok(format!("({call})"))
+            Ok(format!("({binds}{call})"))
         } else {
             let adapted =
                 render_module_fn_value_adapter(&call, &residual, self.ctx.effect_of(fname));
-            self.annotate_rank_n_value(adapted, value_ty)
+            // A strict operand prefix introduces `seq`, whose result slot
+            // cannot supply the expected forall to a type abstraction.
+            let adapted = self.annotate_rank_n_value(adapted, value_ty)?;
+            self.annotate_rank_n_value(format!("({binds}{adapted})"), value_ty)
         }
     }
 
@@ -4702,12 +5054,12 @@ impl NativeExprEmitter<'_> {
                 let (binds, payload) = self.emit_value_binding(payload)?;
                 let built =
                     self.build_newtype_ctor_in(newtype, module_path, type_args, &payload)?;
-                Ok(format!("({binds}pure ({built}))"))
+                Ok(format!("({binds}kioPure ({built}))"))
             }
             Some(NewtypeMemberKind::Projector) if effect == Effect::Effectful => {
                 let (binds, payload) = self.emit_value_binding(payload)?;
                 let projected = self.build_newtype_proj_in(newtype, module_path, &payload)?;
-                Ok(format!("({binds}pure ({projected}))"))
+                Ok(format!("({binds}kioPure ({projected}))"))
             }
             Some(NewtypeMemberKind::Constructor) => {
                 self.emit_newtype_ctor_in(newtype, module_path, type_args, payload, effect)
@@ -4804,19 +5156,10 @@ impl NativeExprEmitter<'_> {
         args: &[Expr<Routed>],
         effect: Effect,
     ) -> Result<String, EmitError> {
-        if let Expr::LowNewtypeProj {
-            newtype, target, ..
-        } = callee
-        {
-            let projected = self.emit_newtype_proj(newtype, target, effect)?;
-            let arg = self.emit_call_arg(args, effect)?;
-            return Ok(format!("({} {arg})", paren_expr(&projected)));
-        }
-        // A general indirect call: render the callee value, apply the
-        // tupled value group.
-        let c = self.emit(callee, effect)?;
-        let arg = self.emit_call_arg(args, effect)?;
-        Ok(format!("({} {arg})", paren_expr(&c)))
+        debug_assert!(effect == Effect::Pure);
+        let (callee_binds, c) = self.emit_pure_value_binding(callee)?;
+        let (arg_binds, arg) = self.emit_pure_call_arg(args)?;
+        Ok(format!("({callee_binds}{arg_binds}{c} {arg})"))
     }
 
     /// Render an `EnrichedMatch` over a right-nested `Either` scrutinee as
@@ -4881,22 +5224,15 @@ impl NativeExprEmitter<'_> {
 
     /// Build a call's single value argument: one value → that value, many
     /// → a tuple (Kio ABI: one product per call group).
-    fn emit_call_arg(
-        &mut self,
-        args: &[Expr<Routed>],
-        effect: Effect,
-    ) -> Result<String, EmitError> {
-        if args.is_empty() {
-            return Ok("()".to_owned());
-        }
-        if args.len() == 1 {
-            return Ok(paren_expr(&self.emit(&args[0], effect)?));
-        }
+    fn emit_pure_call_arg(&mut self, args: &[Expr<Routed>]) -> Result<(String, String), EmitError> {
+        let mut binds = String::new();
         let mut parts = Vec::new();
         for a in args {
-            parts.push(self.emit(a, effect)?);
+            let (binding, value) = self.emit_pure_value_binding(a)?;
+            binds.push_str(&binding);
+            parts.push(value);
         }
-        Ok(nest_tuple_value(&parts))
+        Ok((binds, nest_tuple_value(&parts)))
     }
 
     /// Render a closure at its exact reconstructed function type. Haskell
@@ -5000,11 +5336,7 @@ impl NativeExprEmitter<'_> {
                 }
             }
         }
-        let b = if self.is_pure_expr(body) {
-            self.emit_pure(body).map(|body| format!("pure ({body})"))
-        } else {
-            self.emit_effectful(body)
-        };
+        let b = self.emit_effectful(body);
         for (key, prior) in projection_priors.into_iter().rev() {
             match prior {
                 Some(alias) => {
@@ -5900,7 +6232,7 @@ fn render_module_fn_value_adapter(
     }
 
     let mut body = match effect {
-        Effect::Pure => format!("pure ({call})"),
+        Effect::Pure => format!("kioPure ({call})"),
         Effect::Effectful => call,
     };
     for (depth, binder) in binders.into_iter().rev().enumerate() {
@@ -6034,18 +6366,44 @@ fn render_native_strict_force(value: &str, rank_n_type: Option<&str>, body: &str
     }
 }
 
+fn render_native_strict_force_prefix(value: &str, rank_n_type: Option<&str>) -> String {
+    if let Some(ty) = rank_n_type {
+        format!("seq @{} {value} $ ", paren_ty(ty))
+    } else {
+        format!("{value} `seq` ")
+    }
+}
+
+fn render_native_pure_let_prefix(id: &str, rank_n_type: Option<&str>, value: &str) -> String {
+    let signature = rank_n_type
+        .map(|ty| format!("{id} :: {ty}; "))
+        .unwrap_or_default();
+    let force = render_native_strict_force_prefix(id, rank_n_type);
+    format!("let {{ {signature}{id} = {value} }} in {force}")
+}
+
+/// Unlike a strict let around an action, this evaluates its operand only in
+/// the executing stage, including when a preceding forall is merely retained.
+fn render_native_pure_bind_prefix(value: &str, id: &str, rank_n_type: Option<&str>) -> String {
+    let type_arg = rank_n_type
+        .map(|ty| format!(" @{}", paren_ty(ty)))
+        .unwrap_or_default();
+    format!("kioEval{type_arg} {} $ \\{id} -> ", paren_expr(value))
+}
+
 /// Render the prefix that sequences one effectful value. A rank-N result uses
 /// the generated `kioBind` wrapper so `ImpredicativeTypes` instantiates its
 /// result as a polytype instead of choosing a monomorphic first use.
 fn render_native_effectful_bind_prefix(value: &str, id: &str, rank_n_type: Option<&str>) -> String {
+    let force = render_native_strict_force_prefix(id, rank_n_type);
     if let Some(ty) = rank_n_type {
         format!(
-            "kioBind @{} {} $ \\{id} -> ",
+            "kioBind @{} {} $ \\{id} -> {force}",
             paren_ty(ty),
             paren_expr(value)
         )
     } else {
-        format!("{} >>= \\{id} -> ", paren_expr(value))
+        format!("{} >>= \\{id} -> {force}", paren_expr(value))
     }
 }
 
@@ -6055,7 +6413,7 @@ fn render_native_pure_value(value: &str, rank_n_type: Option<&str>) -> String {
     if let Some(ty) = rank_n_type {
         format!("kioPure @{} {}", paren_ty(ty), paren_expr(value))
     } else {
-        format!("pure ({value})")
+        format!("kioPure ({value})")
     }
 }
 
@@ -6334,7 +6692,8 @@ mod module_call_shape_tests {
         Effect, NativeCallStage, final_return_after_residual_signature, hs_local,
         native_call_stages, propagate_exact_constraints, render_module_fn_patterns,
         render_module_fn_value_adapter, render_native_effectful_bind_prefix,
-        render_native_pure_let, render_native_strict_force, render_staged_forall_adapter,
+        render_native_pure_bind_prefix, render_native_pure_let, render_native_pure_let_prefix,
+        render_native_pure_value, render_native_strict_force, render_staged_forall_adapter,
         render_staged_foralls, residual_module_call_stages,
     };
     use crate::{
@@ -6376,7 +6735,8 @@ mod module_call_shape_tests {
         ];
         let pure = render_module_fn_value_adapter("mod_f _pkg", &stages, Effect::Pure);
         assert!(pure.contains("mod_f _pkg @t_a @t_b __fv2"));
-        assert_eq!(pure.matches("pure").count(), 3);
+        assert_eq!(pure.matches("pure").count(), 2);
+        assert_eq!(pure.matches("kioPure").count(), 1);
 
         let effectful = render_module_fn_value_adapter("mod_f _pkg", &stages, Effect::Effectful);
         assert!(effectful.contains("mod_f _pkg @t_a @t_b __fv2"));
@@ -6610,7 +6970,32 @@ mod module_call_shape_tests {
 
         assert_eq!(
             rendered,
-            "kioBind @(forall t_a. t_a -> m t_a) produce $ \\__m0 -> "
+            "kioBind @(forall t_a. t_a -> m t_a) produce $ \\__m0 -> seq @(forall t_a. t_a -> m t_a) __m0 $ "
+        );
+    }
+
+    #[test]
+    fn pure_operand_demand_is_inside_the_executing_stage() {
+        assert_eq!(
+            render_native_pure_bind_prefix("choose input", "__m0", None),
+            "kioEval (choose input) $ \\__m0 -> "
+        );
+        assert_eq!(
+            render_native_pure_value("choose input", None),
+            "kioPure (choose input)"
+        );
+    }
+
+    #[test]
+    fn strict_pure_operand_preserves_a_nested_polytype() {
+        let ty = "forall t_a. m (forall t_b. m ((t_a -> m t_b) -> m t_b))";
+        assert_eq!(
+            render_native_pure_let_prefix("__m0", Some(ty), "choose input"),
+            format!("let {{ __m0 :: {ty}; __m0 = choose input }} in seq @({ty}) __m0 $ ")
+        );
+        assert_eq!(
+            render_native_pure_bind_prefix("choose input", "__m0", Some(ty)),
+            format!("kioEval @({ty}) (choose input) $ \\__m0 -> ")
         );
     }
 

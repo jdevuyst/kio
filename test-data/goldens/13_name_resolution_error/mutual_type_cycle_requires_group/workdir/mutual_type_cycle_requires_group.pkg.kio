@@ -1,8 +1,6 @@
 package mutual_type_cycle_requires_group;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

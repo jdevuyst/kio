@@ -1,8 +1,6 @@
 package canonical_type_identity_elaborations;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

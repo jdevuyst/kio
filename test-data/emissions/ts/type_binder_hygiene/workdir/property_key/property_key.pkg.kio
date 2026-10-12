@@ -1,8 +1,6 @@
 package property_key;
 
 build {
-  cache ();
-
   target ts {
     out "out/ts/"
   }

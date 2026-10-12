@@ -10,6 +10,12 @@ homepage = "https://jdevuyst.github.io/kio/"
 readme = "README.md"
 keywords = ["kio", "programming-language", "transpiler", "compiler", "embeddable"]
 categories = ["compilers", "development-tools"]
+include = [
+    "Cargo.toml", "Cargo.lock", "build.rs", "manual_build.rs", "manual_pack.rs",
+    "src/**", "examples/pack_manual.rs", "tests/**",
+    "README.md", "LICENSE-MIT", "LICENSE-APACHE",
+    "manual/index.tsv", "manual/payload.tar.gz-concat",
+]
 
 # Feature gating for the kio / kio-prime split. The default keeps both
 # binaries building from one `cargo build`. The `surface` feature gates the

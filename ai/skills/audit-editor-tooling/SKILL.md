@@ -49,6 +49,11 @@ Check the request-specific rules in `specs/cli.md`, including:
   members, and continuation labels; same spelling is not shared identity.
   Check reference ordering and `includeDeclaration`, null/refusal behavior,
   and documentation/signature ownership.
+- Configuration field hover describes accepted forms and defaults from shared
+  field definitions, using the current syntax owner rather than a same-spelled
+  key elsewhere. Check grouped values and invalid/incomplete contexts; these
+  descriptions are not ordinary Kio types. Completion remains owned by
+  `audit-lsp-completion`.
 - Prepare-rename and rename preserve binding ownership across the package,
   reject invalid names and capture/collisions, and respect nonrenameable and
   package-external boundaries. Include row-let shorthand, numbered binding

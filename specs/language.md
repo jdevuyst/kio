@@ -8,7 +8,7 @@ Kio is layered. The small subset **Kio'** — described in [`prime.md`](prime.md
 
 Kio is an ultra-portable language. Kio' deliberately contains nothing host-specific, so a program can be transpiled to any backend for which a host is provided.
 
-- Built on **System F** (polymorphic lambda calculus with explicit universal quantification): functions, universal types (`forall`), type application. Kinds are first-order (`κ ::= * | κ → κ`), so a binder may range over a type constructor, not only a saturated type; there is no type-level lambda and there are no kind variables — a Church-style fragment of F-ω rather than full F-ω (rank-N permitted; quantifiers nest freely under arrows because every binder is explicitly written by the user; see [Higher-kinded types](#higher-kinded-types)). Anonymous type expressions cannot be self-referential. Recursive types exist, but the recursion is always grounded inside a `newtype` body (see [Type declarations](#type-declarations)), giving an iso-recursive wrap/unwrap at the nominal boundary.
+- Built on **System F** (polymorphic lambda calculus with explicit universal quantification): functions, universal types (`forall`), type application. Binder kinds are first-order chains (`κ ::= * | * → κ`): every arrow domain is `*`, so a binder may range over a constructor of ordinary types, not over a higher-order type-level function. Nominal declarations separately list each parameter's kind; a dictionary such as `Monad[*F]` can accept a constructor argument. There is no type-level lambda and there are no kind variables — a Church-style fragment of F-ω rather than full F-ω (rank-N permitted; quantifiers nest freely under arrows because every binder is explicitly written by the user; see [Higher-kinded types](#higher-kinded-types)). Anonymous type expressions cannot be self-referential. Recursive types exist, but the recursion is always grounded inside a `newtype` body (see [Type declarations](#type-declarations)), giving an iso-recursive wrap/unwrap at the nominal boundary.
 - Supports **anonymous sum**, **anonymous product**, and **label-generated nominal** types on top of Kio' (the label forms are surface sugar; the underlying primitive is `newtype`).
 - **No built-in types.** There are no numeric types, no booleans, no I/O, no ambient runtime, and no special `String`. Every type Kio code uses is either built from the language's structural constructors (`->`, `forall`, `&`, `|`), introduced by a module-level declaration (`type`, `newtype`, or `labels`), or declared as a `host type` in a module. Literal tokens in the source — integers (`42`), floats (`3.14`), booleans, and strings — are typed against the `role(...)`-marked host types in scope (see [Host declarations and the bridge block](#host-declarations-and-the-bridge-block)).
 - **No implicit recursive definitions.** Ordinary `fn` bindings may not refer to themselves, nor may two ordinary bindings mutually refer to each other. Surface Kio has one explicit term-level escape hatch: `rec(loop)` groups, which lower annotated recursive calls to an ordinary host-supplied `loop` function and do not introduce a Kio' fixpoint. Recursive data scope is separately explicit and capability-free: `rec newtype` / `rec labels` for a singleton and bare `rec { ... }` for one genuinely mutual type component. Every cyclic type path crosses a nominal newtype boundary; there is no alias-only fixed point. This keeps Kio' strongly normalizing while still letting hosted packages opt into general iteration through an explicit capability.
@@ -55,8 +55,9 @@ the corresponding source action is retained and consumed exactly once after
 other local facts refine the slot. Each application owner may likewise retain
 at most one pending expected-result equation; a connected tree may contain one
 for each owner. After an initial blocked attempt, another attempt requires a
-retained child to close or one of the equation's zonked sides to change
-structurally; another deferral replaces that progress snapshot. Advancing to a
+retained child to close or one side of the equation to change structurally
+after applying the currently known substitutions; another deferral replaces
+that progress snapshot. Advancing to a
 different schedule mode is not progress and never retries the equation. These
 bounded deferrals do not add a third typing mode: source premises are entered
 once, completed subexpressions are not rechecked, and elaborator actions are
@@ -97,7 +98,7 @@ a polytype already fixed by local evidence.
 
 The user has to seed the expected type from one of these positions; everywhere else, the elaborator either synthesizes bottom-up or pulls the expected type from the immediately-enclosing context.
 
-**Untyped `let` takes the RHS's type as-is.** A `let x = e;` types `e` in synthesizing mode with no expected type and binds `x` to whatever type `e` synthesized — polytype or monotype, taken unchanged. No narrowing, no generalization, no defaulting. The reason is structural: every type-binder in Kio is user-written (universal `[A]` at signatures and `fn` headers, existential `<U>` at `newtype` payloads), so any polytype the elaborator synthesizes traces back to a binder the user wrote in the source. There is no ambiguity for the rule to resolve. The Hindley-Milner-era defaulting rules (ML's value restriction, Haskell's `default`) exist to disambiguate un-annotated inference — Kio has nothing to disambiguate. The principal example: `let f = id;` where `id` is an in-scope top-level polymorphic `fn`, e.g. `fn id[T](x: T) -> T { x }`. `id` synthesizes its declared polytype `[T] T -> T`; `f` inherits it; the local `f` is usable at every instantiation `id` accepts.
+**Untyped `let` takes the RHS's type as-is.** A `let x = e;` types `e` in synthesizing mode with no expected type and binds `x` to whatever type `e` synthesized — polytype or monotype, taken unchanged. No narrowing, no generalization, no defaulting. Every type-binder in Kio is user-written (universal `[A]` at signatures and `fn` headers, existential `<U>` at `newtype` payloads), so any polytype the elaborator synthesizes traces back to a binder the user wrote in the source. Unlike Hindley-Milner let-generalization, this rule introduces no new universal binders. The principal example: `let f = id;` where `id` is an in-scope top-level polymorphic `fn`, e.g. `fn id[T](x: T) -> T { x }`. `id` synthesizes its declared polytype `[T] T -> T`; `f` inherits it; the local `f` is usable at every instantiation `id` accepts.
 
 **Typed `let` checks a local RHS.** A fully concrete binding pattern supplies an expected type to the RHS: `let .(f: Int -> Int) = .x. { x1 };` checks the placeholder lambda against `Int -> Int`, and `let .(f: Int -> Int) = make_id();` can solve a polymorphic factory from the checked return position. This is still a local bidirectional boundary, not body-driven inference. The checked position comes only from the binder pattern itself. A partial pattern or partial annotation, such as `let .(f: _) = e;` or `let .(x: Int, y) = e;`, does not push a partial expected type into `e`; the RHS must synthesize on its own, and the written leaves are checked against the synthesized product afterward. This deliberately skips partial product unification.
 
@@ -139,7 +140,9 @@ see § UFCS.
 
 **Named callables share a uniform user-facing contract.** Top-level `fn`s, intrinsics (`__left__`, `__right__`, …, `__absurd__`, `__if_then_else__`), and elaborator names (such as `iso!`, `fit!`, `match!`, `derive!`, or a package-defined `checked!` after the corresponding import) are all looked up by name and expose a declared polytype. Elaborator names are called with bang syntax and run compile-time implementation code over reflected arguments; from the caller's perspective, explicit type arguments, `_` placeholders, value arguments, and surrounding expected types are solved against the elaborator's declared call type by the ordinary call-type rules. `__if_then_else__`'s scheme depends on the unique selected `role(bool)` host identity in the module's unqualified lexical scope; with zero or multiple identities, the name has no scheme and its use is a type error.
 
-> *Implementation note.* The kio-rs implementation routes intrinsics and `__if_then_else__` through the `intrinsic_scheme` registry plus standard application typing. User-defined elaborators route through `Expr::UserElaborator`; their implementation returns reflected checked terms and the substitute pass swaps those terms in at the Lowered → Prime boundary. The split is deliberate: elaborator implementations produce Kio' terms through the compile-time ABI rather than through the runtime function-call path.
+An elaborator implementation produces checked Kio' terms through its
+compile-time interface rather than making a runtime call. Those terms replace
+the bang call at the Lowered → Prime boundary.
 
 **Surface forms reduce to standard call shapes.** UFCS, tuple literals, and elaborator calls reduce to ordinary Kio' trees. `r.>f(T, x)` records the same call plan as `f(T, r, x)`; `(a, b)` becomes `__pair__(a, b)`. A block elaborator call projects its declared blocks into ordinary value arguments and invokes its resolved implementation. The reference library supplies `if!`, `match!`, `scope!`, and `do!`; these names have no compiler-owned control semantics. Elaborator bangs and dot-splices retain boundary-local elaborations until their Kio' terms or normalized calls are substituted at the Lowered → Prime boundary.
 
@@ -233,7 +236,26 @@ consults ambient declarations, so adding an unrelated declaration to a module
 body cannot add an alternative, nominate a result producer, or change the
 common result.
 
-**Annotations at bindings.** Every top-level binding (`fn`, `host fn`, `host type`, `type`, `newtype`, `labels`) carries an explicit type — these are public-contract positions where the type is part of the declared interface. Top-level positions accept no inferred `_` placeholder; the type must be written out. The label-specific exact payload `name: _` is instead an explicit reference to an earlier label declaration, as specified in [Labels](#labels). An omitted result annotation on `fn` or `host fn` means `.`; this is a fixed Unit default, not inference (see [Function definitions](#function-definitions)). Local `let` bindings may annotate the binding pattern: the unary form is `let .(x: T) = e;`, and tuple destructuring and as-patterns write the type leaves inside the pattern. A fully concrete local binding pattern checks the RHS against the pattern-derived type. An untyped or partially typed binding pattern leaves the RHS in synthesis mode; written concrete leaves are verified after the RHS synthesizes. For every partial local form, a source `_` is first classified under the post-materialization annotation rule below; a hole beneath an annotation-local structural `forall` is rejected before the RHS relation is opened. There is no let-generalization: inference never synthesizes a `forall` on its own; if you want polymorphism, you write it (as a `fn` or as a polymorphic `fn` with explicit `<…>` type-parameter slots).
+**Annotations at bindings.** Every top-level binding (`fn`, `host fn`, `host
+type`, `type`, `newtype`, `labels`) carries an explicit type — these are
+public-contract positions where the type is part of the declared interface.
+Top-level positions accept no inferred `_` placeholder; the type must be
+written out. The label-specific exact payload `name: _` instead references an
+earlier label declaration, as specified in [Labels](#labels). An omitted result
+annotation on `fn` or `host fn` means `.`; this is a fixed Unit default, not
+inference (see [Function definitions](#function-definitions)).
+
+Local `let` bindings may annotate the binding pattern: the unary form is
+`let .(x: T) = e;`, and tuple destructuring and as-patterns write the type leaves
+inside the pattern. A fully concrete local binding pattern checks the RHS
+against the pattern-derived type. An untyped or partially typed binding pattern
+leaves the RHS in synthesis mode; written concrete leaves are verified after
+the RHS synthesizes. For every partial local form, a source `_` is first
+classified under the post-materialization annotation rule below; a hole
+beneath an annotation-local structural `forall` is rejected before the RHS
+relation is opened. There is no let-generalization: inference never synthesizes
+a `forall` on its own. Polymorphism comes from explicit `[…]` type-parameter
+groups on declarations, anonymous functions, or type expressions.
 
 **Type-argument inference and the `_` placeholder.** A call site's type-argument list may contain `_` placeholders for type arguments to infer. When the application-local equality relation over value arguments, connected nested results, and any expected result determines the inferred type uniquely, the call is well-typed. The solution may be a monotype or a complete polytype already present as one closed type tree in that finite evidence. Inference never constructs a new `forall` tree or guesses where binders belong, and a polymorphic value does not unify with a proper subterm of a declared monomorphic parameter shape. Kio has no subtypes or implicit coercions in this relation. Unsolved binders and conflicting equalities are compile-time errors. `_` placeholders may be dropped from the call's syntactic surface; full elision is accepted for any binder count, with the same rule.
 
@@ -301,7 +323,7 @@ pub labels { box[A] : A };
 elaborates as if the module contained:
 
 ```kio
-newtype Box[A] : A {
+pub newtype Box[A] : A {
   pub constructor mk;
   pub projector get;
 };
@@ -422,7 +444,7 @@ Every cyclic component produced by label elaboration must cross a generated nomi
 
 **Expected-order checking.** Construction and update synthesize their default result in written order. When either form is checked against an expected product type that is only a permutation of the default row result, the checker accepts the form and emits the ordinary product spine in the expected order. This is a product-axis reorder only: no widening, narrowing, insertion, deletion, label search beyond the labels written at the site, or `fit!` composition. Access does not participate in this rule: `x.?{foo, bar}` unwraps the selected labels first and produces payloads in written order, so checking it against a different product order is a type error.
 
-**Row-let binding.** `.{foo, bar} = x;` is a statement form that evaluates `x` once and binds payload locals from visible label slots for the continuation. Each entry may give an alias: `.{foo as payload} = x;` binds `payload` to `x.?{foo}`. The shorthand `.{foo}` means `.{foo as foo}`; qualified labels use the last segment, so `.{m.foo}` binds `foo`. Row-let lists are non-empty, and duplicate local names in one row-let are rejected.
+**Row-let binding.** `let .({foo, bar}) = x;` is a statement form that evaluates `x` once and binds payload locals from visible label slots for the continuation. Each entry may give an alias: `let .({foo as payload}) = x;` binds `payload` to `x.?{foo}`. The shorthand `{foo}` within the pattern means `{foo as foo}`; qualified labels use the last segment, so `let .({m.foo}) = x;` binds `foo`. Row-let lists are non-empty, and duplicate local names in one row-let are rejected. See [Blocks and local bindings](#blocks-and-local-bindings).
 
 **Enum-like sums.** A closed set of named alternatives is a structural sum of generated label types:
 
@@ -622,7 +644,7 @@ There is no separate `[ ]`-style type-application syntax. Type-argument lists ma
 
 ### Higher-kinded types
 
-Kio expresses **higher-kinded types** through kind-annotated binders and direct type application — the same model as [Kio'](prime.md#higher-kinded-types), described here for the surface reader. The kind language `κ ::= * | κ → κ` (see [`grammar.md` § Kind grammar](grammar.md#kind-grammar)) records type-level arity; a binder's kind is the count of leading `*` in its annotation:
+Kio expresses **higher-kinded types** through kind-annotated binders and direct type application — the same model as [Kio'](prime.md#higher-kinded-types), described here for the surface reader. The binder-kind language `κ ::= * | * → κ` (see [`grammar.md` § Kind grammar](grammar.md#kind-grammar)) records a chain of ordinary-type arguments; every arrow domain is `*`. Nominal parameter signatures can separately accept higher-kinded arguments, as described below. A binder's kind is the count of leading `*` in its annotation:
 
 | Binder | Kind | Role |
 |---|---|---|
@@ -643,7 +665,7 @@ A transparent alias reference must supply every parameter declared by that alias
 **Higher-kinded application without primitives.** Lifting a value into and projecting it out of a kind-`*→*` position uses ordinary language constructs, not intrinsics. (How a backend carries that kind identity through to host code — a native host type constructor, or the transparent erased rep — is a backend-encoding concern, described in [`backends/README.md` § Higher-kinded types](backends/README.md#higher-kinded-types); at the language level there is only the kind-annotated binder and direct `F(A)` application.)
 
 - At a **concrete type constructor** (a named kind-`*→*` newtype like `Box[A] : A`), the newtype's own constructor / projector pair crosses the boundary: `Box.mk_box(x)` lifts, `Box.un_box(b)` peels. The backend contract determines the host representation; equality between the payload and the type parameter does not erase the newtype's nominal identity.
-- At an **abstract type constructor** (a kind-`*→*` binder `[*F]`), the lift / projection routes through an explicitly-threaded instance value. A combinator over `[*F]` that needs to inject takes an `Applicative(F)` parameter and dispatches through its `pure` member; one that needs to project takes a `Comonad(F)` parameter and dispatches through `extract`. Instances are explicit `fn` parameters — Kio has no typeclasses — exactly as in the functor / monad dictionary goldens.
+- At an **abstract type constructor** (a kind-`*→*` binder `[*F]`), the lift / projection routes through an explicitly-threaded instance value. A combinator over `[*F]` that needs to inject takes an `Applicative(F)` parameter and dispatches through its `pure` member; one that needs to project takes a `Comonad(F)` parameter and dispatches through `extract`. Instances are explicit `fn` parameters — Kio has no typeclasses. The [higher-kinded-types case study](../docs/poc/hkt.md) shows this dictionary-passing pattern.
 
 **Polymorphic newtype payloads.** A newtype payload may itself be a polymorphic function — the dictionary pattern that underwrites `Functor[*F]`, `Monad[*F]`, and related abstractions. The payload shape is a `Function` nested under one or more unary `Forall` binders, where the binders scope over the args and ret:
 
@@ -735,12 +757,19 @@ FQNs such as `lib/helpers.build`, calls, and inline lambdas are not
 implementation targets; use an explicit `import` and name an ABI-shaped `pure fn`
 instead.
 
+Parentheses may group the whole reference repeatedly, as in
+`impl ((helpers.build))`, without changing its identity. This also applies to
+each named `captures` entry. The exact `(fills)` spelling after `impl` selects
+the fills schedule only when another target follows: `impl (fills)` names an
+ordinary callable `fills`, while `impl(fills) (build)` selects `build` with the
+fills schedule.
+
 Resolution matches an ordinary path expression's source-order classes. A
 same-module ordinary or host `fn`, `rec` member, newtype head, or identity-alias
 head must precede the declaration. A self-qualified alias or selective
 self-import does not turn a later declaration into an earlier binding.
 
-The ordinary field `impl f;` retains the existing late schedule and ABI:
+The ordinary field `impl f;` selects the late schedule and this ABI:
 
 ```text
 (__Comptime__ & captures... & reflected declared slots...)
@@ -749,10 +778,9 @@ The ordinary field `impl f;` retains the existing late schedule and ABI:
 
 Every declared value slot is a completed `__Checked_term__` before the
 implementation runs. A declared type slot is `__Type__`, or `__Type__ | .`
-only under the existing optional-result-binder rule. The returned checked
+only under the optional-result-binder rule. The returned checked
 term is related to the declared result and may solve its preallocated result
-goal. Ordinary implementations receive no fill context and otherwise behave
-exactly as before.
+goal. Ordinary implementations receive no fill context.
 
 The declaration-local field `impl(fills) f;` selects the fills schedule and
 this ABI:
@@ -858,9 +886,9 @@ type paths, REPL and Kiodoc name queries, and dynamic-loader identity strings.
 
 Every item named by `captures` must have visibility equal to or wider than the elaborator declaration. Captures differ from implementation helpers: a captured type becomes a quoted `__Type__` descriptor and a captured value becomes a quoted `__Checked_term__` that the implementation may place in the generated runtime term. A capture does not execute the captured declaration at compile time, so it may name a host type, host function, or other runtime-provided item. The visibility floor applies because that dependency can survive the bang call; it does not grant the implementation general access to private declarations.
 
-**Fill and specialization helpers.** `import __comptime__;` retains the existing
-proof and helpers and additionally introduces the opaque type `__Fill_ctx__`
-and these values:
+**Fill and specialization helpers.** Alongside the compile-time proof and
+reflection helpers, `import __comptime__;` introduces the opaque type
+`__Fill_ctx__` and these values:
 
 ```kio
 __fill__ :
@@ -1224,7 +1252,7 @@ A user-declared identifier may freely have any of these names — `fn id[A](x: A
 
 Two type-level literal tokens — `.` (the unit type) and `!` (the bottom type) — are grammar tokens rather than identifiers, so they aren't user-declared names but are worth listing alongside the reserved set.
 
-This list is exhaustive: every reserved word or name recognized by the compiler appears above. When adding or removing a reserved word, update this section in the same change as the implementation. The user-identifier grammar and the `__name__`-prefix reservation are documented in [Naming conventions](#naming-conventions) above.
+This list is exhaustive: every reserved word or name recognized by the compiler appears above. The user-identifier grammar and the `__name__`-prefix reservation are documented in [Naming conventions](#naming-conventions) above.
 
 ### Comma-separated lists and operator chains
 
@@ -1300,7 +1328,7 @@ The top level of a module supports these declaration forms:
 - **`labels`** — label declarations; surface sugar over `newtype` (see [Labels](#labels)).
 - **`elab`** — user-defined elaborators called with bang syntax (see [User-defined elaborators](#user-defined-elaborators)).
 - **`op` and `varop`** — user-defined fixed and variadic operator bindings (see [Operators](#operators)).
-- **`equiv`** — compile-time equivalence checks consumed by `kio test` (see [Equivalence declarations](#equivalence-declarations)).
+- **`equiv`** — compile-time equivalence checks consumed by `kio test` (see [Equivalence claims](#equivalence-claims-equiv)).
 
 Top-level value bindings use the declaration forms above; arbitrary top-level value expressions are not Kio items.
 
@@ -1308,10 +1336,16 @@ Top-level bindings are private by default; prefix with **`pub`** to export. An o
 
 ```kio
 pub fn identity[T](x: T) -> T { x }
+
+host type String role(str);
+
 pub fn greeting() -> String { "hello" }
 ```
 
-A `fn` always has a parameter list (parens required, even when empty). `let` is never used at the top level — it is reserved for local naming inside blocks.
+A `fn` has at least one type-binder or value-parameter group. A type-only
+signature needs no parentheses; a zero-parameter value stage is written `()`.
+See [Function definitions](#function-definitions). `let` is never used at the
+top level — it is reserved for local naming inside blocks.
 
 **Order-sensitive visibility.** Declarations, including `host type` and `host fn`, are processed top-to-bottom. A declaration sees only names introduced *above* it in the same file, plus names brought in by `import`. A host declaration introduces its name after its own signature is checked; host types in that signature must already be in scope. There is no implicit forward reference within a file. The explicit exceptions are the capability-free recursive-data scopes (`rec newtype`, `rec labels`, and bare `rec { ... }` type groups; see [Type declarations](#type-declarations)) and `rec(loop)` function groups. A singleton data declaration sees only the heads its own declaration contributes. A bare type group sees exactly its written member heads. A `rec(loop)` group gives its member bodies access to the group's member names only through explicit `recur name(...)` calls.
 
@@ -1331,11 +1365,13 @@ Both forms end with a semicolon and are private by default; prefix with **`pub`*
 A **type alias** gives a structural type expression a name. Two forms:
 
 - **Nullary** — `type Name = body;` names the `Type` `body` as `Name`.
-- **Parametric** — `type Name[A][B](…) = body;` names a family of types parameterized by one or more type parameters. Each reference supplies exactly one argument per declared parameter: `Name(X, Y)` is a type for `type Name[A][B] = …`, while bare `Name` and undersaturated `Name(X)` are type errors. Underapplication cannot retain the alias declaration's own binders as residual constructor slots. This restriction is what rules out anonymous type-level abstraction — the piece separating Kio's Church-style fragment of F-ω from full F-ω (see [Type parameters](#type-parameters)).
+- **Parametric** — `type Name[A][B] = body;` names a family of types parameterized by one or more type parameters. Each reference supplies exactly one argument per declared parameter: `Name(X, Y)` is a type for `type Name[A][B] = …`, while bare `Name` and undersaturated `Name(X)` are type errors. Underapplication cannot retain the alias declaration's own binders as residual constructor slots. This restriction is what rules out anonymous type-level abstraction — the piece separating Kio's Church-style fragment of F-ω from full F-ω (see [Type parameters](#type-parameters)).
 
 ```kio
+host type String role(str);
+
 type Logger = String -> String;
-pub type Show[A] = show(A);
+pub type Endomorphism[A] = A -> A;
 ```
 
 The typer unfolds a type alias structurally wherever it appears; type aliases survive every compilation phase. **An ordinary `type` declaration is non-recursive.** There is no singleton `rec type` form. A transparent alias may be a member of a genuinely mutual `rec { ... }` type group only when every cycle in the component crosses a sibling `newtype` boundary and the alias-only dependency subgraph is acyclic. Kio has no anonymous recursive type expressions or alias-only fixed points: every recursive type component is grounded at an explicit nominal declaration. Parametric declarations behave as **surface sugar** at the parameter level: `Name(X, …)` substitutes the arguments into `body`.
@@ -1476,7 +1512,34 @@ rec {
 
 The group must contain at least two unmarked `type`, `newtype`, or `labels` members and denote exactly one genuinely mutual cyclic strongly connected component after label elaboration. Every written member must contribute to that component. An acyclic group, a one-way helper, multiple independent components, a one-member brace group, or an alias-only cycle is rejected; move an acyclic dependency before its consumer instead. Singleton `rec newtype` and `rec labels` declarations are top-level forms, not nested group members.
 
-Strict positivity is a property of the explicit recursive component. A recursive use site is every occurrence in a newtype payload that reaches a nominal member of the component, directly or through its transparent aliases. Every such use site must sit in a **strictly-positive position**: the **composed variance** from the payload root down to the occurrence must be `+` (covariant) or `0` (unused at that position). Variance composes through every type connective — arrow LHS flips, arrow RHS preserves, `&` / `|` preserve, and entering a parametric `newtype` slot composes with the slot's variance, computed by mutual fixpoint over the component so transitive contravariance through chains of newtypes is caught. Host-type parameter slots are conservatively treated as **invariant**, so any recursive use site under a `host type` type argument fails. A negative occurrence of a nominal outside the written component stays admissible: it names a fixed inductive type rather than part of this recursion. This is what keeps Kio's recursion well-founded; see [`formal/prime.md`](formal/prime.md) § 2.5.
+Strict positivity is a property of the explicit recursive component. A
+recursive use site is every occurrence in a newtype payload that reaches a
+nominal member of the component, directly or through its transparent aliases.
+Every such use site must sit in a **strictly-positive position**: the
+**composed variance** from the payload root down to the occurrence must be `+`
+(covariant) or `0` (unused at that position).
+
+Variance composes through every type connective: arrow LHS flips, arrow RHS
+preserves, and `&` / `|` preserve. Entering a parametric `newtype` slot composes
+with the slot's variance, computed by mutual fixpoint over the component so
+transitive contravariance through chains of newtypes is caught. Host-type
+parameter slots are conservatively **invariant**. A recursive occurrence
+through such a slot fails unless an unused (phantom) parameter on its path
+makes the total composed variance `0`.
+
+A higher-kinded type variable has no declared variance for its argument slots.
+Each slot is therefore conservatively invariant when composing recursive
+occurrences through an application headed by that variable. Knowing the kind
+alone does not establish covariance. For example,
+`rec newtype N[*F] : F(N(F)) { constructor make; projector open }` is rejected:
+the recursive occurrence is an argument of the abstract `F`. A known nominal
+head instead uses its computed parameter variance, and transparent aliases
+preserve that resolved structure.
+
+A negative occurrence of a nominal outside the written component stays
+admissible: it names a fixed inductive type rather than part of this recursion.
+This is what keeps Kio's recursion well-founded; see
+[`formal/prime.md` § 2.5](formal/prime.md#25-strict-positivity).
 
 The marker or group is mandatory exactly when it supplies recursive scope. An omitted singleton marker or omitted mutual group receives a precise diagnostic naming the participating declarations; a redundant marker or non-minimal group is also rejected. The editor offers a safe marker insertion or group wrap only when one unambiguous edit preserves declaration order.
 
@@ -1674,6 +1737,8 @@ loop[S][R](step: S -> (S | R), state: S) -> R
 ```
 
 There is no privileged built-in named `loop`: hosts, package files, root modules, or earlier module declarations provide a normal function, and `rec(loop)` resolves that path by the usual rules.
+The selected path admits transparent repeated grouping: `rec((loop))` names
+the same capability as `rec(loop)`.
 
 Escaping groups require a re-entry-capable provider whose step also receives
 an ordinary `S -> R` callback:
@@ -1719,8 +1784,8 @@ Mutual recursion uses a braced group. Visibility belongs to each member:
 
 ```kio
 rec(loop) {
-  pub fn even(n: I32) -> Bool { if! eq_i32(n, 0) { true } else { recur odd(sub_i32(n, 1)) } }
-  fn odd(n: I32) -> Bool { if! eq_i32(n, 0) { false } else { recur even(sub_i32(n, 1)) } }
+  pub fn even(n: I32) -> Bool { if! eq_i32(n, 0) { .t } else { recur odd(sub_i32(n, 1)) } };
+  fn odd(n: I32) -> Bool { if! eq_i32(n, 0) { .f } else { recur even(sub_i32(n, 1)) } }
 }
 ```
 
@@ -1929,24 +1994,19 @@ call packet boundaries additionally depend only on that resolved signature and
 the written argument/application boundaries; a synthesized argument type does
 not trigger an alternate split.
 
-**Consumer impact.** This rule changes shared typechecking and the
-materialization of concrete lambda annotations in the checked Kio' tree.
-Both full-language and standalone Kio' checking inherit the new acceptance
-behavior. Other compiler entry points that use the shared typer — including
-LSP diagnostics and `kio sig` — inherit it too; no LSP-protocol,
-VS-Code-extension, or consumer-specific implementation is required.
-`equiv` and REPL normalization likewise accept the newly well-typed source,
-but their reduction and display semantics do not change. Lowering materializes
+**Explicit core applications.** Lowering materializes
 unit arguments, nested application boundaries, returned type applications,
 and elaborator residual functions as ordinary Kio'. Post-typecheck routing and
 backend emission preserve those explicit applications, including one ordered
-stage per `Forall` even when the backend erases type representations. This is
-an internal realization of the existing Kio' evaluation contract; the public
-FFI still has value arguments only. The selector gives a deterministic meaning
-to the existing flat-call surface; it introduces no parser token, formatter
-rule, `kio-gen-rs` surface, LSP protocol change, VS Code extension change, or
-syntax-highlighting grammar. The only grammar correction documents `_` as
-Kio-surface syntax, matching the existing Kio' rejection.
+stage per universal binder even when the backend erases type representations.
+These stages preserve the [Kio' evaluation contract](prime.md#kio-semantics).
+Kio type applications do not add runtime Kio type values or host-supplied
+representation codecs to carry their type arguments across the FFI.
+Backend-documented native host type
+selectors may still be required; see the
+[shared type-erasure contract](backends/README.md#2-type-erasure-at-the-ffi).
+Surface `_` placeholders are resolved before Kio' and remain rejected in Kio'
+input.
 
 ### Parameter patterns
 
@@ -1955,7 +2015,7 @@ Kio-surface syntax, matching the existing Kio' rejection.
 Where a value parameter would otherwise be written `name: T`, the surface admits **product-destructuring patterns** that name the components of a product type instead of (or in addition to) the whole:
 
 ```kio
-// Today: name the whole product, project inside the body.
+// Name the whole product, then project inside the body.
 fn project_left(p: (A & B)) -> A { fst(A, B, p) }
 
 // With parameter patterns: name the components directly.
@@ -2156,10 +2216,15 @@ Either way, `match!` reads that parameter component to decide dispatch. This
 independence applies only to the parameter component; the clause result follows
 the common-result rule below.
 
+For example, suppose `labels { ok[A]: A, err[A]: A };` has introduced `Ok`
+and `Err`, `r` has type `Ok(I32) | Err(Str)`, and `handler_ok: I32 -> R` and
+`handler_err: Str -> R` are in scope. Each clause receives the labeled value
+and projects its payload before calling the handler:
+
 ```kio
 match! r {
-  .(v: ok(I32)) { handler_ok(ok(I32, v)) };
-  .(e: err(Str)) { handler_err(err(Str, e)) }
+  .(v: Ok(I32)) { handler_ok(Ok.get(v)) };
+  .(e: Err(Str)) { handler_err(Err.get(e)) }
 }
 ```
 
@@ -2173,7 +2238,7 @@ Concretely — a clause slot's annotated type may be **any structural type** —
 - A multi-parameter clause `.(a: A, b: B) { … }` fires on branches whose factors fill both slots — slots are filled left-to-right (the source-order rule, lifted one level).
 - A zero-parameter clause `.() { … }`, and a `.`-typed slot, fire on any branch: every type fits `.` by projecting to the empty product. `.() { … }` is the **catch-all**. No special catch-all syntax is needed.
 
-Type-parameter declarations (`[A]`) written in a clause `fn` work exactly as in any `fn`. The one twist is who supplies the type arguments: `match!`, as the caller, specializes the clause's explicit leading binders against each compatible scrutinee branch rather than taking them from a written call site. Writing `.[A](v: ok(A)) -> String { … }` matches any `ok(_)` branch and binds `A` to the payload type. A polymorphic clause used by several source branches contributes one specialized result per branch, in source-branch order.
+Type-parameter declarations (`[A]`) written in a clause `fn` work exactly as in any `fn`. The one twist is who supplies the type arguments: `match!`, as the caller, specializes the clause's explicit leading binders against each compatible scrutinee branch rather than taking them from a written call site. Writing `.[A](v: Ok(A)) -> String { … }` matches any compatible `Ok` branch and binds `A` to the payload type. A polymorphic clause used by several source branches contributes one specialized result per branch, in source-branch order.
 
 An inline polymorphic clause follows the marked-lambda staging rules in
 [Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient).
@@ -2237,8 +2302,8 @@ alter dispatch.
 import elab/match(match);
 
 match! r {
-  .(v: ok(I32))  { handle_ok(ok(I32, v)) };
-  .(e: err(Str)) { handle_err(err(Str, e)) }
+  .(v: Ok(I32)) { handler_ok(Ok.get(v)) };
+  .(e: Err(Str)) { handler_err(Err.get(e)) }
 }
 ```
 
@@ -2279,7 +2344,20 @@ derive!((
 ), <TargetType>)
 ```
 
-The leading-comma layout inside the multi-candidate product matches Kio's existing multi-item-list style. The candidate argument is the first (value) argument: `()` supplies no candidates, one function expression supplies one candidate directly, and a product tuple supplies multiple candidates. The target type is the trailing slot, the same convention the other elaborator bangs use for their trailing target slot. The target may be elided — omitted, or written `_` — when a check-mode position (a function's declared return type, a value-argument slot, or the like) pins it, since a plain `let` carries no annotation. Because `_` marks the type slot rather than a value, it may equivalently precede the candidate argument (`derive!(_, <candidates>)`); a written target *type* is accepted only in the trailing slot:
+The leading-comma layout inside the multi-candidate product follows Kio's
+multi-item-list style. The candidate value is the first value argument: `()`
+supplies no candidates, one function expression supplies one candidate
+directly, and a product tuple supplies multiple candidates. Its type fills the
+leading `Candidates` binder in the scheme below. The target type fills the
+`Target` binder exposed after that value argument, so a written target type
+appears in the trailing slot.
+
+The target may be omitted or written `_` when a checking position supplies it,
+for example a function's declared return type, a fully annotated local binding,
+or a value-argument slot. An untyped `let` supplies no expected target. A leading
+`_` in `derive!(_, <candidates>)` instead marks the `Candidates` type slot; it
+does not move the target slot before the candidate value. In the following
+schematic example, the enclosing result supplies the target:
 
 ```kio
 fn stack_instance() -> Monad(State_t(Int, Maybe_t(Maybe))) {
@@ -2291,9 +2369,16 @@ fn stack_instance() -> Monad(State_t(Int, Maybe_t(Maybe))) {
 }
 ```
 
-**Type.** `derive!` has scheme `[A] A -> A` over the target type `A`: `derive!(<candidates>, T)` synthesizes a value of type `T`. The candidate argument is a side input to resolution, not a value the form returns. The empty-candidate argument `derive!((), T)` means "no candidates" and therefore fails with "no rule applies" for every target, including `.` and structurally inhabited product or sum types. Values arise only from caller-supplied candidate rules.
+**Type.** The imported `derive!` has scheme
+`[Candidates] Candidates -> [Target] Target`. The candidate value determines
+`Candidates`, and an explicit trailing type argument or expected result
+determines `Target`: `derive!(<candidates>, T)` produces a value of type `T`,
+not the candidate value. The empty-candidate argument `derive!((), T)` means
+"no candidates" and therefore fails with "no rule applies" for every target,
+including `.` and structurally inhabited product or sum types. Values arise
+only from caller-supplied candidate rules.
 
-**Candidates are function expressions.** A singleton candidate, and each element of a multi-candidate product, is an expression of function type — idiomatically a reference to a top-level or local `fn`, or an inline [`fn`](#anonymous-functions-fn) literal. A candidate's signature *is* an inference rule:
+**Candidates are function expressions.** A singleton candidate, and each element of a multi-candidate product, is an expression of function type — idiomatically a reference to a top-level or local `fn`, or an inline [`fn`](#anonymous-functions) literal. A candidate's signature *is* an inference rule:
 
 ```
 fn <rule-name>[T1](…)[TN](// binders, each with optional kind annotation
@@ -2305,7 +2390,7 @@ fn <rule-name>[T1](…)[TN](// binders, each with optional kind annotation
 
 A singleton candidate that is not of function type, or an element of a multi-candidate product that is not of function type, is a type error pointing at the offending position (`derive_non_function_candidate`).
 
-**Resolution.** Given the goal `T` and the candidate set, the `derive!` implementation finds the **unique** composition of candidates whose result types thread together to produce `T`, treating each candidate's value parameters as sub-goals to discharge from the same set. Resolution is kind-aware (a candidate binder of kind `*→*` binds only to a kind-`*→*` argument), reports an elaborator error when no composition applies or when two distinct compositions exist, and is total by the structural-decrease rules governing its compile-time recursion. The resolution algorithm, the exactly-one-coherence rule, the static termination conditions, and a worked monad-transformer-stack derivation are documented in the case studies [`docs/poc/hkt.md`](../docs/poc/hkt.md) (which exercises `derive!`) and [`docs/poc/elab.md`](../docs/poc/elab.md) (which exercises every resolution shape, including polymorphic and recursive derivations).
+**Resolution.** Given the goal `T` and the candidate set, the `derive!` implementation finds the **unique** composition of candidates whose result types thread together to produce `T`, treating each candidate's value parameters as sub-goals to discharge from the same set. Resolution is kind-aware (a candidate binder of kind `*→*` binds only to a kind-`*→*` argument), reports an elaborator error when no composition applies or when two distinct compositions exist, and is total by the structural-decrease rules governing its compile-time recursion. The [HKT case study](../docs/poc/hkt.md#deriving-an-instance-with-derive) shows dictionary derivation. The [elaborator case study](../docs/poc/elab.md#derive--instance-deriving) explains the resolution algorithm, exactly-one-coherence rule, termination conditions, and recursive and polymorphic compositions of wrapper rules.
 
 The goal may carry **unbound binders inherited from the enclosing `fn`** (a type-constructor-generic combinator with a `derive!` site whose target mentions the function's own `[*F]`). The implementation's structural unifier treats those as logic variables; the generated derivation is then polymorphic in them and the enclosing function compiles to a single type-constructor-generic body.
 
@@ -2497,6 +2582,8 @@ iso!(T).<<r    // = iso!(r, T)
 ```
 
 For `.>` and `.>>`, the left-hand side is the value being inserted and the right-hand side is a path-shaped callee — a single name `f`, a qualified `m.f` (module alias `m`), or a type-member `T.f`. The trailing argument list is optional: argless `r.>f` and `r.>>f` both mean `f(r)`, while `r.>f(args)` inserts `r` first and `r.>>f(args)` inserts `r` last.
+The complete non-bang callee path may be grouped repeatedly, as in
+`r.>((m.f))(args)`, with the same meaning as `r.>m.f(args)`.
 
 For `.<` and `.<<`, the left-hand side is the path-shaped callee, optionally with one direct argument list already written; the right-hand side is the value being inserted. The zero-existing-arg forms omit `()`: `f.<r` and `f.<<r` both mean `f(r)`. With existing args, `.<` appends the inserted value and `.<<` prepends it. The accepted left side is syntactic — a path or direct path call — so `f(args).<r` is admitted, while an arbitrary expression on the left is not retroactively treated as a function by type.
 
@@ -2719,7 +2806,9 @@ foldr1: step(a, step(b, seed(c)))
 An optional unary finalizer receives the completed accumulator exactly once on
 every admitted path, including the empty nullary-base path and the singleton
 nonempty path. It may change the result type. Without a finalizer the literal's
-result is the accumulator itself. Calls follow ordinary Kio typing and
+result is the accumulator itself; `finalize ()` explicitly selects that same
+absence. A repeated `finalize` field is rejected even if one value is `()`.
+Calls follow ordinary Kio typing and
 application rules; the grammar introduces no special accumulator type, library
 identity, or element-specific argument adaptation.
 
@@ -2727,6 +2816,9 @@ Every `step`, base/seed, and finalizer is a lexical value path: a bare local or
 selectively imported value, a dotted path through an explicit module alias, or
 an ordinary newtype member through a local/imported type or identity alias.
 Calls, lambdas, and slash-qualified package FQNs are not callable fields.
+As with a fixed operator's `impl` field, parentheses may group each complete
+reference repeatedly without changing its meaning. Required step and base/seed
+fields still require names; only the optional finalizer admits `()`.
 Argument adaptation belongs in an ordinary named helper. Callable source order
 and visibility are the same as for fixed operators.
 
@@ -2944,7 +3036,7 @@ Four literal **shapes** are recognized — string, integer, float, and bool. Str
 - **String** — double-quoted, with JSON-style escapes interpreted at compile time: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and `\uXXXX` for code points in the Basic Multilingual Plane.
 
     ```kio
-    let s = "hello, world\n";   // assuming `type String role(str);` — s : String
+    let s = "hello, world\n";   // assuming `host type String role(str);` — s : String
     ```
 
     **Adjacent literal concatenation.** Two or more string literal tokens with only trivia (whitespace, newlines, comments) between them fold at parse time into a single string literal whose value is the concatenation. The chunking present in the source is informational only — the AST stores the joined value, and `kio fmt` re-chunks deterministically on emission.

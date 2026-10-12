@@ -67,7 +67,7 @@ The canonical "hello, world" is one of each.
 
 The package file lives at the package root. Its filename stem (`hello`) is the package's name. The optional `build { ... }` block comes first, naming a compilation target; then a `bridge { ... }` block lists the modules whose public surface forms the package's contract with its host.
 
-```kio {variant=package}
+```kio {file}
 // hello.pkg.kio
 package hello;
 
@@ -88,7 +88,7 @@ bridge {
 The module declares the host capabilities it needs as `host` declarations, and
 the submodule at `hello/main.kio` reaches them with an `import`.
 
-```kio {variant=module}
+```kio {file}
 // hello.kio
 module hello;
 
@@ -97,17 +97,26 @@ host type String role(str);
 host fn print(p0: String);
 ```
 
-```kio {@tutorial_module}
+```kio {file}
 // hello/main.kio
-// In real code this would read:
-//   module hello/main;
-//   import hello(String, print);
-// The tutorial's validation harness uses its own package name
-// (`kiodoc`) and an expanded host surface — including `Int`, `add`,
-// `int_to_string` — declared directly in that module, so the rest of
-// the tutorial's snippets can reuse the same scope.
+module hello/main;
+
+import hello(String, print);
+
 pub fn main() { print("hello\n") }
 ```
+
+<!--kio {harness=hello_check file placeholder="__CHECK__"}
+module hello/doc_check;
+
+import hello/main(main);
+
+__CHECK__
+-->
+
+<!--kio {@hello_check}
+fn check_main() { main() }
+-->
 
 Build the package:
 
@@ -138,13 +147,6 @@ read it as *the body of `pub fn main() { ... }` in a module whose host supplies 
 ## Chapter 2 — Inside a module
 
 The hello-world's `hello/main.kio` is a **module**. A module is a `.kio` source file with a `module` declaration at the top, optional `import` statements pulling names into scope, and a sequence of definitions — types, functions, operators. Modules group definitions; the *package* groups modules.
-
-```kio {@tutorial_module}
-// As in Chapter 1, real code would write:
-//   module hello/main;
-//   import hello(String, print);
-pub fn main() { print("hello\n") }
-```
 
 The `module hello/main;` line says "this file is the module at path `hello/main`." The path mirrors the directory layout: `hello/main.kio` is the module `hello/main`; `hello/util/string.kio` would be `hello/util/string`.
 
@@ -192,48 +194,9 @@ lets functions call each other through `recur name(...)`. Term recursion always
 goes through that loop-capability form — see [Recursion](../guides/recursion.md)
 and [Aliases, newtypes, visibility, and purity](../guides/declarations.md#recursive-newtypes).
 
-When updating older source that relied on implicit recursion, add a singleton
-marker only for a declaration that refers to its own data head:
-
-```diff
--newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
-+rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
-```
-
-The diagnostic is “recursive data declaration requires `rec`”; the editor
-offers “Add `rec` to this recursive newtype” (or “Add `rec` to this recursive
-labels declaration”). If the marked declaration is acyclic, “this `rec` marker
-is unnecessary” offers “Remove unnecessary `rec`”. A negative, ill-kinded, or
-wrong-arity recursive payload reports that type defect and offers no marker
-edit.
-
-For declarations that used to depend on a later peer, wrap exactly the mutual
-cycle rather than a whole run of neighboring declarations:
-
-```diff
--type Tree[A] = Branch(A);
--newtype Branch[A] : . | (A & Tree(A) & Tree(A)) {
--  constructor mk_branch;
--  projector un_branch
--}
-+rec {
-+  type Tree[A] = Branch(A);
-+  newtype Branch[A] : . | (A & Tree(A) & Tree(A)) {
-+    constructor mk_branch;
-+    projector un_branch
-+  }
-+}
-```
-
-The ungrouped cycle reports “mutually recursive data declarations require
-`rec { ... }`” and offers “Fix recursive type groups”. The same action repairs
-an acyclic group (“this `rec` group contains no recursive cycle”) or splits an
-over-broad group (“this `rec` group contains multiple independent
-components”). An alias-only cycle instead reports “recursive type component
-has no `newtype` boundary” and offers no grouping or marker shortcut. When one
-file has independent group and singleton mistakes, apply the currently
-reported repair first; reanalysis then offers the next one. Fix All combines
-only repairs already visible in the current analysis.
+For existing code that relied on implicit recursive scope, the
+[declarations guide](../guides/declarations.md#migrating-implicit-recursive-declarations)
+shows the required edits and the editor's corresponding repairs.
 
 ### Module dependencies cannot cycle
 
@@ -366,13 +329,17 @@ fn add_one(n: Int) -> Int {
 
 ### Expression statements
 
-An expression followed by `;` runs the expression for its side effect and discards the value. The expression must have type `.` (unit) — most host I/O functions already return it.
+An expression before another clause runs for its side effect and must have
+type `.` (unit) — most host I/O functions already return it. A semicolon
+separates clauses; it does not discard a value.
 
 ```kio {@tutorial_module}
 fn greet_twice() { print("hi\n"); print("hi again\n") }
 ```
 
-One statement, then a trailing expression: the second `print` is the block's tail. If you find yourself reaching for `let _ = e;` to throw away a value, the expression statement is the form you want — provided `e` is already unit-typed.
+The first `print` is an expression statement; the second is the block's final
+expression. The final expression supplies the block's value even when followed
+by `;`. To discard a non-unit value deliberately, use `let _ = e;`.
 
 ### Inline functions
 

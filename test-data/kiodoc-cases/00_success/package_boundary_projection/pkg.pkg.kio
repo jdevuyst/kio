@@ -1,8 +1,6 @@
 package pkg;
 
 build {
-  cache ();
-
   docs {
     md "docs";
     md_out "out/docs-md/";

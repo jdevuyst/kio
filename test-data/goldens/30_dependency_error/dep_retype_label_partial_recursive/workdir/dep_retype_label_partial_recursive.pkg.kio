@@ -1,8 +1,6 @@
 package dep_retype_label_partial_recursive;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

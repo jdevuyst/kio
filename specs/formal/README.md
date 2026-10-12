@@ -31,7 +31,7 @@ Each prose spec page that has a formal counterpart links here:
 
 The following Kio' / surface concerns have written-down prose but no formal companion. They are intentionally out of scope here; the prose specs are the contract.
 
-- The **module system**, including the use-graph / cycle rule and the open-world property. Both are captured at the prose level only.
+- The **construction of module contexts**, including import resolution and the import-cycle rule. [`prime.md` § 2.7](prime.md#27-module-well-formedness) states module well-formedness relative to those contexts, and [§ 7](prime.md#7-open-world) gives the open-world argument; the detailed resolution rules remain in the prose module-system contract.
 - The **codegen contract** for each backend (`../backends/`). Codegen is described at the value-shape and host-record level; nothing here commits to a specific operational semantics on the host side.
-- **Source-level static rules** that are not type-directed (parse productions, naming conventions, `pub` visibility, `use`-resolution). These are grammar / front-end concerns; the inference-rule presentation in `prime.md` assumes a well-formed elaborated tree as input.
-- **Host items** beyond their declared signatures. Host calls are opaque atoms in `prime.md` and `equiv.md`; whatever the host actually does is outside Kio's contract by design (see [`../prime.md`](../prime.md) § Host declarations).
+- **Source-level static rules** that are not type-directed (parse productions, naming conventions, `pub` visibility, import resolution). These are grammar / front-end concerns; the inference-rule presentation in `prime.md` assumes a well-formed elaborated tree as input.
+- **Host items** beyond their declared signatures. Host operations are opaque in `prime.md` and `equiv.md`; their argument subterms still normalize. Whatever the host actually does is outside Kio's contract by design (see [`../prime.md`](../prime.md) § Host declarations).

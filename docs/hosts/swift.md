@@ -16,6 +16,9 @@ narrative companion.
 > Swift contract's
 > [incompatible-retained-epochs section](../../specs/backends/swift.md#incompatible-retained-declaration-epochs-are-not-source-stable-on-swift).
 
+The generated module requires **Swift 6.0 or newer** and uses only the
+standard library.
+
 ## The build target
 
 A package emits to Swift by declaring a `swift` target in `<pkg>.pkg.kio`:
@@ -77,9 +80,8 @@ same collision is rejected. Support collisions include `KioUnit`, `Product`,
 
 ## How Swift hosts the package
 
-Swift is a statically typed host, and what you see is the host-facing
-**skin** — the `<Handle>Host` protocol, the shape types, the exported
-signatures — which is fully typed. This matters in practice in two ways:
+Swift checks the generated host protocol, boundary value types, and exported
+signatures. This matters in practice in two ways:
 
 - A higher-kinded application crosses through an exact generic carrier, so a
   declaration-owned type constructor remains distinct from every other head.
@@ -87,11 +89,8 @@ signatures — which is fully typed. This matters in practice in two ways:
   has an exact public callable carrier and companion implementation protocol;
   generated public signatures never ask the host to cast an `Any`.
 
-The package body and carrier storage use `Any` internally. That erasure is an
-implementation detail behind the typed surface.
-
-Memory is **ARC** — automatic reference counting. The package body threads
-no ownership annotations and the host needs none.
+Values use Swift's ordinary automatic reference counting; embedding the
+package requires no manual memory management.
 
 ## Loading the package
 
@@ -310,10 +309,8 @@ constructor before lifting its final argument. Your own native constructor
 uses `KioNative<YourMarker>.constructor`. Keep its storage representation
 consistent across your host functions, just as for a fully applied host type.
 
-`()` (unit) surfaces as the `KioUnit` type from
-`kio_runtime.swift` (an empty `struct`). Swift's built-in `()` / `Void` is
-awkward to carry through the erased `Any` body, so the canonical `KioUnit`
-bridges that gap transparently.
+`()` (unit) surfaces as `KioUnit`, an empty `struct`. Use `KioUnit()` when a
+first-class callback expects a Unit value.
 
 ## Newtypes and function values
 
@@ -450,7 +447,7 @@ Build it:
 kio build swift
 ```
 
-Then host it in Swift:
+Save this host as `main.swift` beside the Kio package manifest:
 
 ```swift
 import Greeter
@@ -465,6 +462,19 @@ struct MyHost: GreeterHost {
 
 let pkg = createGreeter(host: MyHost())
 pkg.greeter.KioModule_main.main()
+```
+
+Compile the generated source as a static library and module, then link the
+host against it. The module name must match the marker in `pkg.swift`:
+
+```sh
+mkdir -p out/swift-host
+swiftc -emit-library -static -emit-module -module-name Greeter \
+  -emit-module-path out/swift-host/Greeter.swiftmodule \
+  out/swift/*.swift -o out/swift-host/libGreeter.a
+swiftc -I out/swift-host -L out/swift-host -lGreeter \
+  main.swift -o out/swift-host/host
+./out/swift-host/host
 ```
 
 Running this prints `Hello from Kio!` and exits 0.

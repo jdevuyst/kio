@@ -86,7 +86,9 @@ value.>Type.member(arg)
 value.>>f(arg)
 ```
 
-The right side is not an arbitrary expression. Parenthesized callees such as these are not accepted:
+The complete callee path may be grouped, including nested groups:
+`x.>((helpers.f))` means `x.>helpers.f`. The formatter removes the grouping.
+The right side still requires a path; calls such as these are not accepted:
 
 ```text
 "a".>(f())

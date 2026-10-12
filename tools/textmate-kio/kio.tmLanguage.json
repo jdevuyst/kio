@@ -1649,21 +1649,23 @@
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
-        {
-          "begin": "\\(",
-          "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
-          "beginCaptures": {
-            "0": { "name": "punctuation.bracket.kio" }
-          },
-          "endCaptures": {
-            "0": { "name": "punctuation.bracket.kio" }
-          },
-          "patterns": [
-            { "include": "#comment-doc" },
-            { "include": "#comment" },
-            { "include": "#identifier" }
-          ]
-        }
+        { "include": "#recursive-capability-group" }
+      ]
+    },
+    "recursive-capability-group": {
+      "begin": "\\(",
+      "end": "\\)|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#recursive-capability-group" },
+        { "include": "#identifier" }
       ]
     },
     "module-decl": {
@@ -1993,7 +1995,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.separator.kio"
@@ -2008,6 +2010,9 @@
         },
         {
           "include": "#punctuation-separator"
+        },
+        {
+          "include": "#punctuation-bracket"
         },
         {
           "include": "#identifier"
@@ -2021,7 +2026,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.separator.kio"
@@ -2036,6 +2041,9 @@
         },
         {
           "include": "#punctuation-separator"
+        },
+        {
+          "include": "#punctuation-bracket"
         },
         {
           "include": "#identifier"
@@ -2902,10 +2910,14 @@
                 { "include": "#comment-doc" },
                 { "include": "#comment" },
                 {
-                  "match": "\\bfills\\b",
+                  "match": "\\bfills\\b(?=[ \\t]*\\)[ \\t]*(?:[A-Za-z_]|\\())",
                   "name": "keyword.declaration.kio"
                 },
-                { "include": "#identifier" }
+                {
+                  "match": "\\bfills\\b(?=[ \\t]*(?:\\)[ \\t]*)?(?://[^\\r\\n]*)?$)",
+                  "name": "meta.ambiguous-elaborator-mode.kio"
+                },
+                { "include": "#type-tokens" }
               ]
             }
           ]

@@ -1,8 +1,6 @@
 package module_path_typo_suggestion;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

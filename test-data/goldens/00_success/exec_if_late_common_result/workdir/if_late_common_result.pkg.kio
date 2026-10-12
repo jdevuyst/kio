@@ -1,8 +1,6 @@
 package if_late_common_result;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

@@ -1,8 +1,6 @@
 package grouped;
 
 build {
-  cache ();
-
   target java {
     out "out/java/"
   }

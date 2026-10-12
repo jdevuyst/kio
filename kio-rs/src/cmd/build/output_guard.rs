@@ -137,13 +137,13 @@ pub(super) fn validate(plans: &BTreeMap<PathBuf, PackagePlan>) -> Result<(), Str
                 continue;
             };
             // These invalid targets fail in backend validation before any writes.
-            if entries.next().is_some() || Path::new(&entry.value).is_absolute() {
+            if entries.next().is_some() || Path::new(entry.string_value()).is_absolute() {
                 continue;
             }
-            let path = normalize(&inputs.root.join(&entry.value)).map_err(|error| {
+            let path = normalize(&inputs.root.join(entry.string_value())).map_err(|error| {
                 format!(
                     "cannot resolve output `{}` for target `{}`: {error}",
-                    entry.value,
+                    entry.string_value(),
                     target.name().escape_debug()
                 )
             })?;
@@ -151,7 +151,7 @@ pub(super) fn validate(plans: &BTreeMap<PathBuf, PackagePlan>) -> Result<(), Str
                 "target `{}` in `{}` (out `{}`)",
                 target.name().escape_debug(),
                 DisplayPath(&inputs.root),
-                entry.value
+                entry.string_value()
             );
             outputs.push((path, label));
         }
@@ -216,36 +216,19 @@ pub(super) fn describe_outputs(
             let entry = entries
                 .next()
                 .ok_or_else(|| "selected target has no `out`".to_owned())?;
-            if entries.next().is_some() || Path::new(&entry.value).is_absolute() {
+            if entries.next().is_some() || Path::new(entry.string_value()).is_absolute() {
                 return Err("selected target needs exactly one relative `out`".to_owned());
             }
             // Emission removes and recreates a configured leaf symlink. Keep
             // its access path; the conflict preflight separately checks aliases.
-            let output_dir = inputs.root.join(&entry.value);
+            let output_dir = inputs.root.join(entry.string_value());
             let namespace = if matches!(target.backend.as_str(), "ts" | "python") {
-                let mut namespaces = target
-                    .entries
-                    .iter()
-                    .filter(|entry| entry.key == "namespace");
-                let explicit = namespaces.next();
-                if namespaces.next().is_some() {
-                    return Err("selected target has duplicate `namespace`".to_owned());
-                }
-                let value = match (target.backend.as_str(), explicit) {
-                    ("ts", Some(entry)) => {
-                        backends::namespace::validate_js_namespace(&entry.value)?;
-                        entry.value.clone()
-                    }
-                    ("python", Some(entry)) => {
-                        backends::namespace::validate_python_namespace(&entry.value)?;
-                        entry.value.clone()
-                    }
-                    ("ts", None) => backends::namespace::default_js_namespace(&package.name),
-                    ("python", None) => {
-                        backends::namespace::default_python_namespace(&package.name)
-                    }
-                    _ => unreachable!("only typed-sidecar backends compute a namespace"),
-                };
+                let backend = BuildTarget::from_id(&target.backend)
+                    .expect("typed-sidecar backends are registered build targets");
+                let value = backend
+                    .namespace_override(target)?
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| backend.default_namespace(&package.name));
                 Some(value)
             } else {
                 None

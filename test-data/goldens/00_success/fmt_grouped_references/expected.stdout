@@ -1,0 +1,23 @@
+module main;
+
+op _ + _ { impl helpers.add }
+
+varop [[ ]] { foldl helpers.step Box.base; finalize helpers.finish }
+
+varop [* *] { foldr helpers.step Box.base; finalize () }
+
+varop [% %] { foldl1 helpers.step Box.seed }
+
+varop [& &] { foldr1 helpers.step Box.seed }
+
+elab inspect : . -> . { captures (source, Box); impl helpers.inspect }
+
+elab ordinary : . -> . { impl fills }
+
+elab scheduled : . -> . { impl(fills) fills }
+
+rec(loop) fn keep(x: .) { x }
+
+fn first(x: .) { x.>helpers.keep }
+
+fn last(x: .) { x.>>Box.make(()) }

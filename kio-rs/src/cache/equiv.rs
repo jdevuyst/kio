@@ -1220,20 +1220,20 @@ fn log_probe(kind: &str, key: &EquivCacheKey, module_path: &str, equiv_name: &st
 
 pub fn resolve_from_cache_field(
     workspace_root: &Path,
-    cache: &crate::ast::BuildBlockCache,
+    cache: &Option<crate::ast::BuildBlockCache>,
 ) -> EquivCache {
     if !crate::cache::policy::caches_enabled() {
         return EquivCache::disabled();
     }
     match cache {
-        crate::ast::BuildBlockCache::Path { path, .. } => {
+        Some(crate::ast::BuildBlockCache::Path { path, .. }) => {
             let abs = absolutize(workspace_root, path);
             match EquivCache::open(abs) {
                 Ok(c) => c,
                 Err(_) => EquivCache::disabled(),
             }
         }
-        crate::ast::BuildBlockCache::Disabled { .. } => EquivCache::disabled(),
+        None | Some(crate::ast::BuildBlockCache::Disabled { .. }) => EquivCache::disabled(),
     }
 }
 

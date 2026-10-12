@@ -8,7 +8,6 @@ New to Kio? Start here — these read top to bottom.
 
 - [The Kio language](tutorials/language.md) — a guided tour: packages, modules, functions, types, tuples and labels, sums and pattern matching, polymorphism, elaborator calls, and structural glue.
 - [Getting started with the tooling](tutorials/tooling.md) — one full lap of the dev loop on a tiny package: `kio init`, `fmt`, `check`, `test`, `build`, and sealing the contract surface with `kio sig`.
-- [Filling a shared `match!` result](tutorials/elaborator-hole-filling.md) — start with an explicit target, diagnose disagreeing clauses, and then infer the same common result in either clause order.
 
 For exact command-line behavior, see [`specs/cli.md`](../specs/cli.md).
 
@@ -48,6 +47,7 @@ authors, not the starting point for products and sums.
 ### Compiler-facing material
 
 - [Defining elaborators](guides/elaborators.md) — the checked-term ABI, reflection, captures, diagnostics, and total compile-time recursion.
+- [Building and testing elaborators](guides/elaborator-authoring.md) — a runnable authoring progression through generated bindings, captured templates, reflected walks, fills, blocks, and behavior tests.
 - [Builtin modules](guides/builtin-modules.md) — generated exhaustive reference for `__intrinsics__` and `__comptime__`.
 - [The open-world story](guides/open-world.md) — what open-world compilation means for imports, inference, and elaborator design.
 

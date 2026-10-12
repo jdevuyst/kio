@@ -1,8 +1,6 @@
 package nullary_nominal_constructor;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

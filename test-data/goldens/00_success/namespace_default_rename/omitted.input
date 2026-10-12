@@ -1,0 +1,15 @@
+package before;
+
+build {
+  cache ();
+  target js { out "out/js/" };
+  target ts { out "out/ts/" };
+  target go { out "out/go/" };
+  target python { out "out/python/" };
+  target java { out "out/java/" };
+  target swift { out "out/swift/" };
+  target haskell { out "out/haskell/" };
+  target rust { out "out/rust/" }
+}
+
+bridge { testapi; testapi/** }

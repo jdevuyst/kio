@@ -1,0 +1,323 @@
+================================================================================
+reference grouping preserves operator callable
+================================================================================
+module m;
+op _ + _ { impl ((ops.add)) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (op_decl
+    (keyword_op)
+    (slot)
+    (operator_run)
+    (slot)
+    (callable_impl_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (grouped_callable_value
+        (bracket_lparen)
+        (grouped_callable_value
+          (bracket_lparen)
+          (callable_path
+            (identifier)
+            (separator_dot)
+            (entity_name_function))
+          (bracket_rparen))
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+reference grouping preserves elaborator callable and captures
+================================================================================
+module m;
+elab form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers.run)) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (type_arrow
+      (separator_dot)
+      (operator_arrow_type)
+      (separator_dot))
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_captures_clause
+        (keyword_declaration)
+        (bracket_lparen)
+        (grouped_capture_value
+          (bracket_lparen)
+          (plain_value_path
+            (identifier))
+          (bracket_rparen))
+        (separator_comma)
+        (grouped_capture_value
+          (bracket_lparen)
+          (grouped_capture_value
+            (bracket_lparen)
+            (plain_value_path
+              (identifier))
+            (bracket_rparen))
+          (bracket_rparen))
+        (separator_comma)
+        (grouped_capture_value
+          (bracket_lparen)
+          (grouped_capture_value
+            (bracket_lparen)
+            (plain_value_path
+              (identifier)
+              (separator_dot)
+              (identifier))
+            (bracket_rparen))
+          (bracket_rparen))
+        (bracket_rparen))
+      (separator_semicolon)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (grouped_callable_value
+          (bracket_lparen)
+          (grouped_callable_value
+            (bracket_lparen)
+            (callable_path
+              (identifier)
+              (separator_dot)
+              (entity_name_function))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+reference grouping preserves elaborator fills marker target
+================================================================================
+module m;
+elab form: . -> . { impl(fills) ((helpers.run)) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (type_arrow
+      (separator_dot)
+      (operator_arrow_type)
+      (separator_dot))
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (bracket_lparen)
+        (keyword_declaration)
+        (bracket_rparen)
+        (grouped_callable_value
+          (bracket_lparen)
+          (grouped_callable_value
+            (bracket_lparen)
+            (callable_path
+              (identifier)
+              (separator_dot)
+              (entity_name_function))
+            (bracket_rparen))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+reference grouping treats standalone fills as callable
+================================================================================
+module m;
+elab form: . -> . { impl (fills) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (elaborator_decl
+    (keyword_declaration)
+    (entity_name_function)
+    (operator_builtin)
+    (type_arrow
+      (separator_dot)
+      (operator_arrow_type)
+      (separator_dot))
+    (elaborator_body
+      (bracket_lbrace)
+      (elaborator_impl_clause
+        (keyword_declaration)
+        (grouped_callable_value
+          (bracket_lparen)
+          (callable_path
+            (entity_name_function))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+reference grouping preserves variadic callable fields and absent finalizer
+================================================================================
+module m;
+varop [* *] { foldl ((helpers.join)) (helpers.empty); finalize ((())) }
+varop [+ +] { finalize ((helpers.done)); foldr (helpers.join) ((helpers.empty)) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_star_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (grouped_callable_value
+        (bracket_lparen)
+        (grouped_callable_value
+          (bracket_lparen)
+          (callable_path
+            (identifier)
+            (separator_dot)
+            (entity_name_function))
+          (bracket_rparen))
+        (bracket_rparen))
+      (grouped_callable_value
+        (bracket_lparen)
+        (callable_path
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (bracket_rparen))
+      (separator_semicolon)
+      (keyword_declaration)
+      (grouped_optional_callable_value
+        (bracket_lparen)
+        (grouped_optional_callable_value
+          (bracket_lparen)
+          (unit_expression
+            (bracket_lparen)
+            (bracket_rparen))
+          (bracket_rparen))
+        (bracket_rparen))
+      (bracket_rbrace)))
+  (variadic_decl
+    (keyword_varop)
+    (variadic_head
+      (variadic_open)
+      (variadic_head_gap
+        (head_whitespace))
+      (variadic_close))
+    (variadic_callable_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (grouped_optional_callable_value
+        (bracket_lparen)
+        (grouped_optional_callable_value
+          (bracket_lparen)
+          (callable_path
+            (identifier)
+            (separator_dot)
+            (entity_name_function))
+          (bracket_rparen))
+        (bracket_rparen))
+      (separator_semicolon)
+      (keyword_declaration)
+      (grouped_callable_value
+        (bracket_lparen)
+        (callable_path
+          (identifier)
+          (separator_dot)
+          (entity_name_function))
+        (bracket_rparen))
+      (grouped_callable_value
+        (bracket_lparen)
+        (grouped_callable_value
+          (bracket_lparen)
+          (callable_path
+            (identifier)
+            (separator_dot)
+            (entity_name_function))
+          (bracket_rparen))
+        (bracket_rparen))
+      (bracket_rbrace))))
+
+================================================================================
+reference grouping preserves recursive capability and right UFCS selector
+================================================================================
+module m;
+rec ((helpers.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (recursive_function_definition
+    (keyword_rec)
+    (recursive_capability
+      (bracket_lparen)
+      (grouped_capability_value
+        (bracket_lparen)
+        (expression_path
+          (identifier)
+          (separator_dot)
+          (identifier))
+        (bracket_rparen))
+      (bracket_rparen))
+    (function_definition
+      (fn_decl_head
+        (keyword_fn)
+        (entity_name_function)
+        (fn_signature
+          (value_param_group
+            (bracket_lparen)
+            (value_param_binder
+              (binding_pattern
+                (variable_parameter)
+                (operator_builtin)
+                (separator_dot)))
+            (bracket_rparen)))
+        (operator_arrow_type)
+        (separator_dot))
+      (expression_block
+        (bracket_lbrace)
+        (ufcs_expr
+          (expression_path
+            (identifier))
+          (operator_arrow_ufcs)
+          (grouped_ufcs_callable
+            (bracket_lparen)
+            (grouped_ufcs_callable
+              (bracket_lparen)
+              (call_callee
+                (identifier)
+                (separator_dot)
+                (entity_name_function))
+              (bracket_rparen))
+            (bracket_rparen)))
+        (bracket_rbrace)))))

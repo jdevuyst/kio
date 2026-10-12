@@ -40,7 +40,7 @@ use crate::ast::{
     HostFnParam, HostType, Import, ImportItem, ImportKind, Item, LabelForward, LabelSugarLabel,
     Labels, LiteralAlias, LiteralAliasValue, LockFile, Module, ModulePath, Newtype, Op, OpBody,
     OpPart, PackageFile, RowLetEntry, Signature, SignatureGroupRef, SignatureParam, SourceBlock,
-    SourceOrigin, Surface, TargetBlock, TargetEntry, Type, TypeAlias, TypeParam, VariadicOperator,
+    SourceOrigin, Surface, TargetBlock, Type, TypeAlias, TypeParam, VariadicOperator,
 };
 use crate::ast::{DelimitedTrivia, SignatureTriviaPosition, append_relocated_trivia};
 use crate::doc::{
@@ -1145,7 +1145,13 @@ fn doc_fold(d: &VariadicOperator) -> Doc {
     }
     parts.push(doc_vis(&d.vis));
     parts.push(text("varop"));
-    doc_fold_pattern_and_body(&mut parts, &d.open, &d.spec, &d.body_trivia);
+    doc_fold_pattern_and_body(
+        &mut parts,
+        &d.open,
+        &d.spec,
+        &d.body_trivia,
+        d.finalize_keyword_span.is_some(),
+    );
     concat_all(parts)
 }
 
@@ -1154,6 +1160,7 @@ fn doc_fold_pattern_and_body(
     open: &[String],
     spec: &crate::ast::VariadicSpec,
     body_trivia: &[Trivia],
+    explicit_finalizer: bool,
 ) {
     for tok in open {
         parts.push(text(" "));
@@ -1173,6 +1180,8 @@ fn doc_fold_pattern_and_body(
     if let Some(fin) = &spec.finalize {
         body.push(text("; finalize "));
         body.push(doc_callable_spec(fin));
+    } else if explicit_finalizer {
+        body.push(text("; finalize ()"));
     }
     parts.push(doc_compact_declaration_body(body_trivia, concat_all(body)));
 }
@@ -3790,26 +3799,31 @@ fn doc_source_block(source: &SourceBlock) -> Doc {
             path,
         ),
         SourceOrigin::Git(source) => {
-            let mut fields = vec![
-                doc_string_field_entry(
-                    doc_item_leading_trivia(&source.url_leading_trivia),
+            let mut fields: Vec<ConfigEntry<'_>> = vec![
+                (
                     "git",
-                    &source.url,
+                    crate::ast::BlockFieldValue::Str(source.url.clone()),
+                    &source.url_leading_trivia,
                 ),
-                doc_string_field_entry(
-                    doc_item_leading_trivia(&source.ref_leading_trivia),
+                (
                     "ref",
-                    &source.git_ref,
+                    crate::ast::BlockFieldValue::Str(source.git_ref.clone()),
+                    &source.ref_leading_trivia,
                 ),
             ];
             if let Some(selector) = &source.manifest_path {
-                fields.push(doc_string_field_entry(
-                    doc_item_leading_trivia(&selector.leading_trivia),
+                fields.push((
                     "path",
-                    &selector.path,
+                    crate::ast::BlockFieldValue::Str(selector.path.clone()),
+                    &selector.leading_trivia,
                 ));
+            } else if let Some(trivia) = &source.absent_path_leading_trivia {
+                fields.push(("path", crate::ast::BlockFieldValue::Unit, trivia));
             }
-            join(concat(text(";"), hardline()), fields)
+            join(
+                concat(text(";"), hardline()),
+                fields.into_iter().map(doc_config_entry),
+            )
         }
     };
     doc_braced_block(
@@ -3895,9 +3909,25 @@ fn doc_lock_file(lock: &LockFile) -> Doc {
         doc_string_field_entry(leading("git"), "git", &lock.url),
         doc_string_field_entry(leading("ref"), "ref", &lock.git_ref),
     ];
-    if let Some(path) = &lock.manifest_path {
-        fields.push(doc_string_field_entry(leading("path"), "path", path));
+    let mut path_fields = lock
+        .manifest_path
+        .as_ref()
+        .map(|path| {
+            vec![(
+                "path",
+                crate::ast::BlockFieldValue::Str(path.clone()),
+                &[][..],
+            )]
+        })
+        .unwrap_or_default();
+    if path_fields.is_empty() && lock.field_leading_trivia.contains_key("path") {
+        path_fields.push(("path", crate::ast::BlockFieldValue::Unit, &[]));
     }
+    fields.extend(
+        path_fields
+            .into_iter()
+            .map(|field| concat(leading("path"), doc_config_entry(field))),
+    );
     fields.extend([
         doc_string_field_entry(leading("commit"), "commit", &lock.commit),
         doc_string_field_entry(leading("sig"), "sig", &lock.sig),
@@ -4072,13 +4102,13 @@ fn doc_host_fn_def_param(p: &HostFnParam) -> Doc {
 // =========================================================================
 
 /// Render the `build { ... }` block: the `build` header, then the
-/// body (mandatory `cache`, optional `docs`, then each `target`
+/// body (optional `cache`, optional `docs`, then each `target`
 /// block) at +2 indent, closing `}` back at the outer column.
 fn doc_build_block(b: &BuildBlock) -> Doc {
     let mut body: Vec<Doc> = Vec::new();
-    // Mandatory `cache` declaration emits first, separated from the
-    // optional `docs` block and any `target` blocks by a blank line.
-    body.push(doc_cache_decl(&b.cache));
+    if let Some(cache) = &b.cache {
+        body.push(doc_cache_decl(cache));
+    }
     if let Some(docs) = &b.docs {
         body.push(doc_docs_block(docs));
     }
@@ -4088,7 +4118,7 @@ fn doc_build_block(b: &BuildBlock) -> Doc {
     doc_braced_block(
         concat(doc_item_leading_trivia(&b.leading_trivia), text("build")),
         append_block_trailing(
-            Some(join(concat_all([text(";"), hardline(), hardline()]), body)),
+            (!body.is_empty()).then(|| join(concat_all([text(";"), hardline(), hardline()]), body)),
             &b.trailing_trivia,
         ),
         false,
@@ -4096,42 +4126,35 @@ fn doc_build_block(b: &BuildBlock) -> Doc {
 }
 
 /// Canonicalized layout for the `docs` block: `md` first, then
-/// repeatable `support` entries, then the optional `md_out` and `html`
+/// repeatable `support` entries, then any written `md_out` and `html`
 /// keys in that fixed order, so authors who write the keys in a
 /// different order don't see spurious diffs.
 fn doc_docs_block(d: &crate::ast::BuildBlockDocs) -> Doc {
-    let mut entries: Vec<Doc> = Vec::new();
-    entries.push(doc_string_field_entry(
-        doc_inline_leading_trivia(&d.md_leading_trivia),
+    use crate::ast::BlockFieldValue;
+    let mut fields: Vec<ConfigEntry<'_>> = vec![(
         "md",
-        &d.md,
-    ));
+        BlockFieldValue::Str(d.md.clone()),
+        &d.md_leading_trivia,
+    )];
     for (i, support) in d.support.iter().enumerate() {
-        entries.push(doc_string_field_entry(
-            doc_inline_leading_trivia(
-                d.support_leading_trivia
-                    .get(i)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]),
-            ),
+        fields.push((
             "support",
-            support,
+            BlockFieldValue::Str(support.clone()),
+            d.support_leading_trivia
+                .get(i)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]),
         ));
     }
     if let Some(md_out) = &d.md_out {
-        entries.push(doc_string_field_entry(
-            doc_inline_leading_trivia(&d.md_out_leading_trivia),
-            "md_out",
-            md_out,
-        ));
+        fields.push(("md_out", md_out.clone(), &d.md_out_leading_trivia));
     }
     if let Some(html) = &d.html {
-        entries.push(doc_string_field_entry(
-            doc_inline_leading_trivia(&d.html_leading_trivia),
-            "html",
-            html,
-        ));
+        fields.push(("html", html.clone(), &d.html_leading_trivia));
     }
+    let catalog = crate::config_fields::DOCS_FIELDS;
+    fields.sort_by_key(|(name, _, _)| catalog.iter().position(|field| field.name == *name));
+    let entries: Vec<Doc> = fields.into_iter().map(doc_config_entry).collect();
     doc_braced_block(
         concat(doc_inline_leading_trivia(&d.leading_trivia), text("docs")),
         append_block_trailing(
@@ -4156,13 +4179,19 @@ fn doc_cache_decl(c: &BuildBlockCache) -> Doc {
 }
 
 fn doc_target_block(t: &TargetBlock) -> Doc {
-    // Entries at +2 indent, closing `}` back at the block's indent.
-    let mut entries: Vec<Doc> = Vec::new();
-    let mut ordered_entries: Vec<&TargetEntry> = t.entries.iter().collect();
-    ordered_entries.sort_by(|a, b| target_entry_order(a).cmp(&target_entry_order(b)));
-    for entry in ordered_entries {
-        entries.push(doc_target_entry(entry));
-    }
+    let mut fields: Vec<ConfigEntry<'_>> = t
+        .entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.key.as_str(),
+                entry.value.clone(),
+                entry.leading_trivia.as_slice(),
+            )
+        })
+        .collect();
+    fields.sort_by(|a, b| (a.0 != "out", a.0).cmp(&(b.0 != "out", b.0)));
+    let entries: Vec<Doc> = fields.into_iter().map(doc_config_entry).collect();
     doc_braced_block(
         concat(
             doc_inline_leading_trivia(&t.leading_trivia),
@@ -4183,18 +4212,17 @@ fn doc_target_block(t: &TargetBlock) -> Doc {
     )
 }
 
-fn doc_target_entry(e: &TargetEntry) -> Doc {
-    doc_string_field_entry(
-        doc_inline_leading_trivia(&e.leading_trivia),
-        &e.key,
-        &e.value,
-    )
-}
+type ConfigEntry<'a> = (&'a str, crate::ast::BlockFieldValue, &'a [Trivia]);
 
-fn target_entry_order(e: &TargetEntry) -> (u8, &str) {
-    match e.key.as_str() {
-        "out" => (0, ""),
-        other => (1, other),
+fn doc_config_entry((name, value, trivia): ConfigEntry<'_>) -> Doc {
+    let leading = doc_inline_leading_trivia(trivia);
+    match value {
+        crate::ast::BlockFieldValue::Str(value) => doc_string_field_entry(leading, name, &value),
+        crate::ast::BlockFieldValue::Unit => concat(leading, text(format!("{name} ()"))),
+        crate::ast::BlockFieldValue::Word(value) => {
+            concat(leading, text(format!("{name} {value}")))
+        }
+        _ => unreachable!("configuration fields are validated before formatting"),
     }
 }
 
@@ -4293,6 +4321,7 @@ mod tests {
         );
         assert!(!formatted.contains("html \"out/html\";"), "{formatted}");
         assert!(!formatted.contains("module_format \"esm\";"), "{formatted}");
+        assert!(!formatted.contains("namespace \"pkg\";"), "{formatted}");
     }
 
     #[test]
@@ -8112,7 +8141,7 @@ pub fn main() -> . { print("Hello, world!") }"#,
                      md_out // md_out value\n\"out/md/\";\n\
                      html // html value\n\"out/html/\"\n\
                    }};\n\
-                   target rust {{ out // target value\n\"out/rust/\" }}\n\
+                   target rust {{ out // target value\n\"out/rust/\"; namespace \"pkg\"; thread_safety () }}\n\
                  }}\n\
                  bridge // bridge opener\n{{ main }}"
             );
@@ -8337,6 +8366,88 @@ pub fn main() -> . { print("Hello, world!") }"#,
 
     // ---- build-block round-trips ---------------------------------------
 
+    #[test]
+    fn configuration_preserves_omitted_and_explicit_settings() {
+        let output = package_roundtrip(
+            "build { docs { md \"docs\" }; target rust { out \"out/rust\" }; target haskell { out \"out/haskell\" }; target kio-prime { out \"out/prime\" } }",
+        );
+        for field in [
+            "cache ()",
+            "md_out \"out/docs-md/\"",
+            "html \"out/docs/\"",
+            "namespace ()",
+            "thread_safety ()",
+        ] {
+            assert!(!output.contains(field), "invented {field}:\n{output}");
+        }
+        let parsed = crate::pass::parser::parse_package_file(&output, Some("pkg")).unwrap();
+        let targets = parsed.build.unwrap().targets;
+        assert_eq!(targets[1].entries.len(), 1);
+        assert_eq!(targets[2].entries.len(), 1);
+        assert!(!package_roundtrip("").contains("build"));
+        assert!(!build_roundtrip("target js { out \"js\" }").contains("docs"));
+        assert!(
+            !dependency_roundtrip("dependency dep; source { git \"url\"; ref \"main\" }")
+                .contains("path ()")
+        );
+        assert!(
+            !lock_roundtrip(
+                "lock dep; resolved { git \"url\"; ref \"main\"; commit \"sha\"; sig \"digest\" }"
+            )
+            .contains("path ()")
+        );
+        assert!(
+            !dependency_roundtrip("dependency dep; source { path \"dep.pkg.kio\" }")
+                .contains("path ()")
+        );
+        let explicit = package_roundtrip(
+            "build { cache (); docs { md \"docs\"; md_out (); html \"out/docs/\" }; target rust { out \"out\"; namespace (); thread_safety ((send_sync)) } }",
+        );
+        for field in [
+            "cache ()",
+            "md_out ()",
+            "html \"out/docs/\"",
+            "namespace ()",
+            "thread_safety send_sync",
+        ] {
+            assert!(explicit.contains(field), "lost {field}:\n{explicit}");
+        }
+        assert!(
+            dependency_roundtrip("dependency dep; source { git \"url\"; ref \"main\"; path () }")
+                .contains("path ()")
+        );
+        assert!(lock_roundtrip("lock dep; resolved { git \"url\"; ref \"main\"; path (); commit \"sha\"; sig \"digest\" }").contains("path ()"));
+    }
+
+    #[test]
+    fn configuration_grouping_canonicalizes_without_losing_comments() {
+        let sources = [
+            "build { cache (); target (rust, \"native\") { out \"out/rust\"; thread_safety () } }",
+            "build { cache (((()))); target (rust, ((\"na\" \"tive\"))) { out ((\"out/\" \"rust\")); thread_safety ((())) } }",
+        ];
+        assert_eq!(package_roundtrip(sources[0]), package_roundtrip(sources[1]));
+        let source = "build { cache ( // outer\n( // inner\n) // close\n); target (rust, ( // name\n\"native\")) { out ( // output\n\"out\" // end\n); thread_safety ( // absent\n()) } }";
+        let output = package_roundtrip(source);
+        for comment in ["outer", "inner", "close", "name", "output", "end", "absent"] {
+            assert_eq!(
+                output.matches(&format!("// {comment}\n")).count(),
+                1,
+                "{output}"
+            );
+        }
+        let dependency = dependency_roundtrip(
+            "dependency dep; source { path ( // selection\n()); git (\"url\"); ref ((\"main\")) }",
+        );
+        assert!(
+            dependency.contains("// selection\n  path ()"),
+            "{dependency}"
+        );
+        let lock = lock_roundtrip(
+            "lock dep; resolved { git (\"url\"); ref (\"main\"); path ( // selection\n()); commit (\"sha\"); sig (\"digest\") }",
+        );
+        assert!(lock.contains("// selection\n  path ()"), "{lock}");
+    }
+
     /// Round-trip a `build { ... }` block body (the `cache` / `docs` /
     /// `target` sequence, without the enclosing braces) through the
     /// standalone body parser + `doc_build_block` and assert
@@ -8396,11 +8507,11 @@ pub fn main() -> . { print("Hello, world!") }"#,
     fn build_target_keys_are_canonicalized() {
         let pp = build_roundtrip(
             "cache ();\n\
-             target rust { thread_safety \"send_sync\"; namespace \"demo\"; out \"out/rust/\"; }",
+             target rust { thread_safety send_sync; namespace \"demo\"; out \"out/rust/\"; }",
         );
         let out_at = pp.find("out \"out/rust/\";").unwrap();
         let namespace_at = pp.find("namespace \"demo\";").unwrap();
-        let thread_safety_at = pp.find("thread_safety \"send_sync\"").unwrap();
+        let thread_safety_at = pp.find("thread_safety send_sync").unwrap();
         assert!(
             out_at < namespace_at && namespace_at < thread_safety_at,
             "got:\n{pp}"
@@ -8412,7 +8523,7 @@ pub fn main() -> . { print("Hello, world!") }"#,
         let pp = build_roundtrip(
             "cache ();\n\
              target rust { \
-               thread_safety \"send_sync\"; \
+               thread_safety send_sync; \
                // output path\n\
                out \"out/rust/\"; \
                namespace \"demo\"; \
@@ -8421,7 +8532,7 @@ pub fn main() -> . { print("Hello, world!") }"#,
         let output_comment = pp.find("// output path").unwrap();
         let out_at = pp.find("out \"out/rust/\";").unwrap();
         let namespace_at = pp.find("namespace \"demo\";").unwrap();
-        let thread_safety_at = pp.find("thread_safety \"send_sync\"").unwrap();
+        let thread_safety_at = pp.find("thread_safety send_sync").unwrap();
         assert!(
             output_comment < out_at && out_at < namespace_at && namespace_at < thread_safety_at,
             "expected target entry comment to move with `out`; got:\n{pp}"
@@ -8452,9 +8563,11 @@ pub fn main() -> . { print("Hello, world!") }"#,
             "target // pair\n (// backend\n js // comma\n, // name\n \"w\" // chunk\n \"eb\" // close\n) { out \"web\" }",
         );
         for comment in ["pair", "backend", "comma", "name", "chunk", "close"] {
-            assert!(pp.contains(&format!("// {comment}")), "{pp}");
+            assert_eq!(pp.matches(&format!("// {comment}\n")).count(), 1, "{pp}");
         }
         assert!(pp.contains(r#"target (js, "web")"#), "{pp}");
+        let grouped = build_roundtrip("target (js, // name\n((\"web\"))) { out \"web\" }");
+        assert_eq!(grouped.matches("// name\n").count(), 1, "{grouped}");
     }
 
     #[test]
@@ -8471,7 +8584,6 @@ pub fn main() -> . { print("Hello, world!") }"#,
 
     #[test]
     fn build_docs_block_md_only() {
-        // `md_out` / `html` omitted — only `md` emits.
         let pp = build_roundtrip("cache ();\ndocs { md \"docs\"; }");
         assert!(pp.contains("md \"docs\"\n"), "got:\n{pp}");
         assert!(!pp.contains("md_out"), "got:\n{pp}");

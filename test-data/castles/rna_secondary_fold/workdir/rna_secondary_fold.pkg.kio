@@ -1,8 +1,6 @@
 package rna_secondary_fold;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

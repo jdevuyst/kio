@@ -16,7 +16,8 @@ use crate::span::Span;
 mod tooling;
 #[cfg(feature = "lsp")]
 pub(crate) use tooling::{
-    expression_operators, tooling_module, tooling_operators, tooling_path_allowed,
+    expression_operators, tooling_config_value_field, tooling_keyword_description,
+    tooling_keyword_field, tooling_module, tooling_operators, tooling_path_allowed,
 };
 #[cfg(any(test, feature = "lsp"))]
 pub(crate) use tooling::{tooling_candidates, tooling_keywords};

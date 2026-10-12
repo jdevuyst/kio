@@ -1,8 +1,6 @@
 package repeated_literal_import;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

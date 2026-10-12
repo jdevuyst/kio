@@ -822,36 +822,39 @@ fn synthesize_missing_package_files(
     harness_file: Option<&DocumentFileHeader>,
     files: &mut BTreeMap<String, String>,
 ) {
-    // Root names that appear as their own module file in the document
-    // (`<root>.kio`). Such a root is a plain module — bridged into a
-    // package via `assembled_with_support_bridges`, not a package of its
-    // own — so a `<root>/<sub>;` submodule file must not make us
-    // synthesize a competing `<root>.pkg.kio`.
-    let module_roots: BTreeSet<&str> = document
+    let headers = document
         .files
-        .keys()
-        .filter_map(|path| module_file_root(path))
-        .filter(|root| files.contains_key(&format!("{root}.kio")))
+        .values()
+        .map(|file| &file.header)
+        .chain(harness_file);
+    let mut packages: Vec<&str> = headers
+        .clone()
+        .filter(|header| header.kind == KioFileKind::Package)
+        .filter_map(|header| header.package_name.as_deref())
         .collect();
-
-    let mut packages: BTreeSet<String> = BTreeSet::new();
-    for file in document.files.values() {
-        if let Some(package) = &file.header.package_name
-            && !module_roots.contains(package.as_str())
-        {
-            packages.insert(package.clone());
-        }
-    }
-    if let Some(header) = harness_file
-        && let Some(package) = &header.package_name
-    {
-        packages.insert(package.clone());
+    if packages.is_empty() {
+        // A signature names its package; module prefixes are only fallback
+        // names for the one scratch package, not separate package boundaries.
+        let package = headers
+            .filter(|header| header.kind == KioFileKind::Signature)
+            .find_map(|header| header.package_name.as_deref())
+            .or_else(|| harness_file.and_then(|header| header.package_name.as_deref()))
+            .or_else(|| {
+                document.files.values().find_map(|file| {
+                    file.header
+                        .package_name
+                        .as_deref()
+                        .filter(|name| !files.contains_key(&format!("{name}.kio")))
+                })
+            })
+            .unwrap_or(SCRATCH_PKG_NAME);
+        files.insert(
+            format!("{package}.pkg.kio"),
+            synthesize_package_file(package, "", ""),
+        );
+        packages.push(package);
     }
     for package in packages {
-        let path = format!("{package}.pkg.kio");
-        files
-            .entry(path)
-            .or_insert_with(|| synthesize_package_file(&package, "", ""));
         let root_path = format!("{package}.kio");
         files
             .entry(root_path)
@@ -1169,6 +1172,105 @@ fn write_assembled_file(scratch: &Path, file: &AssembledFile) -> std::io::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_backed_assembly_keeps_one_package_across_module_namespaces() {
+        for (support, harness_header, expected_packages, expected_roots) in [
+            (
+                "module utils/list_ops;",
+                "module app/main;",
+                &["app"][..],
+                &["app"][..],
+            ),
+            (
+                "module utils;",
+                "module consumer;",
+                &["kiodoc"],
+                &["kiodoc", "utils", "consumer"],
+            ),
+            (
+                "module utils/list_ops;",
+                "module consumer;",
+                &["utils"],
+                &["utils", "consumer"],
+            ),
+            (
+                "signature app;",
+                "module consumer;",
+                &["app"],
+                &["app", "consumer"],
+            ),
+            ("signature app;", "module other/main;", &["app"], &["app"]),
+            (
+                "package app; bridge { app; }",
+                "module app/main;",
+                &["app"],
+                &["app"],
+            ),
+            (
+                "package example;",
+                "module app/main;",
+                &["example"],
+                &["example"],
+            ),
+            (
+                "module utils/list_ops;",
+                "package example;",
+                &["example"],
+                &["example"],
+            ),
+            (
+                "package first;",
+                "package second;",
+                &["first", "second"],
+                &["first", "second"],
+            ),
+        ] {
+            let source = format!(
+                "<!--kio {{file}}\n{support}\n-->\n\n\
+                 <!--kio {{harness=test file placeholder=\"__SNIPPET__\"}}\n\
+                 {harness_header}\n__SNIPPET__\n-->\n"
+            );
+            let document = Document::build(
+                Path::new("example.md"),
+                &source,
+                super::super::parse::scan(&source),
+            )
+            .unwrap();
+            let assembled =
+                assemble_file_backed(&document, &document.harnesses["test"], "").unwrap();
+            let packages: BTreeSet<_> = assembled
+                .files
+                .iter()
+                .filter_map(|file| file.path.strip_suffix(".pkg.kio"))
+                .collect();
+            assert_eq!(
+                packages,
+                expected_packages.iter().copied().collect(),
+                "{source}"
+            );
+            let roots: BTreeSet<_> = assembled
+                .files
+                .iter()
+                .filter_map(|file| file.path.strip_suffix(".kio"))
+                .filter(|path| !path.contains(['/', '.']))
+                .collect();
+            assert_eq!(roots, expected_roots.iter().copied().collect(), "{source}");
+            if support.starts_with("package ") {
+                let header = &document.files.values().next().unwrap().header;
+                assert_eq!(
+                    assembled
+                        .files
+                        .iter()
+                        .find(|file| file.path == header.path)
+                        .unwrap()
+                        .body
+                        .trim(),
+                    support
+                );
+            }
+        }
+    }
 
     #[test]
     fn split_no_package_sections() {

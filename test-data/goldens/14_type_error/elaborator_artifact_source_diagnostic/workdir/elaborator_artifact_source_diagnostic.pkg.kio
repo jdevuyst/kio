@@ -1,8 +1,6 @@
 package elaborator_artifact_source_diagnostic;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

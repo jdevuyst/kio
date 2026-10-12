@@ -306,6 +306,13 @@ const EXPR_FORMS: &[ExprForm] = &[
         root_tag: "ufcs",
     },
     ExprForm {
+        id: "ufcs-grouped-callee",
+        grammar: "DotSpliceCallee",
+        declarations: "",
+        source: "form_receiver.>((form_callee))(form_arg)",
+        root_tag: "ufcs",
+    },
+    ExprForm {
         id: "ufcs-argument-last",
         grammar: "LeftCallSplice",
         declarations: "",
@@ -691,8 +698,16 @@ fn normalize_topology(value: &mut serde_json::Value) {
             }
             for (key, child) in map {
                 match key.as_str() {
-                    "ext" | "access_ext" | "match_id" | "temp_name" | "id" | "prefix_explicit"
-                    | "elided" | "ret_elided" | "semicolon" => {
+                    "ext"
+                    | "access_ext"
+                    | "match_id"
+                    | "temp_name"
+                    | "id"
+                    | "prefix_explicit"
+                    | "elided"
+                    | "ret_elided"
+                    | "semicolon"
+                    | "finalize_keyword_span" => {
                         *child = serde_json::Value::Null;
                     }
                     "leading_trivia" | "trailing_trivia" | "leading" | "trailing"
@@ -1048,10 +1063,21 @@ fn unordered_elaborator_entries_preserve_path_only_boundaries() {
             assert_eq!(topology(&parsed), topology(&canonical), "{cell}");
             assert_pretty_topology(&parsed, &cell);
 
+            let grouped = parse_eager_and_lazy(
+                &source(
+                    "((context_impl))",
+                    "((context_capture))",
+                    implementation_first,
+                ),
+                &cell,
+            );
+            assert_eq!(topology(&grouped), topology(&canonical), "{cell}");
+            assert_pretty_topology(&grouped, &cell);
+
             for (implementation, captures) in [
                 ("context_impl(value)", "context_capture"),
                 (".(value) { value }", "context_capture"),
-                ("(context_impl)", "context_capture"),
+                ("(context_impl(value))", "context_capture"),
                 ("context_impl", "context_capture(value)"),
                 ("context_impl", ".(value) { value }"),
             ] {
@@ -1598,6 +1624,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "ElaboratorBody",
     "ElaboratorEntry",
     "ElaboratorImpl",
+    "GroupedValuePath",
     "Equiv",
     "FixedOpToken",
     "VaropHead",
@@ -1623,6 +1650,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "PlaceholderLambda",
     "PrefixOpExpr",
     "DotSpliceSuffix",
+    "DotSpliceCallee",
     "LeftCallSplice",
     "LeftSpliceCallee",
     "LeftSplicePathCallee",
@@ -1755,7 +1783,8 @@ FnExpr ::= '.' FnSignature ('->' Type)? Block
 ElaboratorItem ::= Vis? 'elab' IDENT ':' Type ElaboratorBody
 ElaboratorBody ::= '{' SemiEntries<ElaboratorEntry> '}'
 ElaboratorEntry ::= ElaboratorCaptures | ElaboratorImpl | TrailingBlockDecl
-ElaboratorImpl ::= 'impl' ValuePath | 'impl' '(' 'fills' ')' ValuePath
+ElaboratorImpl ::= 'impl' GroupedValuePath | 'impl' '(' 'fills' ')' GroupedValuePath
+GroupedValuePath ::= ValuePath | '(' GroupedValuePath ')'
 Equiv ::= 'equiv' IDENT ValueSignature? '{' ';'* Expr (';'+ Expr)+ ';'* '}'
 FixedOpToken ::= OpToken
 VaropHead ::= VaropOpen VaropClose
@@ -1781,6 +1810,7 @@ DotPlaceholderIntro ::= '.' IDENT '.'
 PlaceholderLambda ::= DotPlaceholderIntro Block
 PrefixOpExpr ::= FixedOpToken+ Expr
 DotSpliceSuffix ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
+DotSpliceCallee ::= GroupedValuePath | IDENT '!'
 LeftCallSplice ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
 LeftSpliceCallee ::= LeftSplicePathCallee | IDENT '!' NonemptyCallArgList?
 LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList? | '(' LeftSplicePathCallee ')'

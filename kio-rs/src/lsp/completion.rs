@@ -466,9 +466,32 @@ fn complete_source(
             .map(|keyword| CompletionItem {
                 label: keyword.to_owned(),
                 kind: Some(CompletionItemKind::KEYWORD),
+                detail: crate::scope_walk::tooling_keyword_description(&probe, keyword),
+                documentation: crate::scope_walk::tooling_keyword_field(&probe, keyword)
+                    .and_then(|field| field.default_description())
+                    .map(|default| Documentation::String(format!("Default: {default}"))),
                 ..Default::default()
             }),
     );
+    if let Some(field) = crate::scope_walk::tooling_config_value_field(&probe) {
+        result
+            .items
+            .extend(field.value_choices().into_iter().map(|choice| {
+                CompletionItem {
+                    label: choice.clone(),
+                    kind: Some(if field.named_choices.contains(&choice.as_str()) {
+                        CompletionItemKind::ENUM_MEMBER
+                    } else {
+                        CompletionItemKind::VALUE
+                    }),
+                    detail: Some(field.value_description()),
+                    documentation: field
+                        .default_description()
+                        .map(|default| Documentation::String(format!("Default: {default}"))),
+                    ..Default::default()
+                }
+            }));
+    }
     if let Some(module) = module {
         let grammars = crate::scope_walk::expression_operators(module, byte_offset);
         result.items.extend(
@@ -1923,6 +1946,58 @@ fn use_site() -> . { () }
                 lbls.contains(&label),
                 "package target block should complete `{label}`; got {lbls:?}"
             );
+        }
+    }
+
+    #[test]
+    fn configuration_details_follow_every_shared_field_descriptor() {
+        use crate::config_fields::ConfigFieldOwner;
+        let mut cases = [
+            (
+                ConfigFieldOwner::Build,
+                "file:///pkg.pkg.kio",
+                "package pkg; build { ",
+            ),
+            (
+                ConfigFieldOwner::Docs,
+                "file:///pkg.pkg.kio",
+                "package pkg; build { docs { ",
+            ),
+            (
+                ConfigFieldOwner::Source,
+                "file:///pkg.dep.kio",
+                "dependency pkg; source { ",
+            ),
+            (
+                ConfigFieldOwner::Resolved,
+                "file:///pkg.lock.kio",
+                "lock pkg; resolved { ",
+            ),
+        ]
+        .into_iter()
+        .map(|(owner, uri, source)| (uri, source.to_owned(), owner.fields()))
+        .collect::<Vec<_>>();
+        cases.extend(crate::build_target::BuildTarget::ALL.iter().map(|target| {
+            (
+                "file:///pkg.pkg.kio",
+                format!("package pkg; build {{ target {} {{ ", target.id()),
+                target.fields(),
+            )
+        }));
+        for (uri, source, fields) in cases {
+            let uri = Uri::from_str(uri).unwrap();
+            let items = complete_at_uri(&uri, &source, 0, source.len() as u32);
+            for field in fields {
+                let item = items
+                    .iter()
+                    .find(|item| item.label == field.name)
+                    .expect(field.name);
+                assert_eq!(
+                    item.detail.as_deref(),
+                    Some(field.value_description().as_str()),
+                    "{source}: {item:?}"
+                );
+            }
         }
     }
 

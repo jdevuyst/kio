@@ -129,28 +129,37 @@ operators with the same displayed token.
 
 A Markdown guide can contain checked Kio fences. Use a harness when the
 snippet needs surrounding declarations: declare it once with
-`harness=NAME` and a `placeholder=...` marker — usually hidden in an
-HTML comment so readers don't see the plumbing — then reference it from
-snippets with `{@NAME}`:
+`harness=NAME` and a `placeholder=...` marker, then reference it from
+snippets with `{@NAME}`. Here the marker is inside a function, because the
+snippet contains statements and a result expression:
 
-````markdown
-<!--kio {harness=demo placeholder="__SNIPPET__"}
+```kio {harness=demo placeholder="__SNIPPET__"}
 module demo/main;
 
 fn id(x: .) { x }
 
-__SNIPPET__
--->
+fn example() {
+  __SNIPPET__
+}
+```
 
 ```kio {@demo}
 let x = id(());
 x
 ```
-````
 
-(A `{file}` fence is different: it declares a document-scoped support
+Substitution is literal: a marker at module scope accepts declarations, not
+expression statements. A harness may instead live in an HTML comment such as
+`<!--kio {harness=demo placeholder="__SNIPPET__"} ... -->`. Hide only repetitive
+wrapping; show or explain any declarations and imports the reader needs to
+understand the example.
+
+A `{file}` fence is different: it declares a document-scoped support
 file — not a snippet and not a harness — that snippets and file-backed
-harnesses can import from.)
+harnesses can import from. The support files and the substituted harness
+form one scratch package. Their module paths can have different prefixes;
+for example, `app/main` can import `utils/list_ops`. You can supply a
+package file with `{file}`; otherwise, Kiodoc creates one.
 
 Inside a `///` comment, use `{@}` for snippets that should be checked
 inside the surrounding module:
@@ -183,8 +192,6 @@ list that directory in the package build block:
 
 ```text
 build {
-  cache ();
-
   docs {
     md "docs";
     support "../test-data/poc/elab/workdir";

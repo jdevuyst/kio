@@ -1,8 +1,6 @@
 package inferred_conflict_primary_type;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   }

@@ -2,7 +2,22 @@
 
 Trigger: editing under `specs/`, or adding a new spec page.
 
-The `specs/` directory holds the authoritative specifications. These are **contracts**, not prose documentation — each file describes settled behavior and should be kept strictly consistent with the implementation. Pedagogical and reader-facing material lives in `docs/`; see [`ai/topics/docs.md`](docs.md).
+The `specs/` directory holds the authoritative specifications. These are
+**behavioral contracts**: each file describes settled behavior and should be
+kept strictly consistent with the implementation. Pedagogical walkthroughs
+live in `docs/`; see [`ai/topics/docs.md`](docs.md).
+
+**Write for human technical readers.** State rules, conditions, and exceptions
+explicitly, and explain notation or specialized terms before relying on them.
+Examples expose or directly reference the prerequisites needed to interpret
+the rule they illustrate. Preserve formal precision and the expertise expected
+by the page; a specification need not read like a beginner tutorial. Separate
+normative requirements from rationale, implementation history, and validation
+evidence. Notes to self, AI-to-AI handoffs, unexplained shorthand, and repository
+maintenance bookkeeping do not belong in the public contract. An editorial
+clarification preserves the accepted programs, behavior, and guarantees; an
+ambiguous or conflicting rule requires a contract decision, not a silent
+wording repair.
 
 Specifications are also original-byte inputs to the version-matched installed
 `kio manual` bundle, alongside their website/checkout role. Follow

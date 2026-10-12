@@ -1,8 +1,6 @@
 package redundant_recursive_newtype_marker;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

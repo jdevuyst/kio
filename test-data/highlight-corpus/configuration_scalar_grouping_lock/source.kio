@@ -1,0 +1,2 @@
+lock helper;
+resolved { git (("https://example.com/libraries.git")); ref ("main"); commit (("abc")); sig ((("digest"))); path ((())) }

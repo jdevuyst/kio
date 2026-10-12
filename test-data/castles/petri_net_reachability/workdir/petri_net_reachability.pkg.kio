@@ -1,8 +1,6 @@
 package petri_net_reachability;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

@@ -17,7 +17,8 @@ The elaborator is the **surface-to-core boundary**. Its contract:
   once and each retained source action is consumed at most once. Each
   application owner may retain at most one pending expected-result equation;
   a connected tree may contain one for each owner. After an initial blocked
-  attempt, the equation records its two zonked sides. Another attempt is
+  attempt, the equation records its two sides after applying the currently
+  known goal solutions (called **zonking**). Another attempt is
   admitted only when a retained child closes or one of those sides changes
   structurally; another deferral replaces the snapshot. Merely entering the
   next schedule mode never retries it. There is no global constraint solving,
@@ -55,18 +56,33 @@ Contexts `Γ` carry the same shape as in [`prime.md`](prime.md) § 2.1:
 
 The α form admits both ordinary universal binders (introduced by user-written `[α]`) and **skolems** (introduced by checking against a polytype, see § 4). Skolems are distinct from ordinary type variables only when an escape check fires at a binder boundary; the elaborator treats them uniformly elsewhere.
 
+The algorithm also uses **inference goals**: local unknown types to be solved
+by the application rules, not additional source-level type binders. A goal's
+**owner** is the application and lexical scope in which it was introduced.
+Connected applications may exchange constraints without changing that scope.
+A **retained action** is the unconsumed part of a source expression's typing
+derivation, suspended while required type information is missing; resuming it
+does not repeat its completed premises. A type is **closed with respect to
+inference** when it contains no unresolved goal or source placeholder. It may
+still contain the explicit type variables or skolems of its lexical context.
+
 ## 2. Polytypes and instantiation
 
-The elaborator distinguishes **polytypes** (which may contain top-level ∀ quantifiers) from **monotypes** (no top-level ∀). PJ-V-W-S's syntactic split:
+The following metavariables classify the well-formed types of
+[`prime.md` § 1.1](prime.md#11-types); they are not a separate grammar that
+restricts where polymorphic types may occur:
 
 ```text
-σ (polytype)   ::= ∀ᾱ. ρ
-ρ (rho)        ::= τ | σ → σ          (an arrow may carry polytype slots —
-                                          this is what makes the system rank-N)
-τ (monotype)   ::= α | . | !  | τ → τ  | τ & τ  | τ | τ  | N(τ̄)
-                | ∃ᾱ. τ                (existential, surface `<U>` — present
-                                          only inside newtype payload positions)
+σ (polytype)      any well-formed value type, written ∀ᾱ. ρ
+ρ (rho type)      a value type with no leading ∀; the binder list ᾱ may be empty
+τ (monotype)      a value type with no ∀ anywhere in its structural type tree
 ```
+
+A rho type need not be a monotype: `([A] A -> A) & .` has no leading
+quantifier but contains a polymorphic component. Complete polymorphic function
+schemes may occur inside functions, products, sums, and newtype payloads under
+the ordinary kind rules. Existential notation describes the payload bound by
+a newtype declaration; it does not admit a standalone existential source type.
 
 A polytype's leading binders sit at the outermost position; binders nested inside an arrow's parameter or return slot belong to that slot's nested σ. **Shallow skolemization** is the rule that drives the system: when checking against ∀ᾱ. ρ, only the leading binders ᾱ skolemize; binders deeper in ρ are left intact and surface as expected polytypes for the sub-expressions they cover. The two types
 
@@ -288,7 +304,7 @@ with a dropped return slot reads its return type from the body.
 
 E-FnSynth synthesizes a polytype only when the user explicitly writes the `[ᾱ]` binders. A monomorphic `.(x: Int) { … }` synthesizes the monomorphic type `(Int) → R′`, not a generalized scheme. The synthesized polytypes are precisely the polytypes the user wrote.
 
-In particular, `let id = .[A](x) { x };` is a type error: the RHS is a polymorphic lambda literal in a synthesis-only position (E-FnSynth's domain), but the parameter `x` has no annotation. There is no way for the rule to determine `x`'s type; the user must wrap it in a polymorphic call that pins the type from the receiving slot:
+In particular, `let id = .[A](x) { x };` is a type error: the RHS is a polymorphic lambda literal in a synthesis-only position (E-FnSynth's domain), but the parameter `x` has no annotation. The body does not determine that missing annotation. A concrete binding such as `let .(id: [A] A -> A) = .[A](x) { x };` supplies a checking position (§ 6). A polymorphic call can supply one as well:
 
 ```kio
 fn identity[T](x: T) -> T { x }
@@ -561,7 +577,11 @@ this diagnostic.
 
 ### 6.1. Why no narrowing
 
-The Hindley-Milner-era defaulting rules (ML's value restriction, Haskell's `default` declarations) exist because un-annotated inference can produce ambiguous polymorphic types — a choice the elaborator has to resolve before the program can run. The classical `let f = .(x) { x };` is the canonical case: the RHS synthesizes a constraint that admits the polytype `∀α. α → α`, the monotype `Int → Int`, and infinitely many other instantiations; such a system picks one by a defaulting rule.
+Generalization and instantiation are separate operations. Hindley-Milner
+generalization can quantify free inference variables in an inferred binding
+type; Kio instead requires universal binders to be written in the source.
+An untyped Kio let neither introduces those binders nor instantiates an
+already-polymorphic RHS to one of its monomorphic instances.
 
 **Kio has no such ambiguity.** Every type-binder in the language is user-written:
 
@@ -587,7 +607,7 @@ Now `.[A](x) { x }` sits in a checking position (the value-arg slot of `identity
 
 **Consequence — no let-generalization.** "No let-generalization" is not a separate restriction the rule imposes; it is what falls out of "the RHS's synthesized type is taken as-is" plus "there are no free inference variables to generalize over." Hindley-Milner generalization closes a synthesized type over its free metavariables; in Kio, the unification machinery solves every metavariable before the let-rule sees the synthesized type (§ 5.2's failure mode catches anything else), so there is no free metavariable for the let-rule to generalize over even if it wanted to.
 
-**No backward type flow.** The RHS mode is chosen before the body is examined: synthesize for E-LetSynth and partial patterns, check against the binder-derived type for E-LetCheck and E-LetPatternCheck. The body's uses of `x` cannot propagate an expected type back to E. This is the rule that closes the loop on PJ-V-W-S's discipline — backward flow into a `let` RHS would force the typer to delay RHS typing until the body is examined, and that delay is what makes inference undecidable in the impredicative case. By splitting `let` into "type RHS from the local binder only, bind, then synthesize the body," the elaborator's discipline stays first-order. This is a separate property from § 6.1's "no narrowing": § 6.1 says an untyped RHS's synthesized type is taken as-is once obtained; "no backward flow" says nothing from the body informs the RHS in the first place.
+**No backward type flow.** The RHS mode is chosen before the body is examined: synthesize for E-LetSynth and partial patterns, check against the binder-derived type for E-LetCheck and E-LetPatternCheck. The body's uses of `x` cannot propagate an expected type back to E. Completing the RHS before extending the context makes the let boundary independent of later uses; it is one of the restrictions used in § 10's decidability argument. This is separate from "no narrowing": the synthesized type is preserved once obtained, and nothing from the body informs its inference in the first place.
 
 **A statement-form `let x = e;` followed by further block contents** is presented here in the nested-binding shape used by [`prime.md`](prime.md) § 1.2 (T-Let). The block-form-versus-nested-form distinction is purely syntactic; the typing rule is the same either way.
 
@@ -619,7 +639,27 @@ Tuple literals `(a, b, …)` parse-desugar to nested `__pair__` calls. The elabo
 
 ### 7.4. Elaborator bangs
 
-A bang call `name!(args...)` resolves `name` through ordinary scope to a user-defined elaborator declaration imported explicitly from a regular or root module. The declaration supplies a call type and names the code that implements it:
+A bang call `name!(args...)` resolves `name` through ordinary scope to a user-defined elaborator declaration imported explicitly from a regular or root module. The declaration supplies a call type and names the code that implements it.
+
+The schedule below distinguishes three kinds of intermediate information:
+
+- A **header frontier** is the structural type information available before
+  entering a pending lambda body: its written universal binders and value
+  parameters, together with any known result type. A **provisional checked
+  recipe** records this information and the retained typing work needed to
+  produce the completed term; it is not permission to skip that work.
+- `Goal` denotes an unresolved inference goal, whereas `Infer` denotes a
+  source placeholder still requiring completion. An explicit bound type
+  variable is neither. These names describe transient representations, not
+  Kio' type constructors.
+- **Authentication** checks a reflected handle's lexical scope and permitted
+  dependency against the call that supplied it. A direct-parent scope is one
+  enclosing application edge in the connected derivation. **Publication**
+  means accepting the completed term and its constraint effects into that
+  derivation; it is distinct from reflecting a provisional header. The
+  schedule specifies which effects are accepted atomically.
+
+Evaluation proceeds as follows:
 
 1. Resolve the declaration and instantiate its call type in the enclosing
    E-App inference domain. Explicit type arguments, `_` placeholders, value
@@ -999,11 +1039,11 @@ The bottom type `!` has no introduction form in Kio surface (see [`language.md`]
 
 ## 8. Kio-info-erasure property
 
-**Theorem (Surface-form erasure).** After elaboration, every surface-only form has been removed from the AST. The residual tree contains:
+**Theorem (Surface-form erasure).** After typing and Lowered → Prime substitution, every surface-only form has been removed from the AST. The residual tree contains:
 
 - Variables, `let`, function literals (`λ`/`Λ`), applications.
 - Unit, role-annotated literals.
-- Named callables — intrinsics and `__if_then_else__` route through the `intrinsic_scheme` registry; user-defined elaborators route through `Expr::UserElaborator`. Elaborator forms record their Kio' tree in the side channel and are substituted at the Lowered → Prime boundary.
+- References to ordinary functions and the reserved intrinsic values. A user-defined elaborator contributes its completed Kio' expansion, not a residual bang-call node or compile-time implementation request.
 - Newtype constructor / projector members `N.c` / `N.p`.
 - Host items.
 
@@ -1040,11 +1080,13 @@ surface-only forms is finite and enumerated; the rules cover every one.
 - **Polymorphic-payload erasure choices** at newtype constructor / projector calls are recorded on the call node.
 - **Per-branch dispatch choices** produced by the `match!` library, the exact Boolean type at `__if_then_else__`, the carrier at projected sequence calls, and the sequence step's generated Unit parameter distinct from an explicit `let _ <- e` bind — all recorded in ordinary elaborated terms.
 
-**Theorem (IR-preservation).** Every Routed `Expr` variant whose source carried a typing decision preserves that decision at the IR node. The elaborator's outputs flow through the IR; no later pass needs to re-derive a typing fact.
-
-**Proof.** By case analysis over the Routed `Expr` variants: each variant that consumes a typing decision carries that decision in the IR node that later passes read. □
-
-**Why it matters.** Bugs in the "elaboration → backend" pipeline historically traced to type information being re-derived (or guessed at) later instead of carried. The IR-preservation contract is the structural rule that closes that bug class. Each Routed `Expr` variant must carry the typing decisions its later consumers need.
+**Preservation requirement.** Every intermediate node whose source carried a
+typing decision retains that decision for its later consumers. The completed
+term's explicit types and applications are the authority; a later pass must
+not reconstruct them from declaration spelling or an earlier inference
+history. This is a requirement on compiler representations and transformations,
+not a theorem established merely by naming their node variants. It preserves
+the typing derivation and application order represented by the elaborated term.
 
 ## 10. Decidability
 
@@ -1101,7 +1143,7 @@ The following concerns are deliberately not formalized on this page; the prose s
 ## 12. References
 
 - **Peyton Jones, Vytiniotis, Weirich, Shields 2007** — *Practical type inference for arbitrary-rank types*. Journal of Functional Programming, 17(1):1–82. The bidirectional algorithm with shallow skolemization and explicit binders that this page adapts; Kio's finite connected-domain rule additionally admits exact whole-polytype solutions without generalization or higher-order matching.
-- **Pierce 2002** — *Types and Programming Languages*, ch. 22 (Recursive Types) and ch. 23 (Universal Types). Standard reference for System F and the iso-recursive presentation of recursive types.
+- **Pierce 2002** — *Types and Programming Languages*, ch. 20 (Recursive Types) and ch. 23 (Universal Types). Standard reference for System F and the iso-recursive presentation of recursive types.
 - **Reynolds 1974** — *Towards a theory of type structure*. The original predicative-vs-impredicative distinction.
 - **Cardelli 1993** — *An implementation of FSub*. Bidirectional typechecking for System F-subtype, the algorithmic core PJ-V-W-S extends.
 

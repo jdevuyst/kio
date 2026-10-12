@@ -10,8 +10,11 @@ dependency bundle can be positional when it is small and local, labeled when the
 names matter, and row-shaped when a helper should accept "at least these
 capabilities" without caring what else the caller carries.
 
-Assumed setup: a module whose host supplies `String`, `print`, and `string_concat`.
-Snippets thread together through one accumulating harness.
+The examples form one module whose host supplies `String`, `print`, and
+`string_concat`. They also use `one_prod!` and `narrow_prod!` from the
+[`elab` library](using-libraries.md#the-minimal-dependency-workflow). Materialize
+that dependency under the local name `elab`; the first snippet shows the import
+and host declarations used throughout.
 
 <!--kio {harness=di placeholder="__INSERT_CODE_HERE__" accumulate}
 bridge {
@@ -19,12 +22,6 @@ bridge {
 }
 
 module kiodoc;
-
-import spine_elaborators(narrow_prod, one_prod);
-
-host type String role(str);
-host fn print(p0: String);
-host fn string_concat(p0: String, p1: String) -> String;
 
 __INSERT_CODE_HERE__
 -->
@@ -35,6 +32,14 @@ A dependency is usually just a function value. If a service needs a logger and
 a configuration loader, write those two function types down and pass them in:
 
 ```kio {@di}
+import elab/spine_elaborators(narrow_prod, one_prod);
+
+host type String role(str);
+
+host fn print(p0: String);
+
+host fn string_concat(p0: String, p1: String) -> String;
+
 type Raw_deps = (String -> .) & (. -> String);
 
 fn raw_log(deps: Raw_deps) -> String -> . { deps.>one_prod!(String -> .) }
@@ -107,9 +112,8 @@ an implementation is ordinary value substitution.
 
 ## Ask for only what a helper needs
 
-A helper does not have to name the whole application bundle. Because products
-compose structurally, the helper can accept any bundle that contains the slot it
-uses:
+A helper does not have to name the whole application bundle. It can accept a
+bundle with `Log` as its first slot and leave the remaining type generic:
 
 ```kio {@di}
 fn log_line[Rest](deps: Log & Rest, msg: String) { deps.?{log}(string_concat(msg, "\n")) }
@@ -117,9 +121,12 @@ fn log_line[Rest](deps: Log & Rest, msg: String) { deps.?{log}(string_concat(msg
 fn call_log_line(deps: App_deps) { log_line(deps, "ready") }
 ```
 
-Read `(Log & rest)` as "a `log` dependency plus whatever else the caller is
-carrying." `call_log_line` can pass the full `App_deps`; `log_line` projects out
-the single capability it needs.
+Read `Log & Rest` as "a `log` dependency first, followed by the remaining
+capabilities." `App_deps` is `Log & Config`, so `call_log_line` passes it with
+`Rest` inferred as `Config`; `log_line` projects out the capability it needs.
+Products are ordered: `Config & Log` does not match this parameter. For a
+different order, import and call `reorder_prod!` explicitly before passing the
+bundle, as shown in [Product order](products.md#product-order).
 
 This keeps dependency parameters narrow without making callers rebuild tiny
 one-off bundles. It is the same row-typed-record pattern described in

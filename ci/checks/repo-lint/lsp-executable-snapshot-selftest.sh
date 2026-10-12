@@ -19,8 +19,15 @@ mkdir -p "$fake_repo/ci/checks/orchestrators/lib" \
 cp "$REPO_ROOT/ci/checks/orchestrators/lsp-tests.sh" \
   "$fake_repo/ci/checks/orchestrators/"
 cp "$REPO_ROOT/ci/checks/hygiene/kio-rs.sh" "$fake_repo/ci/checks/hygiene/"
+cp "$REPO_ROOT/ci/package-kio.sh" "$fake_repo/ci/"
+git -C "$fake_repo" init -q
+git -C "$fake_repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+  commit --allow-empty -qm fixture
 mkdir -p "$fake_repo/kio-rs/src/backends/js"
 cp "$REPO_ROOT/README.md" "$fake_repo/README.md"
+cp "$fake_repo/README.md" "$fake_repo/kio-rs/README.md"
+git -C "$fake_repo" add -- README.md kio-rs/README.md
+git -C "$fake_repo" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm readme
 cp "$REPO_ROOT/ci/infra/check-readme-examples.sh" "$fake_repo/ci/infra/"
 cp "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.js" \
   "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.test.mjs" \
@@ -106,8 +113,24 @@ case "$1" in
     fi
     ;;
   run)
-    [ "$#" -eq 5 ] && [ "$2" = --example ] && [ "$3" = pack_manual ] &&
-      [ "$4" = -- ] && [ "$5" = --check ] || exit 90
+    case "$*" in
+      'run --locked --example pack_manual -- --write') ;;
+      "run --example pack_manual -- --check-package $PWD/target/package/kio-lang-0.crate") ;;
+      *) exit 90 ;;
+    esac
+    ;;
+  package)
+    case "$*" in
+      'package --list --allow-dirty --locked')
+        printf '%s\n' Cargo.toml.orig .cargo_vcs_info.json manual/index.tsv manual/payload.tar.gz-concat README.md
+        ;;
+      'package --locked --no-verify --allow-dirty') ;;
+      *) exit 90 ;;
+    esac
+    ;;
+  metadata)
+    [ "$*" = 'metadata --format-version 1 --no-deps' ] || exit 90
+    printf '{"target_directory":"%s/target","packages":[{"name":"kio-lang","version":"0"}]}' "$PWD"
     ;;
   fmt|clippy|check) ;;
   *) exit 94 ;;

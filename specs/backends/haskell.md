@@ -302,18 +302,11 @@ the Kio parameters occur in the result kind. For example,
 `HostType__…__Array h a`. Every Kio host-type parameter has kind `*`, so every
 corresponding Haskell argument has kind `Type`.
 
-Every live associated family has a private, kind-correct sentinel default.
-That default is not a representation choice: a private, poly-kinded class has
-a universal success instance and one more-specific `TypeError` instance per
-sentinel. The universal instance's local incoherence admits a present selection
-that is a type variable or an unreduced host family; this is sound because a
-host module cannot name the unexported sentinel, while an omitted equation has
-already reduced to that sentinel and selects its error instance. Consequently
-an instance must define every live equation even when the corresponding Kio
-type is otherwise unused, without depending on `-Wmissing-methods` or
-warning-as-error flags. The sentinel and completeness-class names and the
-superclass constraint are not exported; the instances require no extra host
-declaration.
+An instance must define every live associated-type equation, even when the
+corresponding Kio type is otherwise unused. An omitted equation is a compile
+error without requiring `-Wmissing-methods` or warning-as-error flags. A
+selection may itself be a type variable or an unreduced host type family;
+the completeness check requires no extra host declaration.
 
 A Kio role never selects that associated type's Haskell representation.
 `role(i32)` admits the corresponding Kio literal syntax; it does not mean
@@ -663,7 +656,7 @@ and higher-kinded / rank-N carriers at their native Haskell types
 crossing the host boundary as a `host fn` parameter / return. A parametric
 dictionary newtype has the same declaration-stable nominal identity as every
 other parametric newtype; its exported constructor and projector expose the
-exact rank-N payload type. `kio@haskell` runs the full golden corpus.
+exact rank-N payload type.
 
 An internal body representation (§ Body model) is not a carve-out: it cannot
 change or erase the typed FFI skin the host observes.

@@ -307,12 +307,9 @@ behavioral additivity. Backend-specific notes:
 - Host exceptions propagate through package calls unchanged. Package runtime
   guards surface as ordinary Python exceptions.
 - **Facade topology and execution provenance** ([`README.md`](README.md#facade-topology-and-execution-provenance))
-  — the compiler prepares the callable topology, semantic slot keys, binder
-  scopes, nominal dependencies, and execution actions once. The `.py` embeds
-  that prepared plan and the runtime consumes it directly; it does not scan
-  declarations or reconstruct boundary call grouping. The typed-stub package, host
-  validation, export tree, and runtime conversions consume the same prepared
-  site inventory.
+  — the typed stubs and runtime interface agree on callable stages, parameter
+  grouping, structural slots, and nominal identities. Retained compatibility
+  declarations add no current host requirement or executable package entry.
 - **Open-world property** ([`README.md`](README.md)) — exact host binding and
   nominal names depend only on complete qualified declaration identities;
   callable and shape names depend only on their prepared site identities and

@@ -39,14 +39,14 @@ bridge {
 
 module kiodoc;
 
-host type Int role(i32);
-host fn add(p0: Int, p1: Int) -> Int;
-host fn mul(p0: Int, p1: Int) -> Int;
-
 __INSERT_CODE_HERE__
 -->
 
 ```kio {@module}
+host type Int role(i32);
+
+host fn mul(p0: Int, p1: Int) -> Int;
+
 /// An example function that multiplies its two arguments.
 ///
 /// See [`example_fn2`] for a related example.
@@ -72,10 +72,13 @@ See `example_fn2` for a related example.
 
 pub fn example_fn1(x: Int, y: Int) -> Int
 kio> :source example_fn1
+/// An example function that multiplies its two arguments.
+///
+/// See [`example_fn2`] for a related example.
 pub fn example_fn1(x: Int, y: Int) -> Int { mul(x, y) }
 ```
 
-`:t` gives the type, `:signature` the declaration header, `:doc` renders the doc-comment followed by the signature, and `:source` prints the canonical declaration with its body.
+`:t` gives the type, `:signature` the declaration header, `:doc` renders the doc-comment followed by the signature, and `:source` prints the canonical declaration with its body and preceding comments.
 
 ## The meta-command set
 

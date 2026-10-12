@@ -345,9 +345,7 @@ shape declaration, no per-type slot to wire up.
 Polymorphic non-atomic host types (`host type Array[T];`) flow
 identically: the host's representation handles every instantiation,
 and the type-parameter is erased to its host-chosen reference
-identity. Contrast the Rust backend, where the polymorphic case
-requires a Generic Associated Type on the `Host` trait — see
-[`specs/backends/rust.md` § Non-atomic host types](rust.md#non-atomic-host-types).
+identity.
 
 The host's only obligation is **consistency across calls**. A
 `Foo`-typed value the package returns to the host and later

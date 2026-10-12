@@ -210,14 +210,14 @@ pub fn path_at(package_root: &Path) -> ExitCode {
         }
     };
     match &build_block.cache {
-        BuildBlockCache::Disabled { .. } => {
+        None | Some(BuildBlockCache::Disabled { .. }) => {
             eprintln!(
-                "error: {} declares `cache ();` — no cache directory configured",
+                "error: {} has caching disabled — no cache directory configured",
                 DisplayPath(&build_path)
             );
             ExitCode::Build
         }
-        BuildBlockCache::Path { path, .. } => {
+        Some(BuildBlockCache::Path { path, .. }) => {
             let resolved = absolutize(package_root, path);
             println!("{}", DisplayPath(&resolved));
             ExitCode::Success
@@ -273,7 +273,7 @@ pub fn gc_at(package_root: &Path) -> ExitCode {
         Err(e) => return e.report_usage(package_root),
     };
 
-    let cache_path = match build_block.as_ref().map(|b| &b.cache) {
+    let cache_path = match build_block.as_ref().and_then(|b| b.cache.as_ref()) {
         None | Some(BuildBlockCache::Disabled { .. }) => {
             println!("no cache configured");
             return ExitCode::Success;
@@ -325,7 +325,7 @@ pub fn clear_at(package_root: &Path) -> ExitCode {
 
     // A package file with no build block, or one whose build block
     // declares `cache ();`, has no cache directory — a no-op success.
-    let cache_path = match build_block.as_ref().map(|b| &b.cache) {
+    let cache_path = match build_block.as_ref().and_then(|b| b.cache.as_ref()) {
         None | Some(BuildBlockCache::Disabled { .. }) => {
             println!("no cache configured");
             return ExitCode::Success;

@@ -1,11 +1,9 @@
 # Case study: the elaborator library (`elab`)
 
-This page is a faithful read-through of the elaborator proof-of-concept
-package at [`test-data/poc/elab/`](../../test-data/poc/elab/). That package is
-executable and `kio test`-checked, with the harness building and running it
-across supported targets under CI-selected coverage. It is *ground truth*: every elaborator, rule, and law shown
-here exists in the package exactly as written, and the laws below are the
-`equiv` blocks the package's demo entry discharges.
+This case study follows the
+[`elab` package](../../test-data/poc/elab/): a library of compile-time helpers
+for control flow, structural adaptation, and dispatch. The source quotations
+and `equiv` laws below come from the library and its runnable demo.
 
 The `elab` package is a **worked example of the elaborator mechanism itself**.
 Its modules are reusable library code; the demo is a worked application. The
@@ -25,9 +23,12 @@ The companion guides go deeper on the surrounding pieces and link here for the
 per-form rules:
 
 - [`elaborators.md`](../guides/elaborators.md) is the
-  authoring guide — the compile-time `import __comptime__;` API (`__Type__`,
+  authoring reference — the compile-time `import __comptime__;` API (`__Type__`,
   `__Checked_term__`, the `__Comptime__` proof argument, and the marked-only
   `__Fill_ctx__`) an elaborator implementation programs against.
+- [Building and testing elaborators](../guides/elaborator-authoring.md) works
+  through complete small generators, their callers, and positive and negative
+  checks without requiring this package's source.
 - [`using-libraries.md`](../guides/using-libraries.md) is
   the module map of this same POC package.
 - [`docs/poc/optics.md`](optics.md) reads through a *library built on* the
@@ -582,54 +583,30 @@ Dispatch is **per DNF branch**, first clause that fits wins, and the chosen
 clause is *called* with its argument reconstructed from the matched scrutinee
 components.
 
-`match` and `derive` declare marked implementations. `match_checked` receives
-`__Comptime__`, then a `__Fill_ctx__`, followed by the same reflected `Source`,
-scrutinee, `Clauses`, clause tuple, and `Target` slots. It returns the generated
-dispatch term paired with the final context. `derive_checked` takes the same
-leading pair and returns the supplied context unchanged: its marked reflected
-target can retain the identity of a generic binder from the enclosing
-function while `__term_specialize__` instantiates a candidate rule. The
-coercion palettes and other elaborators keep their ordinary `impl`
-declarations.
+Every clause must return the same type. A surrounding return annotation can
+select that type; otherwise an independently known clause result can determine
+it. The other results must agree, even for a clause that an earlier clause
+shadows. Reordering clauses can change which handler runs, but cannot resolve
+a disagreement between their result types. To return different alternatives
+of one sum, construct that sum explicitly in each clause with `widen_sum!`.
 
-The fill traversal is deliberately separate from runtime dispatch. It visits
-clauses in written order. For a polymorphic clause, it calls
-`__term_specialize__` against compatible source branches in source-branch
-order and appends each specialized result with
-`__fill__(ct, fills, target, result)`. A binder-independent raw result is used
-when no specialization contributes; a clause-local type that cannot close is
-diagnosed. A monomorphic clause appends its raw result.
+Polymorphic clauses declare their own type binders and parameter types.
+`match!` specializes those binders against each compatible source branch.
+The package's `match_polymorphic_clause_case` uses a clause
+`.[A](_value: A) { "match polymorphic: ok\n" }` whose result is `String`,
+independent of `A`. A result that depends on a clause's new type binder needs
+an explicit return annotation or a complete expected function type; the
+[marked-implementation guide](../guides/elaborators.md#marked-fills-implementations)
+explains that distinction.
 
-That authored traversal order does not give one result inference priority. All
-candidates for `Target` are adopted as one finite common-result group,
-including candidates from a shadowed clause. An enclosing target
-checks every candidate. Otherwise any independently determined candidate may
-determine `Target`, and every other result must agree. A conflict or a group
-with no determining candidate fails as a non-directional common-result
-problem. Runtime dispatch remains separate and first-fitting in written clause
-order.
-
-An inline polymorphic clause may leave its final result open while the marked
-schedule prepares its written binder and parameter header. The common match
-target and the ordinary fill relations must determine that result before the
-generic body is checked. The worked package's `match_polymorphic_clause_case`
-uses `.[A](_value: A) { ... }` with an independently known `String` target.
-The provisional result cannot depend on the clause's new `A`; a binder-dependent
-result uses a concrete annotation or a complete expected function type.
-Named or already-typed polymorphic clause values are unaffected.
-
-The private forall traversal carries the actual binder/body pair as its
-structural-recursion fuel. Each step removes one universal binder even when
-the final result remains open; binder-arity metadata is not part of that
-descent measure.
-
-Each node of the clause tuple's ordinary product construction can expose its
-two operands during this marked staging because the resolved product intrinsic
-has the exact ordered `[A][B](A, B) -> (A & B)` scheme. An equivalently typed
-ordinary function remains opaque—it may reorder, duplicate, or discard its
-inputs—and each original product call still completes once. The rule follows
-the resolved intrinsic and scheme, not the spelling `match` or a tuple argument
-index.
+The implementation uses `impl(fills)` to connect these clause results to the
+common target. `match_checked` visits clauses in written order, specializes
+polymorphic clauses against compatible source branches, and records their
+result types with `__fill__`. It returns the generated dispatch term together
+with that fill context. These compile-time checks consider all clause results;
+the generated runtime dispatch calls only the first fitting handler for the
+active branch. [Defining elaborators](../guides/elaborators.md) explains the
+fill API for readers who want to follow or adapt the implementation.
 
 ```text
 equiv match_left_law[A][B](a: A) {
@@ -795,7 +772,16 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
 
 - **`lookup!` / `contains!`** ([`lookup.kio`](../../test-data/poc/elab/workdir/lookup.kio))
   — look a label up in a sum by its generated nominal type, returning the
-  payload (`lookup!`) or a boolean (`contains!`):
+  labeled value or absence (`lookup!`) or a structural yes/no result
+  (`contains!`). For a requested `Foo`, `lookup!` returns `Foo | .`,
+  preserving the `Foo` wrapper; use `Foo.get` after matching the present arm
+  to read its payload. `contains!` returns `Lookup_bool = . | .`: the left
+  arm means present and the right arm absent. The module's `true()` and
+  `false()` functions construct those arms. Use the positional
+  [`__either__`](../guides/builtin-modules.md) eliminator, brought into scope
+  with `import __intrinsics__;`, to give the left and right arms separate
+  handlers: both carry Unit, so type-directed
+  `match!` cannot distinguish them. This is not a host `Bool` condition:
 
   ```text
   equiv lookup_present_label_law(a: I32) {
@@ -806,7 +792,13 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
 
 - **Tuple elaborators** ([`tuple_elaborators.kio`](../../test-data/poc/elab/workdir/tuple_elaborators.kio))
   — `head!`, `tail!`, `last!`, `concat!`, `flatten!`, `group!`, `split!`,
-  `zip!`, `map!`, `distinct!` over product spines:
+  `zip!`, `map!`, `distinct!` over product spines. `head!` and `last!`
+  select the first and last slots; `tail!` removes the first slot.
+  `concat!` joins two product spines, while `flatten!` removes left nesting
+  and `group!` introduces the requested grouping. `split!` divides a product
+  into the requested prefix and suffix. `map!` applies a product of functions
+  slot by slot, and `distinct!` keeps the first slot of each reflected type.
+  `zip!` pairs corresponding slots, as this law shows:
 
   ```text
   equiv tuple_zip_law[A][B][C][D](a: A, b: B, c: C, d: D) {
@@ -837,7 +829,13 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
   ```
 
 - **`type_of!`** ([`type_of.kio`](../../test-data/poc/elab/workdir/type_of.kio))
-  — reflects a type argument into a user-defined `Type_rep` value:
+  — reflects a type argument into the library's `Type_rep` tree. Its nodes
+  distinguish unit (`Rep_unit`), bottom (`Rep_bottom`), products
+  (`Rep_product`), sums (`Rep_sum`), functions (`Rep_function`), and opaque
+  leaves (`Rep_opaque`). Products and sums carry two child trees; functions
+  carry parameter and result trees. The `rep_unit`, `rep_bottom`,
+  `rep_product`, `rep_sum`, `rep_function`, and `rep_opaque` builders construct
+  these values, and `Type_rep.un_type_rep` opens a tree for inspection:
 
   ```text
   equiv type_of_product_law() {
@@ -847,8 +845,14 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
   ```
 
 - **`show!`** ([`show.kio`](../../test-data/poc/elab/workdir/show.kio)) —
-  builds a string-rendering function for supported value shapes from a tuple
-  of host converters.
+  builds a renderer for a supplied value. Calling that renderer takes two
+  arguments: a string-concatenation function and a tuple of converters for
+  the value's host types. In the demo, `show!(("show", (42, .t)))` uses
+  converters of type `(String -> String) & (I32 -> String) & (Bool -> String)`;
+  applying its renderer to `string_concat` and those converters produces
+  `"(show, 42, true)"`. The supported shapes are host leaves, unit, products,
+  sums, and bottom. Products render as tuples and sums as `left(...)` or
+  `right(...)`; opaque nominal values and function values are rejected.
 
 These five show the breadth of what an imported elaborator can express
 once it has the reflected-type API: structural search (`lookup!`), spine
@@ -905,9 +909,16 @@ source {
 
 Run `kio dep fetch` from that package root. It writes `elab.lock.kio` and
 materializes the selected modules under `elab/`; the lock records the selected
-path and commit. The POC package also bridges `testapi` host declarations; if
-they enter your public contract, provide or rehost those requirements through
-your package's host boundary as explained in [Package files and bridges](../guides/pkg.md).
+path and commit. The dependency's `elab/testapi` module declares four host
+types: `String` with role `str`, `I32` and `Int` with role `i32`, and `Bool`
+with role `bool`. These are separate declared identities, including `I32`
+and `Int` despite their shared role. When your public bridge reaches that
+module, include `elab/testapi` in the bridge and supply all four types through
+your host interface. To reuse a consumer module's matching declarations,
+add `rehost elab/testapi to your_host_module;` to `elab.dep.kio` before
+fetching and bridge that provider instead. [Rehosting](../guides/pkg.md#rehosting-a-dependencys-host-items-with-rehost)
+explains the required names and compatible types; [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow)
+explains committing the lock and materialized sources.
 
 Pick the elaborator modules your code calls — `control` for `if!` and `scope!`,
 `sequence` for `do!`, `spine_elaborators` for the spine palette,
@@ -928,8 +939,10 @@ the compile-time API if you want to *write* one rather than reuse these.
 
 ## See also
 
-- [Defining elaborators](../guides/elaborators.md) — authoring
-  elaborators with the `import __comptime__;` reflected-type API.
+- [Defining elaborators](../guides/elaborators.md) — the declaration ABI and
+  `import __comptime__;` reflected-type API.
+- [Building and testing elaborators](../guides/elaborator-authoring.md) —
+  complete generators, calls, and verification.
 - [Using libraries](../guides/using-libraries.md) — the
   module map of this same package.
 - [The optics library](optics.md) — a library *built on* the spine palette and

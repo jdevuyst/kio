@@ -1,0 +1,27 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io(print);
+
+pure fn first[A][B](left: A, _right: B) -> A { left }
+
+pure fn duplicate[A](value: A) -> A & A { (value, value) }
+
+fn mark(event: String, value: String) -> String { print(event); value }
+
+pub fn main() {
+  print(first(duplicate(first(("pure result\n", "discarded\n")))));
+  print(first(mark("left argument\n", "chosen\n"), mark("right argument\n", "ignored\n")));
+  let callback = .(value: String) -> String { print("callback\n"); value };
+  let callbacks = duplicate(callback);
+  print("callbacks constructed\n");
+  print(first(callbacks)("first invocation\n"));
+  print(first(callbacks)("second invocation\n"));
+  let staged =
+    .(_seed: .)[A] {
+      print("type stage\n");
+      .(value: A) -> A { value }
+    }(());
+  print("before type stage\n");
+  print(staged(String)(mark("staged argument\n", "staged result\n")))
+}

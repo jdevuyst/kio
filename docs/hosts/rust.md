@@ -16,6 +16,10 @@ This guide walks through compiling a Kio package to Rust and calling into it fro
 > references. See the contract's
 > [incompatible-retained-epochs section](../../specs/backends/rust.md#incompatible-retained-declaration-epochs-are-not-source-stable-on-rust).
 
+The generated crate uses the **Rust 2024 edition** and requires **Rust 1.85
+or newer**. Its `Cargo.toml` declares the edition; the host selects its own
+edition independently.
+
 ## The build target
 
 A package emits to Rust by declaring a `rust` target in `<pkg>.pkg.kio`:
@@ -39,6 +43,11 @@ bridge {
 ```
 
 `namespace` sets the generated `Cargo.toml` name field; if absent it defaults to the Kio package name.
+
+Omitting `thread_safety`, or writing `thread_safety ()`, uses a local,
+single-threaded value representation. The bare modes `send`, `sync`, and
+`send_sync` select the thread-safe
+representation described in the [thread-safety contract](../../specs/backends/rust.md#thread-safety).
 
 Artifact and public names are distinct: namespace `my_pkg` keeps crate
 `my_pkg`, with handle `MyPkg`, host trait `MyPkgHost`, and factory
@@ -173,6 +182,22 @@ Source-readable carrier and slot frames use the same conversion while keeping
 their fixed role and index suffixes; semantic nominal identity is unchanged.
 
 ## Generic values and functions
+
+For the examples in this section, add `greeter/api.kio` to the package:
+
+```kio {file}
+module greeter/api;
+
+pub fn id[A](value: A) -> A { value }
+
+pub fn keep[*F][A](value: F(A) -> F(A)) -> (F(A) -> F(A)) { value }
+```
+
+`id` returns its argument. `keep` returns a callback unchanged, keeping its
+container type `F` and element type `A`. Together they provide a small public
+API for ordinary generic values and higher-kinded callbacks. Rebuild with
+`kio build rust` after adding the file; the generated crate then includes the
+callable and constructor-marker types used below.
 
 Keep shared tuple fields and nested Kio data unchanged while a retained
 value or closure can still use them, even after a call returns. Construct a
@@ -319,23 +344,19 @@ nevertheless remains the `KioApplied1<F, A>` marker with `KioApply1<F, A>` as
 its facade; choosing the exact marker does not make the native container the
 abstract facade.
 
-These marker/facade spellings replace older generated Rust APIs that used bare
-generic values, `<F::Apply<...> as KioType>::Facade` as an abstract
-application's value skin, parameterized host GATs, or different closure types
-depending on occurrence. The current marker-valued `F::Apply<...>` relation is
-part of `KioTypeConstructorN` and is not that old value skin. After regenerating an
-affected crate, update host source to select `KioNative<T>`, write generic
-values as `A::Facade`, wrap a parameterized declaration's associated `Storage`
-value in its declaration-owned carrier, construct/call functions through
-`KioFnN`, and accept `role(str)` values by value rather than by reference.
+When updating an existing host to these APIs, select `KioNative<T>` for a
+native type and write a generic value's type as `A::Facade`. Wrap a
+parameterized host declaration's associated `Storage` value in its generated
+carrier, construct and call function values through `KioFnN`, and accept
+`role(str)` values by value rather than by reference.
 Entering opaque storage may allocate a
 reference-counted token; cloning that token increments its reference count.
 Default application lift/project invokes the selected `Apply` marker codec
 once. A lawful override may instead translate element-wise between the exact
 facade and stable opaque-token storage; the `Optional` example uses one
-explicit element-wise `Option::map` in each direction. This typed boundary
-conversion is not a separate HKT-specific body walk. A token-backed marker transfers the token
-directly; native and structural markers perform their ordinary codec work.
+explicit element-wise `Option::map` in each direction. A token-backed marker
+transfers the token directly; native and structural markers perform their
+ordinary representation conversions.
 
 ## Newtypes
 
@@ -470,14 +491,6 @@ bridge {
   greeter;
   greeter/**;
 }
--->
-
-<!--kio {file}
-module greeter/api;
-
-pub fn id[A](value: A) -> A { value }
-
-pub fn keep[*F][A](value: F(A) -> F(A)) -> (F(A) -> F(A)) { value }
 -->
 
 <!--kio {harness=greeter_rust_main file placeholder="__SNIPPET__"}

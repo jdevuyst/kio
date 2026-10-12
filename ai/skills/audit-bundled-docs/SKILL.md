@@ -34,9 +34,17 @@ causal negative evidence rather than relying only on a green check.
 
 Inspect the ordinary CI freshness check and its shared packer implementation.
 Verify add/edit/rename/remove rebuild evidence, including Git inventory changes;
-stale generated snapshots must fail validation. Current checkout sources stay
-canonical; packaged-crate inputs contain a complete snapshot, not sibling-path
-includes or network fetches. Check the actual Git-free, sibling-free packaged
+ordinary builds regenerate private output automatically. Packaging regenerates
+the Git-ignored crate snapshot before Cargo's file inventory; explicit package
+inclusion must retain both generated files without shipping caches or unrelated
+inputs. Inspect every package/publish entry point's shared preparation helper,
+tracked manual-source and authenticated Cargo-inventory cleanliness guards, and
+unchanged publication order. Any Cargo dirty exception admits only the freshly
+generated ignored pair after source authentication; genuine dirty provenance
+stays intact.
+Validate the actual source archive against current canonical bytes; missing or
+stale archive snapshots must fail. Packaged-crate inputs contain a complete
+snapshot, not sibling-path includes or network fetches. Check the actual Git-free, sibling-free packaged
 crate build and installed-binary run from an unrelated directory with network
 access disabled. Check both normal and distribution-wrapper binary routes.
 Confirm library-only, browser/Wasm, and internal Prime artifacts contain no

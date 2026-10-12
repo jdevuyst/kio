@@ -1,8 +1,6 @@
 package recursive_mixed_tail;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

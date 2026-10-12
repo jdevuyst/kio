@@ -1,8 +1,6 @@
 package operator_origin_shape_import_local;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

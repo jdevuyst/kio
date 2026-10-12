@@ -1,8 +1,6 @@
 package rec_loop_unresolved_binder;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

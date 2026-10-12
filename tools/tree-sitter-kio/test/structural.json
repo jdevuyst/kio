@@ -1,5 +1,2089 @@
 [
   {
+    "name": "configuration_named_choices",
+    "source": "package modes;\nbuild { target (rust, \"one\") { out \"out/send\"; thread_safety send }; target (rust, \"two\") { out \"out/sync\"; thread_safety (sync) }; target rust { out \"out/both\"; namespace ((())); thread_safety ((send_sync)) } }\n",
+    "targets": [
+      {
+        "start": 76,
+        "end": 80,
+        "text": "send",
+        "kind": "identifier",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 138,
+        "end": 142,
+        "text": "sync",
+        "kind": "identifier",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 211,
+        "end": 220,
+        "text": "send_sync",
+        "kind": "identifier",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 187,
+        "end": 188,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 188,
+        "end": 189,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 189,
+        "end": 190,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 190,
+        "end": 191,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 191,
+        "end": 192,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 192,
+        "end": 193,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 209,
+        "end": 210,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 210,
+        "end": 211,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 220,
+        "end": 221,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 221,
+        "end": 222,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "target_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "reference_scalar_grouping_fields",
+    "source": "module m;\nop _ + _ { impl ((ops.add)) }\nvarop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nelab form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nelab later: . -> . { impl (fills) }\nelab scheduled: . -> . { impl (fills) ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }\n",
+    "targets": [
+      {
+        "start": 21,
+        "end": 25,
+        "text": "impl",
+        "kind": "keyword.declaration",
+        "owners": [
+          "callable_impl_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 26,
+        "end": 27,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 27,
+        "end": 28,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 32,
+        "end": 35,
+        "text": "add",
+        "kind": "entity.name.function",
+        "owners": [
+          "callable_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 35,
+        "end": 36,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 36,
+        "end": 37,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 54,
+        "end": 59,
+        "text": "foldl",
+        "kind": "keyword.declaration",
+        "owners": [
+          "variadic_callable_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 60,
+        "end": 61,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 61,
+        "end": 62,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 66,
+        "end": 70,
+        "text": "join",
+        "kind": "entity.name.function",
+        "owners": [
+          "callable_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 70,
+        "end": 71,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 71,
+        "end": 72,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 73,
+        "end": 74,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 78,
+        "end": 83,
+        "text": "empty",
+        "kind": "entity.name.function",
+        "owners": [
+          "callable_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 83,
+        "end": 84,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 86,
+        "end": 94,
+        "text": "finalize",
+        "kind": "keyword.declaration",
+        "owners": [
+          "variadic_callable_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 95,
+        "end": 96,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_optional_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 96,
+        "end": 97,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_optional_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 97,
+        "end": 98,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_optional_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 98,
+        "end": 99,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_optional_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 99,
+        "end": 100,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_optional_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 100,
+        "end": 101,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_optional_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 124,
+        "end": 132,
+        "text": "captures",
+        "kind": "keyword.declaration",
+        "owners": [
+          "elaborator_captures_clause"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 135,
+        "end": 141,
+        "text": "helper",
+        "kind": "identifier",
+        "owners": [
+          "plain_value_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 146,
+        "end": 150,
+        "text": "Type",
+        "kind": "identifier",
+        "owners": [
+          "plain_value_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 155,
+        "end": 159,
+        "text": "impl",
+        "kind": "keyword.declaration",
+        "owners": [
+          "elaborator_impl_clause"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 160,
+        "end": 161,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 161,
+        "end": 162,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 170,
+        "end": 173,
+        "text": "run",
+        "kind": "entity.name.function",
+        "owners": [
+          "callable_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 173,
+        "end": 174,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 174,
+        "end": 175,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 199,
+        "end": 203,
+        "text": "impl",
+        "kind": "keyword.declaration",
+        "owners": [
+          "elaborator_impl_clause"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 204,
+        "end": 205,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 205,
+        "end": 210,
+        "text": "fills",
+        "kind": "entity.name.function",
+        "owners": [
+          "callable_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 210,
+        "end": 211,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 239,
+        "end": 243,
+        "text": "impl",
+        "kind": "keyword.declaration",
+        "owners": [
+          "elaborator_impl_clause"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 245,
+        "end": 250,
+        "text": "fills",
+        "kind": "keyword.declaration",
+        "owners": [
+          "elaborator_impl_clause"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 274,
+        "end": 275,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "recursive_capability"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 275,
+        "end": 276,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "recursive_capability"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 281,
+        "end": 286,
+        "text": "drive",
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 286,
+        "end": 287,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "recursive_capability"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 287,
+        "end": 288,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "recursive_capability"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 322,
+        "end": 323,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_ufcs_callable"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 323,
+        "end": 324,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_ufcs_callable"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 332,
+        "end": 336,
+        "text": "keep",
+        "kind": "entity.name.function",
+        "owners": [
+          "call_callee"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      },
+      {
+        "start": 336,
+        "end": 337,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_ufcs_callable"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 337,
+        "end": 338,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_ufcs_callable"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "configuration_grouping_rejects_tuple",
+    "source": "package app; build { cache (\"cache\", \"other\") }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "configuration_grouping_rejects_list",
+    "source": "package app; build { cache [\"cache\"] }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "configuration_grouping_rejects_call",
+    "source": "package app; build { cache (resolve(\"cache\")) }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "configuration_grouping_rejects_multiple_scalars",
+    "source": "package app; build { target js { out (\"out\") \"other\" } }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "configuration_target_name_rejects_unit",
+    "source": "package app; build { target (rust, ((()))) { out \"out/rust\" } }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "reference_grouping_rejects_tuple",
+    "source": "module m; op _ + _ { impl (ops.add, ops.other) }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "reference_grouping_rejects_list",
+    "source": "module m; op _ + _ { impl [ops.add] }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "reference_grouping_rejects_call",
+    "source": "module m; op _ + _ { impl (ops.add()) }\n",
+    "partial": true,
+    "error": true,
+    "targets": []
+  },
+  {
+    "name": "configuration_scalar_grouping_package",
+    "source": "package app;\nbuild { cache ((())); docs { md ((\"guide.md\")); support (\"support\"); md_out (\"out/md\"); html ((\"out/html\")) }; target (rust, ((\"r\" \"s\"))) { out ((\"out/rust\")); thread_safety ((())) }; target ts { out (\"out/ts\"); namespace ((\"App\")) } }\n",
+    "targets": [
+      {
+        "start": 21,
+        "end": 26,
+        "text": "cache",
+        "kind": "keyword.declaration",
+        "owners": [
+          "cache_declaration"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 27,
+        "end": 28,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 28,
+        "end": 29,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 29,
+        "end": 30,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 30,
+        "end": 31,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 31,
+        "end": 32,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 32,
+        "end": 33,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 35,
+        "end": 39,
+        "text": "docs",
+        "kind": "keyword.declaration",
+        "owners": [
+          "docs_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 42,
+        "end": 44,
+        "text": "md",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 45,
+        "end": 46,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 46,
+        "end": 47,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 47,
+        "end": 57,
+        "text": "\"guide.md\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 57,
+        "end": 58,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 58,
+        "end": 59,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 61,
+        "end": 68,
+        "text": "support",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 69,
+        "end": 70,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 70,
+        "end": 79,
+        "text": "\"support\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 79,
+        "end": 80,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 82,
+        "end": 88,
+        "text": "md_out",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 89,
+        "end": 90,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 90,
+        "end": 98,
+        "text": "\"out/md\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 98,
+        "end": 99,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 101,
+        "end": 105,
+        "text": "html",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 106,
+        "end": 107,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 107,
+        "end": 108,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 108,
+        "end": 118,
+        "text": "\"out/html\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 118,
+        "end": 119,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 119,
+        "end": 120,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 131,
+        "end": 132,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 138,
+        "end": 139,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 139,
+        "end": 140,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 140,
+        "end": 143,
+        "text": "\"r\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_string",
+          "target_block"
+        ]
+      },
+      {
+        "start": 144,
+        "end": 147,
+        "text": "\"s\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_string",
+          "target_block"
+        ]
+      },
+      {
+        "start": 147,
+        "end": 148,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 148,
+        "end": 149,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 149,
+        "end": 150,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 157,
+        "end": 158,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 158,
+        "end": 159,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 159,
+        "end": 169,
+        "text": "\"out/rust\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 169,
+        "end": 170,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 170,
+        "end": 171,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 187,
+        "end": 188,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 188,
+        "end": 189,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 189,
+        "end": 190,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 190,
+        "end": 191,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 191,
+        "end": 192,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 192,
+        "end": 193,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 213,
+        "end": 214,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 214,
+        "end": 222,
+        "text": "\"out/ts\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 222,
+        "end": 223,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 235,
+        "end": 236,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 236,
+        "end": 237,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 237,
+        "end": 242,
+        "text": "\"App\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 242,
+        "end": 243,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 243,
+        "end": 244,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "build_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "configuration_scalar_grouping_dependency",
+    "source": "dependency helper;\nsource { git ((\"https://example.com/libraries.git\")); ref (((\"main\"))); path ( // lookup\n (())\n) }\n",
+    "targets": [
+      {
+        "start": 19,
+        "end": 25,
+        "text": "source",
+        "kind": "keyword.declaration",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 28,
+        "end": 31,
+        "text": "git",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 32,
+        "end": 33,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 33,
+        "end": 34,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 34,
+        "end": 69,
+        "text": "\"https://example.com/libraries.git\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 69,
+        "end": 70,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 70,
+        "end": 71,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 73,
+        "end": 76,
+        "text": "ref",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 77,
+        "end": 78,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 78,
+        "end": 79,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 79,
+        "end": 80,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 80,
+        "end": 86,
+        "text": "\"main\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 86,
+        "end": 87,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 87,
+        "end": 88,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 88,
+        "end": 89,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 91,
+        "end": 95,
+        "text": "path",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 96,
+        "end": 97,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 109,
+        "end": 110,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 110,
+        "end": 111,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 111,
+        "end": 112,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 112,
+        "end": 113,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 114,
+        "end": 115,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "configuration_scalar_grouping_lock",
+    "source": "lock helper;\nresolved { git ((\"https://example.com/libraries.git\")); ref (\"main\"); commit ((\"abc\")); sig (((\"digest\"))); path ((())) }\n",
+    "targets": [
+      {
+        "start": 13,
+        "end": 21,
+        "text": "resolved",
+        "kind": "keyword.declaration",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 24,
+        "end": 27,
+        "text": "git",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 28,
+        "end": 29,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 29,
+        "end": 30,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 30,
+        "end": 65,
+        "text": "\"https://example.com/libraries.git\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 65,
+        "end": 66,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 66,
+        "end": 67,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 69,
+        "end": 72,
+        "text": "ref",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 73,
+        "end": 74,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 74,
+        "end": 80,
+        "text": "\"main\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 80,
+        "end": 81,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 83,
+        "end": 89,
+        "text": "commit",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 90,
+        "end": 91,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 91,
+        "end": 92,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 92,
+        "end": 97,
+        "text": "\"abc\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 97,
+        "end": 98,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 98,
+        "end": 99,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 101,
+        "end": 104,
+        "text": "sig",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 105,
+        "end": 106,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 106,
+        "end": 107,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 107,
+        "end": 108,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 108,
+        "end": 116,
+        "text": "\"digest\"",
+        "kind": "literal.string",
+        "owners": [
+          "grouped_config_value",
+          "config_field"
+        ]
+      },
+      {
+        "start": 116,
+        "end": 117,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 117,
+        "end": 118,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 118,
+        "end": 119,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 121,
+        "end": 125,
+        "text": "path",
+        "kind": "keyword.declaration",
+        "owners": [
+          "config_field"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "start": 126,
+        "end": 127,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 127,
+        "end": 128,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 128,
+        "end": 129,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 129,
+        "end": 130,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 130,
+        "end": 131,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 131,
+        "end": 132,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "resolved_block"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      }
+    ]
+  },
+  {
     "name": "numbered_binding_modified_head_partial_0",
     "source": "module m;\nfn f() { let .x.\npure fn after() { () }\n",
     "partial": true,

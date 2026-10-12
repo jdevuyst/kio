@@ -1,0 +1,7 @@
+module m;
+op _ + _ { impl ((ops.add)) }
+varop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }
+elab form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }
+elab later: . -> . { impl (fills) }
+elab scheduled: . -> . { impl (fills) ((helpers.run)) }
+rec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }

@@ -460,7 +460,7 @@ fn resolve_cache_dir(workspace_root: &Path) -> Option<PathBuf> {
         .and_then(|s| s.to_str())
         .and_then(crate::file_kind::package_stem);
     let package = crate::pass::parser::parse_package_file(&source, stem).ok()?;
-    match package.build?.cache {
+    match package.build?.cache? {
         crate::ast::BuildBlockCache::Path { path, .. } => {
             let p = PathBuf::from(&path);
             Some(if p.is_absolute() {

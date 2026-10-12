@@ -1,8 +1,6 @@
 package sharing;
 
 build {
-  cache ();
-
   target python {
     out "out/python/"
   }

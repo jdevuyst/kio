@@ -7,8 +7,9 @@ allowed-tools: Read, Grep, Glob, Bash
 # Blog history audit
 
 Anchor: [`ai/topics/docs.md`](../../topics/docs.md) § Blog posts — factual
-communication remains active unless it is time- or version-scoped or a later
-post explicitly retracts, corrects, or supersedes it.
+communication remains active unless it is time- or version-scoped or explicitly
+retracted, corrected, or superseded; substantial intra-post revisions require
+a visible dated content-edit notice.
 
 This is a truth-maintenance audit, not an editorial review. Read every source
 post completely and in publication order, preserve the chronology, and report
@@ -28,6 +29,25 @@ review posts independently: later prose can alter the status of an earlier
 claim only after the earlier claim has entered the ledger.
 
 ## 2. Build the claim ledger
+
+Inspect available local history of each existing post as well as its current
+text: use path history with rename tracking and compare successive post blobs,
+including working-tree changes. Establish published revisions from available
+publication evidence; do not assume every local checkpoint was published.
+Compare intervening edits rather than only the first and last text, which can
+hide a changed-and-restored claim. Apply the meaning-based revision policy in
+the anchor: unannounced corrections and small code/API updates must preserve
+meaning, and formatting-subject changes may be substantive. Report substantial
+silent revisions or notices missing their date or brief nature. A notice must
+describe the actual change; it is not automatically a valid claim correction.
+
+Retain checkable claims from evidenced prior communication when building the
+ledger, identifying the revision as well as the post and line. A removed or
+reworded claim is not silently retired. Use explicit intra-post corrections and
+notices under the same correction criteria as later posts. If history or
+publication evidence is unavailable, disclose the inspected range and gap;
+never reconstruct past claims from current wording or claim history is clean
+from a snapshot alone.
 
 Record every checkable factual claim about Kio or this repository. For each
 claim retain:
@@ -99,6 +119,7 @@ Report findings in chronological order within these categories:
 2. Unretracted inter-post contradictions.
 3. Invalid retractions or corrections.
 4. Verification gaps.
+5. Substantial silent intra-post revisions and inadequate edit notices.
 
 For each finding cite the post and line, quote the minimum necessary claim,
 state its ledger scope and status, cite the contradicting or missing evidence,
@@ -106,7 +127,8 @@ and name any later post that was considered as a possible retraction.
 
 Summarize valid retraction chains separately so the reader can see which old
 communication was intentionally retired. If every active claim verifies and
-every contradiction has an explicit valid retraction, report `clean`.
+every contradiction has an explicit valid retraction and available revision
+history meets the notice policy, report `clean` within the inspected scope.
 
 **Default: report only.** A fix directive does not override the blog-post
 approval gate.

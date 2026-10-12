@@ -1,8 +1,6 @@
 package do_constant_receiver;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

@@ -1,8 +1,6 @@
 package opaque_substitution;
 
 build {
-  cache ();
-
   target swift {
     out "out/swift/"
   }

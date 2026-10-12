@@ -1,8 +1,6 @@
 package pkg;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   }

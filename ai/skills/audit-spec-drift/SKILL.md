@@ -1,6 +1,6 @@
 ---
 name: audit-spec-drift
-description: Find behavior compiler and backend implementations have but the specs don't (or vice versa) — covers cli.md, exit-codes.md, grammar.md, package.md, style.md, language.md, prime.md, backends/*.md
+description: Audit specification clarity for human technical readers and drift between compiler/backend behavior and its authoritative contracts
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -12,6 +12,24 @@ Read AGENTS.md § Universal rules — Backend decisions propagate by semantic
 applicability, ai/topics/specs.md and the index it links, and
 [`ai/topics/emit.md`](../../topics/emit.md) § Decision record and propagation
 gate before starting.
+
+## Human-readable contracts
+
+Apply `ai/topics/specs.md`'s "Write for human technical readers" rule to the
+selected specifications. Read each page's prose and examples, checking defined
+notation and terms, explicit conditions and exceptions, interpretable example
+prerequisites, and the distinction between normative requirements, rationale,
+implementation history, and validation evidence. Flag notes to self, AI-to-AI
+handoffs, unexplained shorthand, and maintenance bookkeeping that obscure the
+contract. Preserve formal precision and audience-appropriate technical detail;
+specialized terminology alone is not a finding.
+
+For a prose-focused request, keep the audit within that scope: consult linked
+contracts or implementation evidence only to resolve a specific doubt. Do not
+expand it automatically into the implementation comparisons below. Distinguish
+meaning-preserving editorial corrections from missing, conflicting, or
+ambiguous rules that need a contract decision; clarity work cannot settle or
+rewrite normative behavior without authority.
 
 ## 1. CLI surface
 
@@ -47,7 +65,23 @@ Compare `specs/exit-codes.md` against the actual exit codes the binaries return.
 
 This isn't a line-by-line diff — focus on shape: missing productions, ambiguous-looking productions, productions that admit syntax the parser rejects (or vice versa).
 
+Apply [`language-surface-tooling.md` § Consistent syntax across
+contexts](../../topics/language-surface-tooling.md#consistent-syntax-across-contexts)
+to grouping parentheses. Inventory value/type entry points, including
+configuration defaults and Kio-family file kinds; compare bare, grouped and
+nested-grouped forms for the same accepted construct. Distinguish grouping from
+argument-list, pattern and operator-grammar roles, and require contract evidence
+for deliberate restrictions. Report incidental parser divergence and missing
+specification separately; a consistency finding grants no contract-change
+authority and does not imply all syntax must be redesigned.
+
 ## 4. Package files
+
+Compare analogous fields across configuration, operator, elaborator and type
+declarations by semantic role using the cross-context guidance above. Check
+shared accepted syntax, optional absence/defaults, comment ownership and tooling;
+distinguish existing references from newly declared names and collections.
+Report incidental parser differences separately from deliberate contracts.
 
 `specs/package.md` defines `<pkg>.pkg.kio` and the build target blocks. Compare against kio-rs's package handling (`kio-rs/src/package*`):
 
@@ -99,6 +133,11 @@ preservation](../../topics/language-surface-tooling.md#canonical-formatting-not-
 This is broad — focus on recent typer changes (`git log --since="3 months ago" -- kio-rs/src/pass/typecheck_core/ kio-rs/src/pass/typecheck_full.rs`) and check whether each commit has a corresponding spec update.
 
 ## 7. Per-backend specs
+
+For lazy hosts or emitted lazy representations, check the evaluation contract
+using [Strict evaluation on lazy targets](../../topics/emit.md#strict-evaluation-on-lazy-targets).
+Inspect pure computation and facade demand, not only observable effect order;
+distinguish permitted optimization from deferred-work retention.
 
 Start from every normative shared law in `specs/backends/README.md`, including
 every `**Applies when:**` clause. Restate its semantic predicate, enumerate
@@ -202,7 +241,13 @@ Group findings into:
    behavior present in one implementation but not another, plus any
    byte-for-byte cross-emitter requirement that should instead be
    FFI-contract/behavioral equivalence (§ 7).
+7. **Specification prose** — unclear terms or notation, obscured rules or
+   exceptions, missing example prerequisites, and implementation or maintenance
+   narration that obscures the human reader's contract. Separate editorial
+   corrections from ambiguities requiring a contract decision.
 
-For each finding, cite spec section and code file/line.
+For behavioral drift, cite the spec section and code file/line. For prose
+findings, cite the affected passages and relevant linked contract, explaining
+the reader impact without inventing an implementation defect.
 
 **Default: report only.** If invoked with a fix-it directive, follow [`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md).

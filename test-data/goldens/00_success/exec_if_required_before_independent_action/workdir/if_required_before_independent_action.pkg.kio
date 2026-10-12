@@ -1,8 +1,6 @@
 package if_required_before_independent_action;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

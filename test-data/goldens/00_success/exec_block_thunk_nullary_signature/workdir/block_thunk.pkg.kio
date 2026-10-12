@@ -1,8 +1,6 @@
 package block_thunk;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

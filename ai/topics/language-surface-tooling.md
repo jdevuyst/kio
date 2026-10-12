@@ -6,6 +6,46 @@ Trigger: changing language syntax, parser tokens, formatter output, user-facing 
 
 Before implementation, state the exact normative behavior delta, trace its authority to the effective authorized contract — the authority-baseline specification plus any specific user instruction or approval given before implementation — and name the behaviors that must remain unchanged. A delegated task must cite the authority it inherits and cannot broaden it. Fix the baseline at the start of the user-requested work, before agent-authored edits; commits, branches, sessions, and same-work spec edits do not reset it. A current implementation, new test, review, or audit finding is evidence rather than authority. If a change to accepted programs, resolution, inference, visibility or capabilities, specified diagnostics, or a phase boundary is not uniquely authorized, stop and ask the user to decide before implementation. If an unauthorized prototype already exists, remove it from the landable range; a later decision starts newly authorized work and does not waive fresh review or the rest of this checklist. Incidental or explicitly unspecified implementation details are outside this gate. Do not infer a diagnostic-selection order from the exit-code table: absent an explicit command-specific rule, selection among independent errors is deterministic but has no category precedence, and public conformance tests that pin a category isolate one defect.
 
+## Consistent syntax across contexts
+
+Reuse established syntactic conventions wherever the same construct appears.
+A context-specific restriction must express a deliberate language distinction,
+not arise incidentally from a separate parser. This principle informs design
+and review; Gate 0 still determines authority for each acceptance change.
+
+Compare block fields by semantic role, not by which declaration contains them:
+stored scalar values, references to existing declarations, declarations of new
+names, and collections are distinct roles. Inventory accepted syntax, optional
+absence/defaults, comments and tooling for each role across configuration and
+language declarations. Share parsing and field metadata where their contracts
+agree; justify differences from their meaning, not separate parser branches.
+Grouping is one consistency witness, not the whole review.
+
+Configuration field definitions in `config_fields.rs` and `build_target.rs`
+share accepted scalar forms, finite choices and omission defaults with parsing
+and tooling. Derive key/value completion and field descriptions from those
+definitions, not duplicated per-field menus or invented compiler `Type` values.
+Keep syntactic presence distinct from effective defaults: formatting preserves
+written optional fields and does not insert omitted ones. Test key retraction,
+grouped values, and insertion of suggested values in their actual owner context;
+required fields and conditional source alternatives retain their constraints.
+
+For grouping parentheses, enumerate contexts that consume values or types,
+including configuration defaults and the Kio-family file kinds. Compare an
+accepted value or type with its grouped and nested-grouped spelling: grouping
+must be transparent when the context accepts that same construct. Parentheses
+forming argument lists, patterns or operator grammar can have a distinct role;
+classify those roles before claiming an inconsistency. Record each deliberate
+restriction and its contract evidence. Do not claim uniform acceptance from
+the principle alone or turn this check into an unrelated syntax redesign.
+
+Prefer shared grammar handling for the same construct, with focused contextual
+tests for acceptance, meaning, diagnostics and formatter round trips. A shared
+parser test alone does not prove that every contextual entry point uses it.
+[`audit-spec-drift`](../skills/audit-spec-drift/SKILL.md) checks contract and
+parser agreement; [`audit-test-strategy`](../skills/audit-test-strategy/SKILL.md)
+checks the context witnesses and their actual assertions.
+
 ## Impact checklist
 
 A surface or semantic change is not complete until the language and tooling agree on the same accepted spelling and the same user-facing behavior. Before implementation or landing, state the impact argument: which bridge surfaces must change, which are intentionally unchanged, and why "unchanged" follows from the boundary being modified.

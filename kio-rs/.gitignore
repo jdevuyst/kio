@@ -1,3 +1,5 @@
 /target
 /Cargo.lock.bak
 /mutants.out
+/manual/index.tsv
+/manual/payload.tar.gz-concat

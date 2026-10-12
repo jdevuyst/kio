@@ -1,8 +1,6 @@
 package rust_forall_constructor_stages;
 
 build {
-  cache ();
-
   target rust {
     out "out/rust/"
   }

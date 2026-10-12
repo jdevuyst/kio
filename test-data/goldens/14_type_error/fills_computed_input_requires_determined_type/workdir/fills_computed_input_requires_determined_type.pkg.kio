@@ -1,8 +1,6 @@
 package fills_computed_input_requires_determined_type;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

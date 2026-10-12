@@ -1,0 +1,6 @@
+dependency pkg;
+
+source {
+  git "https://example.invalid/pkg.git";
+  ref "main"
+}

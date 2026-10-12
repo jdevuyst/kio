@@ -70,6 +70,37 @@ fn exact_labels(result: &Value) -> Vec<&str> {
 }
 
 #[test]
+fn lsp_grouped_reference_prefixes_keep_callable_completion() {
+    for tail in [
+        "op _ + _ { impl ((hel|",
+        "elab inspect : . { impl(hel|",
+        "elab inspect : . { impl(fills) ((hel|",
+        "elab inspect : . { impl ((|",
+        "elab inspect : . { captures ((hel|",
+        "varop [[ ]] { foldl ((hel|",
+        "varop [[ ]] { foldl ((helper)) ((hel|",
+        "varop [[ ]] { foldl helper helper; finalize ((hel|",
+        "rec((hel|",
+        "fn run(x: .) { x.>((hel|",
+    ] {
+        let source = format!("module app; pure fn helper() {{ () }}\n{tail}");
+        let completion = open_change_and_complete("", &source);
+        assert!(
+            completion_labels(&completion).contains(&"helper"),
+            "{tail}: {completion}"
+        );
+    }
+    let completion = open_change_and_complete(
+        "",
+        "module app; pure fn fills() { () }\nelab inspect : . { impl(fi|",
+    );
+    assert!(
+        completion_labels(&completion).contains(&"fills"),
+        "{completion}"
+    );
+}
+
+#[test]
 fn lsp_type_only_completion_keeps_binder_positions_and_scopes_distinct() {
     for (tail, expected) in [
         ("fn fresh[|", vec![]),

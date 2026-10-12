@@ -246,11 +246,26 @@ import greeter(String, print);
 pub fn main() { print("hello from kio\n") }
 ```
 
-Build and run:
+For a Node host, mark the package directory as using ES modules. Add
+`"type": "module"` to its `package.json`, or create this file beside
+`greeter.pkg.kio`:
+
+```json
+{
+  "type": "module"
+}
+```
+
+This lets Node load the generated `.js` file as an ES module. Node 14 or
+newer supports the emitted ECMAScript 2020 code.
+
+Build the package:
 
 ```sh
 kio build js
 ```
+
+Save this host as `host.mjs` in the same directory:
 
 ```js
 import { createGreeter } from './out/js/greeter.js';
@@ -263,6 +278,14 @@ const pkg = createGreeter({
 
 pkg.greeter.KioModule_main.main();
 ```
+
+Run it from that directory:
+
+```sh
+node host.mjs
+```
+
+It prints `hello from kio` followed by a newline.
 
 ## Where this leads
 

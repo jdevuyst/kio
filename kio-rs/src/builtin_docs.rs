@@ -243,10 +243,10 @@ fn intrinsic_summary(name: &str) -> &'static str {
 fn intrinsic_details(name: &str) -> &'static str {
     match name {
         "__left__" => {
-            "The two type arguments fix the complete `A | B` result and the value must have type `A`. No branch search occurs. A missing or incompatible type argument is a type error."
+            "The two type arguments fix the complete `A | B` result and the value must have type `A`. In full Kio, ordinary call inference may supply omitted type arguments. No branch search occurs. Unsolved or incompatible type arguments are type errors."
         }
         "__right__" => {
-            "The two type arguments fix the complete `A | B` result and the value must have type `B`. No branch search occurs. A missing or incompatible type argument is a type error."
+            "The two type arguments fix the complete `A | B` result and the value must have type `B`. In full Kio, ordinary call inference may supply omitted type arguments. No branch search occurs. Unsolved or incompatible type arguments are type errors."
         }
         "__either__" => {
             "The scrutinee must have type `A | B`; the two handlers receive `A` and `B` respectively and must return one common `C`. Only the selected handler runs. An uncovered type, a mismatched handler parameter, or different handler results is a type error."
@@ -539,7 +539,7 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Instantiates the outermost reflected `forall` binder with one argument. Success is the left `__Type__` arm; a non-forall input or a structural argument for a higher-kinded binder returns diagnostic text in the right arm. Call again for additional binders."
         }
         TypeArityFn => {
-            "Returns the kind arity of the reflected type's outer binder/head: zero for an ordinary kind-`*` type and the recorded arrow count for a higher-kinded binder. The argument must already be resolved."
+            "Unfolds aliases and returns the kind arity of the outermost `forall` binder. Returns zero when there is no outer `forall` binder. This is not a general query for a type head's kind. The argument must already be resolved."
         }
         TypeVarArity => {
             "Reads the kind arity recorded on a reflected variable handle. It cannot accept a general type handle; that mismatch is a type error."

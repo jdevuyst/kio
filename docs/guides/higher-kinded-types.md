@@ -1,10 +1,17 @@
 # Higher-kinded types
 
-Kio supports **higher-kinded types** through kind-annotated binders and direct type application. A binder annotated kind-`*→*` stands for a **type constructor**, and `F(A)` applies that type constructor to a carrier type `A`, all inside System F's rank-N discipline.
+Higher-kinded types let one function work with several kinds of container,
+such as a box or an optional value. Instead of taking just an element type
+`A`, it takes a **type constructor** `F`: a type that accepts another type.
+`F(A)` then means the container type for elements of type `A`.
 
 ## Type constructors (kind `*→*`)
 
-A **type constructor** in Kio is a type that takes a type argument to produce a type — kind `*→*`. It's the same shape as Haskell's `Box a` or OCaml's `'a Box`: an arity-1 newtype (`Box[A] : A`) is a kind-`*→*` type constructor, and `Box(A)` (or `F(A)` for an abstract type constructor `F`) is the type-level application "the type constructor applied to the carrier `A`." (The Rust backend erases these into its `Rc<dyn Any>` body — see [`specs/backends/rust.md`](../../specs/backends/rust.md) § Higher-kinded types — but that is a backend-encoding detail; at the language level there is just the kind-annotated binder and direct application.)
+A **kind** describes which type arguments a type accepts. An ordinary type
+has kind `*`; a constructor that accepts one ordinary type has kind `*→*`.
+For example, a newtype declared as `Box[A] : A` takes one type argument, so
+`Box` has kind `*→*` and `Box(A)` is an ordinary type. The same application
+syntax works for an abstract constructor `F`, written `F(A)`.
 
 Properties of type constructors in Kio:
 
@@ -19,7 +26,8 @@ The kind-`*→*` binder `[*F]` in a function signature can stay abstract — cod
 
 This guide is the **language reference** for the HKT machinery — kind annotations, how type-constructor application works, the polymorphic newtype payload contract, the multi-arity story. For a worked, executable walkthrough that builds first-class `Functor` / `Monad` instances over arity-1 brands, consumes them with imported `do!` sequencing, and derives one with `derive!`, see the case study [`docs/poc/hkt.md`](../poc/hkt.md).
 
-Assumed setup: a module whose host supplies `String`, `print`, and `string_concat`.
+Assumed setup: a module whose host supplies `String` with `role(str)`,
+`print: String -> .`, and `string_concat: (String & String) -> String`.
 
 <!--kio {harness=module placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -133,11 +141,11 @@ pub fn main() {
 
 ## Polymorphic newtype payloads — the instance-newtype pattern
 
-A newtype payload may be a polymorphic function — for example,
-`Forall(A, Forall(B, Function(args, ret)))`. This is the language feature that
-underwrites first-class `Functor(F)` / `Monad(F)` instances: the instance
-newtype carries the operation as a polymorphic-fn field that callers project
-to invoke at a specific binding.
+A newtype payload may be a polymorphic function, such as
+`[A][B] (F(A) & (A -> F(B))) -> F(B)`. This lets a `Functor(F)` or `Monad(F)`
+value store one operation that works for every element type. A caller
+projects that operation, then supplies the types and values for a particular
+call.
 
 ```kio {@module}
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
@@ -152,11 +160,8 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 
 The polymorphic-fn payload contract (the constructor accepts any value of the
 declared polymorphic function type, and the projector preserves its binders) is
-specified at [`specs/backends/README.md` § Polymorphic newtype payloads](../../specs/backends/README.md).
-Each backend uses its ordinary newtype representation at that boundary; Rust's
-body representation is already erased, so projection needs no HKT-specific
-up/down-cast adapter (see [`specs/backends/rust.md`](../../specs/backends/rust.md)
-§ Polymorphic newtype payloads).
+shared by all backends. The [host integration guides](../README.md#host-integrations)
+explain how a host constructs and uses such values.
 
 Once a value of `Monad(F)` (or `Functor(F)`, `Applicative(F)`, …) is in hand,
 callers project it with `Monad.bind(monad)` and use the result as a receiver —
@@ -165,6 +170,10 @@ instances, `do!` sequencing, and combinators generic over the type constructor
 — is the case study [`docs/poc/hkt.md`](../poc/hkt.md).
 
 ## Monadic `do!`
+
+`do!` comes from the [elaborator library](using-libraries.md#the-elaborator-library),
+not a keyword. After adopting that dependency under the name `elab`, import
+it with `import elab/sequence(do);`.
 
 A monadic `do!` block supplies the bind operation it will sequence with. The
 receiver must have the shape `[A][B] (F(A) & (A -> F(B))) -> F(B)`. It is an
@@ -249,5 +258,4 @@ Partial application drops *trailing* arguments only — `Either(String)` fixes t
 
 - **No anonymous type-level functions.** Partial application is trailing-slot-drop only; there is no `λα. T`. Fixing a non-trailing slot uses a wrapper newtype.
 - **No kind polymorphism or higher-order kinds.** Kinds are concrete right-associative chains over `*`; a binder cannot itself be kind-polymorphic, and `(*→*)→*` is not expressible.
-- **Manual congruence walks.** A newtype's `mk_*` / `un_*` lift and project at a single position. Structurally lifting / projecting the type constructor through `->` / `&` / `|` constructors — equating, say, `F(A) -> F(B)` with `A -> B` — requires writing the walk by hand at each leaf, with variance handled the standard way (covariant for `->`'s codomain and both sides of `&` / `|`; contravariant for `->`'s domain).
-- **Per-backend instance support.** The instance-newtype pattern (polymorphic-fn value at a newtype payload position) requires each backend to support polymorphic-function values across the storage / projection boundary. JS handles this through its ordinary dynamic representation; Rust uses its ordinary erased body representation and needs no HKT-specific adapter at projection — see [`specs/backends/README.md` § Polymorphic newtype payloads](../../specs/backends/README.md#polymorphic-newtype-payloads) and [`specs/backends/rust.md` § Polymorphic newtype payloads](../../specs/backends/rust.md#polymorphic-newtype-payloads).
+- **Conversions are explicit.** A constructor or projector crosses one newtype boundary. A function of type `Box(A) -> Box(B)` is still distinct from `A -> B`: an adapter must wrap its input, call the original function, and unwrap its result. Products and sums likewise need explicit conversion of their relevant components. For an abstract `F`, supply the required conversion operations as dictionary values.

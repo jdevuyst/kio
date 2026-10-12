@@ -84,7 +84,12 @@ export KIO_DEBUG_TEST_KIO_BIN KIO_DEBUG_TEST_KIO_PRIME_BIN
 sh "$REPO_ROOT/ci/cargo.sh" test --all-features
 
 # Source packages carry a self-contained snapshot of the canonical manual.
-sh "$REPO_ROOT/ci/cargo.sh" run --example pack_manual -- --check
+sh "$REPO_ROOT/ci/package-kio.sh" package --locked --no-verify
+manual_package=$(
+  sh "$REPO_ROOT/ci/cargo.sh" metadata --format-version 1 --no-deps |
+    node -e 'let input=""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { const m=JSON.parse(input); const p=m.packages.find(p => p.name === "kio-lang"); if (!p) throw new Error("missing kio-lang package"); process.stdout.write(require("node:path").join(m.target_directory,"package",p.name+"-"+p.version+".crate")); });'
+)
+sh "$REPO_ROOT/ci/cargo.sh" run --example pack_manual -- --check-package "$manual_package"
 
 # Per-feature checks — confirm each binary's slice compiles and has
 # no rustc warnings in its reduced feature configuration.

@@ -1,5 +1,382 @@
 use super::*;
 
+#[test]
+fn configuration_fields_publish_shared_value_descriptions() {
+    let dir = TempDir::new("configuration-field-details");
+    dir.write("app.pkg.kio", "package app;\n");
+    dir.write("app.kio", "module app;\n");
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    let mut cases = vec![
+        (
+            ".pkg",
+            "package app; build { ".to_owned(),
+            vec![
+                ("cache", Some("() | String")),
+                ("docs", None),
+                ("target", None),
+            ],
+        ),
+        (
+            ".pkg",
+            "package app; build { docs { ".to_owned(),
+            vec![
+                ("html", Some("() | String")),
+                ("md", Some("String")),
+                ("md_out", Some("() | String")),
+                ("support", Some("String")),
+            ],
+        ),
+        (
+            ".dep",
+            "dependency app; source { ".to_owned(),
+            vec![
+                ("git", Some("String")),
+                ("path", Some("() | String")),
+                ("ref", Some("String")),
+            ],
+        ),
+        (
+            ".lock",
+            "lock app; resolved { ".to_owned(),
+            vec![
+                ("commit", Some("String")),
+                ("git", Some("String")),
+                ("path", Some("() | String")),
+                ("ref", Some("String")),
+                ("sig", Some("String")),
+            ],
+        ),
+    ];
+    for target in [
+        "go",
+        "haskell",
+        "java",
+        "js",
+        "kio-prime",
+        "python",
+        "rust",
+        "swift",
+        "ts",
+    ] {
+        let mut expected = vec![("out", Some("String"))];
+        if target != "kio-prime" {
+            expected.push(("namespace", Some("() | String")));
+        }
+        if target == "rust" {
+            expected.push(("thread_safety", Some("() | send | sync | send_sync")));
+        }
+        cases.push((
+            ".pkg",
+            format!("package app; build {{ target {target} {{ "),
+            expected,
+        ));
+    }
+    for (kind, source, expected) in cases {
+        let uri = path_to_file_uri(&dir.path().join(format!("app{kind}.kio")));
+        lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}));
+        let result = send_completion(&mut lsp, &uri, 0, source.len() as u64);
+        let mut labels = completion_labels(&result);
+        labels.sort_unstable();
+        let mut expected_labels = expected.iter().map(|(label, _)| *label).collect::<Vec<_>>();
+        expected_labels.sort_unstable();
+        assert_eq!(labels, expected_labels, "{source}: {result}");
+        for (label, detail) in expected {
+            let item = result["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["label"] == label)
+                .unwrap();
+            assert_eq!(item["kind"], 14, "{source}: {item}");
+            assert_eq!(item["detail"].as_str(), detail, "{source}: {item}");
+            let default = match label {
+                "cache" | "namespace" | "thread_safety" | "path" => Some("()"),
+                "md_out" => Some("\"out/docs-md/\""),
+                "html" => Some("\"out/docs/\""),
+                _ => None,
+            };
+            assert_eq!(
+                item["documentation"].as_str(),
+                default
+                    .map(|default| format!("Default: {default}"))
+                    .as_deref(),
+                "{source}: {item}"
+            );
+            assert_eq!(item["textEdit"]["newText"], label, "{source}: {item}");
+        }
+        lsp.send_notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri}}),
+        );
+    }
+    let uri = path_to_file_uri(&dir.path().join("app.pkg.kio"));
+    lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 100, "text": "package app;\n"}}));
+    wait_for_analysis_event(&lsp.analysis_events, &uri, 100);
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn configuration_field_hover_tracks_owner_overlay_and_parse_validity() {
+    let dir = TempDir::new("configuration-field-hover");
+    dir.write("app.kio", "module app;\nfn namespace() { () }\n");
+    let disk = "package app; build { target kio-prime { out \"out\" } }";
+    let uri = path_to_file_uri(&dir.write("app.pkg.kio", disk));
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    let cases = [
+        (
+            "package app; build { target js { out \"out\"; namespace ((())) } }",
+            "namespace",
+            Some("() | String"),
+        ),
+        (
+            "package app; build { cache (()); docs { md \"docs\"; md_out \"out-md\"; html \"out-html\"; support \"assets\" } }",
+            "cache",
+            Some("() | String"),
+        ),
+        (
+            "package app; build { docs { md \"docs\"; md_out \"out-md\"; html \"out-html\"; support \"assets\" } }",
+            "md_out",
+            Some("() | String"),
+        ),
+        (
+            "package app; build { target kio-prime { out \"out\"; namespace \"literal\" } }",
+            "namespace",
+            None,
+        ),
+        (
+            "package other; build { target js { out \"out\"; namespace () } }",
+            "namespace",
+            None,
+        ),
+        (
+            "package app; build { target js { out \"out\"; namespace (",
+            "namespace",
+            None,
+        ),
+        (
+            "package app; build { target js { out \"namespace\" } }",
+            "namespace",
+            None,
+        ),
+        (
+            "package app; build { target js { out \"out\"; // namespace\n } }",
+            "namespace",
+            None,
+        ),
+    ];
+    lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": cases[0].0}}));
+    for (index, (source, key, expected)) in cases.iter().enumerate() {
+        send_full_text_change(&mut lsp, &uri, index as i32 + 2, source);
+        let offset = source.find(key).unwrap();
+        let (line, character) = source_position(source, offset + 1);
+        let hover = send_hover(&mut lsp, &uri, line, character);
+        if let Some(expected) = expected {
+            assert_eq!(
+                hover["contents"]["value"],
+                format!(
+                    "Configuration value: `{expected}`\n\nDefault: `{}`",
+                    if *key == "md_out" {
+                        "\"out/docs-md/\""
+                    } else {
+                        "()"
+                    }
+                ),
+                "{source}: {hover}"
+            );
+            assert_eq!(
+                hover_range(&hover),
+                (0, offset as u64, 0, (offset + key.len()) as u64)
+            );
+        } else {
+            assert!(hover.is_null(), "{source}: {hover}");
+        }
+    }
+    send_full_text_change(&mut lsp, &uri, 20, disk);
+    wait_for_analysis_event(&lsp.analysis_events, &uri, 20);
+    lsp.send_notification(
+        "textDocument/didClose",
+        json!({"textDocument": {"uri": uri}}),
+    );
+    let offset = disk.find("out").unwrap();
+    assert!(send_hover(&mut lsp, &uri, 0, offset as u64 + 1).is_null());
+    lsp.send_notification(
+        "textDocument/didOpen",
+        json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 30, "text": disk}}),
+    );
+    assert_eq!(
+        send_hover(&mut lsp, &uri, 0, offset as u64 + 1)["contents"]["value"],
+        "Configuration value: `String`"
+    );
+    lsp.send_notification(
+        "textDocument/didClose",
+        json!({"textDocument": {"uri": uri}}),
+    );
+    for (kind, source, key) in [
+        (
+            "dep",
+            "dependency app; source { git \"https://example.invalid/dep\"; ref \"main\"; path ((())) }",
+            "path",
+        ),
+        (
+            "lock",
+            "lock app; resolved { git \"https://example.invalid/dep\"; ref \"main\"; path (); commit \"abc\"; sig \"digest\" }",
+            "path",
+        ),
+    ] {
+        let uri = path_to_file_uri(&dir.path().join(format!("app.{kind}.kio")));
+        lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}));
+        let offset = source.find(key).unwrap();
+        assert_eq!(
+            send_hover(&mut lsp, &uri, 0, offset as u64 + 1)["contents"]["value"],
+            "Configuration value: `() | String`\n\nDefault: `()`"
+        );
+        lsp.send_notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri}}),
+        );
+    }
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn configuration_value_choices_insert_defaults_and_named_modes() {
+    let dir = TempDir::new("configuration-value-choices");
+    dir.write("app.pkg.kio", "package app;\n");
+    dir.write("app.kio", "module app;\n");
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    let mut cases = vec![
+        (".pkg", "package app; build { cache | }".to_owned(), vec!["()"], "() | String"),
+        (".pkg", "package app; build { docs { md \"docs\"; md_out | } }".to_owned(), vec!["\"out/docs-md/\"", "()"], "() | String"),
+        (".pkg", "package app; build { docs { md \"docs\"; html ((|)) } }".to_owned(), vec!["\"out/docs/\"", "()"], "() | String"),
+        (".pkg", "package app; build { target rust { out \"out\"; thread_safety | } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
+        (".pkg", "package app; build { target rust { out \"out\"; thread_safety ((|)) } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
+        (".dep", "dependency app; source { git \"https://example.invalid/dep\"; ref \"main\"; path | }".to_owned(), vec!["()"], "() | String"),
+        (".lock", "lock app; resolved { git \"https://example.invalid/dep\"; ref \"main\"; commit \"abc\"; sig \"digest\"; path | }".to_owned(), vec!["()"], "() | String"),
+        (".pkg", "package app; build { target js { out | } }".to_owned(), vec![], "String"),
+        (".pkg", "package app; build { docs { md | } }".to_owned(), vec![], "String"),
+        (".pkg", "package app; build { target rust { out \"out\"; thread_safety \"se|nd\" } }".to_owned(), vec![], ""),
+        (".pkg", "package app; build { target rust { out \"out\"; thread_safety // se|nd\n } }".to_owned(), vec![], ""),
+    ];
+    for target in [
+        "go", "haskell", "java", "js", "python", "rust", "swift", "ts",
+    ] {
+        cases.push((
+            ".pkg",
+            format!("package app; build {{ target {target} {{ out \"out\"; namespace | }} }}"),
+            vec!["()"],
+            "() | String",
+        ));
+    }
+    for (index, (kind, marked, expected, description)) in cases.iter().enumerate() {
+        let uri = path_to_file_uri(&dir.path().join(format!("app{kind}.kio")));
+        let cursor = marked.find('|').unwrap();
+        let source = marked.replacen('|', "", 1);
+        lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": index + 1, "text": source}}));
+        let (line, character) = source_position(&source, cursor);
+        let result = send_completion(&mut lsp, &uri, line, character);
+        assert_eq!(completion_labels(&result), *expected, "{marked}: {result}");
+        for item in result["items"].as_array().unwrap() {
+            assert_eq!(item["detail"], *description, "{marked}: {item}");
+            let label = item["label"].as_str().unwrap();
+            assert_eq!(
+                item["kind"],
+                if label.starts_with('(') || label.starts_with('"') {
+                    12
+                } else {
+                    20
+                },
+                "{item}"
+            );
+            let inserted = apply_lsp_text_edits(&source, &[item["textEdit"].clone()]);
+            insertion_parses(kind, &inserted)
+                .unwrap_or_else(|error| panic!("{marked}: {item}: {inserted}: {error}"));
+        }
+        lsp.send_notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri}}),
+        );
+    }
+    // Replace the entire started mode, retaining the same closed choices.
+    let marked = "package app; build { target rust { out \"out\"; thread_safety se|nd_sync } }";
+    let cursor = marked.find('|').unwrap();
+    let source = marked.replacen('|', "", 1);
+    let uri = path_to_file_uri(&dir.path().join("app.pkg.kio"));
+    lsp.send_notification(
+        "textDocument/didOpen",
+        json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}),
+    );
+    let result = send_completion(&mut lsp, &uri, 0, cursor as u64);
+    for item in result["items"].as_array().unwrap() {
+        let inserted = apply_lsp_text_edits(&source, &[item["textEdit"].clone()]);
+        assert!(!inserted.contains("sync_sync"), "{item}: {inserted}");
+        insertion_parses(".pkg", &inserted).expect("complete replacement remains a field value");
+    }
+    assert_eq!(
+        completion_labels(&result),
+        ["()", "send", "send_sync", "sync"]
+    );
+    send_full_text_change(&mut lsp, &uri, 100, &source);
+    wait_for_analysis_event(&lsp.analysis_events, &uri, 100);
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn capture_completion_offers_bare_types_and_values_but_value_only_members() {
+    let dir = TempDir::new("capture-role-completion");
+    dir.write("app.pkg.kio", "package app;\n");
+    dir.write(
+        "other.kio",
+        "module other; pub type Foo = .; pub pure fn helper() { () }\n",
+    );
+    let initial = "module app; import other as m;\n";
+    let uri = path_to_file_uri(&dir.write("app.kio", initial));
+    let head = "module app; import other as m; type Foo = .; type _Foo = .; pure fn helper() { () } elab form: . -> . { ";
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    open_and_wait_for_analysis(&mut lsp, &uri, initial);
+    lsp.send_notification(
+        "textDocument/didClose",
+        json!({"textDocument": {"uri": uri}}),
+    );
+    for (index, tail) in [
+        "captures |; impl helper }",
+        "captures (|); impl helper }",
+        "captures ((|)); impl helper }",
+        "captures (((Fo|o))); impl helper }",
+        "captures (helper, |); impl helper }",
+        "captures (helper, ((|))); impl helper }",
+        "captures ((m.|)); impl helper }",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let marked = format!("{head}{tail}");
+        let cursor = marked.find('|').unwrap();
+        let source = marked.replacen('|', "", 1);
+        lsp.send_notification("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "kio", "version": index + 1, "text": source}}));
+        let result = send_completion(&mut lsp, &uri, 0, cursor as u64);
+        let expected = if tail.contains("m.") {
+            vec!["helper"]
+        } else {
+            vec!["Foo", "_Foo", "helper", "m"]
+        };
+        assert_eq!(completion_labels(&result), expected, "{marked}: {result}");
+        for item in result["items"].as_array().unwrap() {
+            let inserted = apply_lsp_text_edits(&source, &[item["textEdit"].clone()]);
+            insertion_parses("", &inserted).expect("capture candidate creates accepted syntax");
+        }
+        lsp.send_notification(
+            "textDocument/didClose",
+            json!({"textDocument": {"uri": uri}}),
+        );
+    }
+    assert!(insertion_parses("", &format!("{head}captures m.Foo; impl helper }}")).is_err());
+    assert_eq!(lsp.shutdown(), 0);
+}
+
 struct ClosedCase {
     kind: &'static str,
     prefix: String,
@@ -397,7 +774,7 @@ fn closed_cases() -> Vec<ClosedCase> {
             keys.push(("namespace", namespace));
         }
         if target == "rust" {
-            keys.push(("thread_safety", " \"send\"; } }"));
+            keys.push(("thread_safety", " send; } }"));
         }
         add(
             ".pkg",

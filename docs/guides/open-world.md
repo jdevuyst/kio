@@ -108,15 +108,17 @@ import derive(derive);
 
 host type String role(str);
 
-newtype Formatter[A] : A -> String {
-  constructor mk_formatter;
-  projector format
-}
-
 __SNIPPET__
 -->
 
+Here `Formatter(A)` packages a function from `A` to the host's `String` type.
+Its constructor stores that function; its projector retrieves it. The example
+uses the imported `derive!` elaborator; [Using libraries](using-libraries.md#the-elaborator-library)
+shows how to add that library and import `elab/derive(derive)`.
+
 ```kio {@explicit_evidence}
+newtype Formatter[A] : A -> String { constructor mk_formatter; projector format }
+
 fn apply_formatter[A](formatter: Formatter(A), value: A) -> String {
   Formatter.format(formatter)(value)
 }
@@ -142,7 +144,7 @@ precondition that `formatter_from_text` consumes to produce
 The compatible `unlisted_formatter` rule can produce the requested target
 directly, but it is absent from the tuple. If `derive!` searched the module,
 that rule and the listed composition would make the result ambiguous. The
-fence typechecks because `derive!` considers only the literal tuple and
+derivation succeeds because `derive!` considers only the literal tuple and
 composes its two listed rules to reach `Formatter(String)`. Adding an unrelated
 declaration therefore cannot alter this derivation. See the
 [higher-kinded-types case study](../poc/hkt.md#deriving-an-instance-with-derive) for a

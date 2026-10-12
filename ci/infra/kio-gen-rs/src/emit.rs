@@ -69,9 +69,8 @@ pub const fn runner_protocol(surface_mode: bool) -> &'static str {
 // the `js`, `ts`, `python`, `java`, and `rust` targets so the generative harness can
 // drive each generated case through `kio build $KIO_TARGET` under any of those
 // impls. (The `ts` target emits the JS backend's `<pkg>.js` byte-identical
-// plus a `<pkg>.d.ts` skin.) `cache` is mandatory per
-// `specs/package.md` § Build target files; a fixed in-package path
-// suffices here, the actual runner build cache lives under the harness-
+// plus a `<pkg>.d.ts` skin.) A fixed in-package cache path
+// suffices here; the actual runner build cache lives under the harness-
 // supplied `KIO_TEST_RUNNER_BUILD_CACHE_DIR`, not this per-package cache
 // directory.
 const PACKAGE_FILE_KIO_PREFIX: &str = "\
@@ -617,7 +616,7 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
         format!("{PACKAGE_FILE_KIO_PREFIX}\n{}", bridge_glob_block(["prog"]))
     };
     if prog.control_probe.is_some() {
-        package_file = package_file.replace("  target rust {", "  target go { out \"out/go/\" };\n  target swift { out \"out/swift/\" };\n  target haskell { out \"out/haskell/\" };\n\n  target rust {");
+        package_file = package_file.replace("  target rust {", "  target go {\n    out \"out/go/\"\n  };\n\n  target swift {\n    out \"out/swift/\"\n  };\n\n  target haskell {\n    out \"out/haskell/\"\n  };\n\n  target rust {");
         package_file = package_file.replace("  testapi\n", "  testapi;\n  testapi/io\n");
         if prog
             .control_probe

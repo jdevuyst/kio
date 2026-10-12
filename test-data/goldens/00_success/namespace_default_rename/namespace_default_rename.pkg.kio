@@ -1,0 +1,46 @@
+package namespace_default_rename;
+
+build {
+  cache ();
+
+  target js {
+    out "out/js/";
+    namespace ()
+  };
+
+  target ts {
+    out "out/ts/";
+    namespace ()
+  };
+
+  target go {
+    out "out/go/";
+    namespace ()
+  };
+
+  target python {
+    out "out/python/";
+    namespace ()
+  };
+
+  target java {
+    out "out/java/";
+    namespace ()
+  };
+
+  target swift {
+    out "out/swift/";
+    namespace ()
+  };
+
+  target haskell {
+    out "out/haskell/";
+    namespace ()
+  };
+
+  target rust {
+    out "out/rust/";
+    namespace ();
+    thread_safety ()
+  }
+}

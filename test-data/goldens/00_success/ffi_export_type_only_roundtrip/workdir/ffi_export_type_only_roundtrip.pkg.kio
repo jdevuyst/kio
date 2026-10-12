@@ -1,8 +1,6 @@
 package ffi_export_type_only_roundtrip;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

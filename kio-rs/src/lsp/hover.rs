@@ -29,6 +29,67 @@ use crate::lsp::util::smallest_containing_span;
 use crate::pass::typecheck_core::{source_type_spelling_with_bound, write_type};
 use crate::span::Span;
 
+/// Configuration keys have accepted-form descriptions without a typed snapshot.
+pub(crate) fn config_field_hover(uri: &Uri, position: &Position, source: &str) -> Option<Hover> {
+    use crate::ast::KioFileKind;
+    use crate::pass::parser::ToolingSyntax;
+
+    let crate::lsp::util::FileUriPath::Path(path) = crate::lsp::util::file_uri_path(uri) else {
+        return None;
+    };
+    let filename = path.file_name()?.to_str()?;
+    let kind = if crate::file_kind::is_package_file(filename) {
+        KioFileKind::Package
+    } else if crate::file_kind::is_dep_file(filename) {
+        KioFileKind::Dependency
+    } else if crate::file_kind::is_lock_file(filename) {
+        KioFileKind::Lock
+    } else {
+        return None;
+    };
+    let line_index = LineIndex::new(source);
+    let offset = line_index.position_to_offset(LspPosition {
+        line: position.line,
+        character: position.character,
+    });
+    let probe = crate::pass::parser::probe_tooling(source, Some(kind), Some(offset), None);
+    if probe.lexical_error.is_some() || probe.parse_error.is_some() || probe.facts.recovered_group {
+        return None;
+    }
+    let coherent = match probe.syntax.as_ref()? {
+        ToolingSyntax::Package(file) => {
+            crate::file_kind::package_stem(filename) == Some(file.name.as_str())
+        }
+        ToolingSyntax::Dependency(file) => {
+            crate::file_kind::dep_stem(filename) == Some(file.name.as_str())
+        }
+        ToolingSyntax::Lock(file) => {
+            crate::file_kind::lock_stem(filename) == Some(file.name.as_str())
+        }
+        _ => false,
+    };
+    if !coherent {
+        return None;
+    }
+    let span = probe.facts.cursor.as_ref()?.atom.replacement;
+    if span.start == span.end {
+        return None;
+    }
+    let keyword = &source[span.start as usize..span.end as usize];
+    let field = crate::scope_walk::tooling_keyword_field(&probe, keyword)?;
+    let mut description = format!("Configuration value: `{}`", field.value_description());
+    if let Some(default) = field.default_description() {
+        description.push_str(&format!("\n\nDefault: `{default}`"));
+    }
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: description,
+        }),
+        range: Some(span_to_lsp_range(span, &line_index)),
+    })
+}
+
 /// Handle one `textDocument/hover` request.
 ///
 /// `uri` is the document URI from the request; `position` is the

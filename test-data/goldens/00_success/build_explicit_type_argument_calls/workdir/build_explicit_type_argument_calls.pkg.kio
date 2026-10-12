@@ -1,8 +1,6 @@
 package build_explicit_type_argument_calls;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

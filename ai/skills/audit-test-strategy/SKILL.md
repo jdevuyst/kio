@@ -40,6 +40,22 @@ that add only unselected declarations. Treat an inventory or matrix failure as
 coverage evidence or a contract question; it does not authorize changing
 accepted syntax or parser behavior to make the audit green.
 
+For grouping parentheses, apply the
+[cross-context syntax guidance](../../topics/language-surface-tooling.md#consistent-syntax-across-contexts).
+Check focused bare/grouped/nested-grouped witnesses at actual value/type entry
+points, including configuration defaults and applicable Kio-family file kinds.
+Assertions must establish preserved meaning and formatter/reparse behavior,
+with focused rejection/diagnostic evidence for deliberate restrictions.
+Argument lists, patterns and operator grammar need controls for their distinct
+roles. Shared grammar helpers are preferable to duplicated parsing, but helper
+tests alone do not establish contextual coverage. Classify missing evidence
+without inventing acceptance authority or expanding execution scope.
+
+For analogous block fields, test the shared semantic roles and their contextual
+entry points, including default/absence and comment behavior. Distinguish
+existing references from new-name declarations and collections; parentheses
+acceptance alone does not establish field consistency.
+
 ## 2. Goldens hygiene
 
 Apply [`TESTING.md` § Corpus and expected-output maintenance](../../../TESTING.md#corpus-and-expected-output-maintenance)

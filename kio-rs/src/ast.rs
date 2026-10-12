@@ -2252,6 +2252,8 @@ pub struct VariadicOperator<P: Phase = Surface> {
     /// Canonical trivia owner for comments inside the compact body, keeping
     /// them distinct from declaration documentation during formatting.
     pub body_trivia: P::LeadingTrivia,
+    /// Written finalizer field head, including an explicit no-finalizer value.
+    pub finalize_keyword_span: Option<Span>,
     pub meta: Meta<P>,
     /// Doc-comment attached to this variadic operator declaration, if any.
     pub doc: Option<DocComment>,
@@ -4060,6 +4062,7 @@ pub struct GitSource {
     pub ref_span: Span,
     pub ref_leading_trivia: Vec<crate::pass::lexer::Trivia>,
     pub manifest_path: Option<GitManifestPath>,
+    pub absent_path_leading_trivia: Option<Vec<crate::pass::lexer::Trivia>>,
 }
 
 /// One present `path` field, retaining its diagnostic and formatter metadata.
@@ -4498,8 +4501,7 @@ pub fn host_fn_group_refs<'a, P: Phase>(
 /// is the unit literal `()` (the no-value default), a string literal, a
 /// number literal, a boolean literal, or a bare word (a value-level
 /// identifier). Each field then validates which of these kinds it
-/// accepts; an omitted optional field is canonicalised to
-/// [`BlockFieldValue::Unit`] by `kio fmt`. See
+/// accepts; formatting preserves omitted and explicitly written settings. See
 /// [`grammar.md` § Package files](../../specs/grammar.md#package-files)
 /// and [`style.md`](../../specs/style.md) for the contract.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5961,23 +5963,22 @@ impl<P: Phase> CallArg<P> {
 // ---- Build block (inside `<name>.pkg.kio`) -----------------------
 
 /// The parsed `build { ... }` block inside a `<name>.pkg.kio`
-/// package file: the mandatory `cache` declaration plus a list of
+/// package file: the defaulted `cache` declaration plus a list of
 /// `target <id> { ... }` blocks. Per
 /// [`specs/package.md`](../../specs/package.md): inside the build
 /// block, `build`, `target`, `cache`, and `docs` are contextual
 /// keywords; otherwise the block uses ordinary Kio grammar tokens.
-/// There are no types or values — the block isn't a language surface.
+/// Values use the restricted configuration scalar grammar.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildBlock {
     pub leading_trivia: Vec<crate::pass::lexer::Trivia>,
     pub trailing_trivia: Vec<crate::pass::lexer::Trivia>,
     /// The optional `cache <string-or-unit>;` declaration. Either a
     /// filesystem-path string (caching enabled at that location) or the
-    /// unit literal `()` (caching explicitly disabled). When the build
-    /// block omits the field it canonicalises to `cache ();` (caching
-    /// disabled), which `kio fmt` inserts; the parser fills the absent
-    /// field with [`BuildBlockCache::Disabled`].
-    pub cache: BuildBlockCache,
+    /// unit literal `()` (caching explicitly disabled). `None` preserves
+    /// omission, which also disables caching; an explicit unit value uses
+    /// [`BuildBlockCache::Disabled`].
+    pub cache: Option<BuildBlockCache>,
     /// The optional `docs { … };` block — points `kio doc` at the
     /// package's documentation tree. `None` when the build block omits
     /// it; `kio doc check` / `kio doc build` then fail with a clear
@@ -6007,11 +6008,11 @@ pub struct BuildBlockDocs {
     pub support_leading_trivia: Vec<Vec<crate::pass::lexer::Trivia>>,
     /// `md_out "<path>";` — rendered-Markdown output directory.
     /// `None` when the key is omitted; the default is `out/docs-md/`.
-    pub md_out: Option<String>,
+    pub md_out: Option<BlockFieldValue>,
     pub md_out_leading_trivia: Vec<crate::pass::lexer::Trivia>,
     /// `html "<path>";` — rendered-HTML output directory. `None`
     /// when the key is omitted; the default is `out/docs/`.
-    pub html: Option<String>,
+    pub html: Option<BlockFieldValue>,
     pub html_leading_trivia: Vec<crate::pass::lexer::Trivia>,
     pub span: Span,
 }
@@ -6043,7 +6044,7 @@ pub struct TargetBlock {
     /// The explicit target name in a pair header. A bare header uses
     /// its backend spelling as the target name.
     pub name: Option<String>,
-    /// The ordered list of `key "value";` entries inside the block.
+    /// The ordered list of scalar configuration entries inside the block.
     /// Keep insertion order so repeat-key diagnostics name the second
     /// occurrence at its actual source position.
     pub entries: Vec<TargetEntry>,
@@ -6061,9 +6062,18 @@ impl TargetBlock {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TargetEntry {
     pub key: String,
-    pub value: String,
+    pub value: BlockFieldValue,
     pub span: Span,
     pub leading_trivia: Vec<crate::pass::lexer::Trivia>,
+}
+
+impl TargetEntry {
+    pub fn string_value(&self) -> &str {
+        match &self.value {
+            BlockFieldValue::Str(value) => value,
+            _ => unreachable!("the parser validates string-valued target fields"),
+        }
+    }
 }
 
 // ---- Signature file (`<name>.sig.kio`) ---------------------------------

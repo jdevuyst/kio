@@ -1,10 +1,8 @@
 #!/bin/sh
-# `kio fmt` canonicalises a `build` block that omits the optional
-# `cache` field by inserting `cache ();` (caching disabled) at the
-# head of the block, ahead of the `target` blocks. The tracked source
-# omits `cache` and writes the target block inline, so the round-trip
-# both inserts the field and expands the target block; the second
-# `kio fmt` proves the inserted form is idempotent.
+# `kio fmt` preserves omission of the optional `cache` field while
+# expanding inline target blocks and preserving their written paths.
+# A second round pins idempotence. Explicit `cache ()` preservation is
+# covered separately by fmt_named_entry_order.
 #
 # Strategy mirrors fmt_package_file: copy the deliberately non-canonical
 # source to scratch so `kio fmt` (which rewrites in place) doesn't

@@ -1,0 +1,11 @@
+package pkg;
+
+build {
+  cache ();
+
+  target rust {
+    out "out/rust/";
+    namespace "pkg";
+    thread_safety ()
+  }
+}

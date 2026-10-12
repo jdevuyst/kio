@@ -20,6 +20,12 @@ is the narrative companion.
 > generated-type references. See the contract's
 > [incompatible-retained-epochs section](../../specs/backends/haskell.md#incompatible-retained-declaration-epochs-are-not-source-stable-on-haskell).
 
+The generated module requires **GHC 9.10 or newer** and the **`text` package**
+for generated string values. In a Cabal project, include `text` alongside
+`base` in the host executable's `build-depends`. The generated module carries
+its own required language-extension pragmas; host extensions are explained
+below where you use them.
+
 ## The build target
 
 A package emits to Haskell by declaring a `haskell` target in
@@ -129,8 +135,8 @@ the host API. Exported calls and callbacks still take only their documented
 value arguments; generated adapters perform any required sequencing before
 the next host-visible value call.
 
-Memory is **GC** — the package body threads no ownership annotations and
-the host needs none.
+Values use Haskell's ordinary garbage collection; embedding the package
+requires no manual memory management.
 
 ## Loading the package
 
@@ -454,8 +460,9 @@ pub fn main() { print(stdout(), "hello\n"(Str)) }
 ```
 
 `kio build haskell` writes `out/haskell/Greeter.hs`.
-The host binds the role-bearing `Str` to `[Char]` and the role-free
-`Output` to a host-defined ADT, then supplies the two functions:
+Save the following host as `Main.hs` beside the Kio package manifest. It
+binds the role-bearing `Str` to `[Char]` and the role-free `Output` to a
+host-defined data type, then supplies the two functions:
 
 ```haskell
 {-# LANGUAGE TypeFamilies #-}
@@ -482,6 +489,16 @@ main :: IO ()
 main = do
   let pkg = Greeter.createGreeter stubHost
   Greeter.export__greeter__main__main pkg
+```
+
+Compile with the generated module directory on GHC's source search path, then
+run the executable:
+
+```sh
+mkdir -p out/haskell-host
+ghc -iout/haskell -outputdir out/haskell-host \
+  -o out/haskell-host/host Main.hs
+./out/haskell-host/host
 ```
 
 This prints `hello` and exits 0.

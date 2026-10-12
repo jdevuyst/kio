@@ -88,7 +88,8 @@ When an ordinary module-body `fn` carries both `pub` and `pure`, `kio fmt` emits
 
 Every comma-separated list in Kio follows the same **A1 layout**, driven by width uniformly:
 
-- **0–1 items.** Single-line, unconditionally.
+- **0–1 items.** Width alone does not break the list; comments and forced
+  breaks inside an item still require the broken layout described below.
 - **2+ items.** Single-line if the flat form fits within the **100-column line-length budget**; otherwise the **leading-comma multi-line** layout below.
 
 The multi-line form puts a leading comma on every item, including the first:
@@ -149,7 +150,9 @@ For label construction and update payloads, `kio fmt` uses the shortest canonica
 
 Inline `match!` clauses are entries of a trailing product block, separated by semicolons: `match! v { .() { 0 }; .[B](n: B) -> I32 { 1 } }`. The block uses the block-call layout above. A preassembled product of clauses, supplied as `match! v { clauses }`, keeps the ordinary comma-list layout at the product's definition.
 
-**Single-element lists stay single-line regardless of length.** A1 says single-line at 0–1 items unconditionally; line length doesn't override.
+**Single-element lists do not break solely because of length.** Comments and
+forced breaks still take precedence; otherwise an over-budget single item
+stays on one line.
 
 The trade-off this policy accepts is that adding or removing an item can reflow the surrounding list when its width crosses the 100-column threshold. The win is a uniform rule: short declarations stay short, and the only thing that changes when a list grows past the budget is its layout — not the form a reader has to recognize.
 
@@ -310,6 +313,13 @@ by exactly one space and the same path shape. Dot-separated segments have no
 surrounding spaces; slash-qualified paths and non-path expressions are not
 declaration syntax.
 
+Redundant grouping around named references in `impl`, variadic fold and
+`finalize` fields, captures, recursive capabilities and non-bang UFCS callees
+is omitted. Omitted finalizers stay omitted, while written `finalize ()` stays explicit;
+comments within the removed grouping remain attached to the containing
+declaration or expression. Thus `impl (fills)` formats as `impl fills`, while
+`impl(fills) (helper)` formats as `impl(fills) helper`.
+
 **Recursive-call annotations.** Recursive calls use `recur`; recursive declarations retain `rec`. Annotations use the order `poly`, `cont`, `escape`, with any implied annotation omitted. Since `escape` entails `cont`, `recur(escape, cont, poly) f(x)` emits as `recur(poly, escape) f(x)`; `recur(cont, poly) f(x)` emits as `recur(poly, cont) f(x)`.
 
 ## `op` patterns
@@ -345,12 +355,13 @@ A `varop` declaration uses one space after its keyword and between OPEN and
 CLOSE. Its compact body stays on one line,
 like a fixed operator declaration. The primary clause always comes first; it
 renders one of `foldl`, `foldr`, `foldl1`, or `foldr1`, followed by the step
-path and then the base/seed path. An optional `finalize` clause follows it.
+path and then the base/seed path. A written `finalize` clause follows it,
+including an explicit `finalize ()`.
 Dotted path segments have no surrounding spaces.
 
 ```kio
 varop [* *] { foldr cons empty }
-varop [[ ]] { foldl append empty }
+varop [[ ]] { foldl append empty; finalize () }
 varop [! !] { foldr1 cons singleton }
 varop [% %] { foldl1 append_entry seed_entry; finalize finish }
 ```
@@ -396,12 +407,10 @@ The package-file `build { … }`, dependency `source { … }`, and dependency-lo
 
 The package-file `build { … }` block is canonicalized as follows (see [`grammar.md` § Package files](grammar.md#package-files) for the field set):
 
-- **Canonical key order.** Fields emit in a fixed order regardless of the order the author wrote them, so a reordering produces no diff: `cache` first, then the optional `docs { … };` block, then the `target` blocks in source order. Inside `docs`: `md`, then any `support` entries in source order, then the optional `md_out`, then `html`. Inside each `target`, the universally meaningful `out` key emits first, then other keys emit in ASCII order by key.
+- **Canonical key order.** Fields emit in a fixed order regardless of the order the author wrote them, so a reordering produces no diff: `cache` first, then the optional `docs { … };` block, then the `target` blocks in source order. Inside `docs`: `md`, then any `support` entries in source order, then `md_out`, then `html`. Inside each `target`, the universally meaningful `out` key emits first, then other keys emit in ASCII order by key.
 - **Target headers.** Bare headers print as `target js { … }`; paired headers print as `target (js, "web") { … }`, with the backend first and a space after the comma. An explicitly paired header remains paired even when its name equals its backend spelling. String escaping and chunking follow the ordinary literal rules.
-- **Insert-missing-optional-with-`()`.** The block's **optional field** is `cache`: a build block that omits `cache` gets `cache ();` inserted (caching disabled).
-
-  This is the opposite of fmt's treatment of elided type-arguments, where fmt **never** inserts a slot (the prefer-fuller-elision ladder in [`language.md` § Type-argument inference and the `_` placeholder](language.md#type-system) keeps `f("")` over `f(_, "")`): for the build block's fields presence is the canonical form, so fmt adds the missing field; for type-argument elision absence is the preferred form, so fmt never de-elides. The two rules concern different constructs — keep them straight.
-- **Field-value canonicalization.** A field value is `()`, a string literal, a number, a boolean, or a bare word (the `BlockFieldValue` grammar). String, number, and boolean literals canonicalize the same way they do in expression position (see [§ Numeric and string literal canonicalization](#numeric-and-string-literal-canonicalization)); `()` and bare words emit verbatim.
+- **Preserve optional settings.** Omitted optional fields stay omitted. Explicitly written fields stay explicit, including `key ()` and concrete values equal to the current default. On an optional scalar field, `()` selects the same behavior as omission; it does not pin a derived or concrete default into the source. The formatter neither inserts nor removes such settings, and does not synthesize absent blocks or repeatable entries. Required fields still require their documented values. The `kio-prime` target has no `namespace` field, and a local dependency requires a string `path`. Formatting never fetches a dependency or selects a discovered manifest.
+- **Field-value canonicalization.** A field value is `()`, a string literal, a number, a boolean, or a bare word (the `BlockFieldValue` grammar), subject to the field's value-kind restrictions. Redundant grouping parentheses are removed, including around a paired target's string name; comments remain attached to the owning field or target. String, number, and boolean literals canonicalize the same way they do in expression position (see [§ Numeric and string literal canonicalization](#numeric-and-string-literal-canonicalization)); `()` and bare words emit verbatim.
 
 ## Package `bridge` blocks
 
@@ -429,7 +438,7 @@ source {
 }
 ```
 
-A `git` source emits `git`, `ref`, then its optional `path`, in that fixed order:
+A `git` source emits `git`, `ref`, then `path`, in that fixed order:
 
 ```
 dependency <local>;
@@ -441,7 +450,7 @@ source {
 }
 ```
 
-Without a selector, `path` is omitted and `ref` is the final field, without a semicolon. Comments preceding fields stay attached to their fields when reordered. Each value is a string literal and canonicalizes the same way string literals do in expression position (see [§ Numeric and string literal canonicalization](#numeric-and-string-literal-canonicalization)).
+Without a selector, an omitted `path` stays omitted and a written `path ()` stays explicit. Comments preceding fields stay attached to their fields when reordered. String values canonicalize the same way string literals do in expression position (see [§ Numeric and string literal canonicalization](#numeric-and-string-literal-canonicalization)).
 
 After the `source` block, any `rehost <from> to <to>;` statements emit — each on its own line, separated from `source` by exactly one blank line — in canonical order: sorted **lexicographically by ASCII codepoint** on the rendered `from` path, then on `to`, the same ordering rule applied to `import` imports above. Source order is not significant; `kio fmt` reorders out-of-order statements rather than erroring. Both paths render as `/`-separated module paths with no trailing item:
 
@@ -457,7 +466,7 @@ rehost <local>/<mod> to <consumer>/<mod>;
 
 ## Dependency lock files (`*.lock.kio`)
 
-A `<local>.lock.kio` lock file (see [`grammar.md` § Dependency lock file](grammar.md#dependency-lock-file-lockkio)) pins a remote `git` dependency's resolved commit and its contract-surface digest. It is **written by `kio build` / `kio dep`** and committed to version control, and `kio fmt` canonicalizes it like a `.dep.kio`: the `lock <local>;` header, one blank line, then the `resolved { … }` block with its `git` / `ref` / optional `path` / `commit` / `sig` lines at +2 indent in that order, and a trailing newline:
+A `<local>.lock.kio` lock file (see [`grammar.md` § Dependency lock file](grammar.md#dependency-lock-file-lockkio)) pins a remote `git` dependency's resolved commit and its contract-surface digest. It is **written by `kio dep fetch` / `kio dep update`** and committed to version control, and `kio fmt` canonicalizes it like a `.dep.kio`: the `lock <local>;` header, one blank line, then the `resolved { … }` block with its `git` / `ref` / `path` / `commit` / `sig` lines at +2 indent in that order, and a trailing newline:
 
 ```
 lock <local>;
@@ -471,7 +480,7 @@ resolved {
 }
 ```
 
-The `path` line is omitted for a pathless Git source. Field comments move with their fields, as in dependency declarations.
+For a pathless Git source, an omitted `path` stays omitted and a written `path ()` stays explicit. Field comments move with their fields, as in dependency declarations.
 
 ## Signature files (`*.sig.kio`)
 
@@ -481,7 +490,10 @@ Within each `v(<N>) { … }` block, the optional version doc-comment emits immed
 
 ## Comments
 
-Comment text is preserved by the lexer's trivia model: each meaningful token carries the line-comments and newlines that preceded it (back to the previous meaningful token), so the canonical-style emission can place comments at the right position. Horizontal whitespace and trailing whitespace inside comments are dropped on the way in; the comment's body is otherwise preserved byte-for-byte. The 100-column line-length budget does **not** apply to comments — long comments stay long.
+Comment bodies are preserved byte-for-byte except for horizontal whitespace
+and trailing-whitespace normalization. The 100-column line-length budget does
+**not** apply to comments — long comments stay long. The attachment and
+relocation rules below determine their output positions.
 
 **Top-level item comments.** Line comments immediately preceding a top-level `import` or item (`fn`, `type`, `literal`, `newtype`, `labels`, either `rec` group, `elab`, `op`, `equiv`, `bridge`) survive a `kio fmt` round-trip. They emit on their own lines at column 0, immediately above the item, in source order. The trivia stays attached to the item it preceded; for `import` statements that the formatter sorts into the canonical block layout, the comments ride with each `import` to its sorted position.
 
@@ -491,7 +503,7 @@ Comment text is preserved by the lexer's trivia model: each meaningful token car
 
 **Empty-comment-line collapse.** A run of two or more empty `//` lines (each one consisting of `//` after trailing-whitespace stripping, with no body) collapses to a single empty `//` line on emit. This composes with the blank-line policy: blank lines between items remain bounded by the surrounding item-separation rule (exactly one blank line). Doc-comment blank lines (`///` with no content) are not subject to this collapse — they are preserved verbatim.
 
-**Comments are legal anywhere and are never dropped.** A `//` line comment may appear at any position the lexer accepts one; `kio fmt` preserves every comment across a round-trip. This is a hard guarantee, enforced by test (a conservation check that numbers every comment and asserts all survive in source order), not by a runtime guard. Two placement disciplines apply, the gofmt model:
+**Comments are legal anywhere and are never dropped.** A `//` line comment may appear at any position the lexer accepts one; `kio fmt` preserves every comment across a round-trip, subject to the empty-comment-line normalization above. Comments attached to reordered imports or fields move with their owners; within each attached block, source order is preserved. Two placement disciplines apply:
 
 - **Faithful at boundaries.** A comment at a node, container, or element boundary — above an item, above a `let` / statement / `match!` clause / list element, trailing the last token before a closing delimiter (`}` / `)`) or end of file, dangling at the end of a block — is preserved *in place*.
 - **Hoisted otherwise.** A genuinely interstitial comment — wedged on a token that does not start an AST node (a `:`, `->`, `,`, or mid-expression position) — is hoisted to the nearest canonical line above the enclosing construct. It is relocated, never dropped, and source order is preserved across the relocation.
@@ -522,8 +534,8 @@ A string literal whose **value** (the unescaped logical content, as stored on th
 
 ```kio
 let greeting =
-  "the quick brown fox jumps over the lazy dog and then continues"
-  " running back home in the late afternoon sunshine"
+  "the quick brown fox jumps over the lazy dog and then continues running "
+  "back home in the late afternoon sunshine"
 ```
 
 Rules:
@@ -544,10 +556,10 @@ Within an expression body, comments preserve through a `kio fmt` round-trip at t
 - **Above a `match!` clause** — comments captured before the clause expression.
 - **Inside a `match!` clause body** — comments captured between the clause's `{` and the body expression.
 - **Inside a call's argument list** — comments captured before each argument's first token (or before the leading `,` separator). Any comment forces the call into the multi-line A1 layout, with the comment on its own line above its argument's `, arg` line.
-- **Inside a tuple literal** — same per-element capture as call arguments. Any comment forces the tuple into the multi-line A1 layout. (Comments are kept through `kio fmt`'s round-trip; they are dropped on the way to `Desugared`, so they don't survive `kio-prime`'s re-emission.)
-- **Inside a label-value `{f = e, g = e'}`** — same per-label capture as tuple elements; same lifetime caveat (dropped at the `label_elab` boundary).
+- **Inside a tuple literal** — same per-element capture as call arguments. Any comment forces the tuple into the multi-line A1 layout. Comment preservation applies to source formatting, not to comments inside surface forms eliminated from emitted Kio'.
+- **Inside a label-value `{f = e, g = e'}`** — same per-label capture as tuple elements; the same surface-form comment lifetime applies.
 - **Inside a type-application argument list** — comments above each type-arg in `Foo(A, B)` or `mk_foo(A, B, x)`. Forces multi-line A1 layout when any entry has a comment.
-- **Inside a `labels { f: X, g: Y }` block** — comments above any label entry. (Same lifetime caveat as `Expr::LabelValue`: dropped on the way to `Lowered`.)
+- **Inside a `labels { f: X, g: Y }` block** — comments above any label entry; the same surface-form comment lifetime applies.
 - **Trailing the last element of a comma list, before the `)` / `}`** — a comment after the final argument / tuple element / label / row-let binder emits on its own line below that element, inside the broken A1 layout, before the closer. The list breaks to multi-line because a comment can't sit inline before the closer.
 - **Dangling at the end of a block, before `}`** — a comment after the body's last token emits on its own line at the body indent, before the closing `}`, forcing the block to multi-line layout.
 - **Trailing the last item / at end of file** — a comment after the last top-level item, before end of file, emits at column 0 below the body, separated by one blank line like a top-level item.
@@ -579,4 +591,8 @@ fn f[A](v: A) {
 
 `kio fmt` reformats a chain of `let X = E;` statements as a single line if the chain fits within the 100-column budget (the surrounding block stays inline) and as a vertical stack if any element forces a break — either because the chain overflows or because a comment is captured at any of the trivia positions above. Mixing the two within one chain isn't supported: a chain either all fits flat or all breaks. The same principle applies to `e;` expression statements interleaved with `let` statements.
 
-Same-line trailing comments — a `// comment` on the same line as a preceding token — are preserved, but emit on the *next* line rather than trailing: the lexer attaches a `// comment` to the following token's leading trivia, and `kio fmt` always opens a fresh line for a comment. A trailing comment whose following token is a closing delimiter or end of file (where the leading-trivia model has no token to attach to) rides the enclosing container's trailing slot — the parser stashes the closer's / end-of-file's leading run there — so it survives at the boundary positions listed above instead of being dropped. The relocation onto a fresh line is the only sense in which `kio fmt` is not a strict no-op on first format; it is a fixpoint thereafter.
+Same-line trailing comments — a `// comment` on the same line as a preceding
+token — are preserved, but emit on the *next* line rather than trailing.
+A trailing comment before a closing delimiter or end of file remains at the
+corresponding boundary position listed above. Relocation may change the first
+formatting result; formatting that result again is a no-op.

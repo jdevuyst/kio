@@ -1,8 +1,6 @@
 package stages_first;
 
 build {
-  cache ();
-
   target python {
     out "out/python/"
   }

@@ -438,14 +438,14 @@ fn temp_entry_dir(root: &Path, key: &ArtifactCacheKey) -> PathBuf {
 
 pub fn resolve_from_cache_field(
     workspace_root: &Path,
-    cache: &crate::ast::BuildBlockCache,
+    cache: &Option<crate::ast::BuildBlockCache>,
 ) -> ArtifactCache {
     match cache {
-        crate::ast::BuildBlockCache::Path { path, .. } => {
+        Some(crate::ast::BuildBlockCache::Path { path, .. }) => {
             let abs = absolutize(workspace_root, path);
             ArtifactCache::open(abs).unwrap_or_else(|_| ArtifactCache::disabled())
         }
-        crate::ast::BuildBlockCache::Disabled { .. } => ArtifactCache::disabled(),
+        None | Some(crate::ast::BuildBlockCache::Disabled { .. }) => ArtifactCache::disabled(),
     }
 }
 

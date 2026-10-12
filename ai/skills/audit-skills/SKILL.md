@@ -43,6 +43,25 @@ Verify that both require successful review of final post contents before
 sign-off, not merely a green website build or existing trailer.
 `review-commits` checks the available per-change review evidence; a static audit
 cannot reconstruct a missing historical review from the committed post alone.
+Check that final-post review requires all-link verification and actual published
+release evidence for ordinary repository file/directory links, with unresolved
+checks surfaced before sign-off. Static syntax checks cannot supply that evidence.
+
+The existing-post revision policy in `docs.md` § Blog posts is checked by
+`review-blog-post` and `review-commits` for proposed changes and by
+`audit-blog-history` for available intra-post history. Verify meaning-based
+classification (including formatting-subject changes), dated notices describing
+substantive edits, retained exact-text approval, and explicit history gaps;
+inter-post contradiction checks alone do not cover silent post revisions.
+`language-surface-tooling.md` § Consistent syntax across contexts is covered by
+`audit-spec-drift`'s grouping/context inventory and `audit-test-strategy`'s actual
+entry-point witnesses. Check the distinction between grouping and argument,
+pattern or operator roles and preserve Gate 0; this routing is not blanket
+authority to change acceptance.
+That coverage also inventories block-field roles across declarations: stored
+values, existing references, new-name declarations and collections. Verify
+shared-contract parsing/defaults and meaningful differences, not merely whether
+each parser happens to accept parentheses.
 
 Cross-reference. For each load-bearing section:
 

@@ -146,11 +146,13 @@ role-specific `From<primitive>` bound, and every generic Kio type parameter is
 a `KioType` marker whose `Facade` is `Clone + 'static`. `Rc` is not
 thread-safe, so an
 emitted package value cannot cross a thread boundary. This is the
-behavior when the `thread_safety` build-block key is absent.
+behavior when the `thread_safety` build-block key is absent or explicitly
+`thread_safety ()`. The formatter preserves omission and explicit settings.
 
 The `thread_safety` key (see
 [`specs/package.md` § Per-target keys](../package.md#per-target-keys))
-opts the crate into a thread-safe representation. Under any opt-in
+accepts the bare choices `send`, `sync`, and `send_sync` to opt the crate
+into a thread-safe representation. Under any opt-in
 value the emitter swaps the wrap to `Arc<dyn …>` and adds `Send +
 Sync` marker bounds throughout:
 
@@ -171,7 +173,7 @@ Sync`. A host impl that doesn't is rejected with a standard Rust
 build-block key is the cause.
 
 **All three opt-in values select the same representation.** The
-build-block key admits `send`, `sync`, and `send_sync`; the Rust backend
+build-block key admits `"send"`, `"sync"`, and `"send_sync"`; the Rust backend
 realizes each as the full `Arc<dyn … + Send + Sync>` shape above. That
 representation satisfies every opt-in: package values may be moved between
 threads, shared between threads, or both. Consequently, every accepted
@@ -549,7 +551,7 @@ emits
 pub trait MyKiopkgHost: Clone + 'static {
     type app__ArrayStorage: Clone + PartialEq + 'static;
 
-    fn app__array_push<A: KioType>(
+    fn app__arrayPush<A: KioType>(
         &self,
         a: KioHostType_app__Array<Self, A>,
         v: A::Facade,
@@ -611,7 +613,7 @@ impl PartialEq for ArrayStorage {
 impl MyKiopkgHost for MyHost {
     type app__ArrayStorage = ArrayStorage;
 
-    fn app__array_push<A: KioType>(
+    fn app__arrayPush<A: KioType>(
         &self,
         a: KioHostType_app__Array<Self, A>,
         value: A::Facade,
@@ -703,17 +705,11 @@ Examples (where `T1` and `T2` are public newtypes):
 
 #### Conversion semantics
 
-The package's **internal body rep is erased** as crate-private raw
-`Rc<dyn Any>` values, or `Arc<dyn Any + Send + Sync>` under the thread-safe
-build option. Boundary marker codecs wrap that raw representation in the
-opaque, cloneable `KioStoredValue` carrier whose raw operations remain
-crate-private (§ Higher-kinded types). A product is a nested-binary pair erased
-at each level; a 3-product `(A & B & C)` stores `(a, (b, c))` through those raw
-values. A sum is an erased tagged payload. The
-nested-binary spine matches the cross-backend right-spine walk, so the
-body's `fst` / `snd` / tag-test operations run uniformly over the erased
-rep with no per-shape machinery. `KioProduct` / `KioSum` reconstitute the same
-binary facade spine; boundary aliases never enter the body.
+The package keeps its erased body representation private. Hosts exchange
+exact typed facades or the opaque, cloneable `KioStoredValue` carrier through
+the documented marker operations (§ Higher-kinded types); the carrier does
+not expose its raw storage. Product and sum conversions preserve the canonical
+binary facade structure described above.
 
 The per-signature wrapper at every exported-function / host-fn boundary
 bridges the erased internal rep and the exact typed facade on the way
@@ -1084,19 +1080,9 @@ itself produces no Rust argument. Direct calls and computed rank-N values
 follow the same tree, so a returned polymorphic value retains any preceding
 computation rather than being flattened into its consumer's value call.
 
-**Why private erasure is observably correct.** A Kio rank-N value is
-binder-uniform: the type system rejects any operation whose meaning depends on
-a specific instantiation of `[T]`. The body therefore uses one erased value
-representation at every instantiation, while the public callable trait and
-the staged adapter preserve the exact binder relation and source application
-order. The erased representation does not occur in the public signature.
-
-This is per-backend codegen, not a spec carve-out. JavaScript preserves the
-same staged-callable structure while erasing binder values entirely; Rust
-preserves it with crate-private raw erased body values and opaque
-`KioStoredValue` boundary carriers. Kio's surface
-semantics (sound, decidable type system; binder-uniform polymorphic body) apply
-identically across backends.
+The public callable trait preserves the exact binder relation and source
+application order. Private erasure does not change the types a host supplies
+or receives, or move computation between callable stages.
 
 ## Higher-kinded types
 
@@ -1299,6 +1285,8 @@ name.
 // hello.pkg.kio
 package hello;
 
+build { target rust { out "out/rust/"; } }
+
 bridge {
   hello;
   hello/**;
@@ -1332,71 +1320,55 @@ pub fn main() {
 }
 ```
 
-Emitted Rust skeleton (illustrative; declaration-owned support names use the
-exact identifier encoding described above):
+Run `kio build rust`. The generated crate under `out/rust/` is named `hello`.
+Create a host crate in the package root with this `Cargo.toml`:
+
+```toml
+[package]
+name = "hello-host"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+hello = { path = "./out/rust" }
+```
+
+The generated `HelloHost` trait requires an exact associated type for each
+nullary host type. Roles add their standard `From` bounds; the host selects
+the representation. Here the host chooses `i32` and `String`. Save this as
+`src/main.rs`:
 
 ```rust
-// src/host.rs — every nullary host type is an exact associated type. A role
-// adds its standard From capability; it does not choose the type.
-// Every role(str) occurrence uses the exact associated type by value.
-// Method and associated-type names carry the declaring module's
-// namespace (`hello__…`).
-pub trait HelloHost: Clone + 'static {
-    type hello__I32: Clone + PartialEq + 'static + From<i32>;
-    type hello__String: Clone + PartialEq + 'static + From<String>;
+use hello::host::HelloHost;
 
-    fn hello__print(&self, s: Self::hello__String);
-    fn hello__intToString(&self, v: Self::hello__I32) -> Self::hello__String;
-}
+#[derive(Clone)]
+struct MyHost;
 
-// src/shapes.rs — shape struct fields hold the exact associated types by
-// value. `Hed` and `Mid`
-// are label-generated in module `hello/main`, so their nominal facade
-// mirrors that declaring path.
-pub mod nominal {
-    pub mod hello {
-        pub mod main {
-            pub struct Hed<__KioHost: 'static> { /* private storage */ }
-            impl<__KioHost: HelloHost> Hed<__KioHost> {
-                pub fn mk(payload: __KioHost::hello__I32) -> Self { … }
-                pub fn get(value: Self) -> __KioHost::hello__I32 { … }
-            }
+impl HelloHost for MyHost {
+    type hello__I32 = i32;
+    type hello__String = String;
 
-            pub struct Mid<__KioHost: 'static> { /* private storage */ }
-            impl<__KioHost: HelloHost> Mid<__KioHost> {
-                pub fn mk(payload: __KioHost::hello__String) -> Self { … }
-                pub fn get(value: Self) -> __KioHost::hello__String { … }
-            }
-        }
+    fn hello__print(&self, value: String) {
+        print!("{value}");
+    }
+
+    fn hello__intToString(&self, value: i32) -> String {
+        value.to_string()
     }
 }
 
-pub struct Product<A, B> {
-    pub _0: A,
-    pub _1: B,
-}
-
-// src/lib.rs
-pub mod host;
-pub mod shapes;
-
-pub struct Hello<H: HelloHost> {
-    // one namespace field per bridged module path segment;
-    // `pkg.hello.main.main()` reaches the export.
-    pub hello: HelloNs<H>,
-}
-
-pub fn create_hello<H: HelloHost>(host: H) -> Hello<H> { … }
-
-impl<H: HelloHost> HelloMainNs<H> {
-    pub fn main(&self) {
-        // Internal representation + per-signature wrappers omitted for
-        // brevity.
-    }
+fn main() {
+    let pkg = hello::create_hello(MyHost);
+    pkg.hello.main.main();
 }
 ```
 
-A host invokes the package via `let pkg = hello::create_hello(MyHost); pkg.hello.main.main()`. If the host wants to construct a `Hed` directly (e.g., when calling a fn that takes one), it goes through the namespaced constructor:
+Run `cargo run` from the host crate to print `42, hi`.
+
+`Hed` and `Mid` are label-generated newtypes in module `hello/main`; their
+nominal Rust types preserve that declaring path. To construct a `Hed` inside
+the host's `main` (for example, to pass to an export that takes one), use its
+public constructor:
 
 ```rust
 let h = hello::shapes::nominal::hello::main::Hed::<MyHost>::mk(42_i32.into());

@@ -55,6 +55,97 @@ latency win, general tail-call elimination, or flattening of arbitrary bind
 continuations. An ordinary bind may invoke, store, skip, or replay its
 continuation; its semantics are unchanged.
 
+## Haskell value demand
+
+This correctness-primary repair starts from compiler revision
+`6c7af9abaaed75966fe04abebfa8685d938a2574`. GHC 9.10.3 executes the same
+independent hosts against baseline and repaired generated modules at `-O0`
+and `-O2`. The baseline module was regenerated with a compiler built from
+that revision and matched the measured artifact byte-for-byte. Its SHA-256
+is `1a844d527d418476dc082393ec34d3c962e201b75606ace7af0e25c446890afd`;
+the repaired module's is
+`c84169a0f775fc5d86149e6f7593665fe0095c641bff39731cdd094a1133aa89`.
+
+The retention subject selects an atom from a sum containing an atom and an
+opaque payload, then duplicates that atom into a returned pair. The host
+pre-evaluates an 8 MiB array, releases its input roots, and retains only that
+pair. After demanding the outer pair and collecting garbage, the baseline
+`-O0` left branch retains 8,417,192 bytes until a field is demanded. The
+repair retains 28,448 bytes for either branch at all three checkpoints: outer
+pair, first field, and both fields. The array was still allocated; this is
+live-residency evidence, not a claim about peak memory. `-O2` avoids the
+size-proportional retention in both versions; the repaired observation is
+28,344 bytes. A selector-only control did not exhibit the original retention.
+
+The emitter demands immediate Kio results at existing call, binding,
+structural-production and facade-conversion boundaries. It does not recursively
+force opaque host contents or execute stored callbacks. Pure computations
+inside monadic code are demanded within their executing stage, preserving
+retained type abstractions. Exact IO traces at both profiles cover type-stage,
+argument and callback order, including a returned action that remains suspended
+and reusable. This is not an operational proof for every possible host monad.
+
+The `haskell/pure_value_demand` emission checks binding-relative operand,
+producer-field and returned-facade demand. It fails on the baseline; removing
+each of those three edges separately from generated text also makes the
+checker fail despite other demand operations remaining. These mutations test
+the oracle, not a runtime failure. The `exec_value_demand_preservation` golden
+is separate natural-source coverage of effects, retained callbacks and type
+stages, not a manufactured timing or garbage-collection assertion.
+
+Cost probes execute 100,000 varying-input calls per row, demand both returned
+fields, and check checksum 10,000,100,000. The input array is constructed
+outside the measured loop. Allocation and CPU time are observed separately,
+in baseline/repair/repair/baseline order. Rounded variable bytes per call:
+
+| Profile | Arm | Direct | Nested | Choice | Callback |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `-O0` | Baseline | 264 | 288 | 328 | 968 |
+| `-O0` | Repair | 568 | 648 | 672 | 1632 |
+| `-O2` | Baseline | 40 | 40 | 40 | 728 |
+| `-O2` | Repair | 40 | 40 | 40 | 688 |
+
+The ordinary runner uses `-O0`: its extra allocation and selected runtime
+cost are real, not an unsupported-profile exception. For example, the two
+choice CPU observations span 71–96 ns/call before and 164–177 after; direct
+calls span 81–118 before and 319–323 after. Optimized choice observations span
+3.9–9.0 before and 4.5–14.0 after. Two samples per arm are diagnostic evidence,
+not statistical equivalence, a speedup claim, or a whole-program prediction.
+
+Exposing generated public callable wrappers to GHC through `INLINABLE`
+removes the much larger optimized overhead of the unannotated repair:
+nested/choice allocation falls from 376/408 to 40/40 bytes per call, and their
+roughly 99–110 ns/call observations return to the smaller ranges above.
+Inlining only the two private demand helpers did not achieve this. Private
+functions and helpers remain unannotated; a unit test covers the public
+function, constructor and projector selection. On this small module, the
+wrapper annotation increases the optimized interface from 42,763 to 48,397
+bytes, object from 75,312 to 77,368 bytes, and executable by 920 bytes.
+Single compile observations of 1.08 and 1.11 seconds do not establish a
+compile-time regression or general scaling bound. The annotation changes no
+public type, value stage or calling convention. This repair makes no general
+tail-call or constant-stack claim.
+
+Generic host calls check their conversions and result lift under a local
+`forall` signature for the resolved declaration schema, then apply the actual
+type arguments. This keeps strict bindings from hiding impredicative types
+from GHC inference, without inspecting opaque substituted types. The
+`exec_generic_callback_schema` regression retains and invokes a recursive
+callback twice; its native compilation fails without the schema helper.
+Guest operands remain evaluated once, in order, outside that helper.
+
+A separate GHC 9.10.3 allocation comparison isolates a generic passthrough:
+100,000 varying `Just Int` values cross `G(T)` through an ordinary host identity,
+and the demanded checksum is 5,000,050,000. Before/after/after/before samples
+all allocate 93,601,592 bytes at `-O0` and 11,201,112 bytes at `-O2`, including
+loop and measurement overhead. No CPU timing was collected. The small
+three-export probe grows from 16,762 to 17,280 generated-source bytes;
+object/executable sizes remain 42,520/1,448,048 bytes at `-O0` and
+46,768/1,410,968 at `-O2`. This bounds one generic-call path, not every possible
+schema or a general zero-overhead claim. The original retention/cost artifact
+remains byte-identical after this inference repair, so its measurements above
+remain separate evidence.
+
 ## Callable-purity dispatch recovery
 
 The measured dispatch witness executes the same host-output assertion before

@@ -171,6 +171,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn init_package_source_preserves_omitted_settings() {
+        for name in ["hello", "_a", "constructor"] {
+            let source = package_source(name);
+            let package = crate::pass::parser::parse_package_file(&source, Some(name)).unwrap();
+            assert_eq!(crate::pretty::pretty_package_file(&package), source);
+            assert!(!source.contains("namespace"), "{source}");
+        }
+    }
+
+    #[test]
     fn validates_package_names() {
         assert!(validate_package_name("hello").is_ok());
         assert!(validate_package_name("hello_world1").is_ok());

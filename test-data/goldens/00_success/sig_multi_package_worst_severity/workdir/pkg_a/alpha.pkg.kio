@@ -1,8 +1,6 @@
 package alpha;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

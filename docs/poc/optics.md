@@ -1,11 +1,10 @@
 # Case study: the optics library
 
-This page is a faithful read-through of the optics proof-of-concept package
-at [`test-data/poc/optics/`](../../test-data/poc/optics/). That package is
-executable and `kio test`-checked, with the harness building and running it
-across supported targets under CI-selected coverage. It is *ground truth*: every type, function, operator, and
-law shown here exists in the package exactly as written, and the laws are
-discharged by the `equiv` blocks at the bottom of the library file.
+This case study follows the
+[`optics` package](../../test-data/poc/optics/), a library for reading and
+updating nested data through composable function pairs. Its definitions and
+`equiv` laws live in `optics.kio`; the operator examples come from its runnable
+demo.
 
 This case study is the reference-grade walkthrough: it covers the *whole*
 public surface of the library, explains the structural glue each optic is
@@ -904,9 +903,15 @@ and materializes the selected package, including its `elab` dependency,
 under the `optics/` local root. Import the public module with, for example,
 `import optics/optics(Lens, view, set);`. The optic functions themselves are
 host-capability-free. The POC package bridge also exposes `elab/testapi` host
-requirements, so provide or rehost them at the consumer boundary where they
-enter its public contract; [Package files and bridges](../guides/pkg.md)
-explains that step.
+requirements, re-rooted as `optics/elab/testapi` in the consumer: `String`
+with role `str`, `I32` and `Int` with role `i32`, and `Bool` with role `bool`.
+If your public bridge reaches these declarations, include that module and
+supply all four host types. Alternatively, add
+`rehost optics/elab/testapi to your_host_module;` to `optics.dep.kio` before
+fetching, provide matching declarations in that consumer module, and bridge
+the provider. [Rehosting](../guides/pkg.md#rehosting-a-dependencys-host-items-with-rehost)
+explains that setup, and [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow)
+explains committing the lock and materialized sources.
 
 If you need to adapt the library source, copy
 [`optics.kio`](../../test-data/poc/optics/workdir/optics.kio) into your package
@@ -917,10 +922,12 @@ operator DSL live separately in
 its host imports (`I32`, `String`, `add`, `int_to_string`, `print`) refer to
 the POC scaffolding and must point at your host when copied.
 
-The whole optic vocabulary — every type, combinator, concrete instance, and
-coercion shown above — works as-is once the spine elaborators and `match!`
-are in scope, and the `equiv` laws travel with it, so `kio test` re-checks
-the library's contract in your package too.
+The `equiv` laws travel with the library source. If you copy `optics.kio`
+into your own package, `kio test` checks them as your package's own laws.
+If you adopt it through `optics.dep.kio`, use `kio test --include-deps` to
+check the dependency's laws too; ordinary `kio test` checks only your own.
+[Verifying an adopted package](../guides/using-libraries.md#verifying-an-adopted-package)
+explains that choice.
 
 ## See also
 

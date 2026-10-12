@@ -1,8 +1,6 @@
 package conditional_checked_term;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

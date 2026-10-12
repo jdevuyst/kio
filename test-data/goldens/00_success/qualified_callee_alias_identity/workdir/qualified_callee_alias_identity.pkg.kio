@@ -1,8 +1,6 @@
 package qualified_callee_alias_identity;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

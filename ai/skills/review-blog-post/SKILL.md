@@ -45,6 +45,18 @@ Arguments override the default:
 - `--all` — every `docs/blog/*.md`;
 - `--last` — only the most recent post (largest `YYYY-MM-DD-` filename).
 
+For an existing post, compare the proposed final contents with its prior
+published contents and inspect intermediate revisions where needed. Apply
+[`docs.md` § Blog posts](../../topics/docs.md#blog-posts): distinguish
+meaning-preserving language/format corrections and small code/API updates from
+substantive revisions. Formatting changes are substantive when formatting is
+the post's subject. Judge the claims and example's meaning, not changed-line
+counts. Substantive revisions need a visible notice with the edit date and
+brief nature; report a missing or misleading notice and propose exact text
+without editing. Disclose unavailable publication/history evidence rather than
+assuming the current text proves what readers previously saw. Exact-text
+approval, authorial voice and the report-only boundary still apply.
+
 ## 2. Mechanical and Kiodoc checks
 
 Run the CI checks that cover blog posts first, so the editorial pass never
@@ -79,6 +91,42 @@ limits and any ignored or otherwise unvalidated Kio examples.
 If a mechanical check fails, report it and skip the prose-editorial pass for
 that post. Still report Kiodoc results where the document can be parsed, and
 investigate compilation failures as below. No failed check authorizes an edit.
+
+### Verify every link before sign-off
+
+Enumerate final-post links, including reference definitions, autolinks, images,
+HTML links and fragments. Verify local destinations against their actual
+publication routes and check anchors in the rendered target. Verify external
+HTTP destinations with bounded requests and inspect redirects; retry a rejected
+HEAD as GET or use a browser when necessary. A status code alone does not prove
+that a redirect, login wall or soft 404 is the intended destination. Validate
+non-HTTP links by their applicable syntax and destination evidence; do not send
+messages or perform other side effects as a link check.
+
+For ordinary repository file/directory links, verify the exact full commit,
+path and fragment and establish that a release tag resolves to that commit and
+has a published, non-draft release in the canonical repository. A local tag or
+an ancestor of a release is insufficient. Commit/diff/issue/pull-request links
+are separate subjects and need no release tag. Keep full commit URLs; version
+labels supplement their identity. This is a sign-off check, not a requirement
+to rewrite unchanged old posts or add live network checks to every broad gate.
+
+Record checked destinations, methods, redirects and release evidence with the
+review. Rate limits, authentication barriers and unavailable destinations are
+unverified, not passes; resolve them before declaring sign-off readiness.
+Never silently delete or replace a link.
+
+When a content link uses `main` or another moving ref, offer to resolve and
+insert the full commit ID for the latest published release with a release tag.
+Show the release version, tag, resolved commit and exact replacement URL for
+approval; do the Git lookup rather than making the author find the hash. Verify
+the path and fragment at that revision. Compare the linked file (or directory)
+with current `main` and warn about any changes since the release, including
+renames or deletion. If the target is absent from that release or its contents
+no longer support the post, explain the mismatch instead of silently choosing
+an older release or an unreleased commit. Applying the approved replacement is
+a separate edit, followed by renewed affected review; this review remains
+report-only.
 
 ## 3. What to flag
 
@@ -152,6 +200,11 @@ Produce a per-post findings list. Make no edits to the `.md`. For each post:
 - the objective mechanics (spelling / grammar / punctuation), each with its fix;
 - the factual findings, each with the contradicting source, and unstable
   repository-link findings;
+- for existing posts, the compared revisions, meaning-based edit classification
+  and notice adequacy, or unavailable history;
+- link verification results, exact release correspondence for repository
+  content links, proposed moving-ref replacements and newer-content warnings,
+  and any unresolved destination or fragment;
 - the Kiodoc check/format results, compilation fixes or harness suggestions,
   and which proposed fixes and visible examples were actually validated;
 - then, cordoned off and clearly labelled optional, the sparse clarity notes.
@@ -163,7 +216,7 @@ something to comment on.
 
 A commit introducing or changing a post may receive DCO sign-off only after this
 review succeeds for its final text, code and harnesses. Report readiness
-explicitly: mechanical and Kiodoc checks pass, objective findings are resolved,
+explicitly: mechanical, Kiodoc and link checks pass, objective findings are resolved,
 and validation limits are disclosed. Optional editorial suggestions may be
 declined. Record the reviewed post's blob ID or content hash and compiler
 revision with the review result; later edits invalidate affected review/checks.

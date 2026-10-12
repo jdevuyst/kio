@@ -1,8 +1,6 @@
 package app;
 
 build {
-  cache ();
-
   target (unknown_backend, "js") {
     out "out/js/"
   }

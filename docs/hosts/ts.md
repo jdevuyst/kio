@@ -390,7 +390,8 @@ export function createGreeter<B extends GreeterHostTypes = GreeterHostTypes>(
 ): Greeter<B>;
 ```
 
-A Node host runs it:
+A Node host can run the package using the following `host.ts`, saved beside
+`greeter.pkg.kio`:
 
 ```ts
 import { createGreeter, type GreeterHost } from './out/ts/greeter.js';
@@ -405,6 +406,28 @@ const pkg = createGreeter(host);
 pkg.greeter.KioModule_main.main();
 // → writes "hello from kio\n" to stdout
 ```
+
+Mark that directory as an ES-module package by adding `"type": "module"`
+to `package.json`, or create this file:
+
+```json
+{
+  "type": "module"
+}
+```
+
+Install TypeScript and Node's type declarations for the host's `process`
+usage, then compile the host and run it:
+
+```sh
+npm install --save-dev typescript @types/node
+npx tsc --strict --target ES2020 --module NodeNext \
+  --moduleResolution NodeNext --types node host.ts
+node host.js
+```
+
+The compiler checks the host against `out/ts/greeter.d.ts`; it compiles
+`host.ts` to `host.js`. Kio's generated `.js` runs directly as emitted.
 
 ## Where this leads
 

@@ -1,8 +1,6 @@
 package do_receiver_factory_header;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

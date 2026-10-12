@@ -716,6 +716,12 @@ Findings:
 
 ## 9. Backend Emission And Host-Compiler Scaling
 
+Where a host or emitted representation is lazy, audit deferred computation and
+retained inputs using
+[Strict evaluation on lazy targets](../../topics/emit.md#strict-evaluation-on-lazy-targets).
+Distinguish body/facade retention from host roots, total allocation and peak RSS;
+an optimized profile's success does not clear an ordinary-profile defect.
+
 For each newly added or materially revised backend path, inspect both the
 compiler and the generated artifact:
 

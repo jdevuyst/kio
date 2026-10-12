@@ -33,6 +33,7 @@ bridge {
 module kiodoc;
 
 import control(if);
+import match(match);
 import sequence(do);
 import spine_elaborators(widen_sum);
 
@@ -314,10 +315,6 @@ fn either_value(flag: Bool, number: Int, text: String) -> Int | String {
 
 The condition is checked before the branch results; those results do not infer
 the condition's type backward. At runtime only the selected branch runs.
-`match!` also requires a common result, while its clause parameters must first
-identify which inputs they handle. The
-[shared-result tutorial](../tutorials/elaborator-hole-filling.md) develops this
-with checked examples in both clause orders.
 
 These are library-defined elaborators, not special meanings attached to the
 names `if` or `match`. Their public types and declared elaboration rules
@@ -325,6 +322,52 @@ determine how their arguments cooperate. The same applies to imported `do!`:
 each action determines its payload before the following binding uses it;
 later uses do not infer an earlier action backward. See
 [higher-kinded types](higher-kinded-types.md) for sequencing.
+
+### Inferring a match result
+
+Add the [elaborator library](using-libraries.md#the-elaborator-library) as an
+`elab` dependency, follow the [dependency workflow](using-libraries.md#the-minimal-dependency-workflow)
+to fetch it, and write `import elab/match(match);` in your module.
+
+`match!` follows the same common-result rule. Its clause parameters first
+identify the input branches; the clause results then agree on one output type.
+That output can be a function, as in this example:
+
+```kio {@branches}
+type Int_fn = Int -> Int;
+
+fn identity[A](value: A) -> A { value }
+
+fn text_handler(_text: String) -> Int_fn { identity(Int) }
+
+fn apply_selected(source: Int | String, value: Int) -> Int {
+  let selected =
+    match! source {
+      .(_number: Int) { identity(_) };
+      text_handler
+    };
+  selected(value)
+}
+```
+
+`identity(_)` asks Kio to choose the identity function's type argument without
+applying it to a value. The already typed `text_handler` returns `Int_fn`, so
+the other clause must also return `Int -> Int`: its `_` is filled as `Int`.
+The match therefore selects an identity function, which `selected(value)`
+then calls.
+
+Swapping these two clauses still infers `Int_fn`. No clause gets priority in
+choosing the common result. Clause order does affect which overlapping clause
+handles a branch and whether a later clause is unreachable; these two clauses
+handle distinct input types. See [matching a sum](sums.md#matching-a-sum).
+
+The later `selected(value)` call does not provide the missing type: Kio must
+finish the `let` initializer before it reaches that call. If neither clause
+determines the result, give the binding a complete annotation such as
+`let .(selected: Int_fn) = match! source { clauses };`, or return the match
+directly from a function whose return type supplies the result. If clause
+results disagree, choose the intended common type and construct it in each
+clause; Kio does not automatically combine incompatible results into a sum.
 
 ## Elaborators need input descriptions before they expand
 

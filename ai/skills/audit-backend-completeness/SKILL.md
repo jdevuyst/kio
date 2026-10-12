@@ -144,6 +144,15 @@ incoming/outgoing owner and subsequent invocation; an internal staged call
 alone cannot discharge a host conversion seam. Reuse shared-owner evidence
 under § 2 rather than require duplicate fixtures for identical behavior.
 
+### Lazy-target demand coverage
+
+For applicable lazy hosts or representations, apply
+[Strict evaluation on lazy targets](../../topics/emit.md#strict-evaluation-on-lazy-targets)
+to internal computation and facade occurrences. Inventory demand boundaries
+separately from effect traces; report missing pure-data retention evidence and
+confirmed deferred-work defects separately. One forced outer constructor does
+not establish evaluated payloads or fields.
+
 ### Generated sequential call-depth witness
 
 For every backend, identify bounded runtime evidence for ordinary binding and

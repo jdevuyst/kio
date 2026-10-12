@@ -1,8 +1,6 @@
 package callable_peer;
 
 build {
-  cache ();
-
   target python {
     out "out/python/"
   }

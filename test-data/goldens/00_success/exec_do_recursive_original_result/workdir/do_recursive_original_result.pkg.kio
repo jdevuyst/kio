@@ -1,8 +1,6 @@
 package do_recursive_original_result;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

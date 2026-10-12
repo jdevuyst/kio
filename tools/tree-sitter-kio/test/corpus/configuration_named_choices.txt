@@ -1,0 +1,33 @@
+================================================================================
+configuration named choices preserve grouped word scalars
+================================================================================
+package app;
+build { target rust { out "out/rust"; thread_safety ((send_sync)) } }
+--------------------------------------------------------------------------------
+
+(source_file
+  (package_file
+    (package_decl
+      (keyword_package)
+      (identifier)
+      (separator_semicolon))
+    (build_block
+      (keyword_build)
+      (bracket_lbrace)
+      (target_block
+        (keyword_declaration)
+        (target_name (identifier))
+        (bracket_lbrace)
+        (config_field (identifier) (string_literal))
+        (separator_semicolon)
+        (config_field
+          (identifier)
+          (grouped_config_value
+            (bracket_lparen)
+            (grouped_config_value
+              (bracket_lparen)
+              (identifier)
+              (bracket_rparen))
+            (bracket_rparen)))
+        (bracket_rbrace))
+      (bracket_rbrace))))

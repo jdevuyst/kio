@@ -1,8 +1,6 @@
 package replica_vector_clock_lab;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

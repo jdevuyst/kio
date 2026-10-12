@@ -109,6 +109,19 @@ require greeter v0.0.0
 replace greeter => ./out/go
 ```
 
+Kio emits Go source files, so this separate-module arrangement also needs
+`out/go/go.mod`. Create it after `kio build go`, which replaces the generated
+directory:
+
+```text
+module greeter
+
+go 1.26
+```
+
+The `module greeter` path matches the host's `require` and `import "greeter"`.
+Recreate this manifest after each build; the worked example shows the commands.
+
 ### 2. Implement the host interface
 
 The generated `Host` interface in `host.go` declares one method
@@ -508,7 +521,8 @@ import greeter(String, print);
 pub fn main() { print("Hello from Kio!\n"(String)) }
 ```
 
-Build it, then host it:
+Save this host as `main.go` beside the Kio package manifest. Create the host's
+`go.mod` from [Make the package importable](#1-make-the-package-importable):
 
 ```go
 package main
@@ -535,6 +549,15 @@ func main() {
     pkg := greeter.New[HostString](MyHost{})
     pkg.Greeter.KioModule_main.Main()
 }
+```
+
+Build the package and run the host from that directory:
+
+```sh
+kio build go
+go -C out/go mod init greeter
+go -C out/go mod edit -go=1.26
+go run .
 ```
 
 Running this prints `Hello from Kio!` and exits 0.

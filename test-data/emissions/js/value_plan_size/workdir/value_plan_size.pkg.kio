@@ -1,8 +1,6 @@
 package value_plan_size;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   }

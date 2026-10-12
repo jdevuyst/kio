@@ -204,7 +204,7 @@ fn prepare_kio_prime_roundtrip_package(
             name: Some(ROUNDTRIP_PRIME_NAME.to_owned()),
             entries: vec![TargetEntry {
                 key: "out".to_owned(),
-                value: ROUNDTRIP_PRIME_OUT.to_owned(),
+                value: crate::ast::BlockFieldValue::Str(ROUNDTRIP_PRIME_OUT.to_owned()),
                 span: build.span,
                 leading_trivia: Vec::new(),
             }],
@@ -218,11 +218,11 @@ fn prepare_kio_prime_roundtrip_package(
 
 fn set_target_output(target: &mut TargetBlock, output: &str) {
     if let Some(entry) = target.entries.iter_mut().find(|entry| entry.key == "out") {
-        entry.value = output.to_owned();
+        entry.value = crate::ast::BlockFieldValue::Str(output.to_owned());
     } else {
         target.entries.push(TargetEntry {
             key: "out".to_owned(),
-            value: output.to_owned(),
+            value: crate::ast::BlockFieldValue::Str(output.to_owned()),
             span: target.span,
             leading_trivia: Vec::new(),
         });
@@ -386,7 +386,7 @@ mod tests {
                     .entries
                     .iter()
                     .filter(|entry| entry.key == "out")
-                    .map(|entry| entry.value.as_str())
+                    .map(|entry| entry.string_value())
                     .collect();
                 assert_eq!(outs, [output], "{name}: target {id}\n{rendered}");
             }
@@ -440,7 +440,7 @@ mod tests {
             build.targets[0]
                 .entries
                 .iter()
-                .any(|entry| entry.key == "namespace" && entry.value == "app")
+                .any(|entry| entry.key == "namespace" && entry.string_value() == "app")
         );
         assert_eq!(build.targets[1].backend, "kio-prime");
         assert_eq!(build.targets[1].name(), ROUNDTRIP_PRIME_NAME);

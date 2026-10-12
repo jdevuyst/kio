@@ -1,0 +1,2 @@
+package modes;
+build { target (rust, "one") { out "out/send"; thread_safety send }; target (rust, "two") { out "out/sync"; thread_safety (sync) }; target rust { out "out/both"; namespace ((())); thread_safety ((send_sync)) } }

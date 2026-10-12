@@ -368,8 +368,9 @@ repository into a per-user cache (`$KIO_CACHE_HOME`, falling back to
 `$XDG_CACHE_HOME/kio` and then `$HOME/.cache/kio`), content-addressed by the URL,
 checks out the commit the `ref` resolves to, and locates the `*.pkg.kio` in the
 checked-out tree — which then re-roots exactly like a local `path` dependency.
-Without `path`, discovery requires a unique package manifest among files at
-the checkout root and one directory level below it. With `path`, only that
+With `path ()` or without `path`, discovery requires a unique package manifest
+among files at the checkout root and one directory level below it. With a
+string `path`, only that
 manifest is selected: a missing or invalid target never falls back to discovery.
 The selector uses relative `/`-separated syntax; rooted, drive-qualified, and
 backslash-separated spellings are parse errors (exit code `11`). The target
@@ -379,7 +380,7 @@ by first collapsing `..`; an escaped, missing, or wrong-kind target is a
 dependency error at the selector, before writing its first lock or materialized
 tree. Ordinary `.` and within-checkout `..` components are admitted.
 
-The clone is reused and fetched on subsequent builds, never re-cloned. A failure
+Subsequent dependency fetches reuse the clone rather than cloning it again. A failure
 to clone, resolve the ref, or find a single `*.pkg.kio` is a dependency error
 (exit code `30`).
 
@@ -410,7 +411,9 @@ lock file whose recorded `git` URL, `ref`, or optional `path` no longer matches
 the `<local>.dep.kio` is stale — a dependency error; use `kio dep update` to
 adopt the declaration, or restore it. The exact declared path is part of source
 identity: adding, removing, or changing it makes a pin stale, even if the same
-manifest or commit would result. Pathless declarations keep pathless locks.
+manifest or commit would result. Pathless declarations keep pathless locks;
+both omission and `path ()` select that same absence. Neither spelling
+records a discovered manifest path.
 The repository cache remains keyed by URL and each checkout by commit; multiple
 aliases selecting different packages share that checkout but have independent
 locks, contract digests, and materialized module trees.
@@ -477,14 +480,16 @@ when both statements name the same target. It is rejected before that
 dependency's materialized tree is written; selectors for distinct source
 modules remain valid.
 
-**Retyping a dependency's newtypes.** Nominal types are **identity-exact**:
+### Retyping a dependency's newtypes
+
+Nominal types are **identity-exact**:
 a `newtype` is identified by its `(module, name)`, so two re-rooted copies of
 the same `newtype` — the same type reached through two different dependency
 paths (a diamond) — are *distinct* types and cannot mix. A `retype` statement
 collapses one copy onto another, the `newtype` analogue of `rehost`:
 
 ```kio
-// app.dep.kio — `widget` re-exports a `Tag` it shares with `core`
+// widget.dep.kio — `widget` re-exports a `Tag` it shares with `core`
 dependency widget;
 
 source {
@@ -493,6 +498,8 @@ source {
 
 retype widget/store to core/store;
 ```
+
+#### Retype selection and shared identity
 
 `retype <local>/<mod> to <to>/<mod>;` names a re-rooted dependency module
 (`<local>/<mod>`, with the dependency's local name as its leading segment) and a
@@ -518,6 +525,8 @@ source — a chain `retype A to B; retype B to C;` — the remap reconciles to t
 chain's origin (`A`'s `newtype` rebinds to `C`'s, the module that still declares
 it), so chained remaps collapse a multi-hop diamond onto one shared type.
 
+#### Retyping labels
+
 Explicit `labels` entries also declare selectable nominal types. Retyping
 their generated names requires corresponding explicit label-generated types,
 not ordinary newtypes with coincidentally matching payloads and member names.
@@ -539,6 +548,8 @@ stay outside those groups. Other declarations and value bodies are not
 rewritten for this decomposition. The `_` rule itself is unchanged: a forward
 is not an explicit minting origin. Fresh materialized source derives identity
 from these declarations and imports, without a record of removed declarations.
+
+#### Disjoint selectors and visibility
 
 The statements form a **partial function from exact source newtypes**. A
 module-form statement first expands over the newtypes its source module
@@ -571,6 +582,8 @@ checked before writing or pruning the affected tree. Private member names and
 access are not checked by fetch; when a retained use becomes invalid, ordinary
 `kio check` or `kio build` diagnoses it.
 
+#### Counterpart shape
+
 Each remap is checked at materialization: the counterpart must declare a
 **same-named** `newtype` (`from`'s newtypes ⊆ `to`'s) with the **same
 type-parameter shape**: universal and existential binder counts both match,
@@ -592,6 +605,8 @@ parameter-shape mismatch, or an incongruent payload is a dependency error
 materialize-time diagnostic, not a downstream typecheck failure. A dependency
 file may carry any number of pairwise-disjoint `retype` statements; `kio fmt`
 sorts them after the `rehost` statements.
+
+### Dependency names and materialized source
 
 **Open-world collision rule.** A dependency only *adds* an importable
 `<local>/…` module root; it never changes the meaning of an existing module. The
@@ -683,6 +698,13 @@ build {
 `cache` is optional. A string path enables package caches under that
 directory; `()` disables caching. When absent, it defaults to `cache ();`.
 
+Configuration values admit ordinary repeated grouping parentheses:
+`cache (("out/.kio-cache/"))` has the same meaning as the ungrouped string,
+and `cache (())` disables caching. Grouping also applies to string values in
+target headers, dependency sources, and dependency locks. It does not admit
+calls, operators, or other expressions in configuration values. `kio fmt`
+removes redundant grouping while preserving comments.
+
 Entries inside `build`, `docs`, and each `target` block may be written in any
 order. Singular entries cannot be duplicated. Repeated `target` and `support`
 entries retain their relative order; [`style.md`](style.md) specifies canonical
@@ -692,6 +714,9 @@ placement of the different entry kinds.
 `md` is required when the docs block is present; `support` is repeatable;
 `md_out` and `html` are optional, naming the Markdown and HTML output
 directories and defaulting to `out/docs-md/` and `out/docs/` respectively.
+`md_out ()` and `html ()` select those same defaults. The formatter preserves
+omission and explicit settings, including strings equal to these defaults;
+it does not add or remove optional fields.
 
 Each target block names one backend and has one target name. A bare header
 such as `target js { ... }` uses `js` for both. A paired header separates them:
@@ -741,20 +766,25 @@ category.
 
 ### Per-target keys
 
-- **`namespace`** *(every backend)* — overrides the per-package
+- **`namespace`** *(every host backend)* — overrides the per-package
   namespace the emitted artifact's top-level names live under: the
   crate name (and the root the branded facade names derive from) on
   rust, the `package` clause on go, the `package` declaration on java,
   the module stem on python, the artifact stem (the `<ns>.js` /
   `<ns>.d.ts` file name, which also roots the branded facade names) on
   js and ts, the Swift module name (the `// kio-swift-module:` marker)
-  on swift, and the module name `<Ns>` on haskell. Defaults to a per-backend
-  derivation of the package name;
+  on swift, and the module name `<Ns>` on haskell. Omission and `namespace ()`
+  both select a per-backend derivation of the current package name at build time;
   each backend page's § Output layout gives the derivation and the
   accepted value grammar, and a value outside that grammar is a build
   error.
+  An explicit string is a pinned override and stays unchanged when the package
+  is renamed. The `kio-prime` target has no `namespace` field.
 - **`thread_safety`** *(rust backend)* — opts the emitted crate into a
-  thread-safe value representation. Accepted values are `"send"`,
-  `"sync"`, and `"send_sync"`.
+  thread-safe value representation. Accepted values are the bare named choices
+  `send`, `sync`, and `send_sync`; `()` retains the default local representation.
+  Omission has the same meaning as `thread_safety ()`. Quoted strings are
+  rejected for this field. Named choices are configuration forms, not references
+  to Kio declarations; grouping such as `thread_safety ((send_sync))` is transparent.
 
 Per-backend output contracts live in [`backends/`](backends/).

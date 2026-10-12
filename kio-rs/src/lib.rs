@@ -116,11 +116,11 @@ mod par;
 mod timing;
 
 pub mod ast;
-#[cfg(any(test, feature = "cli"))]
 pub(crate) mod build_target;
 #[cfg(all(feature = "surface", feature = "cli"))]
 pub(crate) mod builtin_docs;
 pub mod comptime;
+pub(crate) mod config_fields;
 // `package_collection` holds core type definitions and the workspace-walk
 // cluster used by the CLI drivers while keeping pure types available
 // with `cli` off.

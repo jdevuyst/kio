@@ -1,8 +1,6 @@
 package indices;
 
 build {
-  cache ();
-
   target go {
     out "out/go"
   }

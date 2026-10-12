@@ -5,7 +5,10 @@ type another spelling; a `newtype` declaration creates a distinct nominal
 boundary. Literal aliases name literal tokens rather than values. Visibility
 and ordinary-function purity are separate parts of a function's contract.
 
-The checked examples on this page use this small host surface:
+The examples assume host-provided `Int` and `String` types, with the `i32`
+and `str` literal roles respectively. Recursive sum construction also uses
+the imported `widen_sum!` elaborator; [Using libraries](using-libraries.md#the-elaborator-library)
+shows how to add its library and import `elab/spine_elaborators(widen_sum)`.
 
 <!--kio {harness=declarations placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -181,6 +184,19 @@ module. Omitting a necessary marker reports the recursive reference and offers
 an add-`rec` fix. Writing it on an acyclic newtype reports that the marker is
 unnecessary and offers to remove it.
 
+The list's recursive tail is stored as data, which satisfies the positivity
+rule. By contrast, a payload that is a function accepting the recursive type
+puts that occurrence on the input side of an arrow and is rejected:
+
+```kio {@declarations check_exit_code=16}
+rec newtype Bad : Bad -> . { constructor make; projector open }
+```
+
+For nested function types and parameterized wrappers, the rule follows the
+whole path to the recursive occurrence. See the
+[precise positivity rule](../../specs/language.md#type-declarations) for those
+cases.
+
 Mutually recursive types use one bare, capability-free group. Every member
 head is visible throughout the braces, while visibility remains on each
 member:
@@ -274,8 +290,10 @@ fn first_pattern[A](pack: Pack(A)) -> A {
 }
 ```
 
-Construction infers `Hidden` from the payload. The projector is CPS-shaped;
-the `let .(<Hidden> name) = ...` form opens it for the rest of the block. The
+Construction infers `Hidden` from the payload. The projector returns a
+function that accepts a callback; that callback receives the payload with its
+hidden type available only inside the callback. The
+`let .(<Hidden> name) = ...` form opens it for the rest of the block. The
 witness is fresh and cannot escape in the result type. Every declared
 existential must occur in the payload, and repeated occurrences must infer the
 same type.

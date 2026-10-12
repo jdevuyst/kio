@@ -1,8 +1,6 @@
 package role_alias_identity_ambiguous;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

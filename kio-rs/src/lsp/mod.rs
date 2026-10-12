@@ -1242,7 +1242,9 @@ fn doc_hover_with_syntax_context(
         RequestSyntaxModule::Contextual { module, source } => {
             SyntaxContextResult::Available(render(&module, &source))
         }
-        RequestSyntaxModule::NonModule { .. } => SyntaxContextResult::Available(None),
+        RequestSyntaxModule::NonModule { source } => SyntaxContextResult::Available(
+            crate::lsp::hover::config_field_hover(uri, position, &source),
+        ),
         RequestSyntaxModule::AuthenticatedLazy { .. }
         | RequestSyntaxModule::ContextInvalid
         | RequestSyntaxModule::Unavailable => SyntaxContextResult::Unavailable,

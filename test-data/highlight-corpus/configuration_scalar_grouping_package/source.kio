@@ -1,0 +1,2 @@
+package app;
+build { cache ((())); docs { md (("guide.md")); support ("support"); md_out ("out/md"); html (("out/html")) }; target (rust, (("r" "s"))) { out (("out/rust")); thread_safety ((())) }; target ts { out ("out/ts"); namespace (("App")) } }

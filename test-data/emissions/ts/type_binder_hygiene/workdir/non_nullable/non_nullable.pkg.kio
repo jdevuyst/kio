@@ -1,8 +1,6 @@
 package non_nullable;
 
 build {
-  cache ();
-
   target ts {
     out "out/ts/"
   }

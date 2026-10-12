@@ -27,7 +27,7 @@ __left__ : [a][b] a -> (a | b)
 
 Constructs the left branch of a sum value.
 
-The two type arguments fix the complete `A | B` result and the value must have type `A`. No branch search occurs. A missing or incompatible type argument is a type error.
+The two type arguments fix the complete `A | B` result and the value must have type `A`. In full Kio, ordinary call inference may supply omitted type arguments. No branch search occurs. Unsolved or incompatible type arguments are type errors.
 
 #### `__right__`
 
@@ -37,7 +37,7 @@ __right__ : [a][b] b -> (a | b)
 
 Constructs the right branch of a sum value.
 
-The two type arguments fix the complete `A | B` result and the value must have type `B`. No branch search occurs. A missing or incompatible type argument is a type error.
+The two type arguments fix the complete `A | B` result and the value must have type `B`. In full Kio, ordinary call inference may supply omitted type arguments. No branch search occurs. Unsolved or incompatible type arguments are type errors.
 
 #### `__either__`
 
@@ -420,7 +420,7 @@ __type_arity__ : (__Comptime__ & __Type__) -> __Type_arity__
 
 Reads the arity of a reflected type.
 
-Returns the kind arity of the reflected type's outer binder/head: zero for an ordinary kind-`*` type and the recorded arrow count for a higher-kinded binder. The argument must already be resolved.
+Unfolds aliases and returns the kind arity of the outermost `forall` binder. Returns zero when there is no outer `forall` binder. This is not a general query for a type head's kind. The argument must already be resolved.
 
 #### `__type_var_arity__`
 

@@ -879,17 +879,17 @@ fn probe_enabled() -> bool {
 /// step is best-effort, not a build-failing event.
 pub fn resolve_from_cache_field(
     workspace_root: &Path,
-    cache: &crate::ast::BuildBlockCache,
+    cache: &Option<crate::ast::BuildBlockCache>,
 ) -> EnrichedCache {
     match cache {
-        crate::ast::BuildBlockCache::Path { path, .. } => {
+        Some(crate::ast::BuildBlockCache::Path { path, .. }) => {
             let abs = absolutize(workspace_root, path);
             match EnrichedCache::open(abs) {
                 Ok(c) => c,
                 Err(_) => EnrichedCache::disabled(),
             }
         }
-        crate::ast::BuildBlockCache::Disabled { .. } => EnrichedCache::disabled(),
+        None | Some(crate::ast::BuildBlockCache::Disabled { .. }) => EnrichedCache::disabled(),
     }
 }
 
@@ -1842,7 +1842,7 @@ mod tests {
             span: crate::span::Span::new(0, 0),
             leading_trivia: Vec::new(),
         };
-        let c = resolve_from_cache_field(&dir, &cache_field);
+        let c = resolve_from_cache_field(&dir, &Some(cache_field));
         assert!(!c.is_enabled());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1855,7 +1855,7 @@ mod tests {
             span: crate::span::Span::new(0, 0),
             leading_trivia: Vec::new(),
         };
-        let c = resolve_from_cache_field(&dir, &cache_field);
+        let c = resolve_from_cache_field(&dir, &Some(cache_field));
         assert!(c.is_enabled());
         // Caching is rooted under <dir>/out/.kio-cache/enriched-ir/.
         let cache_dir = dir.join("out").join(".kio-cache").join("enriched-ir");

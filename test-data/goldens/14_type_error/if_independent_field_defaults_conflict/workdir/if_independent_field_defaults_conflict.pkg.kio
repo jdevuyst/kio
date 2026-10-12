@@ -1,8 +1,6 @@
 package if_independent_field_defaults_conflict;
 
 build {
-  cache ();
-
   target js {
     out "out/js"
   };

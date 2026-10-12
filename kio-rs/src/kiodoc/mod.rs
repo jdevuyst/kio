@@ -341,8 +341,8 @@ fn resolve_docs_config_at(
     };
     let md_dir = resolve(&docs.md);
     let support_dirs: Vec<PathBuf> = docs.support.iter().map(|p| resolve(p)).collect();
-    let html_out = resolve(docs.html.as_deref().unwrap_or("out/docs"));
-    let md_out = resolve(docs.md_out.as_deref().unwrap_or("out/docs-md"));
+    let html_out = resolve(crate::config_fields::HTML.resolve_string(docs.html.as_ref()));
+    let md_out = resolve(crate::config_fields::MD_OUT.resolve_string(docs.md_out.as_ref()));
 
     if !md_dir.is_dir() {
         eprintln!(

@@ -30,6 +30,15 @@ For closed vocabularies, compare exact sets in both directions, not a few `conta
 
 For identifier eligibility, verify exact lexical/source-order scope, namespace and visibility: explicit selective/qualified imports and intrinsics, ordinary and recursive function/type heads, generated label heads, type parameters, lambda/function parameters, sequential/destructuring/row-let locals, and shadowing. Qualified candidates must follow the selected module or nominal identity; same-leaf names, unrelated loaded modules, and private foreign declarations supply no candidates or enrichment. An unavailable selected edge yields only the authenticated subset with truthful incompleteness, not a broad fallback pool.
 
+For keyed blocks, compare accepted field values, optionality and omission defaults
+with the shared field definitions and their completion consumers. Check missing
+key suggestions, nonrepeatable-key retraction, bare finite choices versus text,
+Unit absence, grouped values, and conditional source alternatives. Field details
+describe configuration forms; they must not claim an ordinary resolved Kio type.
+Reference fields use the appropriate existing-name namespaces, while fields
+introducing names suppress unrelated bindings. Verify returned edits in context,
+not just that their labels occur in metadata.
+
 Check grammar-owned suppression at comments, literals, and binder introductions, with ordinary-name inverses and incomplete-source controls. Check type/value/label/operator routing, type/value naming namespaces versus command-discovery matching, and the exact whole-token replacement range, including multicharacter operators and UTF-8/UTF-16 client coordinates. Separate the eligible set from prefix matching/ranking and bounded visible menus; no eligible match may disappear through an undisclosed response cap.
 
 Trace each candidate's binding identity and source version into optional detail/documentation. A label-only rescan, wrong namespace, stale typed shard, or another same-spelled provider cannot enrich it. Inspect addition/deletion/rename, shadow/unshadow, import retargeting, provider-only edits, incomplete intermediate versions, disk fallback after close, reopen, and REPL reload. Scheduling analysis is not proof that its result describes the requested version.

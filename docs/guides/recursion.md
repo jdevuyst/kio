@@ -39,6 +39,14 @@ host fn loop_reentry[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
 __INSERT_CODE_HERE__
 -->
 
+The examples use host types `I32`, `Bool`, and `String` with roles `i32`,
+`bool`, and `str`. The host comparisons `eq_i32` and `leq_i32` take two `I32`
+values and return `Bool`; `sub_i32` and `mul_i32` take two `I32` values and
+return `I32`. Import the conditional elaborator with
+`import elab/control(if);` after following the
+[elaborator-library setup](using-libraries.md#the-elaborator-library) under
+the dependency name `elab`.
+
 For a single function, put `rec(loop)` directly before the `fn` keyword:
 
 ```kio {@module}
@@ -66,6 +74,9 @@ The compiler checks the proposed edit before offering it, including any required
 choice: `rec(path)` names an ordinary value at `path`, not a compiler-selected
 function. If an edit would leave another error at the call or expose a different
 error, follow the diagnostic's help and correct the source directly.
+
+Parentheses may group the selected capability path repeatedly: `rec((loop))`
+selects the same function as `rec(loop)`. Formatting removes the extra grouping.
 
 The marker precedes the recursive function's name, as in `recur countdown(n)`.
 Both words remain available as ordinary names outside their grammatical
@@ -221,7 +232,12 @@ and [Structural sums and pattern matching](sums.md#recursive-sums).
 
 ## Lowering
 
-`rec(loop)` is surface language only. The frontend lowers the group into private state-packet `newtype`s, one visibility-preserving wrapper function per member, and a call to the ordinary loop function. `recur(cont)` groups carry continuations in the state packet, so non-tail recursion still lowers to iteration rather than a Kio' fixpoint. If a generated continuation packet refers to itself, the emitted Kio' declaration uses `rec newtype`; if several packets refer to one another, they use one minimal bare `rec { ... }` type group. Those markers describe only the generated type-name scope—no recursive-function group or recursive-call marker survives.
+The compiler turns a `rec(loop)` group into ordinary functions that send
+state transitions to the supplied loop. A `recur(cont)` transition also carries
+the remaining computation, so the loop can finish the called step and resume
+its caller. This turns both tail and non-tail recursion into iteration through
+the capability. The group's functions keep their written visibility, and no
+recursive-function group or recursive-call marker remains in Kio'.
 
 The call annotations make the lowering choice explicit in the source: a plain `recur` call is the monomorphic tail-call shape, `poly` changes its type instantiation, `cont` retains the rest of the current step, and `escape` captures an ordinary re-entry function for use across a closure boundary.
 

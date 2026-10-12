@@ -1,8 +1,6 @@
 package role_alias_identity_deduplicated;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

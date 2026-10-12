@@ -34,6 +34,15 @@ For each file under `docs/` (`tutorials/`, `guides/`, `hosts/`):
 `docs/` snippets use Kiodoc (GitHub-flavored Markdown + fence attributes for runnable / validatable Kio snippets). The default expectation is that docs snippets are checked by `kio doc check`; `{ignore}` is a last resort, not a convenience flag.
 
 - Find every Kio code block in `docs/**/*.md`.
+- Apply `ai/topics/docs.md`'s "Examples make their relevant dependencies
+  visible" rule across tutorials, guides, case studies, and host guides,
+  including their host-language examples. Compare rendered reader content
+  with hidden Kiodoc harnesses. Flag semantic helpers or setup essential to
+  understanding an example or reproducing its advertised task that appear
+  only in hidden validation code, without a visible explanation or direct
+  prerequisite link. Distinguish incidental validation scaffolding and clearly
+  labeled illustrative fragments; do not require every snippet to be a
+  standalone program. Passing snippets do not establish reader completeness.
 - Run `kio doc check` from `docs/` when the working tree has a `kio` binary; report any failures. If no binary is available, inspect snippets manually against the current spec and implementation.
 - Count every `kio {ignore}` fence. For each ignored snippet, decide whether a Kiodoc feature could validate it: hidden/visible harnesses, document-scoped `{file}` fences plus a file-backed harness for multi-file context, `variant=KIND`, `check_exit_code=N`, or `placeholder={"...":"valid_replacement()"}` for display-only placeholders.
 - Flag any ignored snippet that appears compilable, or that uses placeholder text such as `...` without a `placeholder=JSON_OBJECT` substitution when a valid replacement is apparent.
@@ -64,7 +73,22 @@ Start at `docs/README.md` and follow the order and branches it recommends as a n
 - Flag central concepts that the documentation never teaches, concepts relied on before they are introduced, circular prerequisite chains, and unexplained terminology that prevents a reader from following the path.
 - Flag any core explanation that requires the reader to consult specifications, source code, tests, blog history, agent guidance, or an external source. Links to those sources may add precision, but cannot replace the learner-facing explanation.
 - Check that `docs/README.md` routes readers through a sensible primary learning path and clearly separates reference, task-oriented, case-study, and host-integration branches.
+- Apply `ai/topics/docs.md`'s "Write for human readers" rule: assess each
+  page's purpose, explanations, terminology, and usable examples or workflow
+  for its advertised audience. Flag notes to self, AI-to-AI handoffs,
+  unexplained shorthand, and maintenance or implementation bookkeeping that
+  leaves the reader without the explanation needed to understand or use the
+  material. Preserve technical precision appropriate to advanced guides and
+  case studies; terminology alone is not a finding when prerequisites or
+  nearby explanations establish its meaning.
 - Audit tutorials as a sequence. Audit each guide as a standalone topic: it must either explain its prerequisites or link to where the learning path teaches them. Treat case studies and host guides according to the specialized audiences in `ai/topics/docs.md`.
+- For each tutorial, identify its learner goal, prerequisites, and progression.
+  Check consecutive `## Chapter N — Title` headings starting at 1, and whether
+  each chapter advances that learning rather than inserting reference,
+  migration, troubleshooting, or compiler-regression material. Judge category
+  fit before proposing cosmetic heading changes.
+- When relocating or consolidating material, preserve its useful lesson and
+  audit the revised incoming links and reading order.
 - Follow advertised reusable-library adoption routes. Apply the dependency-example and fetch/setup contract in `ai/topics/docs.md` § Keeping a case study paired with its POC; use [`audit-poc-docs-sync`](../audit-poc-docs-sync/SKILL.md) § Usable library adoption for the package-specific checks. A library description without a usable route to importing it is a standalone-workflow gap.
 
 ## 6. Internal link structure

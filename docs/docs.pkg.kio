@@ -1,8 +1,6 @@
 package docs;
 
 build {
-  cache ();
-
   docs {
     md ".";
     support "../test-data/poc/elab/workdir";

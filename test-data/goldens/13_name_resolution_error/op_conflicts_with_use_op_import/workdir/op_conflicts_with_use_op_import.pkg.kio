@@ -1,8 +1,6 @@
 package op_conflicts_with_use_op_import;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

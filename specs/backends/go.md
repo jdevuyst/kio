@@ -756,9 +756,31 @@ pub fn main() { print("hello\n"(Str)) }
 
 `kio build go` writes `out/go/{pkg.go, host.go, shapes.go, ffi.go,
 kio_runtime.go}`, each declaring `package greet`; the handle is `Package`,
-the host contract `Host`, the factory `New`. A Go host —
-with its `go.mod` mapping the import path onto the emitted directory
-(`require greet v0.0.0` + `replace greet => ./out/go`):
+the host contract `Host`, the factory `New`.
+
+Place the host's `go.mod` beside `greet.pkg.kio`:
+
+```go.mod
+module greet-host
+
+go 1.26
+
+require greet v0.0.0
+
+replace greet => ./out/go
+```
+
+The replacement directory also needs its own module manifest. Create that
+manifest **after** building, because each Kio build replaces the output
+directory:
+
+```sh
+kio build go
+go -C out/go mod init greet
+go -C out/go mod edit -go=1.26
+```
+
+Save the following host as `main.go` beside the host's `go.mod`:
 
 ```go
 package main
@@ -777,4 +799,4 @@ func main() {
 }
 ```
 
-This prints `hello` and exits 0.
+Run `go run .` from that directory. This prints `hello` and exits 0.

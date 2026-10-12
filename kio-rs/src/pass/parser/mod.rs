@@ -534,6 +534,9 @@ mod diagnostic_repair_tests;
 mod operator_suffix_tests;
 
 #[cfg(test)]
+mod reference_field_tests;
+
+#[cfg(test)]
 mod tests {
     #[test]
     fn boolean_literals_require_adjacent_marker() {
@@ -1422,7 +1425,16 @@ mod tests {
             ),
         ] {
             let probe = probe_tooling(source, Some(kind), Some(source.len() as u32), None);
-            assert!(probe.parse_error.is_some(), "{source}");
+            if source.ends_with("impl(fi") {
+                assert!(probe.parse_error.is_none(), "{source}");
+                assert!(probe.facts.recovered_group, "{source}");
+                assert!(
+                    parse(source).is_err(),
+                    "normal parsing must reject {source}"
+                );
+            } else {
+                assert!(probe.parse_error.is_some(), "{source}");
+            }
             let mut keywords = probe
                 .facts
                 .cursor
@@ -1433,7 +1445,11 @@ mod tests {
             if !expected.is_empty() {
                 assert_eq!(
                     probe.facts.cursor.as_ref().unwrap().slot,
-                    core::CursorSlot::Grammar
+                    if source.contains("impl(") {
+                        core::CursorSlot::Value
+                    } else {
+                        core::CursorSlot::Grammar
+                    }
                 );
             }
         }
@@ -5407,6 +5423,10 @@ fn ok() -> . { () }
     fn elaborator_fills_schedule_uses_exact_marker_and_lexical_path() {
         for (source, expected_schedule) in [
             (
+                "module x; elab demo : . -> . { impl(fills)(x); };",
+                crate::ast::ElaboratorSchedule::Fills,
+            ),
+            (
                 "module x; elab demo : . -> . { impl fills; };",
                 crate::ast::ElaboratorSchedule::Late,
             ),
@@ -5432,8 +5452,7 @@ fn ok() -> . { () }
 
         for source in [
             "module x; elab demo : . -> . { impl .(value: .) -> . { value }; };",
-            "module x; elab demo : . -> . { impl(fills)(x); };",
-            "module x; elab demo : . -> . { impl(fills) .(value: .) -> . { value }; };",
+            "module x; elab demo : . -> . { impl(fills) (); };",
         ] {
             for error in [
                 parse(source).expect_err("eager parsing must reject implementation expressions"),
@@ -10072,12 +10091,10 @@ fn ok() -> . { () }
 
     #[test]
     fn build_block_minimal() {
-        // The `cache` declaration alone is a legal (target-less) build
-        // block — every block must declare it, but `target` blocks are
-        // optional. (The `kio build` driver rejects target-less
-        // packages at command time, but the grammar admits them.)
+        // A target-less build block is legal syntax; the build command
+        // requires a selected target separately.
         let bf = pb("cache ();");
-        assert!(matches!(bf.cache, BuildBlockCache::Disabled { .. }));
+        assert!(matches!(bf.cache, Some(BuildBlockCache::Disabled { .. })));
         assert!(bf.targets.is_empty());
     }
 
@@ -10085,7 +10102,7 @@ fn ok() -> . { () }
     fn build_block_cache_path() {
         let bf = pb("cache \"out/.kio-cache/\";\ntarget js { out \"out/js/\"; }");
         match bf.cache {
-            BuildBlockCache::Path { ref path, .. } => assert_eq!(path, "out/.kio-cache/"),
+            Some(BuildBlockCache::Path { ref path, .. }) => assert_eq!(path, "out/.kio-cache/"),
             other => panic!("expected Path cache, got {other:?}"),
         }
     }
@@ -10099,7 +10116,7 @@ fn ok() -> . { () }
         assert_eq!(t.backend, "js");
         assert_eq!(t.entries.len(), 1);
         assert_eq!(t.entries[0].key, "out");
-        assert_eq!(t.entries[0].value, "out/js/");
+        assert_eq!(t.entries[0].string_value(), "out/js/");
     }
 
     #[test]
@@ -10166,7 +10183,7 @@ fn ok() -> . { () }
         assert_eq!(t.entries.len(), 2);
         assert_eq!(t.entries[0].key, "out");
         assert_eq!(t.entries[1].key, "module_format");
-        assert_eq!(t.entries[1].value, "esm");
+        assert_eq!(t.entries[1].string_value(), "esm");
     }
 
     #[test]
@@ -10180,19 +10197,19 @@ fn ok() -> . { () }
     #[test]
     fn build_block_value_must_be_string_literal() {
         let msg = pb_err("cache ();\ntarget js { out 42; }");
-        assert!(msg.contains("string-literal value"), "got: {msg}");
+        assert_eq!(msg, "expected String for `out`");
     }
 
     #[test]
     fn build_block_value_kind_error_precedes_missing_semicolon() {
         let msg = pb_err("cache ();\ntarget js { out () namespace \"app\" }");
-        assert!(msg.contains("string-literal value"), "got: {msg}");
+        assert_eq!(msg, "expected String for `out`");
     }
 
     #[test]
     fn build_block_boolean_value_reports_field_kind() {
         let msg = pb_err("cache ();\ntarget js { out true; }");
-        assert!(msg.contains("string-literal value"), "got: {msg}");
+        assert_eq!(msg, "expected String for `out`");
     }
 
     #[test]
@@ -10212,18 +10229,16 @@ fn ok() -> . { () }
 
     #[test]
     fn build_block_missing_cache_defaults_to_disabled() {
-        // `cache` is the build block's optional field: an omitted cache
-        // declaration defaults to caching disabled (`kio fmt` then
-        // inserts `cache ();`).
+        // Omission is retained in the source model and disables caching.
         let bf = pb("target js { out \"out/js/\"; }");
-        assert!(matches!(bf.cache, BuildBlockCache::Disabled { .. }));
+        assert!(bf.cache.is_none());
         assert_eq!(bf.targets.len(), 1);
     }
 
     #[test]
     fn build_block_cache_unit_disables_caching() {
         let bf = pb("cache ();");
-        assert!(matches!(bf.cache, BuildBlockCache::Disabled { .. }));
+        assert!(matches!(bf.cache, Some(BuildBlockCache::Disabled { .. })));
     }
 
     #[test]
@@ -10235,13 +10250,77 @@ fn ok() -> . { () }
     #[test]
     fn build_block_docs_value_kind_error_precedes_missing_semicolon() {
         let msg = pb_err("cache ();\ndocs { md () }");
-        assert!(msg.contains("string-literal path"), "got: {msg}");
+        assert_eq!(msg, "expected String for `md`");
     }
 
     #[test]
     fn build_block_cache_value_unclosed_unit_errors() {
         let msg = pb_err("cache (;\ntarget js { out \"out/js/\"; }");
-        assert!(msg.contains("`)`"), "got: {msg}");
+        assert!(msg.contains("matching closer"), "got: {msg}");
+    }
+
+    #[test]
+    fn configuration_grouping_preserves_field_values_and_restrictions() {
+        let build = pb(r#"cache (((()))); docs { md (("do" "cs")); html ("html") };
+            target rust { out (("rust")); thread_safety ((())) }"#);
+        assert!(matches!(
+            build.cache,
+            Some(BuildBlockCache::Disabled { .. })
+        ));
+        assert_eq!(build.docs.unwrap().md, "docs");
+        assert_eq!(build.targets[0].entries[0].string_value(), "rust");
+        assert!(matches!(
+            build.targets[0].entries[1].value,
+            crate::ast::BlockFieldValue::Unit
+        ));
+        for source in [
+            "cache (\"a\", \"b\")",
+            "cache (\"a\")()",
+            "cache (,)",
+            "cache (f())",
+            "cache (\"a\" + \"b\")",
+            "cache (\"a\"; target js {}",
+            "cache (\"a\" }",
+            "cache ( }",
+            "target js { out ((())) }",
+            "target js { thread_safety () }",
+            "target kio-prime { namespace () }",
+            "docs { md (()) }",
+        ] {
+            assert!(parse_build_block_body(source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
+    fn configuration_git_path_unit_preserves_absence_and_duplicate_checks() {
+        let source = parse_dependency_file(
+            r#"dependency dep; source { path ((())); ref ("main"); git (("url")) }"#,
+            Some("dep"),
+        )
+        .unwrap();
+        let crate::ast::SourceOrigin::Git(source) = source.source.origin else {
+            panic!()
+        };
+        assert!(source.manifest_path.is_none());
+        let lock = parse_lock_file(
+            r#"lock dep; resolved { path ((())); git ("url"); ref ("main"); commit ("sha"); sig ("digest") }"#,
+            Some("dep"),
+        ).unwrap();
+        assert!(lock.manifest_path.is_none());
+        for fields in [
+            "path (); path ()",
+            "path (); path \"pkg.pkg.kio\"",
+            "path \"pkg.pkg.kio\"; path ()",
+        ] {
+            let dependency =
+                format!("dependency dep; source {{ git \"url\"; ref \"main\"; {fields} }}");
+            assert!(parse_dependency_file(&dependency, Some("dep")).is_err());
+            let lock = format!(
+                "lock dep; resolved {{ git \"url\"; ref \"main\"; commit \"sha\"; sig \"digest\"; {fields} }}"
+            );
+            assert!(parse_lock_file(&lock, Some("dep")).is_err());
+        }
+        assert!(parse_dependency_file("dependency dep; source { path () }", Some("dep")).is_err());
     }
 
     // ---- Build block inside the package file --------------------------
@@ -10253,7 +10332,10 @@ fn ok() -> . { () }
              bridge {\n  main;\n}\n";
         let ef = parse_package_file(src, Some("app")).expect("parse");
         let build = ef.build.expect("build block present");
-        assert!(matches!(build.cache, BuildBlockCache::Disabled { .. }));
+        assert!(matches!(
+            build.cache,
+            Some(BuildBlockCache::Disabled { .. })
+        ));
         assert_eq!(build.targets.len(), 1);
         assert_eq!(build.targets[0].name(), "js");
         assert_eq!(ef.bridge.expect("bridge block").globs.len(), 1);
@@ -11929,14 +12011,14 @@ v(1) {
     }
 
     #[test]
-    fn dep_git_manifest_path_requires_unique_string_and_complete_origin() {
+    fn dep_git_manifest_path_requires_unique_selector_and_complete_origin() {
         for (fields, fragment) in [
             (
                 "git \"repo\"; ref \"main\"; path \"a.pkg.kio\"; path \"b.pkg.kio\";",
                 "duplicate `path`",
             ),
             (
-                "git \"repo\"; ref \"main\"; path ();",
+                "git \"repo\"; ref \"main\"; path 1;",
                 "requires a string-literal",
             ),
             ("git \"repo\"; path \"a.pkg.kio\";", "requires a `ref"),
@@ -12076,13 +12158,13 @@ v(1) {
     }
 
     #[test]
-    fn lock_manifest_path_rejects_duplicate_non_string_and_rooted_syntax() {
+    fn lock_manifest_path_rejects_duplicate_non_selector_and_rooted_syntax() {
         for (fields, fragment) in [
             (
                 "path \"a.pkg.kio\"; path \"b.pkg.kio\";",
                 "duplicate `path`",
             ),
-            ("path ();", "requires a string-literal"),
+            ("path 1;", "requires a string-literal"),
             ("path \"C:/a.pkg.kio\";", "must be relative"),
             ("path \"a\\\\b.pkg.kio\";", "must use `/`"),
         ] {

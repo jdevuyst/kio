@@ -448,16 +448,18 @@ regenerates for the chosen local root and adaptations, because materialization
 pretty-prints each re-rooted module. Different aliases, rehosts, or retypes can
 produce different bytes for consumers of the same shared dependency.
 
-These two properties — committed and canonical — are checked. A
-`dep-materialization` gate asserts that every package declaring a dependency
-commits the re-rooted tree (with no `.gitignore` hiding it), and a
-`dep-canonical` check regenerates the tree with `kio dep fetch --force` (the
-`--force` bypasses the up-to-date skip, so the regeneration is a genuine fresh
-fetch rather than a no-op) and asserts the committed bytes match what fetch
-produces, with no stale, missing, or extra module. The two together keep
-"committed" and "what fetch would write" the same thing. Test cases re-fetch
-before they run, so the run always exercises the latest materialization rather
-than a stale committed copy.
+After fetching, review and commit the materialized module tree alongside its
+dependency declaration and Git lockfile. Do not hide the tree with
+`.gitignore` or edit its generated modules by hand: express adaptations in the
+dependency declaration and fetch again. Ordinary builds and checks use the
+source already on disk; they do not fetch or verify it against the remote.
+
+To verify reproducibility explicitly, run `kio dep fetch --force` from the
+consumer package root and inspect the resulting diff. `--force` bypasses the
+up-to-date skip and regenerates the tree. With unchanged inputs, the committed
+tree should have no changed, missing, or extra modules. This is also a useful
+check to add to your own CI when you want dependency materialization verified
+there; it does not move a Git dependency's locked commit.
 
 ### Reconciling a dependency diamond with `retype`
 
@@ -603,9 +605,10 @@ shared `Tag` flows end to end.
 
 A dependency module can declare `host` items — types and functions its *own*
 host was expected to supply. Re-rooted under the consumer, those move to
-`<local>/<mod>`, where the consumer's host does not provide them — so they would
-surface as extra, unsatisfiable host requirements on the consumer's boundary. A
-`rehost` clause rebinds them onto a consumer module that supplies replacements:
+`<local>/<mod>`. The consumer can supply those requirements directly, or reuse
+capabilities it already exposes through another module. A `rehost` clause
+chooses the latter: it rebinds the dependency's host items onto a consumer
+module that supplies replacements, sharing the consumer's type identities:
 
 ```kio {variant=dependency}
 // foobar.dep.kio
@@ -752,6 +755,14 @@ bridge {
 For the full key list, see
 [`specs/package.md` § Build target files](../../specs/package.md#build-target-files).
 
+`kio fmt` preserves written settings without adding omitted optional fields
+or blocks. `()` means that no value is selected.
+
+Values can use grouping parentheses: `out (("out/js/"))` is the same path
+as `out "out/js/"`. The formatter removes the extra parentheses. These
+settings still require their documented value kinds; grouping does not make
+them expressions that call functions or compute a path.
+
 To build the same package more than once for one backend, give each target a
 name. The pair is `(backend, "name")`:
 
@@ -759,8 +770,6 @@ name. The pair is `(backend, "name")`:
 package app;
 
 build {
-  cache ();
-
   target (js, "web") {
     out "out/web/";
     namespace "web_app"

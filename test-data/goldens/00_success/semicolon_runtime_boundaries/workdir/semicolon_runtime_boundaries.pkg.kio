@@ -1,8 +1,6 @@
 package semicolon_runtime_boundaries;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

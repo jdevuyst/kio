@@ -1,8 +1,6 @@
 package multiple_bool_roles_without_condition;
 
 build {
-  cache ();
-
   target js {
     out "out/js/"
   };

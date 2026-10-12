@@ -12,11 +12,12 @@ module must depend on the library and import their names without the bang:
 ```kio {ignore}
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
+import elab/tuple_elaborators(concat);
 ```
 
-The examples use the repository's documentation support modules without the
-`elab/` dependency prefix. [Using libraries](using-libraries.md) explains why
-dependency modules acquire that re-rooted prefix.
+Here `elab` is the configured dependency name. Follow
+[Using libraries](using-libraries.md#the-elaborator-library) to adopt it under
+that name or adjust the imports to the name you choose.
 
 Assumed setup: a module whose host supplies `Int`, `String`, `Bool`, `int_to_string`, `string_concat`, and `print`. Snippets are module bodies.
 
@@ -155,7 +156,12 @@ fn describe(v: String | Int) -> String {
 }
 ```
 
-Every clause body must produce the same result type. Clauses must cover the scrutinee. Leaving out the `Int` branch is an elaborator error:
+Every clause body must produce the same result type. The surrounding expected
+type or a clause whose result is already known can supply that type; see
+[inferring a match result](typechecking.md#inferring-a-match-result) for a
+worked example and where to add an annotation.
+
+Clauses must cover the scrutinee. Leaving out the `Int` branch is an elaborator error:
 
 ```kio {@module check_exit_code=15}
 fn incomplete(v: String | Int) -> String {
@@ -249,14 +255,24 @@ fn label(p: Box(Int) | Box(String)) -> String {
 The clause `.[A](b: Box(A)) { ... }` matches *both* `Box(Int)` and
 `Box(String)`, binding `A` per branch. Here the surrounding function's `String`
 result determines the clause's return type before its body is checked, so the
-clause does not need to repeat that annotation. The clause body must produce a
-result type that doesn't mention its local `A`, because one `match!` expression
-has one result type.
+clause does not need to repeat that annotation. This omitted result is
+determined before the body is checked and cannot mention the clause's local
+`A`. A result that uses that binder needs a concrete return annotation, such
+as `-> A`, or a complete expected function type. `match!` specializes an
+annotated result for each compatible source branch; those specialized results
+must still agree on one common result type. See
+[marked elaborator inputs](elaborators.md#marked-fills-implementations) for
+the annotation and staging rules.
 
 ## Composable clause sets
 
 The clause set is an ordinary product value. A caller can build a common set,
 extend it locally, and pass the composed product to `match!` as one block entry:
+
+The imported `concat!` helper combines the nested products into the flat
+product of three clause functions shown in its target type. Without that
+step, `(text_clauses(), extra_clause)` would retain the first pair as a nested
+product.
 
 ```kio {@module}
 fn text_clauses() -> (String -> String) & (Int -> String) {

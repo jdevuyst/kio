@@ -23,7 +23,11 @@ __INSERT_CODE_HERE__
 ## Define and use a collection literal
 
 Here `nil()` constructs an empty list and `cons(head, tail)` prepends an
-element. The imported `widen_sum!` elaborator constructs their sum payloads:
+element. The host supplies `I32` with `role(i32)` for the integer literals.
+The `widen_sum!` elaborator constructs the sum payloads; follow the
+[elaborator-library setup](using-libraries.md#the-elaborator-library) and
+import it with `import elab/spine_elaborators(widen_sum);` when the dependency
+is named `elab`:
 
 ```kio {@collections}
 rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
@@ -99,7 +103,9 @@ direction independently of the delimiter spelling.
 
 An element can itself be a pair. This fixed `=>` operator builds entries;
 `foldl1` starts with the first entry and adds the remaining keys and values.
-The optional unary `finalize` wraps the completed totals:
+The optional unary `finalize` wraps the completed totals. The example uses
+the same host `I32` and a host addition operation
+`add: (I32 & I32) -> I32`:
 
 ```kio {@collections}
 newtype Entry_totals : I32 & I32 { pub constructor pack; pub projector unpack }
@@ -134,7 +140,10 @@ is accepted, and `kio fmt` places the primary clause first.
 ## Export and import
 
 Every step, base, seed, and finalizer is a function name or ordinary imported
-or newtype-member path, such as `helpers.cons`. Put calls, lambdas, or argument
+or newtype-member path, such as `helpers.cons`. Parentheses may group any of
+these references repeatedly. `finalize ()` means no finalizer, like omitting
+the field; formatting preserves either spelling.
+Put calls, lambdas, or argument
 adaptation in a named helper. Declare local targets before the `varop`, and the
 `varop` before functions using its syntax.
 
@@ -146,8 +155,13 @@ implicit and do not appear in the pair. Importing a helper alone does not
 import the syntax. Write each import once; two variadic operators in the same
 scope cannot share an opener.
 
-For a practical example, the [dictionary library](../../test-data/poc/dict/)
+For a practical example, the [dictionary library](using-libraries.md#collection-and-value-libraries)
 exports both a pair-building `=>` and a `[% %]` variadic operator:
+
+Inside the dictionary package, imports name its local `dict` module, as
+below. In a consumer package, add it as a dependency named `dict` using the
+linked setup, then use
+`import dict/dict(Compare, Dict, op _ => _, varop [% %]);` instead.
 
 ```kio {}
 module dictionary_example;

@@ -42,7 +42,8 @@ The filename stem, `dependency` header, and local import root are all `elab`.
 The dependency package's original name does not have to match it. The Git
 `path` selects that exact package file inside the checkout; a standalone
 `source { path "..." }` instead resolves from the consumer's package root.
-Git sources without an explicit `path` use package discovery.
+Git sources without an explicit `path` use package discovery. `path ()` means
+the same thing; neither spelling pins a discovered path.
 
 From the consumer's package root, where `elab.dep.kio` lives, materialize the
 source:
@@ -162,6 +163,37 @@ chosen local name; import those modules as shown. A package's public host
 requirements still need the consumer's ordinary bridge/rehosting setup, as
 explained in [Package files and bridges](pkg.md).
 
+For the full public interfaces, supply the following host capabilities in
+their re-rooted modules, or [rehost](pkg.md#rehosting-a-dependencys-host-items-with-rehost)
+them to compatible consumer declarations. Include the chosen providers in
+your consumer's `bridge` block.
+
+| Module | Host types and operations |
+| --- | --- |
+| `dict/dict` | `I32` (`role(i32)`); `add: (I32 & I32) -> I32`; `loop` |
+| `queue/queue` | `I32` (`role(i32)`); `add_i32: (I32 & I32) -> I32`; `loop` |
+| `option/option` | `Bool` (`role(bool)`), `String` (`role(str)`); `string_concat: (String & String) -> String`; `loop` |
+| `vec/vec` | `I32` (`role(i32)`), `Bool` (`role(bool)`); `add`, `sub`, `mul`, `div`, `mod: (I32 & I32) -> I32`; `eq_i32`, `leq_i32`, `lt_i32: (I32 & I32) -> Bool`; `loop` |
+| `result/result` | No host declarations of its own |
+
+Each `loop` has the same scheme, `[S][R] ((S -> (S | R)) & S) -> R`:
+call the step with the current state, continue with its left result, and return
+its right result. The [list consumer below](#a-list-consumer-with-host-bindings)
+shows this traversal capability and all of `list`'s bindings in a complete
+package.
+
+All six packages also include an elaborator dependency with four host types
+under `<local>/elab/testapi`: `String` (`str`), `I32` and `Int` (both `i32`),
+and `Bool` (`bool`). `option`, `queue`, and `vec` include another copy under
+`<local>/list/elab/testapi`. When bridging the full interfaces, include these
+modules and supply their type bindings as well. These are distinct
+module-qualified types unless you explicitly unify them through rehosting;
+using the same host integer representation alone does not unify Kio types.
+The [elaborator library case study](../poc/elab.md#adopting-the-elaborators) explains the four-type
+setup. Constructors in `option/core`, `queue/core`, and `list/core` use no
+host operations; importing those alone does not require their traversal
+modules' host functions.
+
 ### A list consumer with host bindings
 
 The `list/core` constructors above use no host operations. Traversal functions
@@ -267,8 +299,11 @@ import elab/spine_elaborators(fit, widen_sum);
 ```
 
 [Defining elaborators](elaborators.md) explains the reflection ABI behind
-these modules. [The elaborator library case study](../poc/elab.md) walks their
-implementations and laws.
+these modules. [Building and testing elaborators](elaborator-authoring.md)
+develops complete small implementations and their callers. [The elaborator
+library case study](../poc/elab.md) covers the library's operations, how its
+modules fit together, and its laws; the linked source provides implementation
+details.
 
 ## The optics library
 

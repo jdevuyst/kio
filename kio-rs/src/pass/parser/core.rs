@@ -733,6 +733,7 @@ pub(crate) enum CursorSlot {
     ModulePath,
     ImportProvider,
     Argument,
+    Capture,
     RecursiveCallee,
     RecursiveAnnotation,
     BuildField,
@@ -782,6 +783,8 @@ pub(crate) struct CursorContext {
     pub(crate) path: Option<CursorPath>,
     pub(crate) import: Option<ImportCursor>,
     pub(crate) target: Option<TargetCursor>,
+    pub(crate) config_owner: Option<crate::config_fields::ConfigFieldOwner>,
+    pub(crate) config_value: Option<crate::config_fields::ConfigField>,
     /// Other parsed target headers in the same build block, excluding this atom.
     pub(crate) target_ids: Vec<String>,
     pub(crate) operator_prefix: Option<Vec<String>>,
@@ -2458,8 +2461,7 @@ impl<'a> Parser<'a> {
     /// Parse the value in a `source` / `build` block's directive-style
     /// field. The two blocks share one value grammar:
     ///
-    /// - `()` — the unit literal (the no-value default fmt inserts for a
-    ///   missing optional field);
+    /// - `()` — the explicit no-value form for an optional field;
     /// - a string literal;
     /// - a number literal (integer or float);
     /// - a boolean literal;
@@ -2471,20 +2473,26 @@ impl<'a> Parser<'a> {
     fn parse_block_field_value(
         &mut self,
         leading_trivia: &mut Vec<Trivia>,
+        field: Option<crate::config_fields::ConfigField>,
     ) -> Result<(crate::ast::BlockFieldValue, Span), Error> {
         let mut comments = self.cursor.clone();
-        let parsed = match self.peek() {
+        let start = self.peek_span().start;
+        let mut groups = 0;
+        self.config_value_cursor(field);
+        while matches!(self.peek(), Some(TokenKind::LParen)) {
+            self.expect_kind(TokenKind::LParen, "`(` before field value")?;
+            groups += 1;
+            self.config_value_cursor(field);
+        }
+        let (value, mut span) = match self.peek() {
             Some(TokenKind::StrLit(_)) => {
                 let (value, span) = self.read_str_literal();
                 Ok((BlockFieldValue::Str(value), span))
             }
-            Some(TokenKind::LParen) => {
-                let open = self.advance();
-                if !matches!(self.peek(), Some(TokenKind::RParen)) {
-                    return Err(self.err_here("expected `)` to close the `()` unit literal"));
-                }
+            Some(TokenKind::RParen) if groups > 0 => {
                 let close = self.expect_kind(TokenKind::RParen, "`)`")?;
-                Ok((BlockFieldValue::Unit, Span::new(open.span.start, close.end)))
+                groups -= 1;
+                Ok((BlockFieldValue::Unit, Span::new(start, close.end)))
             }
             Some(TokenKind::IntLit { .. } | TokenKind::FloatLit { .. }) => {
                 let tok = self.advance();
@@ -2509,21 +2517,29 @@ impl<'a> Parser<'a> {
                  a number, a boolean, or a bare word",
             )),
         }?;
-        Self::collect_line_comments(&mut comments, parsed.1.end, leading_trivia);
-        Ok(parsed)
+        for _ in 0..groups {
+            span.end = self
+                .expect_kind(TokenKind::RParen, "`)` after the grouped field value")?
+                .end;
+        }
+        span.start = start;
+        Self::collect_line_comments(&mut comments, span.end, leading_trivia);
+        Ok((value, span))
     }
 
     fn parse_block_field_head(
         &mut self,
         mut leading_trivia: Vec<Trivia>,
         validate_key_name: bool,
+        fields: &[crate::config_fields::ConfigField],
     ) -> Result<ParsedBlockFieldHead, Error> {
         append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         let (key, key_span) = self.expect_ident()?;
         if validate_key_name {
             Self::validate_value_name(&key, key_span)?;
         }
-        let (value, value_span) = self.parse_block_field_value(&mut leading_trivia)?;
+        let field = fields.iter().copied().find(|field| field.name == key);
+        let (value, value_span) = self.parse_block_field_value(&mut leading_trivia, field)?;
         Ok(ParsedBlockFieldHead {
             key,
             key_span,
@@ -3438,7 +3454,7 @@ impl<'a> Parser<'a> {
             append_relocated_trivia(&mut field_trivia, self.skip_semicolon_separators());
             let before = self.cursor.consumed();
             let parsed: Result<Option<u32>, Error> = (|| {
-                let Some(field) = self.next_named_entry(
+                let entry = self.next_named_entry(
                     CursorSlot::BuildField,
                     &[
                         (
@@ -3454,8 +3470,16 @@ impl<'a> Parser<'a> {
                         ("target", true, ""),
                     ],
                     "expected `cache`, `docs`, or `target` in `build` block",
-                )?
-                else {
+                );
+                if let Some(context) = self
+                    .tooling
+                    .as_mut()
+                    .and_then(|tooling| tooling.facts.cursor.as_mut())
+                    && context.slot == CursorSlot::BuildField
+                {
+                    context.config_owner = Some(crate::config_fields::ConfigFieldOwner::Build);
+                }
+                let Some(field) = entry? else {
                     pending_separator_trivia = field_trivia;
                     return Ok(None);
                 };
@@ -3526,10 +3550,6 @@ impl<'a> Parser<'a> {
         if let Some(error) = first_error {
             return Err(error);
         }
-        let cache = cache.unwrap_or(BuildBlockCache::Disabled {
-            span: Span::new(start, start),
-            leading_trivia: Vec::new(),
-        });
         Ok(BuildBlock {
             leading_trivia: Vec::new(),
             trailing_trivia: {
@@ -3561,9 +3581,9 @@ impl<'a> Parser<'a> {
         let mut md_leading_trivia: Vec<Trivia> = Vec::new();
         let mut support: Vec<String> = Vec::new();
         let mut support_leading_trivia: Vec<Vec<Trivia>> = Vec::new();
-        let mut md_out: Option<String> = None;
+        let mut md_out: Option<BlockFieldValue> = None;
         let mut md_out_leading_trivia: Vec<Trivia> = Vec::new();
-        let mut html: Option<String> = None;
+        let mut html: Option<BlockFieldValue> = None;
         let mut html_leading_trivia: Vec<Trivia> = Vec::new();
         let mut pending_separator_trivia: Vec<Trivia> = Vec::new();
         while !matches!(self.peek(), Some(TokenKind::RBrace)) {
@@ -3581,12 +3601,12 @@ impl<'a> Parser<'a> {
                 value_span,
                 leading_trivia,
                 ..
-            } = self.parse_block_field_head(key_trivia, false)?;
-            let value = self.string_block_field_value(
-                value,
-                value_span,
-                "`docs` block keys require a string-literal path",
-            )?;
+            } =
+                self.parse_block_field_head(key_trivia, false, crate::config_fields::DOCS_FIELDS)?;
+            let descriptor = crate::config_fields::ConfigFieldOwner::Docs
+                .field(&key)
+                .unwrap_or(crate::config_fields::ConfigField::string("unknown"));
+            self.validate_config_field_kind(&value, value_span, descriptor)?;
             pending_separator_trivia =
                 self.block_separator(true, false, &["md", "support", "md_out", "html"])?;
             match key.as_str() {
@@ -3594,11 +3614,19 @@ impl<'a> Parser<'a> {
                     if md.is_some() {
                         return Err(self.err(key_span, "duplicate `md` key in `docs` block"));
                     }
-                    md = Some(value);
+                    md = Some(self.string_block_field_value(
+                        value,
+                        value_span,
+                        "`md` requires a string-literal path",
+                    )?);
                     md_leading_trivia = leading_trivia;
                 }
                 "support" => {
-                    support.push(value);
+                    support.push(self.string_block_field_value(
+                        value,
+                        value_span,
+                        "`support` requires a string-literal path",
+                    )?);
                     support_leading_trivia.push(leading_trivia);
                 }
                 "md_out" => {
@@ -3651,19 +3679,23 @@ impl<'a> Parser<'a> {
     }
 
     fn docs_field_keywords(&mut self, md: bool, md_out: bool, html: bool) {
-        self.field_keywords(&[
-            ("md", !md),
-            ("support", true),
-            ("md_out", !md_out),
-            ("html", !html),
-        ]);
+        self.config_field_keywords(
+            crate::config_fields::ConfigFieldOwner::Docs,
+            &[
+                ("md", !md),
+                ("support", true),
+                ("md_out", !md_out),
+                ("html", !html),
+            ],
+        );
     }
 
     /// Parse a cache path or explicit disabled-cache unit value.
     fn cache_decl(&mut self, mut leading_trivia: Vec<Trivia>) -> Result<BuildBlockCache, Error> {
         append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
         let kw_span = self.expect_ident_named("cache")?;
-        let (value, value_span) = self.parse_block_field_value(&mut leading_trivia)?;
+        let (value, value_span) =
+            self.parse_block_field_value(&mut leading_trivia, Some(crate::config_fields::CACHE))?;
         let mut cache = match value {
             BlockFieldValue::Str(path) => BuildBlockCache::Path {
                 path,
@@ -3720,12 +3752,16 @@ impl<'a> Parser<'a> {
             append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
             self.cursor_choices(CursorSlot::Grammar, &[]);
             self.expect_kind(TokenKind::Comma, "`,` after the target backend")?;
-            append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
             self.cursor_choices(CursorSlot::Grammar, &[]);
-            if !matches!(self.peek(), Some(TokenKind::StrLit(_))) {
+            if !matches!(self.peek(), Some(TokenKind::StrLit(_) | TokenKind::LParen)) {
                 return Err(self.err_here("expected a string-literal target name"));
             }
-            let (name, name_span) = self.read_str_literal_parts(Some(&mut leading_trivia));
+            let (value, name_span) = self.parse_block_field_value(&mut leading_trivia, None)?;
+            let name = self.string_block_field_value(
+                value,
+                name_span,
+                "expected a string-literal target name",
+            )?;
             append_relocated_trivia(&mut leading_trivia, self.peek_leading_trivia());
             self.cursor_choices(CursorSlot::Grammar, &[]);
             self.expect_kind(TokenKind::RParen, "`)` after the target name")?;
@@ -3752,7 +3788,7 @@ impl<'a> Parser<'a> {
                 pending_separator_trivia = entry_trivia;
                 break;
             }
-            entries.push(self.target_entry(entry_trivia)?);
+            entries.push(self.target_entry(&backend, entry_trivia)?);
             pending_separator_trivia = self.block_separator(true, false, &[])?;
             self.target_field_cursor(&backend, &entries);
         }
@@ -3842,21 +3878,51 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn target_entry(&mut self, leading_trivia: Vec<Trivia>) -> Result<TargetEntry, Error> {
-        // `key "value";`
-        let field = self.parse_block_field_head(leading_trivia, true)?;
-        let value = self.string_block_field_value(
-            field.value,
-            field.value_span,
-            "expected a string-literal value (the build block is not typed)",
-        )?;
+    fn target_entry(
+        &mut self,
+        backend: &str,
+        leading_trivia: Vec<Trivia>,
+    ) -> Result<TargetEntry, Error> {
+        let fields = crate::build_target::BuildTarget::from_id(backend)
+            .map_or(&[][..], |target| target.fields());
+        let field = self.parse_block_field_head(leading_trivia, true, fields)?;
+        let descriptor = crate::build_target::BuildTarget::from_id(backend)
+            .and_then(|target| target.field(&field.key))
+            .unwrap_or(crate::config_fields::ConfigField::string("unknown"));
+        self.validate_config_field_kind(&field.value, field.value_span, descriptor)?;
         let semi_end = self.syntax_end;
         Ok(TargetEntry {
             key: field.key,
-            value,
+            value: field.value,
             span: Span::new(field.key_span.start, semi_end),
             leading_trivia: field.leading_trivia,
         })
+    }
+
+    fn validate_config_field_kind(
+        &self,
+        value: &BlockFieldValue,
+        span: Span,
+        field: crate::config_fields::ConfigField,
+    ) -> Result<(), Error> {
+        let accepted = match value {
+            BlockFieldValue::Unit => field.accepts_unit(),
+            BlockFieldValue::Str(_) => field.accepts_string(),
+            BlockFieldValue::Word(_) => !field.named_choices.is_empty(),
+            _ => false,
+        };
+        if accepted {
+            Ok(())
+        } else {
+            Err(self.err(
+                span,
+                format!(
+                    "expected {} for `{}`",
+                    field.value_description(),
+                    field.name
+                ),
+            ))
+        }
     }
 
     // =====================================================================
@@ -4507,6 +4573,7 @@ impl<'a> Parser<'a> {
         let mut url: Option<(String, Span)> = None;
         let mut git_ref: Option<(String, Span)> = None;
         let mut manifest_path: Option<(String, Span)> = None;
+        let mut path_present = false;
         let mut commit: Option<(String, Span)> = None;
         let mut sig: Option<(String, Span)> = None;
         let mut field_leading_trivia = std::collections::BTreeMap::new();
@@ -4516,7 +4583,7 @@ impl<'a> Parser<'a> {
             self.resolved_field_keywords(
                 url.is_some(),
                 git_ref.is_some(),
-                manifest_path.is_some(),
+                path_present,
                 commit.is_some(),
                 sig.is_some(),
             );
@@ -4530,10 +4597,27 @@ impl<'a> Parser<'a> {
                 value_span,
                 leading_trivia,
                 ..
-            } = self.parse_block_field_head(std::mem::take(&mut pending), true)?;
+            } = self.parse_block_field_head(
+                std::mem::take(&mut pending),
+                true,
+                crate::config_fields::RESOLVED_FIELDS,
+            )?;
             field_leading_trivia.insert(key.clone(), leading_trivia);
             pending =
                 self.block_separator(true, false, &["git", "ref", "path", "commit", "sig"])?;
+            if key == "path" {
+                if path_present {
+                    return Err(self.err(key_span, "duplicate `path` in `resolved` block"));
+                }
+                path_present = true;
+                if crate::config_fields::ConfigFieldOwner::Resolved
+                    .field(&key)
+                    .is_some_and(|field| field.accepts_unit())
+                    && matches!(value, BlockFieldValue::Unit)
+                {
+                    continue;
+                }
+            }
             let slot = match key.as_str() {
                 "git" => &mut url,
                 "ref" => &mut git_ref,
@@ -4562,7 +4646,7 @@ impl<'a> Parser<'a> {
         self.resolved_field_keywords(
             url.is_some(),
             git_ref.is_some(),
-            manifest_path.is_some(),
+            path_present,
             commit.is_some(),
             sig.is_some(),
         );
@@ -4621,13 +4705,16 @@ impl<'a> Parser<'a> {
         commit: bool,
         sig: bool,
     ) {
-        self.field_keywords(&[
-            ("git", !git),
-            ("ref", !git_ref),
-            ("path", !path),
-            ("commit", !commit),
-            ("sig", !sig),
-        ]);
+        self.config_field_keywords(
+            crate::config_fields::ConfigFieldOwner::Resolved,
+            &[
+                ("git", !git),
+                ("ref", !git_ref),
+                ("path", !path),
+                ("commit", !commit),
+                ("sig", !sig),
+            ],
+        );
     }
 
     /// Parse a `source { … }` block. Two admitted forms:
@@ -4644,7 +4731,7 @@ impl<'a> Parser<'a> {
         let leading_trivia = self.peek_leading_trivia();
         let kw_span = self.expect_ident_named("source")?;
         self.expect_kind(TokenKind::LBrace, "`{`")?;
-        let mut path: Option<(String, Span, Vec<Trivia>)> = None;
+        let mut path: Option<(Option<String>, Span, Vec<Trivia>)> = None;
         let mut git: Option<(String, Span, Vec<Trivia>)> = None;
         let mut git_ref: Option<(String, Span, Vec<Trivia>)> = None;
         let mut pending_separator_trivia: Vec<Trivia> = Vec::new();
@@ -4663,7 +4750,8 @@ impl<'a> Parser<'a> {
                 value_span,
                 leading_trivia,
                 ..
-            } = self.parse_block_field_head(key_trivia, true)?;
+            } =
+                self.parse_block_field_head(key_trivia, true, crate::config_fields::SOURCE_FIELDS)?;
             pending_separator_trivia =
                 self.block_separator(true, false, &["path", "git", "ref"])?;
             match key.as_str() {
@@ -4671,11 +4759,19 @@ impl<'a> Parser<'a> {
                     if path.is_some() {
                         return Err(self.err(key_span, "duplicate `path` in `source` block"));
                     }
-                    let path_val = self.string_block_field_value(
-                        value,
-                        value_span,
-                        "`source` block key `path` requires a string-literal value",
-                    )?;
+                    let path_val = if crate::config_fields::ConfigFieldOwner::Source
+                        .field(&key)
+                        .is_some_and(|field| field.accepts_unit())
+                        && matches!(value, BlockFieldValue::Unit)
+                    {
+                        None
+                    } else {
+                        Some(self.string_block_field_value(
+                            value,
+                            value_span,
+                            "`source` block key `path` requires a string-literal value or `()` for a git source",
+                        )?)
+                    };
                     path = Some((path_val, value_span, leading_trivia));
                 }
                 "git" => {
@@ -4728,10 +4824,17 @@ impl<'a> Parser<'a> {
             if git_ref.trim().is_empty() {
                 return Err(self.err(ref_span, "`source` `ref` must not be empty"));
             }
-            let manifest_path = path.map(|(path, span, leading_trivia)| GitManifestPath {
-                path,
-                span,
-                leading_trivia,
+            let mut absent_path_leading_trivia = None;
+            let manifest_path = path.and_then(|(path, span, leading_trivia)| match path {
+                Some(path) => Some(GitManifestPath {
+                    path,
+                    span,
+                    leading_trivia,
+                }),
+                None => {
+                    absent_path_leading_trivia = Some(leading_trivia);
+                    None
+                }
             });
             if let Some(selector) = &manifest_path {
                 self.validate_git_manifest_path(&selector.path, selector.span)?;
@@ -4746,6 +4849,7 @@ impl<'a> Parser<'a> {
                     ref_span,
                     ref_leading_trivia,
                     manifest_path,
+                    absent_path_leading_trivia,
                 }),
                 span: block_span,
                 leading_trivia,
@@ -4759,6 +4863,8 @@ impl<'a> Parser<'a> {
             ));
         }
         if let Some((path_val, path_span, path_leading_trivia)) = path {
+            let path_val = path_val.ok_or_else(|| self.err(path_span,
+                "a local `source` requires a string-literal `path`; `path ()` requires `git` and `ref`"))?;
             if path_val.starts_with('/') {
                 return Err(self.err(path_span, "`source` `path` must be relative"));
             }
@@ -4784,7 +4890,10 @@ impl<'a> Parser<'a> {
     }
 
     fn source_field_keywords(&mut self, path: bool, git: bool, git_ref: bool) {
-        self.field_keywords(&[("path", !path), ("git", !git), ("ref", !git_ref)]);
+        self.config_field_keywords(
+            crate::config_fields::ConfigFieldOwner::Source,
+            &[("path", !path), ("git", !git), ("ref", !git_ref)],
+        );
     }
 
     fn validate_git_manifest_path(&self, path: &str, span: Span) -> Result<(), Error> {
@@ -6590,6 +6699,10 @@ impl<'a> Parser<'a> {
         matches!(self.peek_at(0), Some(TokenKind::LParen))
             && self.peek_ident_named_at(1, "fills")
             && matches!(self.peek_at(2), Some(TokenKind::RParen))
+            && matches!(
+                self.peek_at(3),
+                Some(TokenKind::Ident(_) | TokenKind::LParen)
+            )
     }
 
     fn parse_elaborator_implementation(
@@ -6604,7 +6717,11 @@ impl<'a> Parser<'a> {
     > {
         if matches!(self.peek(), Some(TokenKind::LParen)) {
             self.cursor_choices_at(
-                CursorSlot::Grammar,
+                if self.has_fills_marker_prefix() {
+                    CursorSlot::Grammar
+                } else {
+                    CursorSlot::Value
+                },
                 std::iter::once("fills"),
                 1,
                 Some(self.peek_span().end),
@@ -6632,11 +6749,13 @@ impl<'a> Parser<'a> {
         self.expect_ident_named("captures")?;
         let mut captures = Vec::new();
         if matches!(self.peek(), Some(TokenKind::LParen)) {
-            self.advance();
+            self.expect_kind(TokenKind::LParen, "`(` before captures")?;
+            self.cursor_choices(CursorSlot::Capture, &[]);
             while !matches!(self.peek(), Some(TokenKind::RParen)) {
                 captures.push(self.parse_elaborator_capture_path()?);
                 if matches!(self.peek(), Some(TokenKind::Comma)) {
                     self.advance();
+                    self.cursor_choices(CursorSlot::Capture, &[]);
                     if matches!(self.peek(), Some(TokenKind::RParen)) {
                         break;
                     }
@@ -6657,12 +6776,13 @@ impl<'a> Parser<'a> {
     fn parse_elaborator_capture_path(
         &mut self,
     ) -> Result<crate::ast::UserElaboratorCapture, Error> {
-        let (segments, span_end) = self.value_path_segments()?;
+        let start = self.peek_span().start;
+        let (segments, _) = self.grouped_reference(|parser| {
+            parser.cursor_choices(CursorSlot::Capture, &[]);
+            parser.value_path_segments()
+        })?;
+        let span_end = self.syntax_end;
         Self::validate_elaborator_capture_path(&segments)?;
-        let start = segments
-            .first()
-            .map(|segment| segment.span.start)
-            .unwrap_or(span_end);
         Ok(crate::ast::UserElaboratorCapture {
             segments,
             span: Span::new(start, span_end),
@@ -6675,7 +6795,7 @@ impl<'a> Parser<'a> {
         let mut leading = self.peek_leading_trivia();
         self.expect_kind(TokenKind::LParen, "`(` after `rec`")?;
         let mut path_tokens = self.cursor.clone();
-        let (path, _) = self.value_path_segments()?;
+        let (path, _) = self.grouped_reference(Self::value_path_segments)?;
         Self::validate_reference_value_path_leaf(&path)?;
         while let Some(token) = path_tokens.peek_token() {
             if token.span.start >= self.peek_span().start {
@@ -7753,7 +7873,9 @@ impl<'a> Parser<'a> {
     fn variadic_operator(&mut self, modifiers: ItemModifiers) -> Result<VariadicOperator, Error> {
         let start = self.peek_span().start;
         let (open, close) = self.parse_variadic_head()?;
-        let (mode, initializer, step, finalize) = self.parse_variadic_op_body()?;
+        let mut finalize_keyword_span = None;
+        let (mode, initializer, step, finalize) =
+            self.parse_variadic_op_body(&mut finalize_keyword_span)?;
         let end = self.syntax_end;
         let span = Span::new(start, end);
         let spec = crate::ast::VariadicSpec {
@@ -7771,6 +7893,7 @@ impl<'a> Parser<'a> {
             open,
             spec: Box::new(spec),
             body_trivia: Vec::new(),
+            finalize_keyword_span,
             meta: Meta::new(span),
             doc: None,
         })
@@ -7830,6 +7953,7 @@ impl<'a> Parser<'a> {
 
     fn parse_variadic_op_body(
         &mut self,
+        finalize_keyword_span: &mut Option<Span>,
     ) -> Result<
         (
             crate::ast::VariadicMode,
@@ -7843,6 +7967,7 @@ impl<'a> Parser<'a> {
         self.leading_block_separator(false)?;
         let mut primary = None;
         let mut finalize = None;
+        let mut finalize_seen = false;
         let duplicate_primary = "a variadic operator body admits only one primary fold clause";
         while let Some(field) = self.next_named_entry(
             CursorSlot::Grammar,
@@ -7853,15 +7978,27 @@ impl<'a> Parser<'a> {
                 ("foldr1", primary.is_none(), duplicate_primary),
                 (
                     "finalize",
-                    finalize.is_none(),
+                    !finalize_seen,
                     "duplicate `finalize` clause in variadic operator body",
                 ),
             ],
             "expected `foldl`, `foldr`, `foldl1`, `foldr1`, or `finalize`",
         )? {
-            self.expect_ident_named(field)?;
+            let field_span = self.expect_ident_named(field)?;
             if field == "finalize" {
-                finalize = Some(self.parse_variadic_callable()?);
+                *finalize_keyword_span = Some(field_span);
+                finalize = self.grouped_reference(|parser| {
+                    if matches!(parser.peek(), Some(TokenKind::LParen))
+                        && matches!(parser.peek_at(1), Some(TokenKind::RParen))
+                    {
+                        parser.expect_kind(TokenKind::LParen, "`(` in the no-finalizer value")?;
+                        parser.expect_kind(TokenKind::RParen, "`)` in the no-finalizer value")?;
+                        Ok(None)
+                    } else {
+                        parser.parse_variadic_callable().map(Some)
+                    }
+                })?;
+                finalize_seen = true;
             } else {
                 let mode = match field {
                     "foldl" => crate::ast::VariadicMode::FoldLeft,
@@ -10545,6 +10682,8 @@ impl<'a> Parser<'a> {
             path: None,
             import: None,
             target: None,
+            config_owner: None,
+            config_value: None,
             target_ids: Vec::new(),
             operator_prefix: None,
             call: None,
@@ -10625,6 +10764,42 @@ impl<'a> Parser<'a> {
             && fields.iter().any(|(field, _)| field == name)
         {
             self.record_keyword(*span, KeywordRole::Declaration);
+        }
+    }
+
+    fn config_field_keywords(
+        &mut self,
+        owner: crate::config_fields::ConfigFieldOwner,
+        fields: &[(&'static str, bool)],
+    ) {
+        let had_cursor = self
+            .tooling
+            .as_ref()
+            .is_some_and(|tooling| tooling.facts.cursor.is_some());
+        self.field_keywords(fields);
+        if !had_cursor
+            && let Some(context) = self
+                .tooling
+                .as_mut()
+                .and_then(|tooling| tooling.facts.cursor.as_mut())
+        {
+            context.config_owner = Some(owner);
+        }
+    }
+
+    fn config_value_cursor(&mut self, field: Option<crate::config_fields::ConfigField>) {
+        let had_cursor = self
+            .tooling
+            .as_ref()
+            .is_some_and(|tooling| tooling.facts.cursor.is_some());
+        self.cursor_choices(CursorSlot::Grammar, &[]);
+        if !had_cursor
+            && let Some(context) = self
+                .tooling
+                .as_mut()
+                .and_then(|tooling| tooling.facts.cursor.as_mut())
+        {
+            context.config_value = field;
         }
     }
 
@@ -10730,6 +10905,8 @@ impl<'a> Parser<'a> {
                 path: None,
                 import: None,
                 target: None,
+                config_owner: None,
+                config_value: None,
                 target_ids: Vec::new(),
                 operator_prefix: None,
                 call: None,
@@ -11420,7 +11597,14 @@ impl<'a> Parser<'a> {
                     Self::collect_comments_into(self.peek_leading_trivia(), &mut splice_comments);
                     append_relocated_trivia(&mut e.meta_mut().trailing_trivia, splice_comments);
                     self.advance(); // consume `.>` / `.>>`
+                    let mut callee_tokens = self.cursor.clone();
+                    let grouped_callee = matches!(self.peek(), Some(TokenKind::LParen));
                     let (segments, callee_span_end) = self.ufcs_callee_path()?;
+                    Self::collect_line_comments(
+                        &mut callee_tokens,
+                        callee_span_end,
+                        &mut e.meta_mut().trailing_trivia,
+                    );
                     let callee_span = Span::new(arrow_end, callee_span_end);
                     // Elaborator bang-call splice: `r.>iso!(T)`,
                     // `r.>>match!(arms)`, etc. The trailing `!`
@@ -11434,6 +11618,10 @@ impl<'a> Parser<'a> {
                     // absorb a trailing op-char into the `!` run,
                     // and `expect_bang` peels it back.
                     if self.at_sym_prefix("!") {
+                        if grouped_callee {
+                            return Err(self
+                                .err_here("the `!` suffix requires an ungrouped elaborator name"));
+                        }
                         e = self.elaborator_ufcs_call(e, segments, callee_span, start, flavor)?;
                         continue;
                     }
@@ -11790,10 +11978,13 @@ impl<'a> Parser<'a> {
         // operand boundary where a non-prefix operator may begin. A direct FQN
         // is therefore rejected even when `/` is imported in the surrounding
         // expression scope.
-        if let Some(error) = self.direct_value_fqn_error() {
-            return Err(error);
-        }
-        let (segments, end) = self.value_path_segments()?;
+        let (segments, _) = self.grouped_reference(|parser| {
+            if let Some(error) = parser.direct_value_fqn_error() {
+                return Err(error);
+            }
+            parser.value_path_segments()
+        })?;
+        let end = self.syntax_end;
         Self::validate_reference_value_path_leaf(&segments)?;
         if let Some(callee) = segments.last() {
             self.record_source_name(callee.span, SourceNameRole::FunctionReference);
@@ -12956,6 +13147,24 @@ impl<'a> Parser<'a> {
         Ok((segments, span_end))
     }
 
+    fn grouped_reference<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut groups = 0;
+        while matches!(self.peek(), Some(TokenKind::LParen))
+            && !matches!(self.peek_at(1), Some(TokenKind::RParen))
+        {
+            self.expect_kind(TokenKind::LParen, "`(` before grouped reference")?;
+            groups += 1;
+        }
+        let reference = parse(self)?;
+        for _ in 0..groups {
+            self.expect_kind(TokenKind::RParen, "`)` after grouped reference")?;
+        }
+        Ok(reference)
+    }
+
     /// Parse the callable-target syntax shared by `op`, `varop`, and `elab`.
     /// A target is an ordinary lexical value path: a local or selectively
     /// imported name, or a dotted path through a qualified import/newtype.
@@ -12964,22 +13173,28 @@ impl<'a> Parser<'a> {
         expectation: &str,
         expression_help: &str,
     ) -> Result<(crate::ast::LexicalCallablePath, u32), Error> {
-        if let Some(span) = self.direct_value_fqn_ahead() {
-            return Err(self
-                .err(
-                    span,
-                    "slash-qualified item paths are not lexical callable targets",
-                )
-                .with_help(
-                    "import the item or its module, then use the local name or dotted module alias",
-                ));
-        }
-        if !matches!(self.peek(), Some(TokenKind::Ident(_))) {
-            return Err(self.err_here(expectation).with_help(expression_help));
-        }
-        let (segments, end) = self.value_path_segments()?;
+        let (segments, _) = self.grouped_reference(|parser| {
+            parser.cursor_choices(CursorSlot::Value, &[]);
+            if let Some(span) = parser.direct_value_fqn_ahead() {
+                return Err(parser
+                    .err(
+                        span,
+                        "slash-qualified item paths are not lexical callable targets",
+                    )
+                    .with_help(
+                        "import the item or its module, then use the local name or dotted module alias",
+                    ));
+            }
+            if !matches!(parser.peek(), Some(TokenKind::Ident(_))) {
+                return Err(parser.err_here(expectation).with_help(expression_help));
+            }
+            parser.value_path_segments()
+        })?;
         Self::validate_reference_value_path_leaf(&segments)?;
-        Ok((crate::ast::LexicalCallablePath::new(segments), end))
+        Ok((
+            crate::ast::LexicalCallablePath::new(segments),
+            self.syntax_end,
+        ))
     }
 
     /// Return the span of an exact `module/path.item` prefix at the current

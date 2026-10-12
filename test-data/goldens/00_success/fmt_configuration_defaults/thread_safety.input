@@ -1,0 +1,6 @@
+package pkg;
+build {
+  target (rust, "sending") { out "out/send/"; thread_safety ((send)) };
+  target (rust, "sharing") { out "out/sync/"; thread_safety (sync) };
+  target rust { out "out/both/"; thread_safety send_sync }
+}

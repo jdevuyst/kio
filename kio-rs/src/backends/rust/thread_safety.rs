@@ -49,15 +49,15 @@ pub enum ThreadSafety {
     /// identity.
     #[default]
     RcLocal,
-    /// The `thread_safety = "send"` opt-in. Uses the shared
+    /// The `thread_safety send` opt-in. Uses the shared
     /// `Arc<dyn … + Send + Sync>` representation; a host may move
     /// package values between threads.
     Send,
-    /// The `thread_safety = "sync"` opt-in. Uses the shared
+    /// The `thread_safety sync` opt-in. Uses the shared
     /// `Arc<dyn … + Send + Sync>` representation; a host may share
     /// package values between threads.
     Sync,
-    /// The `thread_safety = "send_sync"` opt-in. Uses the shared
+    /// The `thread_safety send_sync` opt-in. Uses the shared
     /// `Arc<dyn … + Send + Sync>` representation; a host may both move
     /// and share package values between threads.
     SendSync,
@@ -70,18 +70,29 @@ impl ThreadSafety {
     /// absent-key case is the caller's responsibility (it never calls
     /// this) and maps to [`ThreadSafety::RcLocal`].
     ///
-    /// The accepted spellings are the build-block string values
-    /// (`"send"` / `"sync"` / `"send_sync"`); the build file's
-    /// directive-style syntax delivers them already unquoted.
+    /// The accepted spellings are bare named choices in the shared target
+    /// field catalog; they are not strings or resolved Kio value references.
     pub fn parse(value: &str) -> Result<Self, String> {
+        let field = crate::build_target::BuildTarget::Rust
+            .field("thread_safety")
+            .expect("the Rust target declares thread_safety");
+        if !field.accepts_word(value) {
+            return Err(format!(
+                "unknown value `{value}` for the `thread_safety` key on the `rust` backend \
+                 (recognized: {})",
+                field
+                    .named_choices
+                    .iter()
+                    .map(|choice| format!("`{choice}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
         match value {
             "send" => Ok(ThreadSafety::Send),
             "sync" => Ok(ThreadSafety::Sync),
             "send_sync" => Ok(ThreadSafety::SendSync),
-            other => Err(format!(
-                "unknown value `{other}` for the `thread_safety` key on the `rust` backend \
-                 (recognized: `send`, `sync`, `send_sync`)"
-            )),
+            _ => unreachable!("every thread_safety choice has a Rust representation"),
         }
     }
 

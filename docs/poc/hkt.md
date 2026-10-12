@@ -1,12 +1,9 @@
 # Case study: higher-kinded types (`hkt`)
 
-This page is a faithful read-through of the higher-kinded-types
-proof-of-concept package at
-[`test-data/poc/hkt/`](../../test-data/poc/hkt/). That package is
-executable and `kio test`-checked, with the harness building and running it
-across supported targets under CI-selected coverage. It is *ground truth*: every newtype, instance, and
-brand-generic operation shown here exists in the package exactly as written,
-and the program below is the one its `main` runs.
+This case study follows the
+[`hkt` package](../../test-data/poc/hkt/), one runnable program that combines
+higher-kinded types with explicit operation dictionaries. The definitions
+below are the program's own source.
 
 The `hkt` package is a **worked example**, not a drop-in library. Its job is
 to exercise Kio's whole higher-kinded-type vocabulary end to end against two
@@ -20,7 +17,8 @@ case study links to them rather than restating them:
 - [`higher-kinded-types.md`](../guides/higher-kinded-types.md)
   is the **language reference** for the HKT machinery — kind annotations,
   type-constructor application, the polymorphic-newtype-payload contract,
-  multi-arity type constructors, and the per-backend story. Read it for the
+  multi-arity type constructors, instance dictionaries, and explicit
+  conversions. Read it for the
   *why* behind any mechanism this case study merely *uses*.
 - [`docs/poc/elab.md`](elab.md) is the **elaborator-POC case study**, where
   `derive!`'s resolution algorithm — including the recursive and polymorphic
@@ -158,10 +156,10 @@ primitive over an opaque `F` — there is no way to call `Box.mk_box` when all
 you know is "some `F`." Generic code threads `Pure(F)` / `Extract(F)`
 instances and dispatches through their members instead.
 
-> Why a newtype payload may be a polymorphic function, and how each backend
-> stores and projects it, is
-> [`higher-kinded-types.md` § Polymorphic newtype payloads](../guides/higher-kinded-types.md)
-> and [`specs/backends/README.md` § Polymorphic newtype payloads](../../specs/backends/README.md).
+> Why a newtype payload may be a polymorphic function is explained in
+> [`higher-kinded-types.md` § Polymorphic newtype payloads](../guides/higher-kinded-types.md).
+> For host-side storage and projection, see the [host guides](../README.md#host-integrations)
+> and [`specs/backends/README.md` § Polymorphic newtype payloads](../../specs/backends/README.md#polymorphic-newtype-payloads).
 
 ## Concrete instances per brand
 
@@ -362,12 +360,12 @@ form elaborates to a plain call to `identity_functor()`. `derive!` is pure
 surface convenience — it writes the call you would otherwise write by hand
 and leaves no trace in Kio'.
 
-This single-target pick is the smallest case of `derive!`. Its motivating use
-— composing a monad-transformer stack from base instances plus per-transformer
-rules — is exercised in the elaborator-POC case study
-[`docs/poc/elab.md`](elab.md) (which drives `derive!`'s recursive and
-polymorphic resolution against `equiv` laws) and specified in
-[`specs/language.md` § The `derive!` elaborator](../../specs/language.md#the-derive-elaborator).
+This single-target pick is the smallest case of `derive!`. The
+[elaborator case study](elab.md#derive--instance-deriving) also shows recursive
+composition of wrapper rules and polymorphic rules whose type argument comes
+from the requested goal. Those examples explain how a derivation builds its
+dependencies before applying the outer rule. The precise resolution contract
+is in [`specs/language.md` § The `derive!` elaborator](../../specs/language.md#the-derive-elaborator).
 
 The derived instance is used exactly like a hand-written one — project it
 with `Functor.fmap`, apply the mapping function over a branded value, and
@@ -443,16 +441,19 @@ To reuse the HKT pieces in your own package:
    Declaring a dependency is documented once in
    [`pkg.md` § Dependency files](../guides/pkg.md#dependency-files).
 
-The brand-generic operations (`rebrand`, `pipeline`) and the `derive!` call
-work against any arity-1 newtype without source changes, so adding a third
-brand is a matter of writing its four instance builders and pointing the
-drivers at them.
+The generic operations work with another arity-1 type constructor when you
+can supply the dictionaries each operation requires. `rebrand` needs `Pure`
+and `Extract`; `pipeline` needs `Monad` and `Pure`. The two canonical wrappers
+here support all four dictionaries. An optional container, for example, cannot
+generically supply `Extract(F)`: an absent value contains no `A` to return.
+Choose the dictionaries your constructor can support, then use the matching
+generic operations.
 
 ## See also
 
 - [`higher-kinded-types.md`](../guides/higher-kinded-types.md)
   — the HKT language reference (kinds, application, polymorphic payloads,
-  multi-arity, per-backend codegen).
+  multi-arity, instance dictionaries, and explicit conversions).
 - [The elaborator POC](elab.md) — the case study where `derive!`'s resolution
   (including recursive and polymorphic derivations) is exercised per shape
   against `equiv` laws.

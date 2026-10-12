@@ -1478,14 +1478,16 @@ fn walk_variadic_operator(
     mark_variadic_clause_head(raw, &f.spec.step.path, overrides);
     mark_callable_path(&f.spec.initializer.path, overrides);
     mark_callable_path(&f.spec.step.path, overrides);
+    if let Some(span) = f.finalize_keyword_span {
+        overrides.insert(span.start, TokenKind::KeywordDeclaration);
+    }
     if let Some(finalize) = &f.spec.finalize {
-        mark_variadic_clause_head(raw, &finalize.path, overrides);
         mark_callable_path(&finalize.path, overrides);
     }
 }
 
-/// A clause's first callable immediately follows its grammar-owned head.
-/// Use that boundary, not a spelling search through callable segments.
+/// A clause's first callable follows its grammar-owned head and any grouping
+/// openers. Use that boundary, not a spelling search through callable segments.
 fn mark_variadic_clause_head(
     raw: &[LexToken],
     path: &ast::LexicalCallablePath,
@@ -1495,7 +1497,10 @@ fn mark_variadic_clause_head(
         && let Some(index) = raw
             .iter()
             .position(|token| token.span.start == first.span.start)
-        && let Some(keyword) = index.checked_sub(1).and_then(|previous| raw.get(previous))
+        && let Some(keyword) = raw[..index]
+            .iter()
+            .rev()
+            .find(|token| !matches!(token.kind, LexTokenKind::LParen))
     {
         overrides.insert(keyword.span.start, TokenKind::KeywordDeclaration);
     }
@@ -3407,6 +3412,75 @@ mod tests {
                 TokenKind::Identifier,
             ]
         );
+    }
+
+    #[test]
+    fn grouped_callable_fields_preserve_bracket_tokens() {
+        let source = "module app; op _ + _ { impl ((ops.add)) }\n\
+            varop [[ ]] { foldl ((ops.step)) ((ops.base)); finalize ((ops.finish)) }";
+        let module = crate::pass::parser::parse(source).unwrap();
+        let tokens = dump_with_module(source, &module).unwrap();
+        for (start, ch) in source
+            .char_indices()
+            .filter(|(_, ch)| matches!(ch, '(' | ')'))
+        {
+            let token = tokens
+                .iter()
+                .find(|token| token.span.start == start as u32)
+                .unwrap();
+            assert_eq!(token.kind, TokenKind::PunctuationBracket, "{ch} at {start}");
+        }
+        for keyword in ["impl", "foldl", "finalize"] {
+            let start = source.find(keyword).unwrap() as u32;
+            assert_eq!(
+                tokens
+                    .iter()
+                    .find(|token| token.span.start == start)
+                    .unwrap()
+                    .kind,
+                TokenKind::KeywordDeclaration
+            );
+        }
+        for name in ["add", "step", "base", "finish"] {
+            let start = source.find(name).unwrap() as u32;
+            assert_eq!(
+                tokens
+                    .iter()
+                    .find(|token| token.span.start == start)
+                    .unwrap()
+                    .kind,
+                TokenKind::EntityNameFunctionReference
+            );
+        }
+    }
+
+    #[test]
+    fn absent_finalizer_keyword_uses_its_written_field_span() {
+        for fields in [
+            "foldl ((finalize)) ((helpers.finalize)); finalize ((()))",
+            "finalize ((())); foldl ((helpers.finalize)) ((finalize))",
+        ] {
+            let source = format!("module app; varop [[ ]] {{ {fields} }}");
+            let module = crate::pass::parser::parse(&source).unwrap();
+            let tokens = dump_with_module(&source, &module).unwrap();
+            assert_eq!(tokens, dump(&source).unwrap());
+            for (start, _) in source.match_indices("finalize") {
+                let expected = if source[start..].starts_with("finalize ((()))") {
+                    TokenKind::KeywordDeclaration
+                } else {
+                    TokenKind::EntityNameFunctionReference
+                };
+                assert_eq!(
+                    tokens
+                        .iter()
+                        .find(|token| token.span.start == start as u32)
+                        .unwrap()
+                        .kind,
+                    expected,
+                    "{source} at {start}"
+                );
+            }
+        }
     }
 
     #[test]

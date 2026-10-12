@@ -270,14 +270,14 @@ fn expect(
 
 pub fn resolve_from_cache_field(
     workspace_root: &Path,
-    cache: &crate::ast::BuildBlockCache,
+    cache: &Option<crate::ast::BuildBlockCache>,
 ) -> EmitCache {
     match cache {
-        crate::ast::BuildBlockCache::Path { path, .. } => {
+        Some(crate::ast::BuildBlockCache::Path { path, .. }) => {
             let abs = absolutize(workspace_root, path);
             EmitCache::open(abs).unwrap_or_else(|_| EmitCache::disabled())
         }
-        crate::ast::BuildBlockCache::Disabled { .. } => EmitCache::disabled(),
+        None | Some(crate::ast::BuildBlockCache::Disabled { .. }) => EmitCache::disabled(),
     }
 }
 
