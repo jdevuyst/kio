@@ -83,6 +83,7 @@ export default {
   },
   enhanceApp({ app }) {
     app.component('KiodocPage', defineAsyncComponent(() => import('./components/KiodocPage.vue')))
+    app.component('HistoricalDocPage', defineAsyncComponent(() => import('./components/HistoricalDocPage.vue')))
     app.component('Landing', Landing)
   }
 }

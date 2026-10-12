@@ -5,10 +5,37 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { generateDocsPages } from './prepare-docs.mjs'
+import { docsReference } from './docs-reference.mjs'
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const helperUrl = new URL('./prepare-docs.mjs', import.meta.url).href
 const posixBoundary = { skip: process.platform === 'win32' && 'fake executable shebang boundary requires POSIX' }
+
+test('shared Reference sidebar retains current main links and order', () => {
+  assert.deepEqual(docsReference(), { text: 'Reference', items: [
+    { text: 'Language spec', link: 'https://github.com/jdevuyst/kio/blob/main/specs/language.md' },
+    { text: 'CLI spec', link: 'https://github.com/jdevuyst/kio/blob/main/specs/cli.md' },
+    { text: 'Package spec', link: 'https://github.com/jdevuyst/kio/blob/main/specs/package.md' },
+    { text: 'Backend contracts', link: 'https://github.com/jdevuyst/kio/tree/main/specs/backends' }
+  ] })
+})
+
+test('source metadata follows real docs and package inputs while synthetic catalogues have no source', t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'website-source-pages.'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const rendered = path.join(scratch, 'rendered')
+  fs.mkdirSync(rendered)
+  fs.writeFileSync(path.join(rendered, 'README.html'), '<main>\n<h1>Docs</h1>\n</main>')
+  fs.writeFileSync(path.join(rendered, 'package-boundary.html'), '<main>\n<h1>Package</h1>\n</main>')
+  const sources = new Map()
+  const sections = new Map([['guides', { route: 'guides', title: 'Guides', items: [] }]])
+  generateDocsPages(sections, { output: path.join(scratch, 'output'), rendered,
+    writePage: (page, title, body, source) => sources.set(page, source) })
+  assert.equal(sources.get('index.md'), 'docs/README.md')
+  assert.equal(sources.get('guides/index.md'), undefined)
+  assert.equal(sources.get('package-boundary.md'), 'docs/docs.pkg.kio')
+})
 
 function invoke(t, expression, status = 0, entry = false) {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'website-cargo-test.'))

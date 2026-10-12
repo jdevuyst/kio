@@ -12,7 +12,7 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 CORE_IMPLS="kio@js kio@ts kio@python kio@rust"
 EXTRA_IMPLS="kio@go kio@java kio@swift kio@haskell"
 
-CORE_MISE_TOOLS="node rust tree-sitter actionlint zizmor sccache shellcheck python pipx yamllint ripgrep aqua:wasm-bindgen/wasm-pack npm:typescript npm:pyright pipx:mypy npm:markdownlint-cli2 github:mszostok/codeowners-validator[exe=codeowners-validator]"
+CORE_MISE_TOOLS="node rust tree-sitter actionlint zizmor sccache shellcheck python pipx yamllint ripgrep aqua:wasm-bindgen/wasm-pack npm:typescript npm:pyright pipx:mypy npm:markdownlint-cli2 github:mszostok/codeowners-validator[exe=codeowners-validator] http:kio-firefox"
 REPORT_MISE_TOOLS="cargo:cargo-fuzz cargo:cargo-mutants cargo:cargo-llvm-cov cargo:cargo-audit"
 
 usage() {
@@ -38,6 +38,9 @@ Commands:
       prefer --extra-count for CI and docs.
   core-mise-tools
       Print the mise tools baked into the core devcontainer image.
+  install-browser-system-packages [--dry-run]
+      Install Firefox's Linux runtime libraries through mise bootstrap.
+      macOS and Windows need no extra browser runtime package install.
   report-mise-tools
       Print optional Cargo-backed tools for reports, audits, and upgrades.
   install-report-tools
@@ -226,6 +229,37 @@ as_root() {
   fi
 }
 
+install_browser_system_packages() {
+  case "$*" in
+    ''|--dry-run) ;;
+    *) printf 'error: install-browser-system-packages accepts only --dry-run\n' >&2; exit 2 ;;
+  esac
+  case "$(uname -s)" in
+    Linux) ;;
+    *) printf 'ci/impl-toolchain.sh: no extra browser runtime packages required\n'; return ;;
+  esac
+  if [ ! -r /etc/os-release ]; then
+    printf 'error: browser runtime bootstrap needs Debian/Ubuntu /etc/os-release\n' >&2
+    exit 2
+  fi
+  # This package route is Linux-specific; the browser archive itself is mise-owned on every OS.
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  case "${ID:-}:${VERSION_ID:-}" in
+    ubuntu:22.04|debian:12) t64= ;;
+    ubuntu:24.04|ubuntu:26.04|debian:13) t64=t64 ;;
+    *) printf 'error: browser runtime bootstrap has no package mapping for %s %s; use a supported Debian/Ubuntu runtime or the devcontainer\n' "${ID:-unknown}" "${VERSION_ID:-unknown}" >&2; exit 2 ;;
+  esac
+  MISE_EXPERIMENTAL=1 mise bootstrap packages apply --yes --update "$@" \
+    "apt:libasound2$t64" "apt:libatk1.0-0$t64" "apt:libglib2.0-0$t64" "apt:libgtk-3-0$t64" \
+    apt:libcairo-gobject2 apt:libcairo2 apt:libdbus-1-3 apt:libdbus-glib-1-2 \
+    apt:libfontconfig1 apt:libfreetype6 apt:libgdk-pixbuf-2.0-0 \
+    apt:libpango-1.0-0 apt:libpangocairo-1.0-0 apt:libx11-6 apt:libx11-xcb1 \
+    apt:libxcb-shm0 apt:libxcb1 apt:libxcomposite1 apt:libxcursor1 apt:libxdamage1 \
+    apt:libxext6 apt:libxfixes3 apt:libxi6 apt:libxrandr2 apt:libxrender1 apt:libxtst6 \
+    apt:fonts-liberation
+}
+
 install_impl_tools() {
   impls=$(normalize_impl_args "$@")
   [ -n "$impls" ] || { printf 'error: install requires at least one impl\n' >&2; exit 2; }
@@ -389,6 +423,7 @@ case "$cmd" in
   tooling-impls) print_tooling_impls "$@" ;;
   select) select_impls "$@" ;;
   core-mise-tools) print_core_mise_tools ;;
+  install-browser-system-packages) install_browser_system_packages "$@" ;;
   report-mise-tools) print_report_mise_tools ;;
   install-report-tools) install_report_mise_tools ;;
   extra-mise-tools) emit_extra_mise_tools "$@" ;;

@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
-import { kiodocHtml } from '../../generated/kiodoc-html.mjs'
+import { kiodocHtml, kiodocSources } from '../../generated/kiodoc-html.mjs'
+import SourceFooter from './SourceFooter.vue'
 
 const props = defineProps({
   page: {
@@ -14,4 +15,5 @@ const html = computed(() => kiodocHtml[props.page] ?? '<p>Generated documentatio
 
 <template>
   <div class="kiodoc-import" v-html="html" />
+  <SourceFooter :source="kiodocSources[page]" />
 </template>

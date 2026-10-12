@@ -25,3 +25,16 @@ ripgrep = "14.1.1"
 "pipx:mypy" = "2.4.0"
 "npm:markdownlint-cli2" = "0.22.1"
 "github:mszostok/codeowners-validator[exe=codeowners-validator]" = "0.7.4"
+
+# Firefox 157.0, paired with playwright-core 1.64.0 in website/package.json.
+[tools."http:kio-firefox"]
+version = "1555"
+strip_components = 1
+bin_path = "."
+
+[tools."http:kio-firefox".platforms]
+linux-x64 = { url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/{{ version }}/firefox-ubuntu-22.04.zip", checksum = "sha256:0a32f1f8d7e4170573435b4219eff8317e558750612b6355f18e9a4cb27e594b", size = "116378564" }
+linux-arm64 = { url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/{{ version }}/firefox-ubuntu-22.04-arm64.zip", checksum = "sha256:dd80674501471999418e585e0feac8d7e568f1f88d528bb446b9e574091a9f89", size = "107689926" }
+macos-x64 = { url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/{{ version }}/firefox-mac.zip", checksum = "sha256:ae2c6e477d4c5f59e76be39ca0db6c003e9bcf9bb9b3c4e13cf545275d6be388", size = "118829566", bin_path = "Nightly.app/Contents/MacOS" }
+macos-arm64 = { url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/{{ version }}/firefox-mac-arm64.zip", checksum = "sha256:72eb32289f368789786d16d252e8e4fef7b62ae721d57f82d3d6d9221d3fd2af", size = "110873383", bin_path = "Nightly.app/Contents/MacOS" }
+windows-x64 = { url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/{{ version }}/firefox-win64.zip", checksum = "sha256:410e14bca6099c089c2092df67803320aab70433a754aae356c4c2e990cf6b77", size = "129834277" }

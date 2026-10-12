@@ -45,6 +45,60 @@ package, freshness, offline access, and size evidence. Website checks retain
 their separate rendering ownership; docs-drift reviews the offline learning
 path and the portable guide's navigation into it.
 
+The website renders blog links pinned to full commits in this repository's
+`docs/` Markdown articles as static historical pages under
+`/kio/history/<commit>/docs/`. Every historical page displays an explicit banner
+identifying its exact tagged Kio version or untagged commit and whether its
+reader content differs from, matches, or has no counterpart in current docs.
+Where a counterpart exists, “View current page” links directly to the ordinary
+current documentation URL, preserving the article anchor. Current pages have
+no historical banner or navigation state; browser Back returns to the historical
+page. A missing counterpart offers “Browse current docs” at `/kio/docs/`.
+The site's Docs link also opens current documentation.
+Historical navigation contains only generated articles from the same revision;
+directory links without a historical README retain their pinned GitHub target.
+Specifications retain their GitHub links. Historical pages are excluded from
+current-document search.
+
+Historical provenance displays a tagged version only for a `releases/v*`
+tag pointing to that exact commit. This label identifies a tag, not proof of
+published-release status. Untagged commits display commit provenance.
+Tag labels do not replace the full-commit source identity or choose a nearby release.
+When a shallow checkout lacks tag metadata, one bounded optional canonical
+`ls-remote` lookup supplies exact lightweight or peeled tag identities per build.
+Unavailable metadata leaves commit provenance; offline builds use local tags.
+Articles have a small “View source on GitHub” footer. Historical footers use
+the same label and link to the file at the full pinned commit; ordinary docs
+and blog articles link to their actual source file on `main`. A subtle divider
+separates the footer from the article; blog posts retain their disclosure divider
+without adding a second one. Synthetic index pages with no source file omit
+the footer. Historical banners contain only the version, content state, and
+current-docs action. Historical sidebars list same-revision articles and reuse
+the current sidebar's Reference entries, pinned to the historical commit and
+omitting referenced files or directories absent from that revision.
+
+`website/scripts/historical-docs.mjs` reads Git blobs as data and acquires only
+missing referenced commits into a private object cache from the canonical
+repository. Extraction is bounded to 64 revisions, 4,096 reachable articles and
+128 MiB of unique blob data, with an actionable inventory error at a limit.
+These are extraction limits, not Git download sizes: exact shallow acquisition
+fetches a commit snapshot. Private cache refs retain those commits for reuse;
+checkout refs and `FETCH_HEAD` are untouched.
+It executes no historical scripts or example validation. Historical
+Markdown uses an isolated inert instance of the site's Markdown engine and its
+heading-ID renderer. Raw HTML is escaped, hidden comments are omitted, and
+code and asset content retain their pinned bytes. Raster images are static
+content-addressed assets; SVG images use inert image data URLs. Current docs
+and blog-example validation remain under their existing checks.
+
+The banner's content state compares historical reader content with actual current
+Kiodoc output before history-route rewriting, ignoring presentation wrappers,
+collapsing ordinary HTML prose whitespace while preserving code whitespace,
+and including local image bytes. Hidden comments, fence validation attributes,
+revision dates and theme changes do not alone count as content changes. Missing
+current paths show the no-counterpart state; no rename is inferred. Historical article data
+is imported per page rather than added to the shared current-docs bundle.
+
 **`docs/` is a standalone introduction to Kio.** A reader who starts at `docs/README.md` and follows its recommended order should understand most of the language and its ordinary development workflow without needing the specifications, source code, tests, blog history, agent guidance, or an external explanation. “Most” includes the central concepts and tools needed for everyday Kio work; it does not require teaching every specification edge case or repeating every host-specific detail. Concepts must be introduced before later documents rely on them. The specifications remain the authority for precision and edge cases, but a link to a specification must not substitute for the explanation a learner needs.
 
 **Internal links must set accurate expectations.** When one document under `docs/` describes another document it links to, the description, destination, and any reading order around that link must agree about what the destination contains, who it is for, and when it should be read. None of those is automatically authoritative: resolve a mismatch by making the documentation truthful and the standalone learning path coherent. When a destination's scope, audience, or prerequisites change, review every document that describes or sequences it; a changed description or sequence may instead reveal that the destination needs revision. Do not fix a mismatch merely by weakening or deleting a meaningful description: first preserve the useful coverage or routing obligation somewhere appropriate, then re-evaluate the linking document's own explanation, prerequisites, and order. Apply the obligation according to each document's role: catalogs and routing pages direct readers accurately, sequences preserve prerequisite order, and standalone pages fulfill their advertised scope. The resulting structure must not overstate coverage, omit a prerequisite, or send a reader to the wrong kind of material.

@@ -29,6 +29,39 @@ Three audiences consume the same image:
 
 Tool-version bumps land in `mise.toml`, `mise.optional.toml`, `mise.lock`, and `mise.optional.lock`, and the Dockerfile changes only when the mise version, core tool set, system packages, or an escape-hatch install changes. The published image picks up the core tools from the root mise files at build time; hosted Linux, macOS and Windows test jobs install their core and selected backend tools directly from those pins. Dependency and tool-version *upgrades* — reason-driven (security / end-of-life / deprecation), not "a newer version exists" — are driven by the [`upgrade-deps`](../skills/upgrade-deps/SKILL.md) skill, not an automated bot.
 
+## Website browser tasks
+
+The core mise tool `http:kio-firefox` installs one pinned Playwright Firefox
+revision on Linux x64/arm64, macOS x64/arm64, and Windows x64. Its native ZIP
+archives and SHA256 checksums live in `mise.toml`/`mise.lock`; the matching
+`playwright-core` driver is pinned in `website/package.json`. Update that pair
+together. There is no separate browser cache installer or system browser lookup.
+See [`INSTALL.md`](../../INSTALL.md) for runtime floors and the mise-bootstrap
+Linux library helper; macOS and Windows need no extra browser install step.
+
+After the website is built, `cd website && npm run browser:smoke` reuses its
+dist directory and tests real page/worker/WASM startup and one keyboard REPL
+command. `npm run browser:capture -- --output NEW_DIRECTORY --page
+/kio/docs/guides/repl.html` captures desktop/narrow rendered viewports through
+the same launcher. `--dist DIRECTORY` selects another existing build;
+`--full-page` captures the document beyond the viewport. Inspect the resulting
+images for the changed content and surrounding layout; producing them is not
+a visual review. CI runs the automated smoke, not an agent visual review.
+
+Runs inherit `TMPDIR`, use a fresh owned profile and localhost preview server,
+and clean them on exit. Failures retain a bounded diagnostic report and rendered
+screenshot under the reported temporary directory. Operational waits are
+state-based and bounded; there is no elapsed-time performance assertion or
+whole-test retry. Firefox uses upstream Playwright automation defaults, including
+disabled cross-process iframes, while its OS content sandbox remains enabled.
+If launch fails, report the setup error and repair the supported runtime;
+never add a sandbox opt-out or turn a missing browser into a skipped gate.
+
+`npm run browser:history` builds a private tiny Git-backed documentation fixture
+once and checks its static output plus real rendered version navigation through
+the same browser launcher. It compiles no Rust/WASM. For static-only focused
+iteration, `npm run check:history-site` runs that fixture without a browser.
+
 ## Dev container Docker builds
 
 `devcontainer.json` pulls the published GHCR image; it does not build the local Dockerfile. To test the Dockerfile itself, reproduce the publish workflow's build-context pre-step first: build `tools/vscode-kio/kio.vsix`, copy it to `.devcontainer/kio.vsix`, then run `docker buildx build` against `.devcontainer/Dockerfile`. Remove `.devcontainer/kio.vsix` after the build so the checkout stays clean.

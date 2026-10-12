@@ -154,6 +154,33 @@ url = "https://dl.google.com/go/go1.27.2.darwin-amd64.tar.gz"
 checksum = "sha256:1314008898bd40df77af4b014f777f08873dbdfbcd3d92308728ee03304fe04f"
 url = "https://dl.google.com/go/go1.27.2.windows-amd64.zip"
 
+[[tools."http:kio-firefox"]]
+version = "1555"
+backend = "http:kio-firefox"
+
+[tools."http:kio-firefox".options]
+strip_components = "1"
+
+[tools."http:kio-firefox"."platforms.linux-arm64"]
+checksum = "sha256:dd80674501471999418e585e0feac8d7e568f1f88d528bb446b9e574091a9f89"
+url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/1555/firefox-ubuntu-22.04-arm64.zip"
+
+[tools."http:kio-firefox"."platforms.linux-x64"]
+checksum = "sha256:0a32f1f8d7e4170573435b4219eff8317e558750612b6355f18e9a4cb27e594b"
+url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/1555/firefox-ubuntu-22.04.zip"
+
+[tools."http:kio-firefox"."platforms.macos-arm64"]
+checksum = "sha256:72eb32289f368789786d16d252e8e4fef7b62ae721d57f82d3d6d9221d3fd2af"
+url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/1555/firefox-mac-arm64.zip"
+
+[tools."http:kio-firefox"."platforms.macos-x64"]
+checksum = "sha256:ae2c6e477d4c5f59e76be39ca0db6c003e9bcf9bb9b3c4e13cf545275d6be388"
+url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/1555/firefox-mac.zip"
+
+[tools."http:kio-firefox"."platforms.windows-x64"]
+checksum = "sha256:410e14bca6099c089c2092df67803320aab70433a754aae356c4c2e990cf6b77"
+url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/firefox/1555/firefox-win64.zip"
+
 [[tools.java]]
 version = "temurin-21.0.12+101.0.LTS"
 backend = "core:java"

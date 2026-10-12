@@ -2,10 +2,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { headingIds } from '../.vitepress/search-content.mjs'
 
-const websiteDir = path.resolve(new URL('..', import.meta.url).pathname)
+const websiteDir = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = path.resolve(websiteDir, '..')
 const distDir = path.join(websiteDir, '.vitepress', 'dist')
 const siteBase = '/kio/'

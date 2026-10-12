@@ -48,7 +48,9 @@ The pinned set includes:
   `cargo-llvm-cov`, and `cargo-audit` through mise's `cargo:`
   backend;
 - `wasm-pack` and `dist` (release binaries and installers) through
-  mise's `aqua:` backend.
+  mise's `aqua:` backend;
+- Firefox for website smoke checks and rendered captures through mise's
+  `http:` backend, with the same pinned Playwright browser revision on every OS.
 
 The Cargo-backed report/audit tools may still compile from source, so
 the core dev container and baseline local setup do not install them.
@@ -109,6 +111,7 @@ Linux and macOS:
 
 ```sh
 mise trust mise.toml
+sh ci/impl-toolchain.sh install-browser-system-packages
 sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y
 ```
 
@@ -116,7 +119,7 @@ Windows:
 
 ```powershell
 mise trust mise.toml
-mise install --locked node npm:typescript python go java rust ghcup
+mise install --locked node npm:typescript python go java rust ghcup http:kio-firefox
 ```
 
 The Linux and macOS command installs the core toolchain first. The
@@ -125,6 +128,16 @@ only `rust`, then runs the native scheduler and compiler tests, a compiler
 build smoke, and a compile-only sweep of the success goldens. It does not
 run emitted output or the POSIX-only integration harnesses. The Linux dev
 container already carries the core toolchain.
+
+Website browser tasks use Firefox on Linux x64/arm64 with an Ubuntu 22.04-compatible
+GTK3 runtime, macOS 14+ x64/arm64, and Windows 11+ x64. The runtime-package helper
+installs Linux libraries for Ubuntu 22.04/24.04/26.04 and Debian 12/13 through
+mise bootstrap; it does nothing on macOS or Windows. The browser is installed,
+versioned and removed by mise, not by an OS browser installer. It uses Playwright's
+Firefox automation defaults with the normal OS content sandbox. Those defaults
+turn off cross-process iframes; these localhost checks do not certify retail
+Firefox's isolation policy. A sandbox or library failure is a setup error, not
+an instruction to disable the sandbox or skip the browser check.
 
 Install optional report/audit harness tools only when you need them:
 

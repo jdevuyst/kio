@@ -15,7 +15,9 @@ trap 'exit 129' HUP
 fixture="$scratch/repo with spaces"
 bin="$scratch/bin with spaces"
 mkdir -p "$fixture/ci" "$bin"
-cp "$REPO_ROOT/ci/impl-toolchain.sh" "$fixture/ci/"
+# Redirect only OS metadata to a fixture; all package selection/install code
+# runs unchanged, while the mise shim prevents host package mutation.
+sed "s@/etc/os-release@$scratch/os-release@g" "$REPO_ROOT/ci/impl-toolchain.sh" >"$fixture/ci/impl-toolchain.sh"
 for utility in sh dirname awk tr cksum; do
   ln -s "$(command -v "$utility")" "$bin/$utility"
 done
@@ -85,4 +87,53 @@ EOF
   rm "$bin/$compiler"
 done
 
-printf 'impl-toolchain-selftest: pass (Go, Java, Swift, Haskell; selected/full; absent/nonexecutable/shim)\n'
+cat >"$bin/uname" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$KIO_TEST_UNAME"
+EOF
+cat >"$bin/mise" <<'EOF'
+#!/bin/sh
+printf '%s\n' "experimental=$MISE_EXPERIMENTAL $*" >>"$KIO_TEST_MISE_LOG"
+EOF
+chmod +x "$bin/uname" "$bin/mise"
+for row in 'ubuntu 22.04 plain' 'ubuntu 24.04 t64' 'ubuntu 26.04 t64' 'debian 12 plain' 'debian 13 t64'; do
+  # shellcheck disable=SC2086
+  set -- $row
+  printf 'ID=%s\nVERSION_ID=%s\n' "$1" "$2" >"$scratch/os-release"
+  : >"$scratch/browser-mise.log"
+  PATH="$bin" KIO_TEST_UNAME=Linux KIO_TEST_MISE_LOG="$scratch/browser-mise.log" \
+    sh "$fixture/ci/impl-toolchain.sh" install-browser-system-packages --dry-run
+  invocation=$(sed -n '1p' "$scratch/browser-mise.log")
+  case "$3" in plain) suffix= ;; t64) suffix=t64 ;; esac
+  for package in libasound2 libatk1.0-0 libglib2.0-0 libgtk-3-0; do
+    case " $invocation " in
+      *" apt:$package$suffix "*) ;;
+      *) printf 'browser runtime: missing %s for %s %s\n' "$package$suffix" "$1" "$2" >&2; exit 1 ;;
+    esac
+  done
+  case "$invocation" in
+    'experimental=1 bootstrap packages apply --yes --update --dry-run '*) ;;
+    *) printf 'browser runtime: not using the mise dry-run bootstrap: %s\n' "$invocation" >&2; exit 1 ;;
+  esac
+  for package in libdbus-glib-1-2 libxtst6 fonts-liberation; do
+    case " $invocation " in
+      *" apt:$package "*) ;;
+      *) printf 'browser runtime: missing shared container/CI package %s\n' "$package" >&2; exit 1 ;;
+    esac
+  done
+done
+for platform in Darwin MINGW64_NT-10.0; do
+  : >"$scratch/browser-mise.log"
+  PATH="$bin" KIO_TEST_UNAME="$platform" KIO_TEST_MISE_LOG="$scratch/browser-mise.log" \
+    sh "$fixture/ci/impl-toolchain.sh" install-browser-system-packages >"$scratch/browser-install.log"
+  assert_equal "$(sed -n '1p' "$scratch/browser-mise.log")" '' "$platform has no browser OS package installer"
+done
+printf 'ID=unsupported\nVERSION_ID=1\n' >"$scratch/os-release"
+if PATH="$bin" KIO_TEST_UNAME=Linux KIO_TEST_MISE_LOG="$scratch/browser-mise.log" \
+  sh "$fixture/ci/impl-toolchain.sh" install-browser-system-packages >"$scratch/browser-error.log" 2>&1; then
+  printf 'browser runtime: unsupported package route unexpectedly accepted\n' >&2
+  exit 1
+fi
+assert_equal "$(PATH="$bin" sh "$fixture/ci/impl-toolchain.sh" core-mise-tools | grep -cx http:kio-firefox)" 1 'same managed browser in the shared core tool list'
+
+printf 'impl-toolchain-selftest: pass (host selection; five browser package mappings; macOS/Windows no-op; unsupported route fails)\n'

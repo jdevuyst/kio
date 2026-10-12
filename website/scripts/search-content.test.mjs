@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
 import { createMarkdownRenderer } from 'vitepress'
 import { createSearchRenderer, headingIds, searchHtml, withHeadingIds } from '../.vitepress/search-content.mjs'
 
-const md = await createMarkdownRenderer(new URL('..', import.meta.url).pathname, {}, '/kio/')
+const md = await createMarkdownRenderer(fileURLToPath(new URL('..', import.meta.url)), {}, '/kio/')
 
 test('Kiodoc headings use VitePress IDs, duplicate suffixes and explicit targets', async () => {
   const html = '<h1>Kio <code>fn</code> &amp; types</h1><h2>Same</h2><h2>Same</h2><h2 class="custom" id="kept">Named</h2>'

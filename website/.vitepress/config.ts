@@ -4,6 +4,7 @@ import { siteUrl } from './site.mjs'
 import { fileURLToPath } from 'node:url'
 import { kiodocHtml } from './generated/kiodoc-html.mjs'
 import { createSearchRenderer } from './search-content.mjs'
+import { historicalSidebars } from './generated/history-nav.mjs'
 
 const publicDir = fileURLToPath(new URL('./public', import.meta.url))
 const base = '/kio/'
@@ -28,7 +29,8 @@ export default defineConfig({
       { text: 'Blog', link: '/blog/' }
     ],
     sidebar: {
-      '/docs/': docsSidebar
+      '/docs/': docsSidebar,
+      ...historicalSidebars
     },
     aside: false,
     socialLinks: [

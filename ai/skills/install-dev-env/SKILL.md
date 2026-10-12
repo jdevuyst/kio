@@ -30,11 +30,12 @@ Per [`INSTALL.md`](../../../INSTALL.md) § Install mise, OS-aware. A freshly-ins
 
 ```sh
 mise trust mise.toml
+sh ci/impl-toolchain.sh install-browser-system-packages
 sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y
 mise exec -- python3 --version
 ```
 
-On macOS, use the same `core-mise-tools` command for the baseline local setup; `mise install --locked -y` is reserved for intentionally installing every pinned optional backend-extra and audit tool. On Windows install the portability subset INSTALL.md names (`node npm:typescript python go java rust ghcup`). The mise configs also own package-manager-backed CLIs (`npm:typescript`, `npm:pyright`, `npm:markdownlint-cli2`, pipx-backed `yamllint`, and the optional Cargo-backed tools from `sh ci/impl-toolchain.sh install-report-tools`) plus the `aqua:wasm-bindgen/wasm-pack` entry; do not reintroduce direct `cargo install`, `npm install -g`, or `pipx install` setup steps for them.
+On macOS, use the same `core-mise-tools` command for the baseline local setup; `mise install --locked -y` is reserved for intentionally installing every pinned optional backend-extra and audit tool. On Windows install the portability subset INSTALL.md names (`node npm:typescript python go java rust ghcup http:kio-firefox`). The browser runtime-package helper provisions supported Debian/Ubuntu libraries through mise bootstrap and is a no-op on macOS/Windows. The mise configs also own package-manager-backed CLIs (`npm:typescript`, `npm:pyright`, `npm:markdownlint-cli2`, pipx-backed `yamllint`, and the optional Cargo-backed tools from `sh ci/impl-toolchain.sh install-report-tools`) plus the `aqua:wasm-bindgen/wasm-pack` entry; do not reintroduce direct `cargo install`, `npm install -g`, or `pipx install` setup steps for them.
 
 The Cargo-backed report/audit tools (`cargo-fuzz`, `cargo-mutants`, `cargo-llvm-cov`, `cargo-audit`) are deliberately outside the core devcontainer and baseline local setup because they can source-build. Install them only when a deep report/audit or dependency-upgrade pass needs them:
 

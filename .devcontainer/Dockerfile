@@ -48,7 +48,7 @@ RUN apt-get update \
         xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# ----- VS Code Electron runtime libraries -----------------------------
+# ----- VS Code Electron and Firefox runtime libraries -----------------
 #
 # `@vscode/test-electron` (run by `ci/checks/orchestrators/vscode-e2e.sh`) downloads
 # the upstream VS Code binary into the workspace and exec's it inside
@@ -89,6 +89,9 @@ RUN apt-get update \
         libxfixes3 \
         libxrandr2 \
         libdbus-1-3 \
+        libdbus-glib-1-2 \
+        libxtst6 \
+        fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # ----- mise-managed toolchains ---------------------------------------
@@ -141,7 +144,8 @@ RUN --mount=type=secret,id=github_token,required=false \
         npm:pyright \
         pipx:mypy \
         npm:markdownlint-cli2 \
-        'github:mszostok/codeowners-validator[exe=codeowners-validator]'; \
+        'github:mszostok/codeowners-validator[exe=codeowners-validator]' \
+        http:kio-firefox; \
     mise install --locked -y yamllint; \
     mkdir -p /usr/local/.ghcup; \
     chmod -R a+w "$MISE_DATA_DIR" "$RUSTUP_HOME" "$CARGO_HOME" /usr/local/.ghcup

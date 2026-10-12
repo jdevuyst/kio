@@ -7,8 +7,10 @@ import { fileURLToPath } from 'node:url'
 import { siteUrl } from '../.vitepress/site.mjs'
 import { createMarkdownRenderer } from 'vitepress'
 import { withHeadingIds } from '../.vitepress/search-content.mjs'
+import { generateHistoricalDocs } from './historical-docs.mjs'
+import { docsReference } from './docs-reference.mjs'
 
-const websiteDir = path.resolve(new URL('..', import.meta.url).pathname)
+const websiteDir = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = path.resolve(websiteDir, '..')
 const docsDir = path.join(repoRoot, 'docs')
 const specsBackendsDir = path.join(repoRoot, 'specs', 'backends')
@@ -22,6 +24,7 @@ const githubBase = 'https://github.com/jdevuyst/kio'
 const siteBase = '/kio/'
 const siteOrigin = new URL(siteUrl).origin
 const kiodocPages = new Map()
+const kiodocSourcePaths = new Map()
 const escapedPipeSentinel = '\u0000KIO_ESCAPED_PIPE\u0000'
 
 const blogLead = 'Design notes, milestones, and deep dives.'
@@ -475,16 +478,17 @@ function inlineSummaryHtml(summary) {
   return escapeHtml(summary).replace(/`([^`]+)`/g, '<code>$1</code>')
 }
 
-function writeVitePressPage(markdownRel, title, body) {
+function writeVitePressPage(markdownRel, title, body, source) {
   const outFile = path.join(generatedDocsDir, markdownRel)
   const pageKey = stripMdExt(markdownRel)
   const html = `<div class="kiodoc-page">\n\n${body}\n\n</div>`
   kiodocPages.set(pageKey, html)
+  if (source) kiodocSourcePaths.set(pageKey, source)
   writeText(outFile, `---\ntitle: ${JSON.stringify(title)}\neditLink: false\n---\n\n<KiodocPage page=${JSON.stringify(pageKey)} />\n`)
 }
 
-function generateDocsPages(sections) {
-  fs.rmSync(generatedDocsDir, { recursive: true, force: true })
+export function generateDocsPages(sections, { output = generatedDocsDir, rendered = kiodocOutDir, writePage = writeVitePressPage } = {}) {
+  fs.rmSync(output, { recursive: true, force: true })
   const navItems = [...sections.values()].flatMap((section) => section.items)
   const importedHtml = new Set(navItems.map((item) => `${stripMdExt(item.href)}.html`))
   importedHtml.add('README.html')
@@ -493,34 +497,34 @@ function generateDocsPages(sections) {
     importedHtml.add(`${section.route}/index.html`)
   }
 
-  const readmeHtml = path.join(kiodocOutDir, 'README.html')
+  const readmeHtml = path.join(rendered, 'README.html')
   if (!fs.existsSync(readmeHtml)) {
     fail('kio doc build did not render README.html')
   }
   const readmeBody = rewriteLinks(restoreRenderedMarkdownTables(stripRenderedHtmlComments(extractMain(readmeHtml))), 'README.html', importedHtml)
-  writeVitePressPage('index.md', extractTitle(readmeBody, 'Kio documentation'), readmeBody)
+  writePage('index.md', extractTitle(readmeBody, 'Kio documentation'), readmeBody, 'docs/README.md')
 
   for (const section of sections.values()) {
-    writeVitePressPage(`${section.route}/index.md`, section.title, sectionIndexBody(section))
+    writePage(`${section.route}/index.md`, section.title, sectionIndexBody(section))
   }
 
   for (const item of navItems) {
     const htmlRel = `${stripMdExt(item.href)}.html`
-    const htmlFile = path.join(kiodocOutDir, htmlRel)
+    const htmlFile = path.join(rendered, htmlRel)
     if (!fs.existsSync(htmlFile)) {
       fail(`kio doc build did not render ${htmlRel}`)
     }
     const body = rewriteLinks(restoreRenderedMarkdownTables(stripRenderedHtmlComments(extractMain(htmlFile))), htmlRel, importedHtml)
     const title = extractTitle(body, item.text)
     const outRel = item.href === 'README.md' ? 'index.md' : item.href
-    writeVitePressPage(outRel, title, body)
+    writePage(outRel, title, body, `docs/${item.href}`)
   }
 
-  const packageBoundary = path.join(kiodocOutDir, 'package-boundary.html')
+  const packageBoundary = path.join(rendered, 'package-boundary.html')
   if (fs.existsSync(packageBoundary)) {
     const htmlRel = 'package-boundary.html'
     const body = rewriteLinks(restoreRenderedMarkdownTables(stripRenderedHtmlComments(extractMain(packageBoundary))), htmlRel, importedHtml)
-    writeVitePressPage('package-boundary.md', 'Package Boundary', body)
+    writePage('package-boundary.md', 'Package Boundary', body, 'docs/docs.pkg.kio')
   }
 }
 
@@ -568,7 +572,7 @@ function blogIndexBody(entries) {
   return `<h1>Blog</h1>\n\n<p class="blog-lead">${escapeHtml(blogLead)}</p>\n\n<p class="blog-disclosure">${escapeHtml(blogDisclosure)}</p>\n\n${list}\n\n<p class="blog-rss"><a href="./feed.xml">Subscribe via RSS</a></p>`
 }
 
-function generateBlog() {
+function generateBlog(history) {
   fs.rmSync(generatedBlogDir, { recursive: true, force: true })
   const posts = listBlogPosts()
   const importedHtml = new Set(posts.map((post) => `blog/${stripMdExt(post.name)}.html`))
@@ -580,12 +584,13 @@ function generateBlog() {
     if (!fs.existsSync(htmlFile)) {
       fail(`kio doc build did not render ${htmlRel}`)
     }
-    const body = rewriteLinks(restoreRenderedMarkdownTables(stripRenderedHtmlComments(extractMain(htmlFile))), htmlRel, importedHtml)
+    const body = history?.get(htmlRel) ?? rewriteLinks(restoreRenderedMarkdownTables(stripRenderedHtmlComments(extractMain(htmlFile))), htmlRel, importedHtml)
     const author = parseByline(body)
     const title = extractTitle(body, post.slug)
     const pageKey = `blog/${post.slug}`
     const postHtml = `${injectPostDate(body, post.date)}\n\n<footer class="blog-post-footer">${escapeHtml(postDisclosure)}</footer>`
     kiodocPages.set(pageKey, `<div class="kiodoc-page">\n\n${postHtml}\n\n</div>`)
+    kiodocSourcePaths.set(pageKey, `docs/blog/${post.name}`)
     writeText(
       path.join(generatedBlogDir, `${post.slug}.md`),
       `---\ntitle: ${JSON.stringify(title)}\neditLink: false\nsidebar: false\nprev: false\nnext: false\n---\n\n<KiodocPage page=${JSON.stringify(pageKey)} />\n`
@@ -664,15 +669,7 @@ function generateNav(sections) {
     const items = section.items.map((item) => ({ text: item.text, link: sidebarLink(item) }))
     sidebar.push({ text: title, link: `/docs/${section.route}/`, items })
   }
-  sidebar.push({
-    text: 'Reference',
-    items: [
-      { text: 'Language spec', link: `${githubBase}/blob/main/specs/language.md` },
-      { text: 'CLI spec', link: `${githubBase}/blob/main/specs/cli.md` },
-      { text: 'Package spec', link: `${githubBase}/blob/main/specs/package.md` },
-      { text: 'Backend contracts', link: `${githubBase}/tree/main/specs/backends` }
-    ]
-  })
+  sidebar.push(docsReference())
 
   writeText(path.join(generatedDir, 'nav.mjs'), `export const docsSidebar = ${JSON.stringify(sidebar, null, 2)}\n`)
 }
@@ -694,13 +691,16 @@ function generateHelloExample() {
   writeText(path.join(generatedDir, 'helloExample.mjs'), `export const helloExampleFiles = ${JSON.stringify(files, null, 2)}\n`)
 }
 
-async function generateKiodocHtml() {
-  const md = await createMarkdownRenderer(websiteDir, {}, siteBase)
+export async function generateKiodocHtml({ websiteDir: site = websiteDir, pages: content = kiodocPages, sources = kiodocSourcePaths } = {}) {
+  const md = await createMarkdownRenderer(site, {}, siteBase)
   const pages = {}
-  for (const [key, html] of [...kiodocPages.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  for (const [key, html] of [...content.entries()].sort(([left], [right]) => left.localeCompare(right))) {
     pages[key] = await withHeadingIds(html, md)
   }
-  writeText(path.join(generatedDir, 'kiodoc-html.mjs'), `export const kiodocHtml = ${JSON.stringify(pages, null, 2)}\n`)
+  const pageSources = Object.fromEntries([...sources].filter(([key]) => content.has(key)).map(([key, source]) => [key, {
+    url: `${githubBase}/blob/main/${source.split('/').map(encodeURIComponent).join('/')}`
+  }]))
+  writeText(path.join(site, '.vitepress/generated/kiodoc-html.mjs'), `export const kiodocHtml = ${JSON.stringify(pages, null, 2)}\nexport const kiodocSources = ${JSON.stringify(pageSources, null, 2)}\n`)
 }
 
 async function main() {
@@ -709,12 +709,24 @@ async function main() {
   const languages = buildLanguages(sections.get('hosts').items)
   runKiodocBuild()
   generateDocsPages(sections)
-  const blogEntries = generateBlog()
+  const posts = listBlogPosts()
+  const importedBlogHtml = new Set(posts.map(post => `blog/${post.slug}.html`))
+  const blogPages = new Map(posts.map(post => {
+    const htmlRel = `blog/${post.slug}.html`
+    const file = path.join(kiodocOutDir, htmlRel)
+    if (!fs.existsSync(file)) fail(`kio doc build did not render ${htmlRel}`)
+    return [htmlRel, rewriteLinks(restoreRenderedMarkdownTables(stripRenderedHtmlComments(extractMain(file))), htmlRel, importedBlogHtml)]
+  }))
+  const currentPages = new Map([...kiodocPages, ...[...blogPages].map(([key, body]) => [
+    stripHtmlExt(key), `<div class="kiodoc-page">${injectPostDate(body, path.posix.basename(key).slice(0, 10))}\n<footer class="blog-post-footer">${escapeHtml(postDisclosure)}</footer></div>`
+  ])])
+  const history = await generateHistoricalDocs({ repoRoot, websiteDir, blogPages, currentPages })
+  const blogEntries = generateBlog(history.rewrittenBlogs)
   await generateKiodocHtml()
   generateLanguages(languages)
   generateHelloExample()
   generateNav(sections)
-  console.log(`prepare-docs: generated docs for ${languages.length} host languages, ${blogEntries.length} blog post(s)`)
+  console.log(`prepare-docs: generated docs for ${languages.length} host languages, ${blogEntries.length} blog post(s), ${history.pages.size} historical article(s)`)
 }
 
 if (process.argv[1] && fs.existsSync(process.argv[1])

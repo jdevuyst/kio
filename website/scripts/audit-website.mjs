@@ -2,8 +2,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
-const websiteDir = path.resolve(new URL('..', import.meta.url).pathname)
+const websiteDir = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = path.resolve(websiteDir, '..')
 const docsDir = path.join(repoRoot, 'docs')
 
@@ -317,7 +318,7 @@ function checkE2E() {
     add('website-e2e.sh is not executable')
   }
   const source = read(script)
-  for (const expected of ['--help', 'npm ci', 'npm run check:examples', 'npm run build', 'npm run audit', 'npm run smoke', 'wasm-pack']) {
+  for (const expected of ['--help', 'npm ci', 'npm run check:examples', 'npm run build', 'npm run audit', 'npm run smoke', 'npm run browser:smoke', 'npm run browser:history', 'wasm-pack']) {
     if (!source.includes(expected)) {
       add(`website-e2e.sh is missing ${expected}`)
     }

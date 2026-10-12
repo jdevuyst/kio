@@ -38,8 +38,11 @@ If `website/` is absent, report that there is nothing to audit yet.
 
 ## 5. Website E2E orchestrator
 
-- Verify `ci/checks/orchestrators/website-e2e.sh` exists, is executable, supports `-h|--help`, and runs `npm ci`, wasm bundle build through `npm run build`, `npm run audit`, and `npm run smoke`.
-- Run `sh ci/checks/orchestrators/website-e2e.sh` when the local toolchain has `node`, `npm`, `cargo`, and `wasm-pack`.
+- Verify `ci/checks/orchestrators/website-e2e.sh` exists, is executable, supports `-h|--help`, and runs `npm ci`, wasm bundle build through `npm run build`, `npm run audit`, artifact `npm run smoke`, and real-browser `npm run browser:smoke` against that same build.
+- Confirm the core mise list, Dockerfile, CI runtime libraries and INSTALL/install-dev-env setup pair the same checksum-pinned Firefox revision on supported Linux/macOS/Windows routes with its exact Playwright driver. A missing browser, sandbox failure, or unsupported runtime is a visible setup failure, never a silent skip or sandbox opt-out.
+- Run `sh ci/checks/orchestrators/website-e2e.sh` when the local toolchain has `node`, `npm`, `cargo`, `wasm-pack`, and the managed browser. Report missing runtime evidence explicitly otherwise.
+- The smoke must exercise actual page/worker/WASM startup and keyboard input, assert a distinct rendered result plus returned prompt, and reuse state-based bounded waits with diagnostics. Readiness or echoed input alone is not the result oracle; check running negative controls when changing that oracle.
+- Verify `npm run browser:history` builds its private Git fixture once and applies both static and rendered navigation checks to that output, without Rust/WASM compilation. Keep `npm run check:history-site` available for focused static iteration, not a second fixture build in the broad gate.
 
 ## 6. Ignored generated outputs
 
@@ -70,6 +73,12 @@ content and surrounding layout at relevant viewport sizes. Builds, smoke tests
 and DOM assertions are not substitutes for this review; report missing visual
 evidence explicitly. This does not require a rendered review of ordinary README
 edits or authorize changing protected wording.
+
+Use `npm run browser:capture -- --output NEW_DIRECTORY --page /kio/route.html`
+for scoped desktop/narrow rendered captures through the smoke's launcher;
+`--full-page` includes below-the-fold content. The same rule applies to other
+visible website changes. Do not require an agent screenshot review inside CI,
+or treat producing screenshots as having inspected them.
 
 ## 11. Editor marketplace links
 
