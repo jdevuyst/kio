@@ -5,7 +5,7 @@
 //! lives in [`crate::build_cache`]; this module is the **swiftc
 //! compiler adapter** over it. It supplies the swift-specific policy:
 //! the compiler identity ([`swiftc_identity`]), the key-input field
-//! list ([`key`]), the two-step module + driver `swiftc` build, the
+//! list ([`key`]), the support + package + driver `swiftc` build, the
 //! `meta.json` body, and the `bin` on-disk namespacing. The shared
 //! cache owns everything else.
 //!
@@ -15,22 +15,22 @@
 //! writes recover via its atomic-rename publication, and `meta.json`
 //! sidecars let `cat` / `jq` inspect entries.
 //!
-//! ## One-level caching over a two-step module + driver compile
+//! ## One-level caching over a three-step native compile
 //!
-//! The Swift runner compiles the build tree in **two** `swiftc`
-//! invocations, the way a real host builds against a kio package: the
-//! emitted `pkg.swift` / `host.swift` / `shapes.swift` / `ffi.swift` /
-//! `kio_runtime.swift` compile into the package module `<ns>` (a
+//! The Swift runner first compiles `KioRuntime/KioRuntime.swift` as the
+//! shared support module, then compiles the emitted
+//! `pkg.swift` / `host.swift` / `shapes.swift` / `ffi.swift` /
+//! `kio_runtime.swift` into the package module `<ns>` (a
 //! `.swiftmodule` interface + a **static** `lib<ns>.a`), and the
 //! synthesized `main.swift` driver then `import <ns>`s and static-links
-//! it into the final binary. Only the driver reaches the package across
-//! the module boundary, so a `public`/`internal` slip on any symbol the
+//! both archives into the final binary. The driver reaches the package across
+//! a module boundary, so a `public`/`internal` slip on any symbol the
 //! host needs fails the compile — the fidelity a same-module shortcut
 //! could not enforce.
 //!
 //! The cache is still **one-level**: one [`ArtifactRequest`], one
 //! namespace (`bin`), one key folding `{swiftc identity, build flags
-//! (incl. the `<ns>` module name), all `.swift` source files}`. Both
+//! (incl. the `<ns>` module name), all `.swift` source files}`. All three
 //! invocations run on a single miss and stage one binary; there is no
 //! chained sub-key and no second cache namespace — see
 //! [`crate::build_cache`] for the contrast with the two-level Rust
@@ -122,6 +122,9 @@ const BIN_NAME: &str = "bin";
 /// dir is mapped *to* this fixed string so two compiles of the same
 /// sources from different worktrees agree on the remapped half.
 pub const REMAP_TO: &str = "/kio-build";
+
+pub const SUPPORT_MODULE: &str = "KioRuntime";
+pub const SUPPORT_SOURCE: &str = "KioRuntime/KioRuntime.swift";
 
 /// The Swift adapter's error surface. Carries the shared cache's I/O
 /// failures and this adapter's own admission, `swiftc`, and spawn failures
@@ -243,7 +246,7 @@ impl SwiftCache {
 
     /// Resolve the binary for `tree`. On hit returns the existing binary
     /// path; on miss the shared cache acquires the per-key lock, runs
-    /// the two `swiftc` invocations into a tempdir, and atomic-renames
+    /// the three `swiftc` invocations into a tempdir, and atomic-renames
     /// into place.
     pub fn get_or_compile_bin(&self, tree: &SwiftBuildTree) -> Result<PathBuf, CacheError> {
         let adapter = BinArtifact {
@@ -265,9 +268,10 @@ fn unwrap_produce(e: ProduceError<CacheError>) -> CacheError {
 
 /// The assembled Swift build tree the runner hands the cache: the
 /// toolchain identity, the package module name, and the full set of
-/// `(relative path, bytes)` `.swift` files the two `swiftc` invocations
+/// `(relative path, bytes)` `.swift` files the three `swiftc` invocations
 /// compile (the emitted `pkg.swift` / `host.swift` / `shapes.swift` /
-/// `ffi.swift` / `kio_runtime.swift` and the synthesized `main.swift`).
+/// `ffi.swift` / `kio_runtime.swift`, nested shared support, and synthesized
+/// `main.swift`).
 ///
 /// The runner builds this once. Its file set both *defines the cache
 /// key* (via [`BinInput`]) and *is what `produce` writes to disk* before
@@ -278,8 +282,8 @@ pub struct SwiftBuildTree {
     pub swiftc_identity: String,
     /// Path-sorted `(relative path, bytes)` for the `.swift` build tree:
     /// the emitted package's files plus the synthesized `main.swift`
-    /// driver. The two build steps partition this set — the package files
-    /// compile into the `<module_name>` module, `main.swift` imports it.
+    /// driver. The three build steps partition this set into the shared
+    /// support module, package module, and importing host driver.
     pub files: Vec<(PathBuf, Vec<u8>)>,
     /// The harness-supplied artifact namespace that the package module is
     /// built under (`-module-name`) and the driver imports. Folded into the
@@ -302,7 +306,7 @@ impl SwiftBuildTree {
 }
 
 /// The binary artifact adapter: builds the binary's
-/// [`ArtifactRequest`] and runs the two `swiftc` invocations on a
+/// [`ArtifactRequest`] and runs the three `swiftc` invocations on a
 /// miss.
 struct BinArtifact<'a> {
     tree: &'a SwiftBuildTree,
@@ -339,8 +343,8 @@ impl CompilerAdapter for BinArtifact<'_> {
     }
 }
 
-/// Materialize the `.swift` build tree under `out_dir`, run the two
-/// `swiftc` invocations (build the package module, then the importing
+/// Materialize the `.swift` build tree under `out_dir`, run the three
+/// `swiftc` invocations (shared support, package module, then importing
 /// driver), and stage the binary as `out_dir/bin` for the shared cache to
 /// publish.
 fn do_swiftc_build(
@@ -352,10 +356,10 @@ fn do_swiftc_build(
     let build_root = out_dir.join("build");
     write_tree(&build_root, &tree.files)?;
 
-    // Partition the `.swift` files: the emitted package's files compile
+    // Partition the `.swift` files: support has its own module; package files compile
     // into the `<ns>` module a host `import`s; `main.swift` is the
     // importing driver, compiled and linked against that module — a real
-    // host's two-step build, so a `public`/`internal` slip on any symbol
+    // host's module-separated build, so a `public`/`internal` slip on any symbol
     // the driver reaches now fails the driver compile (the module boundary
     // the single-module shortcut could not enforce). Bare filenames keep
     // the only absolute path swiftc sees the remap source.
@@ -366,7 +370,9 @@ fn do_swiftc_build(
             continue;
         }
         let name = rel.to_string_lossy().into_owned();
-        if name == "main.swift" {
+        if name == SUPPORT_SOURCE {
+            continue;
+        } else if name == "main.swift" {
             driver_name = Some(name);
         } else {
             pkg_names.push(name);
@@ -384,7 +390,7 @@ fn do_swiftc_build(
     let prefix_map = format!("{}={}", build_root.display(), REMAP_TO);
 
     // Pin clang's implicit module cache under the staging tempdir, shared
-    // by both invocations. Left to its default, swiftc writes the `.pcm`
+    // by all invocations. Left to its default, swiftc writes the `.pcm`
     // chain its `import Foundation` driver pulls (SwiftGlibc / Dispatch /
     // Foundation, ~17M) into the machine-shared `~/.cache/clang/ModuleCache`
     // — state outside the runner's own cache root. The runner build cache
@@ -400,6 +406,26 @@ fn do_swiftc_build(
     let swiftmodule = format!("{ns}.swiftmodule");
     let lib = format!("lib{ns}.a");
 
+    let mut support = swiftc_command(observer);
+    support
+        .arg(opt)
+        .arg("-module-name")
+        .arg(SUPPORT_MODULE)
+        .arg("-file-prefix-map")
+        .arg(&prefix_map)
+        .arg("-module-cache-path")
+        .arg(&module_cache)
+        .arg("-emit-module")
+        .arg("-emit-module-path")
+        .arg(format!("{SUPPORT_MODULE}.swiftmodule"))
+        .arg("-emit-library")
+        .arg("-static")
+        .arg("-o")
+        .arg(format!("lib{SUPPORT_MODULE}.a"))
+        .arg(SUPPORT_SOURCE)
+        .current_dir(&build_root);
+    run_swiftc(support, compiler_admission)?;
+
     // Invocation 1 — the package module `<ns>`: a static archive plus its
     // `.swiftmodule` interface, so the driver can `import <ns>` and the
     // final binary static-links it (a static `.a`, not a dynamic `.so`
@@ -408,6 +434,8 @@ fn do_swiftc_build(
     // the compile is dominated by swiftc startup + frontend, not codegen.
     let mut cmd1 = swiftc_command(observer);
     cmd1.arg(opt)
+        .arg("-I")
+        .arg(".")
         .arg("-module-name")
         .arg(ns)
         .arg("-file-prefix-map")
@@ -439,6 +467,7 @@ fn do_swiftc_build(
         .arg("-L")
         .arg(".")
         .arg(format!("-l{ns}"))
+        .arg(format!("-l{SUPPORT_MODULE}"))
         .arg(&driver_name)
         .arg("-o")
         .arg(&bin_path)

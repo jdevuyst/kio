@@ -382,8 +382,12 @@ impl<'a> PreparedPythonStub<'a> {
         );
         self.protocol_defs.insert(
             "KioFn".to_owned(),
-            "KioFn: __kio_typing__.TypeAlias = __kio_typing__.Callable[[KioFn_Arg], KioFn_Result]\n".to_owned(),
+            "class KioFn(__kio_typing__.Protocol[KioFn_Arg, KioFn_Result]):\n    def __call__(self, domain: KioFn_Arg, /) -> KioFn_Result: ...\n    def kio_step(self, domain: KioFn_Arg, transfer: KioTransfer, /) -> KioFn_Result | None: ...\n".to_owned(),
         );
+        self.protocol_defs.insert("KioTransfer".to_owned(),
+            "class KioTransfer(__kio_typing__.Protocol):\n    def call(self, target: KioFn[KioFn_Input, object], domain: KioFn_Input, /) -> None: ...\n    def advance(self, target: KioStage, /) -> None: ...\n".to_owned());
+        self.protocol_defs.insert("KioStage".to_owned(),
+            "class KioStage(__kio_typing__.Protocol):\n    def kio_step(self, transfer: KioTransfer, /) -> object: ...\n".to_owned());
         self.protocol_defs.insert("kio_lift".to_owned(),
             "def kio_lift(body: __kio_typing__.Callable[[KioFn_Input], KioFn_Output], /) -> KioFn[KioFn_Input, KioFn_Output]: ...\n".to_owned());
         for name in [
@@ -392,6 +396,8 @@ impl<'a> PreparedPythonStub<'a> {
             "KioFn_Result",
             "KioFn_Input",
             "KioFn_Output",
+            "KioTransfer",
+            "KioStage",
         ] {
             self.shared_owners
                 .insert(name.to_owned(), "core".to_owned());
@@ -419,13 +425,14 @@ impl<'a> PreparedPythonStub<'a> {
         typevars: Vec<String>,
         include_phantom_typevars: bool,
         signatures: &mut [FnSig],
-    ) -> (Vec<String>, Vec<String>) {
+    ) -> (Vec<String>, Vec<String>, &'static str) {
         let mut seen = BTreeSet::new();
         let requested = typevars
             .into_iter()
             .filter(|typevar| seen.insert(typevar.clone()))
             .collect::<Vec<_>>();
         let uses = protocol_root_uses(&requested, signatures, &self.protocol_variances);
+        let variance_diagnostic = protocol_variance_diagnostic(&uses);
         let mut locals = Vec::new();
         let mut arguments = Vec::new();
         let mut variances = Vec::new();
@@ -461,7 +468,7 @@ impl<'a> PreparedPythonStub<'a> {
         {
             debug_assert_eq!(previous, variances);
         }
-        (locals, arguments)
+        (locals, arguments, variance_diagnostic)
     }
 
     fn root_typevars(&self) -> Vec<String> {
@@ -634,7 +641,7 @@ impl<'a> PreparedPythonStub<'a> {
                 .iter()
                 .map(|(_, signature, _)| signature.clone())
                 .collect::<Vec<_>>();
-            let (locals, arguments) = self.localize_protocol_typevars(
+            let (locals, arguments, variance_diagnostic) = self.localize_protocol_typevars(
                 &format!("Host_{namespace}"),
                 &nested_name,
                 self.root_typevars(),
@@ -646,7 +653,9 @@ impl<'a> PreparedPythonStub<'a> {
             } else {
                 format!("__kio_typing__.Protocol[{}]", locals.join(", "))
             };
-            nested.push_str(&format!("class {nested_name}({bases}):\n"));
+            nested.push_str(&format!(
+                "class {nested_name}({bases}):{variance_diagnostic}\n"
+            ));
             for ((name, _, doc), signature) in methods.iter().zip(&signatures) {
                 nested.push_str(&stub_method(
                     name,
@@ -723,7 +732,7 @@ impl<'a> PreparedPythonStub<'a> {
             .iter()
             .map(|(_, signature)| signature.clone())
             .collect::<Vec<_>>();
-        let (locals, arguments) = self.localize_protocol_typevars(
+        let (locals, arguments, variance_diagnostic) = self.localize_protocol_typevars(
             "HostRoot",
             &host_name,
             self.root_typevars(),
@@ -736,7 +745,7 @@ impl<'a> PreparedPythonStub<'a> {
         } else {
             format!("__kio_typing__.Protocol[{}]", locals.join(", "))
         };
-        let mut outer = format!("class {host_name}({bases}):\n");
+        let mut outer = format!("class {host_name}({bases}):{variance_diagnostic}\n");
         for ((member, _), signature) in members.iter().zip(&signatures) {
             match member {
                 HostProtocolMember::Adapter(name) => {
@@ -1323,7 +1332,7 @@ impl<'a> PreparedPythonStub<'a> {
     fn render_stage_protocol(&mut self, protocol: &str, locals: &[String], ret: &str) {
         // Nested stages finish first, so their declared polarity composes
         // through advance's result without another value-plan traversal.
-        let variances = protocol_root_uses(
+        let uses = protocol_root_uses(
             locals,
             &[FnSig {
                 params: Vec::new(),
@@ -1331,10 +1340,12 @@ impl<'a> PreparedPythonStub<'a> {
                 suppress_invalid_typevar_use: false,
             }],
             &self.protocol_variances,
-        )
-        .into_iter()
-        .map(|uses| uses.polarity().unwrap_or(ProtocolPolarity::Covariant))
-        .collect::<Vec<_>>();
+        );
+        let variance_diagnostic = protocol_variance_diagnostic(&uses);
+        let variances = uses
+            .into_iter()
+            .map(|uses| uses.polarity().unwrap_or(ProtocolPolarity::Covariant))
+            .collect::<Vec<_>>();
         for (local, variance) in locals.iter().zip(&variances) {
             self.declare_protocol_typevar(local, *variance);
         }
@@ -1360,7 +1371,7 @@ impl<'a> PreparedPythonStub<'a> {
             "class {protocol}Source{source_base}:\n    def advance(self) -> {ret}: ...  # pyright: ignore[reportInvalidTypeVarUse]\n"
         ));
         self.protocol_defs.insert(protocol.to_owned(), format!(
-            "class {protocol}({protocol_base}):\n    def advance(self) -> {ret}: ...  # pyright: ignore[reportInvalidTypeVarUse]\n"
+            "class {protocol}({protocol_base}):{variance_diagnostic}\n    def advance(self) -> {ret}: ...  # pyright: ignore[reportInvalidTypeVarUse]\n    def kio_step(self, transfer: KioTransfer, /) -> object: ...\n"
         ));
         self.stage_lifts
             .insert(protocol.to_owned(), (applied_source, applied));
@@ -2338,6 +2349,7 @@ fn protocol_root_uses(
                 &expr,
                 &root_indices,
                 ProtocolPolarity::Contravariant,
+                false,
                 protocol_variances,
                 &mut uses,
             );
@@ -2356,6 +2368,7 @@ fn protocol_root_uses(
             &expr,
             &root_indices,
             ProtocolPolarity::Covariant,
+            false,
             protocol_variances,
             &mut uses,
         );
@@ -2368,6 +2381,18 @@ struct ProtocolRootUse {
     covariant: bool,
     contravariant: bool,
     invariant: bool,
+    invariant_protocol_argument: bool,
+}
+
+fn protocol_variance_diagnostic(uses: &[ProtocolRootUse]) -> &'static str {
+    // Pyright infers variance through an invariant carrier nested in a
+    // contravariant Protocol argument. Keep the carrier's exact invariance;
+    // only its containing Protocol's declaration diagnostic is suppressed.
+    if uses.iter().any(|uses| uses.invariant_protocol_argument) {
+        "  # pyright: ignore[reportInvalidTypeVarUse]"
+    } else {
+        ""
+    }
 }
 
 impl ProtocolRootUse {
@@ -2409,6 +2434,7 @@ fn collect_protocol_root_uses(
     expr: &PythonTypeExpr,
     root_indices: &BTreeMap<&str, usize>,
     polarity: ProtocolPolarity,
+    contravariant_protocol_argument: bool,
     protocol_variances: &BTreeMap<String, Vec<ProtocolPolarity>>,
     uses: &mut [ProtocolRootUse],
 ) {
@@ -2420,11 +2446,20 @@ fn collect_protocol_root_uses(
         PythonTypeExpr::Name(name) => {
             if let Some(index) = root_indices.get(name.as_str()) {
                 uses[*index].record(polarity);
+                uses[*index].invariant_protocol_argument |=
+                    contravariant_protocol_argument && polarity == ProtocolPolarity::Invariant;
             }
         }
         PythonTypeExpr::List(items) | PythonTypeExpr::Union(items) => {
             for item in items {
-                collect_protocol_root_uses(item, root_indices, polarity, protocol_variances, uses);
+                collect_protocol_root_uses(
+                    item,
+                    root_indices,
+                    polarity,
+                    contravariant_protocol_argument,
+                    protocol_variances,
+                    uses,
+                );
             }
         }
         PythonTypeExpr::Apply { head, args } if head == "__kio_typing__.Callable" => {
@@ -2433,12 +2468,20 @@ fn collect_protocol_root_uses(
                     params,
                     root_indices,
                     polarity.compose(ProtocolPolarity::Contravariant),
+                    contravariant_protocol_argument,
                     protocol_variances,
                     uses,
                 );
             }
             if let Some(ret) = args.get(1) {
-                collect_protocol_root_uses(ret, root_indices, polarity, protocol_variances, uses);
+                collect_protocol_root_uses(
+                    ret,
+                    root_indices,
+                    polarity,
+                    contravariant_protocol_argument,
+                    protocol_variances,
+                    uses,
+                );
             }
         }
         PythonTypeExpr::Apply { head, args } => {
@@ -2449,6 +2492,9 @@ fn collect_protocol_root_uses(
                         arg,
                         root_indices,
                         polarity.compose(*variance),
+                        contravariant_protocol_argument
+                            || (*variance == ProtocolPolarity::Contravariant
+                                && polarity != ProtocolPolarity::Invariant),
                         protocol_variances,
                         uses,
                     );
@@ -2459,6 +2505,7 @@ fn collect_protocol_root_uses(
                         arg,
                         root_indices,
                         ProtocolPolarity::Invariant,
+                        contravariant_protocol_argument,
                         protocol_variances,
                         uses,
                     );
@@ -2758,6 +2805,133 @@ mod tests {
     }
 
     #[test]
+    fn protocol_variance_diagnostic_only_marks_nested_invariant_protocol_arguments() {
+        let variances = BTreeMap::from([
+            (
+                "KioFn".to_owned(),
+                vec![ProtocolPolarity::Contravariant, ProtocolPolarity::Covariant],
+            ),
+            (
+                "InvariantProtocol".to_owned(),
+                vec![ProtocolPolarity::Invariant],
+            ),
+        ]);
+        for (params, ret, expected, suppressed) in [
+            (
+                vec!["KioFn[Shape[Root], int]"],
+                "int",
+                ProtocolPolarity::Invariant,
+                true,
+            ),
+            (
+                vec![],
+                "KioFn[Shape[Root], int]",
+                ProtocolPolarity::Invariant,
+                true,
+            ),
+            (
+                vec!["KioFn[Box[Root], int]"],
+                "int",
+                ProtocolPolarity::Invariant,
+                true,
+            ),
+            (
+                vec!["Shape[Root]"],
+                "int",
+                ProtocolPolarity::Invariant,
+                false,
+            ),
+            (
+                vec!["KioFn[int, Shape[Root]]"],
+                "int",
+                ProtocolPolarity::Invariant,
+                false,
+            ),
+            (
+                vec!["__kio_typing__.Callable[[Shape[Root]], int]"],
+                "int",
+                ProtocolPolarity::Invariant,
+                false,
+            ),
+            (vec!["Root"], "int", ProtocolPolarity::Contravariant, false),
+            (vec![], "Root", ProtocolPolarity::Covariant, false),
+            (
+                vec![],
+                "InvariantProtocol[Root]",
+                ProtocolPolarity::Invariant,
+                false,
+            ),
+            (
+                vec!["Shape[KioFn[Root, int]]"],
+                "int",
+                ProtocolPolarity::Invariant,
+                false,
+            ),
+        ] {
+            let uses = protocol_root_uses(
+                &["Root".to_owned()],
+                &[FnSig {
+                    params: params.into_iter().map(str::to_owned).collect(),
+                    ret: ret.to_owned(),
+                    suppress_invalid_typevar_use: false,
+                }],
+                &variances,
+            );
+            assert_eq!(uses[0].polarity(), Some(expected));
+            assert_eq!(!protocol_variance_diagnostic(&uses).is_empty(), suppressed);
+        }
+    }
+
+    #[test]
+    fn protocol_variance_diagnostic_marks_only_affected_host_and_stage_declarations() {
+        let pkg = build_package(
+            &["module main; host type Root; host fn take(callback: (Root & Root) -> .);"],
+            "bridge { main; }",
+        );
+        let source = lower_package_to_stub(&pkg, "greeter").expect("render");
+        let host = source
+            .lines()
+            .find(|line| line.starts_with("class _GreeterHost_main("))
+            .expect("host namespace");
+        assert!(
+            host.ends_with("# pyright: ignore[reportInvalidTypeVarUse]"),
+            "{source}"
+        );
+        let root = source
+            .lines()
+            .find(|line| line.starts_with("class GreeterHost("))
+            .expect("root host");
+        assert!(!root.contains("# pyright:"), "{source}");
+
+        let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
+        let mut stub = PreparedPythonStub::new(&pkg, &prepared, "Greeter".to_owned(), "greeter");
+        stub.render_callable_protocol();
+        stub.render_stage_protocol(
+            "Stage",
+            &["Capture".to_owned()],
+            "KioFn[KioShape[Capture], Selected]",
+        );
+        assert_eq!(
+            stub.protocol_variances["Stage"],
+            [ProtocolPolarity::Invariant]
+        );
+        assert!(
+            stub.protocol_defs["Stage"]
+                .lines()
+                .next()
+                .expect("stage header")
+                .ends_with("# pyright: ignore[reportInvalidTypeVarUse]")
+        );
+        assert!(
+            !stub.protocol_defs["StageSource"]
+                .lines()
+                .next()
+                .expect("source header")
+                .contains("# pyright:")
+        );
+    }
+
+    #[test]
     fn stage_protocol_variance_composes_captures_and_nested_stages() {
         let pkg = build_package(&["module main; pub fn unit() { () }"], "bridge { main; }");
         let prepared = PreparedBoundaryCallableSites::collect(&pkg, None).expect("prepare");
@@ -2865,17 +3039,19 @@ mod tests {
             ret: "Root | RootLong".to_owned(),
             suppress_invalid_typevar_use: false,
         }];
-        let ((locals, arguments), work) = measure_python_stub_batch_work(|| {
-            stub.localize_protocol_typevars(
-                "Batch",
-                "MeasuredProtocol",
-                ["Root", "Unused", "RootLong"].map(str::to_owned).to_vec(),
-                false,
-                &mut signatures,
-            )
-        });
+        let ((locals, arguments, variance_diagnostic), work) =
+            measure_python_stub_batch_work(|| {
+                stub.localize_protocol_typevars(
+                    "Batch",
+                    "MeasuredProtocol",
+                    ["Root", "Unused", "RootLong"].map(str::to_owned).to_vec(),
+                    false,
+                    &mut signatures,
+                )
+            });
         assert_eq!(locals, ["KioProtocol_Batch_B0", "KioProtocol_Batch_B2"]);
         assert_eq!(arguments, ["Root", "RootLong"]);
+        assert_eq!(variance_diagnostic, "");
         assert_eq!(
             signatures[0].params,
             [
@@ -3240,10 +3416,10 @@ mod tests {
         );
         let stub = lower_package_to_stub(&pkg, "facade").expect("render");
         assert!(
-            stub.contains("KioFn: __kio_typing__.TypeAlias = __kio_typing__.Callable[[KioFn_Arg], KioFn_Result]\n"),
+            stub.contains("class KioFn(__kio_typing__.Protocol[KioFn_Arg, KioFn_Result]):"),
             "{stub}"
         );
-        assert!(!stub.contains("class KioFn("), "{stub}");
+        assert!(stub.contains("def kio_step(self, domain: KioFn_Arg, transfer: KioTransfer, /) -> KioFn_Result | None:"), "{stub}");
         assert!(!stub.contains("KioFnAdapt"), "{stub}");
         assert!(!stub.contains("def adapt("), "{stub}");
     }

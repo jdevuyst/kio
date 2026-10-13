@@ -1,0 +1,12 @@
+package tail_peer;
+
+build {
+  target ts {
+    out "out/ts/";
+    baseline v5_0
+  }
+}
+
+bridge {
+  api
+}

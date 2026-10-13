@@ -177,11 +177,12 @@ impl Types<'_, '_> {
                     pending.push(Task::Use(*constructor));
                 }
                 ValueUse::Product { left, right } | ValueUse::Sum { left, right } => {
+                    // Canonical declarations avoid recursively expanding local generic aliases.
                     rendered.push_str(
                         if matches!(self.plan.use_at(id), ValueUse::Product { .. }) {
-                            "Product<"
+                            "KioRuntime.Product<"
                         } else {
-                            "Sum<"
+                            "KioRuntime.Sum<"
                         },
                     );
                     pending.extend([
@@ -192,13 +193,13 @@ impl Types<'_, '_> {
                     ]);
                 }
                 ValueUse::Function { domain, result, .. } => {
-                    rendered.push('(');
-                    // A function substituted into a generic domain is escaping.
-                    // Keep the concrete spelling identical to that convention.
-                    if matches!(self.plan.use_at(*domain), ValueUse::Function { .. }) {
-                        rendered.push_str("@escaping ");
-                    }
-                    pending.extend([Task::Use(*result), Task::Text(") -> "), Task::Use(*domain)]);
+                    rendered.push_str("KioFn<");
+                    pending.extend([
+                        Task::Text(">"),
+                        Task::Use(*result),
+                        Task::Text(", "),
+                        Task::Use(*domain),
+                    ]);
                 }
                 ValueUse::Forall { .. } => rendered.push_str(&self.staged_native(id, scope, host)?),
             }
@@ -450,7 +451,7 @@ impl Types<'_, '_> {
         let mut witness_args = vec!["_: H.Type".to_owned()];
         witness_args.extend((0..free.len()).map(|index| format!("_: W{index}")));
         let declaration = format!(
-            "\npublic protocol {name}Implementation {{\n    associatedtype H: {}\n{associated}    func specialize<T>(_: T.Type) -> {result_type}\n}}\n\npublic struct {name}{declaration_generic}: __KioForallValue {{\n    private let body: (any __KioTypeWitness) -> Any\n    init(__kioBody body: @escaping (any __KioTypeWitness) -> Any) {{ self.body = body }}\n    func __kioAdvance(_ witness: any __KioTypeWitness) -> Any {{ body(witness) }}\n    public func specialize<T>(asKioType _: T.Type = T.self) -> {result_type} {{ __kioNativeChecked(body(__KioNativeWitness<T>()), as: ({result_type}).self) }}\n    public init<Implementation: {name}Implementation>(_ implementation: Implementation) where {} {{\n        func advance<W: __KioTypeWitness>(_ witness: W) -> Any {{ implementation.specialize(W.Native.self) as Any }}\n        self.body = {{ witness in advance(witness) }}\n    }}\n}}\n\nprivate struct __KioWitness_{name}<{}>: __KioForallWitness {{\n    typealias Native = {name}<{}>\n    func construct(_ body: @escaping (any __KioTypeWitness) -> Any) -> Any {{\n        __KioEntry({{ argument in body(__kioChecked(argument, as: (any __KioTypeWitness).self)) }}, native: {{ entry in Native(__kioBody: {{ witness in __kioRun(entry, witness) }}) }})\n    }}\n    func constructTail(_ body: @escaping (any __KioTypeWitness, __KioCursor) -> Any) -> Any {{\n        __KioEntry({{ argument, cursor in body(__kioChecked(argument, as: (any __KioTypeWitness).self), cursor) }}, native: {{ entry in Native(__kioBody: {{ witness in __kioRun(entry, witness) }}) }})\n    }}\n}}\nfunc __kioWitness_{name}<{}>({}) -> any __KioTypeWitness {{ __KioWitness_{name}<{}>() }}\n",
+            "\npublic protocol {name}Implementation {{\n    associatedtype H: {}\n{associated}    func specialize<T>(_: T.Type) -> {result_type}\n}}\n\npublic struct {name}{declaration_generic}: __KioForallValue {{\n    public let __kioEntry: __KioEntry\n    init(__kioEntry entry: __KioEntry) {{ self.__kioEntry = entry }}\n    public func specialize<T>(asKioType _: T.Type = T.self) -> {result_type} {{ __kioNativeChecked(__kioRun(__kioEntry, __KioNativeWitness<T>()), as: ({result_type}).self) }}\n    public init<Implementation: {name}Implementation>(_ implementation: Implementation) where {} {{\n        func advance<W: __KioTypeWitness>(_ witness: W) -> Any {{ implementation.specialize(W.Native.self) as Any }}\n        self.__kioEntry = __KioEntry({{ argument in advance(__kioChecked(argument, as: (any __KioTypeWitness).self)) }}, native: {{ entry in Self(__kioEntry: entry) }})\n    }}\n}}\n\nprivate struct __KioWitness_{name}<{}>: __KioForallWitness {{\n    typealias Native = {name}<{}>\n    func construct(_ body: @escaping (any __KioTypeWitness) -> Any) -> Any {{\n        __KioEntry({{ argument in body(__kioChecked(argument, as: (any __KioTypeWitness).self)) }}, native: {{ entry in Native(__kioEntry: entry) }})\n    }}\n    func constructTail(_ body: @escaping (any __KioTypeWitness, __KioCursor) -> Any) -> Any {{\n        __KioEntry({{ argument, cursor in body(__kioChecked(argument, as: (any __KioTypeWitness).self), cursor) }}, native: {{ entry in Native(__kioEntry: entry) }})\n    }}\n}}\nfunc __kioWitness_{name}<{}>({}) -> any __KioTypeWitness {{ __KioWitness_{name}<{}>() }}\n",
             self.shapes.host_protocol(),
             constraints.join(", "),
             witness_decl.join(", "),

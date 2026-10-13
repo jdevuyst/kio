@@ -478,16 +478,50 @@ owner requirement without an eager boundary validation pass.
 The following value interfaces are distinct from binary structural objects:
 
 - **Unit `()`** is JS `null`. Construct and match as JS `null` directly; there's no construction wrapper because there's nothing to construct.
-- **Function values** (`A -> R`) are plain JS functions, synchronously callable
+- **Function values** (`A -> R`) are cooperative JS functions, synchronously callable
   with exactly one complete domain value. Direct Unit therefore uses
   `callable(null)`, unlike a named direct-Unit declaration's nullary native view.
+  A host creates one with `create<Handle>.lift(body)`, where `body` is an ordinary
+  one-argument function. Existing generated callables are passed unchanged.
 - **Polymorphic values** are objects exposing `advance()`. Each advance enters
   exactly one type stage and returns the next value. A host supplies an object
-  with that method directly. Plain host functions supplied as named host-record
+  with that method to `create<Handle>.liftStage(source)`. Plain host functions supplied as named host-record
   entries retain their ordinary native calling interface.
 - **Bottom `!`** has no JS value. A `fn` declared `-> !` is contractually obliged not to return normally — typically by throwing, calling `process.exit`, or looping indefinitely. A normal return from a `-> !` host fn is undefined behavior at the boundary: Kio code may have eliminated the value via the inline `__absurd__` lowering (which throws a runtime guard) or omitted handling for it entirely. A `!`-typed *return from package code* is unreachable in well-typed programs.
 
 These carve-outs are stable across implementations.
+
+#### Cooperative callable protocol
+
+Every function value also implements `kioStep(domain, transfer)`; every
+polymorphic value implements `kioStep(transfer)`. These are required operations
+on the callable interface, not optional metadata discovered on arbitrary native
+functions. The lift helpers implement them without inspecting the native body's
+properties or entering its body at construction. A lifted type stage preserves
+the source object's receiver and invokes its `advance` with no arguments.
+Native bodies must return values of the declared shape, including lifted or
+generated values when their result contains further functions or type stages.
+
+The structural transfer interface has two methods: `call(target, domain)`
+requests the next value stage and `advance(target)` requests the next type
+stage. During one step, the operation either returns its ordinary result without
+requesting a transfer, or requests one terminal transfer and returns `undefined`.
+The transfer capability is valid only synchronously during that operation and
+must not be retained. A driver distinguishes the request from the returned data;
+no ordinary result object is a control sentinel. Completed calls and reentrant
+calls each own their driver state, and exceptions propagate unchanged.
+
+This operation is the linkage interface used by generated code.
+A requested target must have the same result as the current step; the control
+interface does not encode that semantic obligation. Ordinary hosts use the
+typed lift helpers rather than implementing the control operation themselves.
+
+Compatible carriers implementing this protocol exchange directly between
+independently generated artifacts without a shared runtime, registry or linking
+context. This does not merge nominal owners or make incompatible value shapes
+compatible. Pass a carrier unchanged through host storage to preserve its
+transfer behavior. Explicitly wrapping a call in a native function and lifting
+that wrapper creates an ordinary native execution boundary.
 
 ## Package API
 

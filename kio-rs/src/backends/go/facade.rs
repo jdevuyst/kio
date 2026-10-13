@@ -1958,6 +1958,9 @@ impl<'a> GoFacadeSite<'a> {
                 }))
             }
             FacadeUse::Function { slots, result, .. } => {
+                if slots.is_empty() {
+                    reachability.indices.unit()?;
+                }
                 let mut params = Vec::with_capacity(slots.len());
                 for slot in slots {
                     let child = self.child_traversal(traversal, *slot)?;
@@ -2011,12 +2014,8 @@ impl<'a> GoFacadeSite<'a> {
                     GoRenderResult::Cycle(target) => return Ok(GoRenderResult::Cycle(target)),
                 };
                 Ok(GoRenderResult::Complete(GoRenderedType::concrete(format!(
-                    "func({}) {result}",
-                    grouped
-                        .iter()
-                        .map(GoType::as_str)
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    "Callable[{}, {result}]",
+                    callable_domain_type(&params)
                 ))))
             }
             FacadeUse::Forall { binder, result, .. } => {
@@ -2040,7 +2039,7 @@ impl<'a> GoFacadeSite<'a> {
                                 "TypeStage[{}, {}, {}]",
                                 index.ty, result.ty, self.stage_host_type
                             ),
-                            None => format!("func() {}", result.ty),
+                            None => format!("TypeCallable[{}]", result.ty),
                         }))
                     }
                     GoRenderResult::Cycle(target) => GoRenderResult::Cycle(target),
@@ -5498,6 +5497,7 @@ pub(crate) struct GoProductUse<'site, 'source> {
 
 /// Native parameter presentation without package execution authority.
 pub(crate) enum GoPublicParameter<'site, 'source> {
+    Unit,
     Value(GoFacadeUseRef<'site, 'source>),
     Product(GoProductUse<'site, 'source>),
 }
@@ -5505,6 +5505,7 @@ pub(crate) enum GoPublicParameter<'site, 'source> {
 impl GoPublicParameter<'_, '_> {
     pub(crate) fn boundary_type(&self) -> Result<GoType, GoFacadeError> {
         match self {
+            Self::Unit => Ok(GoType::new("Unit")),
             Self::Value(value) => value.boundary_type(),
             Self::Product(product) => Ok(product.boundary_type().clone()),
         }
@@ -5775,11 +5776,65 @@ impl<'site, 'source> GoFunctionUse<'site, 'source> {
     pub(crate) fn public_parameters(
         &self,
     ) -> Result<Vec<GoPublicParameter<'site, 'source>>, GoFacadeError> {
-        public_parameters(&self.slots, self.layout)
+        match self.slots.as_slice() {
+            [] => Ok(vec![GoPublicParameter::Unit]),
+            [slot] => Ok(vec![GoPublicParameter::Value(slot.clone())]),
+            slots => {
+                let types = slots
+                    .iter()
+                    .map(GoFacadeUseRef::boundary_type)
+                    .collect::<Result<Vec<_>, _>>()?;
+                let shell = GoFacadeShell::new(
+                    self.layout
+                        .facade_shell()
+                        .expect("multiple semantic slots own a product"),
+                )?;
+                Ok(vec![GoPublicParameter::Product(GoProductUse {
+                    boundary_type: callable_domain_type(&types),
+                    fields: slots
+                        .iter()
+                        .enumerate()
+                        .map(|(index, slot)| {
+                            Ok(GoProductFieldUse {
+                                name: go_identifier(format!("F{index}"))?,
+                                payload: slot.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>, GoFacadeError>>()?,
+                    shell,
+                })])
+            }
+        }
+    }
+
+    pub(crate) fn domain_type(&self) -> Result<GoType, GoFacadeError> {
+        self.slots
+            .iter()
+            .map(GoFacadeUseRef::boundary_type)
+            .collect::<Result<Vec<_>, _>>()
+            .map(|types| callable_domain_type(&types))
     }
 
     pub(crate) fn result(&self) -> &GoFacadeUseRef<'site, 'source> {
         &self.result
+    }
+}
+
+/// Callable domains are structural even when the old native function had
+/// several parameters. Package-owned product identities remain unchanged.
+fn callable_domain_type(slots: &[GoType]) -> GoType {
+    match slots {
+        [] => GoType::new("Unit"),
+        [slot] => slot.clone(),
+        slots => GoType::new(format!(
+            "struct {{ {} }}",
+            slots
+                .iter()
+                .enumerate()
+                .map(|(index, ty)| format!("F{index} {ty}"))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )),
     }
 }
 

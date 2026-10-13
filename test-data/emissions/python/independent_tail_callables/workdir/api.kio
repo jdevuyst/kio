@@ -1,0 +1,38 @@
+module api;
+
+host type Number role(i32);
+
+host fn keep[T](value: T) -> T;
+
+host fn mark(code: Number);
+
+pub fn value_root() -> . -> (Number & (. -> Number)) {
+  .() {
+    mark(12);
+    (37, .() { mark(13); 41 })
+  }
+}
+
+pub fn value_link(previous: . -> (Number & (. -> Number))) -> . -> (Number & (. -> Number)) {
+  .() { mark(11); previous() }
+}
+
+pub fn keep_value(value: . -> (Number & (. -> Number))) -> . -> (Number & (. -> Number)) {
+  value.>keep
+}
+
+pub fn type_root() -> [A] A -> (A & (. -> A)) {
+  .[A] {
+    mark(22);
+    .(value: A) {
+      mark(23);
+      (value, .() { mark(24); value })
+    }
+  }
+}
+
+pub fn type_link(previous: [A] A -> (A & (. -> A))) -> [A] A -> (A & (. -> A)) {
+  .[A] { mark(21); previous(A) }
+}
+
+pub fn keep_type(value: [A] A -> (A & (. -> A))) -> [A] A -> (A & (. -> A)) { value.>keep }

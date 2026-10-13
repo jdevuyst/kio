@@ -556,19 +556,27 @@ is realized as follows:
   public, the boundary type is instead that declaration's
   `KioNewtype_…[I, ...]` carrier, with one exact index per declaration
   binder; the hidden payload does not contribute to an enclosing shape.
-- **Function value** → a Go `func(...) ...` whose compound legs are
-  converted across the boundary. The host sees that value-only callable;
-  a product domain is one product parameter, so `(A & B) -> R` is
-  `func(Product[A, B]) R`. A first-class `[A] R` is a
+- **Function value** → `Callable[A, R]`, a generic alias to the structural
+  interface `interface { Call(A) R }`. `A` is the complete semantic value
+  domain: a scalar has its native boundary type, Unit is explicit, and
+  multiple semantic slots use an anonymous struct with positional fields
+  `F0`, `F1`, and so on. The slot's `_cbarg0` alias names that domain.
+  For example `(A & B) -> R` uses
+  `Callable[struct { F0 A; F1 B }, R]`. Ordinary product values and named
+  declaration parameter grouping retain their representations above.
+  `Func[A, R](nativeFunction)` lifts a native Go function; a host-defined
+  type may instead implement `Call(A) R` directly. A first-class `[A] R` is a
   `TypeStage[I, R, H]`. Its site-local `SelectS[ChosenIndex](stage)`
   selects one binder and returns the exact instantiated native view;
   `stage.Invoke()` executes the same stage with its abstract result view.
   Each selection or invocation executes that stage once; calling a returned
   value function does not repeat it. Construction, preparation, return, and
   transport do not execute a stage. `Invoke()` returns the abstract view;
-  further binders in that view are nullary Go functions rather than typed
-  selection stages. A directly
-  written `. -> R` is `func() R`. Instantiating `A -> R` with `A = .`
+  further binders in that view use `TypeCallable[R]`, the structural alias
+  `interface { Invoke() R }`, rather than typed selection stages.
+  `TypeFunc[R](nativeFunction)` lifts a native nullary stage.
+  A directly written `. -> R` is `Callable[Unit, R]`, invoked with
+  `value.Call(Unit{})`. Instantiating `A -> R` with `A = .`
   preserves that existing argument slot; a selected generic view receives
   the exact prepared Unit value in that slot.
 - A selected **type-variable / abstract** position uses `Prepared[I]`.
@@ -579,8 +587,37 @@ is realized as follows:
 An existential projector preserves exact known declaration indices, but its
 hidden existential positions and elimination result use the erased `Value`
 continuation view. A binder without a complete exact index is an ordinary
-nullary function stage in that view, rather than a `TypeStage` with a
+`TypeCallable` stage in that view, rather than a `TypeStage` with a
 selection helper.
+
+### Callable transport and native invocation
+
+Passing a guest callable unchanged through its public interface or an opaque
+host container preserves its entry, captures and execution stage. This includes
+compatible independently generated packages. `Callable` and `TypeCallable` are
+aliases to unnamed interfaces, and `Unit` remains an alias to `struct{}`; nested
+callable signatures therefore preserve structural identity whenever their
+argument and result types are themselves compatible. Package-owned nominal,
+generic and structural carriers retain their existing identity boundaries.
+
+Supplying `value.Call` to a native library, or lifting it with `Func`, creates
+an explicit native execution boundary. The same applies to an extracted
+`Invoke` method. Unchanged transport does not include that new native callback
+or arbitrary native reentry. Required host conversion hooks still execute in
+their specified order with the appropriate instance's bindings.
+
+Generated callables additionally expose the support method
+`KioTail() func(any) (bool, any, any, any, func(any) any, func(any) any)`.
+The getter is inert and repeatable. Its entry receives that callable's native
+domain (no argument payload for a type stage). A true first result carries the
+completed value in the second position. Otherwise, the third position carries
+the next entry with the same exact function signature and the fourth its exact
+argument. The final two positions are optional result conversions, applied in
+that order after the transferred call completes. Each entry owns its private
+body/native conversions; private body values are not interchangeable between
+artifacts. Compatible generated support implements this contract. A host
+implementation providing only `Call` or `Invoke` is an ordinary native entry,
+not a guest transfer. Host authors need not implement the support method.
 
 A both-member **recursive newtype** whose boundary cycle is not cut by an
 opaque or one-member carrier — one whose payload reaches itself, directly
@@ -610,7 +647,7 @@ The `H` parameter ties that view to the package's exact native host
 selections. A package-created callback retains its defining captures;
 requesting a native view through another compatible instance uses that
 instance's adapters without replacing those captures. A host-authored stage
-is constructed with `NewSStage(host, func() R)`; construction is inert and
+is constructed with `NewSStage(host, TypeFunc[R](func() R))`; construction is inert and
 the function executes only when that stage is selected or invoked. Passing
 that native callback into a package uses the receiving instance's adapters,
 following [package isolation](README.md#4-package-isolation).

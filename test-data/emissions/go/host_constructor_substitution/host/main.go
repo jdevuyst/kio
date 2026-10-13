@@ -46,18 +46,18 @@ func main() {
 	generic := artifact.CallExp_Api__product(pkg.Api, box[artifact.IndexExp_Api__product_arg0_typearg0[int32, numberIndex, pairIndex]](artifact.ValueExp_Api__product_arg0_typearg0[int32, numberIndex, pairIndex](pkg, prepared)))
 	checkProduct(generic, "generic product")
 	callbackCalls := 0
-	callback := func(value artifact.Exp_Api__callback_arg1[int32, numberIndex, pairIndex]) artifact.Exp_Api__callback_ret[int32, numberIndex, pairIndex] {
+	callback := artifact.Func[artifact.Exp_Api__callback_arg1[int32, numberIndex, pairIndex], artifact.Exp_Api__callback_ret[int32, numberIndex, pairIndex]](func(value artifact.Exp_Api__callback_arg1[int32, numberIndex, pairIndex]) artifact.Exp_Api__callback_ret[int32, numberIndex, pairIndex] {
 		callbackCalls++
 		events = append(events, "callback")
 		return value
-	}
+	})
 	called := artifact.CallExp_Api__callback(pkg.Api, callback, generic)
 	later := artifact.CallExp_Api__returned(pkg.Api, called)
 	if callbackCalls != 1 {
 		panic("callback count")
 	}
-	checkProduct(later(), "returned product")
-	checkProduct(later(), "repeated returned product")
+	checkProduct(later.Call(artifact.Unit{}), "returned product")
+	checkProduct(later.Call(artifact.Unit{}), "repeated returned product")
 	if !reflect.DeepEqual(events, []string{"echo", "echo", "callback"}) {
 		panic(events)
 	}

@@ -1,0 +1,12 @@
+package tail_origin;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  api
+}

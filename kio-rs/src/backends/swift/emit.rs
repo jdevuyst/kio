@@ -67,8 +67,8 @@ impl std::fmt::Display for EmitError {
 }
 
 /// Emitted Swift package — the per-package source files plus the fixed
-/// `kio_runtime.swift` runtime-support file. Every top-level name lives
-/// under the package's namespace, imposed at compile time via
+/// `kio_runtime.swift` nominal-support file and the shared callable module.
+/// Package-owned names live under its namespace, imposed at compile time via
 /// `-module-name` (Swift sources carry no module declaration); the
 /// `pkg.swift` marker line publishes that namespace.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +86,8 @@ pub struct SwiftPackage {
     pub ffi_swift: String,
     /// The runtime-support file content.
     pub runtime_swift: String,
+    /// The complete source of the shared callable/control support module.
+    pub shared_runtime_swift: String,
 }
 
 /// The branded facade names for one emitted Swift package, all derived
@@ -173,18 +175,17 @@ pub fn lower_package_with_signature(
         host_swift: finalize_swift_file(host_swift),
         shapes_swift: finalize_swift_file(shapes_swift),
         ffi_swift: finalize_swift_file(ffi_swift),
-        // The runtime-support file references no branded or module name
-        // (Swift files carry no module clause), so its content is fixed —
-        // byte-identical across packages — unlike Go's, which binds the
-        // `package <ns>` line. See `super::runtime`.
         runtime_swift: super::RUNTIME_SUPPORT_FILE_CONTENT.to_owned(),
+        shared_runtime_swift: super::SHARED_RUNTIME_FILE_CONTENT.to_owned(),
     })
 }
 
 /// Normalize an emitted Swift file: strip trailing blank lines, end with
-/// exactly one newline. The emitted surface uses Swift standard-library
-/// constructs and needs no import injection.
+/// exactly one newline. Keep the package marker first while importing the
+/// shared representation in each separately compiled source file.
 fn finalize_swift_file(mut s: String) -> String {
+    let first_line = s.find('\n').map_or(0, |index| index + 1);
+    s.insert_str(first_line, "import KioRuntime\n");
     while s.ends_with('\n') {
         s.pop();
     }
@@ -334,7 +335,7 @@ fn render_prepared_source_param_type(
                         values.native(id, &scope.binders, host_ref)
                     }
                     crate::backends::value_plan::ValueDomainStep::Product(left, right) => {
-                        Ok(format!("Product<{left}, {right}>"))
+                        Ok(format!("KioRuntime.Product<{left}, {right}>"))
                     }
                 })?
                 .ok_or_else(|| {
@@ -832,7 +833,7 @@ fn render_host_protocol(
             .param_types
             .iter()
             .enumerate()
-            .map(|(index, ty)| format!("_ arg{index}: {}", escaping_param_ty(ty)))
+            .map(|(index, ty)| format!("_ arg{index}: {ty}"))
             .collect::<Vec<_>>();
         params.extend(
             swift_method_type_selectors(&callable)
@@ -913,18 +914,6 @@ fn swift_host_type_default(role: Option<Role>) -> &'static str {
         Some(Role::F32 | Role::F64) => "Swift.Double",
         Some(Role::Bool) => "Swift.Bool",
         Some(Role::Str) => "Swift.String",
-    }
-}
-
-/// A function-typed Swift parameter must be `@escaping` when it can outlive
-/// the call. Generated top-level closure types start with `(` and contain
-/// ` -> `; a named Product can contain that arrow only in a nested generic
-/// argument and must not receive the parameter-only attribute.
-fn escaping_param_ty(rendered: &str) -> String {
-    if rendered.starts_with('(') && rendered.contains(" -> ") {
-        format!("@escaping {rendered}")
-    } else {
-        rendered.to_owned()
     }
 }
 
@@ -1318,7 +1307,7 @@ fn render_export_method(
         .param_types
         .iter()
         .enumerate()
-        .map(|(index, ty)| format!("_ arg{index}: {}", escaping_param_ty(ty)))
+        .map(|(index, ty)| format!("_ arg{index}: {ty}"))
         .collect::<Vec<_>>();
     params.extend(
         swift_method_type_selectors(&callable)
@@ -2944,11 +2933,9 @@ mod tests {
         assert!(rendered.contains(", v252, v253, v254], [witness, "));
         assert_eq!(rendered.matches('[').count(), 2, "{rendered}");
         assert!(!rendered.contains("as [Any]"), "{rendered}");
-        assert!(
-            super::super::runtime::RUNTIME_SUPPORT_FILE_CONTENT.contains(
-                "func __kioProduct(_ slots: [Any], _ witnesses: [any __KioTypeWitness]) -> Any"
-            )
-        );
+        assert!(super::super::runtime::SHARED_RUNTIME_FILE_CONTENT.contains(
+            "func __kioProduct(_ slots: [Any], _ witnesses: [any __KioTypeWitness]) -> Any"
+        ));
     }
 
     #[test]
@@ -3041,12 +3028,12 @@ mod tests {
             let scope = Default::default();
             let native = types.native(plan.root(), &scope, "H").unwrap();
             let witness = types.witness(plan.root(), &scope, "H").unwrap();
-            assert_eq!(
-                native
-                    .matches(if sum { "Sum<" } else { "Product<" })
-                    .count(),
-                width - 1
-            );
+            let constructor = if sum {
+                "KioRuntime.Sum<"
+            } else {
+                "KioRuntime.Product<"
+            };
+            assert_eq!(native.matches(constructor).count(), width - 1);
             assert_eq!(
                 witness
                     .matches(if sum {
@@ -3057,39 +3044,67 @@ mod tests {
                     .count(),
                 width - 1
             );
-            assert!(native.len() < width * 24);
+            assert_eq!(
+                native.len(),
+                (width - 1) * (constructor.len() + "KioUnit, ".len() + ">".len()) + "KioUnit".len()
+            );
             assert!(witness.len() < width * 240);
         }
     }
 
     #[test]
-    fn escaping_parameter_type_only_marks_top_level_closures() {
-        let closure = "(Swift.Int) -> Swift.Int";
-        assert_eq!(escaping_param_ty(closure), format!("@escaping {closure}"));
-
-        let product_with_closure = "Product<(Swift.Int) -> Swift.Int, Swift.Int>";
-        assert_eq!(
-            escaping_param_ty(product_with_closure),
-            product_with_closure
+    fn structural_type_uses_name_the_shared_declarations() {
+        let package = single_api_package(
+            "module api; host type Atom; \
+             host fn accept(value: Atom & Atom) -> Atom | Atom; \
+             pub fn forward(value: Atom & Atom) -> Atom | Atom { accept(value) }",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit structural Swift");
+        for source in [&emitted.host_swift, &emitted.pkg_swift, &emitted.ffi_swift] {
+            assert!(source.contains("KioRuntime.Product<"), "{source}");
+            assert!(source.contains("KioRuntime.Sum<"), "{source}");
+            let unqualified = source
+                .replace("KioRuntime.Product<", "")
+                .replace("KioRuntime.Sum<", "");
+            assert!(!unqualified.contains("Product<"), "{source}");
+            assert!(!unqualified.contains("Sum<"), "{source}");
+        }
+        assert!(
+            emitted
+                .runtime_swift
+                .contains("public typealias Product<A, B> = KioRuntime.Product<A, B>")
+        );
+        assert!(
+            emitted
+                .runtime_swift
+                .contains("public typealias Sum<A, B> = KioRuntime.Sum<A, B>")
         );
     }
 
     #[test]
-    fn higher_order_domains_preserve_generic_escaping_convention() {
+    fn higher_order_domains_use_canonical_typed_carriers() {
         let package = single_api_package(
             "module api; \
              host fn apply(value: (. -> .) -> .) -> .; \
              pub fn keep(value: (. -> .) -> .) -> (. -> .) -> . { value }",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit higher-order Swift");
-        let higher_order = "(@escaping (KioUnit) -> KioUnit) -> KioUnit";
+        let higher_order = "KioFn<KioFn<KioUnit, KioUnit>, KioUnit>";
         assert!(emitted.ffi_swift.contains(&format!("= {higher_order}")));
-        assert!(emitted.host_swift.contains(&format!(
-            "func api__apply(_ arg0: @escaping {higher_order})"
-        )));
+        assert!(
+            emitted
+                .host_swift
+                .contains(&format!("func api__apply(_ arg0: {higher_order})"))
+        );
         assert!(emitted.pkg_swift.contains(&format!(
-            "public func keep(_ arg0: @escaping {higher_order}) -> {higher_order}"
+            "public func keep(_ arg0: {higher_order}) -> {higher_order}"
         )));
+        assert!(!emitted.host_swift.contains("@escaping"));
+        assert!(
+            emitted
+                .runtime_swift
+                .contains("public typealias KioFn<A, R> = KioRuntime.KioFn<A, R>")
+        );
     }
 
     #[test]
@@ -4292,7 +4307,7 @@ v(2) {
                 && emitted.shapes_swift.contains(".Type")
                 && emitted
                     .shapes_swift
-                    .contains("func specialize<T>(_: T.Type) -> (T) -> T")
+                    .contains("func specialize<T>(_: T.Type) -> KioFn<T, T>")
                 && emitted
                     .shapes_swift
                     .contains("public func specialize<T>(asKioType _: T.Type = T.self)")
@@ -4387,7 +4402,7 @@ v(2) {
             .find(|line| line.starts_with("public typealias Env_api__exchange_arg1_field0<"))
             .unwrap();
         assert!(
-            field.contains("<KioType_0, KioType_1> = (KioType_0) -> KioType_1"),
+            field.contains("<KioType_0, KioType_1> = KioFn<KioType_0, KioType_1>"),
             "{field}"
         );
         assert!(

@@ -99,11 +99,10 @@ at the boundary. This matters in practice in two ways:
   calling the resulting value function.
 
 An opaque constructor keeps its argument's native value representation. Thus
-a Kio `Box(. -> A)` holds a Haskell `() -> m a` callback, even though a direct
-Unit-domain callback at the public boundary is a nullary `m a` action. The
-backend can adapt the direct callback, but does not inspect or map your box.
-The same distinction applies inside an abstract `F` and inside its nested
-products, sums or polymorphic values.
+a Kio `Box(. -> A)` holds a Haskell `() -> m a` callback, exactly like a direct
+Unit-domain callback. The same representation applies inside an abstract `F`
+and inside nested products, sums or polymorphic values. The backend does not
+inspect or map your box.
 
 The package is polymorphic in two host choices:
 
@@ -291,9 +290,10 @@ A structural Kio type crosses as ordinary Haskell pairs or `Either`:
 
 Each written parameter becomes one Haskell argument: `f(x: A, y: B)` takes
 two curried arguments, while `f(pair: A & B)` takes one pair. A callback of
-type `(A & B) -> C` likewise takes one pair. A direct Unit domain is called
-with no term argument; an existing generic slot instantiated with Unit or a
-product still takes one argument. Product patterns also work for returned
+type `(A & B) -> C` likewise takes one pair. A first-class Unit-domain callback
+takes one `()` argument; a named nullary declaration is called with no term
+argument. An existing generic slot instantiated with Unit or a product still
+takes one argument. Product patterns also work for returned
 products and products nested inside other boundary shapes.
 
 Use these native types directly in ordinary host code. For example, a host
@@ -369,8 +369,8 @@ newtypes.
 An **existential newtype** crosses as a native Haskell existential carrier.
 Its constructor accepts the exact payload and seals the hidden binders. Its
 projector accepts a rank-N continuation. With one hidden type, a one-slot
-payload has the form `forall hidden. m (payload -> m r)`; canonical Unit has
-no runtime argument and uses `forall hidden. m (m r)`. Bind the result of the
+payload has the form `forall hidden. m (payload -> m r)`; Unit uses
+`forall hidden. m (() -> m r)`. Bind the result of the
 visible type application before using the payload stage. More hidden types
 repeat that `forall hidden. m (...)` shape. This lets the host inspect the
 payload without letting a hidden type escape. A product payload supplies one
@@ -387,11 +387,11 @@ identity includes the exact declaring module and type, so same-named
 newtypes in different modules remain distinct. An enclosing boundary shape
 treats an abstract carrier as one value and never exposes its hidden payload.
 
-A **function value** crosses as a native Haskell function returning `m ret`;
-a product domain takes one tuple argument and a direct Unit domain is nullary.
-Its compound legs are converted across the
-boundary, but the function itself is a real Haskell function you can call or
-store. Generic host functions quantify their type parameters with native
+A **function value** crosses unchanged as a native Haskell function returning
+`m ret`; a product domain takes one tuple argument and Unit takes one `()`
+argument. Supply a Unit callback as `\() -> action` and invoke it as `callback ()`.
+Named nullary declarations still return an action directly. Generic host
+functions quantify their type parameters with native
 Haskell `forall`, including higher-kinded parameters; this adds no term-level
 type-argument slots to a host call. Generated adapters preserve the package's
 evaluation order before the next visible value call. When a function value

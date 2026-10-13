@@ -1,0 +1,12 @@
+package callback_b;
+
+build {
+  target swift {
+    out "out/swift/";
+    baseline v6_0
+  }
+}
+
+bridge {
+  peer
+}

@@ -543,6 +543,8 @@ fn swift_name_reserved(name: &str) -> bool {
 /// reserved so the handle never redeclares a shape, nominal carrier, abstract
 /// application, or rank-N witness in the artifact module.
 const SWIFT_SUPPORT_BRANDS: &[&str] = &[
+    "KioFn",
+    "KioRuntime",
     "KioUnit",
     "Product",
     "Sum",
@@ -1106,6 +1108,8 @@ mod tests {
 
     #[test]
     fn swift_default_mangles_support_brand_collisions() {
+        assert_eq!(default_swift_namespace("kio_fn"), "KioPkg_KioFn");
+        assert_eq!(default_swift_namespace("kio_runtime"), "KioPkg_KioRuntime");
         assert_eq!(default_swift_namespace("kio_unit"), "KioPkg_KioUnit");
         assert_eq!(default_swift_namespace("product"), "KioPkg_Product");
         assert_eq!(default_swift_namespace("sum"), "KioPkg_Sum");
@@ -1119,6 +1123,8 @@ mod tests {
 
     #[test]
     fn swift_explicit_value_rejects_support_brands() {
+        assert!(validate_swift_namespace("KioFn").is_err());
+        assert!(validate_swift_namespace("KioRuntime").is_err());
         assert!(validate_swift_namespace("KioUnit").is_err());
         assert!(validate_swift_namespace("Product").is_err());
         assert!(validate_swift_namespace("Sum").is_err());
@@ -1133,6 +1139,8 @@ mod tests {
         assert!(validate_swift_namespace("KioNewtypeMk_api__Token").is_err());
         assert!(validate_swift_namespace("KioForall_api__HostFn_apply_U0").is_err());
         assert!(validate_swift_namespace("KioUnits").is_ok());
+        assert!(validate_swift_namespace("KioFns").is_ok());
+        assert!(validate_swift_namespace("KioRuntimeExtra").is_ok());
         assert!(validate_swift_namespace("Products").is_ok());
         assert!(validate_swift_namespace("KioApplyReader").is_ok());
         assert!(validate_swift_namespace("KioFacades").is_ok());

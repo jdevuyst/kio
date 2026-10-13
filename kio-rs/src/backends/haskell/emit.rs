@@ -827,7 +827,7 @@ v(2) {
     }
 
     #[test]
-    fn projected_rank_n_boundary_values_are_annotated_before_visible_type_arguments() {
+    fn projected_rank_n_boundary_values_are_typed_and_transported_without_execution() {
         let emitted = render(
             "module api; \
              pub newtype Pair : . & . { \
@@ -866,20 +866,11 @@ v(2) {
             .lines()
             .find(|line| line.starts_with(&format!("{name} _pkg")))
             .expect("projector export equation");
-        let projection = equation
-            .find("case (__hp0) of")
-            .unwrap_or_else(|| panic!("fixture did not emit a product projection: {equation}"));
-        let annotation = projection
-            + equation[projection..]
-                .find(":: forall")
-                .unwrap_or_else(|| panic!("projected boundary operand is unannotated: {equation}"));
-        let visible_argument = annotation
-            + equation[annotation..].find(" @").unwrap_or_else(|| {
-                panic!("source annotation does not precede type application: {equation}")
-            });
-
-        assert!(projection < annotation, "{equation}");
-        assert!(annotation < visible_argument, "{equation}");
+        assert!(equation.contains("case (__hp0) of"), "{equation}");
+        assert!(equation.contains(":: forall"), "{equation}");
+        assert!(equation.contains("seq @(forall"), "{equation}");
+        assert!(!equation.contains("__hforall"), "{equation}");
+        assert!(!equation.contains("\\ @t_a ->"), "{equation}");
         let concrete = visible_parenthesized_type_application(equation, "= kioPure @");
         assert!(
             concrete.starts_with("(t_pair, (forall"),
@@ -926,25 +917,22 @@ v(2) {
             .lines()
             .find(|line| line.starts_with(&format!("{constructor} _pkg")))
             .expect("constructor export equation");
-        let inward_annotation = constructor_equation.find(":: forall").unwrap_or_else(|| {
-            panic!("constructor's inward rank-N operand is unannotated: {constructor_equation}")
-        });
-        let inward_application = inward_annotation
-            + constructor_equation[inward_annotation..]
-                .find(" @")
-                .unwrap_or_else(|| {
-                    panic!(
-                        "constructor's inward annotation does not precede type application: {constructor_equation}"
-                    )
-                });
         assert!(
-            inward_annotation < inward_application,
+            constructor_equation.contains(":: forall"),
+            "{constructor_equation}"
+        );
+        assert!(
+            constructor_equation.contains("seq @(forall"),
+            "{constructor_equation}"
+        );
+        assert!(
+            !constructor_equation.contains("__hforall"),
             "{constructor_equation}"
         );
     }
 
     #[test]
-    fn generic_sum_boundaries_demand_payloads_and_convert_callable_slots() {
+    fn generic_sum_boundaries_demand_payloads_and_preserve_callable_slots() {
         let emitted = render(
             "module api; \
              host fn choose[A][B](step: . -> (A | B)) -> A | B; \
@@ -971,7 +959,71 @@ v(2) {
         );
         let converted = equation("converted");
         assert!(converted.contains("case"), "{converted}");
-        assert!(converted.contains("__hfd"), "{converted}");
+        assert!(converted.contains("`seq`"), "{converted}");
+        assert!(!converted.contains("__hfd"), "{converted}");
+    }
+
+    #[test]
+    fn native_callable_identity_keeps_unit_and_executing_type_stages() {
+        let emitted = render(
+            "module api; host type N; host type Box[A]; \
+             host fn tick() -> .; \
+             pub fn value(next: . -> N) -> . -> N { .() { tick(); next() } } \
+             pub fn stage(next: [A] . -> N) -> [A] . -> N { .[A] { tick(); next(A) } } \
+             pub fn structure(next: . -> (N & N)) -> . -> (N & N) { next } \
+             pub fn opaque(next: Box(. -> N)) -> Box(. -> N) { next }",
+        )
+        .expect("render native callback transport");
+        let equation = |prefix: &str| {
+            emitted
+                .lines()
+                .find(|line| line.starts_with(prefix))
+                .unwrap_or_else(|| panic!("missing {prefix}: {emitted}"))
+        };
+        let tick = emitted
+            .lines()
+            .find(|line| line.contains("host__api__tick ::"))
+            .expect("named nullary host field");
+        assert!(tick.contains(":: m ()"), "{tick}");
+        assert!(equation("export__api__value ::").contains("() -> m"));
+        assert!(equation("export__api__stage ::").contains("m (() -> m"));
+        assert!(equation("export__api__opaque ::").contains("Box h (() -> m"));
+        for name in ["value", "stage", "structure", "opaque"] {
+            let wrapper = equation(&format!("export__api__{name} _pkg"));
+            assert!(!wrapper.contains("__hfr"), "{wrapper}");
+            assert!(!wrapper.contains("__hforall"), "{wrapper}");
+            assert!(wrapper.contains("kioEval"), "{wrapper}");
+        }
+        let stage = equation(&format!("{} _pkg", module_fn("api", "stage")));
+        assert!(stage.contains("host__api__tick"), "{stage}");
+        assert_eq!(stage.matches("host__api__tick").count(), 1, "{stage}");
+        assert!(!stage.contains("__hft"), "{stage}");
+    }
+
+    #[test]
+    fn native_callback_compound_consumers_keep_value_and_field_demands() {
+        let emitted = render(
+            "module api; host type N; \
+             pub fn consume(next: . -> (N & N)) -> N & N { \
+               let .(selected, _discarded) = next(); (selected, selected) \
+             }",
+        )
+        .expect("render host-origin callback compound consumer");
+        let name = module_fn("api", "consume");
+        let body = emitted
+            .lines()
+            .find(|line| line.starts_with(&format!("{name} _pkg")))
+            .expect("callback consumer body");
+        assert_eq!(body.matches("k_next ()").count(), 1, "{body}");
+        assert!(body.contains(">>="), "{body}");
+        assert!(body.contains("`seq`"), "{body}");
+        let wrapper = emitted
+            .lines()
+            .find(|line| line.starts_with("export__api__consume _pkg"))
+            .expect("compound result facade");
+        assert!(wrapper.contains("__hp0_0 `seq`"), "{wrapper}");
+        assert!(wrapper.contains("__hp0_1 `seq`"), "{wrapper}");
+        assert!(!wrapper.contains("__hfr"), "{wrapper}");
     }
 
     #[test]
@@ -1006,17 +1058,14 @@ v(2) {
             .find(|line| line.starts_with(&format!("{callback} _pkg")))
             .expect("prepared callback export equation");
         let concrete = standard_hs("(forall (t_a :: %KIND%.Type). m (t_a -> m t_a), ())");
-        let marker = ">>= \\__hfr0 -> kioPure @";
-        let lifts = callback_equation
-            .match_indices(marker)
-            .map(|(index, _)| {
-                visible_parenthesized_type_application(&callback_equation[index..], marker)
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(
-            lifts,
-            [concrete.as_str(), concrete.as_str()],
-            "prepared callback inward and outward exact lifts: {callback_equation}"
+        assert!(!callback_equation.contains("__hfr"), "{callback_equation}");
+        assert!(
+            callback_equation.contains("kioEval @"),
+            "{callback_equation}"
+        );
+        assert!(
+            callback_equation.contains("kioPure @"),
+            "{callback_equation}"
         );
 
         let host_value = module_fn("api", "host_value");
@@ -1961,11 +2010,11 @@ v(2) {
             );
         }
         let direct = line("export__api__direct ::");
-        assert!(!direct.contains("() -> m"), "{direct}");
+        assert!(direct.contains("() -> m"), "{direct}");
         let nested = line("type Export_api__compound_Arg0_App0 ");
         assert!(nested.contains("() -> m"), "{nested}");
         let visible = line("type Export_api__visible_Result ");
-        assert!(!visible.contains("() -> m"), "{visible}");
+        assert!(visible.contains("() -> m"), "{visible}");
     }
 
     #[test]
@@ -1983,11 +2032,11 @@ v(2) {
             .expect("direct sum wrapper");
         assert_eq!(direct.matches("either @").count(), 2, "{direct}");
         assert!(
-            direct.contains("either @(m (HostType__api__N h)) @(Either (() -> m"),
+            direct.contains("either @(() -> m (HostType__api__N h)) @(Either (() -> m"),
             "{direct}"
         );
         assert!(
-            direct.contains("either @(() -> m (HostType__api__N h)) @(Either (m"),
+            !direct.contains("either @(m (HostType__api__N h))"),
             "{direct}"
         );
         assert_eq!(direct.matches("Left @").count(), 2, "{direct}");
@@ -2034,9 +2083,9 @@ v(2) {
         };
         assert_eq!(wrapper("three").matches("either @").count(), 4);
         assert_eq!(wrapper("three").matches("(arg0)").count(), 1);
-        assert_eq!(wrapper("callback").matches("either @").count(), 4);
+        assert_eq!(wrapper("callback").matches("either @").count(), 2);
         assert_eq!(wrapper("nested").matches("either @").count(), 2);
-        assert!(wrapper("nested").contains("either @(m t_a)"));
+        assert!(wrapper("nested").contains("either @(() -> m t_a)"));
         let host_body = output
             .lines()
             .find(|line| line.contains("__api__viaHost _pkg k_value ="))
@@ -2067,7 +2116,7 @@ v(2) {
             assert_eq!(wrapper.matches("either @").count(), 2 * (arity - 1));
             assert_eq!(wrapper.matches("Left @").count(), 2 * (arity - 1));
             assert_eq!(wrapper.matches("Right @").count(), 2 * (arity - 1));
-            assert_eq!(wrapper.matches("\\ @t_a ->").count(), 2);
+            assert_eq!(wrapper.matches("\\ @t_a ->").count(), 0);
             assert_eq!(wrapper.matches("(arg0)").count(), 1);
             if let Some(bytes) = small_size {
                 // Explicit tail type arguments repeat type text quadratically;
@@ -2115,7 +2164,7 @@ v(2) {
                 })
                 .expect("host function value parameter");
             let slots = Type::right_spine_product(value);
-            rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes, false)
+            rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes)
                 .expect("normalize rank-N pattern shape")
                 .expect("test shape contains a rank-N slot")
         };
@@ -2132,7 +2181,7 @@ v(2) {
     }
 
     #[test]
-    fn rank_n_patterns_keep_canonical_domains_only_inside_opaque_arguments() {
+    fn rank_n_patterns_keep_canonical_domains_at_every_occurrence() {
         let package = routed_package(
             "module api; host type N; host type Box[A]; \
              host fn nested(value: Box((. -> N) & ([A] A -> A))) -> .;",
@@ -2159,15 +2208,11 @@ v(2) {
             panic!("host Box application")
         };
         let slots = Type::right_spine_product(&args[0]);
-        let native = rank_n_pattern_shape(&slots, &[], Some("api"), &shapes, true)
-            .expect("opaque argument pattern")
-            .expect("rank-N slot");
-        let direct = rank_n_pattern_shape(&slots, &[], Some("api"), &shapes, false)
+        let direct = rank_n_pattern_shape(&slots, &[], Some("api"), &shapes)
             .expect("direct boundary pattern")
             .expect("rank-N slot");
-        assert!(native.slots[0].contains("() ->"), "{:?}", native.slots);
-        assert!(!direct.slots[0].contains("() ->"), "{:?}", direct.slots);
-        let nested = rank_n_pattern_shape(&[ty], &[], Some("api"), &shapes, false)
+        assert!(direct.slots[0].contains("() ->"), "{:?}", direct.slots);
+        let nested = rank_n_pattern_shape(&[ty], &[], Some("api"), &shapes)
             .expect("nested opaque application")
             .expect("rank-N argument");
         assert!(nested.slots[0].contains("() ->"), "{:?}", nested.slots);
@@ -2179,17 +2224,10 @@ v(2) {
             right: right.clone(),
             meta: meta.clone(),
         };
-        for canonical in [false, true] {
-            let shape = rank_n_pattern_shape(&[&sum], &[], Some("api"), &shapes, canonical)
-                .expect("sum context")
-                .expect("rank-N arm");
-            assert_eq!(
-                shape.slots[0].contains("() ->"),
-                canonical,
-                "{:?}",
-                shape.slots
-            );
-        }
+        let shape = rank_n_pattern_shape(&[&sum], &[], Some("api"), &shapes)
+            .expect("sum context")
+            .expect("rank-N arm");
+        assert!(shape.slots[0].contains("() ->"), "{:?}", shape.slots);
     }
 
     #[test]
@@ -2250,7 +2288,7 @@ v(2) {
                         super::normalize_rank_n_boundary_type(slot, &[], Some("api"), &shapes)
                             .expect("normalize exact boundary representation");
                     super::RankNPatternRenderer::new(&[], Some("api"), &shapes)
-                        .render(&normalized, false)
+                        .render(&normalized)
                         .expect("render normalized boundary representation")
                 })
                 .collect::<Vec<_>>();
@@ -2260,7 +2298,7 @@ v(2) {
                 standard_hs("forall (rq0 :: %KIND%.Type). rp0 (rq0 -> rp0 rq0)"),
                 "{function_name}"
             );
-            rank_n_pattern_shape(&slots, &[], Some("api"), &shapes, false)
+            rank_n_pattern_shape(&slots, &[], Some("api"), &shapes)
                 .expect("normalize rank-N boundary shape")
                 .expect("expanded alias or newtype contains forall");
         }
@@ -2401,7 +2439,7 @@ v(2) {
             })
             .expect("rank value parameter type");
         let slots = Type::right_spine_product(value);
-        let shape = rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes, false)
+        let shape = rank_n_pattern_shape(&slots, &scope, Some("api"), &shapes)
             .expect("normalize rank-N product")
             .expect("rank product has a rank-N slot");
         assert_eq!(
@@ -3296,35 +3334,27 @@ fn emit_ffi_slot_aliases(
                 .iter()
                 .map(|slot| slot.ty())
                 .collect::<Vec<_>>();
-            let (decl, helpers) = if let Some(shape) = rank_n_pattern_shape(
-                &product_slots,
-                scope,
-                module,
-                shapes,
-                boundary
-                    .tail
-                    .iter()
-                    .any(|step| matches!(step, BoundaryStep::App(_))),
-            )? {
-                acc.has_rank_n_patterns = true;
-                render_rank_n_product_pattern(
-                    &pattern_id,
-                    &pat,
-                    &rendered_selectors,
-                    &shape,
-                    shapes.structural_names(),
-                    shapes.standard_names(),
-                )
-            } else {
-                (
-                    format!(
-                        "pattern {pat} {{ {} }} = {}\n",
-                        rendered_selectors.join(", "),
-                        nested_product_pattern(&rendered_selectors),
-                    ),
-                    Vec::new(),
-                )
-            };
+            let (decl, helpers) =
+                if let Some(shape) = rank_n_pattern_shape(&product_slots, scope, module, shapes)? {
+                    acc.has_rank_n_patterns = true;
+                    render_rank_n_product_pattern(
+                        &pattern_id,
+                        &pat,
+                        &rendered_selectors,
+                        &shape,
+                        shapes.structural_names(),
+                        shapes.standard_names(),
+                    )
+                } else {
+                    (
+                        format!(
+                            "pattern {pat} {{ {} }} = {}\n",
+                            rendered_selectors.join(", "),
+                            nested_product_pattern(&rendered_selectors),
+                        ),
+                        Vec::new(),
+                    )
+                };
             let complete = format!("{{-# COMPLETE {pat} #-}}\n");
             let payload = format!("{decl}{complete}");
             if acc.claims.claim(pattern_name, &pat, &payload) {
@@ -3363,16 +3393,7 @@ fn emit_ffi_slot_aliases(
                 .iter()
                 .map(|slot| slot.ty())
                 .collect::<Vec<_>>();
-            let rank_n_shape = rank_n_pattern_shape(
-                &sum_slots,
-                scope,
-                module,
-                shapes,
-                boundary
-                    .tail
-                    .iter()
-                    .any(|step| matches!(step, BoundaryStep::App(_))),
-            )?;
+            let rank_n_shape = rank_n_pattern_shape(&sum_slots, scope, module, shapes)?;
             let mut complete = Vec::with_capacity(keys.len());
             for (k, key) in keys.iter().enumerate() {
                 let pattern = SumPatternId {
@@ -3693,7 +3714,7 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
         Ok(name)
     }
 
-    fn render(&mut self, ty: &Type<Routed>, canonical: bool) -> Result<String, EmitError> {
+    fn render(&mut self, ty: &Type<Routed>) -> Result<String, EmitError> {
         match ty {
             Type::Path { segments, args, .. } => {
                 let local = if let [name] = segments.as_slice() {
@@ -3757,7 +3778,7 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
                     self.representation_head(key, kind)?
                 };
                 for arg in args {
-                    let arg = self.render(arg, true)?;
+                    let arg = self.render(arg)?;
                     rendered.push(' ');
                     rendered.push_str(&ty_arg_paren(&arg));
                 }
@@ -3778,18 +3799,14 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
                 let mut rendered = String::new();
                 let params = Type::right_spine_take(param, *abi_arity)
                     .into_iter()
-                    .map(|param| self.render(param, canonical))
+                    .map(|param| self.render(param))
                     .collect::<Result<Vec<_>, _>>()?;
-                let params = if canonical {
-                    vec![raw_product_type(&params)]
-                } else {
-                    params
-                };
+                let params = vec![raw_product_type(&params)];
                 for param in params {
                     rendered.push_str(&fn_arg_paren(&param));
                     rendered.push_str(" -> ");
                 }
-                let ret = self.render(ret, canonical)?;
+                let ret = self.render(ret)?;
                 rendered.push_str(&effect);
                 rendered.push(' ');
                 rendered.push_str(&ty_arg_paren(&ret));
@@ -3798,14 +3815,14 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
             Type::Product { .. } => {
                 let slots = Type::right_spine_product(ty)
                     .into_iter()
-                    .map(|slot| self.render(slot, canonical))
+                    .map(|slot| self.render(slot))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(raw_product_type(&slots))
             }
             Type::Sum { .. } => {
                 let slots = Type::right_spine_sum(ty)
                     .into_iter()
-                    .map(|slot| self.render(slot, canonical))
+                    .map(|slot| self.render(slot))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(raw_sum_type(&slots, self.shapes.standard_names()))
             }
@@ -3813,7 +3830,7 @@ impl<'a, 'p> RankNPatternRenderer<'a, 'p> {
                 let name = format!("rq{}", self.forall_depth);
                 self.forall_depth += 1;
                 self.local_binders.push((param.name.clone(), name.clone()));
-                let body = self.render(body, canonical)?;
+                let body = self.render(body)?;
                 self.local_binders.pop();
                 let effect = self.representation_head(
                     "effect".to_owned(),
@@ -3840,7 +3857,6 @@ fn rank_n_pattern_shape(
     scope: &[TypeParam],
     module: Option<&str>,
     shapes: &super::skin::HaskellShapes<'_>,
-    canonical: bool,
 ) -> Result<Option<RankNPatternShape>, EmitError> {
     let normalized = slots
         .iter()
@@ -3852,7 +3868,7 @@ fn rank_n_pattern_shape(
     let mut renderer = RankNPatternRenderer::new(scope, module, shapes);
     let mut rendered = Vec::with_capacity(slots.len());
     for slot in &normalized {
-        rendered.push(renderer.render(slot, canonical)?);
+        rendered.push(renderer.render(slot)?);
     }
     Ok(Some(RankNPatternShape {
         slots: rendered,

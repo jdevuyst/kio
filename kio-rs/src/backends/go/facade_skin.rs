@@ -97,6 +97,7 @@ impl From<GoFacadeError> for GoFacadeSkinError {
 /// semantic slots. Both use the ordinary converter; the Value helpers add
 /// storage, not another type interpretation.
 pub(crate) enum GoValueView<'view, 'site, 'source> {
+    Unit,
     Host(&'view super::facade::GoHostPreparation<'view>),
     Value(&'view GoLiveFacadeUseRef<'site, 'source>),
     Product(
@@ -114,6 +115,7 @@ pub(crate) struct GoValueViewChild<'site, 'source> {
 impl GoValueView<'_, '_, '_> {
     pub(crate) fn index_parameters(&self) -> Result<Vec<(String, String)>, GoFacadeSkinError> {
         Ok(match self {
+            Self::Unit => Vec::new(),
             Self::Host(host) => host.indices.clone(),
             Self::Value(value) => value.semantic().index_parameters()?,
             Self::Product(_, fields) => {
@@ -127,6 +129,7 @@ impl GoValueView<'_, '_, '_> {
     }
     fn index_type(&self) -> Result<Option<String>, GoFacadeSkinError> {
         Ok(match self {
+            Self::Unit => return Ok(Some("KioIndexUnit".to_owned())),
             Self::Host(host) => Some(host.index_type.clone()),
             Self::Value(value) => value.semantic().index_type()?,
             Self::Product(product, _) => product.index_type()?,
@@ -135,6 +138,7 @@ impl GoValueView<'_, '_, '_> {
     }
     fn boundary_type(&self) -> Result<String, GoFacadeSkinError> {
         Ok(match self {
+            Self::Unit => "Unit".to_owned(),
             Self::Host(host) => host.boundary_type.to_string(),
             Self::Value(value) => value.boundary_type()?.to_string(),
             Self::Product(product, _) => product.boundary_type().to_string(),
@@ -149,6 +153,10 @@ impl GoValueView<'_, '_, '_> {
         names: &mut ValueViewNames<'_, '_, '_>,
     ) -> Result<String, GoFacadeSkinError> {
         match self {
+            Self::Unit => Ok(match direction {
+                FfiDir::In => expression.to_owned(),
+                FfiDir::Out => format!("kioNative[Unit]({expression})"),
+            }),
             Self::Host(host) => Ok(match (host.carrier, direction) {
                 (Some(carrier), FfiDir::In) => carrier.render_in(expression),
                 (Some(carrier), FfiDir::Out) => carrier.render_out(&host.boundary_type, expression),
@@ -476,6 +484,7 @@ pub(crate) fn flatten_public_arguments(
     let mut slots = Vec::new();
     for (parameter, argument) in parameters.iter().zip(arguments) {
         match parameter {
+            GoPublicParameter::Unit => {}
             GoPublicParameter::Value(_) => slots.push(argument.clone()),
             GoPublicParameter::Product(product) => {
                 slots.extend(
@@ -499,6 +508,7 @@ pub(crate) fn group_public_arguments(
     let mut arguments = Vec::with_capacity(parameters.len());
     for parameter in parameters {
         let argument = match parameter {
+            GoPublicParameter::Unit => "Unit{}".to_owned(),
             GoPublicParameter::Value(_) => values
                 .next()
                 .cloned()
@@ -881,33 +891,38 @@ where
     N: GoFreshNames,
 {
     let inner = materialize(statements, names, "function_inner", ERASED_TYPE, expression);
-
     let public = function.public_parameters()?;
-    let mut parameters = Vec::with_capacity(public.len());
-    let mut arguments = Vec::with_capacity(public.len());
-    for parameter in &public {
-        let name = names.fresh("function_param");
-        parameters.push(format!("{name} {}", parameter.boundary_type()?));
-        arguments.push(name);
-    }
-    let arguments = flatten_public_arguments(&public, &arguments)?;
+    let domain_type = function.domain_type()?;
     let return_type = result.boundary_type()?;
+    let result_map = render_result_map(result, FfiDir::Out, statements, names)?;
+    let erased_domain = names.fresh("function_native_domain");
     let mut body = GoSourceBlock::with_indent(1);
-    let body_arguments =
-        convert_nested_function_arguments(slots, layout, &arguments, &mut body, names)?;
-    let call = materialize(
+    let domain = materialize(
         &mut body,
         names,
-        "function_call",
-        ERASED_TYPE,
-        &format!("kioApplyValue({inner}, {})", value_domain(&body_arguments)),
+        "function_param",
+        domain_type.as_str(),
+        &format!("kioNative[{domain_type}]({erased_domain})"),
     );
-    let returned = convert(result, &call, FfiDir::Out, &mut body, names)?;
-    body.line(&format!("return {returned}"));
-    Ok(render_function_literal(
-        &parameters,
-        return_type.as_str(),
+    let arguments = if slots.is_empty() {
+        body.line(&format!("_ = {domain}"));
+        Vec::new()
+    } else {
+        flatten_public_arguments(&public, &[domain])?
+    };
+    let body_arguments =
+        convert_nested_function_arguments(slots, layout, &arguments, &mut body, names)?;
+    body.line(&format!(
+        "return kioExportStep(kioTailValue({inner}, {}), {result_map})",
+        value_domain(&body_arguments)
+    ));
+    let entry = render_function_literal(
+        &[format!("{erased_domain} any")],
+        TAIL_ENTRY_RESULT,
         body.finish(),
+    );
+    Ok(format!(
+        "kioCallable[{domain_type}, {return_type}]{{entry: {entry}}}"
     ))
 }
 
@@ -931,11 +946,22 @@ where
         function.boundary_type().as_str(),
         expression,
     );
+    let result_map = render_result_map(result, FfiDir::In, statements, names)?;
+    let target = materialize(
+        statements,
+        names,
+        "function_target",
+        "*kioBoundaryEntry",
+        &format!("&kioBoundaryEntry{{entry: kioCallableEntry({inner}), result: {result_map}}}"),
+    );
     let domain = names.fresh("function_domain");
     let declarations = vec![format!("{domain} any")];
     let mut body = GoSourceBlock::with_indent(1);
     let parameters = match layout.body_abi_arity() {
-        0 => Vec::new(),
+        0 => {
+            body.line(&format!("_ = {domain}"));
+            Vec::new()
+        }
         1 => vec![domain],
         arity => {
             let unpacked = materialize(
@@ -951,21 +977,57 @@ where
         }
     };
     let facade_arguments = expand_body_arguments(layout, slots, &parameters, &mut body, names)?;
-    let facade_arguments =
+    let mut facade_arguments =
         group_public_arguments(&function.public_parameters()?, &facade_arguments)?;
-    let call = materialize(
-        &mut body,
-        names,
-        "function_call",
-        result.boundary_type()?.as_str(),
-        &format!("{inner}({})", facade_arguments.join(", ")),
-    );
-    let returned = convert(result, &call, FfiDir::In, &mut body, names)?;
+    let native_domain = if facade_arguments.is_empty() {
+        "Unit{}".to_owned()
+    } else {
+        assert_eq!(
+            facade_arguments.len(),
+            1,
+            "a callable has one complete native domain"
+        );
+        facade_arguments.remove(0)
+    };
+    body.line(&format!("return kioTailValue({target}, {native_domain})"));
+    Ok(format!(
+        "kioValueEntry({})",
+        render_function_literal(&declarations, "kioStep", body.finish(),)
+    ))
+}
+
+const TAIL_ENTRY_RESULT: &str = "(bool, any, any, any, func(any) any, func(any) any)";
+
+fn render_result_map<S: GoStatementSink, N: GoFreshNames>(
+    result: &GoLiveFacadeUseRef<'_, '_>,
+    direction: FfiDir,
+    statements: &mut S,
+    names: &mut N,
+) -> Result<String, GoFacadeSkinError> {
+    let argument = names.fresh("function_result");
+    let mut body = GoSourceBlock::with_indent(1);
+    let value = match direction {
+        FfiDir::Out => argument.clone(),
+        FfiDir::In => {
+            let ty = result.boundary_type()?;
+            materialize(
+                &mut body,
+                names,
+                "function_native_result",
+                ty.as_str(),
+                &format!("kioNative[{ty}]({argument})"),
+            )
+        }
+    };
+    let returned = convert(result, &value, direction, &mut body, names)?;
     body.line(&format!("return {returned}"));
-    Ok(render_function_literal(
-        &declarations,
-        ERASED_TYPE,
-        body.finish(),
+    let closure = render_function_literal(&[format!("{argument} any")], "any", body.finish());
+    Ok(materialize(
+        statements,
+        names,
+        "function_result_map",
+        "func(any) any",
+        &closure,
     ))
 }
 
@@ -981,21 +1043,40 @@ where
     N: GoFreshNames,
 {
     let result_type = result.boundary_type()?;
-    let facade_type = format!("func() {result_type}");
-    let (source_type, applied_type, returned_type) = match direction {
-        FfiDir::Out => (ERASED_TYPE, ERASED_TYPE, result_type.as_str()),
-        FfiDir::In => (facade_type.as_str(), result_type.as_str(), ERASED_TYPE),
+    let facade_type = format!("TypeCallable[{result_type}]");
+    let source_type = match direction {
+        FfiDir::Out => ERASED_TYPE,
+        FfiDir::In => facade_type.as_str(),
     };
     let callee = materialize(statements, names, "forall_callee", source_type, expression);
+    let result_map = render_result_map(result, direction, statements, names)?;
     let mut body = GoSourceBlock::with_indent(1);
-    let call = match direction {
-        FfiDir::Out => format!("kioApplyType({callee})"),
-        FfiDir::In => format!("{callee}()"),
-    };
-    let applied = materialize(&mut body, names, "forall_result", applied_type, &call);
-    let returned = convert(result, &applied, direction, &mut body, names)?;
-    body.line(&format!("return {returned}"));
-    Ok(render_function_literal(&[], returned_type, body.finish()))
+    Ok(match direction {
+        FfiDir::Out => {
+            body.line(&format!(
+                "return kioExportStep(kioTailType({callee}), {result_map})"
+            ));
+            let entry =
+                render_function_literal(&["_ any".to_owned()], TAIL_ENTRY_RESULT, body.finish());
+            format!("kioTypeCallable[{result_type}]{{entry: {entry}}}")
+        }
+        FfiDir::In => {
+            let target = materialize(
+                statements,
+                names,
+                "forall_target",
+                "*kioBoundaryEntry",
+                &format!(
+                    "&kioBoundaryEntry{{entry: kioTypeCallableEntry({callee}), result: {result_map}}}"
+                ),
+            );
+            body.line(&format!("return kioTailType({target})"));
+            format!(
+                "kioTypeEntry({})",
+                render_function_literal(&[], "kioStep", body.finish())
+            )
+        }
+    })
 }
 
 fn convert_type_stage(
@@ -1058,7 +1139,7 @@ pub(crate) fn render_type_stage_helpers(
         &["host any".to_owned(), "value any".to_owned()],
         "any",
         format!(
-            "\tnative := value.(func() {})\n{}",
+            "\tnative := value.(TypeCallable[{}])\n{}",
             result.boundary_type()?,
             body.finish()
         ),
@@ -1093,7 +1174,7 @@ pub(crate) fn render_type_stage_helpers(
     selection.line(&format!("return {converted}"));
     let selection = selection.finish();
     Ok(format!(
-        "\nfunc New{spelling}Stage{type_declaration}(host {host_type}, native func() {}) {} {{\n{maker}}}\n\nfunc Select{spelling}{selected_declaration}(stage {}) {selected_type} {{\n{selection}}}\n",
+        "\nfunc New{spelling}Stage{type_declaration}(host {host_type}, native TypeCallable[{}]) {} {{\n{maker}}}\n\nfunc Select{spelling}{selected_declaration}(stage {}) {selected_type} {{\n{selection}}}\n",
         result.boundary_type()?,
         semantic.boundary_type(),
         semantic.boundary_type(),
@@ -1615,11 +1696,11 @@ mod prepared_tests {
                 .boundary_type()
                 .expect("substituted callback boundary type")
                 .as_str(),
-            format!("func(Unit) {TEXT_HOST}")
+            format!("Callable[Unit, {TEXT_HOST}]")
         );
         let substituted_out =
             render_conversion(substituted.returned(), "nextSubstituted()", FfiDir::Out);
-        assert!(substituted_out.contains(&format!(" Unit) {TEXT_HOST}")));
+        assert!(substituted_out.contains(&format!("kioCallable[Unit, {TEXT_HOST}]")));
 
         let direct = live_entry(&catalog, "direct");
         let (direct_slots, direct_layout) = match direct
@@ -1639,14 +1720,15 @@ mod prepared_tests {
                 .boundary_type()
                 .expect("direct callback boundary type")
                 .as_str(),
-            format!("func() {TEXT_HOST}")
+            format!("Callable[Unit, {TEXT_HOST}]")
         );
         let direct_out = render_conversion(direct.returned(), "nextDirect()", FfiDir::Out);
-        assert!(direct_out.contains(&format!("func() {TEXT_HOST}")));
-        assert!(direct_out.contains("kioApplyValue("), "{direct_out}");
+        assert!(direct_out.contains(&format!("kioCallable[Unit, {TEXT_HOST}]")));
+        assert!(direct_out.contains("kioTailValue("), "{direct_out}");
+        assert!(!direct_out.contains("kioApplyValue("), "{direct_out}");
         assert!(direct_out.contains(", Unit{})"), "{direct_out}");
         let direct_in = render_conversion(direct.returned(), "nextDirect()", FfiDir::In);
-        assert!(direct_in.contains(" any) any"), "{direct_in}");
+        assert!(direct_in.contains(" any) kioStep"), "{direct_in}");
         assert!(!direct_in.contains("func() any"), "{direct_in}");
     }
 
@@ -1728,7 +1810,9 @@ mod prepared_tests {
         let function_out =
             render_conversion(function_entry.returned(), "nextFunctionOut()", FfiDir::Out);
         assert_once(&function_out, "nextFunctionOut()");
-        assert_eq!(function_out.matches("kioApplyValue(").count(), 1);
+        assert_eq!(function_out.matches("kioTailValue(").count(), 1);
+        assert_eq!(function_out.matches("kioExportStep(").count(), 1);
+        assert!(!function_out.contains("kioApplyValue("));
         assert_eq!(function_out.matches("[]any{").count(), 2);
         let function_in =
             render_conversion(function_entry.returned(), "nextFunctionIn()", FfiDir::In);

@@ -169,6 +169,14 @@ require arbitrary bind functions to be flattened or assume their continuation
 runs exactly once. Reuse shared-owner evidence without substituting it for each
 backend's applicable execution evidence.
 
+For ordinary tail-call chains, require the public callback roundtrip as well
+as internal transport: each link leaves the package and returns unchanged via
+typed host slots and opaque storage. Check capture owners, repeated invocation,
+and a final type stage returning a still-uninvoked function. Independent-artifact
+compatibility and native-wrapper controls are distinct evidence; apply the
+actual public-type/linking contract rather than assuming all nominal types
+interchange. Follow the shared [call-depth guidance](../../topics/emit.md#generated-call-depth).
+
 ### Recursive control-flow stack-safety runtime witness
 
 The boundary matrix and polymorphic-stage witness do not prove that lowering

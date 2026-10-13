@@ -1,0 +1,12 @@
+package tail_origin;
+
+build {
+  target python {
+    out "out/python/";
+    baseline v3_10
+  }
+}
+
+bridge {
+  api
+}

@@ -34,7 +34,7 @@ func main() {
 	if split(3, 5) != 3 || packed(pair) != 7 || pkg.Api.Staged(11, 13) != 11 {
 		panic("declaration grouping")
 	}
-	if pkg.Api.Returned(17)(19) != 17 {
+	if pkg.Api.Returned(17).Call(19) != 17 {
 		panic("returned function stage")
 	}
 	if pkg.Api.Direct() != 1 || fmt.Sprint(events) != "[1 2 1 2]" {
@@ -43,7 +43,7 @@ func main() {
 	if pkg.Api.ThroughValue(pair) != 7 || fmt.Sprint(events) != "[1 2 1 2 7 9]" {
 		panic("host declaration as a function value")
 	}
-	step := func(value artifact.Product[int32, int32]) int32 { return value.F1 }
+	step := artifact.Func[struct{ F0, F1 int32 }, int32](func(value struct{ F0, F1 int32 }) int32 { return value.F1 })
 	if pkg.Api.Callback(step, pair) != 9 || pkg.Api.Substituted(step, pair) != 9 {
 		panic("product callback or substitution")
 	}

@@ -1,0 +1,9 @@
+module api;
+
+host type Token;
+
+host fn run(callback: (Token & Token) -> .);
+
+pub fn invoke() {
+  run(.(pair: Token & Token) { () })
+}

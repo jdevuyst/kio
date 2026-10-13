@@ -47,8 +47,8 @@ bridge {
 }
 ```
 
-`kio build` or `kio build swift` writes a self-contained Swift module — a
-single flat directory built as one Swift module (the host `import`s it):
+`kio build` or `kio build swift` writes the package module and the complete
+source of its shared support module:
 
 ```text
 out/swift/
@@ -56,11 +56,13 @@ out/swift/
 ├── host.swift         // the GreeterHost protocol the host conforms to
 ├── shapes.swift       // a Swift type per structural shape that crosses the FFI
 ├── ffi.swift          // stable per-slot typealiases
-└── kio_runtime.swift  // fixed support and public Product/Sum/Unit types
+├── kio_runtime.swift  // package-local support and public type aliases
+└── KioRuntime/
+    └── KioRuntime.swift // shared callable and structural types
 ```
 
-The module's **name is the package's namespace**, and every top-level name
-is branded from it. For `greeter` the module is `Greeter`, the handle type
+The package module's **name is its namespace**. For `greeter` the module is
+`Greeter`, the handle type
 `Greeter`, the host protocol `GreeterHost`, and the factory
 `createGreeter(host:)`. A Swift source carries no module declaration — the
 name is imposed at build time — so `pkg.swift`'s first line publishes it as
@@ -70,8 +72,9 @@ a marker:
 // kio-swift-module: Greeter
 ```
 
-Build the package under that name (`swiftc -module-name Greeter`, or a
-SwiftPM target named `Greeter`) and `import Greeter`. The default module
+Build `KioRuntime` first, then build the package under its own name
+(`swiftc -module-name Greeter`, or a SwiftPM target named `Greeter` depending
+on a `KioRuntime` target) and `import Greeter`. The default module
 name is the title-word-cased package name (`my_pkg` → `MyPkg`); affixed
 source names use an exact `KioPkg_...` brand. The `namespace "<value>"`
 target key overrides it (a capital-initial Swift module name), retained
@@ -80,10 +83,16 @@ exactly as both the module name and handle name.
 A default name that collides with Swift, an imported stdlib module, or an
 emitted support type uses the exact `KioPkg_...` frame (`swift` → `KioPkg_Swift`);
 an explicit override with the
-same collision is rejected. Support collisions include `KioUnit`, `Product`,
+same collision is rejected. Support collisions include `KioFn`, `KioRuntime`, `KioUnit`, `Product`,
 `Sum`, `KioNative`, `KioNativeConstructor`, the numeric `KioApplyN` names, and the exact generated-name classes
 `KioFacade_...`, `KioHostType_...`, `KioHostTypeMk_...`, `KioNewtype_...`,
 `KioNewtypeMk_...`, `KioHostTypeIdentity_...`, and `KioForall_...` names.
+
+Each emitted artifact includes its support source: no runtime package needs
+to be downloaded or installed. When combining compatible generated packages,
+compile and link one copy of `KioRuntime`. Its callable and structural types
+are shared; package instances and declaration-owned nominal types remain
+separate. The complete static-library commands appear in the worked example.
 
 ## How Swift hosts the package
 
@@ -350,16 +359,17 @@ first-class callback expects a Unit value.
   argument, including `KioUnit` for a Unit payload. This lets
   the host use the hidden value while preserving its exact scoped type.
 
-- A monomorphic **function value** is a Swift closure with one argument:
+- A monomorphic **function value** is `KioFn<Input, Result>` with one argument:
   its whole input type. A function from `A & B` receives `Product<A, B>`;
   a function from Unit receives `KioUnit`. Named host and exported methods
-  still preserve their written parameter groups. Function-valued arguments
-  are `@escaping`, also in higher-order closure types, so a received callback
-  can be retained in another returned value.
+  still preserve their written parameter groups. Construct a callback with
+  `KioFn { argument in result }` or wrap a native function with `KioFn(native)`.
+  Call it normally as `callback(argument)`. Nested function types use `KioFn`
+  too, and a received callback can be retained in another returned value.
 
 - A polymorphic value uses a generated carrier. Call
   `value.specialize(asKioType: Int32.self)` to select one type argument and
-  receive the next carrier or ordinary closure. A return-type annotation can
+  receive the next carrier or value. A return-type annotation can
   infer the selection, allowing `value.specialize()` instead. Selecting a type
   is an actual stage: effects at that stage happen then, before a later
   specialization or closure invocation.
@@ -382,6 +392,29 @@ first-class callback expects a Unit value.
   A host protocol implementation declares the matching `T.Type` parameter.
   This is native generic selection, not an extra Kio value or representation
   witness; the written value-parameter groups stay unchanged.
+
+For example, this callback is directly callable and also has an explicit
+native function view for APIs that require a Swift closure:
+
+```swift
+let increment = KioFn<Int, Int> { value in value + 1 }
+precondition(increment(3) == 4)
+let nativeIncrement: (Int) -> Int = increment.callAsFunction
+precondition([1, 2].map(nativeIncrement) == [2, 3])
+```
+
+Keep the carrier itself when storing a callback for later Kio use. Guest
+tail calls retain their stack-safety guarantee when carriers pass unchanged
+through host storage, including between compatible generated packages.
+Extracting `callAsFunction` and wrapping that native closure again creates a
+host callback boundary; arbitrary host code that calls back into Kio is not
+covered by that tail-transfer guarantee.
+
+Opaque containers keep their real Swift type arguments. When updating host
+code from native closure storage, change `Box<(A) -> R>` to
+`Box<KioFn<A, R>>` and explicitly rebuild existing containers if necessary.
+Kio does not inspect or rewrite arbitrary host storage. Named host and exported
+methods retain their ordinary parameter lists.
 
 ## Worked example
 
@@ -472,15 +505,18 @@ let pkg = createGreeter(host: MyHost())
 pkg.greeter.KioModule_main.main()
 ```
 
-Compile the generated source as a static library and module, then link the
-host against it. The module name must match the marker in `pkg.swift`:
+Compile the shared support, then the package, then link the host against both.
+The package module name must match the marker in `pkg.swift`:
 
 ```sh
 mkdir -p out/swift-host
-swiftc -emit-library -static -emit-module -module-name Greeter \
+swiftc -emit-library -static -emit-module -module-name KioRuntime \
+  -emit-module-path out/swift-host/KioRuntime.swiftmodule \
+  out/swift/KioRuntime/KioRuntime.swift -o out/swift-host/libKioRuntime.a
+swiftc -emit-library -static -emit-module -module-name Greeter -I out/swift-host \
   -emit-module-path out/swift-host/Greeter.swiftmodule \
   out/swift/*.swift -o out/swift-host/libGreeter.a
-swiftc -I out/swift-host -L out/swift-host -lGreeter \
+swiftc -I out/swift-host -L out/swift-host -lGreeter -lKioRuntime \
   main.swift -o out/swift-host/host
 ./out/swift-host/host
 ```

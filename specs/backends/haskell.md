@@ -235,8 +235,8 @@ binders, accepts the exact payload boundary shape, and seals the hidden
 types in the carrier. Its projector quantifies the universals and result
 type outside, then accepts a rank-N continuation. Each hidden binder is a
 first-class application stage: a one-slot payload with one hidden binder uses
-`forall hidden. m (payload -> m r)`, while canonical Unit uses
-`forall hidden. m (m r)`. Further hidden binders nest another
+`forall hidden. m (payload -> m r)`, including
+`forall hidden. m (() -> m r)` for Unit. Further hidden binders nest another
 `forall hidden. m (...)` stage apiece. The hidden binders never escape in the
 result type. These are public continuation schemes: native type application
 supplies no term-level type argument. The carrier type is exported abstractly;
@@ -381,11 +381,11 @@ to traverse an arbitrary host-supplied `f`.
 
 Arguments of an opaque host or abstract type constructor retain their native
 value representation, including callable domains. For example, `Box(. -> A)`
-uses `HostType__…__Box h (() -> m a)`, not `HostType__…__Box h (m a)`.
-The Unit argument is omitted only at a direct callable boundary where the
-backend can adapt that callable; it cannot change a function hidden inside
-an opaque constructor. Products, sums and polymorphic stages nested inside
-such an argument retain this same native representation.
+uses `HostType__…__Box h (() -> m a)`. A first-class function has this same
+representation directly, in a structural value, and inside an opaque
+constructor. Products, sums and polymorphic stages nested inside such an
+argument retain their native representation; the backend does not inspect or
+map an opaque constructor.
 
 ## Deprecated host items
 
@@ -633,10 +633,11 @@ right-spine walk + 3-step key fallback). A compound type's Haskell shape:
   change the carrier's identity across the boundary.
 - **Function value** → a native Haskell function returning `m ret`.
   An explicit product domain `(A & B) -> C` takes one tuple argument,
-  `(a, b) -> m c`; direct Unit is nullary. The paired layout adapts that
-  interface to the body's original tuple/domain representation, including a
-  declaration passed as a value. Compound legs are converted across the
-  boundary, and the function value itself crosses as a real Haskell function.
+  `(a, b) -> m c`; Unit takes one `()` argument, `() -> m ret`.
+  Every first-class arrow has this uniform native domain, including a named
+  declaration passed as a value. Named declaration wrappers and host-record
+  fields retain their source parameter grouping and nullary calls.
+  A function value crosses unchanged as a real Haskell function.
 - **First-class polymorphic value** → `forall a. m next`, nested once per
   successive Kio `forall`. The host uses visible type application and binds
   the returned action before applying the next stage. This preserves the

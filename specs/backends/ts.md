@@ -458,7 +458,8 @@ The following value interfaces mirror the JS carve-outs
 - **Function values** use `<Handle>Callable<A, R>`, synchronously callable as
   `(value: A) => R`, with one complete domain value. Direct Unit uses `null`;
   only named direct-Unit declaration views remain nullary. A host supplies an
-  ordinary function with this signature.
+  ordinary function to `create<Handle>.lift(body)`; its result has both the
+  precise call signature and required `kioStep` operation.
 - **Polymorphic values** use `<Handle>Poly<Advance>`, where `Advance` is the
   exact generic nullary function type for one binder. `[A] A -> A` therefore
   uses `<Handle>Poly<<A>() => <Handle>Callable<A, A>>`. A second binder adds a
@@ -466,13 +467,27 @@ The following value interfaces mirror the JS carve-outs
   function-valued property, retaining its generic relationship and strict
   parameter variance. Each call enters one stage, as in the
   [JS callable contract](js.md#carve-outs). A host supplies an object with this
-  `advance` property directly. Named host-record functions remain ordinary
+  `advance` property to `create<Handle>.liftStage(source)`. Named host-record functions remain ordinary
   native functions.
 - **Bottom `!`** is `never`. A `fn` declared `-> !` is contractually obliged not
   to return normally; a `!`-typed return from package code is unreachable in
   well-typed programs.
 
 These carve-outs are stable across implementations.
+
+`<Handle>Callable`, `<Handle>Poly` and `<Handle>Transfer` are structural
+interfaces. Their package-branded names do not prevent compatible values from
+exchanging between artifacts, including nested function arguments and results.
+`Transfer.call<A>(target: Callable<A, unknown>, value: A)` and
+`Transfer.advance(target)` implement the
+[cooperative protocol](js.md#cooperative-callable-protocol). The value-step
+operation returns `R | undefined`; the type-step operation returns
+`ReturnType<Advance> | undefined`. The control channel does not add runtime type
+arguments or weaken the ordinary callable or generic `advance` signatures.
+Hosts normally use the typed lift helpers and pass existing carriers unchanged.
+The linkage operation requires a transferred target to preserve the current
+step's result type. Its erased control channel does not statically prove that
+obligation for a manually authored implementation.
 
 ## Higher-kinded types
 

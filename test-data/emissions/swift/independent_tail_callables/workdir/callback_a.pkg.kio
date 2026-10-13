@@ -1,0 +1,12 @@
+package callback_a;
+
+build {
+  target swift {
+    out "out/swift/";
+    baseline v6_0
+  }
+}
+
+bridge {
+  api
+}

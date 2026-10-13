@@ -11,6 +11,9 @@ class _KioTypeStage:
     def advance(self):
         raise NotImplementedError("a polymorphic host value implements advance")
 
+    def kio_step(self, transfer):
+        raise NotImplementedError("a type-stage carrier implements kio_step")
+
     @staticmethod
     def lift(source):
         return _KioPoly(source.advance)
@@ -29,6 +32,9 @@ class KioFn:
     def __call__(self, domain):
         raise NotImplementedError("a host callable implements __call__")
 
+    def kio_step(self, domain, transfer):
+        raise NotImplementedError("a callable carrier implements kio_step")
+
 class _KioTypeIndex:
     @classmethod
     def __class_getitem__(cls, _arguments):
@@ -46,6 +52,56 @@ def kio_lift(body):
 
 def kio_lift_stage(source):
     return _KioTypeStage.lift(source)
+
+
+KioStage = _KioTypeStage
+
+
+class KioTransfer:
+    __slots__ = ()
+
+    def call(self, target, domain):
+        raise NotImplementedError("a transfer control implements call")
+
+    def advance(self, target):
+        raise NotImplementedError("a transfer control implements advance")
+
+
+class _KioTransfer(KioTransfer):
+    __slots__ = ("target", "domain", "type_stage", "pending")
+
+    def __init__(self, target, domain, type_stage):
+        self.target = target
+        self.domain = domain
+        self.type_stage = type_stage
+        self.pending = True
+
+    def call(self, target, domain):
+        self.target = target
+        self.domain = domain
+        self.type_stage = False
+        self.pending = True
+
+    def advance(self, target):
+        self.target = target
+        self.domain = None
+        self.type_stage = True
+        self.pending = True
+
+
+def _kio_run(target, domain, type_stage):
+    transfer = _KioTransfer(target, domain, type_stage)
+    try:
+        while transfer.pending:
+            transfer.pending = False
+            if transfer.type_stage:
+                result = transfer.target.kio_step(transfer)
+            else:
+                result = transfer.target.kio_step(transfer.domain, transfer)
+        return result
+    finally:
+        transfer.target = None
+        transfer.domain = None
 
 
 def _variant_name(value):
@@ -193,6 +249,9 @@ class _KioFunction(KioFn):
     def __call__(self, domain):
         return self.__leaf(domain)
 
+    def kio_step(self, domain, transfer):
+        return self.__leaf(domain)
+
 class _KioPoly(_KioTypeStage):
     __slots__ = ("__leaf",)
 
@@ -205,6 +264,9 @@ class _KioPoly(_KioTypeStage):
         object.__setattr__(self, name, value)
 
     def advance(self):
+        return self.__leaf()
+
+    def kio_step(self, transfer):
         return self.__leaf()
 
 
@@ -229,14 +291,20 @@ class _KioGuestFunction(_KioGuest, KioFn):
     __slots__ = ()
 
     def __call__(self, domain):
-        return self.runtime.eval(None, None, None, self, domain, False)
+        return _kio_run(self, domain, False)
+
+    def kio_step(self, domain, transfer):
+        return self.runtime.eval(None, None, None, self, domain, False, transfer)
 
 
 class _KioGuestPoly(_KioGuest, _KioTypeStage):
     __slots__ = ()
 
     def advance(self):
-        return self.runtime.eval(None, None, None, self, None, True)
+        return _kio_run(self, None, True)
+
+    def kio_step(self, transfer):
+        return self.runtime.eval(None, None, None, self, None, True, transfer)
 
 
 class _KioNamedFunction:
@@ -603,12 +671,9 @@ class _PackageRuntime:
         kind = _KioGuestPoly if groups[index][0] else _KioGuestFunction
         return kind(self, module_key, body, groups, index, env)
 
-    def eval(self, module_key, expr, env, callee=None, domain=None, type_stage=False):
+    def eval(self, module_key, expr, env, callee=None, domain=None, type_stage=False, transfer=None):
         while True:
             if callee is not None:
-                kind = type(callee)
-                if kind is not _KioGuestFunction and kind is not _KioGuestPoly:
-                    return callee.advance() if type_stage else callee(domain)
                 self = callee.runtime
                 is_type, names = callee.groups[callee.index]
                 if is_type != type_stage:
@@ -736,8 +801,13 @@ class _PackageRuntime:
                     domain = _product_from_slots(args)
             else:
                 raise RuntimeError(f"python target cannot evaluate routed expression {tag}")
-            if data.get("tail") != ("type" if type_stage else "value"):
+            if transfer is None or data.get("tail") != ("type" if type_stage else "value"):
                 return callee.advance() if type_stage else callee(domain)
+            if type_stage:
+                transfer.advance(callee)
+            else:
+                transfer.call(callee, domain)
+            return None
 
     def _literal(self, data, value):
         return self._role_adapter(_role_adapter_identity(data["host_type"]), "out", value)

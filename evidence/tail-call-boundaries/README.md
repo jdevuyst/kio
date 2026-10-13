@@ -1,10 +1,10 @@
 # Callback boundary tail-call probes
 
-These reproductions preserve a broader, unlanded callback-integration proposal.
-They exercise transfers between independent generated artifacts or through a
-public native callback view. Their proposed deep-stack assertions are separate
-from guest-contained tail-call execution and from the existing public API
-contracts in the [backend specifications](../../specs/backends/README.md).
+These reproductions preserve historical callback-integration experiments. They
+exercise transfers between independent generated artifacts or through a public
+native callback view. The recorded results apply to the producer/runtime
+identities below, not automatically to the current
+[backend specifications](../../specs/backends/README.md) or implementation.
 
 The Haskell specimens retain their original `CONTRACT` and `BUG` comments,
 markers, expected outputs and source bytes. Those comments overstate the
@@ -33,13 +33,13 @@ The original assertion blocks have SHA-256
 
 [The loader](reproductions/js/runtime.mjs) reads the repository's
 [JavaScript runtime](../../kio-rs/src/backends/js/value_runtime.js) for each
-invocation. These are live reproductions, not replays against a copied historical
-runtime. An artifact-local `WeakMap` recognizes only its own generated entries;
-an unknown foreign callback receives an ordinary native call, which retains a
-frame when the callback enters its own driver. TypeScript shares that runtime;
-these probes do not independently check its static facade.
+invocation. It does not retain a copied historical runtime. In the recorded
+runtime, an artifact-local `WeakMap` recognized only its own generated entries;
+an unknown foreign callback received an ordinary native call, retaining a frame
+when the callback entered its own driver. TypeScript shared that runtime; these
+probes did not independently check its static facade.
 
-With Node 24.21.0 and its default stack configuration, both probes exit 1 with
+With Node 24.21.0 and its default stack configuration, both probes exited 1 with
 `RangeError: Maximum call stack size exceeded`. The runtime SHA-256 for those
 observations is
 `611ff6f9db33d9594439bec8ed4d086b4fddb6e91b860fae213a49380603ed9b`.
@@ -48,8 +48,12 @@ establish failure of a same-artifact chain, and their discovery grants no
 authority for global state, a shared executable runtime dependency, or metadata
 reads from arbitrary host callbacks.
 
-From the repository root, run each independently so the first failure does not
-prevent the second observation:
+The current cooperative callable API requires explicit lifting of native
+callbacks. These original blocks contain unlifted native leaves and the old
+type-stage construction recipe (`poly(guest(...))`), so running them against
+the current runtime is not an equivalent stack-overflow test. Use a checkout
+whose runtime matches the identity above, then run each independently so the
+first failure does not prevent the second observation:
 
 ```sh
 mise exec -- node evidence/tail-call-boundaries/reproductions/js/value-chain.mjs
@@ -97,8 +101,11 @@ records. Changing a native callable representation, dropping required demand,
 or moving execution into the returned action changes a separate semantic or
 public-interface question; the stack observation does not settle it.
 
-To run either original specimen against an existing compiler, set `TMPDIR` to
-an existing writable temporary root and run from the repository root:
+The original hosts also predate explicit Unit domains in first-class Haskell
+arrows. Their `IO (IO ())` signatures are historical, not current host examples;
+a current-compiler type error is not a reproduction of the recorded overflow.
+To run either original specimen with a compatible historical compiler, set
+`TMPDIR` to an existing writable temporary root and run from the repository root:
 
 ```sh
 export KIO_BIN="$PWD/kio-rs/target/debug/kio"

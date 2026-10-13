@@ -964,6 +964,69 @@ elif PROTOCOL == "same-artifact-exchange":
         if result != value:
             raise RuntimeError("exchange payload changed")
         _print("callback: " + str(result) + "\n")
+elif PROTOCOL == "tail-callback-roundtrip":
+    import copy
+    depth = 1024
+    events = []
+    counts = [[0, 0], [0, 0]]
+    def instance(owner):
+        host = copy.deepcopy(HOST)
+        for ns, leaf, body_tag, operation, kind, roles, carrier in HOST_ITEMS:
+            raw = _host_fn(body_tag, operation, kind, carrier)
+            if body_tag == "instance-mark":
+                def raw(code, owner=owner):
+                    events.append((owner, code))
+            elif body_tag in ("box-make", "box-get"):
+                slot = 0 if body_tag == "box-make" else 1
+                def counted(value, raw=raw, slot=slot, owner=owner):
+                    counts[owner][slot] += 1
+                    return raw(value)
+                raw = counted
+            else:
+                raise RuntimeError("unexpected callback roundtrip host operation")
+            _set_host(ns, leaf, _adapt_host_fn(raw, body_tag, roles), host)
+        return _base("main", module.{factory}(host))
+    instances = [instance(0), instance(1)]
+    def check_counts(expected):
+        if counts != [[expected, expected], [expected, expected]]:
+            raise RuntimeError("callback storage count changed")
+    def check_trace(link, root):
+        expected = [(i % 2, link) for i in range(depth - 1, -1, -1)] + [(0, root)]
+        if events != expected:
+            raise RuntimeError("callback owner, phase or effect order changed")
+        events.clear()
+    values = [instances[0].valueRoot()]
+    for i in range(depth):
+        linked = instances[i % 2].valueLink(values[-1])
+        values.extend((linked, instances[1 - i % 2].keepValue(linked)))
+    if events:
+        raise RuntimeError("value callback ran during storage")
+    check_counts(depth // 2)
+    for _ in range(2):
+        if values[-1](None) != 37:
+            raise RuntimeError("value callback result changed")
+        check_trace(11, 12)
+        check_counts(depth // 2)
+    stages = [instances[0].typeRoot()]
+    for i in range(depth):
+        linked = instances[i % 2].typeLink(stages[-1])
+        stages.extend((linked, instances[1 - i % 2].keepType(linked)))
+    if events:
+        raise RuntimeError("type stage ran during storage")
+    check_counts(depth)
+    # Runtime type arguments erase; these remain two executing selections.
+    number_result = stages[-1].advance()
+    check_trace(21, 22)
+    check_counts(depth)
+    unit_result = stages[-1].advance()
+    check_trace(21, 22)
+    check_counts(depth)
+    for callback in (number_result, number_result, unit_result):
+        if callback(None) != 73 or events != [(0, 23)]:
+            raise RuntimeError("returned callback phase, owner or value changed")
+        events.clear()
+        check_counts(depth)
+    _print("tail callback roundtrip ok\n")
 elif PROTOCOL == "export-type-only-roundtrip":
     main = _base("main")
     _print("ready\n")
@@ -1878,6 +1941,7 @@ fn python_driver(protocol: RunnerProtocol) -> &'static str {
         }
         ProtocolExecution::Invoke(ExportDriver::ScalarRoundtrip) => "export-scalar-roundtrip",
         ProtocolExecution::Invoke(ExportDriver::SameArtifactExchange) => "same-artifact-exchange",
+        ProtocolExecution::Invoke(ExportDriver::TailCallbackRoundtrip) => "tail-callback-roundtrip",
         ProtocolExecution::Invoke(ExportDriver::DirectSumForallBoundary) => {
             "direct-sum-forall-boundary"
         }

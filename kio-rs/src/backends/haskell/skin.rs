@@ -548,10 +548,9 @@ impl<'p> HaskellShapes<'p> {
                 let layout = facade.function_layout(boundary).unwrap_or_else(|| {
                     unreachable!("a live Haskell callback has a prepared source layout")
                 });
-                for param in super::facade::source_parameters(layout, &slots) {
-                    rendered.push_str(&paren_arg(&param));
-                    rendered.push_str(" -> ");
-                }
+                let domain = super::facade::callback_domain(layout, &slots);
+                rendered.push_str(&paren_arg(&domain));
+                rendered.push_str(" -> ");
                 let ret = self.boundary_alias_haskell_type_in(
                     facade,
                     &boundary.nested(BoundaryStep::CallbackRet),
@@ -875,12 +874,8 @@ impl<'p> HaskellShapes<'p> {
                     parts.push(self.haskell_type_of_scoped(p, seen_newtypes, module, scope)?);
                 }
                 let ret_ty = self.haskell_type_of_scoped(ret, seen_newtypes, module, scope)?;
-                // A Haskell function is curried: `a -> b -> m ret`.
-                let mut out = String::new();
-                for p in &parts {
-                    out.push_str(&paren_arg(p));
-                    out.push_str(" -> ");
-                }
+                let domain = super::native::nest_tuple_type(&parts);
+                let mut out = format!("{} -> ", paren_arg(&domain));
                 out.push_str(&format!("m {}", paren_arg(&ret_ty)));
                 Ok(format!("({out})"))
             }

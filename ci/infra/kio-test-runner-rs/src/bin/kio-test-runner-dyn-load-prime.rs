@@ -267,6 +267,7 @@ fn export_driver_execution_mode(driver: ExportDriver) -> Result<&'static str, &'
         | ExportDriver::ScalarRoundtrip
         | ExportDriver::HostOwnedRoundtrip
         | ExportDriver::SameArtifactExchange
+        | ExportDriver::TailCallbackRoundtrip
         | ExportDriver::DirectSumForallBoundary
         | ExportDriver::CallableSlotsRoundtrip
         | ExportDriver::IncomingCallableViews

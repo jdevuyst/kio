@@ -156,9 +156,21 @@ impl TestRunner for JsRunner {
                 .get(&*factory_name)
                 .catch(&ctx)
                 .map_err(|e| format!("reading `{factory_name}` export: {}", format_caught(&e)))?;
+            ctx.globals()
+                .set("__kio_callback_factory__", create_fn.clone())
+                .map_err(|e| format!("installing callable factory: {e}"))?;
+            ctx.eval::<(), _>(
+                "globalThis.__kio_lift__ = __kio_callback_factory__.lift; globalThis.__kio_stage__ = __kio_callback_factory__.liftStage;",
+            )
+            .catch(&ctx)
+            .map_err(|e| format!("reading callable lifts: {}", format_caught(&e)))?;
 
             if protocol == RunnerProtocol::SameArtifactExchange {
                 run_same_artifact_exchange_js(&ctx, &create_fn, host, protocol)?;
+                return Ok(0);
+            }
+            if protocol == RunnerProtocol::TailCallbackRoundtrip {
+                run_tail_callback_roundtrip_js(&ctx, &create_fn, host, protocol)?;
                 return Ok(0);
             }
 
@@ -335,8 +347,10 @@ fn run_js_protocol<'js>(
     pkg_obj: &Object<'js>,
 ) -> Result<(), String> {
     match protocol.contract().execution {
-        ProtocolExecution::Invoke(ExportDriver::SameArtifactExchange) => {
-            unreachable!("same-artifact exchange uses the single evaluated module's factory")
+        ProtocolExecution::Invoke(
+            ExportDriver::SameArtifactExchange | ExportDriver::TailCallbackRoundtrip,
+        ) => {
+            unreachable!("multi-instance protocols use the single evaluated module's factory")
         }
         ProtocolExecution::CompileOnly | ProtocolExecution::ConstructOnly => Ok(()),
         ProtocolExecution::Invoke(ExportDriver::Main { module }) => {
@@ -638,17 +652,17 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
     types.makeProjectorGenericValue(86)));
 
   const packed = types[{packed_function}].makePackedFunction(
-    (value => value._0 + value._1));
+    __kio_lift__(value => value._0 + value._1));
   const unpacked = types[{packed_function}].readPackedFunction(packed);
   print(unpacked(constructorPairOut));
 
   print(types[{existential_unit}].readExistentialUnit(
     types.makeExistentialUnitValue()).advance()(
-      ({{ advance: () => (_value => 89) }})));
+      __kio_stage__({{ advance: () => __kio_lift__(_value => 89) }})));
 
   print(types[{existential_empty}].readExistentialEmpty(
-    types.makeExistentialEmptyValue()).advance()(({{
-    advance: () => ((...args) => {{
+    types.makeExistentialEmptyValue()).advance()(__kio_stage__({{
+    advance: () => __kio_lift__((...args) => {{
       if (args.length !== 1 || args[0] !== null) {{
         throw new Error("unit existential continuation lost its null domain");
       }}
@@ -670,8 +684,8 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
       types.makeRecursiveProjectorBase())));
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("visibility callable changed"); }};
   const constructorInputs = [];
-  const constructed = types[{constructor_spread}].makeConstructorSpread(({{
-    advance: () => (value => {{
+  const constructed = types[{constructor_spread}].makeConstructorSpread(__kio_stage__({{
+    advance: () => __kio_lift__(value => {{
     constructorInputs.push(value._0); return value._0 + 3;
   }}) }}));
   check(types.invokeConstructorSpreadI32(constructed, 101), 104);
@@ -681,10 +695,10 @@ fn render_newtype_visibility_facade_js(types: &str, left: &str, right: &str) -> 
   check(projected.advance()({{_0: 111, _1: 1}}), 111);
   check(projected.advance()({{_0: 112, _1: null}}), 112);
   let spreadOpens = 0, recursiveOpens = 0;
-  const openSpread = ({{ advance: () => (value => {{
+  const openSpread = __kio_stage__({{ advance: () => __kio_lift__(value => {{
     check(typeof value.advance, "function"); spreadOpens++; return 91;
   }}) }});
-  const openRecursive = ({{ advance: () => (value => {{
+  const openRecursive = __kio_stage__({{ advance: () => __kio_lift__(value => {{
     check(typeof value, "function"); recursiveOpens++; return 92;
   }}) }});
   check(types[{existential_spread}].readExistentialSpread(types.makeExistentialSpreadValue()).advance()(openSpread), 91);
@@ -758,7 +772,7 @@ fn run_export_callback_roundtrip_js<'js>(
     throw new Error("export-callback-roundtrip: missing exported fn makeStep");
   }}
 
-  __kio_host_print__(String(main.applyTwice(((n) => n + 3), 10)) + "\n");
+  __kio_host_print__(String(main.applyTwice(__kio_lift__((n) => n + 3), 10)) + "\n");
   const step = main.makeStep(4);
   if (typeof step !== "function") {{
     throw new Error("export-callback-roundtrip: makeStep returned non-function");
@@ -785,7 +799,7 @@ fn run_nested_curried_roundtrip_js<'js>(
         r#"
 (() => {{
   const api = {api};
-  const join = (left => (right => left + "/" + right));
+  const join = __kio_lift__(left => __kio_lift__(right => left + "/" + right));
   const viaHost = api.viaHost(join);
   if (typeof viaHost !== "function") {{
     throw new Error("nested-curried-roundtrip: viaHost returned non-function");
@@ -826,7 +840,7 @@ fn run_host_substituted_unit_callback_js<'js>(
         r#"
 (() => {{
   const api = {api};
-  __kio_host_print__(api.viaHost(((unit) => {{
+  __kio_host_print__(api.viaHost(__kio_lift__((unit) => {{
     if (unit !== null) throw new Error("substituted Unit lost its semantic slot");
     return "callback";
   }})) + "\n");
@@ -1131,8 +1145,8 @@ fn run_host_existential_roundtrip_js<'js>(
   let observations = 0, openings = 0;
   globalThis.__kio_existential_observe__ = value => {{
     observations++;
-    return {types}[{packed}].readPacked(value).advance()(({{
-      advance: () => (payload => {{
+    return {types}[{packed}].readPacked(value).advance()(__kio_stage__({{
+      advance: () => __kio_lift__(payload => {{
       openings++;
       return payload._1(payload._0);
     }}) }}));
@@ -1166,8 +1180,8 @@ fn run_export_functor_dict_roundtrip_js<'js>(
   const box = {types}[{box_type}];
   const functor = {types}[{functor_type}];
   const integers = [], texts = [];
-  const toText = (value => {{ integers.push(value); return "v:" + value; }});
-  const toInteger = (value => {{ texts.push(value); return value.length; }});
+  const toText = __kio_lift__(value => {{ integers.push(value); return "v:" + value; }});
+  const toInteger = __kio_lift__(value => {{ texts.push(value); return value.length; }});
   const check = (actual, expected) => {{ if (actual !== expected) throw new Error("functor payload changed"); }};
   const wrap = value => box.mkBox({{_0: value, _1: null}});
   const unwrap = value => {{ const row = box.unBox(value); check(row._1, null); return row._0; }};
@@ -1203,7 +1217,7 @@ fn run_incoming_callable_stages_js<'js>(
     let main = export_base_js_expr(protocol, "main");
     let script = format!(
         r#"(() => {{
-  const api = {main}, lift = value => value, poly = value => value;
+  const api = {main}, lift = __kio_lift__, poly = __kio_stage__;
   const check = (condition, message) => {{ if (!condition) throw new Error(message); }};
   const seal = api.makeSeal(5), other = api.makeOther(5);
   for (const name of ["typeOnlyResult", "cpsResult"]) {{
@@ -1260,7 +1274,7 @@ fn run_incoming_callable_views_js<'js>(
     let main = export_base_js_expr(protocol, "main");
     let script = format!(
         r#"(() => {{
-  const api = {main}, lift = value => value;
+  const api = {main}, lift = __kio_lift__;
   const check = (condition, message) => {{ if (!condition) throw new Error(message); }};
   const seal = api.makeSeal(5), other = api.makeOther(5);
   let effects = 0;
@@ -1324,7 +1338,7 @@ fn run_export_callable_slots_roundtrip_js<'js>(
     if (actual !== expected) throw new Error("callable slot payload changed");
   }};
   let productCalls = 0;
-  const productStep = (value => {{ productCalls++; return value + 5; }});
+  const productStep = __kio_lift__(value => {{ productCalls++; return value + 5; }});
   check(main.applyProduct({{_0: productStep, _1: 11}}), 16);
   const echoedProduct = main.echoProduct({{_0: productStep, _1: 17}});
   check(echoedProduct._1, 17);
@@ -1333,7 +1347,7 @@ fn run_export_callable_slots_roundtrip_js<'js>(
   check(madeProduct._1, 23);
   check(madeProduct._0(29), 29);
   let sumCalls = 0;
-  const sumStep = (value => {{ sumCalls++; return value + 7; }});
+  const sumStep = __kio_lift__(value => {{ sumCalls++; return value + 7; }});
   check(main.applySum({{_0: sumStep}}, 31), 38);
   const echoedSum = main.echoSum({{_0: sumStep}});
   check(Object.keys(echoedSum).join(), "_0");
@@ -1391,6 +1405,85 @@ fn run_same_artifact_exchange_js<'js>(
       report("packed", first.readPacked(second.makePacked(31)), 31);
       report("callback", second.runBox(first.boxedLater(first.makeHidden(17))), 17);
       report("callback", first.runBox(second.boxedLater(second.makeHidden(29))), 29);
+    }})()"#
+    );
+    ctx.eval::<(), _>(script.into_bytes())
+        .catch(ctx)
+        .map_err(|e| format!("running {}: {}", protocol.name(), format_caught(&e)))
+}
+
+fn run_tail_callback_roundtrip_js<'js>(
+    ctx: &Ctx<'js>,
+    factory: &Function<'js>,
+    host: &HostApi,
+    protocol: RunnerProtocol,
+) -> Result<(), String> {
+    ctx.globals()
+        .set("__kio_exchange_factory__", factory.clone())
+        .map_err(|e| format!("installing public package factory: {e}"))?;
+    let record = build_host_record_expression(host, protocol);
+    let selector = js_string_literal(&host_api::facade_module_selector("main", false));
+    let host_selector = js_string_literal(&host_api::js_host_namespace("testapi/api"));
+    let script = format!(
+        r#"(() => {{
+      const depth = 1024;
+      const events = [];
+      const counts = [[0, 0], [0, 0]];
+      const instances = [0, 1].map(owner => {{
+        const host = {record};
+        const api = host[{host_selector}];
+        const pack = api.pack, unpack = api.unpack;
+        api.pack = value => {{ counts[owner][0]++; return pack(value); }};
+        api.unpack = value => {{ counts[owner][1]++; return unpack(value); }};
+        api.mark = code => {{ events.push([owner, code]); return null; }};
+        return __kio_exchange_factory__(host).testapi[{selector}];
+      }});
+      const checkCounts = expected => {{
+        if (counts.some(row => row.some(value => value !== expected)))
+          throw new Error("callback storage count changed");
+      }};
+      const checkTrace = (link, root) => {{
+        const expected = Array.from({{length: depth}}, (_, offset) =>
+          [(depth - 1 - offset) % 2, link]);
+        expected.push([0, root]);
+        if (JSON.stringify(events) !== JSON.stringify(expected))
+          throw new Error("callback owner, phase or effect order changed");
+        events.length = 0;
+      }};
+      const values = [instances[0].valueRoot()];
+      for (let i = 0; i < depth; i++) {{
+        const linked = instances[i % 2].valueLink(values[values.length - 1]);
+        values.push(linked, instances[1 - i % 2].keepValue(linked));
+      }};
+      if (events.length) throw new Error("value callback ran during storage");
+      checkCounts(depth / 2);
+      for (let i = 0; i < 2; i++) {{
+        if (values[values.length - 1](null) !== 37)
+          throw new Error("value callback result changed");
+        checkTrace(11, 12);
+        checkCounts(depth / 2);
+      }};
+      const stages = [instances[0].typeRoot()];
+      for (let i = 0; i < depth; i++) {{
+        const linked = instances[i % 2].typeLink(stages[stages.length - 1]);
+        stages.push(linked, instances[1 - i % 2].keepType(linked));
+      }};
+      if (events.length) throw new Error("type stage ran during storage");
+      checkCounts(depth);
+      // Type arguments erase at this public boundary: both selections execute.
+      const numberResult = stages[stages.length - 1].advance();
+      checkTrace(21, 22);
+      checkCounts(depth);
+      const unitResult = stages[stages.length - 1].advance();
+      checkTrace(21, 22);
+      checkCounts(depth);
+      for (const callback of [numberResult, numberResult, unitResult]) {{
+        if (callback(null) !== 73 || JSON.stringify(events) !== '[[0,23]]')
+          throw new Error("returned callback phase, owner or value changed");
+        events.length = 0;
+        checkCounts(depth);
+      }};
+      __kio_host_print__("tail callback roundtrip ok\n");
     }})()"#
     );
     ctx.eval::<(), _>(script.into_bytes())
@@ -1464,7 +1557,7 @@ fn run_export_native_payload_roundtrip_js<'js>(
   printNumber(main.readSum(main.makeSum()));
   printNumber(main.readSum(main.makeEmpty()));
   let calls = 0;
-  const host = {value: value => { calls++; __kio_host_print__('call\n'); return value + 1; }};
+  const host = {value: __kio_lift__(value => { calls++; __kio_host_print__('call\n'); return value + 1; })};
   if (calls !== 0) throw new Error('opaque callback called during construction');
   printNumber(main.call(host, 31));
   printNumber(main.call(host, 43));
@@ -1772,9 +1865,9 @@ fn run_direct_sum_forall_boundary_js<'js>(
 (() => {{
   const api = {api};
   const print = (value) => __kio_host_print__(String(value) + "\n");
-  const unit = {{ _0: (_unit) => {{ print("unit call"); return 17; }} }};
-  const poly = {{ _1: {{ advance() {{ return (value) => {{ print("poly call"); return value; }}; }} }} }};
-  const callback = (value) => {{ print("callback"); return value; }};
+  const unit = {{ _0: __kio_lift__((_unit) => {{ print("unit call"); return 17; }}) }};
+  const poly = {{ _1: __kio_stage__({{ advance() {{ return __kio_lift__((value) => {{ print("poly call"); return value; }}); }} }}) }};
+  const callback = __kio_lift__((value) => {{ print("callback"); return value; }});
   for (const transport of [(value) => api.relay(value), (value) => api.throughCallback(value, callback)]) {{
     const left = transport(unit);
     print("unit ready");
@@ -1820,8 +1913,8 @@ fn run_export_poly_callback_roundtrip_js<'js>(
     throw new Error("export-poly-callback-roundtrip: missing exported fn applyVia");
   }}
 
-  __kio_host_print__(main_ns.applyVia(((s) => "via: " + s), "apply") + "\n");
-  __kio_host_print__(String(main_ns.applyVia(((n) => n + 8), 7)) + "\n");
+  __kio_host_print__(main_ns.applyVia(__kio_lift__((s) => "via: " + s), "apply") + "\n");
+  __kio_host_print__(String(main_ns.applyVia(__kio_lift__((n) => n + 8), 7)) + "\n");
 }})()
 "#
     );
@@ -1857,7 +1950,7 @@ fn run_compound_input_once_js<'js>(
   const direct = api.direct();
   print(direct._0); print(direct._1);
   let callbackCalls = 0;
-  const callback = api.callback((unit => {{
+  const callback = api.callback(__kio_lift__(unit => {{
     callbackCalls += 1;
     equal(unit, null); print("callback"); return {{ _0: 9, _1: "callback-value" }};
   }}));
@@ -2176,7 +2269,7 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
             "(build, seed) => build(seed)._0".to_owned()
         }
         HostFnBodyKind::MakeStep { .. } => {
-            "(delta) => ((n) => Number(BigInt.asIntN(32, BigInt(n) + BigInt(delta))))".to_owned()
+            "(delta) => __kio_lift__((n) => Number(BigInt.asIntN(32, BigInt(n) + BigInt(delta))))".to_owned()
         }
         HostFnBodyKind::BoxMake { .. } => "(v) => ({ value: v })".to_owned(),
         HostFnBodyKind::BoxGet { .. } => "(box) => box.value".to_owned(),
@@ -2220,10 +2313,10 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
             "(callback) => 'host/' + callback(null)".to_owned()
         }
         HostFnBodyKind::ReturnedForallUnit => {
-            "(() => { let produced = false; return () => { if (produced) { __kio_host_print__('throw\\n'); throw new Error('produce failed'); } produced = true; __kio_host_print__('produce\\n'); return ({ advance: () => null }); }; })()".to_owned()
+            "(() => { let produced = false; return () => { if (produced) { __kio_host_print__('throw\\n'); throw new Error('produce failed'); } produced = true; __kio_host_print__('produce\\n'); return __kio_stage__({ advance: () => null }); }; })()".to_owned()
         }
         HostFnBodyKind::ForallStageEffects => {
-            "() => { __kio_host_print__('create\\n'); return { advance: () => { __kio_host_print__('apply\\n'); return null; } }; }".to_owned()
+            "() => { __kio_host_print__('create\\n'); return __kio_stage__({ advance: () => { __kio_host_print__('apply\\n'); return null; } }); }".to_owned()
         }
         HostFnBodyKind::TraceUnit { text } => format!(
             "() => {{ __kio_host_print__({} + '\\n'); return null; }}",
@@ -2248,8 +2341,8 @@ fn render_js_host_fn_value(binding: &HostFnBinding) -> String {
                 .to_owned()
         }
         HostFnBodyKind::LoopReentry => {
-            "(step, initial) => { function run(state) { \
-             while (true) { const out = step({ _0: run, _1: state }); \
+            "(step, initial) => { const reenter = __kio_lift__(run); function run(state) { \
+             while (true) { const out = step({ _0: reenter, _1: state }); \
              if (Object.prototype.hasOwnProperty.call(out, '_0')) { state = out._0; continue; } \
              if (Object.prototype.hasOwnProperty.call(out, '_1')) return out._1; \
              throw new Error('loop_reentry: step returned invalid sum'); } } \
@@ -2670,7 +2763,7 @@ mod tests {
         let context = Context::full(&runtime).expect("context");
         context.with(|ctx| {
             let result: bool = ctx.eval(format!(
-                "let trace = ''; const __kio_host_print__ = s => {{ trace += s; }}; const produce = ({body}); produce(); const stage = produce(); const inert = trace === 'create\\ncreate\\n'; const first = stage.advance(); const second = stage.advance(); inert && first === null && second === null && trace === 'create\\ncreate\\napply\\napply\\n'"
+                "let trace = ''; const __kio_stage__ = source => source; const __kio_host_print__ = s => {{ trace += s; }}; const produce = ({body}); produce(); const stage = produce(); const inert = trace === 'create\\ncreate\\n'; const first = stage.advance(); const second = stage.advance(); inert && first === null && second === null && trace === 'create\\ncreate\\napply\\napply\\n'"
             )).expect("host forall stage body");
             assert!(result);
         });
@@ -3042,7 +3135,7 @@ mod tests {
         let context = Context::full(&runtime).expect("context");
         context.with(|ctx| {
             let program = format!(
-                "(() => {{ const loop = {body}; let calls = 0; \
+                "(() => {{ const __kio_lift__ = body => body; const loop = {body}; let calls = 0; \
                  const ticket = loop(({{_0: reenter, _1: state}}) => {{ \
                    calls++; \
                    if (state[0] === 0) return {{_1: n => reenter([n, n])(null)}}; \
@@ -3074,7 +3167,7 @@ mod tests {
         let protocol = RunnerProtocol::HostCallbackReturnRoundtrip;
         let host = host_api::dynamic_host_api(protocol.contract());
         let s = build_host_record_expression(&host, protocol);
-        assert!(s.contains("\"makeStep\": (delta) => ((n) => Number(BigInt.asIntN(32"));
+        assert!(s.contains("\"makeStep\": (delta) => __kio_lift__((n) => Number(BigInt.asIntN(32"));
         assert!(s.contains("\"print\": (s) => { __kio_host_print__(s); return null; }"));
     }
 

@@ -1039,6 +1039,43 @@ fn build_driver_for_protocol(
                 _ => contract.testapi_conformed.then_some("testapi"),
             };
             match driver {
+                ExportDriver::TailCallbackRoundtrip => format!(r#"
+    use {crate_name}::ffi::exp::testapi_main__TypeChain::read_ret_impl as _;
+    const DEPTH: usize = 1024;
+    let check_events = |code: i32, root: i32, links: bool| {{
+        let mut expected = Vec::new();
+        if links {{ for index in (0..DEPTH).rev() {{ expected.push((index%2, code)); }} }}
+        expected.push((0, root));
+        TAIL_STATE.with(|state| assert_eq!(::std::mem::take(&mut state.borrow_mut().0), expected));
+    }};
+    let mut values = vec![pkg.testapi.main.valueRoot()];
+    for index in 0..DEPTH {{
+        let previous = values.last().unwrap().clone();
+        values.push(if index%2 == 0 {{ pkgSecond.testapi.main.keepValue(pkg.testapi.main.valueLink(previous)) }} else {{ pkg.testapi.main.keepValue(pkgSecond.testapi.main.valueLink(previous)) }});
+    }}
+    TAIL_STATE.with(|state| {{ let state = state.borrow(); assert!(state.0.is_empty()); assert_eq!(state.1, [DEPTH/2;2]); assert_eq!(state.2,state.1); }});
+    for _ in 0..2 {{ assert_eq!(values.last().unwrap().call(), 37); check_events(11,12,true); }}
+    // A declaration-owned carrier is the compatible Rust forall transport cell;
+    // bare forall facade types are site-owned rather than cross-site assignable.
+    let mut types = vec![pkg.testapi.main.nominalTypeRoot()];
+    for index in 0..DEPTH {{
+        let previous = types.last().unwrap().clone();
+        types.push(if index%2 == 0 {{ pkgSecond.testapi.main.keepNominalType(pkg.testapi.main.nominalTypeLink(previous)) }} else {{ pkg.testapi.main.keepNominalType(pkgSecond.testapi.main.nominalTypeLink(previous)) }});
+    }}
+    TAIL_STATE.with(|state| {{ let state = state.borrow(); assert!(state.0.is_empty()); assert_eq!(state.1,[DEPTH;2]); assert_eq!(state.2,state.1); }});
+    let stage = {crate_name}::shapes::nominal::testapi::main::TypeChain::<StubHost>::read(types.last().unwrap().clone());
+    let number = stage.specialize::<{crate_name}::shapes::KioHostTypeMarker_testapi__Number<StubHost>>();
+    check_events(21,22,true);
+    let unit = stage.specialize::<{crate_name}::shapes::KioUnit>();
+    check_events(21,22,true);
+    for _ in 0..2 {{ assert_eq!(number.call(),73); check_events(0,23,false); }}
+    assert_eq!(unit.call(),73); check_events(0,23,false);
+    TAIL_STATE.with(|state| {{ let state = state.borrow(); assert_eq!(state.1,[DEPTH;2]); assert_eq!(state.2,state.1); }});
+    drop(number); drop(unit); drop(stage);
+    while values.pop().is_some() {{}}
+    while types.pop().is_some() {{}}
+    println!("tail callback roundtrip ok");
+"#),
                 ExportDriver::Main { module } => rust_main_call(module),
                 ExportDriver::Coexist => {
                     unreachable!("--protocol coexist dispatches through run_coexist")
@@ -2015,7 +2052,22 @@ fn build_driver(
     debug_assert_eq!(host.functions.len(), contract.host_fns.len());
     for (i, (m, binding)) in host.methods().zip(contract.host_fns).enumerate() {
         let sig = render_method_sig(m, crate_name);
-        let body = rewrite_crate_paths(&render_rust_body_for_binding(binding, m), crate_name);
+        let mut body = rewrite_crate_paths(&render_rust_body_for_binding(binding, m), crate_name);
+        if protocol == RunnerProtocol::TailCallbackRoundtrip {
+            body = match binding.body {
+                HostFnBodyKind::BoxMake { .. } => format!(
+                    "TAIL_STATE.with(|state| state.borrow_mut().1[self.tail_owner] += 1); {body}"
+                ),
+                HostFnBodyKind::BoxGet { .. } => format!(
+                    "TAIL_STATE.with(|state| state.borrow_mut().2[self.tail_owner] += 1); {body}"
+                ),
+                HostFnBodyKind::InstanceMark { .. } => {
+                    "TAIL_STATE.with(|state| state.borrow_mut().0.push((self.tail_owner,arg0)));"
+                        .to_owned()
+                }
+                _ => unreachable!("tail callback protocol has only storage and marker functions"),
+            };
+        }
         impl_body.push_str(&format!("    {sig} {{\n        {body}\n    }}\n"));
         if i + 1 < host.functions.len() {
             impl_body.push('\n');
@@ -2170,14 +2222,21 @@ fn build_driver(
         ""
     };
 
-    let second_instance = if protocol == RunnerProtocol::SameArtifactExchange {
+    let second_instance = if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        format!("    let pkgSecond = {crate_name}::{factory}(StubHost {{ tail_owner: 1 }});\n")
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         format!(
             "    let pkgSecond = {crate_name}::{factory}(StubHost {{ exchange_label: \"second\" }});\n"
         )
     } else {
         String::new()
     };
-    let (stub_host_decl, stub_host_ctor) = if protocol == RunnerProtocol::SameArtifactExchange {
+    let (stub_host_decl, stub_host_ctor) = if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        (
+            "struct StubHost { tail_owner: usize }",
+            "StubHost { tail_owner: 0 }",
+        )
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         (
             "struct StubHost { exchange_label: &'static str, }",
             "StubHost { exchange_label: \"first\" }",
@@ -2194,7 +2253,9 @@ fn build_driver(
     } else {
         ("struct StubHost;", "StubHost")
     };
-    let existential_state = if protocol == RunnerProtocol::HostExistentialRoundtrip {
+    let existential_state = if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        "thread_local! { static TAIL_STATE: ::std::cell::RefCell<(Vec<(usize,i32)>,[usize;2],[usize;2])> = const { ::std::cell::RefCell::new((Vec::new(),[0;2],[0;2])) }; }\n"
+    } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         "thread_local! { static EXISTENTIAL_COUNTS: ::std::cell::Cell<(usize, usize)> = const { ::std::cell::Cell::new((0, 0)) }; }\n"
     } else {
         ""

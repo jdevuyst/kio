@@ -3,17 +3,17 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('./value_runtime.js', import.meta.url), 'utf8');
-assert.doesNotMatch(source, /__kio(?:Protect|NeedsProtection|ValueRef|BoundaryValueRef|RunAdapted|Callable|Lift)|adapt\(/,
+assert.doesNotMatch(source, /__kio(?:Protect|NeedsProtection|ValueRef|BoundaryValueRef|RunAdapted|Callable)|adapt\(/,
   'ordinary host values have neither an admission walker nor adapter-layer dispatch');
 const realm = vm.createContext({});
-const loadRuntime = (context = realm) => vm.runInContext('(() => {\n' + source + '\nreturn { context: __kioNominalContext, poly: __kioPoly, guest: __kioGuest, call: __kioTailCall, advance: __kioTailAdvance }; })()', context);
+const loadRuntime = (context = realm) => vm.runInContext('(() => {\n' + source + '\nreturn { context: __kioNominalContext, poly: __kioPoly, guest: __kioGuest, guestPoly: __kioGuestPoly, lift: __kioLeaf, liftStage: __kioLiftStage, call: __kioTailCall, advance: __kioTailAdvance }; })()', context);
 const runtime = loadRuntime();
 
 {
   const owners = [];
   const visits = [0, 0];
   const cursors = new Set();
-  const leaf = value => { owners.push('leaf'); return value + 1; };
+  const leaf = runtime.lift(value => { owners.push('leaf'); return value + 1; });
   let chain = leaf;
   for (let index = 0; index < 50000; index++) {
     const next = chain;
@@ -44,7 +44,8 @@ const runtime = loadRuntime();
       return Reflect.apply(target, receiver, args);
     },
   });
-  const call = runtime.guest((value, cursor) => runtime.call(cursor, target, value));
+  const lifted = runtime.lift(target);
+  const call = runtime.guest((value, cursor) => runtime.call(cursor, lifted, value));
   assert.equal(call(6), 7);
   assert.deepEqual(events.splice(0), [['value', undefined, 6]]);
   const poly = {
@@ -56,7 +57,8 @@ const runtime = loadRuntime();
       },
     }),
   };
-  const advance = runtime.guest((_, cursor) => runtime.advance(cursor, poly));
+  const liftedPoly = runtime.liftStage(poly);
+  const advance = runtime.guest((_, cursor) => runtime.advance(cursor, liftedPoly));
   assert.equal(advance(null), poly);
   assert.deepEqual(events, [['type', 0]]);
 }
@@ -64,31 +66,31 @@ const runtime = loadRuntime();
 {
   const events = [];
   const makeOwner = label => {
-    const leaf = value => { events.push(label); return value; };
+    const leaf = runtime.lift(value => { events.push(label); return value; });
     return runtime.guest((value, cursor) => runtime.call(cursor, leaf, value));
   };
   const first = makeOwner('first');
   const second = makeOwner('second');
   const bridge = runtime.guest((value, cursor) => runtime.call(cursor, second, value));
-  const host = callback => {
+  const host = runtime.lift(callback => {
     events.push('before');
     assert.equal(first(3), 3, 'host reentry owns a separate cursor');
     assert.equal(callback(7), 7);
     assert.equal(callback(8), 8);
     events.push('after');
     return callback;
-  };
+  });
   const invoke = runtime.guest((callback, cursor) => runtime.call(cursor, host, callback));
   const returned = invoke(bridge);
   assert.equal(returned, bridge, 'a callable result is an ordinary value');
   assert.deepEqual(events.splice(0), ['before', 'first', 'second', 'second', 'after']);
   assert.equal(returned(9), 9);
   assert.deepEqual(events.splice(0), ['second']);
-  const ignore = runtime.guest((callback, cursor) => runtime.call(cursor, () => 31, callback));
+  const ignore = runtime.guest((callback, cursor) => runtime.call(cursor, runtime.lift(() => 31), callback));
   assert.equal(ignore(first), 31);
   assert.deepEqual(events, [], 'a host may ignore a callback');
   const failure = new Error('host failure');
-  const throwing = runtime.guest((value, cursor) => runtime.call(cursor, () => { throw failure; }, value));
+  const throwing = runtime.guest((value, cursor) => runtime.call(cursor, runtime.lift(() => { throw failure; }), value));
   assert.throws(() => throwing(null), error => error === failure);
   assert.equal(first(11), 11, 'a failed invocation leaves later calls independent');
 }
@@ -101,17 +103,17 @@ const runtime = loadRuntime();
     advance() {
       assert.equal(arguments.length, 0);
       events.push('type');
-      return value => this.value + value;
+      return runtime.lift(value => this.value + value);
     },
   };
-  let chain = leaf;
+  let chain = runtime.liftStage(leaf);
   for (let index = 0; index < 50000; index++) {
     const next = chain;
     const owner = index % 2;
-    chain = runtime.poly(runtime.guest((_, cursor) => {
+    chain = runtime.guestPoly((_, cursor) => {
       visits[owner]++;
       return runtime.advance(cursor, next);
-    }));
+    });
   }
   assert.deepEqual(events, [], 'construction never enters a type stage');
   const result = chain.advance();
@@ -126,14 +128,14 @@ const runtime = loadRuntime();
 {
   const other = loadRuntime();
   const events = [];
-  let value = input => { events.push('value'); return input + 1; };
-  let poly = { advance() { events.push('type'); return 37; } };
-  for (let index = 0; index < 8; index++) {
+  let value = runtime.lift(input => { events.push('value'); return input + 1; });
+  let poly = runtime.liftStage({ advance() { events.push('type'); return 37; } });
+  for (let index = 0; index < 50000; index++) {
     const owner = index % 2 === 0 ? runtime : other;
     const previousValue = value;
     const previousPoly = poly;
     value = owner.guest((input, cursor) => owner.call(cursor, previousValue, input));
-    poly = owner.poly(owner.guest((_, cursor) => owner.advance(cursor, previousPoly)));
+    poly = owner.guestPoly((_, cursor) => owner.advance(cursor, previousPoly));
   }
   assert.equal(value(41), 42, 'independent artifacts retain ordinary callback invocation');
   assert.equal(poly.advance(), 37);
@@ -145,7 +147,7 @@ const runtime = loadRuntime();
 {
   const events = [];
   const failure = new Error('type-stage failure');
-  const poly = runtime.poly(() => { events.push('advance'); return value => value; });
+  const poly = runtime.poly(() => { events.push('advance'); return runtime.lift(value => value); });
   assert.deepEqual(events, []);
   const callable = poly.advance();
   assert.deepEqual(events.splice(0), ['advance']);
@@ -155,6 +157,15 @@ const runtime = loadRuntime();
   assert.deepEqual(events.splice(0), ['advance']);
   assert.throws(() => runtime.poly(() => { throw failure; }).advance(),
     error => error === failure);
+}
+
+{
+  const returnsControl = runtime.guest((_value, transfer) => transfer);
+  const control = returnsControl(null);
+  assert.equal(typeof control.call, 'function', 'a returned control object is ordinary data');
+  assert.equal(typeof control.advance, 'function');
+  const ordinary = runtime.lift(value => value);
+  assert.equal(ordinary(control), control, 'native results are never control sentinels');
 }
 
 {

@@ -203,10 +203,8 @@ mod facade_consumer_tests {
     fn converted_continuation_call(method: &str) -> &str {
         method
             .lines()
-            .find(|line| {
-                line.contains("__kio_function_call") && line.contains(" = __kio_function_inner")
-            })
-            .expect("converted host continuation call")
+            .find(|line| line.contains("return kioTailValue(__kio_function_target"))
+            .expect("converted host continuation transfer")
     }
 
     fn call_arguments(call: &str) -> &str {
@@ -271,7 +269,9 @@ mod facade_consumer_tests {
             format!("Api__split(arg0 {I32_HOST}, arg1 {I32_HOST}) {I32_HOST}"),
             format!("Api__packed(arg0 {pair}) {I32_HOST}"),
             format!("Api__mixed(arg0 {I32_HOST}, arg1 {pair}) {I32_HOST}"),
-            format!("Api__callback(arg0 func({pair}) {I32_HOST}) {I32_HOST}"),
+            format!(
+                "Api__callback(arg0 Callable[struct {{ F0 {I32_HOST}; F1 {I32_HOST} }}, {I32_HOST}]) {I32_HOST}"
+            ),
         ] {
             assert!(
                 emitted.host_go.contains(&signature),
@@ -283,7 +283,7 @@ mod facade_consumer_tests {
             format!("First(arg0 {I32_HOST}, arg1 {I32_HOST}) {I32_HOST}"),
             format!("Second(arg0 {pair}) {I32_HOST}"),
             format!("Staged(arg0 {I32_HOST}, arg1 {I32_HOST}) {I32_HOST}"),
-            format!("Returned(arg0 {I32_HOST}) func({I32_HOST}) {I32_HOST}"),
+            format!("Returned(arg0 {I32_HOST}) Callable[{I32_HOST}, {I32_HOST}]"),
         ] {
             assert!(
                 emitted.pkg_go.contains(&signature),
@@ -726,7 +726,7 @@ mod facade_consumer_tests {
         );
         assert!(
             emitted.ffi_go.contains(&format!(
-                "type Env_Api__useCallback_arg0_result[{TEXT_HOST} any] = func(Value) Value"
+                "type Env_Api__useCallback_arg0_result[{TEXT_HOST} any] = Callable[Value, Value]"
             )),
             "{}",
             emitted.ffi_go
@@ -739,7 +739,7 @@ mod facade_consumer_tests {
         assert!(
             emitted
                 .ffi_go
-                .contains("func(Prepared[KioI0]) Prepared[KioI0]")
+                .contains("Callable[Prepared[KioI0], Prepared[KioI0]]")
         );
     }
 
@@ -751,18 +751,22 @@ mod facade_consumer_tests {
                 "module api; pub fn round(value: {ty}) -> {ty} {{ value }}"
             ));
             let emitted = lower_package(&package, "pkg").expect("emit nested Value views");
-            // Two public roots, each with one native Out and one private In
-            // closure per stage. Only the native Unit-domain closure is nullary.
+            // Two public roots, each with one cooperative Out and one private
+            // In entry per stage. Result maps reuse the nested view helpers.
             // Re-inlining every suffix would multiply these counts by the depth.
-            assert_eq!(emitted.ffi_go.matches("return func()").count(), 2 * depth);
+            assert_eq!(
+                emitted.ffi_go.matches("return kioCallable[").count(),
+                2 * depth
+            );
             assert_eq!(
                 emitted
                     .ffi_go
-                    .matches("return func(__kio_function_domain")
+                    .matches("return kioValueEntry(func(__kio_function_domain")
                     .count(),
                 2 * depth
             );
-            assert_eq!(emitted.ffi_go.matches("return func(").count(), 4 * depth);
+            assert_eq!(emitted.ffi_go.matches("kioExportStep(").count(), 2 * depth);
+            assert!(!emitted.ffi_go.contains("kioApplyValue("));
             assert!(
                 emitted
                     .ffi_go
@@ -816,7 +820,9 @@ mod facade_consumer_tests {
             format!("type Env_Api__consume_arg0_0[{I32_HOST} any] = "),
             format!("type Env_Api__consume_arg0_1[{I32_HOST} any] = "),
             format!("func NewEnv_Api__consume_arg0_0[{I32_HOST} any]("),
-            format!("type Env_Api__consume_arg1[{I32_HOST} any] = func({I32_HOST}) {I32_HOST}"),
+            format!(
+                "type Env_Api__consume_arg1[{I32_HOST} any] = Callable[{I32_HOST}, {I32_HOST}]"
+            ),
         ] {
             assert!(
                 emitted.ffi_go.contains(&fragment),
@@ -1195,7 +1201,7 @@ v(2) {
         assert!(header.contains(") TypeStage["), "{header}");
         for alias in [
             "type Exp_Api__Church_readChurch_ret = TypeStage[",
-            "type Exp_Api__Church_readChurch_ret_result_cbarg0 = func(",
+            "type Exp_Api__Church_readChurch_ret_result_cbarg0 = TypeCallable[Callable[Unit, Value]]",
             "type Exp_Api__Church_readChurch_ret_result_cbret = Value",
         ] {
             assert!(
@@ -1228,7 +1234,7 @@ v(2) {
         let single_header = single.lines().next().expect("Single projector header");
         assert!(
             single_header.contains("ReadSingle(arg0 ")
-                && single_header.contains(", arg1 func() func(Value) Value) Value"),
+                && single_header.contains(", arg1 TypeCallable[Callable[Value, Value]]) Value"),
             "{single_header}"
         );
         assert_eq!(single.matches("= arg1\n").count(), 1, "{single}");
@@ -1236,7 +1242,7 @@ v(2) {
             call_arguments(converted_continuation_call(single))
                 .split(", ")
                 .count(),
-            1,
+            2,
             "{single}"
         );
         assert!(!single.contains("kioProductSlots("), "{single}");
@@ -1253,7 +1259,7 @@ v(2) {
         assert!(
             packed_header.contains("CallExp_Api__Packed_readPacked[")
                 && packed_header.contains(
-                    ", arg1 func() func() func(KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value) Value"
+                    ", arg1 TypeCallable[TypeCallable[Callable[struct { F0 Prepared[KioI0]; F1 Value; F2 Value }, Value]]]) Value"
                 ),
             "{packed_header}"
         );
@@ -1271,10 +1277,12 @@ v(2) {
             expanded < slot0 && slot0 < slot1 && slot1 < slot2 && slot2 < host_call_at,
             "{packed}"
         );
-        let host_arguments = call_arguments(host_call);
+        let host_arguments = call_arguments(host_call)
+            .split_once(", ")
+            .expect("target plus native domain")
+            .1;
         assert!(
-            host_arguments
-                .starts_with("KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]{"),
+            host_arguments.starts_with("struct { F0 Prepared[KioI0]; F1 Value; F2 Value }{"),
             "{host_call}"
         );
         assert!(host_arguments.ends_with('}'), "{host_call}");
@@ -1291,13 +1299,13 @@ v(2) {
 
         for alias in [
             "type Exp_Api__Single_readSingle_arg0 = ",
-            "type Exp_Api__Single_readSingle_arg1 = func() func(Value) Value",
+            "type Exp_Api__Single_readSingle_arg1 = TypeCallable[Callable[Value, Value]]",
             "type Exp_Api__Single_readSingle_arg1_result_cbarg0 = Value",
             "type Exp_Api__Single_readSingle_arg1_result_cbret = Value",
             "type Exp_Api__Single_readSingle_ret = Value",
             "type Exp_Api__Packed_readPacked_arg0[KioI0 KioIndexKind_S] = ",
-            "type Exp_Api__Packed_readPacked_arg1[KioI0 KioIndexKind_S] = func() func() func(KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value",
-            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0[KioI0 KioIndexKind_S] = KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]",
+            "type Exp_Api__Packed_readPacked_arg1[KioI0 KioIndexKind_S] = TypeCallable[TypeCallable[Callable[struct { F0 Prepared[KioI0]; F1 Value; F2 Value }, Value]]]",
+            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0[KioI0 KioIndexKind_S] = struct { F0 Prepared[KioI0]; F1 Value; F2 Value }",
             "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field0[KioI0 KioIndexKind_S] = Prepared[KioI0]",
             "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field1[KioI0 KioIndexKind_S] = Value",
             "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field2[KioI0 KioIndexKind_S] = Value",
@@ -1310,6 +1318,34 @@ v(2) {
                 emitted.ffi_go
             );
         }
+    }
+
+    #[test]
+    fn nullary_callback_domain_registers_its_unit_index_without_a_unit_source_slot() {
+        let package = package(
+            "module api; \
+             pub fn deferred[A](value: A) -> . -> A { .() { value } }",
+        );
+        let emitted = lower_package(&package, "pkg").expect("emit generic nullary callback");
+        assert!(
+            emitted.ffi_go.contains(
+                "type IndexExp_Api__deferred_ret_cbarg0[KioI0 KioIndexKind_S] = KioIndexUnit"
+            ),
+            "{}",
+            emitted.ffi_go
+        );
+        assert_eq!(
+            emitted
+                .shapes_go
+                .matches("type KioIndexUnit struct")
+                .count(),
+            1
+        );
+        assert!(
+            emitted
+                .shapes_go
+                .contains("func (KioIndexUnit) kioIndexKind_S()")
+        );
     }
 
     #[test]
@@ -1336,7 +1372,8 @@ v(2) {
             "{projector}"
         );
         assert!(
-            projector.contains("ReadEmpty(arg0 Unit, arg1 func() func() Value) Value"),
+            projector
+                .contains("ReadEmpty(arg0 Unit, arg1 TypeCallable[Callable[Unit, Value]]) Value"),
             "{projector}"
         );
     }
@@ -2052,6 +2089,16 @@ impl GoValueViewRenderer {
         fields: &[GoLiveFacadeUseRef<'site, 'source>],
     ) -> Result<Vec<facade_skin::GoValueViewChild<'site, 'source>>, EmitError> {
         match parameter {
+            GoPublicParameter::Unit => {
+                assert!(fields.is_empty());
+                self.render(
+                    spelling,
+                    "Unit".to_owned(),
+                    facade_skin::GoValueView::Unit,
+                    &[],
+                );
+                Ok(Vec::new())
+            }
             GoPublicParameter::Value(_) => {
                 assert_eq!(fields.len(), 1);
                 Ok(self
@@ -2150,28 +2197,20 @@ impl GoValueViewRenderer {
             }
             GoLiveFacadeUseView::Function {
                 semantic,
-                layout,
                 slots,
                 result,
+                ..
             } => {
                 let parameters = semantic
                     .public_parameters()
                     .unwrap_or_else(go_facade_invariant);
-                let mut parameters = parameters.iter().enumerate();
-                for group in layout.source_params() {
-                    if group.adapter() == CallableSourceParamAdapter::UnitValue {
-                        continue;
-                    }
-                    let (index, parameter) = parameters
-                        .next()
-                        .expect("each non-unit function group owns one public parameter");
+                if let Some(parameter) = parameters.first() {
                     children.extend(self.visit_parameter(
-                        &format!("{spelling}_cbarg{index}"),
+                        &format!("{spelling}_cbarg0"),
                         parameter,
-                        &slots[group.facade_slots()],
+                        &slots,
                     )?);
                 }
-                assert!(parameters.next().is_none());
                 children.extend(self.visit_value(&format!("{spelling}_cbret"), &result)?);
             }
             _ => {}
@@ -2220,6 +2259,17 @@ fn emit_ffi_parameter_alias(
     removed_at_version: Option<u32>,
 ) -> Result<(), EmitError> {
     match parameter {
+        GoPublicParameter::Unit => {
+            if let Some(version) = removed_at_version {
+                out.push_str(&format!("\n// Deprecated: retained only for source compatibility with host declarations removed at signature v{version}.\n"));
+            }
+            out.push_str(&format!(
+                "type {spelling}{} = Unit\ntype Index{spelling}{} = KioIndexUnit\n",
+                root_parameters.declaration, root_parameters.declaration
+            ));
+            package_names.extend([spelling.to_owned(), format!("Index{spelling}")]);
+            Ok(())
+        }
         GoPublicParameter::Value(cursor) => emit_ffi_alias_tree(
             spelling,
             cursor,
@@ -2692,6 +2742,20 @@ fn validate_package_names(
         ("Value", "canonical erased boundary value"),
         ("Prepared", "statically indexed canonical boundary value"),
         ("TypeStage", "statically indexed delayed type selection"),
+        ("Callable", "structural value callable"),
+        ("Func", "native value callback lift"),
+        ("TypeCallable", "structural executing type stage"),
+        ("TypeFunc", "native type stage lift"),
+        ("kioCallable", "guest public value callable"),
+        ("kioTypeCallable", "guest public type callable"),
+        ("kioTailEntry", "structural transfer entry"),
+        ("kioTailCapability", "transfer capability"),
+        ("kioBoundaryEntry", "native representation boundary"),
+        ("kioCallableEntry", "value callback transfer selection"),
+        ("kioTypeCallableEntry", "type callback transfer selection"),
+        ("kioDrive", "boundary result conversion driver"),
+        ("kioAdvance", "private transfer advancement"),
+        ("kioExportStep", "native result conversion transfer"),
         ("AtomIndex", "abstract native atom index"),
         ("PrepareAtom", "statically indexed native atom construction"),
         ("Atom", "abstract native atom construction"),

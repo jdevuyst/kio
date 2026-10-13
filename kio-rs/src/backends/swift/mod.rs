@@ -5,7 +5,8 @@
 //! package directory per the contract in
 //! [`specs/backends/swift.md`](../../../../specs/backends/swift.md): a
 //! multi-file Swift module (`pkg.swift`, `host.swift`, `shapes.swift`,
-//! `ffi.swift`, `kio_runtime.swift`) whose module name is the package's
+//! `ffi.swift`, `kio_runtime.swift`) plus complete `KioRuntime` support
+//! sources. The package module name is the package's
 //! namespace (default derivation and the `namespace` key:
 //! [`crate::backends::namespace`]) — imposed at compile time via
 //! `-module-name` and published in the `pkg.swift` marker line, since
@@ -32,7 +33,10 @@ pub mod skin;
 mod value;
 
 pub use emit::{EmitError, SwiftPackage, lower_package, lower_package_with_signature};
-pub use runtime::{RUNTIME_SUPPORT_FILE_CONTENT, RUNTIME_SUPPORT_FILE_PATH};
+pub use runtime::{
+    RUNTIME_SUPPORT_FILE_CONTENT, RUNTIME_SUPPORT_FILE_PATH, SHARED_RUNTIME_FILE_CONTENT,
+    SHARED_RUNTIME_FILE_PATH,
+};
 
 /// The Swift backend's profile.
 ///
@@ -45,8 +49,8 @@ pub use runtime::{RUNTIME_SUPPORT_FILE_CONTENT, RUNTIME_SUPPORT_FILE_PATH};
 /// body's perspective, so the body threads no ownership annotations
 /// (`gc: true`).
 ///
-/// `runtime_support: EmbeddedFile` shares the canonical carriers, witness
-/// construction, and structural projection helpers in `kio_runtime.swift`.
+/// `runtime_support: EmbeddedFile` supplies package-local nominal storage;
+/// the output also includes the shared callable/control module.
 pub fn profile() -> Profile {
     Profile {
         native_records: true,

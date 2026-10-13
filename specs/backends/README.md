@@ -187,27 +187,35 @@ inherits the host language's threading model unchanged.
 #### Tail calls within generated code
 
 **Applies when:** a generated Kio invocation finishes by transferring to another
-Kio callable within the same generated artifact.
+Kio callable through its documented callable representation, within one
+artifact or between artifacts whose public types and callable support are
+compatible.
 
 A tail application supplies its enclosing invocation's result without further
 computation. Result branches and the final body of a binding or sequence retain
 that position; callees, arguments, conditions and constructed payloads do not.
 A function body starts a new invocation when called, not when constructed.
 
-Within a generated artifact, transferring to another Kio function in tail
-position does not retain a generated activation merely to return its result.
+Transferring to another Kio function in tail position does not retain a
+generated activation merely to return its result.
 This includes functions passed as arguments or carried through generic,
 structural and nominal values, and final executing type-application stages.
 The callee, earlier application stages and arguments still evaluate in their
 specified order. Captures and package-instance ownership remain intact.
 
-This is not a bound on arbitrary host computation, callbacks converted to and
-from native functions at an actual host boundary, calls between independently
-generated artifacts, or source computations with work remaining after a call.
-Passing an unchanged private callable through opaque host storage does not
-itself cross that native-function conversion boundary. Internal representation
-adapters do not exempt a guest-contained tail transfer. Host runtimes and
-host-supplied sequencing operations retain their own resource behavior.
+Passing a callable unchanged through host code or opaque host storage retains
+this property. The host uses the callable type specified by its backend;
+where that type is a wrapper, converting it explicitly to a native function
+and passing the native function back does not recover the wrapper's transfer
+capability. A host-authored function that calls a Kio callback is likewise a
+new host computation, not unchanged transport. Compiler-generated adapters
+must preserve the tail transfer and its required argument/result conversions.
+
+This is not a bound on arbitrary host computation, explicit native-function
+bridges, or source computations with work remaining after a call. Nor does it
+make otherwise incompatible public types interchangeable between artifacts.
+Host runtimes and host-supplied sequencing operations retain their own
+resource behavior.
 Invocation depth is also distinct from the space occupied or reclaimed by
 captured values.
 
@@ -550,11 +558,12 @@ for the contract-surface and type-closure rules.
 
 ### The package namespace
 
-Package-owned symbols — the package-handle type, factory, host type, nominal
-types, and runtime-support items — live under one per-package namespace,
+Package-owned symbols — the package-handle type, factory, host type, and nominal
+types — live under one per-package namespace,
 expressed in the host language's own namespacing construct (crate, module,
-package declaration, or file-module). Structural facade declarations also live
-there unless they use the shared static-declaration mechanism below. No backend
+package declaration, or file-module). Runtime-support items and structural
+facade declarations also live there unless they use one of the shared-support
+mechanisms below. No backend
 places a fixed-name executable or package-owned symbol at the host language's
 global scope.
 
@@ -597,6 +606,29 @@ Support namespaces cannot collide with configurable package namespaces.
 Package-owned nominal types remain distinct, including when used as parameters
 of shared structural types. Public package interfaces re-export the needed
 types so host authors do not manage the shared support layout.
+
+### Shared callable support
+
+**Applies when:** compatible generated packages use nominal host types from a
+common module to represent transferable callables.
+
+The backend provides a shared support module containing those callable
+types and their execution support. Each generated artifact includes the
+support sources it requires. A host combining compatible artifacts builds and
+links one common copy; no separately downloaded runtime is required. The
+backend's loading instructions specify this step.
+
+The module contains no package-instance state or ambient callback registry.
+Callables retain their own captures and package-instance owners, and separate
+invocations retain separate execution state, including during host reentry.
+Package-owned nominal types remain distinct. Sharing a callable representation
+does not make incompatible argument or result types interchangeable.
+
+Packages linked against one support module use identical definitions and
+calling contracts. Generated package names cannot collide with the support
+namespace. Public callable interfaces
+remain typed: host authors construct and invoke them without manipulating
+erased execution state or supplying representation codecs.
 
 ### Source-derived public names
 
@@ -993,7 +1025,12 @@ opaque `KioStoredValue`, marker-directed facade conversion, and typed generic
 dispatch helpers). The per-backend output layout states which realization
 applies.
 
-Two properties hold for every backend that ships one:
+The [shared callable support](#shared-callable-support) form instead uses one
+module common to compatible artifacts. Its documented public callable
+types are part of the host API; its generated execution linkage remains
+implementation support. The module's complete source travels with each artifact.
+
+For package-local support files, two properties hold:
 
 - **Canonical content, namespaced location.** The file's content is
   canonical per emitter version and documented representation-affecting target

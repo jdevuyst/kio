@@ -1,0 +1,12 @@
+package protocol_variance;
+
+build {
+  target python {
+    out "out/python/";
+    baseline v3_10
+  }
+}
+
+bridge {
+  api
+}

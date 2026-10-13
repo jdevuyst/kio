@@ -55,7 +55,7 @@ func main() {
 	var events []string
 	first := artifact.New[int, int, any](host{"first.", 100, 1000, &events})
 	second := artifact.New[int, int, any](host{"second.", 200, 2000, &events})
-	callback := func(value int) int { events = append(events, "callback"); return value + 7 }
+	callback := artifact.Func[int, int](func(value int) int { events = append(events, "callback"); return value + 7 })
 	prepared := artifact.PrepareExp_Api__useCallback_arg0_typearg0(first, callback)
 	checkEvents(&events)
 	box := artifact.UnsafeKioHostType_api__BoxFromNative[artifact.IndexExp_Api__useCallback_arg0_typearg0[int, int, any]](&vault{prepared.Erase()})
@@ -69,7 +69,7 @@ func main() {
 	checkEvents(&events)
 	native := artifact.UnprepareExp_Api__useCallback_arg0_typearg0(first, converted)
 	checkEvents(&events)
-	if native(11) != 918 {
+	if native.Call(11) != 918 {
 		panic("already-converted callback lost its receiving instance")
 	}
 	checkEvents(&events, "first.NumberIn", "second.NumberOut", "callback", "second.CountIn", "first.CountOut")
@@ -90,7 +90,7 @@ func main() {
 	kioBox := second.Api.OwnCallback()
 	checkEvents(&events)
 	kioCallback := artifact.NativeExp_Api__useCallback_arg0_typearg0(first, kioBox.UnsafeNative().(*vault).value)
-	if kioCallback(1) != -993 {
+	if kioCallback.Call(1) != -993 {
 		panic("Kio-created Count was inferred from native int")
 	}
 	checkEvents(&events, "first.NumberIn", "first.CountOut")

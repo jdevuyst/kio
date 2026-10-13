@@ -1334,6 +1334,7 @@ fn build_driver(
     if needs_impredicative_identity
         || needs_polymorphic_unit
         || protocol == RunnerProtocol::HostForallStageEffects
+        || protocol == RunnerProtocol::TailCallbackRoundtrip
     {
         out.push_str("import qualified \"base\" Data.Kind\n");
     }
@@ -1342,6 +1343,9 @@ fn build_driver(
     out.push_str("import qualified \"base\" Data.Char\n");
     out.push_str("import qualified \"base\" Data.IORef\n");
     out.push_str("import qualified \"base\" Data.List\n");
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str("import qualified \"base\" Control.Monad\n");
+    }
     out.push_str("import qualified \"base\" Text.Read\n");
     if needs_polymorphic_unit {
         out.push_str("import qualified \"base\" Control.Exception\n");
@@ -1367,6 +1371,15 @@ fn build_driver(
     }
     out.push('\n');
 
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str(
+            "type KioRunnerTailStage = forall (a :: Data.Kind.Type). IO (() -> IO Data.Int.Int32)\n\
+             newtype KioRunnerTailStageBox = KioRunnerTailStageBox KioRunnerTailStage\n\
+             bindTailStage :: forall b. IO KioRunnerTailStage -> (KioRunnerTailStage -> IO b) -> IO b\n\
+             bindTailStage = (>>=)\n\n",
+        );
+    }
+
     if needs_impredicative_identity {
         out.push_str("kioPure :: forall a. a -> IO a\nkioPure = pure\n\n");
     }
@@ -1382,7 +1395,11 @@ fn build_driver(
     // The record type / constructor / field labels are all spelled through
     // the `Pkg` import alias; the `host__…` field names are the emitted
     // record's, so a drifted FFI surfaces as a GHC error here.
-    if protocol == RunnerProtocol::SameArtifactExchange {
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str(&format!(
+            "stubHost :: Int -> Data.IORef.IORef [(Int, Int)] -> Data.IORef.IORef (Int, Int) -> Pkg.{handle}Host KioRunnerHostTypes IO\n"
+        ));
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         out.push_str(&format!(
             "stubHost :: String -> Pkg.{handle}Host KioRunnerHostTypes IO\n"
         ));
@@ -1397,7 +1414,9 @@ fn build_driver(
             "stubHost :: Pkg.{handle}Host KioRunnerHostTypes IO\n"
         ));
     }
-    let stub_host_lhs = if protocol == RunnerProtocol::SameArtifactExchange {
+    let stub_host_lhs = if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        "stubHost owner events storage"
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         "stubHost exchangeLabel"
     } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         "stubHost pkg existentialCounts"
@@ -1413,8 +1432,16 @@ fn build_driver(
         for (i, (m, binding, source, kind)) in classified.iter().enumerate() {
             let lead = if i == 0 { "  { " } else { "  , " };
             let field = m.name.as_str();
-            let body =
-                render_haskell_body_for_binding(binding, kind, source, ns, contract.host_types);
+            let body = if protocol == RunnerProtocol::TailCallbackRoundtrip {
+                match binding.body {
+                    HostFnBodyKind::BoxMake { .. } => "\\arg0 -> Data.IORef.modifyIORef' storage (\\(packs, unpacks) -> (packs + 1, unpacks)) >> pure (KioRunnerBox arg0)".to_owned(),
+                    HostFnBodyKind::BoxGet { .. } => "\\(KioRunnerBox arg0) -> Data.IORef.modifyIORef' storage (\\(packs, unpacks) -> (packs, unpacks + 1)) >> pure arg0".to_owned(),
+                    HostFnBodyKind::InstanceMark { .. } => "\\arg0 -> Data.IORef.modifyIORef' events ((owner, fromIntegral arg0) :)".to_owned(),
+                    _ => unreachable!("tail callback protocol has only storage and mark capabilities"),
+                }
+            } else {
+                render_haskell_body_for_binding(binding, kind, source, ns, contract.host_types)
+            };
             out.push_str(&format!("{lead}Pkg.{field} = {body}\n"));
         }
         out.push_str("  }\n\n");
@@ -1423,7 +1450,10 @@ fn build_driver(
     out.push_str("main :: IO ()\n");
     out.push_str("main = do\n");
     out.push_str("  hSetBuffering stdout NoBuffering\n");
-    if protocol == RunnerProtocol::SameArtifactExchange {
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str("  events <- Data.IORef.newIORef []\n  storageA <- Data.IORef.newIORef (0, 0)\n  storageB <- Data.IORef.newIORef (0, 0)\n");
+        out.push_str(&format!("  let pkg = Pkg.create{handle} (stubHost 0 events storageA)\n  let pkgSecond = Pkg.create{handle} (stubHost 1 events storageB)\n"));
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         out.push_str(&format!("  let pkg = Pkg.create{handle} (stubHost \"first\")\n  let pkgSecond = Pkg.create{handle} (stubHost \"second\")\n"));
     } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         out.push_str("  existentialCounts <- Data.IORef.newIORef (0, 0)\n");
@@ -1529,6 +1559,68 @@ fn render_export_driver(
     // (`import qualified <Ns> as Pkg`), so these bodies stay
     // namespace-independent.
     let body = match driver {
+        ExportDriver::TailCallbackRoundtrip => format!(
+            r#"  let depth = 1024 :: Int
+      owner index = if even index then pkg else pkgSecond
+      other index = if even index then pkgSecond else pkg
+      check :: Eq a => a -> a -> IO ()
+      check expected actual = Control.Monad.unless (actual == expected) (fail "tail callback assertion failed")
+      checkEvents expected = do
+        actual <- reverse <$> Data.IORef.readIORef events
+        check expected actual
+        Data.IORef.writeIORef events []
+      checkStorage count = do
+        Data.IORef.readIORef storageA >>= check (count, count)
+        Data.IORef.readIORef storageB >>= check (count, count)
+      chainEvents code root = [(index `mod` 2, code) | index <- reverse [0 .. depth - 1]] ++ [(0, root)]
+  rootValue <- {value_root} pkg
+  (value, retainedValues) <- Control.Monad.foldM
+    (\(previous, retained) index -> do
+      linked <- {value_link} (owner index) previous
+      next <- {keep_value} (other index) linked
+      pure (next, next : linked : retained))
+    (rootValue, [rootValue]) [0 .. depth - 1]
+  checkEvents []
+  checkStorage (depth `div` 2)
+  value () >>= check 37
+  checkEvents (chainEvents 11 12)
+  value () >>= check 37
+  checkEvents (chainEvents 11 12)
+  checkStorage (depth `div` 2)
+  (finalStage, retainedTypes) <- bindTailStage ({type_root} pkg) $ \root ->
+    Control.Monad.foldM
+      (\(KioRunnerTailStageBox previous, retained) index ->
+        bindTailStage ({type_link} (owner index) previous) $ \linked ->
+        bindTailStage ({keep_type} (other index) linked) $ \next ->
+          pure (KioRunnerTailStageBox next, KioRunnerTailStageBox next : KioRunnerTailStageBox linked : retained))
+      (KioRunnerTailStageBox root, [KioRunnerTailStageBox root]) [0 .. depth - 1]
+  checkEvents []
+  checkStorage depth
+  let KioRunnerTailStageBox stage = finalStage
+  first <- stage @Data.Int.Int32
+  checkEvents (chainEvents 21 22)
+  first () >>= check 73
+  checkEvents [(0, 23)]
+  first () >>= check 73
+  checkEvents [(0, 23)]
+  second <- stage @()
+  checkEvents (chainEvents 21 22)
+  second () >>= check 73
+  checkEvents [(0, 23)]
+  checkStorage depth
+  check (2 * depth + 1) (length retainedValues)
+  check (2 * depth + 1) (length retainedTypes)
+  Control.Monad.mapM_ (\node -> node `seq` pure ()) retainedValues
+  Control.Monad.mapM_ (\node -> node `seq` pure ()) retainedTypes
+  putStrLn "tail callback roundtrip ok"
+"#,
+            value_root = pkg_export("testapi/main", "value_root"),
+            value_link = pkg_export("testapi/main", "value_link"),
+            keep_value = pkg_export("testapi/main", "keep_value"),
+            type_root = pkg_export("testapi/main", "type_root"),
+            type_link = pkg_export("testapi/main", "type_link"),
+            keep_type = pkg_export("testapi/main", "keep_type"),
+        ),
         ExportDriver::IncomingCallableViews => {
             "  fail \"this runner has no incoming-callable-views driver\"\n".to_owned()
         }
@@ -1680,7 +1772,7 @@ fn render_export_driver(
   let identity :: forall a. IO (a -> IO a)
       identity = pure (\value -> putStrLn "poly call" >> pure value)
       unit :: {arg} KioRunnerHostTypes IO
-      unit = {input_left} (putStrLn "unit call" >> pure 17)
+      unit = {input_left} (\() -> putStrLn "unit call" >> pure 17)
       poly :: {arg} KioRunnerHostTypes IO
       poly = {input_right} identity
       callback :: {callback_arg} KioRunnerHostTypes IO -> IO ({callback_ret} KioRunnerHostTypes IO)
@@ -1691,7 +1783,7 @@ fn render_export_driver(
         putStrLn "unit ready"
         case left of
           {output_left} step -> do
-            number <- step
+            number <- step ()
             if number /= 17 then error "Unit callback result changed" else print number
           _ -> error "Unit arm changed"
         right <- transport poly
@@ -2086,7 +2178,7 @@ fn render_export_driver(
              \x20 existential <- {make_existential_unit} pkg\n\
              \x20 {read_existential_unit} pkg existential (pure (\\_ -> pure (89 :: Int))) >>= print\n\
              \x20 existentialEmpty <- {make_existential_empty} pkg\n\
-             \x20 {read_existential_empty} pkg existentialEmpty (pure (pure (90 :: Int))) >>= print\n\
+             \x20 {read_existential_empty} pkg existentialEmpty (pure (\\() -> pure (90 :: Int))) >>= print\n\
              \x20 recursiveBothPayload <- {recursive_both_base_payload} pkg\n\
              \x20 recursiveBoth <- {make_recursive_both} pkg recursiveBothPayload\n\
              \x20 recursiveBothOut <- {read_recursive_both} pkg recursiveBoth\n\
@@ -2269,7 +2361,7 @@ fn render_export_driver(
             let last = pkg_sum_pattern(target_namespace, &choice, StructuralKey::bare("Outer"), 2);
             format!(
                 r#"  {call_direct} pkg >>= \({direct} number text) -> print number >> TIO.putStrLn text
-  {call_callback} pkg (putStrLn "callback" >> pure ({callback_input} 9 (T.pack "callback-value"))) >>= \({callback} number text) -> print number >> TIO.putStrLn text
+  {call_callback} pkg (\() -> putStrLn "callback" >> pure ({callback_input} 9 (T.pack "callback-value"))) >>= \({callback} number text) -> print number >> TIO.putStrLn text
   {make_outer} pkg (T.pack "nest") 11 13 >>= {echo_outer} pkg >>= \({outer} text ({inner} left right)) -> TIO.putStrLn text >> print left >> print right
   let printChoice value = {echo_choice} pkg value >>= \result -> case result of
         {first} number -> print number
@@ -2623,7 +2715,7 @@ fn render_haskell_body_for_binding(
             "\\arg0 -> pure arg0".to_owned()
         }
         HostFnBodyKind::RoundPolyThunk => {
-            "\\arg0 -> kioPure @(forall (t :: Data.Kind.Type). IO (IO ())) arg0".to_owned()
+            "\\arg0 -> kioPure @(forall (t :: Data.Kind.Type). IO (() -> IO ())) arg0".to_owned()
         }
         HostFnBodyKind::RoundPolyUnitSlot => "\\arg0 -> pure arg0".to_owned(),
         HostFnBodyKind::ObservePacked { .. } => {
@@ -3165,6 +3257,20 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn retained_tail_stage_keeps_its_declared_type_kind() {
+        let protocol = RunnerProtocol::TailCallbackRoundtrip;
+        let namespace = "RunnerFixture";
+        let host = haskell_host_api_for_protocol(protocol, namespace);
+        let host_types = contract_host_types(protocol, namespace);
+        let driver = build_driver(&host, protocol, namespace, &host_types)
+            .expect("render public callback roundtrip driver");
+        assert!(driver.contains("import qualified \"base\" Data.Kind\n"));
+        assert!(driver.contains(
+            "type KioRunnerTailStage = forall (a :: Data.Kind.Type). IO (() -> IO Data.Int.Int32)"
+        ));
     }
 
     #[test]

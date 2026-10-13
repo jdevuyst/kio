@@ -252,14 +252,16 @@ shapes the `.js` produces while preserving Kio's type relations.
   can leave an enclosing public wrapper structural.
 - **Unit** is `null` and **bottom** is `never`. First-class functions use
   `GreeterCallable<A, R>`: one complete `A` argument, including `null` for
-  Unit. Supply an ordinary function with that signature.
+  Unit. Pass an ordinary function with that signature to
+  `createGreeter.lift(body)`. Generated callbacks already have the complete
+  interface and are forwarded unchanged.
 - **Ordinary Kio type variables** are TypeScript generics. A public
   `pub fn id[T](x: T) -> T` is `<T>(p0: T) => T`, and callbacks, returns, and
   nested polymorphic values instead use `GreeterPoly` with one generic
   `.advance<T>()` per type parameter. For example, an identity value is
-  invoked as `identity.advance<string>()("hello")`. Supply an object with a
-  generic `advance<T>()` method returning the next callable or polymorphic
-  layer at each step.
+  invoked as `identity.advance<string>()("hello")`. Pass an object with a
+  generic `advance<T>()` method to `createGreeter.liftStage(source)`; its result
+  at each step must contain lifted or generated callable values.
 - **Roleless host types** use the selected `B["<module>"]["<name>"]` entry.
   Applications of positive-arity host types and higher-kinded binders use
   `GreeterApply`; non-saturating prefixes use `GreeterBind`.
@@ -271,6 +273,14 @@ base witness, wrong arity, and `any` / `unknown` / `never` results instead of
 leaking a universal type. Runtime type arguments remain erased: these exact
 relations add no JavaScript type arguments. The callable helpers preserve
 the same value and type-stage boundaries when values cross the host boundary.
+`GreeterCallable`, `GreeterPoly` and `GreeterTransfer` are likewise structural:
+compatible independently generated packages can exchange them without a shared
+runtime or registration. The lift helpers add the required transfer operation
+while retaining exact ordinary call signatures. A new native wrapper around an
+existing callback is still a host call, not unchanged callback transport.
+Use the typed lifts for native bodies; the low-level transfer operation is a
+generated-code linkage protocol with additional semantic obligations, not a
+fully type-checked host callback construction API.
 
 `GreeterTypes<B>` provides a readable declaration-keyed catalogue of selected
 host types, fixed role types, and reachable public Kio newtype constructors for

@@ -386,9 +386,10 @@ same newtype.
 
 For a newly written callback, use the generated module's `kio_lift` helper.
 The callback receives one argument: `None` for Unit, or one product dictionary
-for a product domain. In type annotations, `KioFn[Domain, Result]` is an alias
-for `typing.Callable[[Domain], Result]`: one positional-only argument and its
-result. Write a function or callable object, rather than subclassing `KioFn`.
+for a product domain. In type annotations, `KioFn[Domain, Result]` is a
+structural protocol: one positional-only call argument, its exact result, and
+a required transfer operation. Write a native function or callable object and
+pass it to `kio_lift`, rather than implementing the transfer operation yourself.
 A callback returned by Kio already has this interface;
 pass it on directly. Named package methods and host-record methods keep their
 source parameter lists, so a named Unit-only method remains a no-argument call.
@@ -403,9 +404,12 @@ Its `advance` returns the selected `KioFn[T, T]` (for an identity callback).
 Python 3.10-compatible generic return annotations can require the narrow
 `# pyright: ignore[reportInvalidTypeVarUse]` on that method; the returned
 callable's input and result still retain the selected type.
-The lift helpers do not force a stage or call your callback early. Hosts
-implementing their own callable objects follow the same one-domain call or
-`advance()` interface in the
+The lift helpers do not force a stage or call your callback early. Their results
+carry the transfer operation that preserves guest tail calls across unchanged
+host storage and compatible independently generated packages, without a shared
+runtime or registry. Native bodies returning callbacks must lift those callbacks
+too. Re-lifting a native wrapper that invokes a saved guest is a real host call,
+not unchanged transport. The advanced structural operation is described in the
 [callable contract](../../specs/backends/python.md#ffi-surface).
 
 For a structural annotation, use the readable argument/result view instead of

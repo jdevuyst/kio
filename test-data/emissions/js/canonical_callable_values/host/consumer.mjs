@@ -7,7 +7,7 @@ const trace = [];
 const host = {
   api: {
     pack: value => ({ value }),
-    hostHold: value => (unit => {
+    hostHold: value => createCanonicalValues.lift(unit => {
       if (unit !== null) throw new Error("first-class Unit domain omitted");
       return value;
     }),
@@ -61,7 +61,7 @@ check(trace.join() === "0,1,1,2,2", "one leaf call per invocation");
 
 let crossedCalls = 0;
 const retainedPair = { _0: 23, _1: true };
-let crossed = (unit => {
+let crossed = createCanonicalValues.lift(unit => {
   check(unit === null, "cross-package Unit domain");
   crossedCalls++;
   return retainedPair;

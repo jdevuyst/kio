@@ -20,11 +20,13 @@ module. This page describes the surface a Swift host calls against.
 
 Swift is the **`erased-static`** family's **native-sum** member: a
 statically-typed host with a typed FFI skin over an **erased body**.
-Swift's body uses private `Any`-valued execution interfaces. Values cross the
+Swift's body uses erased `Any`-valued execution interfaces. Values cross the
 host boundary in their exact native representation. The host-facing **skin** is exact: bound types are
 Swift generic parameters, higher-kinded applications have generic nominal
-carriers, and `Any` appears only in internal storage and adapter bodies, never
-in a generated public type spelling (see [`README.md` § Higher-kinded
+carriers. Host protocol, export and boundary-value signatures do not expose
+`Any`. The separately compiled support module also publishes
+compiler-facing linkage for erased execution; that linkage is not a host
+construction or transport interface (see [`README.md` § Higher-kinded
 types](README.md#higher-kinded-types) and the note under § Language families).
 Swift uses a **native `enum` with associated values**, matched by an
 exhaustive `switch`, for every sum on the typed host surface.
@@ -59,8 +61,8 @@ build {
 }
 ```
 
-`kio build swift` writes a self-contained Swift module as a flat
-directory under `out` (compiled as one module — the host `import`s it):
+`kio build swift` writes a package module and the complete sources of its
+shared support module under `out`:
 
 - `pkg.swift` — the module's invocable surface: the package-handle class,
   the `create<Handle>(host:)` factory, the export-namespace tree, and
@@ -78,12 +80,20 @@ directory under `out` (compiled as one module — the host `import`s it):
   type takes the host conformance as a generic argument. A host reaches a
   boundary type by its stable alias rather than reconstructing its generic
   shell or carrier spelling. **Part of the surface.**
-- `kio_runtime.swift` — fixed support, including the public `KioUnit`,
-  `Product`, `Sum`, and application carrier types. Its private helpers are
+- `kio_runtime.swift` — package-local nominal and application storage, with
+  public aliases for shared `KioFn`, `KioUnit`, `Product`, and `Sum`. Its private helpers are
   **internal**; the file is rewritten on every build, not
   user-modifiable. Its content is **byte-identical across every emitted
   package** — a Swift source carries no module declaration, so nothing
   here binds the namespace (contrast Go's per-file `package <ns>` line).
+- `KioRuntime/KioRuntime.swift` — complete fixed sources of the shared
+  `KioRuntime` module. Compile it once, then import and link it when building
+  each compatible package module. Every artifact supplies the same source;
+  embedding does not require an installed runtime package or network access.
+  The module owns canonical structural/callable types and their transfer
+  engine, with no package state or ambient registry. Packages linked together
+  use the same support definitions and calling contract. See the shared
+  [runtime-support contract](README.md#runtime-support-library).
 
 ### Native documentation
 
@@ -98,9 +108,8 @@ comment.
 
 ### The package namespace
 
-Every top-level name the module contributes — the handle type, the factory,
-the host protocol, the shell and carrier types, the runtime-support items —
-lives under one per-package **namespace**, per [`README.md`
+The handle type, factory, host protocol, and declaration-owned carriers
+live under one per-package **namespace**, per [`README.md`
 § The package facade](README.md#the-package-facade). Swift realizes the
 namespace as the emitted **module name**.
 
@@ -126,7 +135,7 @@ The namespace **defaults** to the title-word-cased Kio package name
 (`_my_pkg` → `KioPkg__uMyPkg`). An unmarked default uses the same `KioPkg_` frame
 when it collides with a Swift reserved word (`Any`, `Self`), a stdlib module
 the artifact or its host imports, or a generated top-level support name. The
-support-name set is `KioUnit`, `KioNative`, `KioNativeConstructor`, the fixed `Product` / `Sum` shells, the numeric
+support-name set is `KioFn`, `KioRuntime`, `KioUnit`, `KioNative`, `KioNativeConstructor`, the fixed `Product` / `Sum` shells, the numeric
 `KioApplyN` names, and the exact generated-name classes `KioFacade_...`,
 `KioHostType_...`, `KioHostTypeMk_...`, `KioHostTypeIdentity_...`, `KioNewtype_...`,
 `KioNewtypeMk_...`, and `KioForall_...` names. Thus `swift` → `KioPkg_Swift`
@@ -169,8 +178,8 @@ the host's own scope, so `createGreeter`, `GreeterHost`, and the returned
 such member.) The FFI surface is `public`; the erased body is internal.
 
 Two packages with distinct namespaces load into one host program without
-symbol conflict: no emitted type, factory, or runtime-support item has a
-fixed top-level name, and each package is its own Swift module ([`README.md`
+symbol conflict. Each package is its own Swift module and keeps its nominal
+identities; compatible packages link one shared `KioRuntime` copy ([`README.md`
 § The package facade](README.md#the-package-facade) § Coexistence).
 
 ## Loading protocol
@@ -427,8 +436,9 @@ the Swift instantiations:
   call and an exported invocation are each a direct Swift method call.
   No async, no scheduler.
 - **Type erasure at the FFI** ([`README.md`](README.md)) — the body is
-  erased to `Any`; the *skin* is fully typed. `Any` is confined to internal
-  storage and adapter bodies. A boundary binder becomes a Swift generic type
+  erased to `Any`; the *skin* is fully typed. Erased generated-code linkage
+  belongs to the shared support module, not host-authored value transport.
+  A boundary binder becomes a Swift generic type
   parameter, a higher-kinded application uses an exact generic carrier, and a
   rank-N value uses an exact callable carrier. Internal polymorphic callables
   retain the ordered stages specified by [`README.md` § 2](README.md#2-type-erasure-at-the-ffi).
@@ -502,11 +512,12 @@ type's Swift realization is:
   namespace methods can construct or project it; it never changes the
   carrier's identity. The carrier cuts recursive nominal graphs at the public
   boundary.
-- **Function value** → a Swift closure `(Domain) -> Result` with one semantic
+- **Function value** → `KioFn<Domain, Result>` with one semantic
   domain, including `KioUnit`. This is distinct from the source-grouped
-  parameters of a named host or exported method. A function-valued domain is
-  `@escaping`, including inside nested closure types, matching the convention
-  when a generic domain is instantiated with that function type.
+  parameters of a named host or exported method. Construct a host function with
+  `KioFn { argument in result }` or `KioFn(nativeFunction)`, and invoke it as
+  `function(argument)`. Nested function types use the same carrier recursively.
+  The carrier retains captured state and can be copied or stored unchanged.
 - **Type variable / abstract application** → the corresponding Swift generic
   type parameter, or `KioApplyN<F, ...>` when applying an abstract head.
 - **Rank-N value** → an exact `KioForall_<type-shape><H, ...>` carrier.
@@ -515,7 +526,7 @@ type's Swift realization is:
   result context does not infer it. The companion `...Implementation`
   protocol has a generic `specialize<T>(_: T.Type)` requirement returning
   that same residual. Its implementation can perform effects at that stage,
-  retain state in the returned carrier or closure, and advance another binder
+  retain state in the returned carrier, and advance another binder
   only when requested. These metatype arguments select native generics;
   they are not Kio value parameters or host-supplied representation codecs
   ([`README.md` § 2](README.md#2-type-erasure-at-the-ffi)).
@@ -539,12 +550,40 @@ path segment. Only callable descendants receive these additional aliases;
 opaque nominal payloads are not traversed. Their `Implementation`, type-stage
 and function aliases extend the same path.
 
+### Callback transport and native bridges
+
+`KioFn` and generated polymorphic carriers preserve guest tail-transfer
+identity through unchanged host storage and reinsertion. Compatible
+independently generated modules share the same `KioFn<A, R>` and control
+engine; nominal types owned by different package modules remain distinct.
+This implements the shared [tail-call contract](README.md#tail-calls-within-generated-code).
+Selecting a polymorphic carrier's type still executes exactly that stage;
+merely constructing, storing or copying a callable executes no stage.
+
+`function.callAsFunction` is the explicit native `(A) -> R` view, suitable
+for Swift APIs such as `map`. Calling that closure invokes the carrier, but
+wrapping it in another `KioFn` creates a host function boundary rather than
+recovering the original guest entry. Arbitrary host callbacks that reenter
+generated code do not acquire a tail-transfer guarantee.
+
+Opaque containers keep their actual native type arguments. A host migrating
+storage from `Box<(A) -> R>` to the Kio function representation uses
+`Box<KioFn<A, R>>` and explicitly rebuilds the container as needed; generated
+code does not inspect or map arbitrary host storage. Named host/export methods
+keep their declared parameter grouping.
+
+The shared module's `__Kio...` and `__kio...` names, and structural projection
+helpers, are generated-code linkage, not nominal construction or projection
+APIs. Their public Swift access exists for separately compiled generated
+modules. Host authors use the typed facade above; nominal payload storage and
+member visibility remain package-local.
+
 ### Carve-outs
 
 None. Swift expresses every spec- and IR-admitted FFI shape its host
 language can carry: structural products as `struct`s, **sums as native
 `enum`s with associated values** (exhaustive
-`switch`), exact host-selected nullary atoms, function values as closures, and
+`switch`), exact host-selected nullary atoms, typed callable values, and
 the erased higher-kinded body.
 
 ## Item naming
@@ -628,7 +667,8 @@ pub fn main() { print("hello\n"(Str)) }
 ```
 
 `kio build swift` writes `out/swift/{pkg.swift, host.swift,
-shapes.swift, ffi.swift, kio_runtime.swift}`. The package name `greet`
+shapes.swift, ffi.swift, kio_runtime.swift}` plus
+`out/swift/KioRuntime/KioRuntime.swift`. The package name `greet`
 derives the module name `Greet`, published on `pkg.swift`'s first line as
 `// kio-swift-module: Greet`; the host builds the package under
 `-module-name Greet` and:

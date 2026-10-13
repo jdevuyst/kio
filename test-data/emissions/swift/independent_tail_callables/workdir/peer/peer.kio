@@ -1,0 +1,40 @@
+module peer;
+
+host type Box[T];
+
+host fn pack[T](value: T) -> Box(T);
+
+host fn unpack[T](value: Box(T)) -> T;
+
+host fn mark();
+
+pub newtype Secret[T] : T { constructor seal; projector open }
+
+pub fn secret[T](value: T) -> Secret(T) { value.>Secret.seal }
+
+pub fn root[T](value: T) -> . -> T {
+  .() { mark(); value }
+}
+
+pub fn link[T](previous: . -> T) -> . -> T {
+  .() { mark(); previous() }
+}
+
+pub fn keep[T](value: T) -> T { value.>pack.>unpack }
+
+pub fn higher[T](previous: (. -> T) -> . -> T) -> (. -> T) -> . -> T {
+  .(argument) { mark(); previous(argument) }
+}
+
+pub fn pair[T](value: T) -> T & T { (value, value) }
+
+pub fn type_root() -> [A] A -> A {
+  .[A] {
+    mark();
+    .(value) { mark(); value }
+  }
+}
+
+pub fn type_link(previous: [A] A -> A) -> [A] A -> A {
+  .[A] { mark(); previous(A) }
+}

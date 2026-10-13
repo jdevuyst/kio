@@ -47,7 +47,6 @@ use super::reconstruct::TypeRecon;
 use super::skin::instantiate_newtype_payload_in;
 use crate::backends::boundary_facade::{
     BoundaryFacadeSiteOwner, BoundaryNewtypeSurface, CallableSourceParamAdapter,
-    CallableValueStageLayout,
 };
 use crate::backends::skin::FfiDir;
 
@@ -1198,8 +1197,8 @@ impl<'a> NativeCtx<'a> {
             prefix = forall_prefix,
             kind = self.shapes.standard_names().data_kind,
         ));
-        // The CPS unpacker has the exact continuation ABI: canonical Unit
-        // contributes no value argument; every other payload contributes one.
+        // A first-class CPS continuation always takes its semantic domain,
+        // including Unit.
         // The universals are the head tyvars; `r` is the continuation result;
         // each existential is bound under the continuation's `forall`.
         let head_ty = if head_tyvars.is_empty() {
@@ -1208,7 +1207,7 @@ impl<'a> NativeCtx<'a> {
             format!("{} h m {}", e.hs_name, head_tyvars.join(" "))
         };
         let continuation_leaf = match e.continuation_arity {
-            0 => "m r".to_owned(),
+            0 => "() -> m r".to_owned(),
             1 => format!("({payload}) -> m r"),
             arity => unreachable!(
                 "an existential projector continuation has zero or one payload slot, got {arity}"
@@ -1251,7 +1250,7 @@ impl<'a> NativeCtx<'a> {
             let remaining = render_staged_foralls(
                 &e.existential_params[index + 1..],
                 match e.continuation_arity {
-                    0 => "m r".to_owned(),
+                    0 => "() -> m r".to_owned(),
                     1 => format!("({payload}) -> m r"),
                     _ => unreachable!(
                         "an existential projector continuation has zero or one payload slot"
@@ -1265,7 +1264,7 @@ impl<'a> NativeCtx<'a> {
             continuation = next;
         }
         let apply = if e.continuation_arity == 0 {
-            continuation
+            format!("{continuation} ()")
         } else {
             format!("{continuation} __ex_payload")
         };
@@ -2173,167 +2172,38 @@ impl<'a> NativeCtx<'a> {
                     existential.continuation_arity,
                     "the prepared payload execution layout preserves the native continuation ABI",
                 );
-                let (payload_source, payload_slots) = match payload_layout.source_params() {
-                    [] => {
-                        assert_eq!(payload_layout.body_abi_arity(), 0);
-                        (None, 0..0)
-                    }
-                    [source] => (Some(source), source.facade_slots()),
-                    _ => unreachable!(
-                        "an existential projector continuation has zero or one payload source"
-                    ),
-                };
-                assert_eq!(payload_slots, 0..payload_layout.facade_slot_count());
-
-                let mut public_leaf = String::new();
-                let mut public_types = Vec::with_capacity(payload_slots.len());
-                let mut public_slot_types = Vec::with_capacity(payload_slots.len());
-                for index in payload_slots.clone() {
-                    let boundary = continuation_boundary.nested(BoundaryStep::CallbackArg(
-                        index
-                            .try_into()
-                            .expect("existential payload slot index fits u32"),
-                    ));
-                    let ty = self
-                        .facade
-                        .boundary_type(&boundary)
-                        .expect("a prepared existential payload slot has an exact type");
-                    let rendered = self.shapes.boundary_alias_haskell_type_in(
-                        &self.facade,
-                        &boundary,
-                        ty,
-                        &all_params,
-                        module,
-                    )?;
-                    public_types.push(rendered);
-                    public_slot_types.push((boundary, ty));
-                }
-                for rendered in super::facade::source_parameters(payload_layout, &public_types) {
-                    public_leaf.push_str(&format!("{} -> ", paren_ty(&rendered)));
-                }
-                public_leaf.push_str("m r");
+                let public_types = (0..payload_layout.facade_slot_count())
+                    .map(|index| {
+                        let boundary = continuation_boundary.nested(BoundaryStep::CallbackArg(
+                            index
+                                .try_into()
+                                .expect("existential payload slot index fits u32"),
+                        ));
+                        let ty = self
+                            .facade
+                            .boundary_type(&boundary)
+                            .expect("a prepared existential payload slot has an exact type");
+                        self.shapes.boundary_alias_haskell_type_in(
+                            &self.facade,
+                            &boundary,
+                            ty,
+                            &all_params,
+                            module,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let domain = super::facade::callback_domain(payload_layout, &public_types);
                 let public_cont = render_staged_foralls(
                     &d.existential_params,
-                    public_leaf.clone(),
+                    format!("{} -> m r", paren_ty(&domain)),
                     self.shapes.standard_names(),
                 );
-
-                let leaf_adapter = match payload_source.map(|source| source.adapter()) {
-                    None => {
-                        assert!(public_slot_types.is_empty());
-                        assert_eq!(existential.continuation_arity, 0);
-                        None
-                    }
-                    Some(CallableSourceParamAdapter::UnitValue) => {
-                        assert!(public_slot_types.is_empty());
-                        assert_eq!(existential.continuation_arity, 1);
-                        Some(Vec::new())
-                    }
-                    Some(CallableSourceParamAdapter::Identity) => {
-                        let [(boundary, ty)] = public_slot_types.as_slice() else {
-                            unreachable!("an identity existential payload owns one public slot")
-                        };
-                        assert_eq!(existential.continuation_arity, 1);
-                        Some(vec![converter.convert_host_boundary_at(
-                            ty,
-                            boundary,
-                            "__payload",
-                            HaskellHostConversionContext::root(FfiDir::Out, &all_params, module),
-                        )?])
-                    }
-                    Some(CallableSourceParamAdapter::RightNest) => {
-                        assert_eq!(existential.continuation_arity, 1);
-                        let slot_count = public_slot_types.len();
-                        Some(
-                            public_slot_types
-                                .iter()
-                                .enumerate()
-                                .map(|(index, (boundary, ty))| {
-                                    converter.convert_host_boundary_at(
-                                        ty,
-                                        boundary,
-                                        &tuple_proj("__payload", index, slot_count),
-                                        HaskellHostConversionContext::root(
-                                            FfiDir::Out,
-                                            &all_params,
-                                            module,
-                                        ),
-                                    )
-                                })
-                                .collect::<Result<Vec<_>, _>>()?,
-                        )
-                    }
-                };
-                let internal_leaf = match existential.continuation_arity {
-                    0 => "m r".to_owned(),
-                    1 => {
-                        let native_payload =
-                            self.render_direct_generic_type(&d.payload, &all_params, module)?;
-                        format!("({native_payload}) -> m r")
-                    }
-                    _ => unreachable!(
-                        "an existential projector continuation has zero or one payload slot"
-                    ),
-                };
-                let internal_cont = render_staged_foralls(
-                    &d.existential_params,
-                    internal_leaf,
-                    self.shapes.standard_names(),
-                );
-                let leaf_adapter = leaf_adapter
-                    .map(|arguments| -> Result<_, EmitError> {
-                        let mut binds = String::new();
-                        let mut values = Vec::with_capacity(arguments.len());
-                        for (index, (argument, (boundary, ty))) in
-                            arguments.iter().zip(&public_slot_types).enumerate()
-                        {
-                            let id = format!("__ex_arg{index}");
-                            let rank_n = converter.boundary_rank_n_type(
-                                ty,
-                                Some(boundary),
-                                HaskellHostConversionContext::root(
-                                    FfiDir::Out,
-                                    &all_params,
-                                    module,
-                                ),
-                            )?;
-                            binds.push_str(&render_native_pure_bind_prefix(
-                                argument,
-                                &id,
-                                rank_n.as_deref(),
-                            ));
-                            values.push(id);
-                        }
-                        Ok((binds, values))
-                    })
-                    .transpose()?;
-                let adapter = render_staged_forall_adapter(
-                    &d.existential_params,
-                    "arg1",
-                    &public_leaf,
-                    0,
-                    self.shapes.standard_names(),
-                    &|continuation| match &leaf_adapter {
-                        None => format!("({continuation})"),
-                        Some((binds, arguments)) => {
-                            let arguments =
-                                super::facade::source_parameters(payload_layout, arguments)
-                                    .iter()
-                                    .map(|argument| paren_expr(argument))
-                                    .collect::<Vec<_>>()
-                                    .join(" ");
-                            if arguments.is_empty() {
-                                format!("(\\__payload -> ({continuation}))")
-                            } else {
-                                format!("(\\__payload -> {binds}({continuation}) {arguments})")
-                            }
-                        }
-                    },
-                );
-                let adapter = format!("(({adapter}) :: {internal_cont})");
+                // The prepared payload domain has the same native representation.
+                // The unpacker owns the executing type stages and their demands;
+                // transporting the continuation must not run or rebuild them.
                 return Ok(format!(
                     "{wrapper} :: forall {outer}. {context} => {} h m -> {} -> {} -> m r\n\
-                     {wrapper} _pkg arg0 arg1 = {} arg0 {adapter}\n",
+                     {wrapper} _pkg arg0 arg1 = {} arg0 arg1\n",
                     self.handle,
                     paren_ty(&carrier),
                     paren_ty(&public_cont),
@@ -2534,25 +2404,6 @@ impl<'scope, 'module> HaskellHostConversionContext<'scope, 'module> {
         Self {
             depth: self.depth + 1,
             ..self
-        }
-    }
-
-    fn flipped(self) -> Self {
-        Self {
-            direction: self.direction.flip(),
-            ..self
-        }
-    }
-
-    fn with_scope<'nested>(
-        self,
-        scheme_scope: &'nested [TypeParam],
-    ) -> HaskellHostConversionContext<'nested, 'module> {
-        HaskellHostConversionContext {
-            direction: self.direction,
-            depth: self.depth,
-            scheme_scope,
-            module: self.module,
         }
     }
 
@@ -3651,15 +3502,6 @@ impl NativeExprEmitter<'_> {
     /// representation across the boundary, so they convert by identity.
     /// Compounds recurse slotwise; their closed families reduce to the same
     /// binary-nested pair / `Either` shape used by the native body.
-    fn convert_host_boundary_in(
-        &self,
-        ty: &Type<Routed>,
-        expr: &str,
-        context: HaskellHostConversionContext<'_, '_>,
-    ) -> Result<String, EmitError> {
-        self.convert_host_boundary_planned_in(ty, None, expr, context)
-    }
-
     fn convert_host_boundary_at(
         &self,
         ty: &Type<Routed>,
@@ -3677,24 +3519,13 @@ impl NativeExprEmitter<'_> {
         expr: &str,
         context: HaskellHostConversionContext<'_, '_>,
     ) -> Result<String, EmitError> {
-        let public_ty = boundary.map(|boundary| {
+        if let Some(boundary) = boundary {
             self.ctx.facade.boundary_type(boundary).unwrap_or_else(|| {
                 unreachable!(
                     "an exact Haskell boundary path has no prepared public type: {boundary:?}"
                 )
-            })
-        });
-        self.convert_host_boundary_with_public_in(ty, boundary, public_ty, expr, context)
-    }
-
-    fn convert_host_boundary_with_public_in(
-        &self,
-        ty: &Type<Routed>,
-        boundary: Option<&BoundaryId>,
-        public_ty: Option<&Type<Routed>>,
-        expr: &str,
-        context: HaskellHostConversionContext<'_, '_>,
-    ) -> Result<String, EmitError> {
+            });
+        }
         // A passthrough leaf, including a direct existential carrier, crosses
         // unchanged. Structural parents still recurse and use their ordinary
         // product/sum family applications.
@@ -3705,7 +3536,13 @@ impl NativeExprEmitter<'_> {
         {
             return Ok(expr.to_owned());
         }
-        if boundary.is_none() && self.boundary_is_identity(ty, context.scheme_scope, context.module)
+        // Callable transport is inert. Once the prepared public domain and
+        // every value leg have the native representation, rebuilding a
+        // function or forall stage would add result work to a guest tail call.
+        // Direct product/sum crossings below still retain their field demands;
+        // callers retain the value/stage demands around this conversion.
+        if (boundary.is_none() || matches!(ty, Type::Function { .. } | Type::Forall { .. }))
+            && self.boundary_is_identity_at(ty, boundary, context.scheme_scope, context.module)
         {
             return Ok(expr.to_owned());
         }
@@ -3742,10 +3579,9 @@ impl NativeExprEmitter<'_> {
                     ) else {
                         return Ok(expr.to_owned());
                     };
-                    self.convert_host_boundary_with_public_in(
+                    self.convert_host_boundary_planned_in(
                         &payload,
                         boundary,
-                        public_ty,
                         expr,
                         context.nested().with_module(Some(&owner)),
                     )
@@ -3753,165 +3589,11 @@ impl NativeExprEmitter<'_> {
                     Ok(expr.to_owned())
                 }
             }
-            Type::Forall { param, body, .. } => {
-                let nested = super::skin::extend_type_scope(context.scheme_scope, param);
-                let type_var = hs_tyvar(&param.name);
-                let value_var = format!("__hft{}", context.depth);
-                let public_body = match public_ty {
-                    Some(Type::Forall { body, .. }) => Some(body.as_ref()),
-                    Some(_) if boundary.is_some() => unreachable!(
-                        "an exact Haskell forall conversion retains its public type stage"
-                    ),
-                    _ => None,
-                };
-                let source_body_ty =
-                    if self
-                        .ctx
-                        .native_type_contains_forall(body, &nested, context.module)
-                    {
-                        Some(match context.direction {
-                            FfiDir::In => {
-                                if let (Some(boundary), Some(public_body)) = (boundary, public_body)
-                                {
-                                    self.ctx.shapes.boundary_alias_haskell_type_in(
-                                        &self.ctx.facade,
-                                        boundary,
-                                        public_body,
-                                        &nested,
-                                        context.module,
-                                    )?
-                                } else {
-                                    self.ctx.shapes.boundary_haskell_type_scoped_in(
-                                        body,
-                                        &nested,
-                                        context.module,
-                                    )?
-                                }
-                            }
-                            FfiDir::Out => self.ctx.render_direct_generic_type(
-                                body,
-                                &nested,
-                                context.module,
-                            )?,
-                        })
-                    } else {
-                        None
-                    };
-                // GHC does not push the enclosing type-abstraction's expected
-                // type into a projected operand. Preserve the source-side
-                // `forall` explicitly before its visible type application,
-                // just as the ordinary native-expression path does.
-                let source_ty = match context.direction {
-                    FfiDir::In => {
-                        if let (Some(boundary), Some(public_ty)) = (boundary, public_ty) {
-                            self.ctx.shapes.boundary_alias_haskell_type_in(
-                                &self.ctx.facade,
-                                boundary,
-                                public_ty,
-                                context.scheme_scope,
-                                context.module,
-                            )?
-                        } else {
-                            self.ctx.shapes.boundary_haskell_type_scoped_in(
-                                ty,
-                                context.scheme_scope,
-                                context.module,
-                            )?
-                        }
-                    }
-                    FfiDir::Out => self.ctx.render_direct_generic_type(
-                        ty,
-                        context.scheme_scope,
-                        context.module,
-                    )?,
-                };
-                let source = format!("__hforall{}", context.depth);
-                let applied = format!("(({source}) @{type_var})");
-                let bind = render_native_effectful_bind_prefix(
-                    &applied,
-                    &value_var,
-                    source_body_ty.as_deref(),
-                );
-                let converted = self.convert_host_boundary_with_public_in(
-                    body,
-                    boundary,
-                    public_body,
-                    &value_var,
-                    context.nested().with_scope(&nested),
-                )?;
-                let target_ty = match context.direction {
-                    FfiDir::In => self.ctx.render_direct_generic_type(
-                        ty,
-                        context.scheme_scope,
-                        context.module,
-                    )?,
-                    FfiDir::Out => {
-                        if let Some(boundary) = boundary {
-                            let public_ty = public_ty.expect(
-                                "an exact Haskell conversion owns its prepared public type",
-                            );
-                            self.ctx.shapes.boundary_alias_haskell_type_in(
-                                &self.ctx.facade,
-                                boundary,
-                                public_ty,
-                                context.scheme_scope,
-                                context.module,
-                            )?
-                        } else {
-                            self.ctx.shapes.boundary_haskell_type_scoped_in(
-                                ty,
-                                context.scheme_scope,
-                                context.module,
-                            )?
-                        }
-                    }
-                };
-                let target_body_ty =
-                    if self
-                        .ctx
-                        .native_type_contains_forall(body, &nested, context.module)
-                    {
-                        Some(match context.direction {
-                            FfiDir::In => self.ctx.render_direct_generic_type(
-                                body,
-                                &nested,
-                                context.module,
-                            )?,
-                            FfiDir::Out => {
-                                if let (Some(boundary), Some(public_body)) = (boundary, public_body)
-                                {
-                                    self.ctx.shapes.boundary_alias_haskell_type_in(
-                                        &self.ctx.facade,
-                                        boundary,
-                                        public_body,
-                                        &nested,
-                                        context.module,
-                                    )?
-                                } else {
-                                    self.ctx.shapes.boundary_haskell_type_scoped_in(
-                                        body,
-                                        &nested,
-                                        context.module,
-                                    )?
-                                }
-                            }
-                        })
-                    } else {
-                        None
-                    };
-                let lifted = render_native_pure_value(&converted, target_body_ty.as_deref());
-                let converted = format!("((\\ @{type_var} -> {bind}{lifted}) :: {target_ty})");
-                Ok(render_native_pure_let(
-                    &source,
-                    Some(&source_ty),
-                    expr,
-                    &converted,
-                    false,
-                ))
+            Type::Forall { .. } | Type::Function { .. } => {
+                unreachable!("a prepared Haskell callable has the canonical native representation")
             }
             Type::Product { .. } => self.convert_host_product(ty, boundary, expr, context),
             Type::Sum { .. } => self.convert_host_sum(ty, boundary, expr, context),
-            Type::Function { .. } => self.convert_host_function(ty, boundary, expr, context),
             Type::Bottom { .. } => Ok(expr.to_owned()),
             Type::LabelSugar { ext, .. } => match *ext {},
             Type::Infer { ext, .. } => match *ext {},
@@ -4221,334 +3903,22 @@ impl NativeExprEmitter<'_> {
         Ok(format!("(case ({expr}) of {{ {cases} }})"))
     }
 
-    /// Convert a function value crossing the host boundary. Both native and
-    /// boundary callbacks return through `m`; this adapter only re-keys the
-    /// argument/result shapes and bridges the native tupled value group to
-    /// the boundary's curried field spelling.
-    fn convert_host_function(
-        &self,
-        ty: &Type<Routed>,
-        boundary: Option<&BoundaryId>,
-        expr: &str,
-        context: HaskellHostConversionContext<'_, '_>,
-    ) -> Result<String, EmitError> {
-        let bound = format!("__hfun{}", context.depth);
-        let rank_n = self.boundary_rank_n_type(ty, boundary, context.flipped())?;
-        let converted = self.convert_host_function_value(ty, boundary, &bound, context)?;
-        Ok(render_native_pure_let(
-            &bound,
-            rank_n.as_deref(),
-            expr,
-            &converted,
-            false,
-        ))
-    }
-
-    fn convert_host_function_value(
-        &self,
-        ty: &Type<Routed>,
-        boundary: Option<&BoundaryId>,
-        expr: &str,
-        context: HaskellHostConversionContext<'_, '_>,
-    ) -> Result<String, EmitError> {
-        if let Some(boundary) = boundary {
-            let layout = self.ctx.facade.function_layout(boundary).unwrap_or_else(|| {
-                unreachable!(
-                    "an exact Haskell function boundary has no prepared execution layout: {boundary:?}"
-                )
-            });
-            return self.convert_prepared_host_function(ty, boundary, layout, expr, context);
-        }
-        let Type::Function {
-            param,
-            ret,
-            abi_arity,
-            ..
-        } = ty
-        else {
-            unreachable!("host function conversion requires a function type")
-        };
-        let param_tys = Type::right_spine_take(param, *abi_arity);
-        let leg_context = context.flipped().nested();
-        // Identity fast-path: no shape leg needs re-keying.
-        let legs_trivial = param_tys
-            .iter()
-            .all(|p| self.boundary_is_identity(p, context.scheme_scope, context.module))
-            && self.boundary_is_identity(ret, context.scheme_scope, context.module);
-        if param_tys.is_empty() {
-            let body = match context.direction {
-                FfiDir::Out => format!("(({expr}) ())"),
-                FfiDir::In => format!("({expr})"),
-            };
-            let body = if legs_trivial {
-                body
-            } else {
-                let retbind = format!("__hfr{}", context.depth);
-                let ret_conv = self.convert_host_boundary_in(ret, &retbind, context.nested())?;
-                format!("{body} >>= \\{retbind} -> kioPure ({ret_conv})")
-            };
-            return Ok(match context.direction {
-                FfiDir::Out => body,
-                FfiDir::In => format!("(\\() -> {body})"),
-            });
-        }
-        // The lambda / result binders carry `depth` so a function-returning
-        // function (or a function leg nested under a product) never reuses
-        // an enclosing leg's `__hf` / `__hfr` name.
-        let params: Vec<String> = (0..param_tys.len())
-            .map(|i| format!("__hf{}_{i}", context.depth))
-            .collect();
-        let native_arg = if legs_trivial {
-            // No re-key: the native tuple param is the boundary params nested
-            // directly (one value group = one nested-binary tuple).
-            self.strict_boundary_tuple(&param_tys, &params, leg_context)?
-        } else {
-            let mut converted_params = Vec::with_capacity(param_tys.len());
-            for (i, pty) in param_tys.iter().enumerate() {
-                converted_params.push(self.convert_host_boundary_in(
-                    pty,
-                    &params[i],
-                    leg_context,
-                )?);
-            }
-            self.strict_boundary_tuple(&param_tys, &converted_params, leg_context)?
-        };
-        let domain = format!("__hf_arg{}", context.depth);
-        let rank_n = self.boundary_rank_n_type(param, None, leg_context)?;
-        let bind = render_native_pure_bind_prefix(&native_arg, &domain, rank_n.as_deref());
-        let applied = format!("({bind}({expr}) {domain})");
-        let lam = params.join(" ");
-        if legs_trivial {
-            return Ok(format!("(\\{lam} -> {applied})"));
-        }
-        let retbind = format!("__hfr{}", context.depth);
-        let ret_conv = self.convert_host_boundary_in(ret, &retbind, context.nested())?;
-        Ok(format!(
-            "(\\{lam} -> {applied} >>= \\{retbind} -> kioPure ({ret_conv}))"
-        ))
-    }
-
-    /// Adapt one nested callable from its prepared semantic slots to the
-    /// native body's original product-domain ABI (or in the reverse
-    /// direction). The shared layout owns the partition: this renderer only
-    /// builds or projects the corresponding Haskell tuple values.
-    fn convert_prepared_host_function(
-        &self,
-        ty: &Type<Routed>,
-        boundary: &BoundaryId,
-        layout: &CallableValueStageLayout,
-        expr: &str,
-        context: HaskellHostConversionContext<'_, '_>,
-    ) -> Result<String, EmitError> {
-        let Type::Function { param, ret, .. } = ty else {
-            unreachable!("a prepared callback layout belongs to a function type")
-        };
-        let source_types = Type::right_spine_take(param, layout.body_abi_arity());
-        assert_eq!(
-            source_types.len(),
-            layout.source_params().len(),
-            "the prepared callback retains every native ABI parameter"
-        );
-        let public_args = (0..layout.facade_slot_count())
-            .map(|index| format!("__hff{}_{index}", context.depth))
-            .collect::<Vec<_>>();
-        let leg_context = context.flipped().nested();
-
-        let action = match context.direction {
-            FfiDir::Out => {
-                let mut source_values = Vec::with_capacity(source_types.len());
-                for (source_ty, source) in source_types.iter().zip(layout.source_params()) {
-                    let range = source.facade_slots();
-                    let source_value = match source.adapter() {
-                        CallableSourceParamAdapter::UnitValue => {
-                            assert!(range.is_empty());
-                            "()".to_owned()
-                        }
-                        CallableSourceParamAdapter::Identity => {
-                            assert_eq!(range.len(), 1);
-                            let index = range.start;
-                            let nested = boundary.nested(BoundaryStep::CallbackArg(
-                                index.try_into().expect("callback slot index fits u32"),
-                            ));
-                            self.convert_host_boundary_planned_in(
-                                source_ty,
-                                Some(&nested),
-                                &public_args[index],
-                                leg_context,
-                            )?
-                        }
-                        CallableSourceParamAdapter::RightNest => {
-                            let parts = Type::right_spine_product(source_ty);
-                            assert_eq!(parts.len(), range.len());
-                            let converted = parts
-                                .iter()
-                                .copied()
-                                .zip(range)
-                                .map(|(part, index)| {
-                                    let nested = boundary.nested(BoundaryStep::CallbackArg(
-                                        index.try_into().expect("callback slot index fits u32"),
-                                    ));
-                                    self.convert_host_boundary_planned_in(
-                                        part,
-                                        Some(&nested),
-                                        &public_args[index],
-                                        leg_context,
-                                    )
-                                })
-                                .collect::<Result<Vec<_>, _>>()?;
-                            self.strict_boundary_tuple(&parts, &converted, leg_context)?
-                        }
-                    };
-                    source_values.push(source_value);
-                }
-                let native_domain =
-                    self.strict_boundary_tuple(&source_types, &source_values, leg_context)?;
-                let domain_id = format!("__hfa{}", context.depth);
-                let rank_n = self.boundary_rank_n_type(param, None, leg_context)?;
-                let bind =
-                    render_native_pure_bind_prefix(&native_domain, &domain_id, rank_n.as_deref());
-                format!("({bind}({expr}) {domain_id})")
-            }
-            FfiDir::In => {
-                let native_domain = format!("__hfd{}", context.depth);
-                let mut binds = String::new();
-                let mut facade_values = Vec::with_capacity(layout.facade_slot_count());
-                for (source_index, (source_ty, source)) in
-                    source_types.iter().zip(layout.source_params()).enumerate()
-                {
-                    let source_value = if source_types.len() == 1 {
-                        native_domain.clone()
-                    } else {
-                        tuple_proj(&native_domain, source_index, source_types.len())
-                    };
-                    let range = source.facade_slots();
-                    match source.adapter() {
-                        CallableSourceParamAdapter::UnitValue => {
-                            assert!(range.is_empty());
-                        }
-                        CallableSourceParamAdapter::Identity => {
-                            assert_eq!(range.len(), 1);
-                            let index = range.start;
-                            let nested = boundary.nested(BoundaryStep::CallbackArg(
-                                index.try_into().expect("callback slot index fits u32"),
-                            ));
-                            let converted = self.convert_host_boundary_planned_in(
-                                source_ty,
-                                Some(&nested),
-                                &source_value,
-                                leg_context,
-                            )?;
-                            let id = format!("__hfa{}_{}", context.depth, index);
-                            let rank_n =
-                                self.boundary_rank_n_type(source_ty, Some(&nested), leg_context)?;
-                            binds.push_str(&render_native_pure_bind_prefix(
-                                &converted,
-                                &id,
-                                rank_n.as_deref(),
-                            ));
-                            facade_values.push(id);
-                        }
-                        CallableSourceParamAdapter::RightNest => {
-                            let parts = Type::right_spine_product(source_ty);
-                            assert_eq!(parts.len(), range.len());
-                            for (part_index, (part, index)) in
-                                parts.into_iter().zip(range).enumerate()
-                            {
-                                let nested = boundary.nested(BoundaryStep::CallbackArg(
-                                    index.try_into().expect("callback slot index fits u32"),
-                                ));
-                                let converted = self.convert_host_boundary_planned_in(
-                                    part,
-                                    Some(&nested),
-                                    &tuple_proj(
-                                        &source_value,
-                                        part_index,
-                                        source.facade_slots().len(),
-                                    ),
-                                    leg_context,
-                                )?;
-                                let id = format!("__hfa{}_{}", context.depth, index);
-                                let rank_n =
-                                    self.boundary_rank_n_type(part, Some(&nested), leg_context)?;
-                                binds.push_str(&render_native_pure_bind_prefix(
-                                    &converted,
-                                    &id,
-                                    rank_n.as_deref(),
-                                ));
-                                facade_values.push(id);
-                            }
-                        }
-                    }
-                }
-                let facade_values = super::facade::source_parameters(layout, &facade_values);
-                let applied = if facade_values.is_empty() {
-                    format!("({expr})")
-                } else {
-                    format!(
-                        "(({expr}) {})",
-                        facade_values
-                            .iter()
-                            .map(|value| paren_expr(value))
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    )
-                };
-                let ret_boundary = boundary.nested(BoundaryStep::CallbackRet);
-                let retbind = format!("__hfr{}", context.depth);
-                let converted = self.convert_host_boundary_planned_in(
-                    ret,
-                    Some(&ret_boundary),
-                    &retbind,
-                    context.nested(),
-                )?;
-                let body = if converted == retbind {
-                    applied
-                } else {
-                    let lifted = self.render_boundary_pure_value_at(
-                        ret,
-                        &ret_boundary,
-                        &converted,
-                        context.nested(),
-                    )?;
-                    format!("{applied} >>= \\{retbind} -> {lifted}")
-                };
-                return Ok(format!("(\\{native_domain} -> {binds}{body})"));
-            }
-        };
-
-        let ret_boundary = boundary.nested(BoundaryStep::CallbackRet);
-        let retbind = format!("__hfr{}", context.depth);
-        let converted = self.convert_host_boundary_planned_in(
-            ret,
-            Some(&ret_boundary),
-            &retbind,
-            context.nested(),
-        )?;
-        let body = if converted == retbind {
-            action
-        } else {
-            let lifted = self.render_boundary_pure_value_at(
-                ret,
-                &ret_boundary,
-                &converted,
-                context.nested(),
-            )?;
-            format!("{action} >>= \\{retbind} -> {lifted}")
-        };
-        let public_args = super::facade::source_parameters(layout, &public_args);
-        if public_args.is_empty() {
-            Ok(body)
-        } else {
-            Ok(format!("(\\{} -> {body})", public_args.join(" ")))
-        }
-    }
-
-    /// True when a value of type `ty` crosses the host boundary unchanged in
-    /// the native body — a passthrough (erased) position, an exact host type,
-    /// or `()` whose native rep is its boundary rep.
+    /// Representation equality, not a proof that evaluating a value is free.
+    /// Demand belongs to the producer/consumer and direct structural crossing;
+    /// an equal callable representation needs no result-side adapter.
     fn boundary_is_identity(
         &self,
         ty: &Type<Routed>,
+        scheme_scope: &[TypeParam],
+        module: Option<&str>,
+    ) -> bool {
+        self.boundary_is_identity_at(ty, None, scheme_scope, module)
+    }
+
+    fn boundary_is_identity_at(
+        &self,
+        ty: &Type<Routed>,
+        boundary: Option<&BoundaryId>,
         scheme_scope: &[TypeParam],
         module: Option<&str>,
     ) -> bool {
@@ -4563,33 +3933,78 @@ impl NativeExprEmitter<'_> {
             return true;
         }
         match ty {
-            Type::Product { .. } => Type::right_spine_product(ty)
-                .into_iter()
-                .all(|slot| self.boundary_is_identity(slot, scheme_scope, module)),
-            Type::Sum { .. } => Type::right_spine_sum(ty)
-                .into_iter()
-                .all(|slot| self.boundary_is_identity(slot, scheme_scope, module)),
+            Type::Product { .. } | Type::Sum { .. } => {
+                let slots = if matches!(ty, Type::Product { .. }) {
+                    Type::right_spine_product(ty)
+                } else {
+                    Type::right_spine_sum(ty)
+                };
+                slots.into_iter().enumerate().all(|(index, slot)| {
+                    let nested = boundary.map(|boundary| {
+                        boundary.nested(BoundaryStep::Slot(
+                            index.try_into().expect("structural slot index fits u32"),
+                        ))
+                    });
+                    self.boundary_is_identity_at(slot, nested.as_ref(), scheme_scope, module)
+                })
+            }
             Type::Function {
                 param,
                 ret,
                 abi_arity,
                 ..
             } => {
-                let params = Type::right_spine_take(param, *abi_arity);
-                params.len() == 1
-                    && self.boundary_is_identity(params[0], scheme_scope, module)
-                    && self.boundary_is_identity(ret, scheme_scope, module)
+                if let Some(boundary) = boundary {
+                    let layout = self
+                        .ctx
+                        .facade
+                        .function_layout(boundary)
+                        .unwrap_or_else(|| {
+                            unreachable!("an exact Haskell callable identity has a prepared layout")
+                        });
+                    assert_eq!(layout.body_abi_arity(), *abi_arity);
+                    let sources = Type::right_spine_take(param, *abi_arity);
+                    assert_eq!(sources.len(), layout.source_params().len());
+                    for (source_ty, source) in sources.iter().zip(layout.source_params()) {
+                        let parts = match source.adapter() {
+                            CallableSourceParamAdapter::UnitValue => Vec::new(),
+                            CallableSourceParamAdapter::Identity => vec![*source_ty],
+                            CallableSourceParamAdapter::RightNest => {
+                                Type::right_spine_product(source_ty)
+                            }
+                        };
+                        assert_eq!(parts.len(), source.facade_slots().len());
+                        for (part, index) in parts.into_iter().zip(source.facade_slots()) {
+                            let nested = boundary.nested(BoundaryStep::CallbackArg(
+                                index.try_into().expect("callback slot index fits u32"),
+                            ));
+                            if !self.boundary_is_identity_at(
+                                part,
+                                Some(&nested),
+                                scheme_scope,
+                                module,
+                            ) {
+                                return false;
+                            }
+                        }
+                    }
+                    let returned = boundary.nested(BoundaryStep::CallbackRet);
+                    self.boundary_is_identity_at(ret, Some(&returned), scheme_scope, module)
+                } else {
+                    self.boundary_is_identity(param, scheme_scope, module)
+                        && self.boundary_is_identity(ret, scheme_scope, module)
+                }
             }
             Type::Forall { param, body, .. } => {
                 let nested = super::skin::extend_type_scope(scheme_scope, param);
-                self.boundary_is_identity(body, &nested, module)
+                self.boundary_is_identity_at(body, boundary, &nested, module)
             }
             Type::Path { .. } => self
                 .ctx
                 .shapes
                 .boundary_path_expansion_in(ty, scheme_scope, module)
                 .is_some_and(|(body, owner)| {
-                    self.boundary_is_identity(&body, scheme_scope, Some(&owner))
+                    self.boundary_is_identity_at(&body, boundary, scheme_scope, Some(&owner))
                 }),
             Type::Bottom { .. } => true,
             Type::Unit { .. } => true,
@@ -5108,8 +4523,7 @@ impl NativeExprEmitter<'_> {
     /// receiver and the continuation lambda: `(unBox (<recv>)
     /// (<continuation>))`. The unpacker `case`-unpacks the GADT (re-binding
     /// each existential as a fresh skolem) and invokes the continuation.
-    /// Canonical Unit contributes no value parameter; otherwise the rank-N
-    /// continuation's payload parameter is emitted unannotated so GHC reads
+    /// The rank-N continuation's payload parameter is emitted unannotated so GHC reads
     /// the skolem from the `case` pattern rather than the emitter trying to
     /// spell the hidden existential.
     fn emit_cps_projector_apply(
@@ -6070,40 +5484,6 @@ fn render_staged_foralls(
     leaf
 }
 
-/// Adapt the payload leaf of a staged public `forall` while preserving every
-/// observable type-application action. Applying a public stage produces the
-/// next stage through `m`; bind that action before rebuilding the matching
-/// internal stage, rather than manufacturing the later polymorphism with
-/// `pure` ahead of the public continuation's effects.
-fn render_staged_forall_adapter(
-    type_params: &[TypeParam],
-    source: &str,
-    source_leaf_ty: &str,
-    depth: usize,
-    standard_names: &super::naming::StandardNames,
-    adapt_leaf: &impl Fn(&str) -> String,
-) -> String {
-    let Some((param, remaining_params)) = type_params.split_first() else {
-        return adapt_leaf(source);
-    };
-    let type_var = hs_tyvar(&param.name);
-    let next = format!("__ex_public_k{depth}");
-    let action = format!("({source} @{type_var})");
-    let remaining_ty =
-        render_staged_foralls(remaining_params, source_leaf_ty.to_owned(), standard_names);
-    let rank_n = (!remaining_params.is_empty()).then_some(remaining_ty.as_str());
-    let bind = render_native_effectful_bind_prefix(&action, &next, rank_n);
-    let rest = render_staged_forall_adapter(
-        remaining_params,
-        &next,
-        source_leaf_ty,
-        depth + 1,
-        standard_names,
-        adapt_leaf,
-    );
-    format!("(\\ @{type_var} -> {bind}pure ({rest}))")
-}
-
 /// The declaration's ordered System-F application stages.  A type binder is
 /// one stage even when adjacent binders share a source bracket run; a value
 /// group is one product-domain stage.  `module_positional` records only the
@@ -6543,7 +5923,7 @@ pub(super) fn tuple_proj(target: &str, index: usize, arity: usize) -> String {
 /// type `(t0, (t1, t2))`: a Kio product / value group is one binary cons
 /// per `&`, the last element bare; a single element is itself (no tuple),
 /// an empty group is `()`.
-fn nest_tuple_type(elems: &[String]) -> String {
+pub(super) fn nest_tuple_type(elems: &[String]) -> String {
     match elems {
         [] => "()".to_owned(),
         [only] => only.clone(),
@@ -6817,8 +6197,8 @@ mod module_call_shape_tests {
         native_call_stages, propagate_exact_constraints, render_module_fn_patterns,
         render_module_fn_value_adapter, render_native_effectful_bind_prefix,
         render_native_pure_bind_prefix, render_native_pure_let, render_native_pure_let_prefix,
-        render_native_pure_value, render_native_strict_force, render_staged_forall_adapter,
-        render_staged_foralls, residual_module_call_stages,
+        render_native_pure_value, render_native_strict_force, render_staged_foralls,
+        residual_module_call_stages,
     };
     use crate::{
         ast::{Meta, Param, PathSegment, Routed, Signature, SignatureGroup, Type, TypeParam},
@@ -6882,42 +6262,6 @@ mod module_call_shape_tests {
             render_staged_foralls(&params, "t_b -> m t_a".to_owned(), &standard_names),
             "forall (t_a :: Test.Package.KioStandardDataKind.Type). m (forall (t_b :: Test.Package.KioStandardDataKind.Type). m (t_b -> m t_a))"
         );
-    }
-
-    #[test]
-    fn staged_boundary_adapter_sequences_each_public_type_stage() {
-        let span = Span::new(0, 0);
-        let params = ["A", "B"].map(|name| TypeParam {
-            presentation: Default::default(),
-            name: name.to_owned(),
-            span,
-            kind: None,
-        });
-        let standard_names = standard_names();
-        let rendered = render_staged_forall_adapter(
-            &params,
-            "arg1",
-            "boundary -> m r",
-            0,
-            &standard_names,
-            &|continuation| format!("(\\payload -> {continuation} (convert payload))"),
-        );
-
-        assert!(
-            rendered.contains(
-                "kioBind @(forall (t_b :: Test.Package.KioStandardDataKind.Type). m (boundary -> m r)) (arg1 @t_a)"
-            ),
-            "{rendered}"
-        );
-        assert!(
-            rendered.contains("\\ @t_b -> (__ex_public_k0 @t_b) >>= \\__ex_public_k1 ->"),
-            "{rendered}"
-        );
-        assert!(
-            rendered.contains("\\payload -> __ex_public_k1 (convert payload)"),
-            "{rendered}"
-        );
-        assert!(!rendered.contains("pure (arg1 @"), "{rendered}");
     }
 
     #[test]

@@ -82,13 +82,17 @@ func main() {
 	check(pkg.Api.ReadWrap(pkg.Api.KioType_Wrap.Make(59)) == 59, "ignored Const argument keeps native constructor")
 	check(pkg.Api.Reveal(pkg.Api.Hide(61)) == 61, "hidden existential stays behind public operations")
 	stages, projections := 0, 0
-	continuation := func() func(p.Product[p.Prepared[numberIndex], p.Value]) p.Value {
+	type continuationDomain = struct {
+		F0 p.Prepared[numberIndex]
+		F1 p.Value
+	}
+	continuation := p.TypeFunc[p.Callable[continuationDomain, p.Value]](func() p.Callable[continuationDomain, p.Value] {
 		stages++
-		return func(payload p.Product[p.Prepared[numberIndex], p.Value]) p.Value {
+		return p.Func[continuationDomain, p.Value](func(payload continuationDomain) p.Value {
 			projections++
 			return payload.F0.Erase()
-		}
-	}
+		})
+	})
 	for _, number := range []int{67, 71} {
 		projected := p.CallExp_Api__Hidden_open(pkg.Api.KioType_Hidden, pkg.Api.Hide(number), continuation)
 		check(p.NativeExp_Api__number_arg0(pkg, projected) == number, "native existential continuation retains public index")

@@ -37,7 +37,12 @@ assert all(line == line.rstrip() for line in source.splitlines()
            if line.lstrip().startswith("///")), "doc framing has trailing whitespace"
 PY
 mkdir -p "$scratch/symbols" "$scratch/module-cache"
+swiftc -emit-module -module-name KioRuntime \
+  -module-cache-path "$scratch/module-cache" \
+  -emit-module-path "$scratch/KioRuntime.swiftmodule" \
+  out/swift/KioRuntime/KioRuntime.swift
 swiftc -emit-module -module-name NativeDocs \
+  -I "$scratch" \
   -module-cache-path "$scratch/module-cache" \
   -emit-module-path "$scratch/NativeDocs.swiftmodule" \
   -emit-symbol-graph -emit-symbol-graph-dir "$scratch/symbols" \

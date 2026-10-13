@@ -117,6 +117,13 @@ fn bin_key_changes_on_driver_byte() {
 }
 
 #[test]
+fn bin_key_changes_on_shared_support_byte() {
+    let a = bin_key(&input(&[(super::SUPPORT_SOURCE, b"support v1")]));
+    let b = bin_key(&input(&[(super::SUPPORT_SOURCE, b"support v2")]));
+    assert_ne!(a, b, "the separately compiled runtime is a build input");
+}
+
+#[test]
 fn bin_key_changes_on_file_rename() {
     let a = bin_key(&input(&[("a.swift", b"x")]));
     let b = bin_key(&input(&[("b.swift", b"x")]));

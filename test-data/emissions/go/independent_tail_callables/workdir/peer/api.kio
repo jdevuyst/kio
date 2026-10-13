@@ -1,0 +1,36 @@
+module api;
+
+host type Number role(i32);
+
+host fn keep[T](value: T) -> T;
+
+host fn mark(code: Number);
+
+pub fn root() -> Number -> . -> Number {
+  .(value) {
+    mark(12);
+    .() { mark(13); value }
+  }
+}
+
+pub fn link(previous: Number -> . -> Number) -> Number -> . -> Number {
+  .(value) { mark(11); previous(value) }
+}
+
+pub fn keep_callback(value: Number -> . -> Number) -> Number -> . -> Number { value.>keep }
+
+pub fn pair_root() -> (Number & Number) -> Number {
+  .(left, right) { mark(32); right }
+}
+
+pub fn pair_link(previous: (Number & Number) -> Number) -> (Number & Number) -> Number {
+  .(left, right) { mark(31); previous(left, right) }
+}
+
+pub fn unit_root() -> . -> Number {
+  .() { mark(42); 43 }
+}
+
+pub fn generic_identity[T](value: T) -> T { value.>keep }
+
+pub fn invoke_stage(value: [T] Number) -> Number { value(Number) }

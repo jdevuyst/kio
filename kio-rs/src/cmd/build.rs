@@ -1703,6 +1703,20 @@ fn swift_backend(
         backends::swift::RUNTIME_SUPPORT_FILE_PATH,
         &swift_pkg.runtime_swift,
     )?;
+    let shared_runtime_path = target_dir.join(backends::swift::SHARED_RUNTIME_FILE_PATH);
+    let shared_runtime_dir = shared_runtime_path
+        .parent()
+        .expect("Swift shared runtime has a module directory");
+    fs::create_dir_all(shared_runtime_dir).map_err(|e| {
+        BackendError::Build(format!(
+            "cannot create `{}`: {e}",
+            DisplayPath(shared_runtime_dir)
+        ))
+    })?;
+    write(
+        backends::swift::SHARED_RUNTIME_FILE_PATH,
+        &swift_pkg.shared_runtime_swift,
+    )?;
     let write_ms = build_timing::elapsed_ms(write_start);
 
     let artifact_store_start = Instant::now();

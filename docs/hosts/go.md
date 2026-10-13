@@ -294,10 +294,26 @@ destructures that parameter. This also applies to host methods and newtype
 members. Multiple parameter groups in a declaration head join one native
 call; a function returned by that call remains a separate callable value.
 
-A callback written as `(A & B) -> R` takes one product argument. A callback
-written as `. -> R` is a nullary Go `func() R`. A generic
+A callback uses `Callable[A, R]` and is invoked with `callback.Call(value)`.
+Lift a native Go function with `Func[A, R](function)`, or supply a type with
+the corresponding `Call(A) R` method. A callback written as `(A & B) -> R`
+takes one structural domain with positional fields `F0` and `F1`; use its
+generated `_cbarg0` alias for the struct literal. A callback
+written as `. -> R` uses `Callable[Unit, R]`: call it with
+`callback.Call(greeter.Unit{})` and lift a host callback with an explicit
+`func(_ greeter.Unit) R` parameter. Named nullary methods remain ordinary
+zero-argument Go methods. A generic
 one-argument callback such as `A -> R` keeps that argument when `A` is later
 set to Unit. In a selected generic view, pass its exact prepared Unit value.
+
+Storing or forwarding the callable itself preserves its guest entry, including
+through a host-owned box or between compatible generated packages. The
+structural interface aliases preserve nested callback types as well as scalar
+callbacks; existing package-owned carrier identities still apply. A native
+library receives `callback.Call`, a native function value. Extracting that
+method or wrapping it in `Func` is an explicit native call boundary, not
+unchanged forwarding of the guest callable. See the
+[callable transport contract](../../specs/backends/go.md#callable-transport-and-native-invocation).
 
 A polymorphic value `[A] R` has a generated `TypeStage` alias. Select its
 type with `Select<slot-name>[ChosenIndex](stage)`, then use the returned
@@ -306,15 +322,16 @@ returned function reuse the selection. Selecting the original stage again
 runs it again. Its `Invoke()` method runs one stage using its abstract result
 view. Storing, preparing, transporting, or ignoring a stage runs nothing.
 Nested type binders in the selected view require one selection each. After
-`Invoke()`, later binders use ordinary nullary functions in the abstract
-view; call each once to advance to its result.
+`Invoke()`, later binders use `TypeCallable[R]` in the abstract
+view; invoke each once to advance to its result. Lift a native nullary stage
+with `TypeFunc[R](function)`.
 
 The selection helper takes the stage alone. It keeps the host conversion
 context already associated with that view. If you request a view through
 another compatible package instance, that view uses the other instance's
 adapters; the Kio callback still retains its original captures and host
 bindings. To supply a Go-authored stage, use its generated
-`New<slot-name>Stage(host, func() R)` helper. The function waits until
+`New<slot-name>Stage(host, TypeFunc[R](function))` helper. The function waits until
 selection or invocation to run. When you pass it into another instance,
 the receiving instance supplies its argument and result conversions.
 

@@ -53,8 +53,7 @@ mod runtime_tests {
             .0;
         assert!(!callable.contains("_product_slots("));
         assert!(!guest.contains("_product_slots("));
-        assert!(guest.contains("kind = type(callee)"));
-        assert!(guest.contains("kind is not _KioGuestFunction and kind is not _KioGuestPoly"));
+        assert!(!guest.contains("type(callee)"));
         assert!(!guest.contains("_kio_tail_entry_v1"));
         assert!(!guest.contains("isinstance("));
         assert!(guest.contains("self = callee.runtime"));
@@ -84,6 +83,8 @@ mod runtime_tests {
         assert!(
             evaluator.contains("data.get(\"tail\") != (\"type\" if type_stage else \"value\")")
         );
+        assert!(evaluator.contains("transfer.advance(callee)"));
+        assert!(evaluator.contains("transfer.call(callee, domain)"));
         assert!(evaluator.contains("range(len(data[\"type_args\"]) - int(type_stage))"));
         assert!(!evaluator.contains("return self.eval(module_key, arm[\"body\"]"));
         assert!(!evaluator.contains("return self.eval(module_key, branch"));

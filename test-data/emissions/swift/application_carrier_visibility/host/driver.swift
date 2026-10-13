@@ -46,12 +46,12 @@ func checkSum(_ value: Exp_api__sumValue_ret, _ index: Int) {
 
 var events: [String] = []
 let payload = pkg.api.productValue(Atom(11), Atom(22), Atom(33))
-let packProduct: (Exp_api__productValue_ret) -> Exp_api__concreteProductBox_arg0 = { value in
+let packProduct = KioFn<Exp_api__productValue_ret, Exp_api__concreteProductBox_arg0> { value in
     checkProduct(value)
     events.append("pack-product")
     return .init(ProductStorage(value: value))
 }
-let readProduct: (Exp_api__concreteProductBox_arg0) -> Exp_api__productValue_ret = { value in
+let readProduct = KioFn<Exp_api__concreteProductBox_arg0, Exp_api__productValue_ret> { value in
     let stored = value.value(as: ProductStorage.self)
     checkProduct(stored.value)
     events.append("read-product")
@@ -69,12 +69,12 @@ checkProduct(projected)
 
 let sums: [Exp_api__sumValue_arg0] = [._0(Atom(11)), ._1(._0(Atom(22))), ._1(._1(Atom(33)))]
 for (index, payload) in sums.enumerated() {
-    let packSum: (Exp_api__sumValue_arg0) -> Exp_api__concreteSumBox_arg0 = { value in
+    let packSum = KioFn<Exp_api__sumValue_arg0, Exp_api__concreteSumBox_arg0> { value in
         checkSum(value, index)
         events.append("pack-sum-\(index)")
         return .init(SumStorage(value: value))
     }
-    let readSum: (Exp_api__concreteSumBox_arg0) -> Exp_api__sumValue_ret = { value in
+    let readSum = KioFn<Exp_api__concreteSumBox_arg0, Exp_api__sumValue_ret> { value in
         let stored = value.value(as: SumStorage.self)
         checkSum(stored.value, index)
         events.append("read-sum-\(index)")

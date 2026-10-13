@@ -239,6 +239,12 @@ scope and effects; do not infer continuation cardinality from a library name,
 rely on increased stack limits, or treat one passing depth as a general proof.
 Reuse existing causal guards and shared owners where applicable.
 
+Also exercise the public callback roundtrip from that guidance: retained
+callbacks cross real typed host slots and opaque storage at each link, with
+instance-owner and executing-type-stage controls. Internal-only chains do not
+prove this boundary. Cover compatible independent artifacts through the
+backend's documented support/linking mechanism.
+
 ### Comparative runtime check
 
 Before acceptance, compare generated-program execution on a small, bounded set

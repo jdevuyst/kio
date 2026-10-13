@@ -1,42 +1,69 @@
 function __kioPoly(advance) {
-  return { advance };
+  return Object.freeze({ advance, kioStep: _transfer => advance() });
 }
 
-// A weak identity lookup preserves host Proxy behavior.
-const __kioTailEntries = new WeakMap();
-
-function __kioGuest(entry) {
-  const callable = domain => {
-    const cursor = { target: null, domain: null, receiver: null };
-    let result = entry(domain, cursor);
-    while (result === cursor) {
-      const target = cursor.target;
-      const next = __kioTailEntries.get(target);
-      if (next === undefined) {
-        return cursor.receiver === null
-          ? target(cursor.domain)
-          : Reflect.apply(target, cursor.receiver, []);
-      }
-      result = next(cursor.domain, cursor);
+function __kioRun(target, domain, typeStage) {
+  let pending = true;
+  const transfer = Object.freeze({
+    call(next, value) {
+      target = next;
+      domain = value;
+      typeStage = false;
+      pending = true;
+    },
+    advance(next) {
+      target = next;
+      domain = undefined;
+      typeStage = true;
+      pending = true;
+    }
+  });
+  let result;
+  try {
+    while (pending) {
+      pending = false;
+      result = typeStage
+        ? target.kioStep(transfer)
+        : target.kioStep(domain, transfer);
     }
     return result;
+  } finally {
+    target = undefined;
+    domain = undefined;
+  }
+}
+
+function __kioLeaf(body) {
+  const callable = domain => body(domain);
+  callable.kioStep = (domain, _transfer) => body(domain);
+  return Object.freeze(callable);
+}
+
+function __kioGuest(entry) {
+  const callable = domain => __kioRun(callable, domain, false);
+  callable.kioStep = entry;
+  return Object.freeze(callable);
+}
+
+function __kioGuestPoly(entry) {
+  const poly = {
+    advance: () => __kioRun(poly, undefined, true),
+    kioStep: transfer => entry(undefined, transfer)
   };
-  __kioTailEntries.set(callable, entry);
-  return callable;
+  return Object.freeze(poly);
+}
+
+function __kioLiftStage(source) {
+  const advance = source.advance;
+  return __kioPoly(() => Reflect.apply(advance, source, []));
 }
 
 function __kioTailCall(cursor, target, domain) {
-  cursor.target = target;
-  cursor.domain = domain;
-  cursor.receiver = null;
-  return cursor;
+  cursor.call(target, domain);
 }
 
 function __kioTailAdvance(cursor, value) {
-  cursor.target = value.advance;
-  cursor.domain = undefined;
-  cursor.receiver = value;
-  return cursor;
+  cursor.advance(value);
 }
 
 function __kioNominalContext(inventory, views, unwrap, wrap) {

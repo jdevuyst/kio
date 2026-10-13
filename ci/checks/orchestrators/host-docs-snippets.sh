@@ -25,6 +25,8 @@
 # the fresh artifact with asserted output. The harness calls main once more
 # and asserts its public Unit result is null, checking the host callback result
 # without modifying the displayed program; both calls must print the greeting.
+# Swift's complete worked host links the emitted package and shared-support
+# static archives and executes with the documented greeting assertion.
 #
 # A few structural-shape fences (Go / Swift sum matching) illustrate a
 # value shape the tiny greeter example package does not contain. They are
@@ -74,7 +76,7 @@ Usage: sh $0 [<lang>...]
 
 Validate the host-language code fences in docs/hosts/<lang>.md by
 building each page's Kio example package, checking syntax or types as
-appropriate, and executing the JavaScript worked host and Python typed host
+appropriate, and executing the JavaScript/Swift worked hosts and Python typed host
 against their facades.
 
 With no arguments, every page is checked. Positional <lang> arguments
@@ -538,8 +540,16 @@ compile_swift() {
   mod=$(head -1 "$art/pkg.swift" | sed 's|^//[[:space:]]*kio-swift-module:[[:space:]]*||')
   [ -n "$mod" ] || mod=Greeter
   mkdir -p "$cw/mc"
-  if ! run_compiler swiftc -emit-module -module-name "$mod" \
+  if ! run_compiler swiftc -emit-library -static -emit-module -module-name KioRuntime \
+       -emit-module-path "$cw/KioRuntime.swiftmodule" -module-cache-path "$cw/mc" \
+       -o "$cw/libKioRuntime.a" \
+       "$art/KioRuntime/KioRuntime.swift" >"$cw/support.log" 2>&1; then
+    printf 'FAIL swift: shared support did not build:\n' >&2; sed 's/^/  /' "$cw/support.log" >&2
+    printf '0\n' > "$cw/validated"; return 1
+  fi
+  if ! run_compiler swiftc -emit-library -static -emit-module -module-name "$mod" -I "$cw" \
        -emit-module-path "$cw/$mod.swiftmodule" -module-cache-path "$cw/mc" \
+       -o "$cw/lib$mod.a" \
        "$art"/*.swift >"$cw/mod.log" 2>&1; then
     printf 'FAIL swift: emitted module did not build:\n' >&2; sed 's/^/  /' "$cw/mod.log" >&2
     printf '0\n' > "$cw/validated"; return 1
@@ -548,6 +558,8 @@ compile_swift() {
     run_compiler swiftc -typecheck -I "$cw" -module-name hostcheck \
       -module-cache-path "$cw/mc" "$1" >"$cw/log" 2>&1
   }
+  printf 'Hello from Kio!\n' > "$cw/expected"
+  executed=0
   v=0; i=1; frags=""
   while [ "$i" -le "$nf" ]; do
     f="$hraw/host_$i"; i=$((i + 1))
@@ -557,6 +569,19 @@ compile_swift() {
     elif grep -q 'struct ' "$f" && grep -q 'createGreeter' "$f"; then   # complete program
       cp "$f" "$cw/p.swift"
       if sc "$cw/p.swift"; then v=$((v + 1)); else report_fail swift "$f" "$cw/log"; printf '%s\n' "$v" > "$cw/validated"; return 1; fi
+      if ! run_compiler swiftc -I "$cw" -L "$cw" "-l$mod" -lKioRuntime \
+        -module-cache-path "$cw/mc" "$cw/p.swift" -o "$cw/worked" >"$cw/log" 2>&1; then
+        report_fail swift "$f" "$cw/log"; return 1
+      fi
+      if ! "$cw/worked" >"$cw/stdout" 2>"$cw/log"; then
+        report_fail swift "$f" "$cw/log"; return 1
+      fi
+      if ! cmp -s "$cw/expected" "$cw/stdout"; then
+        printf 'FAIL swift: worked host must print Hello from Kio!\n' >&2
+        sed 's/^/  /' "$cw/stdout" >&2
+        return 1
+      fi
+      executed=$((executed + 1))
     else frags="$frags $f"; fi
   done
   if [ -n "$frags" ]; then
@@ -564,6 +589,7 @@ compile_swift() {
     if sc "$cw/w.swift"; then for f in $frags; do v=$((v + 1)); done
     else report_fail swift "$cw/w.swift" "$cw/log"; printf '%s\n' "$v" > "$cw/validated"; return 1; fi
   fi
+  [ "$executed" = 1 ] || { printf 'FAIL swift: expected one executable worked host, found %s\n' "$executed" >&2; return 1; }
   printf '%s\n' "$v" > "$cw/validated"; return 0
 }
 
@@ -718,6 +744,7 @@ for page in $PAGES; do
     case "$page" in
       js) level='syntax checked; worked host executed with output and Unit-result assertions' ;;
       python) level='syntax checked; facade-importing fences strict type checked; typed host executed with output assertion' ;;
+      swift) level='compiled/type checked; worked host linked with shared support and executed with output assertion' ;;
       *) level='compiled/type checked (including documented self-contained illustrations)' ;;
     esac
     SUMMARY="$SUMMARY\n  $page: $validated/$nfences host fences $level"

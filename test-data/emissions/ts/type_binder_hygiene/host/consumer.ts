@@ -62,7 +62,9 @@ if (pkg.api.callable(token) !== token || pkg.api.control(token) !== token || cal
   throw new Error("alpha-renamed callables lost identity or invocation");
 }
 
-const identity = { advance: <A>() => (value: A): A => value };
+const identity = createDemo.liftStage({
+  advance: <A>() => createDemo.lift((value: A): A => value),
+});
 if (pkg.api.nested(token, identity) !== token) {
   throw new Error("nested binders captured an outer type");
 }
@@ -80,7 +82,9 @@ if (partial !== pair || partial.Wrap[0] !== "partial") {
 
 const nested = pkg.api.KioType_Nested.makeNested({
   _0: token,
-  _1: { advance: <A>() => (_value: A) => token },
+  _1: createDemo.liftStage({
+    advance: <A>() => createDemo.lift((_value: A) => token),
+  }),
 });
 const payload = pkg.api.KioType_Nested.readNested(pkg.api.round(nested));
 if (payload._0 !== token || payload._1.advance<number>()(17) !== token) {

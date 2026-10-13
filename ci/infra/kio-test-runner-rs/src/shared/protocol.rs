@@ -102,6 +102,7 @@ pub enum ExportDriver {
     OpaqueCompoundRoundtrip,
     GenericNominalOpaqueRoundtrip,
     SameArtifactExchange,
+    TailCallbackRoundtrip,
     DirectSumForallBoundary,
     CallableSlotsRoundtrip,
     IncomingCallableViews,
@@ -1115,6 +1116,7 @@ pub const TESTAPI_FLOAT_PROTOCOL_NAME: &str = "testapi-float";
 pub const TESTAPI_DYN_LOAD_PROTOCOL_NAME: &str = "testapi-dyn-load";
 pub const COEXIST_PROTOCOL_NAME: &str = "coexist";
 pub const SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME: &str = "same-artifact-exchange";
+pub const TAIL_CALLBACK_ROUNDTRIP_PROTOCOL_NAME: &str = "tail-callback-roundtrip";
 
 pub const TESTAPI_ARITH_ADD_I32_PROTOCOL_NAME: &str = "testapi-arith-add-i32";
 pub const TESTAPI_ARITH_ADD_INT_PROTOCOL_NAME: &str = "testapi-arith-add-int";
@@ -1196,6 +1198,7 @@ pub const TESTAPI_TEXT_CONCAT_PROTOCOL_NAME: &str = "testapi-text-concat";
 #[allow(dead_code)] // Consumed only by the dyn-load-prime runner and shell lint.
 pub const DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES: &[&str] = &[
     SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME,
+    TAIL_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
     DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME,
     EXPORT_POLY_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME,
@@ -1293,6 +1296,9 @@ pub enum RunnerProtocol {
     OpaqueCompoundRoundtrip,
     GenericNominalOpaqueRoundtrip,
     SameArtifactExchange,
+    /// Retained guest callbacks cross host storage and instance boundaries at
+    /// every link, preserving value/type-stage order and captured owners.
+    TailCallbackRoundtrip,
     DirectSumForallBoundary,
     ExportCallableSlotsRoundtrip,
     /// Recovered callable stages and immutable structural values.
@@ -3742,6 +3748,7 @@ impl RunnerProtocol {
         Self::OpaqueCompoundRoundtrip,
         Self::GenericNominalOpaqueRoundtrip,
         Self::SameArtifactExchange,
+        Self::TailCallbackRoundtrip,
         Self::DirectSumForallBoundary,
         Self::ExportCallableSlotsRoundtrip,
         Self::IncomingCallableViews,
@@ -4020,6 +4027,7 @@ impl RunnerProtocol {
             Self::TestApiTextConcat => TESTAPI_TEXT_CONCAT_PROTOCOL_NAME,
             Self::Coexist => COEXIST_PROTOCOL_NAME,
             Self::SameArtifactExchange => SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME,
+            Self::TailCallbackRoundtrip => TAIL_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
             Self::DirectSumForallBoundary => DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME,
         }
     }
@@ -4096,6 +4104,7 @@ impl RunnerProtocol {
             }
             HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostGenericTypeRoundtrip),
             SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME => Ok(Self::SameArtifactExchange),
+            TAIL_CALLBACK_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::TailCallbackRoundtrip),
             DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME => Ok(Self::DirectSumForallBoundary),
             HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME => {
                 Ok(Self::HostGenericTypeElabRoundtrip)
@@ -4226,6 +4235,12 @@ impl RunnerProtocol {
             Self::ConstructOnly => construct_contract(NO_HOST_TYPES, NO_HOST_FNS),
             Self::SameArtifactExchange => invoke_contract(
                 ExportDriver::SameArtifactExchange,
+                TYPES_SAME_ARTIFACT_EXCHANGE,
+                FNS_SAME_ARTIFACT_EXCHANGE,
+                true,
+            ),
+            Self::TailCallbackRoundtrip => invoke_contract(
+                ExportDriver::TailCallbackRoundtrip,
                 TYPES_SAME_ARTIFACT_EXCHANGE,
                 FNS_SAME_ARTIFACT_EXCHANGE,
                 true,
@@ -5356,6 +5371,22 @@ mod tests {
         );
         assert!(RunnerProtocol::parse("same-artifact-exchange-extra").is_err());
         assert!(RunnerProtocol::parse("ffi_same_artifact_instance_exchange").is_err());
+        assert!(DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES.contains(&protocol.name()));
+    }
+
+    #[test]
+    fn tail_callback_roundtrip_reuses_the_exact_storage_host() {
+        let protocol = RunnerProtocol::TailCallbackRoundtrip;
+        let contract = protocol.contract();
+        assert_eq!(
+            contract.execution,
+            ProtocolExecution::Invoke(ExportDriver::TailCallbackRoundtrip)
+        );
+        assert_eq!(contract.host_types, TYPES_SAME_ARTIFACT_EXCHANGE);
+        assert_eq!(contract.host_fns, FNS_SAME_ARTIFACT_EXCHANGE);
+        assert!(contract.testapi_conformed);
+        assert_eq!(RunnerProtocol::parse(protocol.name()), Ok(protocol));
+        assert!(RunnerProtocol::parse("tail-callback-roundtrip-extra").is_err());
         assert!(DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES.contains(&protocol.name()));
     }
 

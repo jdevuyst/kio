@@ -1329,10 +1329,14 @@ fn build_driver(host: &HostApi, protocol: RunnerProtocol, ns: &str, qual: &str) 
     out.push_str("\t\"os\"\n");
     out.push_str("\t\"strconv\"\n");
     out.push_str("\t\"strings\"\n");
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str("\t\"runtime\"\n");
+    }
     out.push_str(&format!("\t{qual} \"{GO_MODULE_ROOT}/{ns}\"\n"));
     out.push_str(")\n\n");
     // Silence unused-import complaints — not every driver uses every pkg.
     out.push_str("var _ = bufio.NewReader\nvar _ = fmt.Sprintf\nvar _ = big.NewInt\nvar _ = os.Stdout\nvar _ = strconv.Itoa\nvar _ = strings.Repeat\n\n");
+    out.push_str(&format!("func nativeValue[A, R any](callback func(A) R) {qual}.Callable[A, R] {{ return {qual}.Func[A, R](callback) }}\nfunc nativeType[R any](callback func() R) {qual}.TypeCallable[R] {{ return {qual}.TypeFunc[R](callback) }}\n\n"));
 
     if needs_array_runtime(contract.host_types) {
         out.push_str(KIO_ARRAY_DECL);
@@ -1407,7 +1411,9 @@ fn build_driver(host: &HostApi, protocol: RunnerProtocol, ns: &str, qual: &str) 
             "var observePacked func({payload}) int32\nvar existentialObservations int\n\n"
         ));
     }
-    if protocol == RunnerProtocol::SameArtifactExchange {
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str("type StubHost struct { tailOwner int }\nvar tailEvents [][2]int\nvar tailPacks, tailUnpacks [2]int\n\n");
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         out.push_str("type StubHost struct { exchangeLabel string }\n\n");
     } else {
         out.push_str("type StubHost struct{}\n\n");
@@ -1415,12 +1421,34 @@ fn build_driver(host: &HostApi, protocol: RunnerProtocol, ns: &str, qual: &str) 
     selection.render_role_adapters(&mut out);
     for (m, binding) in host.methods().zip(contract.host_fns) {
         let kind = canonical_kind(binding.body);
-        out.push_str(&render_method(m, &kind, binding, qual, &selection));
+        if protocol == RunnerProtocol::TailCallbackRoundtrip {
+            let ordinary = render_go_body_for_binding(binding, &kind, m, qual, &selection);
+            let body = match binding.body {
+                HostFnBodyKind::BoxMake { .. } => {
+                    format!("tailPacks[host.tailOwner]++; {ordinary}")
+                }
+                HostFnBodyKind::BoxGet { .. } => {
+                    format!("tailUnpacks[host.tailOwner]++; {ordinary}")
+                }
+                HostFnBodyKind::InstanceMark { .. } => {
+                    "tailEvents = append(tailEvents, [2]int{host.tailOwner, int(arg0)})".to_owned()
+                }
+                _ => unreachable!("tail callback protocol has only storage and marker functions"),
+            };
+            out.push_str(&format!(
+                "func (host StubHost) {} {{\n\t{body}\n}}\n",
+                render_method_sig(m)
+            ));
+        } else {
+            out.push_str(&render_method(m, &kind, binding, qual, &selection));
+        }
         out.push('\n');
     }
 
     out.push_str("func main() {\n");
-    if protocol == RunnerProtocol::SameArtifactExchange {
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str(&format!("\tpkg := {qual}.New{0}(StubHost{{tailOwner: 0}})\n\tpkgSecond := {qual}.New{0}(StubHost{{tailOwner: 1}})\n", selection.root_arguments()));
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         out.push_str(&format!("\tpkg := {qual}.New{0}(StubHost{{exchangeLabel: \"first\"}})\n\tpkgSecond := {qual}.New{0}(StubHost{{exchangeLabel: \"second\"}})\n", selection.root_arguments()));
     } else {
         out.push_str(&format!(
@@ -1503,6 +1531,46 @@ fn render_export_driver(
         |module: &str, source: &str| format!("{module}.{}", go_type_handle_selector(source));
 
     let body = match driver {
+        ExportDriver::TailCallbackRoundtrip => {
+            let main = module("main");
+            let second = main.replacen("pkg.", "pkgSecond.", 1);
+            format!(
+                r#"
+    const depth = 1024
+    checkEvents := func(code, root int, links bool) {{
+        count := 1; if links {{ count += depth }}
+        if len(tailEvents) != count {{ panic("tail callback event count") }}
+        if links {{ for i := range depth {{ if tailEvents[i] != [2]int{{(depth-1-i)%2, code}} {{ panic("tail callback owner/order") }} }} }}
+        if tailEvents[count-1] != [2]int{{0,root}} {{ panic("tail callback root owner/stage") }}
+        tailEvents = nil
+    }}
+    value := {main}.ValueRoot()
+    valueNodes := []any{{value}}
+    for i := range depth {{
+        if i%2 == 0 {{ value = {second}.KeepValue({main}.ValueLink(value)) }} else {{ value = {main}.KeepValue({second}.ValueLink(value)) }}
+        valueNodes = append(valueNodes, value)
+    }}
+    if len(tailEvents) != 0 || tailPacks != [2]int{{depth/2,depth/2}} || tailUnpacks != tailPacks {{ panic("tail callback eager construction/storage") }}
+    for range 2 {{ if value.Call({ns}.Unit{{}}) != 37 {{ panic("tail value result") }}; checkEvents(11,12,true) }}
+    poly := {main}.TypeRoot()
+    typeNodes := []any{{poly}}
+    for i := range depth {{
+        if i%2 == 0 {{ poly = {second}.KeepType({main}.TypeLink(poly)) }} else {{ poly = {main}.KeepType({second}.TypeLink(poly)) }}
+        typeNodes = append(typeNodes, poly)
+    }}
+    if len(tailEvents) != 0 || tailPacks != [2]int{{depth,depth}} || tailUnpacks != tailPacks {{ panic("tail type eager construction/storage") }}
+    number := {ns}.SelectExp_Testapi_main__typeRoot_ret[{ns}.Index_testapi__Number[int32]](poly)
+    checkEvents(21,22,true)
+    unit := {ns}.SelectExp_Testapi_main__typeRoot_ret[{ns}.KioIndexUnit](poly)
+    checkEvents(21,22,true)
+    for range 2 {{ if number.Call({ns}.Unit{{}}) != 73 {{ panic("tail selected result") }}; checkEvents(0,23,false) }}
+    if unit.Call({ns}.Unit{{}}) != 73 {{ panic("tail Unit selection result") }}; checkEvents(0,23,false)
+    if tailPacks != [2]int{{depth,depth}} || tailUnpacks != tailPacks {{ panic("tail callback invocation repeated storage") }}
+    runtime.KeepAlive(valueNodes); runtime.KeepAlive(typeNodes)
+    fmt.Println("tail callback roundtrip ok")
+"#
+            )
+        }
         // `tag()` / `value()` / `echo` exported in `testapi/api`.
         ExportDriver::ModuleRoundtrip => {
             let api = module("api");
@@ -1529,13 +1597,13 @@ fn render_export_driver(
         ),
         // `apply_twice(step, seed)` and `make_step(delta)` in
         // `testapi/main`; the callback / returned closure are concrete
-        // `func(int32) int32`.
+        // `Callable[int32, int32]`.
         ExportDriver::CallbackRoundtrip => {
             let main = module("main");
             format!(
-                "\tfmt.Println({main}.ApplyTwice(func(n int32) int32 {{ return n + 3 }}, 10))\n\
+                "\tfmt.Println({main}.ApplyTwice(nativeValue(func(n int32) int32 {{ return n + 3 }}), 10))\n\
                  \tstep := {main}.MakeStep(4)\n\
-                 \tfmt.Println(step(5))\n"
+                 \tfmt.Println(step.Call(5))\n"
             )
         }
         // `make_pair(I32, String) -> (I32 & String)` exported in the flat
@@ -1579,7 +1647,7 @@ fn render_export_driver(
             );
             let packed = go_type_handle_selector("Packed");
             format!(
-                "\topenings := 0\n\tobservePacked = func(value {payload}) int32 {{\n\t\treturn {ns}.NativeAtom[int32]({types}.{packed}.ReadPacked(value, func() func({ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ return func(pair {ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ openings++; return {ns}.Atom(pair.F1(pair.F0)) }} }}))\n\t}}\n\tresult := {main}.Exercise()\n\tif result.F0 != 37 || result.F1 != 83 || existentialObservations != 2 || openings != 2 {{ panic(\"existential host observations changed\") }}\n\tfmt.Println(\"existential host opening ok\")\n"
+                "\topenings := 0\n\tobservePacked = func(value {payload}) int32 {{\n\t\treturn {ns}.NativeAtom[int32]({types}.{packed}.ReadPacked(value, nativeType(func() {ns}.Callable[{ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}, {ns}.Value] {{ return nativeValue(func(pair {ns}.Exp_Testapi_types__Packed_readPacked_arg1_result_cbarg0{root_arguments}) {ns}.Value {{ openings++; return {ns}.Atom(pair.F1.Call(pair.F0)) }}) }})))\n\t}}\n\tresult := {main}.Exercise()\n\tif result.F0 != 37 || result.F1 != 83 || existentialObservations != 2 || openings != 2 {{ panic(\"existential host observations changed\") }}\n\tfmt.Println(\"existential host opening ok\")\n"
             )
         }
         ExportDriver::FunctorDictRoundtrip => {
@@ -1598,8 +1666,8 @@ fn render_export_driver(
     type textBox = {ns}.Exp_Testapi_types__Box_mkBox_arg0[{roots}, textIndex]
     integers := []int32{{}}
     texts := []string{{}}
-    toText := func(value numberValue) textValue {{ number := {ns}.UnprepareHost_testapi_I32(pkg, value); integers = append(integers, number); return {ns}.PrepareHost_testapi_String(pkg, fmt.Sprintf("v:%d", number)) }}
-    toInteger := func(value textValue) numberValue {{ text := {ns}.UnprepareHost_testapi_String(pkg, value); texts = append(texts, text); return {ns}.PrepareHost_testapi_I32(pkg, int32(len(text))) }}
+    toText := nativeValue(func(value numberValue) textValue {{ number := {ns}.UnprepareHost_testapi_I32(pkg, value); integers = append(integers, number); return {ns}.PrepareHost_testapi_String(pkg, fmt.Sprintf("v:%d", number)) }})
+    toInteger := nativeValue(func(value textValue) numberValue {{ text := {ns}.UnprepareHost_testapi_String(pkg, value); texts = append(texts, text); return {ns}.PrepareHost_testapi_I32(pkg, int32(len(text))) }})
     dict := {main}.EchoFunctor({main}.BoxFunctor())
     first := {ns}.CallExp_Testapi_main__applyFunctor({main}, dict, toText, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 42), F1: {ns}.Unit{{}}}}))
     if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, first).F0) != "v:42" {{ panic("functor integer input") }}
@@ -1608,11 +1676,11 @@ fn render_export_driver(
     abstractDict := {ns}.NativeExp_Testapi_types__Functor_fmap_arg0[{roots}, boxIndex](pkg, {ns}.ValueExp_Testapi_main__boxFunctor_ret(pkg, dict))
     mapping := {ns}.CallExp_Testapi_types__Functor_fmap({functor}, abstractDict)
     numberMapping := {ns}.SelectExp_Testapi_types__Functor_fmap_ret_selected[textIndex]({ns}.SelectExp_Testapi_types__Functor_fmap_ret[numberIndex](mapping))
-    thirdValue := numberMapping({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, numberIndex, textIndex]{{F0: toText, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, numberIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 7), F1: {ns}.Unit{{}}}}))}})
+    thirdValue := numberMapping.Call({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, numberIndex, textIndex]{{F0: toText, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, numberIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, numberBox{{F0: {ns}.PrepareHost_testapi_I32(pkg, 7), F1: {ns}.Unit{{}}}}))}})
     third := {ns}.UnprepareExp_Testapi_types__Box_unBox_arg0[{roots}, textIndex](pkg, thirdValue)
     if {ns}.UnprepareHost_testapi_String(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, third).F0) != "v:7" {{ panic("projected functor integer input") }}
     textMapping := {ns}.SelectExp_Testapi_types__Functor_fmap_ret_selected[numberIndex]({ns}.SelectExp_Testapi_types__Functor_fmap_ret[textIndex](mapping))
-    fourthValue := textMapping({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, textIndex, numberIndex]{{F0: toInteger, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, textIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "pear"), F1: {ns}.Unit{{}}}}))}})
+    fourthValue := textMapping.Call({ns}.Exp_Testapi_types__Functor_fmap_ret_selected_selected_cbarg0[{roots}, boxIndex, textIndex, numberIndex]{{F0: toInteger, F1: {ns}.PrepareExp_Testapi_types__Box_mkBox_ret[{roots}, textIndex](pkg, {ns}.CallExp_Testapi_types__Box_mkBox({box_type}, textBox{{F0: {ns}.PrepareHost_testapi_String(pkg, "pear"), F1: {ns}.Unit{{}}}}))}})
     fourth := {ns}.UnprepareExp_Testapi_types__Box_unBox_arg0[{roots}, numberIndex](pkg, fourthValue)
     if {ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__Box_unBox({box_type}, fourth).F0) != int32(4) {{ panic("projected functor text input") }}
     if len(integers) != 2 || integers[0] != 42 || integers[1] != 7 || len(texts) != 2 || texts[0] != "apple" || texts[1] != "pear" {{ panic("functor callback events") }}
@@ -1630,24 +1698,24 @@ fn render_export_driver(
             let relay_right = format!("{ns}.Exp_Testapi_api__relay_ret_1{root_arguments}");
             format!(
                 r#"
-    unit := {left}(func() int32 {{ fmt.Println("unit call"); return 17 }})
-    poly := {right}({ns}.NewExp_Testapi_api__relay_arg0_1_valueStage{root_arguments}(StubHost{{}}, func() func({ns}.Value) {ns}.Value {{ return func(value {ns}.Value) {ns}.Value {{ fmt.Println("poly call"); return value }} }}))
-    callback := {callback}(func(value {ns}.Exp_Testapi_api__throughCallback_arg1_cbarg0{root_arguments}) {ns}.Exp_Testapi_api__throughCallback_arg1_cbret{root_arguments} {{ fmt.Println("callback"); return value }})
+    unit := {left}(nativeValue(func(_ {ns}.Unit) int32 {{ fmt.Println("unit call"); return 17 }}))
+    poly := {right}({ns}.NewExp_Testapi_api__relay_arg0_1_valueStage{root_arguments}(StubHost{{}}, nativeType(func() {ns}.Callable[{ns}.Value, {ns}.Value] {{ return nativeValue(func(value {ns}.Value) {ns}.Value {{ fmt.Println("poly call"); return value }}) }})))
+    callback := {callback}(nativeValue(func(value {ns}.Exp_Testapi_api__throughCallback_arg1_cbarg0{root_arguments}) {ns}.Exp_Testapi_api__throughCallback_arg1_cbret{root_arguments} {{ fmt.Println("callback"); return value }}))
     for _, viaCallback := range []bool{{false, true}} {{
         returnedUnit := unit
         if viaCallback {{ returnedUnit = {api}.ThroughCallback(unit, callback) }} else {{ returnedUnit = {api}.Relay(unit) }}
         fmt.Println("unit ready")
-        number := returnedUnit.Case().({relay_left}).Value()()
+        number := returnedUnit.Case().({relay_left}).Value().Call({ns}.Unit{{}})
         if number != 17 {{ panic("Unit callback result changed") }}
         fmt.Println(number)
         returnedPoly := poly
         if viaCallback {{ returnedPoly = {api}.ThroughCallback(poly, callback) }} else {{ returnedPoly = {api}.Relay(poly) }}
         fmt.Println("poly ready")
         identity := returnedPoly.Case().({relay_right}).Value()
-        integer := {ns}.NativeAtom[int32](identity.Invoke()({ns}.Atom(int32(23))))
+        integer := {ns}.NativeAtom[int32](identity.Invoke().Call({ns}.Atom(int32(23))))
         if integer != 23 {{ panic("polymorphic Number result changed") }}
         fmt.Println(integer)
-        text := {ns}.NativeAtom[string](identity.Invoke()({ns}.Atom("identity")))
+        text := {ns}.NativeAtom[string](identity.Invoke().Call({ns}.Atom("identity")))
         if text != "identity" {{ panic("polymorphic Text result changed") }}
         fmt.Println(text)
     }}
@@ -1665,20 +1733,20 @@ fn render_export_driver(
             let made_scalar = format!("{ns}.Exp_Testapi_main__makeScalarSum_ret_1{root_arguments}");
             format!(
                 "\tproductCalls := 0\n\
-                 \tproductStep := func(value int32) int32 {{ productCalls++; return value + 5 }}\n\
+                 \tproductStep := nativeValue(func(value int32) int32 {{ productCalls++; return value + 5 }})\n\
                  \tif {main}.ApplyProduct({ns}.Exp_Testapi_main__applyProduct_arg0{root_arguments}{{F0: productStep, F1: 11}}) != 16 {{ panic(\"product callback input\") }}\n\
                  \techoedProduct := {main}.EchoProduct({ns}.Exp_Testapi_main__echoProduct_arg0{root_arguments}{{F0: productStep, F1: 17}})\n\
-                 \tif echoedProduct.F1 != 17 || echoedProduct.F0(echoedProduct.F1) != 22 {{ panic(\"product callback roundtrip\") }}\n\
+                 \tif echoedProduct.F1 != 17 || echoedProduct.F0.Call(echoedProduct.F1) != 22 {{ panic(\"product callback roundtrip\") }}\n\
                  \tmadeProduct := {main}.MakeProduct(23)\n\
-                 \tif madeProduct.F1 != 23 || madeProduct.F0(29) != 29 {{ panic(\"package product callback\") }}\n\
+                 \tif madeProduct.F1 != 23 || madeProduct.F0.Call(29) != 29 {{ panic(\"package product callback\") }}\n\
                  \tsumCalls := 0\n\
-                 \tsumStep := func(value int32) int32 {{ sumCalls++; return value + 7 }}\n\
+                 \tsumStep := nativeValue(func(value int32) int32 {{ sumCalls++; return value + 7 }})\n\
                  \tsum := {input_callable}(sumStep)\n\
                  \tif {main}.ApplySum(sum, 31) != 38 {{ panic(\"sum callback input\") }}\n\
                  \techoedSum := {main}.EchoSum(sum).Case().({echo_callable})\n\
-                 \tif echoedSum.Value()(37) != 44 {{ panic(\"sum callback roundtrip\") }}\n\
+                 \tif echoedSum.Value().Call(37) != 44 {{ panic(\"sum callback roundtrip\") }}\n\
                  \tmadeSum := {main}.MakeCallableSum().Case().({made_callable})\n\
-                 \tif madeSum.Value()(41) != 41 {{ panic(\"package sum callback\") }}\n\
+                 \tif madeSum.Value().Call(41) != 41 {{ panic(\"package sum callback\") }}\n\
                  \tscalar := {main}.MakeScalarSum(97)\n\
                  \tif scalar.Case().({made_scalar}).Value() != 97 || {main}.ApplySum(scalar, 43) != 97 {{ panic(\"scalar sum input\") }}\n\
                  \tif {main}.EchoSum(scalar).Case().({echo_scalar}).Value() != 97 {{ panic(\"scalar sum roundtrip\") }}\n\
@@ -1793,7 +1861,7 @@ fn render_export_driver(
     fmt.Println({main}.ReadSum({main}.MakeSum()))
     fmt.Println({main}.ReadSum({main}.MakeEmpty()))
     calls := 0
-    step := func(value {number}) {number} {{ calls++; fmt.Println("call"); return value + 1 }}
+    step := nativeValue(func(value {number}) {number} {{ calls++; fmt.Println("call"); return value + 1 }})
     hostBox := {callback_box}(&kioBox{{value: {ns}.ValueExp_Testapi_main__call_arg0_typearg0(pkg, step)}})
     if calls != 0 {{ panic("callback ran during preparation") }}
     fmt.Println({main}.Call(hostBox, {number}(31)))
@@ -1801,7 +1869,7 @@ fn render_export_driver(
     if calls != 2 {{ panic("callback invocation count changed") }}
     kioCallable := {main}.MakeCallable()
     nativeStep := {ns}.NativeExp_Testapi_main__call_arg0_typearg0(pkg, kioCallable.UnsafeNative().(*kioBox).value)
-    if nativeStep({number}(61)) != {number}(61) {{ panic("native callable extraction changed") }}
+    if nativeStep.Call({number}(61)) != {number}(61) {{ panic("native callable extraction changed") }}
     fmt.Println({main}.Call(kioCallable, {number}(47)))
     nativeNominal := {wrapped}.MkWrapped({ns}.Exp_Testapi_main__Wrapped_mkWrapped_arg0{root_arguments}{{F0: 41, F1: 43}})
     hostNominal := {nominal_box}(&kioBox{{value: {ns}.ValueExp_Testapi_main__readNominal_arg0_typearg0(pkg, nativeNominal)}})
@@ -2028,13 +2096,13 @@ fn render_export_driver(
              \tfmt.Println({ns}.UnprepareHost_testapi_I32(pkg, {ns}.CallExp_Testapi_types__readConstructorGenericValue({types}, constructorGenericValue)))\n\
              \tprojectorGenericValue := {ns}.CallExp_Testapi_types__makeProjectorGenericValue({types}, {ns}.PrepareHost_testapi_I32(pkg, 86))\n\
              \tfmt.Println({ns}.UnprepareHost_testapi_I32(pkg, {projector_generic_call}({projector_generic}, projectorGenericValue)))\n\
-             \tpacked := {packed_function}.MakePackedFunction(func(pair {packed_function_arg}) {i32_type} {{ return pair.F0 + pair.F1 }})\n\
+             \tpacked := {packed_function}.MakePackedFunction(nativeValue(func(pair {packed_function_arg}) {i32_type} {{ return pair.F0 + pair.F1 }}))\n\
              \tunpacked := {packed_function}.ReadPackedFunction(packed)\n\
-             \tfmt.Println(unpacked(constructorPairOut))\n\
+             \tfmt.Println(unpacked.Call({packed_function_arg}{{F0: constructorPairOut.F0, F1: constructorPairOut.F1}}))\n\
              \texistential := {types}.MakeExistentialUnitValue()\n\
-             \tfmt.Println({ns}.NativeAtom[int32]({existential_unit}.ReadExistentialUnit(existential, func() func({ns}.Value) {ns}.Value {{ return func(_ {ns}.Value) {ns}.Value {{ return {ns}.Atom(int32(89)) }} }})))\n\
+             \tfmt.Println({ns}.NativeAtom[int32]({existential_unit}.ReadExistentialUnit(existential, nativeType(func() {ns}.Callable[{ns}.Value, {ns}.Value] {{ return nativeValue(func(_ {ns}.Value) {ns}.Value {{ return {ns}.Atom(int32(89)) }}) }}))))\n\
              \texistentialEmptyValue := {types}.MakeExistentialEmptyValue()\n\
-             \tfmt.Println({ns}.NativeAtom[int32]({existential_empty}.ReadExistentialEmpty(existentialEmptyValue, func() func() {ns}.Value {{ return func() {ns}.Value {{ return {ns}.Atom(int32(90)) }} }})))\n\
+             \tfmt.Println({ns}.NativeAtom[int32]({existential_empty}.ReadExistentialEmpty(existentialEmptyValue, nativeType(func() {ns}.Callable[{ns}.Unit, {ns}.Value] {{ return nativeValue(func(_ {ns}.Unit) {ns}.Value {{ return {ns}.Atom(int32(90)) }}) }}))))\n\
              \trecursiveBothValue := {recursive_both}.MakeRecursiveBoth({types}.RecursiveBothBasePayload())\n\
              \tfmt.Println({types}.RecursiveBothPayloadIsBase({recursive_both}.ReadRecursiveBoth(recursiveBothValue)))\n\
              \trecursiveConstructorValue := {recursive_constructor}.MakeRecursiveConstructor({types}.RecursiveConstructorBasePayload())\n\
@@ -2042,13 +2110,13 @@ fn render_export_driver(
              \trecursiveProjectorValue := {types}.MakeRecursiveProjectorBase()\n\
              \tfmt.Println({types}.RecursiveProjectorPayloadIsBase({recursive_projector}.ReadRecursiveProjector(recursiveProjectorValue)))\n\
              \tinputs := []{i32_type}{{}}\n\
-             \tconstructed := {constructor_spread}.MakeConstructorSpread({constructor_spread_stage}(StubHost{{}}, func() func({constructor_spread_arg}) {i32_type} {{ return func(pair {constructor_spread_arg}) {i32_type} {{ inputs = append(inputs, pair.F0); return pair.F0 + 3 }} }}))\n\
+             \tconstructed := {constructor_spread}.MakeConstructorSpread({constructor_spread_stage}(StubHost{{}}, nativeType(func() {ns}.Callable[{constructor_spread_arg}, {i32_type}] {{ return nativeValue(func(pair {constructor_spread_arg}) {i32_type} {{ inputs = append(inputs, pair.F0); return pair.F0 + 3 }}) }})))\n\
              \tif {types}.InvokeConstructorSpreadI32(constructed, 101) != 104 || {types}.InvokeConstructorSpreadUnit(constructed, 102) != 105 || len(inputs) != 2 || inputs[0] != 101 || inputs[1] != 102 {{ panic(\"constructor callback changed\") }}\n\
              \tprojected := {projector_spread}.ReadProjectorSpread({types}.MakeProjectorSpreadValue())\n\
-             \tif projected.Invoke()({projector_spread_arg}{{F0: 111, F1: {ns}.Atom({i32_type}(1))}}) != 111 || projected.Invoke()({projector_spread_arg}{{F0: 112, F1: {ns}.Atom({ns}.Unit{{}})}}) != 112 {{ panic(\"projector callback changed\") }}\n\
+             \tif projected.Invoke().Call({projector_spread_arg}{{F0: 111, F1: {ns}.Atom({i32_type}(1))}}) != 111 || projected.Invoke().Call({projector_spread_arg}{{F0: 112, F1: {ns}.Atom({ns}.Unit{{}})}}) != 112 {{ panic(\"projector callback changed\") }}\n\
              \tspreadOpens, recursiveOpens := 0, 0\n\
-             \topenedSpread := {existential_spread}.ReadExistentialSpread({types}.MakeExistentialSpreadValue(), func() func({existential_spread_arg}) {ns}.Value {{ return func(_ {existential_spread_arg}) {ns}.Value {{ spreadOpens++; return {ns}.Atom(int32(91)) }} }})\n\
-             \topenedRecursive := {recursive_existential}.ReadRecursiveExistentialFunction({types}.MakeRecursiveExistentialFunctionValue(), func() func(func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ return func(_ func({ns}.Value) {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}) {ns}.Value {{ recursiveOpens++; return {ns}.Atom(int32(92)) }} }})\n\
+             \topenedSpread := {existential_spread}.ReadExistentialSpread({types}.MakeExistentialSpreadValue(), nativeType(func() {ns}.Callable[{existential_spread_arg}, {ns}.Value] {{ return nativeValue(func(_ {existential_spread_arg}) {ns}.Value {{ spreadOpens++; return {ns}.Atom(int32(91)) }}) }}))\n\
+             \topenedRecursive := {recursive_existential}.ReadRecursiveExistentialFunction({types}.MakeRecursiveExistentialFunctionValue(), nativeType(func() {ns}.Callable[{ns}.Callable[{ns}.Value, {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}], {ns}.Value] {{ return nativeValue(func(_ {ns}.Callable[{ns}.Value, {ns}.Exp_Testapi_types__makeRecursiveExistentialFunctionValue_ret{root_arguments}]) {ns}.Value {{ recursiveOpens++; return {ns}.Atom(int32(92)) }}) }}))\n\
              \tif {ns}.NativeAtom[int32](openedSpread) != 91 || {ns}.NativeAtom[int32](openedRecursive) != 92 || spreadOpens != 1 || recursiveOpens != 1 {{ panic(\"existential continuation count changed\") }}\n\
              \tinner := {visible_comptime_outer}.ReadVisibleComptimeOuter({types}.MakeVisibleComptimeOuterBase())\n\
              \t_ = {visible_comptime_outer}.ReadVisibleComptimeOuter({visible_comptime_outer}.MakeVisibleComptimeOuter(inner))\n"
@@ -2067,10 +2135,10 @@ fn render_export_driver(
                 r#"    direct := {main}.Direct()
     fmt.Println(direct.F0)
     fmt.Println(direct.F1)
-    callback := {main}.Callback(func() {ns}.Exp_Testapi_main__callback_arg0_cbret{root_arguments} {{
+    callback := {main}.Callback(nativeValue(func(_ {ns}.Unit) {ns}.Exp_Testapi_main__callback_arg0_cbret{root_arguments} {{
         fmt.Println("callback")
         return {ns}.Exp_Testapi_main__callback_arg0_cbret{root_arguments}{{F0: 9, F1: "callback-value"}}
-    }})
+    }}))
     fmt.Println(callback.F0)
     fmt.Println(callback.F1)
     outer := {main}.EchoOuter({main}.MakeOuter("nest", 11, 13))
@@ -2116,13 +2184,13 @@ fn render_export_driver(
         ExportDriver::NestedCurriedRoundtrip => {
             let api = module("api");
             format!(
-                "\tjoin := func(left string) func(string) string {{\n\
-                 \t\treturn func(right string) string {{ return left + \"/\" + right }}\n\
-                 \t}}\n\
+                "\tjoin := nativeValue(func(left string) {ns}.Callable[string, string] {{\n\
+                 \t\treturn nativeValue(func(right string) string {{ return left + \"/\" + right }})\n\
+                 \t}})\n\
                  \tviaHost := {api}.ViaHost(join)\n\
-                 \tfmt.Println(\"via host:\", viaHost(\"env-left\")(\"env-right\"))\n\
+                 \tfmt.Println(\"via host:\", viaHost.Call(\"env-left\").Call(\"env-right\"))\n\
                  \troundExport := {api}.RoundExport(join)\n\
-                 \tfmt.Println(\"round export:\", roundExport(\"export-left\")(\"export-right\"))\n"
+                 \tfmt.Println(\"round export:\", roundExport.Call(\"export-left\").Call(\"export-right\"))\n"
             )
         }
         ExportDriver::TypeOnlyRoundtrip => {
@@ -2131,13 +2199,13 @@ fn render_export_driver(
                 r#"    fmt.Println("ready")
     direct := {ns}.CallExp_Testapi_main__direct[{ns}.AtomIndex[string]]({main})
     fmt.Println("specialized")
-    fmt.Println({ns}.NativeAtom[string](direct({ns}.PrepareAtom("direct-string")).Erase()))
+    fmt.Println({ns}.NativeAtom[string](direct.Call({ns}.PrepareAtom("direct-string")).Erase()))
     integer := {ns}.CallExp_Testapi_main__direct[{ns}.AtomIndex[int32]]({main})
     fmt.Println("specialized-again")
-    fmt.Println({ns}.NativeAtom[int32](integer({ns}.PrepareAtom(int32(42))).Erase()))
+    fmt.Println({ns}.NativeAtom[int32](integer.Call({ns}.PrepareAtom(int32(42))).Erase()))
     delayed := {ns}.CallExp_Testapi_main__delayed[{ns}.AtomIndex[string]]({main})
     fmt.Println("unit-called")
-    fmt.Println({ns}.NativeAtom[string](delayed({ns}.PrepareAtom("unit-string")).Erase()))
+    fmt.Println({ns}.NativeAtom[string](delayed.Call({ns}.PrepareAtom("unit-string")).Erase()))
     fmt.Println({ns}.NativeAtom[string]({ns}.CallExp_Testapi_main__ordinary({main}, {ns}.PrepareAtom("ordinary-string")).Erase()))
     {ns}.CallExp_Testapi_main__phantom[{ns}.AtomIndex[string]]({main})
     fmt.Println("phantom-called")
@@ -2145,15 +2213,15 @@ fn render_export_driver(
     fmt.Println("phantom-unit-called")
     poly := {ns}.CallExp_Testapi_main__poly[{ns}.AtomIndex[string]]({main})
     fmt.Println("poly-returned")
-    fmt.Println({ns}.NativeAtom[string](poly.Invoke()({ns}.Atom("poly-string"))))
-    fmt.Println({ns}.NativeAtom[int32](poly.Invoke()({ns}.Atom(int32(73)))))
+    fmt.Println({ns}.NativeAtom[string](poly.Invoke().Call({ns}.Atom("poly-string"))))
+    fmt.Println({ns}.NativeAtom[int32](poly.Invoke().Call({ns}.Atom(int32(73)))))
 "#
             )
         }
         ExportDriver::HostSubstitutedUnitCallback => {
             let api = module("api");
             format!(
-                "\tfmt.Println({api}.ViaHost(func(_ {ns}.Unit) string {{ return \"callback\" }}))\n"
+                "\tfmt.Println({api}.ViaHost(nativeValue(func(_ {ns}.Unit) string {{ return \"callback\" }})))\n"
             )
         }
         ExportDriver::ReturnedForallCallByValue => format!("\t{}.Main()\n", module("main")),
@@ -2245,15 +2313,15 @@ fn render_export_driver(
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "\tout := {main}.Select({arguments})\n\tfmt.Println(out.F0)\n\tfmt.Println(out.F1)\n\tfmt.Println(out.F2)\n\tcallbackOut := {main}.MakeSelect()({ns}.Exp_Testapi_main__makeSelect_ret_cbarg0{root_arguments}{{{fields}}})\n\tfmt.Println(callbackOut.F0)\n\tfmt.Println(callbackOut.F1)\n\tfmt.Println(callbackOut.F2)\n"
+                "\tout := {main}.Select({arguments})\n\tfmt.Println(out.F0)\n\tfmt.Println(out.F1)\n\tfmt.Println(out.F2)\n\tcallbackOut := {main}.MakeSelect().Call({ns}.Exp_Testapi_main__makeSelect_ret_cbarg0{root_arguments}{{{fields}}})\n\tfmt.Println(callbackOut.F0)\n\tfmt.Println(callbackOut.F1)\n\tfmt.Println(callbackOut.F2)\n"
             )
         }
         // The driver selects opaque atoms for the abstract K and R slots.
         ExportDriver::PolyCallbackRoundtrip => {
             let main = module("main");
             format!(
-                "\tfmt.Println({ns}.NativeAtom[string]({ns}.CallExp_Testapi_main__applyVia({main}, func(v {ns}.Prepared[{ns}.AtomIndex[string]]) {ns}.Prepared[{ns}.AtomIndex[string]] {{ return {ns}.PrepareAtom(\"via: \" + {ns}.NativeAtom[string](v.Erase())) }}, {ns}.PrepareAtom(\"apply\")).Erase()))\n\
-                 \tfmt.Println({ns}.NativeAtom[int]({ns}.CallExp_Testapi_main__applyVia({main}, func(v {ns}.Prepared[{ns}.AtomIndex[int]]) {ns}.Prepared[{ns}.AtomIndex[int]] {{ return {ns}.PrepareAtom({ns}.NativeAtom[int](v.Erase()) + 8) }}, {ns}.PrepareAtom(7)).Erase()))\n"
+                "\tfmt.Println({ns}.NativeAtom[string]({ns}.CallExp_Testapi_main__applyVia({main}, nativeValue(func(v {ns}.Prepared[{ns}.AtomIndex[string]]) {ns}.Prepared[{ns}.AtomIndex[string]] {{ return {ns}.PrepareAtom(\"via: \" + {ns}.NativeAtom[string](v.Erase())) }}), {ns}.PrepareAtom(\"apply\")).Erase()))\n\
+                 \tfmt.Println({ns}.NativeAtom[int]({ns}.CallExp_Testapi_main__applyVia({main}, nativeValue(func(v {ns}.Prepared[{ns}.AtomIndex[int]]) {ns}.Prepared[{ns}.AtomIndex[int]] {{ return {ns}.PrepareAtom({ns}.NativeAtom[int](v.Erase()) + 8) }}), {ns}.PrepareAtom(7)).Erase()))\n"
             )
         }
         ExportDriver::TypeRoundtrip => {
@@ -2431,14 +2499,14 @@ fn render_go_body_for_binding(
                 "arg0_cbarg0",
                 &selection.root_arguments(),
             );
-            format!("return arg0({input}{{F0: arg1, F1: {string}, F2: {bool_}}})")
+            format!("return arg0.Call({input}{{F0: arg1, F1: {string}, F2: {bool_}}})")
         }
         // `make_pair(build, seed)`: apply the callback (returns `(I32 &
         // String)`) and take the first field.
-        HostFnBodyKind::MakePairCallback { .. } => "return arg0(arg1).F0".to_owned(),
+        HostFnBodyKind::MakePairCallback { .. } => "return arg0.Call(arg1).F0".to_owned(),
         // `make_step(delta)`: return an `I32 -> I32` step closure.
         HostFnBodyKind::MakeStep { .. } => {
-            "return func(n int32) int32 { return n + arg0 }".to_owned()
+            "return nativeValue(func(n int32) int32 { return n + arg0 })".to_owned()
         }
         // The package owns one declaration-keyed carrier for `Box(T)`. The
         // fixture keeps its native payload erased, but crosses the public
@@ -2469,11 +2537,11 @@ fn render_go_body_for_binding(
         }
         HostFnBodyKind::StagedSecond { .. } => "return arg1".to_owned(),
         HostFnBodyKind::NestedCurriedRoundtrip { .. } => {
-            "fmt.Println(\"round host probe:\", arg0(\"host-left\")(\"host-right\"))\n\treturn arg0"
+            "fmt.Println(\"round host probe:\", arg0.Call(\"host-left\").Call(\"host-right\"))\n\treturn arg0"
                 .to_owned()
         }
         HostFnBodyKind::InvokeSubstitutedUnitCallback { .. } => {
-            format!("return \"host/\" + arg0({ns}.Unit{{}})")
+            format!("return \"host/\" + arg0.Call({ns}.Unit{{}})")
         }
         HostFnBodyKind::ReturnedForallUnit => {
             let stage = format!(
@@ -2481,7 +2549,7 @@ fn render_go_body_for_binding(
                 go_host_member(binding.module, binding.leaf)
             );
             format!(
-                "if returnedForallProduced {{\n\t\tfmt.Println(\"throw\")\n\t\tpanic(\"produce failed\")\n\t}}\n\treturnedForallProduced = true\n\tfmt.Println(\"produce\")\n\treturn {stage}(host, func() {ns}.Unit {{ return {ns}.Unit{{}} }})"
+                "if returnedForallProduced {{\n\t\tfmt.Println(\"throw\")\n\t\tpanic(\"produce failed\")\n\t}}\n\treturnedForallProduced = true\n\tfmt.Println(\"produce\")\n\treturn {stage}(host, nativeType(func() {ns}.Unit {{ return {ns}.Unit{{}} }}))"
             )
         }
         HostFnBodyKind::ForallStageEffects => {
@@ -2490,7 +2558,7 @@ fn render_go_body_for_binding(
                 go_host_member(binding.module, binding.leaf)
             );
             format!(
-                "fmt.Println(\"create\")\n\treturn {stage}(host, func() {ns}.Unit {{ fmt.Println(\"apply\"); return {ns}.Unit{{}} }})"
+                "fmt.Println(\"create\")\n\treturn {stage}(host, nativeType(func() {ns}.Unit {{ fmt.Println(\"apply\"); return {ns}.Unit{{}} }}))"
             )
         }
         HostFnBodyKind::TraceUnit { text } => format!("fmt.Println({text:?})"),
@@ -2498,7 +2566,7 @@ fn render_go_body_for_binding(
         // `apply_poly(f)`: feed the rank-n callback an erased `String`
         // carrier and return the (erased) result as a string.
         HostFnBodyKind::ApplyPoly { .. } => {
-            format!("return {ns}.NativeAtom[string](arg0.Invoke()({ns}.Atom(\"rank-n\\n\")))")
+            format!("return {ns}.NativeAtom[string](arg0.Invoke().Call({ns}.Atom(\"rank-n\\n\")))")
         }
         // `make_pair(n, s)`: build the `(I32 & String)` product directly.
         HostFnBodyKind::MakePairStructural { .. } => {
@@ -2568,7 +2636,7 @@ fn render_go_body_for_binding(
             let state = &m.arg_types[1];
             let result = &m.ret_type;
             format!(
-                "var run func({state}) {result}\n\trun = func(state {state}) {result} {{\n\t\tfor {{\n\t\t\tswitch next := arg0({pair}{{F0: run, F1: state}}).Case().(type) {{\n\t\t\tcase {case_0}:\n\t\t\t\tstate = next.Value()\n\t\t\tcase {case_1}:\n\t\t\t\treturn next.Value()\n\t\t\tdefault:\n\t\t\t\tpanic(\"loop_reentry: foreign step result\")\n\t\t\t}}\n\t\t}}\n\t}}\n\treturn run(arg1)"
+                "var run {ns}.Callable[{state}, {result}]\n\trun = nativeValue(func(state {state}) {result} {{\n\t\tfor {{\n\t\t\tswitch next := arg0.Call({pair}{{F0: run, F1: state}}).Case().(type) {{\n\t\t\tcase {case_0}:\n\t\t\t\tstate = next.Value()\n\t\t\tcase {case_1}:\n\t\t\t\treturn next.Value()\n\t\t\tdefault:\n\t\t\t\tpanic(\"loop_reentry: foreign step result\")\n\t\t\t}}\n\t\t}}\n\t}})\n\treturn run.Call(arg1)"
             )
         }
         HostFnBodyKind::UnreachableI32Print { .. } => {
@@ -2814,7 +2882,7 @@ fn render_read_ascii_line(m: &TraitMethod, ns: &str) -> String {
 fn render_loop_body(cbret: &str) -> String {
     let (case_0, case_1) = sum_cases(cbret);
     format!(
-        "s := arg1\n\tfor {{\n\t\tswitch step := arg0(s).Case().(type) {{\n\t\tcase {case_0}:\n\t\t\ts = step.Value()\n\t\tcase {case_1}:\n\t\t\treturn step.Value()\n\t\tdefault:\n\t\t\t_ = step\n\t\t\tpanic(\"loop: foreign step result\")\n\t\t}}\n\t}}"
+        "s := arg1\n\tfor {{\n\t\tswitch step := arg0.Call(s).Case().(type) {{\n\t\tcase {case_0}:\n\t\t\ts = step.Value()\n\t\tcase {case_1}:\n\t\t\treturn step.Value()\n\t\tdefault:\n\t\t\t_ = step\n\t\t\tpanic(\"loop: foreign step result\")\n\t\t}}\n\t}}"
     )
 }
 
@@ -2971,7 +3039,7 @@ mod tests {
                 &selection,
             );
             assert!(
-                body.contains("NewEnv_Testapi_main__produce_retStage(host, func() fixture.Unit { return fixture.Unit{} })"),
+                body.contains("NewEnv_Testapi_main__produce_retStage(host, nativeType(func() fixture.Unit { return fixture.Unit{} }))"),
                 "{body}"
             );
             assert!(!body.contains("fixture.Value"), "{body}");
@@ -3145,7 +3213,7 @@ mod tests {
 
         let body =
             render_go_body_for_binding(&binding, &CanonicalKind::Loop, &method, "demo", &selection);
-        assert!(body.contains("arg0(s).Case().(type)"), "{body}");
+        assert!(body.contains("arg0.Call(s).Case().(type)"), "{body}");
         let cbret = format!("demo.Env_{member}_arg0_cbret{root_arguments}");
         let (case_0, case_1) = sum_cases(&cbret);
         assert!(body.contains(&format!("case {case_0}:")), "{body}");
@@ -3228,7 +3296,7 @@ mod tests {
         assert_eq!(method.ret_type, "int32");
         assert_eq!(
             body,
-            "return arg0(demo.Env_Testapi_arith__callStep_arg0_cbarg0[bool, int32, string]{F0: arg1, F1: \"compound-callback\", F2: true})"
+            "return arg0.Call(demo.Env_Testapi_arith__callStep_arg0_cbarg0[bool, int32, string]{F0: arg1, F1: \"compound-callback\", F2: true})"
         );
     }
 
@@ -3333,6 +3401,42 @@ mod tests {
         let body = render_loop_body("demo.Env_Testapi_control__loop_arg0_cbret");
         assert!(body.contains(".Case().(type)"), "{body}");
         assert!(body.contains(".Value()"), "{body}");
+    }
+
+    #[test]
+    fn wide_callable_driver_uses_call_with_every_domain_slot() {
+        let selection = GoHostBindingSelection::new(RunnerProtocol::ExportWideCallable.contract());
+        let body = render_export_driver(
+            ExportDriver::WideCallable,
+            "pkg.Testapi",
+            "demo",
+            true,
+            &selection,
+        )
+        .expect("wide callable driver");
+        let lines = body.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 8, "{body}");
+        let arguments = lines[0]
+            .strip_prefix("\tout := pkg.Testapi.KioModule_main.Select(")
+            .and_then(|line| line.strip_suffix(')'))
+            .expect("named declaration uses an ordinary Go call");
+        let fields = lines[4]
+            .strip_prefix("\tcallbackOut := pkg.Testapi.KioModule_main.MakeSelect().Call(demo.Exp_Testapi_main__makeSelect_ret_cbarg0[int32]{")
+            .and_then(|line| line.strip_suffix("})"))
+            .expect("returned callable uses Call with its public domain alias");
+        assert_eq!(arguments.split(", ").count(), WIDE_CALLABLE_SLOT_COUNT);
+        assert_eq!(fields.split(", ").count(), WIDE_CALLABLE_SLOT_COUNT);
+        for (index, (argument, field)) in arguments.split(", ").zip(fields.split(", ")).enumerate()
+        {
+            assert_eq!(argument, index.to_string());
+            assert_eq!(field, format!("F{index}: {index}"));
+        }
+        for (index, line) in lines[1..4].iter().enumerate() {
+            assert_eq!(*line, format!("\tfmt.Println(out.F{index})"));
+        }
+        for (index, line) in lines[5..8].iter().enumerate() {
+            assert_eq!(*line, format!("\tfmt.Println(callbackOut.F{index})"));
+        }
     }
 
     #[test]
@@ -3441,7 +3545,11 @@ mod tests {
             body.contains(&format!(") {selected_i32} {{ return pair.F0 + pair.F1 }}")),
             "{body}"
         );
-        assert!(body.contains("unpacked(constructorPairOut)"), "{body}");
+        assert!(body.contains("unpacked.Call("), "{body}");
+        assert!(
+            body.contains("{F0: constructorPairOut.F0, F1: constructorPairOut.F1})"),
+            "{body}"
+        );
         assert!(
             body.contains("MakeProjectorPairValue(constructorPairOut)"),
             "{body}"

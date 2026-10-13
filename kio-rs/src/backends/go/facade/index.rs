@@ -118,6 +118,14 @@ impl GoIndexDeclarations {
         Ok(GoType::new(marker.to_string()))
     }
 
+    pub(super) fn unit(&mut self) -> Result<GoIndexType, GoFacadeError> {
+        let marker = self.marker("KioIndexUnit".to_owned(), &[], &Kind::Star)?;
+        Ok(GoIndexType {
+            ty: GoType::new(marker.to_string()),
+            kind: Kind::Star,
+        })
+    }
+
     pub(super) fn product(
         &mut self,
         shell: &GoFacadeShell,
@@ -289,7 +297,7 @@ impl GoFacadeSite<'_> {
                 }
                 return Ok(constructor);
             }
-            FacadeUse::Unit { .. } => ("KioIndexUnit".to_owned(), Vec::new()),
+            FacadeUse::Unit { .. } => return Ok(Some(declarations.unit()?)),
             FacadeUse::Bottom { .. } => ("KioIndexBottom".to_owned(), Vec::new()),
             FacadeUse::Product { shell, args, .. } | FacadeUse::Sum { shell, args, .. } => (
                 format!("KioIndex_{}", GoFacadeShell::new(shell)?.name),

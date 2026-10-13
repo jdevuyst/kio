@@ -12,8 +12,8 @@ if (Reflect.ownKeys(packed).length !== 0 || "Pack" in packed) {
   throw new Error("existential payload is publicly inspectable");
 }
 let openings = 0;
-const continuation = ({
-  advance: () => (value => {
+const continuation = createCarrierPrivacy.liftStage({
+  advance: () => createCarrierPrivacy.lift(value => {
     openings++;
     if (value !== secret) throw new Error("abstract witness identity changed");
     return null;

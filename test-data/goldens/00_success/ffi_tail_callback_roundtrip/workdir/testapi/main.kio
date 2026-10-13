@@ -1,0 +1,37 @@
+module testapi/main;
+
+import testapi as t;
+import testapi/api as api;
+
+pub fn value_root() -> . -> t.Number {
+  .() { api.mark(12); 37 }
+}
+
+pub fn value_link(previous: . -> t.Number) -> . -> t.Number {
+  .() { api.mark(11); previous() }
+}
+
+pub fn keep_value(value: . -> t.Number) -> . -> t.Number { value.>api.pack.>api.unpack }
+
+pub fn type_root() -> [A] . -> t.Number {
+  .[A] {
+    api.mark(22);
+    .() { api.mark(23); 73 }
+  }
+}
+
+pub fn type_link(previous: [A] . -> t.Number) -> [A] . -> t.Number {
+  .[A] { api.mark(21); previous(A) }
+}
+
+pub fn keep_type(value: [A] . -> t.Number) -> [A] . -> t.Number { value.>api.pack.>api.unpack }
+
+pub newtype Type_chain : [A] . -> t.Number { constructor make; pub projector read }
+
+pub fn nominal_type_root() -> Type_chain { type_root().>Type_chain.make }
+
+pub fn nominal_type_link(previous: Type_chain) -> Type_chain {
+  .[A] { api.mark(21); previous.>Type_chain.read(A) }.>Type_chain.make
+}
+
+pub fn keep_nominal_type(value: Type_chain) -> Type_chain { value.>api.pack.>api.unpack }

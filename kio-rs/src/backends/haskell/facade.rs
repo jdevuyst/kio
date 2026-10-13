@@ -54,6 +54,13 @@ pub(crate) fn source_parameters(
         .collect()
 }
 
+/// First-class functions take one semantic domain, including Unit. Keep the
+/// prepared source partition when rebuilding that domain, without giving a
+/// declaration's curried parameter list to an escaped function value.
+pub(crate) fn callback_domain(layout: &CallableValueStageLayout, slots: &[String]) -> String {
+    super::native::nest_tuple_type(&source_parameters(layout, slots))
+}
+
 /// One semantic declaration-head stage rendered for Haskell.
 #[derive(Clone, Debug)]
 pub(crate) enum HaskellCallableHeadStage {

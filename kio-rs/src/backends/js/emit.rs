@@ -372,6 +372,10 @@ pub fn lower_package_to_factory_module_cached(
     out.push_str(&format!("export function {}(host) {{\n", brand.factory));
     out.push_str(&factory_body);
     out.push_str("}\n");
+    out.push_str(&format!(
+        "Object.defineProperties({}, {{ lift: {{ value: __kioLeaf }}, liftStage: {{ value: __kioLiftStage }} }});\n",
+        brand.factory
+    ));
     Ok(out)
 }
 
@@ -1863,7 +1867,7 @@ fn wrap_js_signature_stages_with_tail(
     for group in groups.iter().rev() {
         body = match group {
             JsRuntimeSignatureGroup::Type if tail => {
-                format!("__kioPoly(__kioGuest((__kioUnit, __kioTailCursor) => {body}))")
+                format!("__kioGuestPoly((__kioUnit, __kioTailCursor) => {body})")
             }
             JsRuntimeSignatureGroup::Type => format!("__kioPoly(() => {body})"),
             JsRuntimeSignatureGroup::Value(names) => {
@@ -1895,7 +1899,7 @@ fn wrap_js_signature_stages_with_tail(
                 if tail {
                     format!("__kioGuest({value})")
                 } else {
-                    value
+                    format!("__kioLeaf({value})")
                 }
             }
         };
@@ -1973,7 +1977,7 @@ fn lower_newtype(d: &Newtype, top: &TopLevel, out: &mut String) {
     .expect("a routed newtype has an exact declaring module");
     let frame = super::super::serialized_runtime_ir::exact_nominal_identity_frame(&name);
     let ctor = format!(
-        "(__kioPayload => ({}))",
+        "__kioLeaf(__kioPayload => ({}))",
         js_nominal_operation(top, &frame, "__kioPayload", true)
     );
     let ctor = wrap_js_type_stages(ctor, d.type_params.len() + d.existential_params.len());
@@ -1988,7 +1992,7 @@ fn lower_newtype(d: &Newtype, top: &TopLevel, out: &mut String) {
         )
     };
     let projector = wrap_js_type_stages(
-        format!("(__kioNominal => ({projected}))"),
+        format!("__kioLeaf(__kioNominal => ({projected}))"),
         d.type_params.len(),
     );
     out.push_str(&format!(
@@ -3267,7 +3271,7 @@ mod tests {
         );
         assert!(js.contains("__kioPoly("));
         assert!(
-            !js.contains("__kioLift") && !js.contains("__kioRunAdapted") && !js.contains(".adapt")
+            !js.contains("__kioLift(") && !js.contains("__kioRunAdapted") && !js.contains(".adapt")
         );
     }
     #[test]
@@ -3406,7 +3410,7 @@ mod tests {
         );
         assert!(
             rendered.contains(
-                "const _3 = __kioDomain; return __kioPoly(() => (__kioUnit => (__kioDomain =>"
+                "const _3 = __kioDomain; return __kioPoly(() => __kioLeaf((__kioUnit => __kioLeaf((__kioDomain =>"
             ),
             "{rendered}"
         );
@@ -3635,7 +3639,7 @@ mod tests {
         assert_eq!(declaration("staged").matches("__kioGuest").count(), 1);
         assert!(
             declaration("staged")
-                .contains("__kioPoly(() => ((callback) => __kioPoly(() => __kioGuest")
+                .contains("__kioPoly(() => __kioLeaf(((callback) => __kioPoly(() => __kioGuest")
         );
         assert!(declaration("staged").contains("__kioTailCall(__kioTailCursor, callback, value)"));
     }
@@ -3867,7 +3871,7 @@ mod tests {
     #[test]
     fn unit_returning_fn_def() {
         let js = lower("module x; fn empty() -> . { () }");
-        assert!(js.contains("const empty = (__kioUnit => null)"));
+        assert!(js.contains("const empty = __kioLeaf((__kioUnit => null))"));
     }
 
     #[test]
@@ -3877,14 +3881,17 @@ mod tests {
              host type T role(str); \
              fn first(x: T) -> T { x }",
         );
-        assert!(js.contains("const first = ((x) => x)"), "got: {js}");
+        assert!(
+            js.contains("const first = __kioLeaf(((x) => x))"),
+            "got: {js}"
+        );
     }
 
     #[test]
     fn polymorphic_fn_def_keeps_an_erased_type_stage() {
         let js = lower("module x; fn id[A](x: A) -> A { x }");
         assert!(
-            js.contains("const id = __kioPoly(() => ((x) => x))"),
+            js.contains("const id = __kioPoly(() => __kioLeaf(((x) => x)))"),
             "got: {js}"
         );
         assert_eq!(js.matches("__kioPoly(").count(), 1, "got: {js}");
@@ -3914,7 +3921,7 @@ mod tests {
              fn first_app[*F][A][B](x: F(A), y: F(B)) -> F(A) { x }",
         );
         assert!(
-            js.contains("const id_app = __kioPoly(() => __kioPoly(() => ((x) => x)"),
+            js.contains("const id_app = __kioPoly(() => __kioPoly(() => __kioLeaf(((x) => x))"),
             "got: {js}"
         );
         assert!(
@@ -3932,7 +3939,9 @@ mod tests {
              fn expose() -> [A] A -> A { host_id }",
         );
         assert!(
-            js.contains("__kioPoly(() => ((__kioHostArg0) => __host__.x.hostId(__kioHostArg0)))"),
+            js.contains(
+                "__kioPoly(() => __kioLeaf(((__kioHostArg0) => __host__.x.hostId(__kioHostArg0))))"
+            ),
             "got: {js}"
         );
     }
@@ -3981,7 +3990,7 @@ mod tests {
         let staged_explicit = function_body("staged_explicit", "staged_effectful");
         assert!(
             function_body("staged", "staged_type_only")
-                .contains("__kioPoly(() => (__kioUnit => ((x) => x)))"),
+                .contains("__kioPoly(() => __kioLeaf((__kioUnit => __kioLeaf(((x) => x)))))"),
             "the selected type stage must return its Unit value layer: {js}"
         );
         assert_eq!(
@@ -4098,7 +4107,10 @@ mod tests {
         );
         // The lifted inline callee stays parenthesized at the indirect
         // call site, preserving the arrow's value before applying `y`.
-        assert!(js.contains("__kioTailCursor, ((x) => x), y"), "got: {js}");
+        assert!(
+            js.contains("__kioTailCursor, __kioLeaf(((x) => x)), y"),
+            "got: {js}"
+        );
     }
 
     #[test]
@@ -4138,7 +4150,7 @@ mod tests {
         let js = lower("module pkg/helper; pub fn greet() -> . { () }");
         assert!(js.contains("const PKG_HELPER = (() => {"), "got: {js}");
         assert!(
-            js.contains("const greet = (__kioUnit => null)"),
+            js.contains("const greet = __kioLeaf((__kioUnit => null))"),
             "got: {js}"
         );
         assert!(js.contains("return { greet };"), "got: {js}");
@@ -4183,7 +4195,7 @@ mod tests {
              host type T role(str); \
              fn first(p: (T & T)) -> T { __fst__(T, T, p) }",
         );
-        assert!(js.contains("const first = ((p) =>"), "got: {js}");
+        assert!(js.contains("const first = __kioLeaf(((p) =>"), "got: {js}");
         assert!(js.contains("__kioProductSlot((p), 0, 2)"), "got: {js}");
     }
 
@@ -4195,7 +4207,7 @@ mod tests {
              host type T role(str); \
              fn second(p: (T & T)) -> T { __snd__(T, T, p) }",
         );
-        assert!(js.contains("const second = ((p) =>"), "got: {js}");
+        assert!(js.contains("const second = __kioLeaf(((p) =>"), "got: {js}");
         assert!(js.contains("__kioProductSlot((p), 1, 2)"), "got: {js}");
     }
 
@@ -4207,7 +4219,10 @@ mod tests {
              host type T role(str); \
              fn first_of_pair(x: T) -> T { __fst__(T, T, __pair__(T, T, x, x)) }",
         );
-        assert!(js.contains("const first_of_pair = ((x) =>"), "got: {js}");
+        assert!(
+            js.contains("const first_of_pair = __kioLeaf(((x) =>"),
+            "got: {js}"
+        );
         assert!(
             js.contains("__kioProductSlot((({ _0: x, _1: x })), 0, 2)"),
             "got: {js}"
@@ -4449,7 +4464,10 @@ mod tests {
         );
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
 
-        assert!(js.contains("__kioPoly(() => ((value) => value))"), "{js}");
+        assert!(
+            js.contains("__kioPoly(() => __kioLeaf(((value) => value)))"),
+            "{js}"
+        );
         assert_eq!(
             js.matches("__kioTailAdvance(__kioTailCursor, identity)")
                 .count(),
@@ -5286,13 +5304,13 @@ mod tests {
         assert!(js.contains("const Foo = {"), "got: {js}");
         assert!(
             js.contains(
-                "mk_foo: (__kioPayload => (__kioOpaqueOut(\"M1_C1_xN3_Foo\", __kioPayload)))"
+                "mk_foo: __kioLeaf(__kioPayload => (__kioOpaqueOut(\"M1_C1_xN3_Foo\", __kioPayload)))"
             ),
             "got: {js}"
         );
         assert!(
             js.contains(
-                "un_foo: (__kioNominal => (__kioOpaqueIn(\"M1_C1_xN3_Foo\", __kioNominal)))"
+                "un_foo: __kioLeaf(__kioNominal => (__kioOpaqueIn(\"M1_C1_xN3_Foo\", __kioNominal)))"
             ),
             "got: {js}"
         );
@@ -5406,8 +5424,9 @@ mod tests {
         };
 
         let receiver_binding = unique_position("const __kio_cps_receiver = v;");
-        let continuation_binding =
-            unique_position("const __kio_cps_continuation = __kioPoly(() => (__kioDomain => {");
+        let continuation_binding = unique_position(
+            "const __kio_cps_continuation = __kioPoly(() => __kioLeaf((__kioDomain => {",
+        );
         let first_product_slot = unique_position("const _value = __kioDomain._0;");
         let remaining_product = unique_position("__kioDomain = __kioDomain._1;");
         let second_product_slot = unique_position("const _unit = __kioDomain;");
@@ -5475,15 +5494,15 @@ mod tests {
              fn make_bool() -> Bool { .t }",
         );
         assert!(
-            js.contains("const make_int = (__kioUnit => 42)"),
+            js.contains("const make_int = __kioLeaf((__kioUnit => 42))"),
             "got: {js}"
         );
         assert!(
-            js.contains("const make_float = (__kioUnit => 3.14)"),
+            js.contains("const make_float = __kioLeaf((__kioUnit => 3.14))"),
             "got: {js}"
         );
         assert!(
-            js.contains("const make_bool = (__kioUnit => true)"),
+            js.contains("const make_bool = __kioLeaf((__kioUnit => true))"),
             "got: {js}"
         );
     }
@@ -5504,23 +5523,25 @@ mod tests {
              fn u128_v() -> U128 { 0(U128) }",
         );
         assert!(
-            js.contains("const small = (__kioUnit => 7)"),
+            js.contains("const small = __kioLeaf((__kioUnit => 7))"),
             "i32 stays bare: {js}"
         );
         assert!(
-            js.contains("const s64 = (__kioUnit => 9000000000n)"),
+            js.contains("const s64 = __kioLeaf((__kioUnit => 9000000000n))"),
             "i64 gets n: {js}"
         );
         assert!(
-            js.contains("const u64_v = (__kioUnit => 9000000000n)"),
+            js.contains("const u64_v = __kioLeaf((__kioUnit => 9000000000n))"),
             "u64 gets n: {js}"
         );
         assert!(
-            js.contains("const s128 = (__kioUnit => 170141183460469231731687303715884105727n)"),
+            js.contains(
+                "const s128 = __kioLeaf((__kioUnit => 170141183460469231731687303715884105727n))"
+            ),
             "i128 gets n: {js}"
         );
         assert!(
-            js.contains("const u128_v = (__kioUnit => 0n)"),
+            js.contains("const u128_v = __kioLeaf((__kioUnit => 0n))"),
             "u128 gets n even at 0: {js}"
         );
     }
@@ -5571,7 +5592,7 @@ mod tests {
         // Rung-1 nested host record: the lifted host leaf still reaches
         // `main.print`, and the caller supplies its original `s` value.
         assert!(
-            js.contains("(((__kioHostArg0) => __host__.main.print(__kioHostArg0)))(s)"),
+            js.contains("(__kioLeaf(((__kioHostArg0) => __host__.main.print(__kioHostArg0))))(s)"),
             "got: {js}"
         );
     }
@@ -5587,7 +5608,9 @@ mod tests {
         // `let p = print` binds a lifted wrapper that preserves host FFI
         // conversions; `print` reaches the rung-1 nested host record.
         assert!(
-            js.contains("const p = ((__kioHostArg0) => __host__.main.print(__kioHostArg0))"),
+            js.contains(
+                "const p = __kioLeaf(((__kioHostArg0) => __host__.main.print(__kioHostArg0)))"
+            ),
             "got: {js}"
         );
         assert!(js.contains("__kioTailCursor, p, s"), "got: {js}");
@@ -5651,7 +5674,7 @@ mod tests {
              fn caller[A](z: A) -> A { default(A, z) }",
         );
         assert!(
-            js.contains("const __kio_default__ = __kioPoly(() => ((y) => y))"),
+            js.contains("const __kio_default__ = __kioPoly(() => __kioLeaf(((y) => y)))"),
             "expected mangled decl, got: {js}"
         );
         assert!(
@@ -5670,7 +5693,9 @@ mod tests {
         // parameter list and the body's reference must mangle.
         let js = lower("module x; fn id[A](class: A) -> A { class }");
         assert!(
-            js.contains("const id = __kioPoly(() => ((__kio_class__) => __kio_class__))"),
+            js.contains(
+                "const id = __kioPoly(() => __kioLeaf(((__kio_class__) => __kio_class__)))"
+            ),
             "expected mangled param, got: {js}"
         );
         assert!(
@@ -5715,7 +5740,7 @@ mod tests {
         // word stays unchanged through the same code path.
         let js = lower("module x; fn helper[A](y: A) -> A { y }");
         assert!(
-            js.contains("const helper = __kioPoly(() => ((y) => y))"),
+            js.contains("const helper = __kioPoly(() => __kioLeaf(((y) => y)))"),
             "got: {js}"
         );
         assert!(

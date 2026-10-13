@@ -376,9 +376,8 @@ The carve-outs are:
 
 - Unit (`.`) crosses as `None`.
 - A function value uses `KioFn[Domain, Result]`, called with one domain value.
-  Its typed view is the alias `typing.Callable[[Domain], Result]`, with one
-  positional-only argument; hosts implement ordinary callable functions or
-  objects rather than subclassing this type alias.
+  Its typed view is a structural protocol with one positional-only call
+  argument and the required `kio_step(domain, transfer)` operation.
   Its Unit domain takes `None`; a product domain takes one binary product.
   Named declaration calls retain their source parameter grouping, with a
   directly written Unit parameter omitted.
@@ -388,7 +387,8 @@ The carve-outs are:
 Hosts turn a newly authored Python function into a first-class Kio callable
 with `kio_lift(function)`. The result uses the one-domain `KioFn` calling
 interface. Existing Kio callable values are forwarded directly, not lifted
-again. Independently implemented callables use that same calling interface.
+again. Plain native callables are not first-class Kio values until lifted;
+named host-record functions retain their ordinary native interface.
 
 Each first-class type binder is one argument-free `advance()` on its generated
 `KioForall_<shape>` protocol. The result retains the type selected at that
@@ -397,6 +397,35 @@ passes an ordinary object with an `advance` method to `kio_lift_stage`. A
 statically checked host subclasses the corresponding readable `Source` view
 (below). Lifting a stage does not advance it. Ordinary named generic functions
 still receive no runtime type arguments.
+
+### Cooperative callable protocol
+
+Function carriers implement `kio_step(domain, transfer)`; type-stage
+carriers implement `kio_step(transfer)`. These are required operations, not
+optional marker methods inspected on native callables. Native lifts invoke
+their saved body normally without inspecting it for transfer metadata. A stage
+lift preserves the source method's receiver. A native result containing another
+function or type stage must contain a lifted or generated carrier at that slot.
+
+The structural `KioTransfer` interface exposes `call(target, domain)` and
+`advance(target)`. One step either returns its ordinary result without a
+request, or requests one terminal transfer and returns `None`. The capability
+is valid only synchronously during that operation and must not be retained.
+The driver tracks requests separately from results: returning `None` or any
+ordinary host object does not itself request control flow. Reentrant completed
+calls use separate driver state, and exceptions retain their identity.
+
+The typed `KioFn` step returns `Result | None`; the `KioStage` control view
+erases only a type step's control-channel result to `object`. Each generated
+stage protocol's ordinary `advance` keeps its precise selected result type.
+The step operation is generated-code linkage: any requested target must preserve
+the current step's result type. The erased control interface does not prove
+that obligation for a manually authored implementation; ordinary hosts use the
+typed lifts.
+Compatible carriers exchange between independently generated artifacts without
+a shared runtime or registry. This does not merge nominal classes or grant
+access to opaque values. Storage preserves the unchanged carrier; lifting a
+native wrapper around its call creates a genuine native execution boundary.
 
 ## Typed stub
 
@@ -411,7 +440,9 @@ package-owned. The package contains no runtime code and types exactly the
 public surface `create_<value-brand>` exposes, so a host that runs a static type checker
 (pyright or mypy) checks the embedding at author time. The generated stubs carry
 only targeted Pyright suppressions: `reportInvalidTypeVarUse` where Pyright
-would otherwise widen an exact single-use Kio binder, and
+would otherwise widen an exact single-use Kio binder or incorrectly infer a
+protocol's variance through an invariant carrier nested in a contravariant
+callable argument, and
 `reportPrivateUsage` on the exact import or annotation line that transports a
 deliberately private shard module or support declaration between sibling
 shards. Pyright and mypy still check the transported type and the rest of the
@@ -453,7 +484,7 @@ factory.
 Each boundary value is typed at its § FFI surface Python shape: an exact
 nullary host declaration at its `KioHost_<frame>` type parameter; a parameterized
 declaration at nested `KioApply1` indices; a site type binder at its exact
-`typing.TypeVar`; unit as `None`; a function as its exact `KioFn` callable alias;
+`typing.TypeVar`; unit as `None`; a function as its exact `KioFn` callable protocol;
 a polymorphic stage as its exact protocol; a binary product as a two-field
 `typing.TypedDict`; and a binary sum as the union of its two tagged `TypedDict`
 arms. Newtypes have exact nominal
@@ -508,7 +539,7 @@ also runtime-importable aliases of the existing package-local classes; they
 preserve generic subscription and introduce no wrapper or stage execution.
 Hosts need not import or derive encoded structural identity names.
 
-`object` occurs only at an explicit parameterized-host-carrier native endpoint
+In ordinary value signatures, `object` occurs only at an explicit parameterized-host-carrier native endpoint
 and at the `__getattr__` escape for a Python hard keyword. A spellable exact
 callable position never widens a host declaration, generic application,
 newtype, structural shape, rank-N callable, or scoped binder to `object`.

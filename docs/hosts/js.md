@@ -120,11 +120,21 @@ to Unit remains an explicit `null` argument.
 
 Callbacks and returned functions instead take one complete domain value. A
 callback of type `A & B -> R` receives `{_0: a, _1: b}`, and a callback of type
-`. -> R` is called as `callback(null)`. Supply an ordinary JS function with
-that one-argument interface. Polymorphic values expose one `.advance()`
+`. -> R` is called as `callback(null)`. Wrap a newly written native callback
+with the imported factory's `createGreeter.lift(body)` helper. The result is
+still a one-argument function. Pass callbacks returned by Kio directly, without
+lifting them again. Polymorphic values expose one `.advance()`
 step per type parameter; for example, an identity value of type `[A] A -> A`
-is used as `identity.advance()(value)`. Supply an object with an `advance`
-method returning the next function or polymorphic stage.
+is used as `identity.advance()(value)`. Use `createGreeter.liftStage(source)`
+for a native object whose `advance` method returns the next value. Returned
+callbacks and nested stages must themselves be lifted or generated carriers.
+Neither lift invokes your body early.
+
+These values carry the transfer operation needed for guest tail calls even
+after unchanged storage in a host object or exchange with a compatible generated
+package. No shared runtime or registration step is needed. A native wrapper
+such as `createGreeter.lift(value => saved(value))` is a real host call, not
+unchanged transport. Named host-record methods keep their ordinary JS functions.
 
 ### 3. Instantiate and invoke
 

@@ -17,8 +17,14 @@ rm -rf "$scratch/workdir/out"
 out="$scratch/workdir/out/swift"
 host_build="$scratch/host-build"
 mkdir -p "$host_build/.module-cache"
+swiftc -Onone -module-name KioRuntime \
+  -module-cache-path "$host_build/.module-cache" \
+  -emit-module -emit-module-path "$host_build/KioRuntime.swiftmodule" \
+  -emit-library -static -o "$host_build/libKioRuntime.a" \
+  "$out/KioRuntime/KioRuntime.swift"
 swiftc \
   -Onone \
+  -I "$host_build" \
   -module-name FfiSwiftExactHostBindings \
   -module-cache-path "$host_build/.module-cache" \
   -emit-module \
@@ -33,6 +39,7 @@ swiftc \
   -I "$host_build" \
   -L "$host_build" \
   -lFfiSwiftExactHostBindings \
+  -lKioRuntime \
   "$scratch/host/driver.swift" \
   -o "$host_build/driver"
 "$host_build/driver"

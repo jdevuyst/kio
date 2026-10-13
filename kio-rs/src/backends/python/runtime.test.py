@@ -68,13 +68,13 @@ class TailEntryTests(unittest.TestCase):
         self.assertEqual(poly.advance(), 37)
         self.assertEqual(poly.advance(), 37)
 
-    def test_independent_artifacts_preserve_ordinary_invocation(self):
+    def test_independent_artifacts_transfer_value_and_type_stages(self):
         foreign_log = []
         foreign = package_runtime(load_runtime(), foreign_log)
         literal = {"StrLit": {"host_type": STRING_IDENTITY, "value": "foreign"}}
         value = guest(foreign, [value_stage()], literal)
         poly = guest(foreign, [TYPE_STAGE], literal)
-        for index in range(8):
+        for index in range(20000):
             owner = self.runtime if index % 2 else foreign
             value = guest(owner, [value_stage()], call("next"), {"next": value})
             poly = guest(owner, [TYPE_STAGE], advance("next"), {"next": poly})
@@ -105,8 +105,8 @@ class TailEntryTests(unittest.TestCase):
                 return 47
 
         opaque = OpaqueCallable()
-        value = guest(self.runtime, [value_stage("x")], call("opaque", reference("x")), {"opaque": opaque})
-        poly = guest(self.runtime, [TYPE_STAGE], advance("opaque"), {"opaque": opaque})
+        value = guest(self.runtime, [value_stage("x")], call("opaque", reference("x")), {"opaque": self.module.kio_lift(opaque)})
+        poly = guest(self.runtime, [TYPE_STAGE], advance("opaque"), {"opaque": self.module.kio_lift_stage(opaque)})
         self.assertEqual(value(53), 53)
         self.assertEqual(poly.advance(), 47)
 
@@ -130,8 +130,8 @@ class TailEntryTests(unittest.TestCase):
                 return 47
 
         host = HostCallable()
-        value = guest(self.runtime, [value_stage("x")], call("host", reference("x")), {"host": host})
-        poly = guest(self.runtime, [TYPE_STAGE], advance("host"), {"host": host})
+        value = guest(self.runtime, [value_stage("x")], call("host", reference("x")), {"host": self.module.kio_lift(host)})
+        poly = guest(self.runtime, [TYPE_STAGE], advance("host"), {"host": self.module.kio_lift_stage(host)})
         self.assertEqual(value(53), 53)
         self.assertEqual(poly.advance(), 47)
         self.assertEqual(events, ["value", "type"])
@@ -188,7 +188,7 @@ class TailEntryTests(unittest.TestCase):
         def fail(_):
             raise marker
 
-        broken = guest(self.runtime, [value_stage()], call("host"), {"host": fail})
+        broken = guest(self.runtime, [value_stage()], call("host"), {"host": self.module.kio_lift(fail)})
         with self.assertRaises(RuntimeError) as raised:
             broken(None)
         self.assertIs(raised.exception, marker)

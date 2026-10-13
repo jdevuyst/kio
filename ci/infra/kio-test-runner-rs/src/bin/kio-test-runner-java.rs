@@ -1310,7 +1310,9 @@ fn build_driver_source(
     out.push_str(&format!(
         "final class StubHost implements {handle}Host{root_use} {{\n"
     ));
-    if protocol == RunnerProtocol::SameArtifactExchange {
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str("  final int owner;\n  final java.util.List<Driver.TailEvent> events;\n  int packs;\n  int unpacks;\n  StubHost(int owner, java.util.List<Driver.TailEvent> events) { this.owner = owner; this.events = events; }\n");
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         out.push_str("  String exchangeLabel = \"first\";\n");
     }
     if needs_returned_forall {
@@ -1328,12 +1330,51 @@ fn build_driver_source(
     }
     for (m, binding) in host.methods().zip(contract.host_fns) {
         let kind = canonical_kind(binding.body);
-        out.push_str(&render_method(m, &kind, binding, contract.host_types));
+        if protocol == RunnerProtocol::TailCallbackRoundtrip {
+            let body = match binding.body {
+                HostFnBodyKind::BoxMake { .. } => format!(
+                    "packs++; {}",
+                    render_java_body_for_binding(binding, &kind, m, contract.host_types)
+                ),
+                HostFnBodyKind::BoxGet { .. } => format!(
+                    "unpacks++; {}",
+                    render_java_body_for_binding(binding, &kind, m, contract.host_types)
+                ),
+                HostFnBodyKind::InstanceMark { .. } => {
+                    "events.add(new Driver.TailEvent(owner, p0));".to_owned()
+                }
+                _ => unreachable!("tail callback protocol has only storage and mark capabilities"),
+            };
+            out.push_str(&format!(
+                "  @Override\n  @SuppressWarnings(\"unchecked\")\n  public {} {{ {body} }}\n",
+                render_method_sig(m)
+            ));
+        } else {
+            out.push_str(&render_method(m, &kind, binding, contract.host_types));
+        }
         out.push('\n');
     }
     out.push_str("}\n\n");
 
     out.push_str("public final class Driver {\n");
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str(r#"  record TailEvent(int owner, int code) {}
+  static java.util.List<TailEvent> chainEvents(int depth, int code, int root) {
+    var expected = new java.util.ArrayList<TailEvent>();
+    for (int index = depth - 1; index >= 0; index--) expected.add(new TailEvent(index % 2, code));
+    expected.add(new TailEvent(0, root));
+    return expected;
+  }
+  static void checkEvents(java.util.List<TailEvent> events, java.util.List<TailEvent> expected) {
+    if (!events.equals(expected)) throw new AssertionError("tail callback events changed");
+    events.clear();
+  }
+  static void checkStorage(StubHost first, StubHost second, int count) {
+    if (first.packs != count || first.unpacks != count || second.packs != count || second.unpacks != count)
+      throw new AssertionError("tail callback storage count changed");
+  }
+"#);
+    }
     if needs_stdin {
         out.push_str(
             "  static final java.io.BufferedReader STDIN =\n      new java.io.BufferedReader(new java.io.InputStreamReader(System.in));\n\n  static String readLine() {\n    try {\n      return STDIN.readLine();\n    } catch (java.io.IOException e) {\n      throw new RuntimeException(e);\n    }\n  }\n\n",
@@ -1351,7 +1392,9 @@ fn build_driver_source(
         );
     }
     out.push_str("  public static void main(String[] args) {\n");
-    if protocol == RunnerProtocol::SameArtifactExchange {
+    if protocol == RunnerProtocol::TailCallbackRoundtrip {
+        out.push_str(&format!("    var events = new java.util.ArrayList<TailEvent>();\n    var firstHost = new StubHost(0, events);\n    var secondHost = new StubHost(1, events);\n    {handle}{root_use} pkg = {handle}.create(firstHost);\n    {handle}{root_use} pkgSecond = {handle}.create(secondHost);\n"));
+    } else if protocol == RunnerProtocol::SameArtifactExchange {
         out.push_str(&format!("    var firstHost = new StubHost();\n    var secondHost = new StubHost();\n    secondHost.exchangeLabel = \"second\";\n    {handle}{root_use} pkg = {handle}.create(firstHost);\n    {handle}{root_use} pkgSecond = {handle}.create(secondHost);\n"));
     } else if protocol == RunnerProtocol::HostExistentialRoundtrip {
         out.push_str(&format!(
@@ -1538,6 +1581,57 @@ fn render_export_driver(
         .unwrap_or_else(|| "Integer".to_owned());
 
     let body = match driver {
+        ExportDriver::TailCallbackRoundtrip => {
+            let second_main = main_ns.replacen("pkg.", "pkgSecond.", 1);
+            format!(r#"    final int depth = 1024;
+    var first = {main_ns};
+    var second = {second_main};
+    var retained = new java.util.ArrayList<Object>();
+    var value = first.valueRoot();
+    retained.add(value);
+    for (int index = 0; index < depth; index++) {{
+      var owner = index % 2 == 0 ? first : second;
+      var other = index % 2 == 0 ? second : first;
+      var linked = owner.valueLink(value);
+      value = other.keepValue(linked);
+      retained.add(linked);
+      retained.add(value);
+    }}
+    checkEvents(events, java.util.List.of());
+    checkStorage(firstHost, secondHost, depth / 2);
+    if (value.apply(new Shapes.Unit()) != 37) throw new AssertionError("tail callback value changed");
+    checkEvents(events, chainEvents(depth, 11, 12));
+    if (value.apply(new Shapes.Unit()) != 37) throw new AssertionError("tail callback reuse changed");
+    checkEvents(events, chainEvents(depth, 11, 12));
+    checkStorage(firstHost, secondHost, depth / 2);
+    var stage = first.typeRoot();
+    retained.add(stage);
+    for (int index = 0; index < depth; index++) {{
+      var owner = index % 2 == 0 ? first : second;
+      var other = index % 2 == 0 ? second : first;
+      var linked = owner.typeLink(stage);
+      stage = other.keepType(linked);
+      retained.add(linked);
+      retained.add(stage);
+    }}
+    checkEvents(events, java.util.List.of());
+    checkStorage(firstHost, secondHost, depth);
+    var selectedNumber = stage.<Integer>advance();
+    checkEvents(events, chainEvents(depth, 21, 22));
+    if (selectedNumber.apply(new Shapes.Unit()) != 73) throw new AssertionError("type callback value changed");
+    checkEvents(events, java.util.List.of(new TailEvent(0, 23)));
+    if (selectedNumber.apply(new Shapes.Unit()) != 73) throw new AssertionError("type callback reuse changed");
+    checkEvents(events, java.util.List.of(new TailEvent(0, 23)));
+    var selectedUnit = stage.<Shapes.Unit>advance();
+    checkEvents(events, chainEvents(depth, 21, 22));
+    if (selectedUnit.apply(new Shapes.Unit()) != 73) throw new AssertionError("second specialization changed");
+    checkEvents(events, java.util.List.of(new TailEvent(0, 23)));
+    checkStorage(firstHost, secondHost, depth);
+    if (retained.size() != 4 * depth + 2) throw new AssertionError("tail callback retention changed");
+    java.lang.ref.Reference.reachabilityFence(retained);
+    System.out.println("tail callback roundtrip ok");
+"#)
+        }
         ExportDriver::IncomingCallableViews => "    throw new IllegalArgumentException(\"this runner has no incoming-callable-views driver\");\n".to_owned(),
         ExportDriver::IncomingCallableStages => "    throw new IllegalArgumentException(\"this runner has no incoming-callable-stages driver\");\n".to_owned(),
         ExportDriver::RustCallbackAliases => "    throw new IllegalArgumentException(\"rust-callback-aliases tests the Rust public naming contract only\");\n".to_owned(),

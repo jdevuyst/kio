@@ -127,7 +127,7 @@ let exportedAtomOutput: Exp_main__keepToken_ret<ExactHost> = package.main.keepTo
 precondition(exportedAtomOutput == Token(raw: 9))
 let unitResult: Exp_main__discard_ret = package.main.discard(exportedAtomOutput)
 _ = unitResult
-let aliasCallback: Exp_main__applyText_arg0<ExactHost> = {
+let aliasCallback: Exp_main__applyText_arg0<ExactHost> = KioFn {
     (value: Exp_main__applyText_arg0_cbarg0<ExactHost>) -> Exp_main__applyText_arg0_cbret<ExactHost> in
     TextValue(raw: value.raw + " aliased")
 }
@@ -141,7 +141,7 @@ requireExactHostContract(ExactHost.self, flag: false, unused: false, token: Toke
 
 precondition(package.left.keep(41).raw == 41)
 precondition(package.left.literal().raw == 41)
-precondition(package.left.apply({ value in LeftShared(integerLiteral: value.raw + 1) }, 41).raw == 42)
+precondition(package.left.apply(KioFn { value in LeftShared(integerLiteral: value.raw + 1) }, 41).raw == 42)
 precondition(package.right.keep(42).raw == 42)
 precondition(package.right.literal().raw == 42)
 let duplicated = package.right.duplicate(43)
@@ -152,7 +152,7 @@ precondition(package.main.roundtripText("borrowed").raw == "borrowed")
 precondition(package.main.roundtripTextLiteral().raw == "direct literal")
 precondition(package.main.keepToken(Token(raw: 7)) == Token(raw: 7))
 precondition(package.main.applyText(
-    { value in TextValue(raw: value.raw + " callback") },
+    KioFn { value in TextValue(raw: value.raw + " callback") },
     "direct"
 ).raw == "direct callback")
 

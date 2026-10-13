@@ -11,9 +11,9 @@
 //! Unlike the two-level Rust rlib→bin split, the Swift runner produces a
 //! single cached binary from the whole build tree — the emitted
 //! `pkg.swift` / `host.swift` / `shapes.swift` / `ffi.swift` /
-//! `kio_runtime.swift` plus the synthesized `main.swift` driver. It takes
-//! two `swiftc` invocations (the package module, then the importing
-//! driver — see [`super`]), but both run on one miss and stage one
+//! `kio_runtime.swift`, nested shared support, and synthesized `main.swift` driver. It takes
+//! three `swiftc` invocations (support, package, then the importing
+//! driver — see [`super`]), but all run on one miss and stage one
 //! binary, so the cache stays **one-level**: a single binary keyed by
 //! `{swiftc identity, build flags (incl. the module name), all `.swift`
 //! source files}`. There is no chained sub-key and no second namespace.
@@ -42,7 +42,7 @@ pub struct BinInput {
     /// The path-sorted `(relative path, file bytes)` list for every
     /// `.swift` file the `swiftc` invocations read: the emitted
     /// `pkg.swift` / `host.swift` / `shapes.swift` / `ffi.swift` /
-    /// `kio_runtime.swift` and the synthesized `main.swift` driver. This
+    /// `kio_runtime.swift`, nested support, and synthesized `main.swift` driver. This
     /// is the content hash that invalidates the cached binary when the
     /// emitted sources or the driver change.
     pub build_files: Vec<(PathBuf, Vec<u8>)>,

@@ -259,11 +259,24 @@ parameter grouping. Preserve private guest-entry identity through internal
 generic, structural, nominal and existential transport; a representation
 adapter is not source-level pending work. Test retained, repeatedly invoked
 captured chains and executing type stages, with effectful non-tail controls.
-Classify actual native callback conversion and independent-artifact exchange
-separately from opaque transport that preserves the private value. Measure
+Test the public boundary as well: repeatedly export a generated callable,
+retain it unchanged in host storage, and reimport it through another instance.
+Compatible independent artifacts must preserve the same capability; native
+extraction and explicit host-authored wrappers remain distinct controls. Trace
+conversion ownership and execution order rather than cancelling adapters from
+equal types alone. A converter may execute host-provided code. A final type
+stage returning a function must not invoke that function prematurely.
+
+For shared callable support, test separately compiled packages linked against
+one common support module, including owner isolation and nominal privacy.
+Structural protocols must preserve their typed argument/result relationships
+and distinguish an ordinary result from a transfer without result-shaped tags.
+Keep execution state invocation-local, including reentry and exceptional exits.
+Measure
 shallow-call costs as well as deep-chain improvements; account for argument
-packing, ownership and dispatch allocations instead of counting only removed
-native stack frames. Public callable interfaces remain compatibility-gated.
+packing, ownership, retained conversion work and dispatch allocations instead
+of counting only removed native stack frames. Public callable interfaces remain
+compatibility-gated.
 
 ### Backend evidence boundary
 

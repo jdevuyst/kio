@@ -194,6 +194,13 @@ runtime/support naming: inspect emitted namespaces, types and operations,
 including host-facing codecs and protocols, for version tags. Classify numeric
 names by their meaning rather than treating every number as a version.
 
+For [shared callable support](../../../specs/backends/README.md#shared-callable-support),
+verify independently compiled artifacts link one compatible support module,
+retain distinct nominal owners and package captures, and use invocation-local
+execution state. Check public callback transport under the
+[call-depth guidance](../../topics/emit.md#generated-call-depth); common native
+types alone do not prove preserved conversion ownership or execution order.
+
 Report a finding when, despite compiling correctly, the facade:
 
 - flattens unrelated module- or declaration-owned nominal types into one

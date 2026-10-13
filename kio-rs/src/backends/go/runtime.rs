@@ -68,6 +68,54 @@ const RUNTIME_SUPPORT_BODY: &str = r#"
 // value, so `struct{}` stands in; every `()` lowers to `Unit{}`.
 type Unit = struct{}
 
+// Callable has one complete value domain, including explicit Unit. The alias
+// keeps nested callable signatures identical across generated packages.
+type Callable[A, R any] = interface { Call(A) R }
+
+// Func lifts a native callback. Extracting a guest's Call method is a native
+// execution boundary, rather than unchanged transport of the guest value.
+type Func[A, R any] func(A) R
+func (f Func[A, R]) Call(argument A) R { return f(argument) }
+
+// TypeCallable retains an executing type stage separately from value calls.
+type TypeCallable[R any] = interface { Invoke() R }
+type TypeFunc[R any] func() R
+func (f TypeFunc[R]) Invoke() R { return f() }
+
+// Structural built-in types let independent artifacts share the control
+// protocol without sharing their private body representations.
+type kioTailEntry = func(any) (bool, any, any, any, func(any) any, func(any) any)
+type kioTailCapability interface { KioTail() func(any) (bool, any, any, any, func(any) any, func(any) any) }
+
+type kioCallable[A, R any] struct { entry kioTailEntry }
+func (value kioCallable[A, R]) Call(argument A) R {
+	return kioNative[R](kioDrive(false, nil, value.entry, argument, nil, nil))
+}
+func (value kioCallable[A, R]) KioTail() func(any) (bool, any, any, any, func(any) any, func(any) any) { return value.entry }
+
+type kioTypeCallable[R any] struct { entry kioTailEntry }
+func (value kioTypeCallable[R]) Invoke() R {
+	return kioNative[R](kioDrive(false, nil, value.entry, nil, nil, nil))
+}
+func (value kioTypeCallable[R]) KioTail() func(any) (bool, any, any, any, func(any) any, func(any) any) { return value.entry }
+
+func kioCallableEntry[A, R any](value Callable[A, R]) kioTailEntry {
+	if guest, ok := value.(kioTailCapability); ok { return guest.KioTail() }
+	return func(argument any) (bool, any, any, any, func(any) any, func(any) any) {
+		return true, value.Call(kioNative[A](argument)), nil, nil, nil, nil
+	}
+}
+
+func kioTypeCallableEntry[R any](value TypeCallable[R]) kioTailEntry {
+	if guest, ok := value.(kioTailCapability); ok { return guest.KioTail() }
+	return func(_ any) (bool, any, any, any, func(any) any, func(any) any) {
+		return true, value.Invoke(), nil, nil, nil, nil
+	}
+}
+
+// An imported entry retains its native result codec once, not per tail hop.
+type kioBoundaryEntry struct { entry kioTailEntry; result func(any) any }
+
 type kioValueEntry func(any) kioStep
 type kioTypeEntry func() kioStep
 
@@ -100,24 +148,53 @@ func kioTailType(callee any) kioStep {
 }
 
 func kioComplete(step kioStep) any {
+	return kioDrive(kioAdvance(step))
+}
+
+// Only representation-result maps wait for completion. Host-supplied role
+// adapters remain observable and run in the original inner-to-outer order.
+func kioDrive(done bool, value, next, argument any, first, second func(any) any) any {
+	var results []func(any) any
+	for {
+		if second != nil { results = append(results, second) }
+		if first != nil { results = append(results, first) }
+		if done {
+			for index := len(results)-1; index >= 0; index-- { value = results[index](value) }
+			return value
+		}
+		done, value, next, argument, first, second = next.(kioTailEntry)(argument)
+	}
+}
+
+func kioExportStep(step kioStep, result func(any) any) (bool, any, any, any, func(any) any, func(any) any) {
+	done, value, next, argument, first, _ := kioAdvance(step)
+	if done { return true, result(value), nil, nil, nil, nil }
+	return false, nil, next, argument, first, result
+}
+
+// Run private steps without entering a foreign public driver. A boundary
+// transfers its exact native argument and queues its exact result conversion.
+func kioAdvance(step kioStep) (bool, any, any, any, func(any) any, func(any) any) {
 	for {
 		if step.invoke != nil {
 			step = step.invoke(step.owner, step.arguments)
 		} else if step.callee == nil {
-			return step.value
+			return true, step.value, nil, nil, nil, nil
+		} else if boundary, ok := step.callee.(*kioBoundaryEntry); ok {
+			return false, nil, boundary.entry, step.domain, boundary.result, nil
 		} else if step.typeStage {
 			switch entry := step.callee.(type) {
 			case kioTypeEntry:
 				step = entry()
 			default:
-				return entry.(func() any)()
+				return true, entry.(func() any)(), nil, nil, nil, nil
 			}
 		} else {
 			switch entry := step.callee.(type) {
 			case kioValueEntry:
 				step = entry(step.domain)
 			default:
-				return entry.(func(any) any)(step.domain)
+				return true, entry.(func(any) any)(step.domain), nil, nil, nil, nil
 			}
 		}
 	}
@@ -157,7 +234,18 @@ type TypeStage[I, R, H any] struct {
 
 // Invoke executes one stage with its abstract Value interface.
 func (stage TypeStage[I, R, H]) Invoke() R {
-	return stage.result(stage.host, kioApplyType(stage.value.kioIntoBody(stage.host)))
+	return stage.result(stage.host, kioApplyType(stage.kioIntoBody()))
+}
+
+func (stage TypeStage[I, R, H]) kioIntoBody() any {
+	return stage.value.kioIntoBody(stage.host)
+}
+
+func (stage TypeStage[I, R, H]) KioTail() func(any) (bool, any, any, any, func(any) any, func(any) any) {
+	result := func(value any) any { return stage.result(stage.host, value) }
+	return func(_ any) (bool, any, any, any, func(any) any, func(any) any) {
+		return kioExportStep(kioTailType(stage.kioIntoBody()), result)
+	}
 }
 
 // Erase transports the prepared value through an abstract host slot.

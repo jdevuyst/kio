@@ -544,7 +544,13 @@ fn python_static_namespace(name: &str) -> bool {
 fn swift_support_brand_collision(name: &str) -> bool {
     matches!(
         name,
-        "KioUnit" | "KioNative" | "KioNativeConstructor" | "Product" | "Sum"
+        "KioFn"
+            | "KioRuntime"
+            | "KioUnit"
+            | "KioNative"
+            | "KioNativeConstructor"
+            | "Product"
+            | "Sum"
     ) || [
         "KioFacade_",
         "KioHostType_",
@@ -618,6 +624,8 @@ mod tests {
             ("go", "kio_sum", "kio_sum"),
             ("swift", "csv_reconcile", "CsvReconcile"),
             ("swift", "foundation", "KioPkg_Foundation"),
+            ("swift", "kio_fn", "KioPkg_KioFn"),
+            ("swift", "kio_runtime", "KioPkg_KioRuntime"),
             ("swift", "kio_native", "KioPkg_KioNative"),
             (
                 "swift",
@@ -770,6 +778,8 @@ mod tests {
             ("go", "main"),
             ("go", "_"),
             ("swift", "Foundation"),
+            ("swift", "KioFn"),
+            ("swift", "KioRuntime"),
             ("swift", "KioNative"),
             ("swift", "KioNativeConstructor"),
             ("swift", "KioHostTypeIdentity_api__Box"),
