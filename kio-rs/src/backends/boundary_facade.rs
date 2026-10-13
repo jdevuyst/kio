@@ -73,13 +73,7 @@ use crate::sig::{
 };
 use crate::span::Span;
 
-/// Compatibility version of the backend-neutral named-shell codec.
-///
-/// This is spelling compatibility, not part of FacadeShellId's semantic
-/// identity.
-pub const PUBLIC_FACADE_CODEC_VERSION: u32 = 1;
-
-const PUBLIC_READABLE_CODEC_PREFIX: &str = "KioFacade_V";
+const PUBLIC_READABLE_CODEC_PREFIX: &str = "KioFacade_";
 const PUBLIC_EXACT_CODEC_PREFIX: &str = "KioFacadeX_";
 const PUBLIC_CODEC_MAGIC: &[u8; 3] = b"KFS";
 
@@ -187,8 +181,6 @@ impl FacadeShellId {
 
         let mut encoded = String::new();
         encoded.push_str(PUBLIC_READABLE_CODEC_PREFIX);
-        write!(&mut encoded, "{}_", PUBLIC_FACADE_CODEC_VERSION)
-            .expect("writing to String cannot fail");
         encoded.push_str(match self.kind {
             FacadeKind::Product => "Product_",
             FacadeKind::Sum => "Sum_",
@@ -227,7 +219,6 @@ impl FacadeShellId {
     pub fn encode_exact_fallback(&self) -> String {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(PUBLIC_CODEC_MAGIC);
-        bytes.extend_from_slice(&PUBLIC_FACADE_CODEC_VERSION.to_be_bytes());
         bytes.push(match self.kind {
             FacadeKind::Product => 0,
             FacadeKind::Sum => 1,
@@ -301,12 +292,6 @@ impl FacadeShellId {
     fn decode_readable(encoded: &str) -> Result<Self, PublicIdentityCodecError> {
         let mut cursor = TextCursor::new(encoded);
         cursor.consume(PUBLIC_READABLE_CODEC_PREFIX)?;
-        let codec_version = cursor.read_u32_frame()?;
-        if codec_version != PUBLIC_FACADE_CODEC_VERSION {
-            return Err(PublicIdentityCodecError::new(
-                "unsupported facade codec version",
-            ));
-        }
         let kind = if cursor.consume_if("Product_") {
             FacadeKind::Product
         } else if cursor.consume_if("Sum_") {
@@ -380,12 +365,6 @@ impl FacadeShellId {
         let mut cursor = ByteCursor::new(&bytes);
         if cursor.take(PUBLIC_CODEC_MAGIC.len())? != PUBLIC_CODEC_MAGIC {
             return Err(PublicIdentityCodecError::new("wrong facade codec magic"));
-        }
-        let codec_version = cursor.read_u32()?;
-        if codec_version != PUBLIC_FACADE_CODEC_VERSION {
-            return Err(PublicIdentityCodecError::new(
-                "unsupported facade codec version",
-            ));
         }
         let kind = match cursor.read_byte()? {
             0 => FacadeKind::Product,
@@ -583,11 +562,6 @@ impl<'a> TextCursor<'a> {
         Ok(bytes)
     }
 
-    fn read_u32_frame(&mut self) -> Result<u32, PublicIdentityCodecError> {
-        u32::try_from(self.read_decimal_frame()?)
-            .map_err(|_| PublicIdentityCodecError::new("facade codec version exceeds u32"))
-    }
-
     fn read_u64_frame(&mut self) -> Result<u64, PublicIdentityCodecError> {
         self.read_decimal_frame()
     }
@@ -696,14 +670,6 @@ impl<'a> ByteCursor<'a> {
 
     fn read_byte(&mut self) -> Result<u8, PublicIdentityCodecError> {
         Ok(self.take(1)?[0])
-    }
-
-    fn read_u32(&mut self) -> Result<u32, PublicIdentityCodecError> {
-        let bytes: [u8; 4] = self
-            .take(4)?
-            .try_into()
-            .expect("cursor returned the requested frame width");
-        Ok(u32::from_be_bytes(bytes))
     }
 
     fn read_u64(&mut self) -> Result<u64, PublicIdentityCodecError> {
@@ -7446,7 +7412,7 @@ mod tests {
         );
         let encoded = identity.encode_public();
         assert!(encoded.len() > long.len());
-        assert!(encoded.starts_with("KioFacade_V1_Product_K3_B"));
+        assert!(encoded.starts_with("KioFacade_Product_K3_B"));
         assert!(
             encoded
                 .bytes()
@@ -7481,35 +7447,37 @@ mod tests {
                 name: "A".to_owned(),
             }],
         );
-        assert_eq!(fixed.encode_public(), "KioFacade_V1_Product_K1_B1_A");
+        assert_eq!(fixed.encode_public(), "KioFacade_Product_K1_B1_A");
         assert_eq!(
-            FacadeShellId::decode_public("KioFacade_V1_Product_K1_B1_A")
+            FacadeShellId::decode_public("KioFacade_Product_K1_B1_A")
                 .expect("fixed readable codec vector"),
             fixed
         );
         assert_eq!(
             fixed.encode_exact_fallback(),
-            "KioFacadeX_4b46530000000100000000000000000100000000000000000141"
+            "KioFacadeX_4b465300000000000000000100000000000000000141"
         );
         assert_eq!(
-            FacadeShellId::decode_public(
-                "KioFacadeX_4b46530000000100000000000000000100000000000000000141"
-            )
-            .expect("fixed exact codec vector"),
+            FacadeShellId::decode_public("KioFacadeX_4b465300000000000000000100000000000000000141")
+                .expect("fixed exact codec vector"),
             fixed
         );
 
         for malformed in [
             "",
-            "KioFacade_V01_Product_K1_B1_A",
-            "KioFacade_V2_Product_K1_B1_A",
-            "KioFacade_V1_Product_K1_B2_A",
-            "KioFacade_V1_Product_K1_B2__q",
+            "KioFacade_V1_Product_K1_B1_A",
+            "KioFacade_Product_K01_B1_A",
+            "KioFacade_Product_K1_B01_A",
+            "KioFacade_Product_K18446744073709551616_B1_A",
+            "KioFacade_Product_K1_B2_A",
+            "KioFacade_Product_K1_B2__q",
             "KioFacadeX_0",
             "KioFacadeX_FF",
             "KioFacadeX_4b4653",
-            "KioFacadeX_4b46530000000200000000000000000100000000000000000141",
-            "KioFacadeX_4b465300000001000000000000000000ff",
+            "KioFacadeX_4b46530000000100000000000000000100000000000000000141",
+            "KioFacadeX_4b465302000000000000000100000000000000000141",
+            "KioFacadeX_4b4653000000000000000001ff",
+            "KioFacadeX_4b465300000000000000000000",
             "Product_extra",
         ] {
             assert!(

@@ -12,10 +12,10 @@ from opaque_substitution import (
 if TYPE_CHECKING:
     from opaque_substitution import (
         OpaqueSubstitutionHost,
-        KioShape_V1_M1_C3_apiR6_ExportN7_putLeft_U4_left as PutLeftLeft,
-        KioShape_V1_M1_C3_apiR6_ExportN7_putLeft_U4_right as PutLeftRight,
-        KioShape_V1_M1_C3_apiR6_ExportN8_putRight_U4_left as PutRightLeft,
-        KioShape_V1_M1_C3_apiR6_ExportN8_putRight_U4_right as PutRightRight,
+        KioShape_M1_C3_apiR6_ExportN7_putLeft_U4_left as PutLeftLeft,
+        KioShape_M1_C3_apiR6_ExportN7_putLeft_U4_right as PutLeftRight,
+        KioShape_M1_C3_apiR6_ExportN8_putRight_U4_left as PutRightLeft,
+        KioShape_M1_C3_apiR6_ExportN8_putRight_U4_right as PutRightRight,
     )
 
 T = TypeVar("T")

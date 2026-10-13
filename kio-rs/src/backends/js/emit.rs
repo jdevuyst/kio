@@ -4372,8 +4372,8 @@ mod tests {
             false
         );
         assert!(
-            js.contains("__kioNominals.get(\"V1_M1_C4_mainN6_Opaque\").wrap")
-                && js.contains("__kioNominals.get(\"V1_M1_C4_mainN6_Opaque\").unwrap"),
+            js.contains("__kioNominals.get(\"M1_C4_mainN6_Opaque\").wrap")
+                && js.contains("__kioNominals.get(\"M1_C4_mainN6_Opaque\").unwrap"),
             "{js}"
         );
         assert!(
@@ -5088,13 +5088,13 @@ mod tests {
         assert!(js.contains("const Foo = {"), "got: {js}");
         assert!(
             js.contains(
-                "mk_foo: (__kioPayload => (__kioOpaqueOut(\"V1_M1_C1_xN3_Foo\", __kioPayload)))"
+                "mk_foo: (__kioPayload => (__kioOpaqueOut(\"M1_C1_xN3_Foo\", __kioPayload)))"
             ),
             "got: {js}"
         );
         assert!(
             js.contains(
-                "un_foo: (__kioNominal => (__kioOpaqueIn(\"V1_M1_C1_xN3_Foo\", __kioNominal)))"
+                "un_foo: (__kioNominal => (__kioOpaqueIn(\"M1_C1_xN3_Foo\", __kioNominal)))"
             ),
             "got: {js}"
         );
@@ -5111,8 +5111,8 @@ mod tests {
         assert!(js.contains("mk_box: __kioPoly(() => ("), "got: {js}");
         assert!(js.contains("un_box: __kioPoly(() => ("), "got: {js}");
         assert!(
-            js.contains("__kioOpaqueOut(\"V1_M1_C1_xN3_Box\", __kioPayload)")
-                && js.contains("__kioOpaqueIn(\"V1_M1_C1_xN3_Box\", __kioNominal)"),
+            js.contains("__kioOpaqueOut(\"M1_C1_xN3_Box\", __kioPayload)")
+                && js.contains("__kioOpaqueIn(\"M1_C1_xN3_Box\", __kioNominal)"),
             "got: {js}"
         );
     }

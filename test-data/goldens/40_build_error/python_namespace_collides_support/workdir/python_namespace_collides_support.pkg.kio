@@ -1,0 +1,14 @@
+package python_namespace_collides_support;
+
+build {
+  cache "out/.kio-cache/";
+
+  target python {
+    out "out/python/";
+    namespace "kio_static"
+  }
+}
+
+bridge {
+  main
+}

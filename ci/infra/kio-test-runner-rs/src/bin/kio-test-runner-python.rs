@@ -779,7 +779,7 @@ def _role_adapter_identity(source_module, leaf, frame):
         words = source.strip("_").split("_")
         return "_" * leading + words[0] + "".join(word[:1].upper() + word[1:] for word in words[1:]) + "_" * trailing
     components = [render(source) for source in source_module.split("/") + [leaf]]
-    if (not source_module or components[0] == "V1"
+    if (not source_module
             or any(not component or not component.isascii()
                    or not component.isalnum() for component in components)):
         return frame
@@ -1759,7 +1759,7 @@ fn exact_host_type_frame(module: &str, leaf: &str) -> String {
     } else {
         module.split('/').collect::<Vec<_>>()
     };
-    let mut out = format!("V1_M{}_", segments.len());
+    let mut out = format!("M{}_", segments.len());
     for segment in segments {
         let segment = host_api::host_name_core(segment);
         out.push_str(&format!("C{}_{segment}", segment.len()));
@@ -1776,7 +1776,6 @@ fn python_role_adapter_identity(module: &str, leaf: &str) -> String {
         .map(host_api::host_name_core)
         .collect::<Vec<_>>();
     if module.is_empty()
-        || module.split('/').next() == Some("V1")
         || components.iter().any(|component| {
             component.is_empty() || !component.bytes().all(|byte| byte.is_ascii_alphanumeric())
         })
@@ -2169,6 +2168,23 @@ mod tests {
     }
 
     #[test]
+    fn host_type_frames_and_readable_adapters_keep_disjoint_source_paths() {
+        assert_eq!(exact_host_type_frame("api", "Box"), "M1_C3_apiN3_Box");
+        assert_eq!(
+            python_role_adapter_identity("m1/c3/api_n3", "Box"),
+            "m1_c3_apiN3_Box"
+        );
+        assert_eq!(
+            python_role_adapter_identity("api_", "Box"),
+            "M1_C4_api_N3_Box"
+        );
+        assert_ne!(
+            exact_host_type_frame("a/b", "Box"),
+            exact_host_type_frame("a_b", "Box")
+        );
+    }
+
+    #[test]
     fn host_body_descriptors_do_not_depend_on_function_leaf() {
         let string = protocol::HostRoleRef::new("testapi", "String", protocol::RoleFixture::String);
         let i64 = protocol::HostRoleRef::new("testapi", "I64", protocol::RoleFixture::I64);
@@ -2185,7 +2201,7 @@ mod tests {
             host_api::HostItemIdentity::new(string_concat.module, string_concat.leaf);
         assert_eq!(
             host_item_literal(&string_concat_identity, &string_concat, &host_types),
-            "('odd_module', 'addI128', 'string-concat', None, None, ['V1_M1_C7_testapiN6_String'], None)"
+            "('odd_module', 'addI128', 'string-concat', None, None, ['M1_C7_testapiN6_String'], None)"
         );
 
         let arithmetic = HostFnBinding {
@@ -2200,7 +2216,7 @@ mod tests {
             host_api::HostItemIdentity::new(arithmetic.module, arithmetic.leaf);
         assert_eq!(
             host_item_literal(&arithmetic_identity, &arithmetic, &host_types),
-            "(None, 'print', 'arithmetic', 'mul', 'i64', ['V1_M1_C7_testapiN3_I64'], None)"
+            "(None, 'print', 'arithmetic', 'mul', 'i64', ['M1_C7_testapiN3_I64'], None)"
         );
     }
 
@@ -2208,9 +2224,9 @@ mod tests {
     fn selected_role_host_types_get_distinct_exact_type_frames() {
         let contract = RunnerProtocol::HostTypeRoundtrip.contract();
         let literal = host_types_literal(contract.host_types);
-        assert!(literal.contains("'V1_M1_C7_testapiN5_Count', 'selected-role'"));
-        assert!(literal.contains("'V1_M1_C7_testapiN3_I32', 'selected-role'"));
-        assert!(literal.contains("'V1_M1_C7_testapiN6_String', 'selected-role'"));
+        assert!(literal.contains("'M1_C7_testapiN5_Count', 'selected-role'"));
+        assert!(literal.contains("'M1_C7_testapiN3_I32', 'selected-role'"));
+        assert!(literal.contains("'M1_C7_testapiN6_String', 'selected-role'"));
         assert_ne!(
             exact_host_type_frame("testapi", "Count"),
             exact_host_type_frame("testapi", "I32")

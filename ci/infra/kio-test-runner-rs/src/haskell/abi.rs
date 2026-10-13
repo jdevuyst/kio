@@ -456,7 +456,7 @@ impl Name {
     }
 
     fn render_fallback(&self) -> String {
-        let mut bytes = vec![0x01];
+        let mut bytes = Vec::new();
         self.encode(&mut bytes);
         format!(
             "{}_H{}__{}",
@@ -983,26 +983,26 @@ mod tests {
     fn fixed_vectors_match_the_normative_name_abi() {
         assert_eq!(
             module_fn(&ModuleItemId::new("a/b", "c")),
-            "mod_H0101010100000002000000016100000001620000000163__a_b__c"
+            "mod_H01010100000002000000016100000001620000000163__a_b__c"
         );
         assert_eq!(
             module_fn(&ModuleItemId::new("a", "b_c")),
-            "mod_H0101010100000001000000016100000003625f63__a__bC"
+            "mod_H01010100000001000000016100000003625f63__a__bC"
         );
         assert_eq!(host_field(&ModuleItemId::new("a/b", "f")), "host__a__b__f");
         assert_eq!(host_field(&ModuleItemId::new("a_b", "f")), "host__aB__f");
         assert_eq!(host_field(&ModuleItemId::new("", "f")), "host__f");
         assert_eq!(
             host_field(&ModuleItemId::new("a_/b", "g")),
-            "host_H010102010000000200000002615f00000001620000000167__a__b__g"
+            "host_H0102010000000200000002615f00000001620000000167__a__b__g"
         );
         assert_eq!(
             host_field(&ModuleItemId::new("a/_b", "g")),
-            "host_H01010201000000020000000161000000025f620000000167__a__b__g"
+            "host_H010201000000020000000161000000025f620000000167__a__b__g"
         );
         assert_eq!(
             export_wrapper(&ItemId::item("a", "foo__bar")),
-            "exp_H0101030100000001000000016100000008666f6f5f5f626172__a__fooBar"
+            "exp_H01030100000001000000016100000008666f6f5f5f626172__a__fooBar"
         );
         assert_eq!(
             export_wrapper(&ItemId::newtype_member("a", "Foo", "bar")),
@@ -1010,7 +1010,7 @@ mod tests {
         );
         assert_eq!(
             export_wrapper(&ItemId::newtype_member("api", "_Box", "mk")),
-            "exp_H010103020000000100000003617069000000045f426f78000000026d6b__api___Box__mk"
+            "exp_H0103020000000100000003617069000000045f426f78000000026d6b__api___Box__mk"
         );
         assert_eq!(
             export_wrapper(&ItemId::newtype_member("api", "A_b", "c")),
@@ -1023,19 +1023,19 @@ mod tests {
         assert_eq!(export_wrapper(&ItemId::item("a/b", "f")), "export__a__b__f");
         assert_eq!(
             export_wrapper(&ItemId::item("a_/b", "c")),
-            "exp_H010103010000000200000002615f00000001620000000163__a__b__c"
+            "exp_H0103010000000200000002615f00000001620000000163__a__b__c"
         );
         assert_eq!(
             export_wrapper(&ItemId::item("a/_b", "c")),
-            "exp_H01010301000000020000000161000000025f620000000163__a__b__c"
+            "exp_H010301000000020000000161000000025f620000000163__a__b__c"
         );
         assert_eq!(
             export_wrapper(&ItemId::newtype_member("api", "A_", "b")),
-            "exp_H01010302000000010000000361706900000002415f0000000162__api__A___b"
+            "exp_H010302000000010000000361706900000002415f0000000162__api__A___b"
         );
         assert_eq!(
             export_wrapper(&ItemId::newtype_member("api", "A", "_b")),
-            "exp_H0101030200000001000000036170690000000141000000025f62__api__A___b"
+            "exp_H01030200000001000000036170690000000141000000025f62__api__A___b"
         );
         assert_eq!(
             host_assoc("Greeter", "a/b", "Thing"),
@@ -1088,7 +1088,7 @@ mod tests {
         );
         assert_eq!(
             Name::RankNViewType(PatternId::Product(env)).render(),
-            "ViewT_H0130010100000001000000016d000000016802000000030100000002030000000304__m__h_ret_app2_cbarg3_cbret_P"
+            "ViewT_H30010100000001000000016d000000016802000000030100000002030000000304__m__h_ret_app2_cbarg3_cbret_P"
         );
 
         let sum = SumPatternId {
@@ -1099,19 +1099,19 @@ mod tests {
         let pattern = PatternId::Sum(sum.clone());
         assert_eq!(
             Name::RankNViewType(pattern.clone()).render(),
-            "ViewT_H0130020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "ViewT_H30020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
         assert_eq!(
             Name::RankNViewConstructor(pattern.clone()).render(),
-            "ViewC_H0131020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "ViewC_H31020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
         assert_eq!(
             Name::RankNNoMatch(sum).render(),
-            "NoMatch_H01320201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "NoMatch_H320201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
         assert_eq!(
             Name::RankNViewFunction(pattern).render(),
-            "view_H0133020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "view_H33020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
     }
 

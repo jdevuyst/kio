@@ -538,9 +538,7 @@ pub(crate) fn value_brand(namespace: &str) -> String {
 }
 
 fn python_static_namespace(name: &str) -> bool {
-    name.strip_prefix("kio_static_v").is_some_and(|version| {
-        !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
-    })
+    name == "kio_static"
 }
 
 fn swift_support_brand_collision(name: &str) -> bool {
@@ -605,10 +603,9 @@ mod tests {
             ("ts", "greeter", "greeter"),
             ("python", "match", "match"),
             ("python", "class", "__kio_pkg_class"),
-            ("python", "kio_static_v1", "__kio_pkg_kio_ustatic_uv1"),
-            ("python", "kio_static_v23", "__kio_pkg_kio_ustatic_uv23"),
-            ("python", "kio_static_v", "kio_static_v"),
-            ("python", "kio_static_v2_extra", "kio_static_v2_extra"),
+            ("python", "kio_static", "__kio_pkg_kio_ustatic"),
+            ("python", "kio_static_v1", "kio_static_v1"),
+            ("python", "kio_static_tools", "kio_static_tools"),
             ("java", "package", "__kio_pkg_package"),
             ("java", "shapes", "__kio_pkg_shapes"),
             ("rust", "two_part", "two_part"),
@@ -745,8 +742,8 @@ mod tests {
         for (backend, accepted) in [
             ("js", "pkg_name"),
             ("python", "pkg_name"),
-            ("python", "kio_static_v"),
-            ("python", "kio_static_v2_extra"),
+            ("python", "kio_static_v1"),
+            ("python", "kio_static_tools"),
             ("java", "com.acme.pkg"),
             ("rust", "acme-pkg"),
             ("go", "acme_pkg"),
@@ -767,8 +764,7 @@ mod tests {
         for (backend, rejected) in [
             ("js", "pkg/name"),
             ("python", "class"),
-            ("python", "kio_static_v1"),
-            ("python", "kio_static_v23"),
+            ("python", "kio_static"),
             ("java", "com.class.pkg"),
             ("rust", "match"),
             ("go", "main"),

@@ -43,18 +43,20 @@ target output directory:
 out/python/greeter.py
 out/python/greeter/__init__.pyi
 out/python/greeter/_kio_stub_0000.pyi
-out/python/kio_static_v1/core.pyi
+out/python/kio_static/core.pyi
 ```
 
 `__init__.pyi` is the public typed entry point. The `_kio_stub_*` files are
 private supporting shards; host code imports `greeter`, never a shard.
-The generated `kio_static_v1/` directory holds shared type definitions, with
+The generated `kio_static/` directory holds shared type definitions, with
 additional files as the package needs them. Keep the complete output tree when
 distributing typing support. Each build supplies everything its stubs need;
 there is no extra package to install and no shared runtime to load. A dynamic
-host can distribute just `greeter.py`. Names matching `kio_static_v[0-9]+`
-(with one or more ASCII digits) belong to this generated support and cannot
-be an explicit Python target namespace.
+host can distribute just `greeter.py`. Packages combined in one host build use
+the same support implementation. The exact name `kio_static` belongs to this
+generated support and cannot be an explicit Python target namespace. A source
+package named `kio_static` receives the default namespace
+`__kio_pkg_kio_ustatic`.
 
 The emitted module targets Python 3.10+ and uses only the standard library.
 

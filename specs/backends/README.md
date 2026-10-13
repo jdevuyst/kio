@@ -527,18 +527,19 @@ rules below. Two packages with the same source name disambiguate with this key.
 **Applies when:** generated type declarations are consumed only by the host's
 static checker, without being imported or linked by executable code.
 
-Package-independent structural type declarations may live in a shared,
-versioned support namespace. Separately generated packages can refer to the
-same declarations without requiring distinct copies of a generic type to be
+Package-independent structural type declarations may live in a shared support
+namespace. All generated packages in one host build use one consistent support
+implementation. Separately generated packages can refer to the same
+declarations without requiring distinct copies of a generic type to be
 interchangeable under the host checker's rules. This shares type descriptions,
 not executable code, package state, or nominal identities.
 
 Each artifact includes the complete support closure it needs. Generation and
 ordinary host imports require no other generated package, external support
 installation, or registry. Matching declaration identities have identical
-definitions; incompatible schemas use distinct support namespaces. Resolution
-must preserve both overlapping and disjoint declarations in either package
-search order, and must not silently substitute a conflicting definition.
+definitions. Resolution must preserve both overlapping and disjoint
+declarations in either package search order, and must not silently substitute
+a conflicting definition.
 Support namespaces cannot collide with configurable package namespaces.
 Package-owned nominal types remain distinct, including when used as parameters
 of shared structural types. Public package interfaces re-export the needed
@@ -629,9 +630,9 @@ handle or host type; its factory carries the brand.
 ### Coexistence
 
 Two packages whose namespaces differ load into one host program without
-symbol conflict — including artifacts emitted by different kio versions.
-Package-owned symbols remain namespace-qualified; shared static declarations
-obey the identity, versioning, and resolution rules above. Fixed member names
+symbol conflict. Packages combined in one build use one consistent support
+implementation. Package-owned symbols remain namespace-qualified; shared static
+declarations obey the identity and resolution rules above. Fixed member names
 for package-local support types therefore remain separate, while shared static
 definitions deliberately agree across packages. Neither arrangement merges
 package-owned nominal identities or runtime state. Two packages with the same
@@ -875,12 +876,11 @@ realizations.
 The common anonymous binary positional shells are `Product` and `Sum` on hosts
 that materialize names. When a backend materializes a named non-anonymous
 shell, the shared reversible readable codec is:
-`KioFacade_V1_<Kind>_K<arity>_...`. Each key frame records its role and exact
+`KioFacade_<Kind>_K<arity>_...`. Each key frame records its role and exact
 content: `B` plus one escaped component for a bare name, `Q` plus all framed
 module components and the leaf for a qualified name, or `P<index>_` for a
 positional key. Component frames carry their escaped byte length; underscores
 and non-alphanumeric UTF-8 bytes are escaped, so concatenation is injective.
-The codec is versioned spelling compatibility, not semantic identity.
 
 A backend may instead use the shared reversible exact-frame spelling
 `KioFacadeX_<hex>` when its identifier syntax cannot carry the readable form.

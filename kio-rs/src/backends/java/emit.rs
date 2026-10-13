@@ -1885,7 +1885,7 @@ fn java_facade_shell_name(shell: &FacadeShellId) -> String {
             FacadeKind::Sum => "Sum",
         };
         return format!(
-            "KioFacade_V1_{kind}_Positional_K{}",
+            "KioFacade_{kind}_Positional_K{}",
             shell.ordered_keys().len()
         );
     }
@@ -1895,10 +1895,7 @@ fn java_facade_shell_name(shell: &FacadeShellId) -> String {
             FacadeKind::Product => "Product",
             FacadeKind::Sum => "Sum",
         };
-        Ok::<_, std::convert::Infallible>(format!(
-            "KioFacade_V1_{kind}_H{}",
-            fnv1a_64_hex(identity)
-        ))
+        Ok::<_, std::convert::Infallible>(format!("KioFacade_{kind}_H{}", fnv1a_64_hex(identity)))
     })
     .unwrap_or_else(|never| match never {})
 }
@@ -2844,7 +2841,7 @@ mod tests {
         let bounded = java_facade_shell_name(&long_shell);
         assert_eq!(
             bounded,
-            format!("KioFacade_V1_Product_H{}", fnv1a_64_hex(&exact_identity))
+            format!("KioFacade_Product_H{}", fnv1a_64_hex(&exact_identity))
         );
         assert!(bounded.len() <= READABLE_MINT_MAX_LEN);
     }
@@ -4320,10 +4317,7 @@ mod tests {
             bounded, rank_n,
             "alpha-renaming and source-site names do not change the stage"
         );
-        assert_eq!(
-            exact, "V1;e0;q*fb0;b0;",
-            "exact shape identity is unchanged"
-        );
+        assert_eq!(exact, "e0;q*fb0;b0;", "exact shape identity is unchanged");
         assert_eq!(bounded, "KioForall_Type_Fn_T0_T0");
         assert_eq!(
             emitted
@@ -4341,7 +4335,7 @@ mod tests {
             let source = format!("module api; host fn use_stage(f: [T] ({domain}) -> T) -> .;");
             let package = build_package(&[&source], "bridge { api; }");
             let emitted = lower_package(&package, "pkg", None).expect("emit wide Java stage");
-            let identity = format!("V1;e0;q*f{}b0;b0;", "pb0;".repeat(width - 1));
+            let identity = format!("e0;q*f{}b0;b0;", "pb0;".repeat(width - 1));
             let name = format!("KioForall_H{}", fnv1a_64_hex(&identity));
             assert!(name.len() <= crate::backends::skin::READABLE_MINT_MAX_LEN);
             assert!(

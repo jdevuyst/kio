@@ -11,8 +11,7 @@ use std::fmt::Write as _;
 
 use crate::backends::boundary_facade::{FacadeShellId, SemanticKey};
 
-const SEMANTIC_KEY_CODEC_PREFIX: &str = "KioKey_V";
-const SEMANTIC_KEY_CODEC_VERSION: u64 = 1;
+const SEMANTIC_KEY_CODEC_PREFIX: &str = "KioKey_";
 
 /// The public role in which a semantic product or sum key is rendered.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -99,7 +98,7 @@ pub(crate) fn encode_semantic_key(role: GoSemanticKeyRole, key: &SemanticKey) ->
             crate::backends::public_names::host_name_core(name)
         }
         SemanticKey::Bare { name } => {
-            let mut encoded = framed_prefix();
+            let mut encoded = SEMANTIC_KEY_CODEC_PREFIX.to_owned();
             write_component_frame(&mut encoded, 'B', name);
             encoded
         }
@@ -107,7 +106,7 @@ pub(crate) fn encode_semantic_key(role: GoSemanticKeyRole, key: &SemanticKey) ->
             module_segments,
             name,
         } => {
-            let mut encoded = framed_prefix();
+            let mut encoded = SEMANTIC_KEY_CODEC_PREFIX.to_owned();
             write!(&mut encoded, "Q{}_", module_segments.len())
                 .expect("writing to String cannot fail");
             for segment in module_segments {
@@ -289,10 +288,6 @@ impl<S, N, O> ScopeClaimCollision<S, N, O> {
     }
 }
 
-fn framed_prefix() -> String {
-    format!("{SEMANTIC_KEY_CODEC_PREFIX}{SEMANTIC_KEY_CODEC_VERSION}_")
-}
-
 fn is_natural_bare_spelling(role: GoSemanticKeyRole, spelling: &str) -> bool {
     is_exported_ascii_go_identifier(spelling)
         && !spelling.starts_with(SEMANTIC_KEY_CODEC_PREFIX)
@@ -328,12 +323,6 @@ fn parse_canonical_decimal(digits: &str) -> Result<u64, GoNamingError> {
 fn decode_framed_semantic_key(spelling: &str) -> Result<SemanticKey, GoNamingError> {
     let mut cursor = TextCursor::new(spelling);
     cursor.consume_bytes(SEMANTIC_KEY_CODEC_PREFIX.as_bytes())?;
-    let version = cursor.read_decimal_frame()?;
-    if version != SEMANTIC_KEY_CODEC_VERSION {
-        return Err(GoNamingError::new(
-            "unsupported Go semantic-key codec version",
-        ));
-    }
 
     match cursor.peek() {
         Some(b'B') => {
@@ -633,14 +622,17 @@ mod tests {
 
     #[test]
     fn framed_prefix_is_reserved_to_avoid_a_natural_bare_collision() {
-        let key = bare("Kio_key_v1_b0_");
-        let encoded = encode_semantic_key(GoSemanticKeyRole::ProductField, &key);
-        assert_eq!(encoded, "KioKeyV1B0_");
-        assert!(!encoded.starts_with(SEMANTIC_KEY_CODEC_PREFIX));
-        assert_eq!(
-            decode_semantic_key(GoSemanticKeyRole::ProductField, &encoded),
-            Ok(key)
-        );
+        for role in [GoSemanticKeyRole::ProductField, GoSemanticKeyRole::SumArm] {
+            for (source, expected) in [
+                ("Kio_key_", "KioKey_B8_KioKey_u"),
+                ("Kio_key_b0_", "KioKeyB0_"),
+            ] {
+                let key = bare(source);
+                let encoded = encode_semantic_key(role, &key);
+                assert_eq!(encoded, expected);
+                assert_eq!(decode_semantic_key(role, &encoded), Ok(key));
+            }
+        }
     }
 
     #[test]
@@ -702,24 +694,24 @@ mod tests {
             );
         }
 
-        assert!(decode_semantic_key(GoSemanticKeyRole::ProductField, "KioKey_V1_B4__xff").is_err());
+        assert!(decode_semantic_key(GoSemanticKeyRole::ProductField, "KioKey_B4__xff").is_err());
     }
 
     #[test]
     fn malformed_and_noncanonical_frames_are_rejected() {
         let malformed = [
-            "KioKey_V_B0_",
-            "KioKey_V01_B0_",
-            "KioKey_V2_B0_",
-            "KioKey_V1_X0_",
-            "KioKey_V1_B1_",
-            "KioKey_V1_B2__q",
-            "KioKey_V1_B4__xFF",
-            "KioKey_V1_B4__x5f",
-            "KioKey_V1_B3_Foo",
-            "KioKey_V1_B0_x",
-            "KioKey_V1_Q1_N1_A",
-            "KioKey_V1_Q0_N1_Ax",
+            "KioKey_V1_B1_A",
+            "KioKey_B01_A",
+            "KioKey_Q01_M1_aN1_A",
+            "KioKey_X0_",
+            "KioKey_B1_",
+            "KioKey_B2__q",
+            "KioKey_B4__xFF",
+            "KioKey_B4__x5f",
+            "KioKey_B3_Foo",
+            "KioKey_B0_x",
+            "KioKey_Q1_N1_A",
+            "KioKey_Q0_N1_Ax",
         ];
 
         for spelling in malformed {
@@ -741,10 +733,10 @@ mod tests {
             assert!(decode_semantic_key(role, &format!("{prefix}{overflow}")).is_err());
         }
         for spelling in [
-            format!("KioKey_V{overflow}_B0_"),
-            format!("KioKey_V1_B{overflow}_"),
-            "KioKey_V1_B18446744073709551615_".to_owned(),
-            format!("KioKey_V1_Q{overflow}_N0_"),
+            format!("KioKey_Q1_M{overflow}_N0_"),
+            format!("KioKey_B{overflow}_"),
+            "KioKey_B18446744073709551615_".to_owned(),
+            format!("KioKey_Q{overflow}_N0_"),
         ] {
             assert!(
                 decode_semantic_key(GoSemanticKeyRole::ProductField, &spelling).is_err(),

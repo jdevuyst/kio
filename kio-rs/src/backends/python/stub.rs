@@ -1928,7 +1928,7 @@ fn prepared_error(message: &str) -> EmitError {
 }
 
 fn exact_qtn_frame(name: &QualifiedTypeName) -> String {
-    let mut out = format!("V1_M{}_", name.module_segments().len());
+    let mut out = format!("M{}_", name.module_segments().len());
     for segment in name.module_segments() {
         let segment = host_name_core(segment);
         out.push_str(&format!("C{}_{segment}", segment.len()));
@@ -1939,7 +1939,7 @@ fn exact_qtn_frame(name: &QualifiedTypeName) -> String {
 }
 
 fn exact_site_frame(site: PreparedBoundaryCallableSite<'_>) -> String {
-    let mut out = format!("V1_M{}_", site.site().module_segments().len());
+    let mut out = format!("M{}_", site.site().module_segments().len());
     for segment in site.site().module_segments() {
         let segment = host_name_core(segment);
         out.push_str(&format!("C{}_{segment}", segment.len()));
@@ -3112,8 +3112,8 @@ mod tests {
 
         assert!(stub.contains("def make(self) -> KioFn[KioShape_"), "{stub}");
         assert!(
-            stub.contains("    left: KioHost_V1_M1_C4_mainN3_I32\n")
-                && stub.contains("    right: KioHost_V1_M1_C4_mainN3_I32\n"),
+            stub.contains("    left: KioHost_M1_C4_mainN3_I32\n")
+                && stub.contains("    right: KioHost_M1_C4_mainN3_I32\n"),
             "{stub}"
         );
     }
@@ -3262,7 +3262,7 @@ mod tests {
         );
         let first = lower_package_to_stub_package(&first, "one").expect("first stub");
         let second = lower_package_to_stub_package(&second, "two").expect("second stub");
-        assert!(first.companions.contains_key("kio_static_v1/core.pyi"));
+        assert!(first.companions.contains_key("kio_static/core.pyi"));
         assert!(second.companions.len() > first.companions.len());
         for (path, bytes) in &first.companions {
             assert_eq!(
@@ -3271,7 +3271,7 @@ mod tests {
                 "independent bytes: {path}"
             );
             assert!(!path.ends_with("__init__.pyi"));
-            assert!(!bytes.contains("KioHost_V1_"));
+            assert!(!bytes.contains("KioHost_M"));
             assert!(!bytes.contains("alpha"));
             assert!(!bytes.contains("beta"));
         }
@@ -3279,7 +3279,7 @@ mod tests {
             first
                 .files
                 .values()
-                .any(|file| file.contains("from kio_static_v1."))
+                .any(|file| file.contains("from kio_static."))
         );
     }
 
@@ -3319,15 +3319,12 @@ mod tests {
         );
         let artifact = render_stub_artifact(&pkg, "one", None).expect("declaration views");
         for (alias, target) in [
-            ("KioHostType_api__Box", "KioHostType_V1_M1_C3_apiN3_Box"),
-            ("KioHostMk_api__Box", "KioHostMk_V1_M1_C3_apiN3_Box"),
-            (
-                "KioNewtype_api__Wrapper",
-                "KioNewtype_V1_M1_C3_apiN7_Wrapper",
-            ),
+            ("KioHostType_api__Box", "KioHostType_M1_C3_apiN3_Box"),
+            ("KioHostMk_api__Box", "KioHostMk_M1_C3_apiN3_Box"),
+            ("KioNewtype_api__Wrapper", "KioNewtype_M1_C3_apiN7_Wrapper"),
             (
                 "KioNewtypeMk_api__Wrapper",
-                "KioNewtypeMk_V1_M1_C3_apiN7_Wrapper",
+                "KioNewtypeMk_M1_C3_apiN7_Wrapper",
             ),
         ] {
             assert_eq!(artifact.public_aliases[alias], target);
@@ -3339,7 +3336,7 @@ mod tests {
             assert!(!artifact.source.contains(&format!("class {alias}")));
         }
         assert!(artifact.source.contains(
-            "KioNewtype_api__Wrapper: __kio_typing__.TypeAlias = KioNewtype_V1_M1_C3_apiN7_Wrapper[KioHost_V1_M1_C3_apiN5_Token, KioNewtypeParam_V1_M1_C3_apiN7_Wrapper_0]"
+            "KioNewtype_api__Wrapper: __kio_typing__.TypeAlias = KioNewtype_M1_C3_apiN7_Wrapper[KioHost_M1_C3_apiN5_Token, KioNewtypeParam_M1_C3_apiN7_Wrapper_0]"
         ));
         let (runtime, _) =
             super::super::emit::lower_package(&pkg, "one").expect("paired declarations");
@@ -3379,7 +3376,7 @@ mod tests {
         ));
         let (runtime, _) = super::super::emit::lower_package(&pkg, "one").expect("paired views");
         assert!(runtime.contains(&format!("{alias} = {}\n", original.public_aliases[alias])));
-        assert!(!runtime.contains("import kio_static_v1"));
+        assert!(!runtime.contains("import kio_static"));
     }
 
     #[test]
@@ -3469,8 +3466,7 @@ mod tests {
         );
         assert!(
             stub.contains("def main(self) -> _GreeterHost_main[KioProtocol_HostRoot_B0]: ...")
-                && stub
-                    .contains("def create_greeter(host: GreeterHost[KioHost_V1_M1_C4_mainN3_Str])"),
+                && stub.contains("def create_greeter(host: GreeterHost[KioHost_M1_C4_mainN3_Str])"),
             "{stub}"
         );
 
@@ -3499,7 +3495,7 @@ mod tests {
 
         assert!(stub.contains("right: KioForall_"), "{stub}");
         assert!(
-            stub.contains("class KioNewtype_V1_M1_C4_mainN4_Pack(__kio_typing__.Generic[")
+            stub.contains("class KioNewtype_M1_C4_mainN4_Pack(__kio_typing__.Generic[")
                 && !stub.contains("    Pack: object\n"),
             "{stub}"
         );
@@ -3602,8 +3598,8 @@ mod tests {
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
-        let str_root = "KioHost_V1_M1_C4_mainN3_Str";
-        let i64_root = "KioHost_V1_M1_C4_mainN3_I64";
+        let str_root = "KioHost_M1_C4_mainN3_Str";
+        let i64_root = "KioHost_M1_C4_mainN3_I64";
         assert!(
             stub.contains("class GreeterHost(__kio_typing__.Protocol["),
             "{stub}"
@@ -3703,20 +3699,17 @@ mod tests {
             stub.contains("__kio_typing__.TypedDict, __kio_typing__.Generic["),
             "{stub}"
         );
-        assert!(stub.contains("left: KioHost_V1_M1_C4_mainN3_I32"), "{stub}");
-        assert!(
-            stub.contains("right: KioHost_V1_M1_C4_mainN3_Str"),
-            "{stub}"
-        );
+        assert!(stub.contains("left: KioHost_M1_C4_mainN3_I32"), "{stub}");
+        assert!(stub.contains("right: KioHost_M1_C4_mainN3_Str"), "{stub}");
         assert!(
             stub.contains(
-                "tag: __kio_typing__.Literal['left']\n    value: KioHost_V1_M1_C4_mainN3_I32"
+                "tag: __kio_typing__.Literal['left']\n    value: KioHost_M1_C4_mainN3_I32"
             ),
             "{stub}"
         );
         assert!(
             stub.contains(
-                "tag: __kio_typing__.Literal['right']\n    value: KioHost_V1_M1_C4_mainN3_Str"
+                "tag: __kio_typing__.Literal['right']\n    value: KioHost_M1_C4_mainN3_Str"
             ),
             "{stub}"
         );
@@ -3741,13 +3734,13 @@ mod tests {
             .lines()
             .find(|line| line.contains("def current"))
             .expect("public projector");
-        let root = "KioHost_V1_M1_C4_mainN3_I32";
+        let root = "KioHost_M1_C4_mainN3_I32";
         assert!(
             constructor.contains(&format!("p0: {root}")),
             "{constructor}\n\n{stub}"
         );
         assert!(
-            constructor.contains("-> KioNewtype_V1_M1_C4_mainN7_Counter["),
+            constructor.contains("-> KioNewtype_M1_C4_mainN7_Counter["),
             "{constructor}\n\n{stub}"
         );
         let carrier = constructor
@@ -3777,10 +3770,10 @@ mod tests {
         );
         let stub = lower_package_to_stub(&pkg, "facade").expect("render");
         assert!(
-            stub.contains("class KioNewtypeMk_V1_M1_C4_mainN10__WordBox__:"),
+            stub.contains("class KioNewtypeMk_M1_C4_mainN10__WordBox__:"),
             "{stub}"
         );
-        assert!(stub.contains("KioNewtype_V1_M1_C4_mainN10__WordBox__: __kio_typing__.TypeAlias = KioApply1[KioNewtypeMk_V1_M1_C4_mainN10__WordBox__, "), "{stub}");
+        assert!(stub.contains("KioNewtype_M1_C4_mainN10__WordBox__: __kio_typing__.TypeAlias = KioApply1[KioNewtypeMk_M1_C4_mainN10__WordBox__, "), "{stub}");
         assert!(stub.contains("def wrapWord("), "{stub}");
         assert!(stub.contains("def unwrapWord("), "{stub}");
         assert!(!stub.contains("\n    _Word_box__:"), "{stub}");
@@ -3798,8 +3791,8 @@ mod tests {
         let stub = lower_package_to_stub(&pkg, "facade").expect("render");
         let declarations = split_python_stub_declarations(&stub).expect("declarations");
         for (frame, expected, wrong) in [
-            ("V1_M1_C4_leftN3_Box", "Left wrapper.", "Right wrapper."),
-            ("V1_M1_C5_rightN3_Box", "Right wrapper.", "Left wrapper."),
+            ("M1_C4_leftN3_Box", "Left wrapper.", "Right wrapper."),
+            ("M1_C5_rightN3_Box", "Right wrapper.", "Left wrapper."),
         ] {
             let marker = declarations
                 .iter()
@@ -3954,7 +3947,7 @@ mod tests {
             ) && stub.contains(
                 "def right(self) -> _GreeterHost_right[KioProtocol_HostRoot_B0, KioProtocol_HostRoot_B1]: ..."
             ) && stub.contains(
-                "def create_greeter(host: GreeterHost[KioHost_V1_M1_C4_leftN3_I32, KioHost_V1_M1_C5_rightN3_I32])"
+                "def create_greeter(host: GreeterHost[KioHost_M1_C4_leftN3_I32, KioHost_M1_C5_rightN3_I32])"
             ),
             "{stub}"
         );
@@ -3999,7 +3992,7 @@ mod tests {
             .expect("constructor return")
             .1
             .trim_end_matches(": ...");
-        let root = "KioHost_V1_M1_C4_mainN3_I32";
+        let root = "KioHost_M1_C4_mainN3_I32";
         assert!(
             make_only.contains(&format!("p0: {root}")),
             "{make_only}\n\n{stub}"
@@ -4073,12 +4066,12 @@ mod tests {
             .expect("polymorphic projector");
         assert!(
             make_box.contains("p0: KioType_")
-                && make_box.contains("-> KioApply1[KioNewtypeMk_V1_M1_C4_mainN3_Box[")
+                && make_box.contains("-> KioApply1[KioNewtypeMk_M1_C4_mainN3_Box[")
                 && !make_box.contains("object"),
             "{make_box}\n\n{stub}"
         );
         assert!(
-            read_box.contains("p0: KioApply1[KioNewtypeMk_V1_M1_C4_mainN3_Box[")
+            read_box.contains("p0: KioApply1[KioNewtypeMk_M1_C4_mainN3_Box[")
                 && read_box.contains("], /) -> KioType_")
                 && !read_box.contains("object"),
             "{read_box}\n\n{stub}"
@@ -4094,12 +4087,12 @@ mod tests {
             .expect("existential projector");
         assert!(
             make_pack.contains("p0: KioShape_")
-                && make_pack.contains("-> KioNewtype_V1_M1_C4_mainN4_Pack[")
+                && make_pack.contains("-> KioNewtype_M1_C4_mainN4_Pack[")
                 && !make_pack.contains("object"),
             "{make_pack}\n\n{stub}"
         );
         assert!(
-            open_pack.contains("p0: KioNewtype_V1_M1_C4_mainN4_Pack[")
+            open_pack.contains("p0: KioNewtype_M1_C4_mainN4_Pack[")
                 && open_pack.contains("-> KioForall_")
                 && !open_pack.contains("object"),
             "{open_pack}\n\n{stub}"
@@ -4159,7 +4152,7 @@ mod tests {
         assert!(
             signature("roundVisible").contains(&format!("p0: {visible}"))
                 && stub.contains(&format!("class {visible_head}(__kio_typing__.Generic["))
-                && !stub.contains("    ComptimeBool: KioHost_V1_M1_C7_visibleN3_I32\n"),
+                && !stub.contains("    ComptimeBool: KioHost_M1_C7_visibleN3_I32\n"),
             "{stub}"
         );
         assert!(
@@ -4183,11 +4176,11 @@ mod tests {
             "{stub}"
         );
         assert!(
-            signature("roundHost").contains("p0: KioHost_V1_M1_C7_hostishN12_ComptimeBool")
+            signature("roundHost").contains("p0: KioHost_M1_C7_hostishN12_ComptimeBool")
                 && signature("roundHost")
-                    .ends_with("-> KioHost_V1_M1_C7_hostishN12_ComptimeBool: ...")
-                && signature("roundAlias").contains("p0: KioHost_V1_M1_C8_aliasingN3_I32")
-                && signature("roundAlias").ends_with("-> KioHost_V1_M1_C8_aliasingN3_I32: ..."),
+                    .ends_with("-> KioHost_M1_C7_hostishN12_ComptimeBool: ...")
+                && signature("roundAlias").contains("p0: KioHost_M1_C8_aliasingN3_I32")
+                && signature("roundAlias").ends_with("-> KioHost_M1_C8_aliasingN3_I32: ..."),
             "{stub}"
         );
         let wrapped = return_type(signature("roundWrapped"));
@@ -4195,7 +4188,7 @@ mod tests {
         assert!(
             signature("roundWrapped").contains(&format!("p0: {wrapped}"))
                 && stub.contains(&format!("class {wrapped_head}(__kio_typing__.Generic["))
-                && !stub.contains("    Wrapped: KioHost_V1_M1_C7_hostishN12_ComptimeBool\n"),
+                && !stub.contains("    Wrapped: KioHost_M1_C7_hostishN12_ComptimeBool\n"),
             "{stub}"
         );
     }
@@ -4279,17 +4272,14 @@ mod tests {
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
 
-        for binding in [
-            "KioHost_V1_M1_C3_apiN5_Count",
-            "KioHost_V1_M1_C3_apiN5_Token",
-        ] {
+        for binding in ["KioHost_M1_C3_apiN5_Count", "KioHost_M1_C3_apiN5_Token"] {
             assert!(
                 stub.contains(&format!("{binding} = __kio_typing__.TypeVar")),
                 "missing exact root binding {binding}:\n{stub}"
             );
         }
         assert!(
-            stub.contains("class KioHostType_V1_M1_C3_apiN3_Box"),
+            stub.contains("class KioHostType_M1_C3_apiN3_Box"),
             "missing exact parameterized carrier:\n{stub}"
         );
         assert!(
@@ -4327,9 +4317,9 @@ mod tests {
             "bridge { api; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
-        let root = "KioHost_V1_M1_C3_apiN6_String";
+        let root = "KioHost_M1_C3_apiN6_String";
         let host_root = "KioProtocol_Host_api_B0";
-        let witness = "KioNewtypeMk_V1_M1_C3_apiN3_Box";
+        let witness = "KioNewtypeMk_M1_C3_apiN3_Box";
 
         assert!(
             stub.contains(&format!("class {witness}(__kio_typing__.Generic[{root}])")),
@@ -4340,7 +4330,7 @@ mod tests {
                 .filter(|line| line.contains("def round"))
                 .any(|line| {
                     line.contains(&format!(
-                        "KioApply1[KioNewtypeMk_V1_M1_C3_apiN7_Functor[{host_root}], {witness}[{host_root}]]"
+                        "KioApply1[KioNewtypeMk_M1_C3_apiN7_Functor[{host_root}], {witness}[{host_root}]]"
                     ))
                 }),
             "higher-kinded application lost the exact constructor selection:\n{stub}"
@@ -4368,14 +4358,14 @@ mod tests {
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
-        let frame = "V1_M1_C4_mainN9_Recursive";
+        let frame = "M1_C4_mainN9_Recursive";
 
         assert!(
             stub.contains(&format!("class KioNewtype_{frame}(__kio_typing__.Generic[")),
             "recursive nominal is absent:\n{stub}"
         );
         assert!(
-            stub.contains(&format!("tag: __kio_typing__.Literal['right']\n    value: KioNewtype_{frame}[KioHost_V1_M1_C4_mainN3_I32]")),
+            stub.contains(&format!("tag: __kio_typing__.Literal['right']\n    value: KioNewtype_{frame}[KioHost_M1_C4_mainN3_I32]")),
             "recursive sum leaf lost the exact nominal/root:\n{stub}"
         );
         assert_eq!(
@@ -4466,11 +4456,11 @@ v(2) {
             .expect("render Python runtime with sealed history");
 
         for declaration in [
-            "KioHost_V1_M1_C3_apiN4_Live = __kio_typing__.TypeVar",
-            "KioHostParam_V1_M1_C3_apiN7_LiveBox_0 = __kio_typing__.TypeVar",
-            "class KioHostType_V1_M1_C3_apiN7_LiveBox(",
-            "KioNewtypeParam_V1_M1_C3_apiN9_LiveToken_0 = __kio_typing__.TypeVar",
-            "KioNewtype_V1_M1_C3_apiN9_LiveToken: __kio_typing__.TypeAlias = KioApply1[",
+            "KioHost_M1_C3_apiN4_Live = __kio_typing__.TypeVar",
+            "KioHostParam_M1_C3_apiN7_LiveBox_0 = __kio_typing__.TypeVar",
+            "class KioHostType_M1_C3_apiN7_LiveBox(",
+            "KioNewtypeParam_M1_C3_apiN9_LiveToken_0 = __kio_typing__.TypeVar",
+            "KioNewtype_M1_C3_apiN9_LiveToken: __kio_typing__.TypeAlias = KioApply1[",
             "def KioHostIn_api_Live(",
             "def KioHostOut_api_Live(",
             "def current(",
@@ -4497,7 +4487,7 @@ v(2) {
         for declaration in [
             "\"name\":\"Live\"",
             "\"name\":\"Live_box\"",
-            "\"frame\":\"V1_M1_C3_apiN7_LiveBox\"",
+            "\"frame\":\"M1_C3_apiN7_LiveBox\"",
             "\"name\":\"Live_token\"",
             "\"name\":\"current\"",
             "\"name\":\"echo\"",

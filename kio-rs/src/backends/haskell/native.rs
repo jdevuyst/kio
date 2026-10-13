@@ -2738,10 +2738,12 @@ impl NativeExprEmitter<'_> {
                 payload,
                 variant,
                 variants,
+                synth_ty,
                 ..
             } => {
                 let (binds, p) = self.emit_pure_value_binding(payload)?;
-                Ok(format!("({binds}{})", sum_inject(&p, *variant, *variants)))
+                let injected = self.emit_sum_inject(&p, *variant, *variants, synth_ty)?;
+                Ok(format!("({binds}{injected})"))
             }
             // N-arm match on a right-nested `Either` chain → nested `case`.
             Expr::EnrichedMatch {
@@ -3089,13 +3091,12 @@ impl NativeExprEmitter<'_> {
                 payload,
                 variant,
                 variants,
+                synth_ty,
                 ..
             } => {
                 let (binds, payload) = self.emit_value_binding(payload)?;
-                Ok(format!(
-                    "({binds}kioPure ({}))",
-                    sum_inject(&payload, *variant, *variants)
-                ))
+                let injected = self.emit_sum_inject(&payload, *variant, *variants, synth_ty)?;
+                Ok(format!("({binds}kioPure ({injected}))"))
             }
             Expr::EnrichedProject {
                 target,
@@ -3191,6 +3192,35 @@ impl NativeExprEmitter<'_> {
                 expr_kind(other)
             ))),
         }
+    }
+
+    fn emit_sum_inject(
+        &self,
+        payload: &str,
+        variant: usize,
+        variants: usize,
+        ty: &Type<Routed>,
+    ) -> Result<String, EmitError> {
+        if !self
+            .ctx
+            .native_type_contains_forall(ty, &self.type_params, Some(self.module_key))
+        {
+            return Ok(sum_inject(payload, variant, variants));
+        }
+        // A demanded polymorphic binder is instantiated by an untyped Left
+        // or Right application even with an enclosing sum type annotation.
+        let slots = Type::right_spine_sum(ty)
+            .into_iter()
+            .map(|slot| {
+                self.ctx
+                    .render_direct_generic_type(slot, &self.type_params, Some(self.module_key))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(slots.len(), variants, "routed injection sum arity");
+        Ok(format!(
+            "({})",
+            super::emit::raw_sum_expr(&slots, variant, payload, self.ctx.shapes.standard_names())
+        ))
     }
 
     /// Evaluate an argument-position sub-expression to a native **value**,

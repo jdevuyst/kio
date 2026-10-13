@@ -434,7 +434,7 @@ package made public:
   directly.
 
 The opaque and one-member forms use a declaration-owned
-`KioNewtype_V1_...` carrier whose name encodes the complete module-and-type
+`KioNewtype_...` carrier whose name encodes the complete module-and-type
 identity; their storage stays private. Generic declarations carry their exact
 type indices as carrier arguments. Their public operations retain exact host
 bindings and declaration-owned host-type applications. A selected generic

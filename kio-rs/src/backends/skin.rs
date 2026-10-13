@@ -1332,7 +1332,7 @@ mod tests {
         );
         assert!(
             swift.host_swift.contains(
-                "main__nested(_ arg0: KioForall_56313b65303b712a6662303b62303b<Self>) -> Self.main__Str"
+                "main__nested(_ arg0: KioForall_65303b712a6662303b62303b<Self>) -> Self.main__Str"
             ),
             "{}",
             swift.host_swift

@@ -422,7 +422,7 @@ retain the prepared semantic keys; it is an argument-container convention,
 not a second representation of a first-class product. Such shell names use
 the shared facade codec, with the existing bounded Java mint and collision
 check; wider all-positional shells use the exact
-`KioFacade_V1_Product_Positional_K<arity>` spelling.
+`KioFacade_Product_Positional_K<arity>` spelling.
 
 Callable parameters follow the shared [source-parameter grouping
 contract](README.md#function-type-ffi-canonicalization): each declared value parameter is

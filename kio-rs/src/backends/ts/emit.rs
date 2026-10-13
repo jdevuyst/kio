@@ -2016,8 +2016,8 @@ v(2) {
         let unrelated = opaque_ts_type_name("aaa", "Nested");
 
         assert!(
-            js.contains("__kioNominals.get(\"V1_M1_C3_zedN5_Outer\").wrap")
-                && js.contains("__kioNominals.get(\"V1_M1_C3_zedN6_Nested\").wrap"),
+            js.contains("__kioNominals.get(\"M1_C3_zedN5_Outer\").wrap")
+                && js.contains("__kioNominals.get(\"M1_C3_zedN6_Nested\").wrap"),
             "{js}"
         );
         assert!(

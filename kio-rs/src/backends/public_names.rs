@@ -119,10 +119,10 @@ pub(crate) fn encode_source_identity(source: &str) -> String {
 /// Readable declaration identity for a role-adapter method.
 ///
 /// Unmarked source components can be joined without losing their
-/// boundaries. The exact `V1_…` frame owns its leading class, so declarations
-/// that could enter that class (or whose components need escaping) use the
-/// exact fallback instead. This choice is per identity and therefore cannot
-/// change when another declaration is added.
+/// boundaries. Validated module names start lowercase, keeping this spelling
+/// disjoint from the exact `M<count>_…` frame. Components that need escaping
+/// use that exact fallback instead. This choice is per identity and therefore
+/// cannot change when another declaration is added.
 pub(crate) fn readable_role_adapter_identity(
     module_segments: &[String],
     name: &str,
@@ -133,7 +133,6 @@ pub(crate) fn readable_role_adapter_identity(
         .chain(std::iter::once(host_name_core(name)))
         .collect::<Vec<_>>();
     if module_segments.is_empty()
-        || components.first().is_some_and(|segment| segment == "V1")
         || components.iter().any(|component| {
             component.is_empty() || !component.bytes().all(|byte| byte.is_ascii_alphanumeric())
         })
@@ -281,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn role_adapter_identity_uses_readable_and_reserved_classes() {
+    fn role_adapter_identity_uses_readable_and_exact_classes() {
         assert_eq!(
             readable_role_adapter_identity(&["api".to_owned()], "Count").as_deref(),
             Some("api_Count")
@@ -291,8 +290,16 @@ mod tests {
             Some("fooBar_Count".to_owned())
         );
         assert_eq!(
-            readable_role_adapter_identity(&["V1".to_owned()], "Count"),
+            readable_role_adapter_identity(&["api_".to_owned()], "Count"),
             None
+        );
+        assert_eq!(
+            readable_role_adapter_identity(
+                &["m1".to_owned(), "c3".to_owned(), "api_n3".to_owned()],
+                "Box",
+            )
+            .as_deref(),
+            Some("m1_c3_apiN3_Box")
         );
     }
 }

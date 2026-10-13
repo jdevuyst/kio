@@ -28,7 +28,7 @@ short = "KioForall_Type_Fn_T0_T0"
 assert shapes.count(f"public interface {short} {{") == 1, "one shared short identity"
 assert host.count(f"Shapes.{short} p0") == 2, "source-name length does not change identity"
 for width in (30, 128):
-    identity = "V1;e0;q*f" + "pb0;" * (width - 1) + "b0;b0;"
+    identity = "e0;q*f" + "pb0;" * (width - 1) + "b0;b0;"
     name = bounded_name(identity)
     assert len(name.encode()) <= 64 and name.startswith("KioForall_H"), name
     assert f"public interface {name} {{" in shapes, (width, name)

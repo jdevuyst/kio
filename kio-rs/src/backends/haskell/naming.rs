@@ -2,7 +2,7 @@
 //!
 //! Public structural views use role-tagged, reversibly escaped source paths.
 //! Their typed identities remain separate from presentation. Private body and
-//! rank-N helper names retain the versioned codec; public host fields and
+//! rank-N helper names use the exact codec; public host fields and
 //! entry wrappers retain their existing readable primary routes.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -330,7 +330,7 @@ fn runtime_private_name(
     role: &str,
     readable: &str,
 ) -> String {
-    let mut identity = vec![0x01];
+    let mut identity = Vec::new();
     encode_string(target_namespace, &mut identity);
     encode_string(role, &mut identity);
     let prefix = match namespace {
@@ -564,7 +564,7 @@ impl HaskellName {
     }
 
     fn render_fallback(&self) -> String {
-        let mut bytes = vec![0x01];
+        let mut bytes = Vec::new();
         self.encode(&mut bytes);
         let prefix = self.prefix();
         let exact = lowercase_hex(&bytes);
@@ -1198,11 +1198,11 @@ mod tests {
     fn public_item_names_are_readable_and_fallbacks_remain_framed() {
         assert_eq!(
             HaskellName::ModuleFn(ModuleItemId::new("a/b", "c")).render(),
-            "mod_H0101010100000002000000016100000001620000000163__a_b__c"
+            "mod_H01010100000002000000016100000001620000000163__a_b__c"
         );
         assert_eq!(
             HaskellName::ModuleFn(ModuleItemId::new("a", "b_c")).render(),
-            "mod_H0101010100000001000000016100000003625f63__a__bC"
+            "mod_H01010100000001000000016100000003625f63__a__bC"
         );
         assert_eq!(
             HaskellName::HostField(ModuleItemId::new("a/b", "f")).render(),
@@ -1218,15 +1218,15 @@ mod tests {
         );
         assert_eq!(
             HaskellName::HostField(ModuleItemId::new("a", "foo__bar")).render(),
-            "host_H0101020100000001000000016100000008666f6f5f5f626172__a__fooBar"
+            "host_H01020100000001000000016100000008666f6f5f5f626172__a__fooBar"
         );
         assert_eq!(
             HaskellName::HostField(ModuleItemId::new("a_/b", "g")).render(),
-            "host_H010102010000000200000002615f00000001620000000167__a__b__g"
+            "host_H0102010000000200000002615f00000001620000000167__a__b__g"
         );
         assert_eq!(
             HaskellName::HostField(ModuleItemId::new("a/_b", "g")).render(),
-            "host_H01010201000000020000000161000000025f620000000167__a__b__g"
+            "host_H010201000000020000000161000000025f620000000167__a__b__g"
         );
         assert_eq!(
             HaskellName::ExportWrapper(ItemId::item("a/b", "f")).render(),
@@ -1246,23 +1246,23 @@ mod tests {
         );
         assert_eq!(
             HaskellName::ExportWrapper(ItemId::newtype_member("api", "_Box", "mk")).render(),
-            "exp_H010103020000000100000003617069000000045f426f78000000026d6b__api___Box__mk"
+            "exp_H0103020000000100000003617069000000045f426f78000000026d6b__api___Box__mk"
         );
         assert_eq!(
             HaskellName::ExportWrapper(ItemId::item("a_/b", "c")).render(),
-            "exp_H010103010000000200000002615f00000001620000000163__a__b__c"
+            "exp_H0103010000000200000002615f00000001620000000163__a__b__c"
         );
         assert_eq!(
             HaskellName::ExportWrapper(ItemId::item("a/_b", "c")).render(),
-            "exp_H01010301000000020000000161000000025f620000000163__a__b__c"
+            "exp_H010301000000020000000161000000025f620000000163__a__b__c"
         );
         assert_eq!(
             HaskellName::ExportWrapper(ItemId::newtype_member("api", "A_", "b")).render(),
-            "exp_H01010302000000010000000361706900000002415f0000000162__api__A___b"
+            "exp_H010302000000010000000361706900000002415f0000000162__api__A___b"
         );
         assert_eq!(
             HaskellName::ExportWrapper(ItemId::newtype_member("api", "A", "_b")).render(),
-            "exp_H0101030200000001000000036170690000000141000000025f62__api__A___b"
+            "exp_H01030200000001000000036170690000000141000000025f62__api__A___b"
         );
         assert_ne!(
             HaskellName::ExportWrapper(ItemId::item("a", "foo__bar")).render(),
@@ -1329,19 +1329,19 @@ mod tests {
         ];
         assert_eq!(
             names[0],
-            "ViewT_H0130020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "ViewT_H30020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
         assert_eq!(
             names[1],
-            "ViewC_H0131020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "ViewC_H31020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
         assert_eq!(
             names[2],
-            "NoMatch_H01320201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "NoMatch_H320201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
         assert_eq!(
             names[3],
-            "view_H0133020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
+            "view_H33020201000000010000000161000000016601000000000000000001000000015800000000__a__f_arg0_S_X_0"
         );
         assert_eq!(
             names
@@ -1372,10 +1372,10 @@ mod tests {
         assert_eq!(
             vectors,
             [
-                "exp_H0101030100000001000000016100000008666f6f5f5f626172__a__fooBar",
+                "exp_H01030100000001000000016100000008666f6f5f5f626172__a__fooBar",
                 "Host_m__h_Result_App2_CallbackArg3_CallbackResult",
                 "Host_m__h_Result_App2_CallbackArg3_CallbackResult_Case7_Position7",
-                "ViewT_H0130010100000001000000016d000000016802000000030100000002030000000304__m__h_ret_app2_cbarg3_cbret_P",
+                "ViewT_H30010100000001000000016d000000016802000000030100000002030000000304__m__h_ret_app2_cbarg3_cbret_P",
             ]
         );
     }

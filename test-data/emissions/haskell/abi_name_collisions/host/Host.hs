@@ -23,10 +23,10 @@ instance P.BuildHaskellAbiNameCollisionsHostTypes HostTypes where
 host :: IORef [String] -> P.BuildHaskellAbiNameCollisionsHost HostTypes IO
 host calls =
   P.BuildHaskellAbiNameCollisionsHost
-    { P.host_H01010201000000020000000161000000025f620000000167__a__b__g = \value -> do
+    { P.host_H010201000000020000000161000000025f620000000167__a__b__g = \value -> do
         modifyIORef' calls (++ ["a/_b.g"])
         pure (value + 1),
-      P.host_H010102010000000200000002615f00000001620000000167__a__b__g = \value -> do
+      P.host_H0102010000000200000002615f00000001620000000167__a__b__g = \value -> do
         modifyIORef' calls (++ ["a_/b.g"])
         pure (value * 2),
       P.host__a__b__f = pure
@@ -64,8 +64,8 @@ main :: IO ()
 main = do
   calls <- newIORef []
   let package = P.createBuildHaskellAbiNameCollisions (host calls)
-  first <- P.exp_H01010301000000020000000161000000025f620000000163__a__b__c package 10
-  second <- P.exp_H010103010000000200000002615f00000001620000000163__a__b__c package 10
+  first <- P.exp_H010301000000020000000161000000025f620000000163__a__b__c package 10
+  second <- P.exp_H0103010000000200000002615f00000001620000000163__a__b__c package 10
   observed <- readIORef calls
   unless (first == 11 && second == 20 && observed == ["a/_b.g", "a_/b.g"]) $
     fail (show (first, second, observed))
@@ -73,7 +73,7 @@ main = do
   P.export__a__bC package
   P.export__api__AB__c package
   P.export__api__A__bC package
-  P.exp_H01010301000000010000000161000000085f666f6f5f626172__a___fooBar package
+  P.exp_H010301000000010000000161000000085f666f6f5f626172__a___fooBar package
   _ <- P.export__a__Foo__bar package
   innerY <- P.export__shape__makeY package 17
   outerY <- P.export__slot0__Y__mkY package 29

@@ -633,7 +633,7 @@ impl ValuePlan {
             Leave,
         }
         let readable = presentation == IdentityPresentation::ReadableStage;
-        let mut out = String::from(if readable { "KioForall_" } else { "V1;" });
+        let mut out = String::from(if readable { "KioForall_" } else { "" });
         let mut scope = self.free_binders(root, ambient);
         if !readable {
             write!(out, "e{};", scope.len()).expect("writing to String cannot fail");
@@ -965,17 +965,17 @@ mod tests {
         for (ty, exact, readable) in [
             (
                 forall("A", function(path("A"), path("A"))),
-                "V1;e0;q*fb0;b0;",
+                "e0;q*fb0;b0;",
                 "KioForall_Type_Fn_T0_T0",
             ),
             (
                 forall("A", forall("B", function(path("A"), path("B")))),
-                "V1;e0;q*q*fb1;b0;",
+                "e0;q*q*fb1;b0;",
                 "KioForall_Type_Forall_Type_Fn_T1_T0",
             ),
             (
                 forall("A", forall("A", function(path("A"), path("A")))),
-                "V1;e0;q*q*fb0;b0;",
+                "e0;q*q*fb0;b0;",
                 "KioForall_Type_Forall_Type_Fn_T0_T0",
             ),
             (
@@ -984,7 +984,7 @@ mod tests {
                     Kind::arrow_chain(1),
                     forall("A", application("F", vec![path("A")])),
                 ),
-                "V1;e0;q>**q*a1;b1;b0;",
+                "e0;q>**q*a1;b1;b0;",
                 "KioForall_Arrow_Type_Type_Forall_Type_Apply1_T1_T0",
             ),
             (
@@ -996,7 +996,7 @@ mod tests {
                         forall("B", application("F", vec![path("A"), path("B")])),
                     ),
                 ),
-                "V1;e0;q>*>**q*q*a2;b2;b1;b0;",
+                "e0;q>*>**q*q*a2;b2;b1;b0;",
                 "KioForall_Arrow_Type_Arrow_Type_Type_Forall_Type_Forall_Type_Apply2_T2_T1_T0",
             ),
         ] {
@@ -1018,7 +1018,7 @@ mod tests {
             function(path("api.Captured"), path("B")),
         )));
         let shaped = shape(&plan, plan.root());
-        assert_eq!(shape_identity(&shaped), "V1;e1;*q*fb1;b0;");
+        assert_eq!(shape_identity(&shaped), "e1;*q*fb1;b0;");
         assert_eq!(
             shaped.plan.readable_stage_symbol(),
             "KioForall_Captures1_Type_Type_Fn_T1_T0"
@@ -1029,7 +1029,7 @@ mod tests {
             application("api.Either", vec![path("api.A"), path("B")]),
         )));
         let shaped = shape(&plan, plan.root());
-        assert_eq!(shape_identity(&shaped), "V1;e1;>**q*a1;b1;b0;");
+        assert_eq!(shape_identity(&shaped), "e1;>**q*a1;b1;b0;");
         assert_eq!(
             shaped.plan.readable_stage_symbol(),
             "KioForall_Captures1_Arrow_Type_Type_Type_Apply1_T1_T0"
@@ -1043,7 +1043,7 @@ mod tests {
             ),
         )));
         let shaped = shape(&plan, plan.root());
-        assert_eq!(shape_identity(&shaped), "V1;e2;**q*fpb0;b2;pb0;b1;");
+        assert_eq!(shape_identity(&shaped), "e2;**q*fpb0;b2;pb0;b1;");
         assert_eq!(
             shaped.plan.readable_stage_symbol(),
             "KioForall_Captures2_Type_Type_Type_Fn_Pair_T0_T2_Pair_T0_T1"

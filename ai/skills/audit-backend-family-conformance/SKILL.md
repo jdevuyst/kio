@@ -184,10 +184,15 @@ the specified limit and independent collision checks for distinct identities.
 For static-only support declarations, apply
 [`specs/backends/README.md` § Shared static type declarations](../../../specs/backends/README.md#shared-static-type-declarations).
 Check independent complete outputs, overlapping and disjoint definitions in
-either package search order, schema separation, and distinct nominal owners.
+either package search order, structural type identity, and distinct nominal owners.
 Report unnecessary adapter or identity machinery introduced solely to keep
 common static declarations package-local; do not mistake necessary runtime
 staging, ownership, or stack-safety machinery for a consequence of that layout.
+
+Apply [Package namespace](../../topics/emit.md#package-namespace) to generated
+runtime/support naming: inspect emitted namespaces, types and operations,
+including host-facing codecs and protocols, for version tags. Classify numeric
+names by their meaning rather than treating every number as a version.
 
 Report a finding when, despite compiling correctly, the facade:
 

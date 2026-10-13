@@ -957,7 +957,7 @@ fn python_qualified_name(name: &QualifiedTypeName) -> PythonQualifiedNameIr {
 
 pub(crate) fn exact_nominal_identity_frame(name: &QualifiedTypeName) -> String {
     use crate::backends::public_names::host_name_core;
-    let mut out = format!("V1_M{}_", name.module_segments().len());
+    let mut out = format!("M{}_", name.module_segments().len());
     for segment in name.module_segments() {
         let segment = host_name_core(segment);
         out.push_str(&format!("C{}_{segment}", segment.len()));
@@ -2153,6 +2153,21 @@ mod tests {
     use crate::pipeline::Pipeline;
     use crate::prime::pipeline::PrimePipeline;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn nominal_identity_frames_preserve_component_boundaries() {
+        for (module, leaf, expected) in [
+            ("api", "Box", "M1_C3_apiN3_Box"),
+            ("a/b", "Box", "M2_C1_aC1_bN3_Box"),
+            ("a_b", "Box", "M1_C2_aBN3_Box"),
+            ("api_", "Box", "M1_C4_api_N3_Box"),
+            ("data_api", "Native_count", "M1_C7_dataApiN11_NativeCount"),
+        ] {
+            let name = QualifiedTypeName::new(module.split('/').map(str::to_owned).collect(), leaf)
+                .unwrap();
+            assert_eq!(exact_nominal_identity_frame(&name), expected);
+        }
+    }
 
     #[test]
     fn erased_runtime_package_omits_admission_plans_and_keeps_execution_layouts() {

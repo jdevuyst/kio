@@ -7,8 +7,8 @@ if TYPE_CHECKING:
         KioApply1,
         KioHostMk_api__Box,
         OpaqueSubstitution,
-        KioShape_V1_M1_C3_apiR6_ExportN8_putRight_U4_left as Left,
-        KioShape_V1_M1_C3_apiR6_ExportN8_putRight_U4_right as Right,
+        KioShape_M1_C3_apiR6_ExportN8_putRight_U4_left as Left,
+        KioShape_M1_C3_apiR6_ExportN8_putRight_U4_right as Right,
     )
 
 

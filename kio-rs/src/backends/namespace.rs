@@ -365,13 +365,7 @@ pub(crate) fn is_python_keyword(name: &str) -> bool {
     PYTHON_KEYWORDS.contains(&name)
 }
 
-pub(crate) const PYTHON_STATIC_NAMESPACE: &str = "kio_static_v1";
-
-fn is_python_static_namespace(name: &str) -> bool {
-    name.strip_prefix("kio_static_v").is_some_and(|version| {
-        !version.is_empty() && version.bytes().all(|byte| byte.is_ascii_digit())
-    })
-}
+pub(crate) const PYTHON_STATIC_NAMESPACE: &str = "kio_static";
 
 /// Python module stems retain source spelling; hard keywords and the static
 /// support namespace use the exact
@@ -386,7 +380,7 @@ fn is_python_static_namespace(name: &str) -> bool {
 /// name for a case the host already governs; `specs/backends/python.md`
 /// § Output layout documents the resolution as the host's responsibility.
 pub fn default_python_namespace(pkg_name: &str) -> String {
-    if PYTHON_KEYWORDS.contains(&pkg_name) || is_python_static_namespace(pkg_name) {
+    if PYTHON_KEYWORDS.contains(&pkg_name) || pkg_name == PYTHON_STATIC_NAMESPACE {
         escaped_default_namespace(pkg_name)
     } else {
         pkg_name.to_owned()
@@ -413,10 +407,10 @@ pub fn validate_python_namespace(value: &str) -> Result<(), String> {
              `{value}` is a Python keyword, so host code could not `import` the module"
         ));
     }
-    if is_python_static_namespace(value) {
+    if value == PYTHON_STATIC_NAMESPACE {
         return Err(format!(
             "invalid `namespace` value `{value}` for the `python` backend: \
-             this name belongs to generated immutable type definitions"
+             this name belongs to generated shared type definitions"
         ));
     }
     Ok(())
@@ -917,18 +911,10 @@ mod tests {
         assert_eq!(default_python_namespace("import"), "__kio_pkg_import");
         assert_eq!(default_python_namespace("class"), "__kio_pkg_class");
         assert_eq!(
-            default_python_namespace("kio_static_v1"),
-            "__kio_pkg_kio_ustatic_uv1"
+            default_python_namespace("kio_static"),
+            "__kio_pkg_kio_ustatic"
         );
-        assert_eq!(
-            default_python_namespace("kio_static_v2"),
-            "__kio_pkg_kio_ustatic_uv2"
-        );
-        assert_eq!(
-            default_python_namespace("kio_static_v02"),
-            "__kio_pkg_kio_ustatic_uv02"
-        );
-        for name in ["kio_static_v", "kio_static_vx", "kio_static_v2_extra"] {
+        for name in ["kio_static_v1", "kio_static_tools", "kio_static2"] {
             assert_eq!(default_python_namespace(name), name);
             assert!(validate_python_namespace(name).is_ok());
         }
@@ -952,9 +938,7 @@ mod tests {
         assert!(validate_python_namespace("a.b").is_err());
         assert!(validate_python_namespace("import").is_err());
         assert!(validate_python_namespace("None").is_err());
-        assert!(validate_python_namespace("kio_static_v1").is_err());
-        assert!(validate_python_namespace("kio_static_v2").is_err());
-        assert!(validate_python_namespace("kio_static_v02").is_err());
+        assert!(validate_python_namespace("kio_static").is_err());
     }
 
     #[test]
@@ -1142,7 +1126,7 @@ mod tests {
         assert!(validate_swift_namespace("KioNative").is_err());
         assert!(validate_swift_namespace("KioNativeConstructor").is_err());
         assert!(validate_swift_namespace("KioHostTypeIdentity_api__Box").is_err());
-        assert!(validate_swift_namespace("KioFacade_V1_Product_K2_P0_P1").is_err());
+        assert!(validate_swift_namespace("KioFacade_Product_K2_P0_P1").is_err());
         assert!(validate_swift_namespace("KioHostType_api__Box").is_err());
         assert!(validate_swift_namespace("KioHostTypeMk_api__Box").is_err());
         assert!(validate_swift_namespace("KioNewtype_api__Token").is_err());

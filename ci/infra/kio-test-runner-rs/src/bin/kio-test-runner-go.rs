@@ -735,7 +735,6 @@ fn go_role_adapter_identity(module: &str, leaf: &str) -> String {
         .map(host_api::host_name_core)
         .collect::<Vec<_>>();
     if module.is_empty()
-        || module.split('/').next() == Some("V1")
         || components.iter().any(|component| {
             component.is_empty() || !component.bytes().all(|b| b.is_ascii_alphanumeric())
         })
@@ -752,7 +751,7 @@ fn go_host_type_frame(module: &str, leaf: &str) -> String {
     } else {
         module.split('/').collect::<Vec<_>>()
     };
-    let mut frame = format!("V1_M{}_", segments.len());
+    let mut frame = format!("M{}_", segments.len());
     for segment in segments {
         let segment = go_escape_identity_component(segment);
         frame.push('C');
@@ -2191,9 +2190,9 @@ fn render_export_driver(
                  \tboxed := {wrap}({word_nodes}.KioType__uWordBox_u_u, {ns}.PrepareHost_wordApi_CountValue(pkg, 55))\n\
                  \tfmt.Println({ns}.UnprepareHost_wordApi_CountValue(pkg, {unwrap}({word_nodes}.KioType__uWordBox_u_u, boxed)))\n\
                  \tfmt.Println({ns}.UnprepareHost_wordApi_CountValue(pkg, {keep}({word_nodes}, {ns}.PrepareHost_wordApi_CountValue(pkg, 66))))\n\
-                 \tpair := {word_api}.KeepPair({ns}.Exp_KioItem_wordApi__keepPair_arg0{root_arguments}{{KioKey_V1_B13__uWordBox_u_u: 77, KioKey_V1_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u: 88}})\n\
-                 \tfmt.Println(pair.KioKey_V1_B13__uWordBox_u_u)\n\
-                 \tfmt.Println(pair.KioKey_V1_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u)\n"
+                 \tpair := {word_api}.KeepPair({ns}.Exp_KioItem_wordApi__keepPair_arg0{root_arguments}{{KioKey_B13__uWordBox_u_u: 77, KioKey_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u: 88}})\n\
+                 \tfmt.Println(pair.KioKey_B13__uWordBox_u_u)\n\
+                 \tfmt.Println(pair.KioKey_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u)\n"
             )
         }
         ExportDriver::FacadeSelectorCollisions => {
@@ -3073,11 +3072,16 @@ mod tests {
 
         assert_eq!(
             go_host_type_frame("api/foo_bar", "read_value"),
-            "V1_M2_C3_apiC6_fooBarN9_readValue"
+            "M2_C3_apiC6_fooBarN9_readValue"
         );
         assert_eq!(
             go_role_adapter_identity("testapi/foo_bar_", "I32"),
-            "V1_M2_C7_testapiC8_fooBar_uN3_I32"
+            "M2_C7_testapiC8_fooBar_uN3_I32"
+        );
+        assert_eq!(go_host_type_frame("api", "Box"), "M1_C3_apiN3_Box");
+        assert_eq!(
+            go_role_adapter_identity("m1/c3/api_n3", "Box"),
+            "m1_c3_apiN3_Box"
         );
 
         assert!(
@@ -3383,8 +3387,8 @@ mod tests {
             "demo.CallExp_KioItem_wordApi_swordNodes___uWordBox_u_u__unwrapWord(pkg.WordApi.KioModule_wordNodes.KioType__uWordBox_u_u, boxed)",
             "demo.CallExp_KioItem_wordApi_swordNodes__keepWord(pkg.WordApi.KioModule_wordNodes, demo.PrepareHost_wordApi_CountValue(pkg, 66))",
             "pkg.WordApi.KeepPair(demo.Exp_KioItem_wordApi__keepPair_arg0",
-            "pair.KioKey_V1_B13__uWordBox_u_u",
-            "pair.KioKey_V1_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u",
+            "pair.KioKey_B13__uWordBox_u_u",
+            "pair.KioKey_Q2_M7_wordApiM10_otherNodesN13__uWordBox_u_u",
         ] {
             assert!(body.contains(literal), "{body}");
         }

@@ -1305,6 +1305,49 @@ v(2) {
     }
 
     #[test]
+    fn native_rank_n_sum_injections_keep_typed_constructors_and_demand() {
+        let emitted = render(
+            "module api; import __intrinsics__; \
+             host type I32 role(i32); \
+             host fn produce() -> [A] I32; \
+             type Stage = [A] I32; \
+             fn left(value: [A] I32) -> ([A] I32) | . { \
+               __left__([A] I32, ., value) \
+             } \
+             fn right(value: [A] I32) -> . | ([A] I32) { \
+               __right__(., [A] I32, value) \
+             } \
+             fn effectful() -> . | ([A] I32) { \
+               __right__(., [A] I32, produce()) \
+             } \
+             fn alias(value: Stage) -> . | Stage { \
+               __right__(., Stage, value) \
+             } \
+             fn nested(value: . & Stage) -> . | (. & Stage) { \
+               __right__(., . & Stage, value) \
+             }",
+        )
+        .expect("render native rank-N sum injections");
+        for (name, constructor, effectful) in [
+            ("left", "Left @(forall", false),
+            ("right", "Right @() @(forall", false),
+            ("effectful", "Right @() @(forall", true),
+            ("alias", "Right @() @(forall", false),
+            ("nested", "Right @() @(", false),
+        ] {
+            let prefix = format!("{} _pkg", module_fn("api", name));
+            let body = emitted
+                .lines()
+                .find(|line| line.starts_with(&prefix))
+                .expect("module equation");
+            assert!(body.contains(constructor), "{body}");
+            assert!(body.contains("seq @("), "{body}");
+            assert!(body.contains("forall"), "{body}");
+            assert_eq!(body.contains("kioBind @(forall"), effectful, "{body}");
+        }
+    }
+
+    #[test]
     fn effectful_residual_module_call_uses_rank_n_lift() {
         let emitted = render(
             "module api; \

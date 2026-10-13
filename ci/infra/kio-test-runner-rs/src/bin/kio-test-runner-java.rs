@@ -724,7 +724,7 @@ fn java_positional_shell(kind: &str, arity: usize) -> String {
     if arity == 2 {
         return kind.to_owned();
     }
-    format!("KioFacade_V1_{kind}_Positional_K{arity}")
+    format!("KioFacade_{kind}_Positional_K{arity}")
 }
 
 fn java_structural_type(kind: &str, types: &[&str]) -> String {
@@ -814,16 +814,16 @@ fn java_function_type(params: &[&str], ret: &str) -> String {
 fn java_forall_stage(identity: &str) -> String {
     // Fixed independent protocol schemes, not compiler-emitted declarations.
     let mut name = match identity {
-        "V1;e0;q*fb0;b0;" => "KioForall_Type_Fn_T0_T0",
-        "V1;e0;q*b0;" => "KioForall_Type_T0",
-        "V1;e2;**q*fpb0;fb0;b2;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Pair_T0_Fn_T0_T2_T1",
-        "V1;e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;" => "KioForall_Captures2_Arrow_Type_Type_Arrow_Type_Type_Type_Forall_Type_Fn_Pair_Fn_T1_T0_Apply1_T3_T1_Apply1_T2_T0",
-        "V1;e3;**>**q*fpfb3;b0;b2;a1;b1;b0;" => "KioForall_Captures3_Type_Type_Arrow_Type_Type_Type_Fn_Pair_Fn_T3_T0_T2_Apply1_T1_T0",
-        "V1;e1;*q*fb0;b1;" => "KioForall_Captures1_Type_Type_Fn_T0_T1",
-        "V1;e1;*q*b1;" => "KioForall_Captures1_Type_Type_T1",
-        "V1;e2;**q*fpb2;b0;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Pair_T2_T0_T1",
-        "V1;e1;*q*fq*fpb1;b0;b1;b1;" => "KioForall_Captures1_Type_Type_Fn_Forall_Type_Fn_Pair_T1_T0_T1_T1",
-        "V1;e2;**q*ffb0;b2;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Fn_T0_T2_T1",
+        "e0;q*fb0;b0;" => "KioForall_Type_Fn_T0_T0",
+        "e0;q*b0;" => "KioForall_Type_T0",
+        "e2;**q*fpb0;fb0;b2;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Pair_T0_Fn_T0_T2_T1",
+        "e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;" => "KioForall_Captures2_Arrow_Type_Type_Arrow_Type_Type_Type_Forall_Type_Fn_Pair_Fn_T1_T0_Apply1_T3_T1_Apply1_T2_T0",
+        "e3;**>**q*fpfb3;b0;b2;a1;b1;b0;" => "KioForall_Captures3_Type_Type_Arrow_Type_Type_Type_Fn_Pair_Fn_T3_T0_T2_Apply1_T1_T0",
+        "e1;*q*fb0;b1;" => "KioForall_Captures1_Type_Type_Fn_T0_T1",
+        "e1;*q*b1;" => "KioForall_Captures1_Type_Type_T1",
+        "e2;**q*fpb2;b0;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Pair_T2_T0_T1",
+        "e1;*q*fq*fpb1;b0;b1;b1;" => "KioForall_Captures1_Type_Type_Fn_Forall_Type_Fn_Pair_T1_T0_T1_T1",
+        "e2;**q*ffb0;b2;b1;" => "KioForall_Captures2_Type_Type_Type_Fn_Fn_T0_T2_T1",
         _ => panic!("Java runner stage identity is not a declared protocol scheme: {identity}"),
     }.to_owned();
     if name.len() > 64 {
@@ -843,7 +843,7 @@ fn java_apply_poly_type(binding: &HostFnBinding, _host_types: &[HostTypeBinding]
         ("testapi/arith", "apply_poly"),
         "the Java rank-N API oracle names its exact protocol site"
     );
-    java_forall_stage("V1;e0;q*fb0;b0;")
+    java_forall_stage("e0;q*fb0;b0;")
 }
 
 fn java_returned_forall_type(binding: &HostFnBinding) -> String {
@@ -852,7 +852,7 @@ fn java_returned_forall_type(binding: &HostFnBinding) -> String {
         ("testapi/main", "produce"),
         "the Java returned-forall oracle names its exact protocol site"
     );
-    format!("{}<Shapes.Unit>", java_forall_stage("V1;e1;*q*b1;"))
+    format!("{}<Shapes.Unit>", java_forall_stage("e1;*q*b1;"))
 }
 
 /// The protocol's exact [`HostApi`], rendered for Java. Member identity,
@@ -997,7 +997,7 @@ fn java_method(binding: &HostFnBinding, host_types: &[HostTypeBinding]) -> Trait
         }
         HostFnBodyKind::ForallStageEffects => method(
             Vec::new(),
-            &format!("{}<Shapes.Unit>", java_forall_stage("V1;e1;*q*b1;")),
+            &format!("{}<Shapes.Unit>", java_forall_stage("e1;*q*b1;")),
         ),
         HostFnBodyKind::ObservePacked { i32 } => method(
             vec![java_newtype_type(
@@ -1566,7 +1566,7 @@ fn render_export_driver(
         }
         ExportDriver::HostExistentialRoundtrip => {
             let packed = facade_type_selector("Packed");
-            let opener = java_forall_stage("V1;e2;**q*fpb0;fb0;b2;b1;");
+            let opener = java_forall_stage("e2;**q*fpb0;fb0;b2;b1;");
             format!(r#"    int[] openings = {{0}};
     host.observePacked = value -> {types_ns}.{packed}.readPacked(value).<Integer>advance().apply(new {opener}<Integer, Integer>() {{
       @Override public <U> Shapes.Fn1<Shapes.Product<U, Shapes.Fn1<U, Integer>>, Integer> advance() {{
@@ -1582,8 +1582,8 @@ fn render_export_driver(
             let box_handle = format!("{types_ns}.{}", facade_type_selector("Box"));
             let functor_handle = format!("{types_ns}.{}", facade_type_selector("Functor"));
             let box_marker = java_newtype_constructor_marker("testapi/types", "Box", host_types);
-            let outer_stage = java_forall_stage("V1;e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;");
-            let inner_stage = java_forall_stage("V1;e3;**>**q*fpfb3;b0;b2;a1;b1;b0;");
+            let outer_stage = java_forall_stage("e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;");
+            let inner_stage = java_forall_stage("e3;**>**q*fpfb3;b0;b2;a1;b1;b0;");
             format!(
                 r#"    var integers = new java.util.ArrayList<Integer>();
     var texts = new java.util.ArrayList<String>();
@@ -1923,11 +1923,11 @@ fn render_export_driver(
              \x20   System.out.println({main_ns}.acceptPayload(projected));\n"
         ),
         ExportDriver::NewtypeVisibilityFacade => {
-            let unit_opener = java_forall_stage("V1;e1;*q*fb0;b1;");
-            let empty_opener = java_forall_stage("V1;e1;*q*b1;");
-            let spread = java_forall_stage("V1;e2;**q*fpb2;b0;b1;");
-            let spread_opener = java_forall_stage("V1;e1;*q*fq*fpb1;b0;b1;b1;");
-            let recursive_opener = java_forall_stage("V1;e2;**q*ffb0;b2;b1;");
+            let unit_opener = java_forall_stage("e1;*q*fb0;b1;");
+            let empty_opener = java_forall_stage("e1;*q*b1;");
+            let spread = java_forall_stage("e2;**q*fpb2;b0;b1;");
+            let spread_opener = java_forall_stage("e1;*q*fq*fpb1;b0;b1;b1;");
+            let recursive_opener = java_forall_stage("e2;**q*ffb0;b2;b1;");
             format!(
             "    var a = {types_ns}.makeA(new {selected_i32}(11));\n\
              \x20   System.out.println({types_ns}.readA(a).value());\n\
@@ -2694,8 +2694,8 @@ mod tests {
             contract.host_types,
         )
         .expect("newtype visibility driver");
-        let unit_opener = java_forall_stage("V1;e1;*q*fb0;b1;");
-        let empty_opener = java_forall_stage("V1;e1;*q*b1;");
+        let unit_opener = java_forall_stage("e1;*q*fb0;b1;");
+        let empty_opener = java_forall_stage("e1;*q*b1;");
 
         assert!(
             body.contains(&format!("new {unit_opener}<Object>()")),
@@ -2790,10 +2790,10 @@ mod tests {
 
     #[test]
     fn forall_stage_names_bound_only_long_full_identities() {
-        assert_eq!(java_forall_stage("V1;e0;q*b0;"), "Shapes.KioForall_Type_T0");
+        assert_eq!(java_forall_stage("e0;q*b0;"), "Shapes.KioForall_Type_T0");
         assert_eq!(
-            java_forall_stage("V1;e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;"),
-            "Shapes.KioForall_Hd1831f1e4f3eacb4"
+            java_forall_stage("e2;>**>**q*q*fpfb1;b0;a1;b3;b1;a1;b2;b0;"),
+            "Shapes.KioForall_Ha1eaea2c7cb55288"
         );
     }
 
@@ -2807,7 +2807,7 @@ mod tests {
             .expect("apply-poly binding");
         let method = java_method(binding, contract.host_types);
 
-        assert_eq!(method.arg_types, [java_forall_stage("V1;e0;q*fb0;b0;")]);
+        assert_eq!(method.arg_types, [java_forall_stage("e0;q*fb0;b0;")]);
         assert_eq!(method.ret_type, "String");
         assert!(!method.arg_types[0].contains("Object"));
     }
@@ -2821,7 +2821,7 @@ mod tests {
             .find(|binding| matches!(binding.body, HostFnBodyKind::ReturnedForallUnit))
             .expect("returned-forall binding");
         let method = java_method(binding, contract.host_types);
-        let expected = format!("{}<Shapes.Unit>", java_forall_stage("V1;e1;*q*b1;"));
+        let expected = format!("{}<Shapes.Unit>", java_forall_stage("e1;*q*b1;"));
 
         assert_eq!(method.ret_type, expected);
         let body = render_java_body_for_binding(

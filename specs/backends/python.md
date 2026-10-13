@@ -44,7 +44,7 @@ build {
 - `<ns>/_kio_stub_<index>.pyi` — deterministic private declaration shards
   re-exported by `__init__.pyi`. Hosts import only `<ns>`; the shard modules
   are supporting artifacts rather than a second public API.
-- `kio_static_v1/*.pyi` — immutable shared callable and application type
+- `kio_static/*.pyi` — shared callable and application type
   definitions. Each output contains its complete required definition closure;
   hosts import these types through `<ns>`, not through this support namespace.
 
@@ -53,8 +53,8 @@ import path, type checkers select `<ns>/__init__.pyi` as `<ns>`'s typed view,
 while Python selects the sibling `<ns>.py` runtime module. Every build emits
 the runtime and complete typing support together. The shared directory has no
 `__init__.pyi`: independently generated output roots contribute compatible
-namespace portions, including disjoint callable types. Completeness, schema
-separation and search-order composition follow the shared
+namespace portions, including disjoint callable types. Completeness, consistent
+support definitions and search-order composition follow the shared
 [static type declaration contract](README.md#shared-static-type-declarations).
 Bounded support filenames are
 locators only; imports retain exact definition identities and a locator
@@ -64,16 +64,16 @@ output tree to retain type checking; the runtime `.py` alone remains usable
 by an untyped host.
 
 The file stem `<ns>` is the package's **namespace**: the kio package name by
-default (a collision with a Python keyword that a stem could not be imported
-under — `import <kw>` is a syntax error — uses `__kio_pkg_<escaped-name>`,
+default (a collision with a Python keyword or the shared support name
+`kio_static` uses `__kio_pkg_<escaped-name>`,
 where source `_` is escaped as `_u`, so the default is
 always importable), overridden by the `namespace` build-block key
 ([`specs/package.md` § Per-target keys](../package.md#per-target-keys)). An
 explicit value must be a Python identifier matching `[A-Za-z_][A-Za-z0-9_]*`
-and not a keyword or a name matching `kio_static_v[0-9]+` (one or more ASCII
-digits); anything else is a build error. The shared support naming class is
-escaped by the same rule when it is the default package name. Names such as
-`kio_static_v` or `kio_static_v2_extra` are outside this reserved class.
+and not a keyword or the exact name `kio_static`; anything else is a build
+error. The shared support name is escaped by the same rule when it is the
+default package name. Other identifiers, such as `kio_static_tools`, are not
+reserved by this rule.
 This reservation governs newly emitted package names; it does not rename
 previously generated artifacts that used a support name.
 The package's public
@@ -238,8 +238,8 @@ methods:
 When every word-cased component is ASCII-alphanumeric, `<identity>` is those
 components joined by `_` (`api.Count` → `api_Count`,
 `data_api.Native_count` → `dataApi_NativeCount`). A remaining affix
-underscore, another unspellable component, or the reserved leading `V1` class
-selects the exact qualified-type-name frame from § Item naming. This choice is
+underscore or another unspellable component selects the exact
+qualified-type-name frame from § Item naming. This choice is
 per declaration and does not change when another declaration is added. A host
 that selects the ordinary Python role type may implement both operations as
 identity functions. A host may instead select a declaration-specific class,
@@ -550,11 +550,11 @@ getattr(pkg.someModule, "class")
 ```
 
 Exact host and nominal bindings use a complete qualified-type-name frame:
-`V1_M<count>_C<len>_<segment>...N<len>_<leaf>`. `<count>` is the number of
+`M<count>_C<len>_<segment>...N<len>_<leaf>`. `<count>` is the number of
 module components; each component is word-cased before its UTF-8 byte length
 is calculated. For example, `data_api.Native_count` is
-`V1_M1_C7_dataApiN11_NativeCount`, and `testapi.Count` is
-`V1_M1_C7_testapiN5_Count`. The frame appears in `KioHost_<frame>`,
+`M1_C7_dataApiN11_NativeCount`, and `testapi.Count` is
+`M1_C7_testapiN5_Count`. The frame appears in `KioHost_<frame>`,
 underlying declaration-class names, and fallback role-adapter names. The
 readable declaration views above alias those exact classes. Each spelling
 depends only on the exact declaration identity, not

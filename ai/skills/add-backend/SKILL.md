@@ -406,7 +406,9 @@ ABI arity, or another producer-side side channel.
   items) live beneath the per-package **namespace**. Package-independent,
   static-only structural declarations may share a support namespace under
   § Shared static type declarations; verify complete independent outputs,
-  both package search orders, schema separation, and nominal distinctions.
+  both package search orders, structural type identity, and nominal distinctions.
+  Apply [Package namespace](../../topics/emit.md#package-namespace) to generated
+  runtime/support naming.
   Do not add host-facing adapters merely to retain duplicate static definitions.
   The package namespace is derived
   from the package name in

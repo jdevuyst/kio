@@ -204,7 +204,7 @@ four surfaces are:
 An opaque or one-member carrier is one exported Go `struct` with hidden
 storage, parameterized by its exact Kio type arguments when the declaration
 has binders. Its name is branded from the complete qualified
-Kio declaration identity (`KioNewtype_V1_…`; § Item naming), so a same-leaf
+Kio declaration identity (`KioNewtype_…`; § Item naming), so a same-leaf
 newtype in another module is a different Go type without relying on package
 occupancy. Its selected member has the exact declared Kio member scheme after
 the Go boundary mapping, including exact host-type applications, and an
@@ -531,7 +531,7 @@ is realized as follows:
 - **Product** `(A & B & C)` → one flat generic `struct` shell with one
   type parameter and field per right-spine slot. The ordinary positional
   binary shell is `Product[T0, T1]`, with fields `F0` and `F1`; other key
-  topologies use the reversible `KioFacade_V1_…` shell name. Field names
+  topologies use the reversible `KioFacade_…` shell name. Field names
   follow the 3-step key fallback, rendered into Go's exact key codec when a
   bare identifier is not enough. Payload types do not participate in the
   shell name: a boundary site gives the concrete application a stable alias,
@@ -551,7 +551,7 @@ is realized as follows:
   `[]any` rep, and the skin re-imposes no wrapper, so its boundary type is
   its instantiated payload's. With neither member or exactly one member
   public, the boundary type is instead that declaration's
-  `KioNewtype_V1_…[I, ...]` carrier, with one exact index per declaration
+  `KioNewtype_…[I, ...]` carrier, with one exact index per declaration
   binder; the hidden payload does not contribute to an enclosing shape.
 - **Function value** → a Go `func(...) ...` whose compound legs are
   converted across the boundary. The host sees that value-only callable;
@@ -667,7 +667,7 @@ with title casing for exported leaves (`do_work` → `DoWork`).
   (§ Host record contract).
 - **Exact host bindings** — one `KioHost_<frame>` root parameter per nullary
   declaration. `<frame>` is
-  `V1_M<count>_C<len>_<segment>...N<len>_<leaf>`, so it encodes the complete
+  `M<count>_C<len>_<segment>...N<len>_<leaf>`, so it encodes the complete
   qualified declaration identity without package occupancy or leaf lookup.
   Word-case every source component before escaping it and calculating its
   encoded byte length; fixed count, role, and index fields are unchanged.
@@ -680,8 +680,8 @@ with title casing for exported leaves (`do_work` → `DoWork`).
 - **Role adapters** — `KioHostIn_<identity>` / `KioHostOut_<identity>`, where
   ASCII-alphanumeric word-cased components are joined by `_`
   (`api.Count` → `api_Count`, `data_api.Native_count` → `dataApi_NativeCount`).
-  A remaining affix underscore, another unspellable component, or the reserved leading `V1`
-  class selects the exact `<frame>` instead. The choice depends only on that
+  A remaining affix underscore or another unspellable component selects the
+  exact `<frame>` instead. The choice depends only on that
   declaration, so adding another declaration cannot rename an adapter.
 - **Exported items** — a root module and every function/member method use the
   natural/exact component rule: unmarked names use title word casing, while
@@ -690,7 +690,7 @@ with title casing for exported leaves (`do_work` → `DoWork`).
   selectors always use `KioModule_<encoded-component>`, and public-newtype
   handles always use `KioType_<encoded-component>`. The role prefixes are
   disjoint, and every exact component is encoded independently.
-- **Newtype carriers** — `KioNewtype_V1_M<count>_`, followed by one
+- **Newtype carriers** — `KioNewtype_M<count>_`, followed by one
   `C<len>_<component>` frame per module component and one
   `N<len>_<name>` frame for the newtype leaf. Each component is word-cased
   first. ASCII letters and digits remain
@@ -701,7 +701,7 @@ with title casing for exported leaves (`do_work` → `DoWork`).
 - **Generic product and row declarations** — named from structural kind plus
   the ordered 3-step semantic keys, never from payload types. The common
   positional binary product is `Product`; every other topology uses the
-  reversible `KioFacade_V1_<kind>_K<count>_…` spelling. The encoding is
+  reversible `KioFacade_<kind>_K<count>_…` spelling. The encoding is
   selected before package namespace validation and has no content hash,
   registry-occupancy suffix, or length-triggered alternate name. This opaque
   structural identity codec retains raw semantic keys; public word casing
@@ -727,6 +727,9 @@ Product-field and sum-arm semantic keys follow the 3-step key fallback
 by their alias-local index.
 Named semantic field keys word-case their source components; positional
 roles such as `F1` and `K1` are not source words and retain their fixed spelling.
+Exact key fallbacks use the `KioKey_` prefix with role-tagged, length-framed
+components. A bare spelling beginning with that prefix uses the exact fallback
+so it cannot collide with a framed key.
 
 ## Worked example
 

@@ -98,7 +98,7 @@ def _type_facade_name(name):
 
 def _role_adapter_identity(name):
     components = [_host_name_core(component) for component in name["module"] + [name["name"]]]
-    if (not name["module"] or name["module"][0] == "V1"
+    if (not name["module"]
             or any(not component or not component.isascii()
                    or not component.isalnum() for component in components)):
         return name["frame"]

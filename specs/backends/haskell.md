@@ -744,7 +744,7 @@ This primary form requires every source component to contain no `__` and
 have no leading or trailing `_`. Lowercase-initial modules/values and
 uppercase-initial newtypes keep ordinary and member routes distinct.
 A non-boundary-safe entry uses
-`<prefix>_H<hex(01 || tagged-payload)>__<readable>`, with prefix `host`
+`<prefix>_H<hex(tagged-payload)>__<readable>`, with prefix `host`
 or `exp`. The raw-byte payload is `01 02 || item` for a host field or
 `01 03 || item` for an export. Here `u32` is unsigned big-endian,
 `text(s) = u32(len(UTF-8(s))) || UTF-8(s)`, and `module` is a

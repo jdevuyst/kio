@@ -733,10 +733,19 @@ static-only support namespace under
 [`specs/backends/README.md` § Shared static type declarations](../../specs/backends/README.md#shared-static-type-declarations).
 Do not introduce adapter or identity machinery merely to duplicate those
 declarations inside each package. Sharing must preserve independently generated
-complete outputs, schema identity/version separation, collision-safe resolution,
+complete outputs, structural type identity, collision-safe resolution,
 and distinct nominal owners; it never implies a common executable runtime or
-registry. Fixed member spellings inside a package / module / crate remain
-qualified by that namespace. The implementation has one home per concern:
+registry.
+
+Generated runtime/support namespaces, types and operations use unversioned
+names, including host-facing codec and protocol names. Each host build uses
+one coherent runtime/support implementation; do not encode runtime or support
+schema versions in names to accommodate incompatible implementations together.
+This rule does not prohibit release, cache or artifact-format versions, or
+numeric names that identify arity or semantic identity rather than a version.
+
+Fixed member spellings inside a package / module / crate remain qualified by
+that namespace. The implementation has one home per concern:
 
 - A public facade path preserves its semantic identity before target-language
   rendering: exact source module components and their boundaries, plus whether

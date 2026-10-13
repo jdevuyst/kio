@@ -42,9 +42,6 @@ use super::naming::{
 mod index;
 use index::{GoIndexDeclarations, GoIndexType};
 
-const NEWTYPE_CODEC_VERSION: u64 = 1;
-const SUM_USE_CODEC_VERSION: u64 = 1;
-
 const UNIT_TYPE: &str = "Unit";
 const ERASED_TYPE: &str = "Value";
 const SUM_CARRIER_TYPE: &str = "KioSum";
@@ -724,10 +721,7 @@ fn apply_go_type(head: &str, arguments: &[GoType]) -> String {
 }
 
 fn encode_qualified_type_frame(name: &QualifiedTypeName) -> String {
-    let mut encoded = format!(
-        "V{NEWTYPE_CODEC_VERSION}_M{}_",
-        name.module_segments().len()
-    );
+    let mut encoded = format!("M{}_", name.module_segments().len());
     for segment in name.module_segments() {
         write_identity_component(&mut encoded, 'C', segment);
     }
@@ -1152,10 +1146,7 @@ impl GoHostBindingPlan {
 }
 
 fn encode_site_frame(site: &BoundaryFacadeSiteId) -> String {
-    let mut encoded = format!(
-        "V{SUM_USE_CODEC_VERSION}_M{}_",
-        site.module_segments().len()
-    );
+    let mut encoded = format!("M{}_", site.module_segments().len());
     for segment in site.module_segments() {
         write_identity_component(&mut encoded, 'C', segment);
     }
@@ -2379,7 +2370,7 @@ mod prepared_tests {
     use crate::pipeline::Pipeline;
     use std::path::{Path, PathBuf};
 
-    const I32_HOST: &str = "KioHost_V1_M1_C3_apiN3_I32";
+    const I32_HOST: &str = "KioHost_M1_C3_apiN3_I32";
 
     fn package(source: &str) -> Package<Routed> {
         package_sources(&[("api", source)], "api;")
@@ -2545,13 +2536,13 @@ mod prepared_tests {
                     .boundary_type()
                     .unwrap()
                     .as_str()
-                    .starts_with("KioNewtype_V1_")
+                    .starts_with("KioNewtype_M")
             );
         }
         let carrier_type = first_value_slots(&live_entry(&catalog, "carrier_cut"))[0]
             .boundary_type()
             .unwrap();
-        assert!(carrier_type.as_str().starts_with("KioNewtype_V1_"));
+        assert!(carrier_type.as_str().starts_with("KioNewtype_M"));
     }
 
     #[test]
@@ -3225,7 +3216,7 @@ v(2) {
         let declarations = catalog.render_declarations().unwrap();
         assert!(declarations.contains(&format!("type {product_name}[")));
         assert!(declarations.contains(&format!("type {sum_name}_Row[")));
-        assert!(declarations.contains("type KioNewtype_V1_"));
+        assert!(declarations.contains("type KioNewtype_M"));
     }
 
     #[test]
@@ -3240,7 +3231,7 @@ v(2) {
         assert_eq!(catalog.sites().count(), 0);
         assert_eq!(catalog.carriers().count(), 1);
         let declarations = catalog.render_declarations().unwrap();
-        assert_eq!(declarations.matches("type KioNewtype_V1_").count(), 1);
+        assert_eq!(declarations.matches("type KioNewtype_M").count(), 1);
         assert!(declarations.contains("struct {"));
     }
 
@@ -3345,7 +3336,7 @@ mod tests {
         );
         assert_eq!(
             carrier.identity_field.as_str(),
-            "kioHostTypeMarker_V1_M1_C3_apiN3_Box"
+            "kioHostTypeMarker_M1_C3_apiN3_Box"
         );
         let paths = [
             named(&["a", "b"], "Box"),
@@ -3372,7 +3363,7 @@ mod tests {
         assert_ne!(flat.public_type(), nested.public_type());
         assert_ne!(flat.public_type(), underscore.public_type());
         assert_ne!(underscore.public_type(), affixed.public_type());
-        assert!(flat.public_type().as_str().starts_with("KioNewtype_V1_"));
+        assert!(flat.public_type().as_str().starts_with("KioNewtype_M"));
         assert!(underscore.public_type().as_str().contains("N5_TOken"));
         assert!(affixed.public_type().as_str().contains("N9__uToken_u"));
 
@@ -3594,8 +3585,8 @@ mod tests {
     #[test]
     fn exact_alias_owner_rejects_same_spelling_for_another_sum_context() {
         let alias = go_identifier("Env_Api_value_ret".to_owned()).unwrap();
-        let row_a = go_identifier("kioSumUse_V1_M1_C3_apiH_N1_a_U0".to_owned()).unwrap();
-        let row_b = go_identifier("kioSumUse_V1_M1_C3_apiH_N1_b_U0".to_owned()).unwrap();
+        let row_a = go_identifier("kioSumUse_M1_C3_apiH_N1_a_U0".to_owned()).unwrap();
+        let row_b = go_identifier("kioSumUse_M1_C3_apiH_N1_b_U0".to_owned()).unwrap();
         let collision = ScopeClaims::try_collect([
             (
                 GoFacadeScope::Package,

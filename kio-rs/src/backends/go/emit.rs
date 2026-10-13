@@ -66,8 +66,8 @@ mod facade_consumer_tests {
     use crate::pipeline::Pipeline;
     use std::path::{Path, PathBuf};
 
-    const I32_HOST: &str = "KioHost_V1_M1_C3_apiN3_I32";
-    const TEXT_HOST: &str = "KioHost_V1_M1_C3_apiN4_Text";
+    const I32_HOST: &str = "KioHost_M1_C3_apiN3_I32";
+    const TEXT_HOST: &str = "KioHost_M1_C3_apiN4_Text";
 
     #[test]
     fn native_docs_follow_selected_public_declarations() {
@@ -314,7 +314,7 @@ mod facade_consumer_tests {
              pub fn exported(value: Token) -> Token { value }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit exact Go host binding");
-        let binding = "KioHost_V1_M1_C3_apiN5_Token";
+        let binding = "KioHost_M1_C3_apiN5_Token";
 
         assert!(
             emitted
@@ -364,7 +364,7 @@ mod facade_consumer_tests {
              pub fn via(value: Count) -> Count { round(value) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit exact Go role binding");
-        let binding = "KioHost_V1_M1_C3_apiN5_Count";
+        let binding = "KioHost_M1_C3_apiN5_Count";
         let convert_in = "KioHostIn_api_Count";
         let convert_out = "KioHostOut_api_Count";
 
@@ -397,7 +397,7 @@ mod facade_consumer_tests {
              host fn round(value: Box(I32)) -> Box(I32);",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go host carrier");
-        let atom = "KioIndexNominal_V1_M1_C3_apiN3_I32[KioHost_V1_M1_C3_apiN3_I32]";
+        let atom = "KioIndexNominal_M1_C3_apiN3_I32[KioHost_M1_C3_apiN3_I32]";
         let carrier = "KioHostType_api__Box";
 
         assert!(
@@ -586,7 +586,7 @@ mod facade_consumer_tests {
             lower_package(&package, "pkg").expect("emit constructor-only host preparation");
         assert!(emitted.ffi_go.contains("func PrepareHost_api_Number["));
         assert!(emitted.ffi_go.contains("func PrepareHost_api_Vault["));
-        assert!(emitted.ffi_go.contains("value KioHostType_api__Vault[KioI0]) Prepared[KioIndexApply_ASS[KioIndexNominal_V1_M1_C3_apiN5_Vault, KioI0]]"));
+        assert!(emitted.ffi_go.contains("value KioHostType_api__Vault[KioI0]) Prepared[KioIndexApply_ASS[KioIndexNominal_M1_C3_apiN5_Vault, KioI0]]"));
         assert!(
             emitted
                 .shapes_go
@@ -918,8 +918,8 @@ v(2) {
         let signature = (2, replayed);
         let emitted = lower_package_with_signature(&package, "pkg", Some(&signature))
             .expect("emit retained Go host type");
-        let live = "KioHost_V1_M1_C3_apiN4_Live";
-        let retained = "KioHost_V1_M1_C3_apiN6_Legacy";
+        let live = "KioHost_M1_C3_apiN4_Live";
+        let retained = "KioHost_M1_C3_apiN6_Legacy";
 
         assert!(
             emitted
@@ -1006,12 +1006,12 @@ v(2) {
         let signature = (2, replayed);
         let emitted = lower_package_with_signature(&package, "pkg", Some(&signature))
             .expect("emit retained Go newtype carrier");
-        let carrier = "KioNewtype_V1_M1_C3_apiN5_Token";
+        let carrier = "KioNewtype_M1_C3_apiN5_Token";
 
         assert_deprecated_declaration(&emitted.shapes_go, &format!("type {carrier} struct {{"));
         assert_deprecated_declaration(
             &emitted.ffi_go,
-            "type Env_Api__old_arg0 = KioNewtype_V1_M1_C3_apiN5_Token",
+            "type Env_Api__old_arg0 = KioNewtype_M1_C3_apiN5_Token",
         );
         assert!(
             !emitted.host_go.contains("Api__old("),
@@ -1209,7 +1209,7 @@ v(2) {
         assert!(
             packed_header.contains("CallExp_Api__Packed_readPacked[")
                 && packed_header.contains(
-                    ", arg1 func() func() func(KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value) Value"
+                    ", arg1 func() func() func(KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value) Value"
                 ),
             "{packed_header}"
         );
@@ -1230,7 +1230,7 @@ v(2) {
         let host_arguments = call_arguments(host_call);
         assert!(
             host_arguments
-                .starts_with("KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]{"),
+                .starts_with("KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]{"),
             "{host_call}"
         );
         assert!(host_arguments.ends_with('}'), "{host_call}");
@@ -1252,8 +1252,8 @@ v(2) {
             "type Exp_Api__Single_readSingle_arg1_result_cbret = Value",
             "type Exp_Api__Single_readSingle_ret = Value",
             "type Exp_Api__Packed_readPacked_arg0[KioI0 KioIndexKind_S] = ",
-            "type Exp_Api__Packed_readPacked_arg1[KioI0 KioIndexKind_S] = func() func() func(KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value",
-            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0[KioI0 KioIndexKind_S] = KioFacade_V1_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]",
+            "type Exp_Api__Packed_readPacked_arg1[KioI0 KioIndexKind_S] = func() func() func(KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]) Value",
+            "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0[KioI0 KioIndexKind_S] = KioFacade_Product_K3_P0_P1_P2_[Prepared[KioI0], Value, Value]",
             "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field0[KioI0 KioIndexKind_S] = Prepared[KioI0]",
             "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field1[KioI0 KioIndexKind_S] = Value",
             "type Exp_Api__Packed_readPacked_arg1_result_result_cbarg0_field2[KioI0 KioIndexKind_S] = Value",

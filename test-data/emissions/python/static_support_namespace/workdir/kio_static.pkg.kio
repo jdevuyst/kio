@@ -1,0 +1,13 @@
+package kio_static;
+
+build {
+  cache "out/.kio-cache/";
+
+  target python {
+    out "out/python/"
+  }
+}
+
+bridge {
+  main
+}

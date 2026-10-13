@@ -1,0 +1,42 @@
+module testapi/main;
+
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(String);
+import testapi/io(print);
+
+fn stage[A] -> String { print("stage\n"); "payload\n" }
+
+fn left(value: [A] String) -> ([A] String) | . { value.>widen_sum! }
+
+fn right(value: [A] String) -> . | ([A] String) { value.>widen_sum! }
+
+fn make_stage() -> [A] String { print("factory\n"); stage }
+
+fn effectful() -> . | ([A] String) { make_stage().>widen_sum! }
+
+fn read_left(value: ([A] String) | .) -> String {
+  match! value {
+    .(selected: [A] String) { selected(.) };
+    .(_empty: .) { "wrong arm\n" }
+  }
+}
+
+fn read_right(value: . | ([A] String)) -> String {
+  match! value {
+    .(selected: [A] String) { selected(.) };
+    .(_empty: .) { "wrong arm\n" }
+  }
+}
+
+pub fn main() {
+  let stored_left = left(stage);
+  print("left built\n");
+  print(read_left(stored_left));
+  let stored_right = right(stage);
+  print("right built\n");
+  print(read_right(stored_right));
+  let stored_effectful = effectful();
+  print("effectful built\n");
+  print(read_right(stored_effectful))
+}

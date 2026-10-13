@@ -1336,7 +1336,7 @@ mod prepared_tests {
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
-    const TEXT_HOST: &str = "KioHost_V1_M1_C3_apiN4_Text";
+    const TEXT_HOST: &str = "KioHost_M1_C3_apiN4_Text";
 
     const LIVE_SOURCE: &str = "module api; \
          host type I32 role(i32); \
