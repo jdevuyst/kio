@@ -38,10 +38,21 @@ sh "$REPO_ROOT/ci/cargo.sh" fmt --check
 
 command -v node >/dev/null 2>&1 || {
   printf '%s\n' "hygiene/kio-rs: node not found — the JavaScript value-runtime tests require the pinned Node toolchain." >&2
-  printf '%s\n' '  run sh ci/impl-toolchain.sh install-core, then sh ci/impl-toolchain.sh toolchain-exec js,rust --core -- sh ci/checks/hygiene/kio-rs.sh from the repo root.' >&2
+  printf '%s\n' '  run sh ci/impl-toolchain.sh install-core, then sh ci/impl-toolchain.sh toolchain-exec js,python,rust --core -- sh ci/checks/hygiene/kio-rs.sh from the repo root.' >&2
   exit 1
 }
 node src/backends/js/value_runtime.test.mjs
+
+if command -v python3 >/dev/null 2>&1; then
+  runtime_python=python3
+elif command -v python >/dev/null 2>&1; then
+  runtime_python=python
+else
+  printf '%s\n' "hygiene/kio-rs: Python not found — the Python value-runtime tests require the pinned Python toolchain." >&2
+  printf '%s\n' '  run sh ci/impl-toolchain.sh install-core, then sh ci/impl-toolchain.sh toolchain-exec js,python,rust --core -- sh ci/checks/hygiene/kio-rs.sh from the repo root.' >&2
+  exit 1
+fi
+"$runtime_python" -B src/backends/python/runtime.test.py
 
 # rg must exist, or the `|| true` below swallows exit 127 and the gate
 # passes vacuously. Pinned in mise.toml.

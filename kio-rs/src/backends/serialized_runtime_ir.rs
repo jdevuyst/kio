@@ -18,6 +18,7 @@ use super::boundary_facade::{
     CallableExecutionStage, CallableSourceParamAdapter, CallableValueStageLayout, FacadeKind,
     FacadeShellId, FacadeUse, PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
 };
+use super::tail_plan::{ResultChild, TailContext, TailStage};
 use super::value_plan::{ValuePlan, ValueUse};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -665,6 +666,8 @@ enum RuntimeExpr {
         applied_plan: Option<usize>,
     },
     LowModuleCall {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tail: Option<TailStage>,
         mangled: String,
         module_path: String,
         type_args: Vec<RuntimeType>,
@@ -676,6 +679,8 @@ enum RuntimeExpr {
         applied_plan: Option<usize>,
     },
     LowQualifiedModuleCall {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tail: Option<TailStage>,
         mangled: String,
         module_path: String,
         type_args: Vec<RuntimeType>,
@@ -700,6 +705,8 @@ enum RuntimeExpr {
         nominal: PythonQualifiedNameIr,
     },
     LowClosureCall {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tail: Option<TailStage>,
         name: String,
         type_args: Vec<RuntimeType>,
         args: Vec<RuntimeExpr>,
@@ -709,6 +716,8 @@ enum RuntimeExpr {
         applied_plan: Option<usize>,
     },
     LowIndirectCall {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tail: Option<TailStage>,
         callee: Box<RuntimeExpr>,
         type_args: Vec<RuntimeType>,
         args: Vec<RuntimeExpr>,
@@ -718,6 +727,8 @@ enum RuntimeExpr {
         applied_plan: Option<usize>,
     },
     LowTypeApplication {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tail: Option<TailStage>,
         callee: Box<RuntimeExpr>,
         #[serde(skip_serializing_if = "Option::is_none")]
         callee_plan: Option<usize>,
@@ -728,6 +739,8 @@ enum RuntimeExpr {
         value_arg: Box<RuntimeExpr>,
     },
     LowCpsProjectorApply {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tail: Option<TailStage>,
         // These are the continuation type's erased leading `forall`
         // applications and first value-stage ABI arity. Keeping both on the
         // serialized node makes execution depend only on the already-routed
@@ -1261,7 +1274,7 @@ fn runtime_items(
                     package,
                     module_key,
                     module,
-                    &def.body,
+                    TailContext::body(&def.body),
                     &scope,
                     Some(&def.ret),
                 ),
@@ -1512,7 +1525,14 @@ fn runtime_expr(
     expr: &Expr<Routed>,
     scope: &RuntimeTypeScope,
 ) -> RuntimeExpr {
-    runtime_expr_expected(package, module_key, module, expr, scope, None)
+    runtime_expr_expected(
+        package,
+        module_key,
+        module,
+        TailContext::operand(expr),
+        scope,
+        None,
+    )
 }
 
 fn runtime_call_arguments(
@@ -1546,7 +1566,16 @@ fn runtime_call_arguments(
     );
     args.iter()
         .zip(slots)
-        .map(|(arg, ty)| runtime_expr_expected(package, module_key, module, arg, scope, Some(ty)))
+        .map(|(arg, ty)| {
+            runtime_expr_expected(
+                package,
+                module_key,
+                module,
+                TailContext::operand(arg),
+                scope,
+                Some(ty),
+            )
+        })
         .collect()
 }
 
@@ -1554,13 +1583,32 @@ fn runtime_expr_expected(
     package: &Package<Routed>,
     module_key: &str,
     module: &Module<Routed>,
-    expr: &Expr<Routed>,
+    context: TailContext<'_>,
     scope: &RuntimeTypeScope,
     expected: Option<&Type<Routed>>,
 ) -> RuntimeExpr {
+    let expr = context.expr();
+    let tail = context.tail_stage();
     let nested = |expr: &Expr<Routed>| runtime_expr(package, module_key, module, expr, scope);
     let with_expected = |expr: &Expr<Routed>, expected: Option<&Type<Routed>>| {
-        runtime_expr_expected(package, module_key, module, expr, scope, expected)
+        runtime_expr_expected(
+            package,
+            module_key,
+            module,
+            TailContext::operand(expr),
+            scope,
+            expected,
+        )
+    };
+    let result = |edge, expected: Option<&Type<Routed>>| {
+        runtime_expr_expected(
+            package,
+            module_key,
+            module,
+            context.result_child(edge),
+            scope,
+            expected,
+        )
     };
     let empty_values = HashMap::new();
     let types = super::reconstruct::RoutedBodyTypes {
@@ -1611,7 +1659,7 @@ fn runtime_expr_expected(
     };
     match expr {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        Expr::FnExpr { sig, body, .. } => {
+        Expr::FnExpr { sig, .. } => {
             let scheme = expected
                 .map(|ty| types.canonical(ty))
                 .or_else(|| scope.value_type(package, module, expr))
@@ -1627,25 +1675,25 @@ fn runtime_expr_expected(
                     package,
                     module_key,
                     module,
-                    body,
+                    context.result_child(ResultChild::FunctionBody),
                     &nested_scope,
                     Some(&ret),
                 )),
             }
         }
-        Expr::Let {
-            name, value, body, ..
-        } => {
+        Expr::Let { name, value, .. } => {
             let ty = scope.value_type(package, module, value);
             RuntimeExpr::Let {
                 name: name.clone(),
                 value: Box::new(nested(value)),
-                body: Box::new(scope.with_value(name, ty, || with_expected(body, expected))),
+                body: Box::new(
+                    scope.with_value(name, ty, || result(ResultChild::LetBody, expected)),
+                ),
             }
         }
-        Expr::Seq { value, body, .. } => RuntimeExpr::Seq {
+        Expr::Seq { value, .. } => RuntimeExpr::Seq {
             value: Box::new(nested(value)),
-            body: Box::new(with_expected(body, expected)),
+            body: Box::new(result(ResultChild::SeqBody, expected)),
         },
         Expr::Unit { .. } => RuntimeExpr::Unit {},
         Expr::StrLit {
@@ -1738,7 +1786,7 @@ fn runtime_expr_expected(
                         RuntimeArm {
                             param: arm.param.clone(),
                             body: scope.with_value(&arm.param, Some(ty.clone()), || {
-                                with_expected(&arm.body, Some(result_ty))
+                                result(ResultChild::MatchArm(index), Some(result_ty))
                             }),
                         }
                     })
@@ -1746,11 +1794,7 @@ fn runtime_expr_expected(
             }
         }
         Expr::EnrichedConditional {
-            cond,
-            then_branch,
-            else_branch,
-            result_ty,
-            ..
+            cond, result_ty, ..
         } => RuntimeExpr::EnrichedConditional {
             cond: Box::new(nested(cond)),
             host_type: nominal(
@@ -1758,8 +1802,8 @@ fn runtime_expr_expected(
                     .value_type(package, module, cond)
                     .expect("a routed condition retains its role type"),
             ),
-            then_branch: Box::new(with_expected(then_branch, Some(result_ty))),
-            else_branch: Box::new(with_expected(else_branch, Some(result_ty))),
+            then_branch: Box::new(result(ResultChild::ThenBranch, Some(result_ty))),
+            else_branch: Box::new(result(ResultChild::ElseBranch, Some(result_ty))),
         },
         Expr::EnrichedFieldGet {
             target,
@@ -1842,6 +1886,7 @@ fn runtime_expr_expected(
                 .then(|| target_scope.value_plan(package, target_module, &scheme))
                 .flatten();
             RuntimeExpr::LowModuleCall {
+                tail,
                 mangled: mangled.clone(),
                 module_path: target_key,
                 type_args: type_args
@@ -1881,6 +1926,7 @@ fn runtime_expr_expected(
                 .then(|| target_scope.value_plan(package, target_module, &scheme))
                 .flatten();
             RuntimeExpr::LowQualifiedModuleCall {
+                tail,
                 mangled: member.to_owned(),
                 module_path: target_key,
                 type_args: type_args
@@ -1963,6 +2009,7 @@ fn runtime_expr_expected(
                 .map(|ty| types.canonical(ty))
                 .expect("a routed local callable has its lexical scheme");
             RuntimeExpr::LowClosureCall {
+                tail,
                 name: name.clone(),
                 type_args: type_args
                     .iter()
@@ -1988,6 +2035,7 @@ fn runtime_expr_expected(
                 .map(|ty| types.canonical(&ty))
                 .expect("a routed indirect callable has its phase-owned scheme");
             RuntimeExpr::LowIndirectCall {
+                tail,
                 callee: Box::new(with_expected(callee, Some(&scheme))),
                 type_args: type_args
                     .iter()
@@ -2010,6 +2058,7 @@ fn runtime_expr_expected(
                 .map(|ty| types.canonical(&ty))
                 .expect("a routed type application retains the callee's phase-owned scheme");
             RuntimeExpr::LowTypeApplication {
+                tail,
                 callee: Box::new(with_expected(callee, Some(&scheme))),
                 callee_plan: scope.value_plan(package, module, &scheme),
                 applied_plan: scope.applied_value_plan(
@@ -2035,6 +2084,7 @@ fn runtime_expr_expected(
                 cps_continuation_runtime_shape(continuation_ty);
             let continuation_plan = scope.value_plan(package, module, continuation_ty);
             RuntimeExpr::LowCpsProjectorApply {
+                tail,
                 continuation_type_stages,
                 continuation_abi_arity,
                 continuation_plan,
@@ -2657,7 +2707,7 @@ mod tests {
             package,
             module_path,
             module,
-            body,
+            TailContext::body(body),
             &scope,
             Some(&def.ret),
         ))
@@ -2666,6 +2716,94 @@ mod tests {
 
     fn canonical_body(package: &Package<Routed>, name: &str) -> serde_json::Value {
         canonical_body_in(package, "x/main", name)
+    }
+
+    #[test]
+    fn tail_markers_follow_checked_execution_stages_and_operand_boundaries() {
+        let package = routed(&full_prime(
+            "module x/main; \
+             fn leaf() -> . { () } \
+             fn type_leaf[A] -> . { () } \
+             fn named() -> . { leaf() } \
+             fn named_type() -> . { type_leaf(.) } \
+             fn indirect(f: . -> .) -> . { f() } \
+             fn indirect_type(f: [A] .) -> . { f(.) } \
+             fn nested(f: . -> ., g: . -> .) -> . { g(f()) } \
+             fn forwarded(f: . -> .) -> . -> . { .() { f() } } \
+             fn hold(callback: . -> .) -> . -> . { callback } \
+             fn saved(before: . -> ., after: . -> .) -> . -> . { \
+               hold(.() { before(); after() }) \
+             }",
+        ));
+        assert_eq!(
+            canonical_body(&package, "named")["LowModuleCall"]["tail"],
+            "value"
+        );
+        assert_eq!(
+            canonical_body(&package, "named_type")["LowTypeApplication"]["tail"],
+            "type"
+        );
+        assert_eq!(
+            canonical_body(&package, "indirect")["LowClosureCall"]["tail"],
+            "value"
+        );
+        assert_eq!(
+            canonical_body(&package, "indirect_type")["LowTypeApplication"]["tail"],
+            "type"
+        );
+
+        fn markers(value: &serde_json::Value, out: &mut Vec<(String, Option<String>)>) {
+            match value {
+                serde_json::Value::Object(fields) => {
+                    for (tag, data) in fields {
+                        if tag == "LowClosureCall" {
+                            out.push((
+                                data["name"].as_str().unwrap().to_owned(),
+                                data.get("tail")
+                                    .map(|tail| tail.as_str().unwrap().to_owned()),
+                            ));
+                        }
+                        markers(data, out);
+                    }
+                }
+                serde_json::Value::Array(values) => {
+                    for value in values {
+                        markers(value, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut nested = Vec::new();
+        markers(&canonical_body(&package, "nested"), &mut nested);
+        nested.sort();
+        assert_eq!(
+            nested,
+            [
+                ("f".to_owned(), None),
+                ("g".to_owned(), Some("value".to_owned()))
+            ]
+        );
+        let forwarded = canonical_body(&package, "forwarded");
+        assert_eq!(forwarded["LowBoundRef"]["name"], "f");
+        let mut forwarded_calls = Vec::new();
+        markers(&forwarded, &mut forwarded_calls);
+        assert!(forwarded_calls.is_empty());
+        let saved = canonical_body(&package, "saved");
+        let closure = saved["LowModuleCall"]["args"][0]
+            .get("FnExpr")
+            .expect("non-forwarding closure remains a non-tail call operand");
+        assert!(closure.get("tail").is_none());
+        let mut saved_calls = Vec::new();
+        markers(&closure["body"], &mut saved_calls);
+        saved_calls.sort();
+        assert_eq!(
+            saved_calls,
+            [
+                ("after".to_owned(), Some("value".to_owned())),
+                ("before".to_owned(), None)
+            ]
+        );
     }
 
     fn selective_module_fn_value_sig(package: &Package<Routed>, name: &str) -> serde_json::Value {
@@ -2899,37 +3037,44 @@ mod tests {
                 if !matches!(def.name.as_str(), "direct" | "local" | "computed") {
                     continue;
                 }
-                let mut pending = vec![(&def.body, false)];
+                let mut pending = vec![&def.body];
                 let mut applications = Vec::new();
-                while let Some((node, under_let)) = pending.pop() {
+                let mut computed_producers = 0;
+                while let Some(node) = pending.pop() {
                     match node {
                         RuntimeExpr::Let { value, body, .. } => {
-                            pending.extend([(value.as_ref(), true), (body.as_ref(), true)]);
+                            pending.extend([value.as_ref(), body.as_ref()]);
                         }
                         RuntimeExpr::Seq { value, body } => {
-                            pending
-                                .extend([(value.as_ref(), under_let), (body.as_ref(), under_let)]);
+                            pending.extend([value.as_ref(), body.as_ref()]);
                         }
-                        RuntimeExpr::FnExpr { body, .. } => pending.push((body, under_let)),
+                        RuntimeExpr::FnExpr { body, .. } => pending.push(body),
                         RuntimeExpr::LowTypeApplication {
                             callee,
                             applied_plan,
                             ..
                         } => {
-                            applications.push(("type", applied_plan.unwrap(), under_let));
-                            pending.push((callee, under_let));
+                            applications.push(("type", applied_plan.unwrap()));
+                            pending.push(callee);
                         }
                         RuntimeExpr::LowModuleCall {
-                            args, applied_plan, ..
+                            mangled,
+                            args,
+                            applied_plan,
+                            ..
+                        } => {
+                            computed_producers += usize::from(mangled == "generic");
+                            applications.extend(applied_plan.map(|plan| ("call", plan)));
+                            pending.extend(args);
                         }
-                        | RuntimeExpr::LowQualifiedModuleCall {
+                        RuntimeExpr::LowQualifiedModuleCall {
                             args, applied_plan, ..
                         }
                         | RuntimeExpr::LowClosureCall {
                             args, applied_plan, ..
                         } => {
-                            applications.extend(applied_plan.map(|plan| ("call", plan, under_let)));
-                            pending.extend(args.iter().map(|arg| (arg, under_let)));
+                            applications.extend(applied_plan.map(|plan| ("call", plan)));
+                            pending.extend(args);
                         }
                         RuntimeExpr::LowIndirectCall {
                             callee,
@@ -2937,10 +3082,9 @@ mod tests {
                             applied_plan,
                             ..
                         } => {
-                            applications
-                                .extend(applied_plan.map(|plan| ("indirect", plan, under_let)));
-                            pending.push((callee, under_let));
-                            pending.extend(args.iter().map(|arg| (arg, under_let)));
+                            applications.extend(applied_plan.map(|plan| ("indirect", plan)));
+                            pending.push(callee);
+                            pending.extend(args);
                         }
                         RuntimeExpr::Unit {}
                         | RuntimeExpr::LowBoundRef { .. }
@@ -2954,16 +3098,24 @@ mod tests {
                 assert_eq!(
                     applications.len(),
                     1,
-                    "{} must specialize once through its residualized body",
+                    "{} must specialize once before its value stage escapes",
                     def.name
                 );
-                let (variant, applied, under_let) = applications[0];
+                let (variant, applied) = applications[0];
                 if def.name == "computed" {
                     assert_eq!(variant, "type");
+                    assert_eq!(computed_producers, 1);
+                    let RuntimeExpr::LowTypeApplication { callee, tail, .. } = &def.body else {
+                        panic!("computed specialization executes before returning its value stage")
+                    };
+                    assert_eq!(*tail, Some(TailStage::Type));
                     assert!(
-                        under_let,
-                        "computed specialization is retained under residualization"
+                        matches!(callee.as_ref(), RuntimeExpr::LowModuleCall { mangled, tail: None, .. }
+                            if mangled == "generic"),
+                        "the computed callee executes once as an operand before specialization"
                     );
+                } else {
+                    assert_eq!(computed_producers, 0);
                 }
                 let plan = &plans[applied];
                 let ValueUse::Function { domain, result, .. } = plan.use_at(plan.root()) else {
@@ -3097,6 +3249,7 @@ mod tests {
 
         let body = canonical_body(&package, "consume");
         let cps = &body["LowCpsProjectorApply"];
+        assert_eq!(cps["tail"], "value");
         assert_eq!(cps["continuation_type_stages"], 2);
         assert_eq!(cps["continuation_abi_arity"], 1);
         assert!(cps.get("module_path").is_none());

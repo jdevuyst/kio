@@ -5,7 +5,142 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('./value_runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /__kio(?:Protect|NeedsProtection|ValueRef|BoundaryValueRef|RunAdapted|Callable|Lift)|adapt\(/,
   'ordinary host values have neither an admission walker nor adapter-layer dispatch');
-const runtime = vm.runInNewContext(source + '\n({ context: __kioNominalContext, poly: __kioPoly })');
+const realm = vm.createContext({});
+const loadRuntime = (context = realm) => vm.runInContext('(() => {\n' + source + '\nreturn { context: __kioNominalContext, poly: __kioPoly, guest: __kioGuest, call: __kioTailCall, advance: __kioTailAdvance }; })()', context);
+const runtime = loadRuntime();
+
+{
+  const owners = [];
+  const visits = [0, 0];
+  const cursors = new Set();
+  const leaf = value => { owners.push('leaf'); return value + 1; };
+  let chain = leaf;
+  for (let index = 0; index < 50000; index++) {
+    const next = chain;
+    const owner = index % 2;
+    chain = runtime.guest((value, cursor) => {
+      visits[owner]++;
+      cursors.add(cursor);
+      return runtime.call(cursor, next, value);
+    });
+  }
+  assert.equal(typeof chain, 'function');
+  assert.equal(chain(17), 18);
+  assert.equal(cursors.size, 1, 'every transfer reuses its invocation cursor');
+  assert.equal(chain(23), 24, 'retained entries are reusable across invocations');
+  assert.equal(cursors.size, 2, 'separate calls own separate cursors');
+  assert.deepEqual(owners, ['leaf', 'leaf']);
+  assert.deepEqual(visits, [50000, 50000], 'each captured owner survives both invocations');
+  assert.deepEqual(Object.getOwnPropertySymbols(chain), []);
+}
+
+{
+  const events = [];
+  const target = new Proxy(value => value + 1, {
+    get() { throw new Error('unexpected callable property read'); },
+    getOwnPropertyDescriptor() { throw new Error('unexpected callable descriptor read'); },
+    apply(target, receiver, args) {
+      events.push(['value', receiver, ...args]);
+      return Reflect.apply(target, receiver, args);
+    },
+  });
+  const call = runtime.guest((value, cursor) => runtime.call(cursor, target, value));
+  assert.equal(call(6), 7);
+  assert.deepEqual(events.splice(0), [['value', undefined, 6]]);
+  const poly = {
+    advance: new Proxy(function () { return this; }, {
+      get() { throw new Error('unexpected type callable property read'); },
+      apply(target, receiver, args) {
+        events.push(['type', args.length]);
+        return Reflect.apply(target, receiver, args);
+      },
+    }),
+  };
+  const advance = runtime.guest((_, cursor) => runtime.advance(cursor, poly));
+  assert.equal(advance(null), poly);
+  assert.deepEqual(events, [['type', 0]]);
+}
+
+{
+  const events = [];
+  const makeOwner = label => {
+    const leaf = value => { events.push(label); return value; };
+    return runtime.guest((value, cursor) => runtime.call(cursor, leaf, value));
+  };
+  const first = makeOwner('first');
+  const second = makeOwner('second');
+  const bridge = runtime.guest((value, cursor) => runtime.call(cursor, second, value));
+  const host = callback => {
+    events.push('before');
+    assert.equal(first(3), 3, 'host reentry owns a separate cursor');
+    assert.equal(callback(7), 7);
+    assert.equal(callback(8), 8);
+    events.push('after');
+    return callback;
+  };
+  const invoke = runtime.guest((callback, cursor) => runtime.call(cursor, host, callback));
+  const returned = invoke(bridge);
+  assert.equal(returned, bridge, 'a callable result is an ordinary value');
+  assert.deepEqual(events.splice(0), ['before', 'first', 'second', 'second', 'after']);
+  assert.equal(returned(9), 9);
+  assert.deepEqual(events.splice(0), ['second']);
+  const ignore = runtime.guest((callback, cursor) => runtime.call(cursor, () => 31, callback));
+  assert.equal(ignore(first), 31);
+  assert.deepEqual(events, [], 'a host may ignore a callback');
+  const failure = new Error('host failure');
+  const throwing = runtime.guest((value, cursor) => runtime.call(cursor, () => { throw failure; }, value));
+  assert.throws(() => throwing(null), error => error === failure);
+  assert.equal(first(11), 11, 'a failed invocation leaves later calls independent');
+}
+
+{
+  const events = [];
+  const visits = [0, 0];
+  const leaf = {
+    value: 41,
+    advance() {
+      assert.equal(arguments.length, 0);
+      events.push('type');
+      return value => this.value + value;
+    },
+  };
+  let chain = leaf;
+  for (let index = 0; index < 50000; index++) {
+    const next = chain;
+    const owner = index % 2;
+    chain = runtime.poly(runtime.guest((_, cursor) => {
+      visits[owner]++;
+      return runtime.advance(cursor, next);
+    }));
+  }
+  assert.deepEqual(events, [], 'construction never enters a type stage');
+  const result = chain.advance();
+  assert.deepEqual(events.splice(0), ['type']);
+  assert.equal(result(1), 42);
+  assert.deepEqual(events, []);
+  assert.equal(chain.advance()(2), 43);
+  assert.deepEqual(events, ['type']);
+  assert.deepEqual(visits, [50000, 50000]);
+}
+
+{
+  const other = loadRuntime();
+  const events = [];
+  let value = input => { events.push('value'); return input + 1; };
+  let poly = { advance() { events.push('type'); return 37; } };
+  for (let index = 0; index < 8; index++) {
+    const owner = index % 2 === 0 ? runtime : other;
+    const previousValue = value;
+    const previousPoly = poly;
+    value = owner.guest((input, cursor) => owner.call(cursor, previousValue, input));
+    poly = owner.poly(owner.guest((_, cursor) => owner.advance(cursor, previousPoly)));
+  }
+  assert.equal(value(41), 42, 'independent artifacts retain ordinary callback invocation');
+  assert.equal(poly.advance(), 37);
+  assert.equal(value(43), 44);
+  assert.equal(poly.advance(), 37);
+  assert.deepEqual(events, ['value', 'type', 'value', 'type']);
+}
 
 {
   const events = [];
@@ -51,4 +186,4 @@ const runtime = vm.runInNewContext(source + '\n({ context: __kioNominalContext, 
   assert.equal(context.get('visible.Box').unwrap(visible), token);
 }
 
-console.log('JavaScript value runtime: type stages and nominal storage passed');
+console.log('JavaScript value runtime: tail transfers, type stages and nominal storage passed');

@@ -7,11 +7,11 @@
 //! § Runtime-support library convention for the framework-level
 //! rationale.
 //!
-//! Swift's body carries canonical native values inside `Any`. Private
-//! witnesses selected at lexical type stages construct exact generic nodes;
-//! their payloads never determine the represented type. Structural projection
-//! uses protocols for already-proved product, sum, or nominal nodes. Host-owned
-//! applications keep their contents opaque across this execution boundary.
+//! Swift's body carries private callable and structural values inside `Any`.
+//! Lexically selected witnesses attach their exact native views, used only at
+//! host boundaries. Internal projection and application retain the private
+//! values across generic and nominal transport. Host-owned applications remain
+//! opaque, with their original native generic indices.
 //!
 //! The content lives here as a `&str` constant so it ships with the
 //! kio-rs binary. The build-side dispatcher writes it under
@@ -137,6 +137,71 @@ func __kioChecked<T>(_ value: Any, as _: T.Type) -> T {
     return typed
 }
 
+// Only compiler-owned rich values conform. Inspect this marker before casting
+// to T: an opaque public T may itself be Any, but must still get a native view.
+protocol __KioPrivateValue {
+    func __kioNative() -> Any
+}
+
+func __kioNativeChecked<T>(_ value: Any, as _: T.Type) -> T {
+    let native = (value as? any __KioPrivateValue)?.__kioNative() ?? value
+    return __kioChecked(native, as: T.self)
+}
+
+// Retain the checked no-transfer proof so a terminal invocation needs no cursor.
+// A terminal body can still perform effects and non-tail calls.
+enum __KioEntryBody {
+    case terminal((Any) -> Any)
+    case resumable((Any, __KioCursor) -> Any)
+}
+
+// The entry owns its body and a typed view factory, never a closure capturing
+// itself. A returned native closure owns the entry for its own lifetime.
+final class __KioEntry: __KioPrivateValue {
+    let body: __KioEntryBody
+    private let native: (__KioEntry) -> Any
+    init(_ body: @escaping (Any, __KioCursor) -> Any,
+         native: @escaping (__KioEntry) -> Any) {
+        self.body = .resumable(body)
+        self.native = native
+    }
+    init(_ body: @escaping (Any) -> Any,
+         native: @escaping (__KioEntry) -> Any) {
+        self.body = .terminal(body)
+        self.native = native
+    }
+    func __kioNative() -> Any { native(self) }
+}
+
+final class __KioCursor {
+    var next: __KioEntry?
+    var argument: Any = KioUnit()
+    func transfer(_ entry: __KioEntry, _ argument: Any) -> Any {
+        self.next = entry
+        self.argument = argument
+        return KioUnit()
+    }
+}
+
+func __kioRun(_ entry: __KioEntry, _ argument: Any) -> Any {
+    if case .terminal(let body) = entry.body { return body(argument) }
+    let cursor = __KioCursor()
+    var current = entry
+    var argument = argument
+    while true {
+        let result: Any
+        switch current.body {
+        case .terminal(let body): return body(argument)
+        case .resumable(let body): result = body(argument, cursor)
+        }
+        guard let next = cursor.next else { return result }
+        current = next
+        argument = cursor.argument
+        cursor.next = nil
+        cursor.argument = KioUnit()
+    }
+}
+
 protocol __KioProductValue {
     var __kioFirst: Any { get }
     var __kioRest: Any { get }
@@ -145,6 +210,13 @@ protocol __KioProductValue {
 extension Product: __KioProductValue {
     var __kioFirst: Any { _0 }
     var __kioRest: Any { _1 }
+}
+
+private struct __KioProductBody: __KioProductValue, __KioPrivateValue {
+    let __kioFirst: Any
+    let __kioRest: Any
+    let native: () -> Any
+    func __kioNative() -> Any { native() }
 }
 
 protocol __KioSumValue {
@@ -160,6 +232,12 @@ extension Sum: __KioSumValue {
     }
 }
 
+private struct __KioSumBody: __KioSumValue, __KioPrivateValue {
+    let __kioBranch: (Int, Any)
+    let native: () -> Any
+    func __kioNative() -> Any { native() }
+}
+
 protocol __KioProductWitness: __KioTypeWitness {
     func construct(_ first: Any, _ rest: Any) -> Any
 }
@@ -167,8 +245,10 @@ protocol __KioProductWitness: __KioTypeWitness {
 private struct __KioProductType<L: __KioTypeWitness, R: __KioTypeWitness>: __KioProductWitness {
     typealias Native = Product<L.Native, R.Native>
     func construct(_ first: Any, _ rest: Any) -> Any {
-        Native(_0: __kioChecked(first, as: L.Native.self),
-               _1: __kioChecked(rest, as: R.Native.self))
+        __KioProductBody(__kioFirst: first, __kioRest: rest, native: {
+            Native(_0: __kioNativeChecked(first, as: L.Native.self),
+                   _1: __kioNativeChecked(rest, as: R.Native.self))
+        })
     }
 }
 
@@ -186,9 +266,11 @@ private struct __KioSumType<L: __KioTypeWitness, R: __KioTypeWitness>: __KioSumW
     typealias Native = Sum<L.Native, R.Native>
     func inject(_ branch: Int, _ payload: Any) -> Any {
         precondition(branch == 0 || branch == 1, "Kio private sum branch is invalid")
-        return branch == 0
-            ? Native._0(__kioChecked(payload, as: L.Native.self))
-            : Native._1(__kioChecked(payload, as: R.Native.self))
+        return __KioSumBody(__kioBranch: (branch, payload), native: {
+            branch == 0
+                ? Native._0(__kioNativeChecked(payload, as: L.Native.self))
+                : Native._1(__kioNativeChecked(payload, as: R.Native.self))
+        })
     }
 }
 
@@ -200,20 +282,36 @@ func __kioSumType<L: __KioTypeWitness, R: __KioTypeWitness>(
 
 protocol __KioFunctionWitness: __KioTypeWitness {
     func construct(_ body: @escaping (Any) -> Any) -> Any
+    func constructTail(_ body: @escaping (Any, __KioCursor) -> Any) -> Any
     func invoke(_ function: Any, _ argument: Any) -> Any
+    func invokeTail(_ function: Any, _ argument: Any, _ cursor: __KioCursor) -> Any
 }
 
 private struct __KioFunctionType<D: __KioTypeWitness, R: __KioTypeWitness>: __KioFunctionWitness {
     typealias Native = (D.Native) -> R.Native
     func construct(_ body: @escaping (Any) -> Any) -> Any {
+        __KioEntry(body, native: native)
+    }
+    func constructTail(_ body: @escaping (Any, __KioCursor) -> Any) -> Any {
+        __KioEntry(body, native: native)
+    }
+    private func native(_ entry: __KioEntry) -> Any {
         let function: Native = { argument in
-            __kioChecked(body(argument), as: R.Native.self)
+            __kioNativeChecked(__kioRun(entry, argument), as: R.Native.self)
         }
         return function
     }
     func invoke(_ function: Any, _ argument: Any) -> Any {
+        if let entry = function as? __KioEntry { return __kioRun(entry, argument) }
+        return invokeNative(function, argument)
+    }
+    func invokeTail(_ function: Any, _ argument: Any, _ cursor: __KioCursor) -> Any {
+        if let entry = function as? __KioEntry { return cursor.transfer(entry, argument) }
+        return invokeNative(function, argument)
+    }
+    private func invokeNative(_ function: Any, _ argument: Any) -> Any {
         __kioChecked(function, as: Native.self)(
-            __kioChecked(argument, as: D.Native.self)
+            __kioNativeChecked(argument, as: D.Native.self)
         )
     }
 }
@@ -230,10 +328,18 @@ protocol __KioForallValue {
 
 protocol __KioForallWitness: __KioTypeWitness {
     func construct(_ body: @escaping (any __KioTypeWitness) -> Any) -> Any
+    func constructTail(_ body: @escaping (any __KioTypeWitness, __KioCursor) -> Any) -> Any
 }
 
 func __kioAdvance(_ value: Any, _ witness: any __KioTypeWitness) -> Any {
-    __kioChecked(value, as: (any __KioForallValue).self).__kioAdvance(witness)
+    if let entry = value as? __KioEntry { return __kioRun(entry, witness) }
+    return __kioChecked(value, as: (any __KioForallValue).self).__kioAdvance(witness)
+}
+
+func __kioAdvanceTail(_ value: Any, _ witness: any __KioTypeWitness,
+                      _ cursor: __KioCursor) -> Any {
+    if let entry = value as? __KioEntry { return cursor.transfer(entry, witness) }
+    return __kioChecked(value, as: (any __KioForallValue).self).__kioAdvance(witness)
 }
 
 // The emitter selects these operations from the shared structural plan. The
@@ -318,3 +424,39 @@ func kioSumPayload(_ v: Any, _ variants: Int) -> (Int, Any) {
 }
 
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::RUNTIME_SUPPORT_FILE_CONTENT;
+
+    #[test]
+    fn terminal_entries_retain_the_no_cursor_path() {
+        let runtime = RUNTIME_SUPPORT_FILE_CONTENT;
+        let run = runtime
+            .split("func __kioRun(")
+            .nth(1)
+            .unwrap()
+            .split("protocol __KioProductValue")
+            .next()
+            .unwrap();
+        let terminal = run.find("if case .terminal(let body)").unwrap();
+        let cursor = run.find("let cursor = __KioCursor()").unwrap();
+        assert!(terminal < cursor);
+        assert!(run.contains("case .terminal(let body): return body(argument)"));
+        assert!(run.contains("case .resumable(let body): result = body(argument, cursor)"));
+
+        let construction = runtime
+            .split("private struct __KioFunctionType")
+            .nth(1)
+            .unwrap()
+            .split("func invoke(")
+            .next()
+            .unwrap();
+        assert!(construction.contains(
+            "func construct(_ body: @escaping (Any) -> Any) -> Any {\n        __KioEntry(body, native: native)"
+        ));
+        assert!(construction.contains(
+            "func constructTail(_ body: @escaping (Any, __KioCursor) -> Any) -> Any {\n        __KioEntry(body, native: native)"
+        ));
+    }
+}

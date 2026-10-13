@@ -1,0 +1,13 @@
+package haskell_general_tail_function_result;
+
+build {
+  target haskell {
+    out "out/haskell/";
+    baseline ghc9_10;
+    namespace "GeneralTailFunctionResult"
+  }
+}
+
+bridge {
+  api
+}

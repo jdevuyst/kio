@@ -1,0 +1,27 @@
+module api;
+
+host type I32 role(i32);
+
+host fn tick();
+
+fn forward(previous: I32 -> I32, value: I32) -> I32 { previous(value) }
+
+fn forward_wide(_first: I32, previous: I32 -> I32, value: I32) -> I32 { previous(value) }
+
+pub fn link(previous: I32 -> I32) -> I32 -> I32 {
+  .(value) { tick(); forward(previous, value) }
+}
+
+pub fn wide_link(previous: I32 -> I32) -> I32 -> I32 {
+  .(value) { tick(); forward_wide(value, previous, value) }
+}
+
+pub fn ordered(first: I32, previous: I32 -> I32, last: I32) -> I32 {
+  forward_wide(first, previous, last)
+}
+
+pub newtype Poly : [A] I32 { pub constructor make_poly; pub projector read_poly }
+
+pub fn type_link(previous: Poly) -> Poly {
+  Poly.make_poly(.[A] { tick(); Poly.read_poly(previous)(A) })
+}

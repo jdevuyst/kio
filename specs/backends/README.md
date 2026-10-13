@@ -24,7 +24,7 @@ limitation.
 - [`java.md`](java.md) — Java backend. Family `erased-static`. A statically-typed host with a typed FFI skin over an *erased* body (`Object`, the host's universal object); HKT is carried dynamically in that erased rep. The body is a serialized-IR interpreter rather than per-function compiled code — the page carries the family-divergence note.
 - [`rust.md`](rust.md) — Rust backend. Family `erased-static`. A statically-typed host with a typed FFI skin over an *erased* body (an opaque reference-counted `Any` token: `Rc` by default, `Arc + Send + Sync` under the thread-safe option); HKT is carried dynamically in that erased rep. Reference-counted, not GC.
 - [`go.md`](go.md) — Go backend. Family `erased-static`. A statically-typed host with a generic typed FFI facade over an *erased* body (`interface{}` / `[]any`); products use generic record shells and concrete sums use row-anchored `KioSum` values. HKT is carried dynamically in the erased rep.
-- [`swift.md`](swift.md) — Swift backend. Family `erased-static`. A statically-typed host with an exact typed FFI skin over canonical native values stored as `Any`. Private lexical type witnesses construct the same typed products, sums, and constructor applications used at the public boundary. Sums use native enums with payloads.
+- [`swift.md`](swift.md) — Swift backend. Family `erased-static`. A statically-typed host with an exact typed FFI skin over private `Any`-valued execution interfaces. Private callable and structural carriers retain their execution form inside the body; lexical type witnesses construct exact native views at the public boundary. Public sums use native enums with payloads.
 - [`haskell.md`](haskell.md) — Haskell backend. Family `native-HKT`. A statically-typed host whose own kind system carries HKT directly (`F(A)` → `f a`); exact host types selected through a package-qualified marker class; products and sums as transparent pair / `Either` folds with flat boundary patterns; monad-polymorphic exports over a value host-function record. The first native-HKT member; its per-backend concern is forcing Kio's strict evaluation in a lazy host.
 
 ## Host API stability
@@ -183,6 +183,33 @@ that themselves invoke other exports. Each backend picks the host
 language's natural mechanism — JS uses synchronous function calls on
 a single event-loop thread, and a typed backend with native threading
 inherits the host language's threading model unchanged.
+
+#### Tail calls within generated code
+
+**Applies when:** a generated Kio invocation finishes by transferring to another
+Kio callable within the same generated artifact.
+
+A tail application supplies its enclosing invocation's result without further
+computation. Result branches and the final body of a binding or sequence retain
+that position; callees, arguments, conditions and constructed payloads do not.
+A function body starts a new invocation when called, not when constructed.
+
+Within a generated artifact, transferring to another Kio function in tail
+position does not retain a generated activation merely to return its result.
+This includes functions passed as arguments or carried through generic,
+structural and nominal values, and final executing type-application stages.
+The callee, earlier application stages and arguments still evaluate in their
+specified order. Captures and package-instance ownership remain intact.
+
+This is not a bound on arbitrary host computation, callbacks converted to and
+from native functions at an actual host boundary, calls between independently
+generated artifacts, or source computations with work remaining after a call.
+Passing an unchanged private callable through opaque host storage does not
+itself cross that native-function conversion boundary. Internal representation
+adapters do not exempt a guest-contained tail transfer. Host runtimes and
+host-supplied sequencing operations retain their own resource behavior.
+Invocation depth is also distinct from the space occupied or reclaimed by
+captured values.
 
 ### 2. Type erasure at the FFI
 
@@ -1197,7 +1224,7 @@ Each backend page documents its own realization under a § Higher-kinded types s
 - **Java** ([`java.md`](java.md#higher-kinded-types)) — the private body uses `Object`; the exact public skin names each declaration with a constructor marker, records `F(A)` through its typed application witness, and owns the conversion to that carrier. Private body identity does not replace the public witness relation.
 - **Rust** ([`rust.md`](rust.md#higher-kinded-types)) — the body is type-erased; the exact public skin represents every saturated value type with a `KioType` marker and `Facade`, represents an abstract constructor application with `KioAppliedN<F, ...>` / `KioApplyN<F, ...>`, and converts explicitly through the opaque stored representation. Rust does not require or claim native `F::Apply` equality.
 - **Go** ([`go.md`](go.md#higher-kinded-types)) — the private body uses `any`; the public skin uses exact kind-constrained type indices, `Prepared[I]`, free slot/declaration boundary conversion functions, declaration-owned application carriers, and typed selection helpers for first-class `TypeStage` values. Selection preserves each application stage and its captured host conversion context without traversing opaque host storage.
-- **Swift** ([`swift.md`](swift.md)) — the private body stores canonical native values as `Any`; the exact public skin uses declaration-owned constructor markers and unary application carriers. Private lexical type witnesses construct those same native types; opaque host-owned payloads are neither traversed nor reindexed.
+- **Swift** ([`swift.md`](swift.md)) — the private body stores callable and structural execution carriers as `Any`; the exact public skin uses declaration-owned constructor markers and unary application carriers. Private lexical type witnesses construct native boundary views without replacing the internal callable stages; opaque host-owned payloads are neither traversed nor reindexed.
 - **Haskell** ([`haskell.md`](haskell.md#body-model)) — native-HKT; `F(A)` maps to `f a`. Direct known declarations may use consecutive native `forall`s, while escaped polymorphic values have one internal monadic stage per binder.
 
 ## Polymorphic newtype payloads

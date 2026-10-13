@@ -57,7 +57,8 @@ use crate::backends::product_rebuild::{
 };
 use crate::backends::public_names::{encode_host_identity, encode_source_identity, host_name_core};
 use crate::backends::reconstruct::{ReconProfile, apply_subst, build_typearg_subst_from_sig};
-use crate::backends::skin::{function_boundary_arity, runtime_param_name_groups};
+use crate::backends::skin::runtime_param_name_groups;
+use crate::backends::tail_plan::{ResultChild, TailContext};
 use crate::backends::{boundary_docs, doc};
 use crate::host_descriptor::{self, BoundRequirement, HostDescriptor, HostTypeDecl};
 use crate::pass::resolve::{
@@ -3538,35 +3539,18 @@ impl BodyShapeRegistry {
         )
     }
 
-    /// The Rust storage type a newtype's **function** payload lands as.
-    /// Polymorphic dictionary payloads use their established spread domain;
-    /// an ordinary function retains its declared `abi_arity`, including a
-    /// one-argument function whose argument happens to be a product.
+    /// Function payload storage uses the same single semantic domain as
+    /// ordinary first-class functions, independent of presentation arity.
     fn newtype_fn_field_ty(
         &self,
         payload: &Type<Routed>,
         nt_tparams: &std::collections::HashSet<&str>,
     ) -> Option<String> {
-        let (inner_fn, arity) = match detect_polymorphic_fn_payload(payload) {
-            Some((_binders, inner_fn)) => {
-                let arity = match &inner_fn {
-                    Type::Function {
-                        param, abi_arity, ..
-                    } => function_boundary_arity(param, *abi_arity),
-                    _ => unreachable!("polymorphic function detection returns a function"),
-                };
-                (inner_fn, arity)
-            }
-            None => match peel_forall_ty(payload) {
-                Type::Function { abi_arity, .. } => (payload.clone(), *abi_arity),
-                _ => return None,
-            },
-        };
         let _ = nt_tparams;
-        let Type::Function { .. } = peel_forall_ty(&inner_fn) else {
+        let Type::Function { .. } = peel_forall_ty(payload) else {
             return None;
         };
-        Some(rc_fn_type(arity))
+        Some(rc_fn_type(&self.crate_root, 1))
     }
 
     fn newtype_key_for_segments(&self, segments: &[PathSegment]) -> Option<String> {
@@ -4721,13 +4705,7 @@ impl BodyShapeRegistry {
         let payload_field_ty = if erased_storage {
             raw_payload.clone()
         } else if payload_is_fn {
-            // A dictionary newtype stores its closure in the body's
-            // **spread** rep (`Fn(step, m) -> …`, the domain's right-spine
-            // arity), the form the FFI boundary recovers / wraps; render
-            // the field to match (not the single packed product the
-            // payload's `abi_arity` records). A plain fn-typed payload
-            // (`Show[A] : A -> String`, abi-arity-1 over a non-product)
-            // coincides with its spread form.
+            // Callable payloads retain the canonical private entry shape.
             self.newtype_fn_field_ty(&payload_substituted, &nt_tparams)
                 .unwrap_or_else(|| {
                     let stripped = raw_payload.replacen("impl Fn", "dyn Fn", 1).replacen(
@@ -5807,7 +5785,8 @@ impl<'a> PreparedRustConverter<'a> {
             self.crate_root()
         );
         let body = erased_converter.convert(&body_cursor, &applied, FfiDir::In)?;
-        let stage_type = rc_fn_type(0);
+        let stage_type = rc_fn_type(self.crate_root(), 0);
+        let body = done_value(self.crate_root(), &body);
         // Constructing a carrier is inert; each selection computes a fresh
         // residual without entering its next type or value stage.
         Ok(format!(
@@ -6547,7 +6526,7 @@ fn render_export_block_namespace_struct(
             names.host_trait
         ));
         let prelude = format!(
-            "        let pkg = {}(self.__host.clone());\n",
+            "        let pkg = ::std::rc::Rc::new({}(self.__host.clone()));\n",
             names.factory
         );
         for site_id in tree.methods.values() {
@@ -6710,7 +6689,7 @@ fn emit_prepared_module_fn_public_method(
                     Some(previous) => format!(
                         "({}::__kio_runtime::from_any::<{}>({previous}))()",
                         converter.crate_root(),
-                        rc_fn_type(0)
+                        rc_fn_type(converter.crate_root(), 0)
                     ),
                 });
             }
@@ -6725,16 +6704,18 @@ fn emit_prepared_module_fn_public_method(
                 current = Some(match current {
                     None => format!("{}.{mangled}({})", ctx.receiver, args.join(", ")),
                     Some(previous) => {
-                        let callable = rc_fn_type(layout.body_abi_arity());
+                        let callable = rc_fn_type(converter.crate_root(), 1);
+                        let domain = pack_erased_domain(converter.crate_root(), &args);
                         format!(
                             "({}::__kio_runtime::from_any::<{callable}>({previous}))({})",
                             converter.crate_root(),
-                            args.join(", ")
+                            domain
                         )
                     }
                 });
             }
         }
+        current = current.map(|call| complete_call(converter.crate_root(), &call));
     }
     if next_slot != converted_values.len() {
         unreachable!("Rust emitter: export head execution did not consume every facade slot");
@@ -6763,7 +6744,7 @@ fn emit_internal_fn_method(
     context: RustInternalFnMethodContext<'_>,
     name: &str,
     sig: &crate::ast::Signature<Routed>,
-    ret: &Type<Routed>,
+    _ret: &Type<Routed>,
     body: &Expr<Routed>,
     out: &mut String,
 ) -> Result<(), EmitError> {
@@ -6777,10 +6758,11 @@ fn emit_internal_fn_method(
         .collect();
 
     // The body-private method is erased and non-generic: its first runtime
-    // stage accepts `Rc<dyn Any>` values and returns the same universal.
+    // stage accepts `Rc<dyn Any>` values and returns an execution step.
     // Later value stages curry as nested erased closures; type binders are
     // represented by their paired nullary execution stages.
     let runtime_groups = runtime_param_name_groups(sig);
+    let value_stages = runtime_value_stages(sig);
     let mut params_rust = Vec::new();
     let internal_first_group: std::collections::HashSet<&str> = runtime_groups
         .first()
@@ -6812,8 +6794,9 @@ fn emit_internal_fn_method(
         format!(", {}", params_rust.join(", "))
     };
     out.push_str(&format!(
-        "    fn {}(&self{params_joined}) -> ::std::rc::Rc<dyn ::std::any::Any> {{\n",
-        escape_rust_keyword(name)
+        "    fn {}(self: &::std::rc::Rc<Self>{params_joined}) -> {}::__kio_runtime::Step {{\n",
+        escape_rust_keyword(name),
+        context.shapes.crate_root
     ));
     let fn_value_param_names: Vec<String> = sig
         .params
@@ -6855,28 +6838,12 @@ fn emit_internal_fn_method(
     if multi_group {
         emit.self_ref = Some("__pkg".to_owned());
     }
-    let body_rust = emit.emit_expr(body)?;
-    // A fn-valued body returned at a function type whose ABI grouping
-    // differs from the closure literal's binder grouping (a church
-    // `.[A](x, y)` 2-binder closure returned as `Boolc = (A & A) -> A`,
-    // abi-arity 1) is reshaped so a call through the typed slot — which
-    // passes one product arg — reaches the closure's binders.
-    let body_rust = emit.adapt_fn_value_for_type(body_rust, body, ret)?;
+    let body_rust = emit.emit_result(TailContext::body(body))?;
     // The erased internal fn binds only the first group and currys the inner
     // groups as nested boxed closures around the body.
     let mut body_out = body_rust;
     for (gi, g) in runtime_groups.iter().enumerate().skip(1).rev() {
-        let params: String = g
-            .iter()
-            .map(|n| {
-                format!(
-                    "{}: ::std::rc::Rc<dyn ::std::any::Any>",
-                    escape_rust_keyword(n)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let fn_ty = rc_fn_type(g.len());
+        let params: Vec<String> = g.iter().map(|n| escape_rust_keyword(n)).collect();
         // Clone every enclosing capture used by this layer before its
         // `move`.  Otherwise constructing an inner stage would move a
         // first/earlier-stage value parameter out of an outer `Fn`
@@ -6892,9 +6859,15 @@ fn emit_internal_fn_method(
                 }
             }
         }
+        let closure = erased_closure(
+            &context.shapes.crate_root,
+            &params,
+            value_stages[gi],
+            &body_out,
+        );
         body_out = format!(
-            "{{ {layer_preludes}let __f: {fn_ty} = ::std::rc::Rc::new(move |{params}| -> ::std::rc::Rc<dyn ::std::any::Any> {{ {body_out} }}); {}::__kio_runtime::as_any(__f) }}",
-            context.shapes.crate_root
+            "{{ {layer_preludes}{} }}",
+            done_value(&context.shapes.crate_root, &closure)
         );
     }
     // Bind the captured package handle once around the curried value when the
@@ -6914,14 +6887,11 @@ fn emit_internal_fn_method(
 /// package-handle method, the prepared catalog for every host-boundary call,
 /// and [`BodyShapeRegistry`] only for body-local storage plus exact host metadata.
 ///
-/// The erased body carries **no** typed-shape threading: every value is
-/// `Rc<dyn Any>`, closures box a `Rc<dyn Fn(Rc<dyn Any>, …) -> Rc<dyn
-/// Any>>`, products / sums ride the nested-binary erased rep, and a
-/// higher-kinded carrier `F(A)` is an ordinary erased value — so the
-/// fields that the old typed-carrier body threaded (per-slot expected
-/// types, `Rc<dyn Fn>`-storage flags, brand bounds, rank-N erasure
-/// state, turbofish scope) are all gone. What survives is the same set
-/// the Go erased body keeps.
+/// Values use `Rc<dyn Any>`; products and sums use nested-binary erased
+/// carriers, and a higher-kinded `F(A)` is an ordinary erased value.
+/// Callable entries return execution steps: a value stage accepts one packed
+/// domain, including Unit, while a type stage is nullary. Result positions
+/// return a step; operands complete their steps before consuming the value.
 struct BodyEmitter<'a> {
     package: &'a Package<Routed>,
     /// The single package-complete boundary catalog. Host calls and host
@@ -7144,42 +7114,107 @@ impl ReconProfile for RustTypeRecon<'_, '_> {
     }
 }
 
-/// The Rust erased function-pointer storage type for an `n`-value-arg
-/// layer: `Rc<dyn Fn(Rc<dyn Any>, …) -> Rc<dyn Any>>`. Every closure the
-/// body builds is boxed at this type (then erased to `Rc<dyn Any>` via
-/// `as_any`); every apply recovers it via `from_any` before calling.
-fn rc_fn_type(arity: usize) -> String {
+/// Stored executable entries return a step. Type stages are nullary; value
+/// stages accept one semantic domain, including Unit. The outer stored token
+/// is erased, but a step never crosses a value-storage or public boundary.
+fn rc_fn_type(crate_root: &str, arity: usize) -> String {
     let params = std::iter::repeat_n("::std::rc::Rc<dyn ::std::any::Any>", arity)
         .collect::<Vec<_>>()
         .join(", ");
-    format!("::std::rc::Rc<dyn Fn({params}) -> ::std::rc::Rc<dyn ::std::any::Any>>")
+    format!("::std::rc::Rc<dyn Fn({params}) -> {crate_root}::__kio_runtime::Step>")
 }
 
-/// The value param names of a signature, grouped by value group (one
-/// inner `Vec` per group). A type-binder param carries no runtime arg
-/// and is dropped. A nullary fn yields a single empty group. Mirrors the
-/// Go backend's `value_param_name_groups`.
-fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups: Vec<Vec<&str>> = sig
-        .canonical_groups()
-        .into_iter()
-        .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter_map(|p| match p {
-                        crate::ast::SignatureParam::Value(vp) => Some(vp.name.as_str()),
-                        crate::ast::SignatureParam::Type(_) => None,
-                    })
-                    .collect(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
-        })
-        .collect();
-    if groups.is_empty() {
-        groups.push(Vec::new());
+fn complete_call(crate_root: &str, call: &str) -> String {
+    format!("{crate_root}::__kio_runtime::complete({call})")
+}
+
+fn erased_call(crate_root: &str, callee: &str, args: &[String], tail: bool) -> String {
+    assert!(
+        args.len() <= 1,
+        "an erased stage has at most one semantic domain"
+    );
+    let fn_ty = rc_fn_type(crate_root, args.len());
+    let recovered = format!("{crate_root}::__kio_runtime::from_any::<{fn_ty}>({callee})");
+    if !tail {
+        return complete_call(crate_root, &format!("({recovered})({})", args.join(", ")));
     }
-    groups
+    let domain = args
+        .first()
+        .map_or_else(|| "None".to_owned(), |arg| format!("Some({arg})"));
+    format!(
+        "{{ let __kio_tail_callee = {callee}; let __kio_tail_domain = {domain}; {crate_root}::__kio_runtime::Step::Apply {{ callee: __kio_tail_callee, domain: __kio_tail_domain }} }}"
+    )
+}
+
+fn pack_erased_domain(crate_root: &str, values: &[String]) -> String {
+    let Some((last, prefix)) = values.split_last() else {
+        return format!("{crate_root}::__kio_runtime::as_any(())");
+    };
+    prefix.iter().rev().fold(last.clone(), |tail, head| {
+        format!("{crate_root}::__kio_runtime::as_any(({head}, {tail}))")
+    })
+}
+
+fn erased_value_call(crate_root: &str, callee: &str, args: &[String], tail: bool) -> String {
+    erased_call(
+        crate_root,
+        callee,
+        &[pack_erased_domain(crate_root, args)],
+        tail,
+    )
+}
+
+fn unpack_erased_domain(crate_root: &str, names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [name] => format!("let {name} = __kio_domain; "),
+        _ => {
+            let mut out = format!(
+                "let __kio_slots = {crate_root}::__kio_runtime::product_slots(__kio_domain, {}); ",
+                names.len()
+            );
+            for (index, name) in names.iter().enumerate() {
+                out.push_str(&format!("let {name} = __kio_slots[{index}].clone(); "));
+            }
+            out
+        }
+    }
+}
+
+fn runtime_value_stages(sig: &crate::ast::Signature<Routed>) -> Vec<bool> {
+    let mut stages = Vec::new();
+    for group in sig.canonical_groups() {
+        match group {
+            crate::ast::SignatureGroupRef::Type(params) => {
+                stages.extend(params.iter().map(|_| false))
+            }
+            crate::ast::SignatureGroupRef::Value(_) => stages.push(true),
+        }
+    }
+    if stages.is_empty() {
+        stages.push(true);
+    }
+    stages
+}
+
+fn done_value(crate_root: &str, value: &str) -> String {
+    format!("{crate_root}::__kio_runtime::Step::Done({value})")
+}
+
+fn erased_closure(crate_root: &str, names: &[String], value_stage: bool, body: &str) -> String {
+    let function = rc_fn_type(crate_root, usize::from(value_stage));
+    let (parameters, bindings) = if value_stage {
+        (
+            "__kio_domain: ::std::rc::Rc<dyn ::std::any::Any>",
+            unpack_erased_domain(crate_root, names),
+        )
+    } else {
+        assert!(names.is_empty(), "a type stage binds no values");
+        ("", String::new())
+    };
+    format!(
+        "{{ let __f: {function} = ::std::rc::Rc::new(move |{parameters}| -> {crate_root}::__kio_runtime::Step {{ {bindings}{body} }}); {crate_root}::__kio_runtime::as_any(__f) }}"
+    )
 }
 
 /// The value-arity of each value group of a fn signature, in order (each
@@ -7199,55 +7234,6 @@ fn value_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
         })
         .collect();
     if arities.is_empty() { vec![0] } else { arities }
-}
-
-/// The declared type of each value parameter across all value groups of
-/// a signature, in order; `None` for a value param with no declared
-/// type. Used to adapt a fn-value argument to its declared slot's
-/// grouping at a call site.
-fn sig_all_value_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Option<Type<Routed>>> {
-    let mut out = Vec::new();
-    for group in sig.canonical_groups() {
-        if let crate::ast::SignatureGroupRef::Value(params) = group {
-            for p in params {
-                if let crate::ast::SignatureParam::Value(vp) = p {
-                    out.push(vp.ty.clone());
-                }
-            }
-        }
-    }
-    out
-}
-
-/// The signature of the closure literal a fn-valued expression
-/// ultimately evaluates to, peeling transparent wrappers (a bare
-/// `FnExpr`, a host- / module-fn value ref, a `let`/`Seq` tail, a
-/// nullary IIFE, an identity-style single-arg call, a newtype
-/// ctor/proj). A fn value that does not reduce to a visible closure
-/// literal yields `None`. Mirrors the Go backend.
-fn underlying_fn_expr_sig(e: &Expr<Routed>) -> Option<&crate::ast::Signature<Routed>> {
-    match e {
-        Expr::FnExpr { sig, .. } => Some(sig),
-        Expr::LowHostFnValueRef { sig, .. } | Expr::LowModuleFnValueRef { sig, .. } => Some(sig),
-        Expr::Let { body, .. } | Expr::Seq { body, .. } => underlying_fn_expr_sig(body),
-        Expr::LowTypeApplication { callee, .. } => underlying_fn_expr_sig(callee),
-        Expr::LowClosureCall { args, .. } if args.is_empty() => None,
-        Expr::LowIndirectCall { callee, args, .. } if args.is_empty() => {
-            if let Expr::FnExpr { body, .. } = callee.as_ref() {
-                underlying_fn_expr_sig(body)
-            } else {
-                None
-            }
-        }
-        Expr::LowModuleCall { args, .. } | Expr::LowQualifiedModuleCall { args, .. }
-            if args.len() == 1 =>
-        {
-            underlying_fn_expr_sig(&args[0])
-        }
-        Expr::LowNewtypeCtor { payload, .. } => underlying_fn_expr_sig(payload),
-        Expr::LowNewtypeProj { target, .. } => underlying_fn_expr_sig(target),
-        _ => None,
-    }
 }
 
 /// Peel leading `Type::Forall` binders.
@@ -7281,26 +7267,6 @@ fn rust_str_borrowed(value: &str) -> String {
 /// Render a Kio string value as a Rust owned-`String` literal expression.
 fn rust_string_lit(value: &str) -> String {
     format!("{}.to_string()", rust_str_borrowed(value))
-}
-
-/// The declared types of the **first** value group's params, in order
-/// (`None` for an un-annotated param). Used to adapt fn-valued args at an
-/// indirect-call site whose callee is a closure literal.
-fn sig_first_value_group_param_types(
-    sig: &crate::ast::Signature<Routed>,
-) -> Vec<Option<Type<Routed>>> {
-    for group in sig.canonical_groups() {
-        if let crate::ast::SignatureGroupRef::Value(params) = group {
-            return params
-                .iter()
-                .filter_map(|p| match p {
-                    crate::ast::SignatureParam::Value(vp) => Some(vp.ty.clone()),
-                    crate::ast::SignatureParam::Type(_) => None,
-                })
-                .collect();
-        }
-    }
-    Vec::new()
 }
 
 /// The erased access expression for slot `i` of an `n`-slot nested-binary
@@ -7394,7 +7360,13 @@ impl<'a> BodyEmitter<'a> {
     /// Render one Routed-phase expression to a Rust expression string of
     /// type `Rc<dyn Any>` (the universal erased value).
     fn emit_expr(&mut self, e: &Expr<Routed>) -> Result<String, EmitError> {
-        match e {
+        self.emit_result(TailContext::operand(e))
+    }
+
+    fn emit_result(&mut self, context: TailContext<'_>) -> Result<String, EmitError> {
+        let e = context.expr();
+        let tail = context.tail_stage().is_some();
+        let rendered = match e {
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
             Expr::Unit { .. } => Ok(self.box_any("()")),
             // `Expr::Path` / `Expr::Call` are statically uninhabited at
@@ -7469,12 +7441,13 @@ impl<'a> BodyEmitter<'a> {
                     && let Some(start) = projected_product_tail(items, name)
                 {
                     let value = self.emit_expr(value)?;
-                    return Ok(product_slot_access(
-                        self.crate_root(),
-                        &value,
-                        start,
-                        start + 1,
-                    ));
+                    let projected =
+                        product_slot_access(self.crate_root(), &value, start, start + 1);
+                    return Ok(if context.is_tail_position() {
+                        done_value(self.crate_root(), &projected)
+                    } else {
+                        projected
+                    });
                 }
                 // A `let` is an expression in Rust; bind the value at the
                 // erased type and emit the body in a block. The binder is
@@ -7488,7 +7461,7 @@ impl<'a> BodyEmitter<'a> {
                 if let Some(ty) = value_ty {
                     self.local_types.insert(name.clone(), ty);
                 }
-                let b = self.emit_expr(body);
+                let b = self.emit_result(context.result_child(ResultChild::LetBody));
                 self.local_types.remove(name);
                 if let Some(ty) = prior_ty {
                     self.local_types.insert(name.clone(), ty);
@@ -7499,9 +7472,9 @@ impl<'a> BodyEmitter<'a> {
                     "{{ let {safe}: ::std::rc::Rc<dyn ::std::any::Any> = {v}; {b} }}"
                 ))
             }
-            Expr::Seq { value, body, .. } => {
+            Expr::Seq { value, .. } => {
                 let v = self.emit_expr(value)?;
-                let b = self.emit_expr(body)?;
+                let b = self.emit_result(context.result_child(ResultChild::SeqBody))?;
                 Ok(format!("{{ let _ = {v}; {b} }}"))
             }
             Expr::FnExpr { sig, body, .. } => self.emit_fn_expr(sig, body),
@@ -7534,13 +7507,8 @@ impl<'a> BodyEmitter<'a> {
                 arms,
                 scrutinee_ty,
                 ..
-            } => self.emit_match(scrutinee, arms, scrutinee_ty),
-            Expr::EnrichedConditional {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => self.emit_conditional(cond, then_branch, else_branch),
+            } => self.emit_match(context, scrutinee, arms, scrutinee_ty),
+            Expr::EnrichedConditional { cond, .. } => self.emit_conditional(context, cond),
             Expr::LowBoundRef { name, .. } => Ok(format!("{}.clone()", escape_rust_keyword(name))),
             Expr::LowHostFnValueRef {
                 name,
@@ -7567,14 +7535,14 @@ impl<'a> BodyEmitter<'a> {
                 args,
                 sig,
                 ..
-            } => self.emit_low_module_call(mangled, type_args.len(), args, sig),
+            } => self.emit_low_module_call(mangled, type_args.len(), args, sig, tail),
             Expr::LowQualifiedModuleCall {
                 mangled,
                 type_args,
                 args,
                 sig,
                 ..
-            } => self.emit_low_qualified_module_call(mangled, type_args.len(), args, sig),
+            } => self.emit_low_qualified_module_call(mangled, type_args.len(), args, sig, tail),
             // A newtype constructor / projector is a runtime identity in
             // the erased body: the newtype value shares its payload's
             // `Rc<dyn Any>` rep (the typed FFI skin re-imposes the nominal
@@ -7593,7 +7561,7 @@ impl<'a> BodyEmitter<'a> {
                     format!("{}.clone()", escape_rust_keyword(name)),
                     type_args.len(),
                 );
-                self.emit_apply(&callee, args)
+                self.emit_apply(&callee, args, tail)
             }
             Expr::LowIndirectCall {
                 callee,
@@ -7603,24 +7571,18 @@ impl<'a> BodyEmitter<'a> {
             } => {
                 let c = self.emit_expr(callee)?;
                 let c = self.emit_erased_type_applications(c, type_args.len());
-                match callee.as_ref() {
-                    Expr::FnExpr { sig, .. } => {
-                        let param_tys = sig_first_value_group_param_types(sig);
-                        self.emit_apply_adapting(&c, args, &param_tys)
-                    }
-                    _ => self.emit_apply(&c, args),
-                }
+                self.emit_apply(&c, args, tail)
             }
             Expr::LowTypeApplication { callee, .. } => {
                 let c = self.emit_expr(callee)?;
-                Ok(self.emit_erased_type_applications(c, 1))
+                Ok(erased_call(self.crate_root(), &c, &[], tail))
             }
             Expr::LowCpsProjectorApply {
                 receiver,
                 continuation,
                 continuation_ty,
                 ..
-            } => self.emit_low_cps_projector_apply(receiver, continuation, continuation_ty),
+            } => self.emit_low_cps_projector_apply(receiver, continuation, continuation_ty, tail),
             Expr::LowAbsurdCall { value_arg, .. } => {
                 // Evaluate the bottom-typed argument for its host effects
                 // (e.g. an `exit(n) -> !` call must run), then `unreachable`
@@ -7628,12 +7590,29 @@ impl<'a> BodyEmitter<'a> {
                 let arg = self.emit_expr(value_arg)?;
                 Ok(format!("{{ let _ = {arg}; unreachable!() }}"))
             }
+        }?;
+        if context.is_tail_position()
+            && !tail
+            && !matches!(
+                e,
+                Expr::Let { .. }
+                    | Expr::Seq { .. }
+                    | Expr::EnrichedConditional { .. }
+                    | Expr::EnrichedMatch { .. }
+            )
+        {
+            Ok(format!(
+                "{}::__kio_runtime::Step::Done({rendered})",
+                self.crate_root()
+            ))
+        } else {
+            Ok(rendered)
         }
     }
 
     /// Lower a closure literal to an erased closure value. Each type binder
     /// renders one nullary layer and each value group renders one layer
-    /// taking its binders as `Rc<dyn Any>` params. The innermost layer is
+    /// taking its packed semantic domain. The innermost layer is
     /// boxed to the `Rc<dyn Fn>` storage
     /// type and then erased via `as_any`, so a downstream apply recovers
     /// the arity-matched fn type before calling.
@@ -7647,6 +7626,7 @@ impl<'a> BodyEmitter<'a> {
         body: &Expr<Routed>,
     ) -> Result<String, EmitError> {
         let groups = runtime_param_name_groups(sig);
+        let value_stages = runtime_value_stages(sig);
         // Closures dispatch through a captured `let __pkg = self.clone();`
         // so they stay `'static` (no `&self` borrow). Set `self_ref`
         // around the body emit; restore after.
@@ -7698,7 +7678,7 @@ impl<'a> BodyEmitter<'a> {
             }
             prior_param_types.push((n.clone(), prior));
         }
-        let body_src = self.emit_expr(body);
+        let body_src = self.emit_result(TailContext::body(body));
         for _ in &closure_params {
             self.locals.pop();
         }
@@ -7733,17 +7713,7 @@ impl<'a> BodyEmitter<'a> {
         // layer body can reference are `__pkg` plus every binder of the
         // groups *outside* this one (the groups before it in `groups`).
         for (gi, g) in groups.iter().enumerate().rev() {
-            let params: String = g
-                .iter()
-                .map(|n| {
-                    format!(
-                        "{}: ::std::rc::Rc<dyn ::std::any::Any>",
-                        escape_rust_keyword(n)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            let fn_ty = rc_fn_type(g.len());
+            let params: Vec<String> = g.iter().map(|n| escape_rust_keyword(n)).collect();
             // Outer-group binders this layer may capture (only meaningful
             // for an inner layer, gi > 0): pre-clone each one the body
             // references.
@@ -7773,9 +7743,12 @@ impl<'a> BodyEmitter<'a> {
             // `{ preludes acc }`), so the block needs no surrounding
             // parens — wrapping it would trip Rust's `unused_parens` lint.
             acc = format!(
-                "{{ {layer_preludes}let __f: {fn_ty} = ::std::rc::Rc::new(move |{params}| -> ::std::rc::Rc<dyn ::std::any::Any> {{ {acc} }}); {} }}",
-                self.box_any("__f")
+                "{{ {layer_preludes}{} }}",
+                erased_closure(self.crate_root(), &params, value_stages[gi], &acc)
             );
+            if gi > 0 {
+                acc = done_value(self.crate_root(), &acc);
+            }
         }
         // The closure dispatches through `__pkg`; bind it once, plus a
         // clone of each captured outer local, around the whole curried
@@ -7792,100 +7765,23 @@ impl<'a> BodyEmitter<'a> {
     /// Consume one hidden nullary closure per erased type argument.
     fn emit_erased_type_applications(&self, mut callee: String, count: usize) -> String {
         for _ in 0..count {
-            let fn_ty = rc_fn_type(0);
-            let recovered = self.unbox_any(&fn_ty, &callee);
-            callee = format!("({recovered})()");
+            callee = erased_call(self.crate_root(), &callee, &[], false);
         }
         callee
     }
 
-    /// Apply an erased callee expression (an `Rc<dyn Any>` boxing a
-    /// closure) to `args`: recover the arity-matched `Rc<dyn Fn>` and
-    /// call. The callee expression is consumed once.
-    fn emit_apply(&mut self, callee: &str, args: &[Expr<Routed>]) -> Result<String, EmitError> {
-        self.emit_apply_adapting(callee, args, &[])
-    }
-
-    /// Like [`Self::emit_apply`], but adapts each fn-valued arg to the
-    /// callee's declared param-slot grouping when known. A flat fn value
-    /// flowing into a slot whose function type groups its parameters as a
-    /// product domain (abi-arity 1) is re-grouped by
-    /// [`Self::adapt_fn_value_for_type`]. A missing / non-function
-    /// `param_tys[i]` leaves the arg unchanged.
-    fn emit_apply_adapting(
+    /// Apply one canonical value domain after completing every operand.
+    fn emit_apply(
         &mut self,
         callee: &str,
         args: &[Expr<Routed>],
-        param_tys: &[Option<Type<Routed>>],
+        tail: bool,
     ) -> Result<String, EmitError> {
-        let mut emitted = Vec::with_capacity(args.len());
-        for (i, a) in args.iter().enumerate() {
-            let rendered = self.emit_expr(a)?;
-            let rendered = match param_tys.get(i).and_then(|t| t.as_ref()) {
-                Some(ty) => self.adapt_fn_value_for_type(rendered, a, ty)?,
-                None => rendered,
-            };
-            emitted.push(rendered);
-        }
-        let fn_ty = rc_fn_type(args.len());
-        let recovered = self.unbox_any(&fn_ty, callee);
-        Ok(format!("({recovered})({})", emitted.join(", ")))
-    }
-
-    /// Adapt a fn-valued expression `rendered` (source `source`) to the
-    /// product-grouping the function type `expected` requires, when the
-    /// two differ. A closure `.[A](x, y)` (one 2-binder group) flowing
-    /// into `(A & A) -> A` (abi-arity 1, one product param) is wrapped so
-    /// a call passing one product arg peels it into the two binders.
-    /// Mirrors the Go backend's `adapt_fn_value_for_type`.
-    fn adapt_fn_value_for_type(
-        &self,
-        rendered: String,
-        source: &Expr<Routed>,
-        expected: &Type<Routed>,
-    ) -> Result<String, EmitError> {
-        let Some(sig) = underlying_fn_expr_sig(source) else {
-            return Ok(rendered);
-        };
-        let expected = self
-            .shapes
-            .normalize_type_for_owned_tparams_in_current_scope(expected, &self.tparams);
-        let expected = peel_forall_ty(&expected);
-        let Type::Function {
-            param, abi_arity, ..
-        } = expected
-        else {
-            return Ok(rendered);
-        };
-        let groups = value_param_name_groups(sig);
-        let Some(first_group) = groups.first() else {
-            return Ok(rendered);
-        };
-        let binder_count = first_group.len();
-        let type_arity = Type::right_spine_take(param, *abi_arity).len();
-        if binder_count == type_arity || groups.len() > 1 {
-            return Ok(rendered);
-        }
-        if type_arity == 1 && binder_count >= 2 {
-            // Wrap: one product arg `__a0` peeled into `binder_count`
-            // binder args, applied to the inner `binder_count`-ary fn.
-            let inner_fn_ty = rc_fn_type(binder_count);
-            // Clone `__a0` per peel — `from_any` consumes its `Rc`, and the
-            // helper peels the product once.
-            let peels: Vec<String> = (0..binder_count)
-                .map(|i| format!("__slots[{i}].clone()"))
-                .collect();
-            let outer_fn_ty = rc_fn_type(1);
-            let recovered_inner = self.unbox_any(&inner_fn_ty, "__inner.clone()");
-            let wrapped = format!(
-                "{{ let __inner = {rendered}; let __w: {outer_fn_ty} = ::std::rc::Rc::new(move |__a0: ::std::rc::Rc<dyn ::std::any::Any>| -> ::std::rc::Rc<dyn ::std::any::Any> {{ let __slots = {}::__kio_runtime::product_slots(__a0, {binder_count}); ({recovered_inner})({}) }}); {} }}",
-                self.crate_root(),
-                peels.join(", "),
-                self.box_any("__w"),
-            );
-            return Ok(wrapped);
-        }
-        Ok(rendered)
+        let emitted = args
+            .iter()
+            .map(|arg| self.emit_expr(arg))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(erased_value_call(self.crate_root(), callee, &emitted, tail))
     }
 
     fn emit_product_from_rendered(&self, rendered: &[String]) -> String {
@@ -7902,7 +7798,6 @@ impl<'a> BodyEmitter<'a> {
     fn emit_product_with_cached_slots(
         &mut self,
         items: &[&Expr<Routed>],
-        slot_tys: Option<&[&Type<Routed>]>,
         plan: &ProductRebuildPlan,
     ) -> Result<String, EmitError> {
         let product_crate_root = self.crate_root().to_owned();
@@ -7910,16 +7805,7 @@ impl<'a> BodyEmitter<'a> {
         render_cached_product_rebuild(
             plan,
             |slot| format!("__slots[{slot}].clone()"),
-            |i| {
-                let item = items[i];
-                let v = self.emit_expr(item)?;
-                match slot_tys.and_then(|slots| slots.get(i)).copied() {
-                    Some(slot_ty) if matches!(slot_ty, Type::Function { .. }) => {
-                        self.adapt_fn_value_for_type(v, item, slot_ty)
-                    }
-                    _ => Ok(v),
-                }
-            },
+            |i| self.emit_expr(items[i]),
             |rendered| {
                 let n = rendered.len();
                 debug_assert!(n > 0);
@@ -7939,45 +7825,23 @@ impl<'a> BodyEmitter<'a> {
         )
     }
 
-    /// Build a product, adapting each **fn-valued** slot to that slot's
-    /// function-type grouping from the product's `synth_ty`.
-    ///
-    /// A fn value's natural rep is flat per value group (a host fn /
-    /// closure of `n` first-group params is an `n`-ary closure), but a
-    /// product slot's *type* may group those params as one product domain
-    /// (`(I32 & I32) -> I32`, abi-arity 1). The slot is then projected and
-    /// applied at that grouping (`dep_plus(deps)(n, 1)` reaches the slot
-    /// with one product arg), so a bare flat closure stored there is
-    /// recovered at the wrong arity and the `from_any` downcast fails at
-    /// the call. [`Self::adapt_fn_value_for_type`]
-    /// wraps the flat closure to the slot's product-domain grouping —
-    /// exactly as a fn-valued *call argument* is adapted to its declared
-    /// param slot. Mirrors the Go backend's `emit_tuple_item`.
+    /// Construct the canonical erased product; callable slots already have
+    /// the same semantic-domain representation at every occurrence.
     fn emit_product_typed(
         &mut self,
         items: &[&Expr<Routed>],
-        synth_ty: &Type<Routed>,
+        _synth_ty: &Type<Routed>,
     ) -> Result<String, EmitError> {
         let n = items.len();
         if n == 0 {
             return Ok(self.box_any("()"));
         }
-        let slots = Type::right_spine_product(synth_ty);
         if let Some(plan) = bound_product_rebuild_plan(items, NominalValueRepresentation::Erased) {
-            return self.emit_product_with_cached_slots(items, Some(&slots), &plan);
+            return self.emit_product_with_cached_slots(items, &plan);
         }
-        let emit_item = |this: &mut Self, i: usize| -> Result<String, EmitError> {
-            let v = this.emit_expr(items[i])?;
-            match slots.get(i) {
-                Some(slot) if matches!(slot, Type::Function { .. }) => {
-                    this.adapt_fn_value_for_type(v, items[i], slot)
-                }
-                _ => Ok(v),
-            }
-        };
         let mut rendered = Vec::with_capacity(n);
-        for i in 0..n {
-            rendered.push(emit_item(self, i)?);
+        for item in items {
+            rendered.push(self.emit_expr(item)?);
         }
         Ok(self.emit_product_from_rendered(&rendered))
     }
@@ -8010,6 +7874,7 @@ impl<'a> BodyEmitter<'a> {
     /// Match on a sum scrutinee by peeling it once to `(variant, payload)`.
     fn emit_match(
         &mut self,
+        context: TailContext<'_>,
         scrutinee: &Expr<Routed>,
         arms: &[crate::ast::EnrichedArm<Routed>],
         scrutinee_ty: &Type<Routed>,
@@ -8037,7 +7902,7 @@ impl<'a> BodyEmitter<'a> {
                     )
                 });
             self.local_types.insert(arm.param.clone(), ty.clone());
-            let body = self.emit_expr(&arm.body);
+            let body = self.emit_result(context.result_child(ResultChild::MatchArm(i)));
             self.local_types.remove(&arm.param);
             if let Some(ty) = prior_ty {
                 self.local_types.insert(arm.param.clone(), ty);
@@ -8062,13 +7927,12 @@ impl<'a> BodyEmitter<'a> {
     /// declaration-wide `From<bool>` construction of `true`.
     fn emit_conditional(
         &mut self,
+        context: TailContext<'_>,
         cond: &Expr<Routed>,
-        then_branch: &Expr<Routed>,
-        else_branch: &Expr<Routed>,
     ) -> Result<String, EmitError> {
         let c = self.emit_bool(cond)?;
-        let t = self.emit_expr(then_branch)?;
-        let e = self.emit_expr(else_branch)?;
+        let t = self.emit_result(context.result_child(ResultChild::ThenBranch))?;
+        let e = self.emit_result(context.result_child(ResultChild::ElseBranch))?;
         Ok(format!("if {c} {{ {t} }} else {{ {e} }}"))
     }
 
@@ -8202,11 +8066,8 @@ impl<'a> BodyEmitter<'a> {
             &call,
             FfiDir::In,
         )?;
+        acc = done_value(self.crate_root(), &acc);
         for (stage_index, params) in stages.iter().enumerate().rev() {
-            let declarations = params
-                .iter()
-                .map(|param| format!("{param}: ::std::rc::Rc<dyn ::std::any::Any>"))
-                .collect::<Vec<_>>();
             let mut prelude = String::new();
             if stage_index > 0 {
                 prelude.push_str("let __host = __host.clone(); ");
@@ -8214,12 +8075,17 @@ impl<'a> BodyEmitter<'a> {
                     prelude.push_str(&format!("let {captured} = {captured}.clone(); "));
                 }
             }
-            let fn_ty = rc_fn_type(params.len());
-            acc = format!(
-                "{{ {prelude}let __f: {fn_ty} = ::std::rc::Rc::new(move |{}| -> ::std::rc::Rc<dyn ::std::any::Any> {{ {acc} }}); {} }}",
-                declarations.join(", "),
-                self.box_any("__f")
+            let value_stage = matches!(
+                &execution.head_stages()[stage_index],
+                CallableExecutionStage::Value(_)
             );
+            acc = format!(
+                "{{ {prelude}{} }}",
+                erased_closure(self.crate_root(), params, value_stage, &acc)
+            );
+            if stage_index > 0 {
+                acc = done_value(self.crate_root(), &acc);
+            }
         }
         let receiver = self.self_ref_str().to_owned();
         Ok(format!(
@@ -8246,20 +8112,19 @@ impl<'a> BodyEmitter<'a> {
         let groups = runtime_param_name_groups(sig);
         let first = groups.first().cloned().unwrap_or_default();
         let s = self.self_ref_str().to_owned();
-        let params: String = (0..first.len())
-            .map(|i| format!("__p{i}: ::std::rc::Rc<dyn ::std::any::Any>"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let params: Vec<String> = (0..first.len()).map(|i| format!("__p{i}")).collect();
         let fwd: String = (0..first.len())
             .map(|i| format!("__p{i}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let fn_ty = rc_fn_type(first.len());
         let call = format!("__pkg.{method}({fwd})");
-        Ok(format!(
-            "{{ let __pkg = {s}.clone(); let __f: {fn_ty} = ::std::rc::Rc::new(move |{params}| -> ::std::rc::Rc<dyn ::std::any::Any> {{ {call} }}); {} }}",
-            self.box_any("__f"),
-        ))
+        let closure = erased_closure(
+            self.crate_root(),
+            &params,
+            runtime_value_stages(sig)[0],
+            &call,
+        );
+        Ok(format!("{{ let __pkg = {s}.clone(); {closure} }}",))
     }
 
     /// `LowHostCall` → a call to the user's `Host` trait method, crossing
@@ -8395,13 +8260,14 @@ impl<'a> BodyEmitter<'a> {
         type_arg_count: usize,
         args: &[Expr<Routed>],
         sig: &crate::ast::Signature<Routed>,
+        tail: bool,
     ) -> Result<String, EmitError> {
         let method = self
             .selective_imports
             .get(mangled)
             .cloned()
             .unwrap_or_else(|| mangled.to_owned());
-        self.emit_grouped_method_call(&method, type_arg_count, args, sig)
+        self.emit_grouped_method_call(&method, type_arg_count, args, sig, tail)
     }
 
     /// `LowQualifiedModuleCall` (`import <pkg>/<mod> as a; a.fn(...)`):
@@ -8412,6 +8278,7 @@ impl<'a> BodyEmitter<'a> {
         type_arg_count: usize,
         args: &[Expr<Routed>],
         sig: &crate::ast::Signature<Routed>,
+        tail: bool,
     ) -> Result<String, EmitError> {
         // `mangled` is `<alias>.<member>` (the alias is one segment from
         // `import <pkg>/<mod> as <alias>;`). Resolve the alias to its real
@@ -8433,7 +8300,7 @@ impl<'a> BodyEmitter<'a> {
                  qualified import nor a direct module (compiler bug)"
             )));
         };
-        self.emit_grouped_method_call(&resolved, type_arg_count, args, sig)
+        self.emit_grouped_method_call(&resolved, type_arg_count, args, sig, tail)
     }
 
     /// Emit a call to a package-handle module-fn method over `args`,
@@ -8449,24 +8316,30 @@ impl<'a> BodyEmitter<'a> {
         type_arg_count: usize,
         args: &[Expr<Routed>],
         sig: &crate::ast::Signature<Routed>,
+        tail: bool,
     ) -> Result<String, EmitError> {
         let group_arities = value_group_arities(sig);
         let first = group_arities.first().copied().unwrap_or(0);
         let s = self.self_ref_str().to_owned();
         let staged_callee = if type_arg_count > 0 {
-            Some(self.emit_erased_type_applications(format!("{s}.{method}()"), type_arg_count - 1))
+            let final_type = !sig.has_value_group();
+            let mut call =
+                self.emit_method_invocation(method, &[], tail && final_type && type_arg_count == 1);
+            for index in 1..type_arg_count {
+                call = erased_call(
+                    self.crate_root(),
+                    &call,
+                    &[],
+                    tail && final_type && index + 1 == type_arg_count,
+                );
+            }
+            Some(call)
         } else {
             None
         };
-        let param_tys = sig_all_value_param_types(sig);
         let mut emitted = Vec::with_capacity(args.len());
-        for (i, a) in args.iter().enumerate() {
-            let v = self.emit_expr(a)?;
-            let v = match param_tys.get(i).and_then(|t| t.as_ref()) {
-                Some(t) => self.adapt_fn_value_for_type(v, a, t)?,
-                None => v,
-            };
-            emitted.push(v);
+        for a in args {
+            emitted.push(self.emit_expr(a)?);
         }
         if let Some(mut call) = staged_callee {
             if !sig.has_value_group() {
@@ -8479,35 +8352,37 @@ impl<'a> BodyEmitter<'a> {
             if args.len() < first {
                 let missing = first - args.len();
                 let fresh: Vec<String> = (0..missing).map(|i| format!("__pa{i}")).collect();
-                let params: String = fresh
-                    .iter()
-                    .map(|param| format!("{param}: ::std::rc::Rc<dyn ::std::any::Any>"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
                 let mut all_args = emitted.clone();
                 all_args.extend(fresh.iter().cloned());
-                let fn_ty = rc_fn_type(missing);
-                let applied_ty = rc_fn_type(all_args.len());
-                let recovered = self.unbox_any(&applied_ty, "__callee.clone()");
-                return Ok(format!(
-                    "{{ let __callee = {call}; let __f: {fn_ty} = ::std::rc::Rc::new(move |{params}| -> ::std::rc::Rc<dyn ::std::any::Any> {{ ({recovered})({}) }}); {} }}",
-                    all_args.join(", "),
-                    self.box_any("__f"),
-                ));
+                let invoke =
+                    erased_value_call(self.crate_root(), "__callee.clone()", &all_args, true);
+                let closure = erased_closure(self.crate_root(), &fresh, true, &invoke);
+                let result = format!("{{ let __callee = {call}; {closure} }}");
+                return Ok(if tail {
+                    done_value(self.crate_root(), &result)
+                } else {
+                    result
+                });
             }
             let first_args = &emitted[..first];
-            let fn_ty = rc_fn_type(first);
-            let recovered = self.unbox_any(&fn_ty, &call);
-            call = format!("({recovered})({})", first_args.join(", "));
+            call = erased_value_call(
+                self.crate_root(),
+                &call,
+                first_args,
+                tail && first == emitted.len(),
+            );
             let mut consumed = first;
             for arity in group_arities.iter().skip(1) {
                 if consumed >= emitted.len() {
                     break;
                 }
                 let slice = &emitted[consumed..(consumed + arity).min(emitted.len())];
-                let fn_ty = rc_fn_type(slice.len());
-                let recovered = self.unbox_any(&fn_ty, &call);
-                call = format!("({recovered})({})", slice.join(", "));
+                call = erased_value_call(
+                    self.crate_root(),
+                    &call,
+                    slice,
+                    tail && consumed + slice.len() == emitted.len(),
+                );
                 consumed += arity;
             }
             return Ok(call);
@@ -8517,33 +8392,79 @@ impl<'a> BodyEmitter<'a> {
             // missing first-group slots as fresh erased params.
             let missing = first - args.len();
             let fresh: Vec<String> = (0..missing).map(|i| format!("__pa{i}")).collect();
-            let params: String = fresh
-                .iter()
-                .map(|p| format!("{p}: ::std::rc::Rc<dyn ::std::any::Any>"))
-                .collect::<Vec<_>>()
-                .join(", ");
             let mut all_args = emitted.clone();
             all_args.extend(fresh.iter().cloned());
-            let fn_ty = rc_fn_type(missing);
             let call = format!("__pkg.{method}({})", all_args.join(", "));
-            return Ok(format!(
-                "{{ let __pkg = {s}.clone(); let __f: {fn_ty} = ::std::rc::Rc::new(move |{params}| -> ::std::rc::Rc<dyn ::std::any::Any> {{ {call} }}); {} }}",
-                self.box_any("__f"),
-            ));
+            let closure = erased_closure(self.crate_root(), &fresh, true, &call);
+            let result = format!("{{ let __pkg = {s}.clone(); {closure} }}");
+            return Ok(if tail {
+                done_value(self.crate_root(), &result)
+            } else {
+                result
+            });
         }
-        let mut call = format!("{s}.{method}({})", emitted[..first].join(", "));
+        let mut call =
+            self.emit_method_invocation(method, &emitted[..first], tail && first == emitted.len());
         let mut consumed = first;
         for arity in group_arities.iter().skip(1) {
             if consumed >= emitted.len() {
                 break;
             }
             let slice = &emitted[consumed..(consumed + arity).min(emitted.len())];
-            let fn_ty = rc_fn_type(slice.len());
-            let recovered = self.unbox_any(&fn_ty, &call);
-            call = format!("({recovered})({})", slice.join(", "));
+            call = erased_value_call(
+                self.crate_root(),
+                &call,
+                slice,
+                tail && consumed + slice.len() == emitted.len(),
+            );
             consumed += arity;
         }
         Ok(call)
+    }
+
+    fn emit_method_invocation(&self, method: &str, args: &[String], tail: bool) -> String {
+        let receiver = self.self_ref_str();
+        if !tail {
+            return complete_call(
+                self.crate_root(),
+                &format!("{receiver}.{method}({})", args.join(", ")),
+            );
+        }
+        let names = (0..args.len())
+            .map(|index| format!("__kio_tail_arg_{index}"))
+            .collect::<Vec<_>>();
+        let packet = format!("{}::__kio_runtime::NamedArguments", self.crate_root());
+        let (argument_packet, pattern) = match args {
+            [] => (format!("{packet}::None"), format!("{packet}::None")),
+            [one] => (
+                format!("{packet}::One({one})"),
+                format!("{packet}::One({})", names[0]),
+            ),
+            [one, two] => (
+                format!("{packet}::Two({one}, {two})"),
+                format!("{packet}::Two({}, {})", names[0], names[1]),
+            ),
+            _ => (
+                format!("{packet}::Many(vec![{}])", args.join(", ")),
+                format!("{packet}::Many(__kio_values)"),
+            ),
+        };
+        let mut bindings = format!(
+            "let {pattern} = __kio_arguments else {{ unreachable!(\"named entry argument layout\") }}; "
+        );
+        if args.len() > 2 {
+            bindings.push_str("let mut __kio_values = __kio_values.into_iter(); ");
+            for name in &names {
+                bindings.push_str(&format!(
+                    "let {name} = __kio_values.next().expect(\"named entry argument count\"); "
+                ));
+            }
+        }
+        let arguments = names.join(", ");
+        format!(
+            "{{ let __kio_tail_owner = {receiver}.clone(); let __kio_tail_arguments = {argument_packet}; {}::__kio_runtime::Step::Named {{ owner: __kio_tail_owner, arguments: __kio_tail_arguments, invoke: |__kio_owner, __kio_arguments| {{ let __kio_pkg = __kio_owner.downcast::<Self>().expect(\"named entry retains its package owner\"); {bindings} __kio_pkg.{method}({arguments}) }} }} }}",
+            self.crate_root()
+        )
     }
 
     /// `LowCpsProjectorApply { receiver, continuation }` →
@@ -8557,6 +8478,7 @@ impl<'a> BodyEmitter<'a> {
         receiver: &Expr<Routed>,
         continuation: &Expr<Routed>,
         continuation_ty: &Type<Routed>,
+        tail: bool,
     ) -> Result<String, EmitError> {
         let recv = self.emit_expr(receiver)?;
         let cont = self.emit_expr(continuation)?;
@@ -8572,15 +8494,14 @@ impl<'a> BodyEmitter<'a> {
         );
         let advanced =
             self.emit_erased_type_applications(format!("{continuation_name}.clone()"), type_stages);
-        let fn_ty = rc_fn_type(*abi_arity);
-        let recovered = self.unbox_any(&fn_ty, &advanced);
         let args = if *abi_arity == 0 {
-            String::new()
+            Vec::new()
         } else {
-            format!("{receiver_name}.clone()")
+            vec![format!("{receiver_name}.clone()")]
         };
+        let call = erased_value_call(self.crate_root(), &advanced, &args, tail);
         Ok(format!(
-            "{{ let {receiver_name}: ::std::rc::Rc<dyn ::std::any::Any> = {recv}; let {continuation_name}: ::std::rc::Rc<dyn ::std::any::Any> = {cont}; ({recovered})({args}) }}"
+            "{{ let {receiver_name}: ::std::rc::Rc<dyn ::std::any::Any> = {recv}; let {continuation_name}: ::std::rc::Rc<dyn ::std::any::Any> = {cont}; {call} }}"
         ))
     }
 
@@ -8990,7 +8911,7 @@ fn render_rust_function_support(arity: usize, origin: BoundaryFacadeSupportOrigi
     let raw_parameters = arguments
         .iter()
         .enumerate()
-        .map(|(index, _)| format!("__arg{index}: ::std::rc::Rc<dyn ::std::any::Any>"))
+        .map(|(index, _)| format!("__arg{index}"))
         .collect::<Vec<_>>();
     let decode_parameters = arguments
         .iter()
@@ -9006,11 +8927,11 @@ fn render_rust_function_support(arity: usize, origin: BoundaryFacadeSupportOrigi
         .enumerate()
         .map(|(index, argument)| format!("{argument}::into_stored(arg{index}).into_raw()"))
         .collect::<Vec<_>>();
-    let raw_fn = format!(
-        "::std::rc::Rc<dyn Fn({}) -> ::std::rc::Rc<dyn ::std::any::Any>>",
-        std::iter::repeat_n("::std::rc::Rc<dyn ::std::any::Any>", arity)
-            .collect::<Vec<_>>()
-            .join(", ")
+    let raw_fn = rc_fn_type("crate", 1);
+    let decode = format!(
+        "{}{}",
+        unpack_erased_domain("crate", &raw_parameters),
+        decode_parameters.join(" ")
     );
     let mut out = String::new();
     out.push_str("#[allow(non_camel_case_types)]\n");
@@ -9019,12 +8940,12 @@ fn render_rust_function_support(arity: usize, origin: BoundaryFacadeSupportOrigi
         .map(|attribute| format!("{attribute}\n"))
         .unwrap_or_default();
     out.push_str(&format!(
-        "pub struct KioFn{arity}<{declarations}>(\n    KioStoredValue,\n    ::std::marker::PhantomData<fn({phantom_tuple}) -> ({phantom_tuple})>,\n);\n\nimpl<{declarations}> Clone for KioFn{arity}<{uses}> {{\n    fn clone(&self) -> Self {{ Self(self.0.clone(), ::std::marker::PhantomData) }}\n}}\n\nimpl<{declarations}> KioFn{arity}<{uses}> {{\n    pub fn new(__function: impl Fn({}) -> KioResult::Facade + 'static) -> Self {{\n        let __erased: {raw_fn} = ::std::rc::Rc::new(move |{}| {{\n            {}\n            KioResult::into_stored(__function({})).into_raw()\n        }});\n        Self(\n            KioStoredValue::from_raw(crate::__kio_runtime::as_any(__erased)),\n            ::std::marker::PhantomData,\n        )\n    }}\n\n    pub fn call(&self{call_parameters}) -> KioResult::Facade {{\n        let __erased: {raw_fn} = crate::__kio_runtime::from_any(self.0.raw());\n        KioResult::from_stored(KioStoredValue::from_raw(__erased({})))\n    }}\n}}\n\n{deprecation}pub struct KioFunction{arity}<{declarations}>(\n    ::std::marker::PhantomData<fn({phantom_tuple}) -> ({phantom_tuple})>,\n);\n\nimpl<{declarations}> Clone for KioFunction{arity}<{uses}> {{\n    fn clone(&self) -> Self {{ Self(::std::marker::PhantomData) }}\n}}\n\nimpl<{declarations}> __kio_type_private::Sealed for KioFunction{arity}<{uses}> {{}}\n\nimpl<{declarations}> KioType for KioFunction{arity}<{uses}> {{\n    type Facade = KioFn{arity}<{uses}>;\n    fn into_stored(value: Self::Facade) -> KioStoredValue {{ value.0 }}\n    fn from_stored(value: KioStoredValue) -> Self::Facade {{\n        KioFn{arity}(value, ::std::marker::PhantomData)\n    }}\n}}\n\n",
+        "pub struct KioFn{arity}<{declarations}>(\n    KioStoredValue,\n    ::std::marker::PhantomData<fn({phantom_tuple}) -> ({phantom_tuple})>,\n);\n\nimpl<{declarations}> Clone for KioFn{arity}<{uses}> {{\n    fn clone(&self) -> Self {{ Self(self.0.clone(), ::std::marker::PhantomData) }}\n}}\n\nimpl<{declarations}> KioFn{arity}<{uses}> {{\n    pub fn new(__function: impl Fn({}) -> KioResult::Facade + 'static) -> Self {{\n        let __erased: {raw_fn} = ::std::rc::Rc::new(move |{}| {{\n            {}\n            crate::__kio_runtime::Step::Done(KioResult::into_stored(__function({})).into_raw())\n        }});\n        Self(\n            KioStoredValue::from_raw(crate::__kio_runtime::as_any(__erased)),\n            ::std::marker::PhantomData,\n        )\n    }}\n\n    pub fn call(&self{call_parameters}) -> KioResult::Facade {{\n        let __erased: {raw_fn} = crate::__kio_runtime::from_any(self.0.raw());\n        KioResult::from_stored(KioStoredValue::from_raw(crate::__kio_runtime::complete(__erased({}))))\n    }}\n}}\n\n{deprecation}pub struct KioFunction{arity}<{declarations}>(\n    ::std::marker::PhantomData<fn({phantom_tuple}) -> ({phantom_tuple})>,\n);\n\nimpl<{declarations}> Clone for KioFunction{arity}<{uses}> {{\n    fn clone(&self) -> Self {{ Self(::std::marker::PhantomData) }}\n}}\n\nimpl<{declarations}> __kio_type_private::Sealed for KioFunction{arity}<{uses}> {{}}\n\nimpl<{declarations}> KioType for KioFunction{arity}<{uses}> {{\n    type Facade = KioFn{arity}<{uses}>;\n    fn into_stored(value: Self::Facade) -> KioStoredValue {{ value.0 }}\n    fn from_stored(value: KioStoredValue) -> Self::Facade {{\n        KioFn{arity}(value, ::std::marker::PhantomData)\n    }}\n}}\n\n",
         closure_types,
-        raw_parameters.join(", "),
-        decode_parameters.join(" "),
+        "__kio_domain: ::std::rc::Rc<dyn ::std::any::Any>",
+        decode,
         (0..arity).map(|index| format!("arg{index}")).collect::<Vec<_>>().join(", "),
-        encode_arguments.join(", "),
+        pack_erased_domain("crate", &encode_arguments),
     ));
     out
 }
@@ -9835,8 +9756,9 @@ fn render_prepared_forall_declaration(
             internal = format!(
                 "({}::__kio_runtime::from_any::<{}>({internal}))()",
                 shapes.crate_root(),
-                rc_fn_type(0)
+                rc_fn_type(shapes.crate_root(), 0)
             );
+            internal = complete_call(shapes.crate_root(), &internal);
             current = *result;
         }
         let body_cursor = PreparedRustUseCursor {
@@ -10222,19 +10144,21 @@ fn render_prepared_existential_projector_body(
         shapes.crate_root()
     );
     for _ in 0..existential_count {
-        let stage = rc_fn_type(0);
+        let stage = rc_fn_type(shapes.crate_root(), 0);
         invoke.push_str(&format!(
-            "let __stage: {stage} = {}::__kio_runtime::from_any(__continuation);\n        let __continuation = __stage();\n        ",
-            shapes.crate_root()
+            "let __stage: {stage} = {}::__kio_runtime::from_any(__continuation);\n        let __continuation = {}::__kio_runtime::complete(__stage());\n        ",
+            shapes.crate_root(),
+            shapes.crate_root(),
         ));
     }
-    let function = rc_fn_type(layout.body_abi_arity());
+    let function = rc_fn_type(shapes.crate_root(), 1);
     let arguments = (0..layout.body_abi_arity())
         .map(|index| format!("__source_{index}.clone()"))
-        .collect::<Vec<_>>()
-        .join(", ");
+        .collect::<Vec<_>>();
+    let arguments = pack_erased_domain(shapes.crate_root(), &arguments);
     invoke.push_str(&format!(
-        "let __function: {function} = {}::__kio_runtime::from_any(__continuation);\n        let __returned = __function({arguments});\n        <{selected_marker} as {}::shapes::KioType>::from_stored({}::shapes::KioStoredValue::from_raw(__returned))",
+        "let __function: {function} = {}::__kio_runtime::from_any(__continuation);\n        let __returned = {}::__kio_runtime::complete(__function({arguments}));\n        <{selected_marker} as {}::shapes::KioType>::from_stored({}::shapes::KioStoredValue::from_raw(__returned))",
+        shapes.crate_root(),
         shapes.crate_root(),
         shapes.crate_root(),
         shapes.crate_root(),
@@ -11439,6 +11363,181 @@ mod tests {
 
         let krate = lower_package(&pkg, "ordinary_facade").expect("ordinary Rust emission");
         assert!(!krate.lib_rs.contains("#![recursion_limit ="));
+    }
+
+    #[test]
+    fn tail_transfers_and_operand_drivers_have_separate_scopes() {
+        let pkg = build_package(
+            "module main; \
+             pub fn forward(next: . -> .) { next() } \
+             pub fn before(next: . -> .) { next(); () } \
+             pub fn type_tail(next: [A] A -> A) -> . -> . { next(.) } \
+             pub fn leaf() { () }",
+            Some("bridge { main; }"),
+        );
+        let krate = lower_package(&pkg, "tail_scopes").expect("tail scopes emit");
+        let method = |name: &str| {
+            let (_, body) = krate
+                .lib_rs
+                .split_once(&format!("fn {}(", mangle_module_fn("main", name)))
+                .expect("private method");
+            body.split_once("\n    }").expect("method end").0
+        };
+        for name in ["forward", "type_tail"] {
+            let body = method(name);
+            assert!(body.contains("::__kio_runtime::Step::Apply"), "{body}");
+            assert!(!body.contains("::__kio_runtime::complete("), "{body}");
+        }
+        let before = method("before");
+        assert!(before.contains("::__kio_runtime::complete("), "{before}");
+        assert!(!before.contains("::__kio_runtime::Step::Apply"), "{before}");
+        let leaf = method("leaf");
+        assert!(!leaf.contains("::__kio_runtime::complete("), "{leaf}");
+        assert!(!leaf.contains("::__kio_runtime::Step::Apply"), "{leaf}");
+    }
+
+    #[test]
+    fn named_tail_entries_retain_the_package_without_a_forwarding_box() {
+        let pkg = build_package(
+            "module main; host fn effect(); host type Atom; \
+             fn zero() { effect() } \
+             fn invoke(next: . -> .) { effect(); next() } \
+             fn two(first: Atom, second: Atom) -> Atom { effect(); second } \
+             fn many(first: Atom, second: Atom, third: Atom) -> Atom { effect(); third } \
+             pub fn forward(next: . -> .) { invoke(next) } \
+             pub fn forward_zero() { zero() } \
+             pub fn forward_two(first: Atom, second: Atom) -> Atom { two(first, second) } \
+             pub fn forward_many(first: Atom, second: Atom, third: Atom) -> Atom { \
+               many(first, second, third) \
+             }",
+            Some("bridge { main; }"),
+        );
+        let krate = lower_package(&pkg, "named_tail_owner").expect("named tail entry emit");
+        assert!(
+            krate
+                .lib_rs
+                .contains("Step::Named { owner: __kio_tail_owner")
+        );
+        assert!(krate.lib_rs.contains("__kio_owner.downcast::<Self>()"));
+        assert!(krate.lib_rs.contains("self: &::std::rc::Rc<Self>"));
+        assert!(!krate.runtime_rs.contains("Box<dyn FnOnce"));
+        assert!(!krate.lib_rs.contains("tail_call(move"));
+        for variant in ["None", "One(", "Two(", "Many(vec!["] {
+            assert!(
+                krate.lib_rs.contains(&format!("NamedArguments::{variant}")),
+                "missing named argument layout {variant}: {}",
+                krate.lib_rs
+            );
+        }
+        assert!(
+            krate.lib_rs.contains(
+                "NamedArguments::Many(vec![first.clone(), second.clone(), third.clone()])"
+            )
+        );
+        assert_eq!(
+            krate
+                .lib_rs
+                .matches("__kio_values.next().expect(\"named entry argument count\")")
+                .count(),
+            3
+        );
+    }
+
+    #[test]
+    fn projected_product_tail_is_a_completed_result() {
+        let pkg = build_package(
+            "module main; host type Atom; \
+             pub fn suffix(value: Atom & Atom & Atom) -> Atom & Atom { \
+                 let .(_, second, third) = value; (second, third) \
+             }",
+            Some("bridge { main; }"),
+        );
+        let suffix = pkg
+            .module("main")
+            .expect("main module")
+            .module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ast::Item::FnDef(def) if def.name == "suffix" => Some(def),
+                _ => None,
+            })
+            .expect("suffix definition");
+        let domain = suffix
+            .sig
+            .params
+            .iter()
+            .find_map(|param| match param {
+                crate::ast::SignatureParam::Value(param) => param.ty.as_ref(),
+                _ => None,
+            })
+            .expect("product domain");
+        let mut projected_tail = suffix.body.clone();
+        let Expr::Let {
+            name, body, meta, ..
+        } = &mut projected_tail
+        else {
+            panic!("destructuring binds its product once");
+        };
+        // Exercise the admitted flat Routed projection form directly. Source
+        // destructuring can retain nested binary projections and intermediate
+        // bindings, which do not select this private fast path.
+        **body = Expr::EnrichedTuple {
+            occurrence: (),
+            items: (1..3)
+                .map(|index| Expr::EnrichedProject {
+                    occurrence: (),
+                    target: Box::new(Expr::LowBoundRef {
+                        occurrence: (),
+                        name: name.clone(),
+                        meta: meta.clone(),
+                        ext: (),
+                    }),
+                    index,
+                    arity: 3,
+                    target_ty: domain.clone(),
+                    meta: meta.clone(),
+                    ext: (),
+                })
+                .collect(),
+            synth_ty: suffix.ret.clone(),
+            meta: meta.clone(),
+            ext: (),
+        };
+        let prepared =
+            PreparedBoundaryCallableSites::collect_live(&pkg).expect("product-tail boundary sites");
+        let shapes = BodyShapeRegistry::new(
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            "crate".to_owned(),
+            "ProductTailHost".to_owned(),
+        );
+        let imports = std::collections::HashMap::new();
+        let mut emitter = BodyEmitter {
+            package: &pkg,
+            prepared: &prepared,
+            shapes: &shapes,
+            selective_imports: &imports,
+            qualified_imports: &imports,
+            self_ref: None,
+            tparams: Default::default(),
+            locals: vec!["value".to_owned()],
+            local_types: Default::default(),
+            fresh: 0,
+        };
+        let operand = emitter
+            .emit_expr(&projected_tail)
+            .expect("raw suffix operand");
+        assert_eq!(
+            operand,
+            "crate::__kio_runtime::product_slot(value.clone(), 1, 2)"
+        );
+        assert!(!operand.contains("Step::"), "{operand}");
+        let result = emitter
+            .emit_result(TailContext::body(&projected_tail))
+            .expect("completed suffix result");
+        assert_eq!(result, done_value("crate", &operand));
     }
 
     #[test]
@@ -12881,7 +12980,7 @@ mod tests {
                     .contains("<crate::shapes::KioForall_Site_M_main__H_applyPoly_U3_K1_B0_A0Marker<__KioHost> as crate::shapes::KioType>::from_stored(crate::shapes::KioStoredValue::from_raw(")
                 && krate
                     .shapes_rs
-                    .contains("::std::rc::Rc<dyn Fn() -> ::std::rc::Rc<dyn ::std::any::Any>>"),
+                    .contains("::std::rc::Rc<dyn Fn() -> crate::__kio_runtime::Step>"),
             "rank-N adapter does not pair the exact trait and marker codec with private erased execution:\nshapes:\n{}\nlib:\n{}",
             krate.shapes_rs,
             krate.lib_rs,
@@ -12996,7 +13095,7 @@ mod tests {
     }
 
     #[test]
-    fn rank_n_direct_unit_function_is_nullary_in_public_and_private_forms() {
+    fn rank_n_unit_function_has_nullary_specialization_and_public_function0() {
         let pkg = build_package(
             "module main; \
              host fn consume(poly: [A](.) -> .) -> .; \
@@ -13029,7 +13128,7 @@ mod tests {
     }
 
     #[test]
-    fn staged_unit_head_is_publicly_and_privately_nullary() {
+    fn staged_unit_head_is_publicly_nullary_and_privately_one_domain() {
         let pkg = build_package(
             "module main; \
              pub fn staged_unit[A](value: .)(result: A) -> A { result }",
@@ -13051,10 +13150,9 @@ mod tests {
             staged.contains("arg0: <A as crate::shapes::KioType>::Facade")
                 && !staged.contains("arg0: ()")
                 && !staged.contains("arg1:")
-                && staged.contains("::__kio_runtime::from_any::<::std::rc::Rc<dyn Fn()")
-                && staged.contains(")()")
-                && !staged.contains("as_any(())"),
-            "a direct Unit head is absent from the public argument list but still invokes the private Fn0 stage before the later value stage:\n{staged}",
+                && staged.contains("::__kio_runtime::from_any::<::std::rc::Rc<dyn Fn(::std::rc::Rc<dyn ::std::any::Any>) -> crate::__kio_runtime::Step>")
+                && staged.contains(")(crate::__kio_runtime::as_any(()))"),
+            "a direct Unit head is absent from the public argument list but invokes its canonical private Unit-domain stage before the later value stage:\n{staged}",
         );
     }
 

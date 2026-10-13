@@ -119,6 +119,43 @@ pub(crate) fn from_any<T: Clone + 'static>(v: Rc<dyn Any>) -> T {
     .clone()
 }
 
+/// Named methods retain their known binder layout rather than rebuilding a
+/// first-class function domain. Small calls carry arguments inline; wider calls
+/// own one vector, consumed by the selected method entry in source order.
+pub(crate) enum NamedArguments {
+    None,
+    One(Rc<dyn Any>),
+    Two(Rc<dyn Any>, Rc<dyn Any>),
+    Many(Vec<Rc<dyn Any>>),
+}
+
+pub(crate) enum Step {
+    Done(Rc<dyn Any>),
+    Apply { callee: Rc<dyn Any>, domain: Option<Rc<dyn Any>> },
+    Named {
+        owner: Rc<dyn Any>,
+        invoke: fn(Rc<dyn Any>, NamedArguments) -> Step,
+        arguments: NamedArguments,
+    },
+}
+
+pub(crate) fn complete(mut step: Step) -> Rc<dyn Any> {
+    loop {
+        step = match step {
+            Step::Done(value) => return value,
+            Step::Apply { callee, domain: Some(domain) } => {
+                let entry: Rc<dyn Fn(Rc<dyn Any>) -> Step> = from_any(callee);
+                entry(domain)
+            }
+            Step::Apply { callee, domain: None } => {
+                let entry: Rc<dyn Fn() -> Step> = from_any(callee);
+                entry()
+            }
+            Step::Named { owner, invoke, arguments } => invoke(owner, arguments),
+        };
+    }
+}
+
 pub(crate) fn product_slots(v: Rc<dyn Any>, arity: usize) -> Vec<Rc<dyn Any>> {
     let mut slots = Vec::with_capacity(arity);
     let mut cur = v;

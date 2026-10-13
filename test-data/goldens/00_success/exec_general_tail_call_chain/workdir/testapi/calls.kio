@@ -1,0 +1,7 @@
+module testapi/calls;
+
+import testapi(I32);
+
+fn forward(previous: . -> I32) -> I32 { previous() }
+
+pub fn enter(previous: . -> I32) -> I32 { forward(previous) }

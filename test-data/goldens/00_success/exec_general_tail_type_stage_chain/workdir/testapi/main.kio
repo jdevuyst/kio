@@ -1,0 +1,68 @@
+module testapi/main;
+
+import elab/control(if);
+import testapi(Bool, I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+fn leaf[A] -> I32 { io.print("type leaf\n"); 73 }
+
+fn advance[A](previous: [B] I32) -> I32 { previous(A) }
+
+fn link(previous: [A] I32) -> [A] I32 {
+  .[A] { advance(A, previous) }
+}
+
+// Each link enters a helper whose final operation advances the previous type stage.
+rec(iter.loop) fn build(remaining: I32, previous: [A] I32) -> [A] I32 {
+  if! arith.leq_i32(remaining, 0) {
+    previous
+  } else {
+    recur build(arith.sub_i32(remaining, 1), link(previous))
+  }
+}
+
+fn show(value: I32) { io.print(fmt.i32_to_string(value)); io.print("\n") }
+
+fn function_leaf[A] -> A -> A {
+  io.print("function stage\n");
+  .(value) { io.print("function call\n"); value }
+}
+
+fn function_advance[A](previous: [B] B -> B) -> A -> A { previous(A) }
+
+fn function_link(previous: [A] A -> A) -> [A] A -> A {
+  .[A] { function_advance(A, previous) }
+}
+
+rec(iter.loop) fn build_function(remaining: I32, previous: [A] A -> A) -> [A] A -> A {
+  if! arith.leq_i32(remaining, 0) {
+    previous
+  } else {
+    recur build_function(arith.sub_i32(remaining, 1), function_link(previous))
+  }
+}
+
+pub fn main() {
+  let short = build(8, leaf);
+  io.print("short built\n");
+  show(short(I32));
+  show(short(I32));
+  let deep = build(1024, leaf);
+  io.print("deep built\n");
+  show(deep(I32));
+  io.print("first returned\n");
+  show(deep(I32));
+  io.print("second returned\n");
+  let functions = build_function(1024, function_leaf);
+  io.print("function chain built\n");
+  let number = functions(I32);
+  io.print("number ready\n");
+  show(number(89));
+  show(number(97));
+  let text = functions(String);
+  io.print("text ready\n");
+  io.print(text("returned text\n"))
+}

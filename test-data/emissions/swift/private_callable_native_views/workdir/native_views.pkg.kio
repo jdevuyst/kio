@@ -1,0 +1,12 @@
+package native_views;
+
+build {
+  target swift {
+    out "out/swift/";
+    baseline v6_0
+  }
+}
+
+bridge {
+  api
+}

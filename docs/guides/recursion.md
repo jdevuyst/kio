@@ -204,6 +204,16 @@ while its callback starts another run, leaving waiting host frames on the
 stack. Arbitrarily deep nested synchronous callbacks can therefore exhaust
 the host stack. The loop does not capture or suspend an opaque host continuation.
 
+Ordinary function composition also avoids unnecessary waiting frames. When a
+Kio function finishes by calling another Kio function, generated code continues
+in the called function without keeping a frame just to return its result. This
+includes calling a function parameter, such as the final `next(value)` in a
+binding helper. This does not guarantee stack safety for calls with work
+remaining afterwards, native host callbacks, or calls between independently
+generated artifacts.
+See the [backend contract](../../specs/backends/README.md#tail-calls-within-generated-code)
+for the precise boundary.
+
 ## Recursive data has no loop capability
 
 Recursive types use the same contextual word but different, capability-free

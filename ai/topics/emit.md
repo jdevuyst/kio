@@ -252,6 +252,19 @@ authority. Establish the relevant call/use facts before reducing its call
 depth; uncertain cases remain unchanged. This is not a blanket tail-call or
 constant-stack guarantee for arbitrary function composition.
 
+For the [guest-contained tail-call contract](../../specs/backends/README.md#tail-calls-within-generated-code),
+consume the shared checked result-edge plan in `backends/tail_plan.rs` rather
+than reconstructing eligibility from emitted text, function names or native
+parameter grouping. Preserve private guest-entry identity through internal
+generic, structural, nominal and existential transport; a representation
+adapter is not source-level pending work. Test retained, repeatedly invoked
+captured chains and executing type stages, with effectful non-tail controls.
+Classify actual native callback conversion and independent-artifact exchange
+separately from opaque transport that preserves the private value. Measure
+shallow-call costs as well as deep-chain improvements; account for argument
+packing, ownership and dispatch allocations instead of counting only removed
+native stack frames. Public callable interfaces remain compatibility-gated.
+
 ### Backend evidence boundary
 
 Keep three evidence layers distinct:

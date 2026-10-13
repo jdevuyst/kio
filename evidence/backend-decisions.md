@@ -72,3 +72,147 @@ The focused shared `retained_roots_omit_incompatible_same_name_newtype_epochs`
 witness constructs two incompatible frozen payload declarations at one exact
 identity and proves that both retained roots and their carrier/shell closure
 are omitted before any backend can render an inexact compatibility surface.
+
+## Guest-contained tail transfers (Stage 1)
+
+This decision implements the [generated-code tail-call law](../specs/backends/README.md#tail-calls-within-generated-code).
+Its predicate is an executing final value or type application to a Kio callable
+within one generated artifact, including calls between its package instances.
+It is universal across the eight host backends, not an erased-body family rule.
+The public callable types, application stages and host interfaces are unchanged.
+This record contains source arguments and bounded observations, not a completed
+Stage 1 acceptance claim or a general throughput claim.
+
+### Source argument and representation choice
+
+The shared [`TailContext`](../kio-rs/src/backends/tail_plan.rs) borrows checked,
+routed expressions. Its `ResultChild` selects the actual let/sequence body,
+conditional branch or match arm that supplies an invocation's result; it cannot
+attach that context to an arbitrary child. Operands remain non-tail, and a
+function body starts a fresh context when invoked. `TailStage` distinguishes the
+last executing type application from a value application, including a type
+stage whose result is itself callable. Known host calls are ordinary leaves.
+The plan adds no persistent Prime syntax, node identities or producer authority.
+
+JS, Rust, Go and Swift consume that plan during emission; Python and Java
+consume its markers through the shared [serialized runtime IR](../kio-rs/src/backends/serialized_runtime_ir.rs).
+Haskell retains native tail application and strict stage sequencing rather than
+adopting an erased dispatcher. That realization still owes the same law; native
+tail position alone is not evidence about arbitrary host-selected monads.
+
+The private representation keeps the actual guest entry through generic,
+structural, nominal and existential transport. In Rust and Go, a first-class
+value stage consumes one canonical domain: Unit, one value, or a right-nested
+product. Source binders determine unpacking, not an extra callable-result
+adapter; direct named entry layouts and public native parameter groups remain
+separate. Executing type stages stay distinct from Unit-domain value calls.
+Swift keeps private callable and structural values with lexical-witness-owned
+native-view factories; constructing a public native view occurs at its actual
+boundary, not around a private transfer. No opaque host container is traversed.
+
+JS recognizes artifact-owned callable identities in a `WeakMap`; Python uses
+exact private-class identity; Java rebinds its interpreter to the guest entry's
+runtime, body, environment and stage. Rust/Go step loops and the JS/Swift
+invocation-local cursors likewise replace the pending guest invocation rather
+than retaining a return-only activation. This is an implementation argument,
+not an allocation-free or captured-chain-destruction guarantee.
+
+Evaluation invariants are unchanged: evaluate the callee, earlier type stages
+and arguments in order; execute a final type stage before returning its result;
+retain captures and package ownership; leave callable construction inert; and
+preserve repeated invocation, host reentry, exceptions and post-call effects.
+Unknown host callables receive their ordinary invocation, without additional
+identity-discovery property or descriptor probes. No declaration-name hook,
+declaration-pool search or new import participates in tail eligibility. Adding
+unrelated declarations therefore cannot change an existing resolved edge or
+the closure value it invokes: the open-world argument is structural and local.
+
+Actual native-function conversion and independent-artifact calls fall outside
+this transfer-identity predicate, not outside ordinary semantic correctness.
+Passing the unchanged private value through opaque host storage remains inside
+the predicate. Internal representation conversion is not source-level pending
+work and cannot justify a retained return-only frame. The separate
+[callback-boundary probes](tail-call-boundaries/README.md) preserve the broader
+unlanded assertions, including their failures, without changing this boundary.
+
+### Observed execution and remaining acceptance
+
+The original stress/control observations use compiler SHA-256
+`d6439c6eaf96c319b55fff6582b9be5037c05401e3ea790bb95e4a453498416a`.
+The extended all-backend and Rust/Swift integration observations use compiler
+SHA-256 `0acfe32cccf970397a204567c676b28375db693423f5ac5014b3bca7a9d803b4`.
+Go's packet/static-helper refinement refreshes its three shared golden rows
+and five native-interface cases with compiler SHA-256
+`7cfa7886d8dd477bc54cc14bf4aeecf8dac9cfb3a4215d6fbb15af0e20330e87`.
+The final compiler, SHA-256
+`5a73364a45992da7b17d3a97da172d1fb998e5d57306c4c419e5be24fa563e15`,
+passes 795 backend unit tests and strict Clippy. Its measured Rust/Go generated
+files are byte-identical to the respective measured artifacts. Both native
+fixtures additionally pass a host-panic catch followed by reuse of the same
+retained deep callable, including exact partial and subsequent effect counts.
+These remain bounded workflows, not claims about arbitrary host programs.
+The four dynamic/Java runners use QuickJS (`rquickjs` 0.11.0), Python 3.12.15
+and Java 21.0.12.1; TypeScript checks use 6.0.3, with no stack-limit increase.
+
+| Backend | Applicability | Conformance on observed paths | Evidence and limit |
+| --- | --- | --- | --- |
+| JS | applies | conforms | Generated 20,000-link value and final-type chains pass, each invoked twice; ten existing semantic controls pass; 50,000-link private runtime controls pass. |
+| TypeScript | applies | conforms | The same two generated chains and ten controls pass; both stress artifacts pass strict declaration checking and JS/TS runtime byte comparison. |
+| Python | applies | conforms | Both generated 20,000-link chains and ten controls pass; eight private runtime tests include exact-class dispatch and host-method collision non-interception. |
+| Java | applies | conforms | Both generated 20,000-link chains and ten controls pass through the independent typed host runner. |
+| Rust | applies | conforms | Retained 20,001-link value/type chains pass on a 128 KiB thread stack in local/send/sync/send_sync modes at `-C opt-level=0` and `2` (eight configurations). The final fixture includes two- and three-slot named entries, unequal arguments and two package owners. The released compiler overflows on that exact fixture. |
+| Go | applies | conforms | Retained 20,001-link value/type chains pass with a 128 KiB maximum goroutine stack, both default optimization and `-gcflags='all=-N -l'`. Zero-/one-slot calls, deep two-/five-slot transfers, unequal arguments, operand order, two owners and reuse pass after the packet/static-helper refinement. Four existing public-interface controls also pass. |
+| Swift | applies | conforms | Three separately compiled native-interface cases pass at `-Onone`; both extended 1,024-link chain goldens pass, including stored nominal/existential transport and callable results at I32 and String. |
+| Haskell | applies | conforms | Both extended 1,024-link chain goldens pass after the separately identified rank-N sum-constructor repair. Internal native/projector paths return the final invocation directly; operand demand and earlier executing type stages precede it. Actual public conversion wrappers are a separate occurrence, not an exemption for private adapters. Host-selected monad resource behavior is not established by these results. |
+
+Both extended chain goldens and the dedicated
+[`exec_forall_sum_injection`](../test-data/goldens/00_success/exec_forall_sum_injection/)
+regression execute successfully on all eight backends (24 runtime rows) and
+through dynamic Prime (three rows with a freshly generated interpreter driver).
+Each case's invariant suite checks canonical formatting/dependencies, strict
+typed skins, and Prime roundtripping. The roundtrip grammar-verifies emitted
+Prime, separately builds it with the reduced compiler, and requires identical
+generated target file sets and bytes. The ordinary runtime row therefore
+executes the same code that the reduced compiler emits; this is not a claim
+that a second native binary was executed.
+
+The four JS/TS/Python/Java stress pairs used the original simple value/type
+subjects at depth 20,000, before the [value-chain golden](../test-data/goldens/00_success/exec_general_tail_call_chain/)
+and [type-chain golden](../test-data/goldens/00_success/exec_general_tail_type_stage_chain/)
+acquired their additional stored-chain and callable-result subjects. Their
+main-source SHA-256 values are respectively
+`1213407d1a76fed9cf69eb39cde32e13fdedd211bf5f625529f13b3098c81cb1` and
+`f763197afc3e5dd7e081fbf14cf6aa9adb3a158efe39e2e87126a98e6bcd6fae`.
+Those extra subjects do not inherit the stress passes. The forty control runs
+cover CPS/projector calls, function/type-stage ordering, host forall/interleaved
+stages, generic callbacks, opaque compound transport, statement-spine captures
+and same-artifact instance exchange; their phase and typed-skin checks pass.
+
+Rust and Go's bounded hosts are [Rust](../test-data/emissions/rust/general_tail_calls/)
+and [Go](../test-data/emissions/go/general_tail_calls/) emission subjects. Swift's
+native cases are [private callable views](../test-data/emissions/swift/private_callable_native_views/),
+[opaque substitution](../test-data/emissions/swift/opaque_structural_substitution/)
+and [application-carrier visibility](../test-data/emissions/swift/application_carrier_visibility/).
+Fixed-depth execution supports these workloads; it does not prove arbitrary
+depth, general monadic stack bounds, or capture reclamation behavior.
+
+### Alternatives and evidence ownership
+
+Self-recursion-only rewriting misses captured higher-order and final-type
+edges. The explored name-based identity protocol introduced effects and granted
+an uncontracted host method control-flow authority. Global registries or a
+shared executable runtime add deployment and lifetime obligations outside the
+artifact-local decision.
+Changing public callable wrappers addresses a different compatibility question.
+Treating every private adapter as a native boundary would evade the predicate.
+
+The shared specification owns the law; the plan and its [unit tests](../kio-rs/src/backends/tail_plan/tests.rs)
+own result-edge eligibility. Runtime units own dispatch isolation; goldens own
+language/effect behavior; emission cases own native integration facts. The
+[measured representation costs](backend-performance.md#guest-contained-tail-transfers)
+remain separate from stack-depth correctness: in particular, small named-call
+chains incur substantial driver overhead. Integrated coverage includes the
+regular and direct-Prime goldens, sampled dynamic-Prime execution, generated
+programs, POCs and castles. These checks supplement the explicit per-backend
+witnesses; grouping backends with similar mechanisms supplies no evidence by
+itself.

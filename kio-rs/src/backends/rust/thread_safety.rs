@@ -479,6 +479,25 @@ mod tests {
     }
 
     #[test]
+    fn named_entry_owner_and_arguments_receive_thread_bounds() {
+        let source = "fn(Rc<dyn Any>, NamedArguments) -> Step; enum NamedArguments { None, One(Rc<dyn Any>), Two(Rc<dyn Any>, Rc<dyn Any>), Many(Vec<Rc<dyn Any>>) }";
+        assert_eq!(
+            transform_emitted_source(source, ThreadSafety::RcLocal),
+            source
+        );
+        for mode in [
+            ThreadSafety::Send,
+            ThreadSafety::Sync,
+            ThreadSafety::SendSync,
+        ] {
+            assert_eq!(
+                transform_emitted_source(source, mode),
+                "fn(Arc<dyn Any + Send + Sync>, NamedArguments) -> Step; enum NamedArguments { None, One(Arc<dyn Any + Send + Sync>), Two(Arc<dyn Any + Send + Sync>, Arc<dyn Any + Send + Sync>), Many(Vec<Arc<dyn Any + Send + Sync>>) }"
+            );
+        }
+    }
+
+    #[test]
     fn wrap_and_dyn_rewrites_preserve_protected_spans_and_utf8() {
         let source = r####"type Live = ::std::rc::Rc<dyn LiveTrait>;
 const QUOTED: &str = "雪 ::std::rc::Rc<dyn Quoted>";

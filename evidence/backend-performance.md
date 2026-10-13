@@ -11,6 +11,180 @@ Any omitted source revision, toolchain version, invocation or raw-log location
 remains unrecorded; it cannot be inferred from the current checkout. The results
 apply to the stated experiments and assumptions.
 
+## Guest-contained tail transfers
+
+These comparisons measure the implementation of the
+[tail-call boundary](../specs/backends/README.md#tail-calls-within-generated-code),
+starting from released compiler `3774beac81faa78c85eee7da45afb35b07742a24`.
+Bounded invocation stack is the primary benefit; it is not a promise that
+shallow calls or every host program become faster. Callable construction,
+retained captures and their eventual destruction are separate costs.
+
+### Rust named-entry arguments
+
+Rust 1.99.0, edition 2024, compiled the generated library and independent host
+at `-C opt-level=2`; generated code forbids unsafe code. The measurement host
+uses the same forwarding allocator in both arms. Allocation counting is
+disabled during timing, although its flag read remains. Captured predecessor
+chains at depths 0, 1, 8 and 64 return the checked value 17. Indirect-only,
+named-plus-indirect, and alternating links distinguish entry paths. Chain
+construction and destruction are outside the timer. Ten samples per row use
+20,000 invocations each, in released/candidate/candidate/released process order
+without overlapping builds or tests.
+
+The first step driver packed named arguments into a canonical product and then
+unpacked them into a temporary vector. A private `NamedArguments` packet stores
+zero, one or two values inline, with an owned vector for wider entries. It
+preserves the separate native named-entry grouping and first-class single-domain
+contract. Removing those two transient allocations per two-argument named hop
+reduces the isolated depth-64 named-path median from 5,744.5 to 2,597 ns. Its
+step grows from 48 to 64 bytes; the indirect-only control consequently rises
+from 1,379.5 to 1,460 ns in that comparison.
+
+The final production compiler has SHA-256
+`0acfe32cccf970397a204567c676b28375db693423f5ac5014b3bca7a9d803b4`.
+It reproduces the allocation result and passes the same source/host assertions.
+Final production versus released measurements, in nanoseconds per invocation
+(median and full sample range):
+
+| Subject | Released | Production |
+| --- | ---: | ---: |
+| Leaf export | 25.5 (9–60) | 46 (37–56) |
+| Indirect depth 64 | 1,075.5 (1,043–1,110) | 1,565.5 (1,494–1,617) |
+| Named + indirect depth 64 | 1,124.5 (1,102–1,393) | 2,600.5 (2,515–2,761) |
+| Alternating depth 64 | 1,165 (1,047–1,824) | 2,028 (1,985–2,170) |
+
+All three depth-64 paths allocate 66 times per invocation in both released and
+final production code. The leaf export allocates twice instead of once because
+it retains the shared package owner. Named paths still perform two driver
+transfers per link, owner reference-counting and an owner downcast; indirect
+paths perform one transfer. The observed depth-64 overheads are about 2.31×,
+1.46× and 1.74× for named, indirect and alternating paths respectively. These
+are costs of this implementation, not proven lower bounds for stack safety.
+Small-call rows vary substantially; they establish no universal latency ratio.
+
+The separate [native fixture](../test-data/emissions/rust/general_tail_calls/)
+executes 20,001-link captured value and type-stage chains twice across two
+owners on a 128 KiB host thread, in all four thread-safety modes at optimization
+levels 0 and 2. Two- and three-slot named entries, including unequal arguments,
+are exercised. The released compiler's exact strengthened fixture overflows
+the native stack; final production passes. Wider-entry vector allocation is
+not measured by the two-argument timing subject.
+
+### Go reusable named entries
+
+Go 1.27.2 on linux/amd64 built the generated package and fixed independent
+host with ordinary `go build` settings. The source exercises indirect-only,
+named-plus-indirect and alternating captured predecessor chains at depths
+0, 1, 8 and 64, checking result 17. Allocation measurements use
+`testing.AllocsPerRun(100, ...)`; timing uses ten samples of 20,000 calls per
+row in released/candidate/candidate/released process order, without overlapping
+builds or tests. Both exclude chain construction. All samples are retained.
+
+The original driver allocated a product domain and unpacking slice per named
+transfer. A concrete first/second/rest packet removes that packing. A remaining
+invoker literal inside the generic package method still captured Go's generic
+dictionary, even after its body used only an exact private method interface.
+Hoisting that invoker to one nongeneric package-level helper per body removes
+the closure allocation. It asserts the same private method interface on the
+retained owner; it adds no registry, public callable type or runtime type
+argument. Wider entries retain one overflow slice.
+
+Unmodified production output from compiler SHA-256
+`7cfa7886d8dd477bc54cc14bf4aeecf8dac9cfb3a4215d6fbb15af0e20330e87`
+reproduces the measured allocation reduction:
+
+| Allocations per invocation | Released | Original driver | Final driver |
+| --- | ---: | ---: | ---: |
+| Leaf export | 0 | 0 | 0 |
+| Indirect depth 64 | 1 | 3 | 1 |
+| Named + indirect depth 64 | 1 | 195 | 1 |
+| Alternating depth 64 | 1 | 99 | 1 |
+
+Every measured final chain depth has one allocation per public invocation, independent
+of depth. The 56-byte argument packet enlarges the common step from 80 to 136
+bytes, including on indirect-only paths. Final timing remains materially slower
+than release (nanoseconds per invocation, median and full sample range):
+
+| Subject | Released | Final driver |
+| --- | ---: | ---: |
+| Leaf export | 14 (12–16) | 13 (8–19) |
+| Indirect depth 64 | 512 (500–556) | 1,848 (1,815–1,918) |
+| Named + indirect depth 64 | 727.5 (659–1,287) | 3,911 (3,880–4,476) |
+| Alternating depth 64 | 865.5 (663–1,346) | 2,909 (2,875–3,718) |
+
+Those depth-64 medians are 3.61×, 5.38× and 3.36× the released times. Named links
+perform two driver transfers plus the helper's interface dispatch; indirect
+links perform one transfer. The larger result copy and dispatch remain, but
+these measurements do not attribute their costs individually or prove that
+the overhead is unavoidable. Shallow rows and released alternating timings
+are noisy. The benefit established here is bounded invocation stack, not a
+general speedup or acceptable overhead for every workload.
+
+For this subject, generated body/runtime source grows from 9,807/4,255 bytes
+in release to 13,336/5,664 bytes; the executable grows from 2,648,354 to
+2,658,786 bytes. Ten private static helpers contribute linear source text;
+unused helpers can be removed by the native linker. Public host, FFI and shape
+files are byte-identical before and after the packet/helper repair.
+The [native fixture](../test-data/emissions/go/general_tail_calls/) separately
+checks zero-, one-, two- and five-slot calls, operand order, two owners, repeated
+invocation and final type stages. Its 20,001-link chains pass with a 128 KiB
+maximum goroutine stack at default settings and with `-gcflags='all=-N -l'`.
+Four existing public-interface controls also pass. The two-slot cost experiment
+does not measure wider-entry allocation or arbitrary host workloads.
+
+### Swift private entries
+
+Swift 6.4 on x86_64 Linux compiled the same generated package and independent
+host at `-Onone` and `-O`. A host loop builds a captured predecessor chain;
+the stored variant transports that callback and a mark through a product and
+generic private nominal, then invokes a named helper at each link. Construction
+has no effects; each invocation checks one leaf event, exactly one tick per
+link and result 42. Six alternating samples per arm execute 3,000 invocations
+at depths 0, 1 and 64. Timers include invocation-time helper construction and
+dispatch, but exclude chain construction, native-view creation and destruction.
+Other builds and tests were held during the comparison.
+
+The initial private-entry implementation allocated a transfer cursor even for
+a body already classified as terminal by the shared tail plan. Keeping that
+terminal/resumable distinction removes the cursor and ignored-cursor wrapper
+for terminal entry calls. Terminal does not mean pure: its effects and non-tail
+calls still execute. All targets remain the same private entry type, so an
+active driver can finish at a terminal entry without starting another driver.
+
+Median nanoseconds per invocation (full six-sample range). These are two
+separate paired experiments, not a single three-arm run:
+
+| Comparison | Profile / subject | Before | After |
+| --- | --- | ---: | ---: |
+| Released → initial private entry | `-O`, leaf | 85.7 (81.4–94.6) | 233.6 (225.9–263.7) |
+| Released → initial private entry | `-Onone`, leaf | 144.4 (140.2–157.2) | 339.8 (325.9–352.8) |
+| Released → initial private entry | `-O`, simple depth 64 | 26,837.6 (24,637.2–29,682.5) | 29,970.5 (29,158.8–30,642.3) |
+| Released → initial private entry | `-O`, stored depth 64 | 146,919.9 (143,814.1–153,621.2) | 140,840.4 (139,247.8–147,120.1) |
+| Initial → terminal fast path | `-O`, leaf | 230.1 (217.4–237.0) | 165.4 (160.9–175.2) |
+| Initial → terminal fast path | `-Onone`, leaf | 328.6 (325.7–347.5) | 280.2 (266.8–318.6) |
+| Initial → terminal fast path | `-O`, simple depth 64 | 30,071.0 (29,750.3–33,998.7) | 30,455.0 (29,568.7–32,648.9) |
+| Initial → terminal fast path | `-O`, stored depth 64 | 141,152.9 (137,776.4–145,156.9) | 140,767.2 (135,540.2–151,215.5) |
+| Initial → terminal fast path | `-Onone`, simple depth 64 | 45,807.6 (43,077.7–49,658.2) | 50,853.2 (45,991.8–56,196.9) |
+
+The leaf rows are the later repeated leaf measurements. The first depth-0/1
+rows had substantial startup variation and no explicit warm-up, so they do not
+establish steady-state latency. The fast path improves the later leaf by about
+28% at `-O` and 15% at `-Onone`; it still costs more than the released leaf.
+The `-Onone` simple-chain median increases about 11%, with overlapping ranges.
+Neither comparison establishes a general speedup or an allocation census.
+
+The terminal discriminator adds a tag and dispatch branch. This small artifact's
+executable grows from 204,352 to 210,664 bytes at `-Onone` and 144,368 to 146,232
+at `-O`; native compilation was not timed. Final compiler SHA-256
+`0acfe32cccf970397a204567c676b28375db693423f5ac5014b3bca7a9d803b4`
+regenerated and passed the same clock-disabled controls at both profiles. Its
+timed invocation path matches the measured terminal artifact; the only code
+difference is a terminal forall constructor used during untimed construction.
+Host and FFI files remain byte-identical to release. Private unit assertions
+pin the terminal-before-cursor path and its constructor selection; native
+interface and executing-type-stage tests supply separate semantic evidence.
+
 ## Sequential statement call depth
 
 This correctness-primary comparison starts from compiler revision

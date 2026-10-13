@@ -207,6 +207,38 @@ class _KioPoly(_KioTypeStage):
     def advance(self):
         return self.__leaf()
 
+
+class _KioGuest:
+    __slots__ = ("runtime", "module", "body", "groups", "index", "env")
+
+    def __init__(self, runtime, module, body, groups, index, env):
+        self.runtime = runtime
+        self.module = module
+        self.body = body
+        self.groups = groups
+        self.index = index
+        self.env = env
+
+    def __setattr__(self, name, value):
+        if hasattr(self, name):
+            raise AttributeError("guest callable captures are immutable")
+        object.__setattr__(self, name, value)
+
+
+class _KioGuestFunction(_KioGuest, KioFn):
+    __slots__ = ()
+
+    def __call__(self, domain):
+        return self.runtime.eval(None, None, None, self, domain, False)
+
+
+class _KioGuestPoly(_KioGuest, _KioTypeStage):
+    __slots__ = ()
+
+    def advance(self):
+        return self.runtime.eval(None, None, None, self, None, True)
+
+
 class _KioNamedFunction:
     def __init__(self, arity, invoke, label):
         self.arity = arity
@@ -521,28 +553,21 @@ class _PackageRuntime:
             )
         if use["kind"] == "function":
             layout = site["execution"]["root_uses"][use_id]["layout"]
-
-            def apply(domain):
-                source_args = _product_slots(domain, layout["body_abi_arity"])
-                continuation = source_args[0]
-                continuation_use = use["slots"][0]
-                return self._apply_existential_continuation(
-                    site, continuation_use, continuation, payload
-                )
-
-            return _KioFunction(apply)
+            if layout["body_abi_arity"] != 1:
+                raise RuntimeError("existential projector takes one continuation")
+            body = self._existential_continuation_body(site, use["slots"][0])
+            return self._guest_stage(None, body, [(False, ["continuation"])], 0, {"payload": payload})
         raise RuntimeError("existential projector has no prepared continuation stage")
 
-    def _apply_existential_continuation(
-        self, site, use_id, continuation, payload
-    ):
+    def _existential_continuation_body(self, site, use_id):
         plan = site["callable"]["facade"]
         execution_uses = site["execution"]["root_uses"]
         use = plan["uses"][use_id]
+        type_args = []
         while use["kind"] == "forall":
             action = execution_uses[use_id]["kind"]
             if action == "invoke_forall":
-                continuation = continuation.advance()
+                type_args.append(None)
             elif action != "declaration_binder":
                 raise RuntimeError("prepared forall has no execution action")
             use_id = use["result"]
@@ -553,13 +578,13 @@ class _PackageRuntime:
         if execution["kind"] != "function":
             raise RuntimeError("prepared function has no execution layout")
         arity = execution["layout"]["body_abi_arity"]
-        if arity == 0:
-            return _call_value(continuation)
-        if arity == 1:
-            return _call_value(continuation, payload)
-        raise RuntimeError(
-            f"existential continuation must have zero or one ABI argument, got {arity}"
-        )
+        if arity not in (0, 1):
+            raise RuntimeError(f"existential continuation has invalid ABI arity {arity}")
+        return {"LowClosureCall": {
+            "name": "continuation", "type_args": type_args,
+            "args": [{"LowBoundRef": {"name": "payload"}}] if arity else [],
+            "tail": "value",
+        }}
 
     def fn(self, module_key, name):
         cache_key = (module_key, name)
@@ -572,12 +597,23 @@ class _PackageRuntime:
 
     def _make_fn(self, module_key, fn_def, base_env):
         groups = _signature_runtime_groups(fn_def["sig"])
+        return self._guest_stage(module_key, fn_def["body"], groups, 0, dict(base_env))
 
-        def layer(index, env):
-            is_type, names = groups[index]
+    def _guest_stage(self, module_key, body, groups, index, env):
+        kind = _KioGuestPoly if groups[index][0] else _KioGuestFunction
+        return kind(self, module_key, body, groups, index, env)
 
-            def invoke(domain):
-                local = dict(env)
+    def eval(self, module_key, expr, env, callee=None, domain=None, type_stage=False):
+        while True:
+            if callee is not None:
+                kind = type(callee)
+                if kind is not _KioGuestFunction and kind is not _KioGuestPoly:
+                    return callee.advance() if type_stage else callee(domain)
+                self = callee.runtime
+                is_type, names = callee.groups[callee.index]
+                if is_type != type_stage:
+                    raise RuntimeError("checked call and guest stage disagree")
+                local = dict(callee.env)
                 if not is_type:
                     for slot, name in enumerate(names):
                         if slot + 1 == len(names):
@@ -585,18 +621,12 @@ class _PackageRuntime:
                         else:
                             local[name] = domain["left"]
                             domain = domain["right"]
-                if index + 1 < len(groups):
-                    return layer(index + 1, local)
-                return self.eval(module_key, fn_def["body"], local)
-
-            if is_type:
-                return _KioPoly(lambda: invoke(None))
-            return _KioFunction(invoke)
-
-        return layer(0, dict(base_env))
-
-    def eval(self, module_key, expr, env):
-        while True:
+                if callee.index + 1 < len(callee.groups):
+                    return self._guest_stage(
+                        callee.module, callee.body, callee.groups, callee.index + 1, local
+                    )
+                module_key, expr, env = callee.module, callee.body, local
+                callee = None
             tag, data = _tag(expr)
             if tag == "Let":
                 value = self.eval(module_key, data["value"], env)
@@ -604,120 +634,110 @@ class _PackageRuntime:
                 local[data["name"]] = value
                 env = local
                 expr = data["body"]
-            elif tag == "Seq":
+                continue
+            if tag == "Seq":
                 self.eval(module_key, data["value"], env)
                 expr = data["body"]
+                continue
+            if tag == "Unit":
+                return None
+            if tag == "FnExpr":
+                return self._make_lambda(module_key, data, env)
+            if tag == "StrLit":
+                return self._literal(data, data["value"])
+            if tag == "IntLit":
+                return self._literal(data, int(data["digits"].replace("_", "")))
+            if tag == "FloatLit":
+                return self._literal(data, float(data["digits"].replace("_", "")))
+            if tag == "BoolLit":
+                return self._literal(data, data["value"])
+            if tag == "EnrichedTuple":
+                return _product_from_slots([self.eval(module_key, item, env) for item in data["items"]])
+            if tag == "EnrichedProject":
+                return _product_slot(
+                    self.eval(module_key, data["target"], env), data["index"], data["arity"]
+                )
+            if tag == "EnrichedFieldGet":
+                carrier = _product_slot(
+                    self.eval(module_key, data["target"], env), data["index"], data["arity"]
+                )
+                return self._nominal_unwrap(data["nominal"], carrier)
+            if tag == "EnrichedInject":
+                return _sum_inject(
+                    self.eval(module_key, data["payload"], env), data["variant"], data["variants"]
+                )
+            if tag == "EnrichedMatch":
+                variant, payload = _sum_payload(
+                    self.eval(module_key, data["scrutinee"], env), len(data["arms"])
+                )
+                arm = data["arms"][variant]
+                local = dict(env)
+                local[arm["param"]] = payload
+                expr, env = arm["body"], local
+                continue
+            if tag == "EnrichedConditional":
+                condition = self.eval(module_key, data["cond"], env)
+                native = self._role_adapter(_role_adapter_identity(data["host_type"]), "in", condition)
+                expr = data["then_branch"] if native else data["else_branch"]
+                continue
+            if tag == "LowBoundRef":
+                return env[data["name"]]
+            if tag == "LowHostFnValueRef":
+                return self._host_fn_value(data["name"], data["module_path"], data["sig"], data["ret_ty"])
+            if tag == "LowModuleFnValueRef":
+                return self.fn(data["module_path"], data["mangled"])
+            if tag in ("LowQualifiedNewtypeMember", "LowNewtypeCtor", "LowNewtypeProj"):
+                payload = data.get("payload", data.get("target"))
+                value = self.eval(module_key, payload, env)
+                constructor = tag == "LowNewtypeCtor" or (
+                    tag == "LowQualifiedNewtypeMember" and data["constructor"]
+                )
+                operation = self._nominal_wrap if constructor else self._nominal_unwrap
+                return operation(data["nominal"], value)
+            if tag == "LowAbsurdCall":
+                self.eval(module_key, data["value_arg"], env)
+                raise RuntimeError("Kio: __absurd__ on bottom value")
+            if tag == "LowTypeApplication":
+                callee = self.eval(module_key, data["callee"], env)
+                domain, type_stage = None, True
+            elif tag == "LowCpsProjectorApply":
+                receiver = self.eval(module_key, data["receiver"], env)
+                payload = self._nominal_unwrap(data["nominal"], receiver)
+                callee = self.eval(module_key, data["continuation"], env)
+                callee = _apply_type_stages(callee, range(data["continuation_type_stages"]))
+                arity = data["continuation_abi_arity"]
+                if arity not in (0, 1):
+                    raise RuntimeError(f"CPS projector continuation has invalid ABI arity {arity}")
+                domain, type_stage = payload if arity else None, False
+            elif tag in ("LowHostCall", "LowModuleCall", "LowQualifiedModuleCall",
+                         "LowClosureCall", "LowIndirectCall"):
+                if tag == "LowHostCall":
+                    callee = self._host_fn_value(
+                        data["name"], data["module_path"], data["sig"], data["ret_ty"]
+                    )
+                elif tag in ("LowModuleCall", "LowQualifiedModuleCall"):
+                    callee = self.fn(data["module_path"], data["mangled"])
+                elif tag == "LowClosureCall":
+                    callee = env[data["name"]]
+                else:
+                    callee = self.eval(module_key, data["callee"], env)
+                type_stage = bool(data["type_args"]) and tag in (
+                    "LowHostCall", "LowModuleCall", "LowQualifiedModuleCall"
+                ) and not _signature_has_value_group(data["sig"])
+                callee = _apply_type_stages(
+                    callee, range(len(data["type_args"]) - int(type_stage))
+                )
+                if type_stage:
+                    if data["args"]:
+                        raise RuntimeError("a routed type-only head has value arguments")
+                    domain = None
+                else:
+                    args = [self.eval(module_key, arg, env) for arg in data["args"]]
+                    domain = _product_from_slots(args)
             else:
-                break
-        if tag == "Unit":
-            return None
-        if tag == "FnExpr":
-            return self._make_lambda(module_key, data, env)
-        if tag == "StrLit":
-            return self._literal(data, data["value"])
-        if tag == "IntLit":
-            return self._literal(data, int(data["digits"].replace("_", "")))
-        if tag == "FloatLit":
-            return self._literal(data, float(data["digits"].replace("_", "")))
-        if tag == "BoolLit":
-            return self._literal(data, data["value"])
-        if tag == "EnrichedTuple":
-            return _product_from_slots([self.eval(module_key, item, env) for item in data["items"]])
-        if tag == "EnrichedProject":
-            return _product_slot(
-                self.eval(module_key, data["target"], env), data["index"], data["arity"]
-            )
-        if tag == "EnrichedFieldGet":
-            carrier = _product_slot(
-                self.eval(module_key, data["target"], env), data["index"], data["arity"]
-            )
-            return self._nominal_unwrap(data["nominal"], carrier)
-        if tag == "EnrichedInject":
-            return _sum_inject(
-                self.eval(module_key, data["payload"], env), data["variant"], data["variants"]
-            )
-        if tag == "EnrichedMatch":
-            variant, payload = _sum_payload(
-                self.eval(module_key, data["scrutinee"], env), len(data["arms"])
-            )
-            arm = data["arms"][variant]
-            local = dict(env)
-            local[arm["param"]] = payload
-            return self.eval(module_key, arm["body"], local)
-        if tag == "EnrichedConditional":
-            condition = self.eval(module_key, data["cond"], env)
-            native = self._role_adapter(_role_adapter_identity(data["host_type"]), "in", condition)
-            branch = data["then_branch"] if native else data["else_branch"]
-            return self.eval(module_key, branch, env)
-        if tag == "LowBoundRef":
-            return env[data["name"]]
-        if tag == "LowHostFnValueRef":
-            return self._host_fn_value(data["name"], data["module_path"], data["sig"], data["ret_ty"])
-        if tag == "LowModuleFnValueRef":
-            return self.fn(data["module_path"], data["mangled"])
-        if tag == "LowHostCall":
-            fn = self._host_fn_value(
-                data["name"], data["module_path"], data["sig"], data["ret_ty"]
-            )
-            fn = _apply_type_stages(fn, data["type_args"])
-            args = [self.eval(module_key, arg, env) for arg in data["args"]]
-            return _call_value(fn, *args)
-        if tag == "LowModuleCall":
-            fn = self.fn(data["module_path"], data["mangled"])
-            fn = _apply_type_stages(fn, data["type_args"])
-            if data["type_args"] and not _signature_has_value_group(data["sig"]):
-                assert not data["args"], "a routed type-only head has no value arguments"
-                return fn
-            args = [self.eval(module_key, arg, env) for arg in data["args"]]
-            return _call_value(fn, *args)
-        if tag == "LowQualifiedModuleCall":
-            fn = self.fn(data["module_path"], data["mangled"])
-            fn = _apply_type_stages(fn, data["type_args"])
-            if data["type_args"] and not _signature_has_value_group(data["sig"]):
-                assert not data["args"], "a routed type-only head has no value arguments"
-                return fn
-            args = [self.eval(module_key, arg, env) for arg in data["args"]]
-            return _call_value(fn, *args)
-        if tag in ("LowQualifiedNewtypeMember", "LowNewtypeCtor", "LowNewtypeProj"):
-            payload = data.get("payload", data.get("target"))
-            value = self.eval(module_key, payload, env)
-            constructor = tag == "LowNewtypeCtor" or (
-                tag == "LowQualifiedNewtypeMember" and data["constructor"]
-            )
-            operation = self._nominal_wrap if constructor else self._nominal_unwrap
-            return operation(data["nominal"], value)
-        if tag == "LowClosureCall":
-            callee = _apply_type_stages(env[data["name"]], data["type_args"])
-            args = [self.eval(module_key, arg, env) for arg in data["args"]]
-            return _call_value(callee, *args)
-        if tag == "LowIndirectCall":
-            callee = self.eval(module_key, data["callee"], env)
-            callee = _apply_type_stages(callee, data["type_args"])
-            args = [self.eval(module_key, arg, env) for arg in data["args"]]
-            return _call_value(callee, *args)
-        if tag == "LowTypeApplication":
-            return self.eval(module_key, data["callee"], env).advance()
-        if tag == "LowAbsurdCall":
-            self.eval(module_key, data["value_arg"], env)
-            raise RuntimeError("Kio: __absurd__ on bottom value")
-        if tag == "LowCpsProjectorApply":
-            receiver = self.eval(module_key, data["receiver"], env)
-            payload = self._nominal_unwrap(data["nominal"], receiver)
-            continuation = self.eval(module_key, data["continuation"], env)
-            continuation = _apply_type_stages(
-                continuation,
-                range(data["continuation_type_stages"]),
-            )
-            continuation_arity = data["continuation_abi_arity"]
-            if continuation_arity == 0:
-                return _call_value(continuation)
-            if continuation_arity == 1:
-                return _call_value(continuation, payload)
-            raise RuntimeError(
-                "CPS projector continuation must have zero or one ABI argument, "
-                f"got {continuation_arity}"
-            )
-        raise RuntimeError(f"python target cannot evaluate routed expression {tag}")
+                raise RuntimeError(f"python target cannot evaluate routed expression {tag}")
+            if data.get("tail") != ("type" if type_stage else "value"):
+                return callee.advance() if type_stage else callee(domain)
 
     def _literal(self, data, value):
         return self._role_adapter(_role_adapter_identity(data["host_type"]), "out", value)

@@ -37,6 +37,7 @@ use crate::backends::product_rebuild::{
 use crate::backends::skin::{
     FfiDir, HostRoleTable, exact_host_role, host_role_table, runtime_param_name_groups,
 };
+use crate::backends::tail_plan::{ResultChild, TailContext};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
 
@@ -216,7 +217,7 @@ mod facade_consumer_tests {
 
     fn assert_selected_result_is_returned(method: &str) {
         let selected = method
-            .find(" = (__kio_existential_selected_callee")
+            .find(" = kioApplyValue(__kio_existential_selected_callee")
             .expect("selected CPS result call");
         let returned = method
             .rfind("\n\treturn __kio_facade_value")
@@ -750,9 +751,18 @@ mod facade_consumer_tests {
                 "module api; pub fn round(value: {ty}) -> {ty} {{ value }}"
             ));
             let emitted = lower_package(&package, "pkg").expect("emit nested Value views");
-            // Two public roots, each with one In and Out closure per stage.
-            // Re-inlining every suffix would multiply this by the depth.
-            assert_eq!(emitted.ffi_go.matches("return func()").count(), 4 * depth);
+            // Two public roots, each with one native Out and one private In
+            // closure per stage. Only the native Unit-domain closure is nullary.
+            // Re-inlining every suffix would multiply these counts by the depth.
+            assert_eq!(emitted.ffi_go.matches("return func()").count(), 2 * depth);
+            assert_eq!(
+                emitted
+                    .ffi_go
+                    .matches("return func(__kio_function_domain")
+                    .count(),
+                2 * depth
+            );
+            assert_eq!(emitted.ffi_go.matches("return func(").count(), 4 * depth);
             assert!(
                 emitted
                     .ffi_go
@@ -1128,7 +1138,7 @@ v(2) {
         );
         assert_eq!(emitted.pkg_go.matches("pkg.host.Api__staged").count(), 1);
         assert!(
-            emitted.pkg_go.matches(".(func() any)()").count() >= 2,
+            emitted.pkg_go.matches("kioApplyType(").count() >= 2,
             "{}",
             emitted.pkg_go
         );
@@ -1158,7 +1168,7 @@ v(2) {
             emitted.pkg_go
         );
         let method = emitted_method(&emitted.pkg_go, "CallExp_Api__staged");
-        assert!(method.matches(".(func() any)()").count() >= 2, "{method}");
+        assert!(method.matches("kioApplyType(").count() >= 2, "{method}");
         assert!(method.contains("[]any{"), "{method}");
     }
 
@@ -1176,7 +1186,7 @@ v(2) {
         let emitted = lower_package(&package, "pkg").expect("emit generic newtype members");
 
         let make_generic = emitted_method(&emitted.pkg_go, "CallExp_Api__Generic_makeGeneric");
-        assert!(make_generic.contains(".(func() any)()"), "{make_generic}");
+        assert!(make_generic.contains("kioApplyType("), "{make_generic}");
 
         let read_church = emitted_method(&emitted.pkg_go, "ReadChurch");
         let header = read_church.lines().next().expect("Church projector header");
@@ -1231,7 +1241,9 @@ v(2) {
         );
         assert!(!single.contains("kioProductSlots("), "{single}");
         assert!(
-            single.contains(".(func(any) any)(__kio_member_arg0)"),
+            single.contains(
+                "kioTailValue(kioApplyType(__kio_member_continuation), __kio_member_arg0)"
+            ),
             "{single}"
         );
         assert_selected_result_is_returned(single);
@@ -1267,13 +1279,13 @@ v(2) {
         );
         assert!(host_arguments.ends_with('}'), "{host_call}");
         assert!(
-            packed.contains(".(func(any) any)(__kio_member_arg0)"),
+            packed.contains("kioTailValue(kioApplyType(kioApplyType(__kio_member_continuation)), __kio_member_arg0)"),
             "{packed}"
         );
         assert_selected_result_is_returned(packed);
         let make_packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_makePacked");
         assert!(
-            make_packed.matches(".(func() any)()").count() >= 3,
+            make_packed.matches("kioApplyType(").count() >= 3,
             "{make_packed}"
         );
 
@@ -1301,7 +1313,7 @@ v(2) {
     }
 
     #[test]
-    fn nullary_existential_payload_calls_the_continuation_without_a_unit_argument() {
+    fn nullary_existential_payload_calls_the_private_continuation_with_unit() {
         let package = package(
             "module api; \
              pub type Erased[A] = .; \
@@ -1312,14 +1324,141 @@ v(2) {
         let emitted = lower_package(&package, "pkg").expect("emit nullary existential projector");
         let projector = emitted_method(&emitted.pkg_go, "ReadEmpty");
 
-        assert!(
-            projector.contains("(__kio_member_continuation).(func() any)()"),
+        assert_eq!(
+            projector
+                .matches("return kioTailValue(kioApplyType(__kio_member_continuation), Unit{})")
+                .count(),
+            1,
             "{projector}"
         );
         assert!(
-            !projector.contains("(__kio_member_continuation).(func(any) any)(Unit{})"),
+            !projector.contains("return kioTailType(kioApplyType(__kio_member_continuation))"),
             "{projector}"
         );
+        assert!(
+            projector.contains("ReadEmpty(arg0 Unit, arg1 func() func() Value) Value"),
+            "{projector}"
+        );
+    }
+
+    #[test]
+    fn private_value_domains_do_not_change_executable_type_stages() {
+        let mut body = super::GoBlock::default();
+        body.line("return Unit{}");
+        let unit = super::GoClosureGroup::Value(Vec::new()).render(&body);
+        let type_stage = super::GoClosureGroup::Type.render(&body);
+        let product =
+            super::GoClosureGroup::Value(vec!["left".into(), "right".into()]).render(&body);
+        assert!(unit.starts_with("func(_ any) any"), "{unit}");
+        assert!(type_stage.starts_with("func() any"), "{type_stage}");
+        assert!(
+            product.starts_with("func(__kio_domain any) any"),
+            "{product}"
+        );
+        assert_eq!(
+            product.matches("kioProductSlots(__kio_domain, 2)").count(),
+            1
+        );
+        assert!(product.contains("left := __kio_domain_slots[0]"));
+        assert!(product.contains("right := __kio_domain_slots[1]"));
+    }
+
+    #[test]
+    fn guest_result_transfers_leave_operands_and_host_calls_eager() {
+        let package = package(
+            "module api; host fn effect(); \
+             fn invoke(next: . -> .) { effect(); next() } \
+             pub fn forward(next: . -> .) { invoke(next) } \
+             pub fn before(next: . -> .) { next(); effect() } \
+             pub fn type_tail(next: [A] A -> A) -> . -> . { next(.) }",
+        );
+        let emitted = lower_package(&package, "pkg").expect("tail contexts emit");
+        let forward = emitted_method(&emitted.pkg_go, "kioStep_mod_api_forward");
+        assert!(forward.contains("owner: pkg"), "{forward}");
+        assert!(
+            forward.contains("invoke: kioInvoke_mod_api_invoke"),
+            "{forward}"
+        );
+        let invoke = emitted_method(&emitted.pkg_go, "kioStep_mod_api_invoke");
+        assert!(invoke.contains("return kioTailValue("), "{invoke}");
+        let before = emitted_method(&emitted.pkg_go, "kioStep_mod_api_before");
+        assert!(before.contains("kioApplyValue("), "{before}");
+        assert!(!before.contains("kioTailValue("), "{before}");
+        assert!(before.contains("pkg.host.Api__effect"), "{before}");
+        let type_tail = emitted_method(
+            &emitted.pkg_go,
+            &format!("kioStep_{}", module_fn_method_name("api", "type_tail")),
+        );
+        assert!(type_tail.contains("return kioTailType("), "{type_tail}");
+        assert!(!type_tail.contains("kioApplyType("), "{type_tail}");
+    }
+
+    #[test]
+    fn named_tail_packets_use_nongeneric_static_entries_for_every_arity() {
+        let package = package(
+            "module api; host fn effect(); host type Atom; \
+             fn zero() { effect() } \
+             fn one(first: Atom) -> Atom { effect(); first } \
+             fn two(first: Atom, second: Atom) -> Atom { effect(); second } \
+             fn many(first: Atom, second: Atom, third: Atom, fourth: Atom, fifth: Atom) -> Atom { effect(); fifth } \
+             pub fn forward_zero() { zero() } \
+             pub fn forward_one(first: Atom) -> Atom { one(first) } \
+             pub fn forward_two(first: Atom, second: Atom) -> Atom { two(first, second) } \
+             pub fn forward_many(first: Atom, second: Atom, third: Atom, fourth: Atom, fifth: Atom) -> Atom { \
+               many(first, second, third, fourth, fifth) \
+             }",
+        );
+        let emitted = lower_package(&package, "pkg").expect("named argument layouts emit");
+        for (name, arity) in [("zero", 0), ("one", 1), ("two", 2), ("many", 5)] {
+            let method = module_fn_method_name("api", name);
+            let forward = emitted_method(
+                &emitted.pkg_go,
+                &format!(
+                    "kioStep_{}",
+                    module_fn_method_name("api", &format!("forward_{name}"))
+                ),
+            );
+            assert!(
+                forward.contains(&format!("invoke: kioInvoke_{method}")),
+                "{forward}"
+            );
+            assert!(!forward.contains("invoke: func("), "{forward}");
+            assert!(!forward.contains("domain:"), "{forward}");
+            assert_eq!(forward.contains("first:"), arity >= 1, "{forward}");
+            assert_eq!(forward.contains("second:"), arity >= 2, "{forward}");
+            assert_eq!(forward.contains("rest: []any{"), arity > 2, "{forward}");
+            let signature = vec!["any"; arity].join(", ");
+            let marker = format!(
+                "func kioInvoke_{method}(__kio_owner any, __kio_arguments kioNamedArguments) kioStep"
+            );
+            let helper = emitted
+                .pkg_go
+                .split(&marker)
+                .nth(1)
+                .expect("nongeneric static helper");
+            let helper = helper.split("\nfunc ").next().expect("helper body");
+            assert!(
+                helper.contains(&format!(
+                    "interface {{ kioStep_{method}({signature}) kioStep }}"
+                )),
+                "{helper}"
+            );
+            assert!(!helper.contains("Package["), "{helper}");
+            let expected = (0..arity)
+                .map(|index| match index {
+                    0 => "__kio_arguments.first".to_owned(),
+                    1 => "__kio_arguments.second".to_owned(),
+                    _ => format!("__kio_arguments.rest[{}]", index - 2),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            assert!(
+                helper.contains(&format!(".kioStep_{method}({expected})")),
+                "{helper}"
+            );
+            let body = emitted_method(&emitted.pkg_go, &format!("kioStep_{method}"));
+            assert!(!body.contains("kioProductSlots"), "{body}");
+        }
     }
 }
 
@@ -2565,6 +2704,16 @@ fn validate_package_names(
         ("kioProductSlot", "runtime product projection"),
         ("kioSumPayload", "runtime sum projection"),
         ("kioSumInject", "runtime sum injection"),
+        ("kioStep", "private execution result"),
+        ("kioNamedArguments", "private named argument packet"),
+        ("kioValueEntry", "guest value entry"),
+        ("kioTypeEntry", "guest type entry"),
+        ("kioDone", "private completed result"),
+        ("kioTailValue", "private value transfer"),
+        ("kioTailType", "private type transfer"),
+        ("kioComplete", "private execution driver"),
+        ("kioApplyValue", "private value application"),
+        ("kioApplyType", "private type application"),
     ] {
         claim("package".to_owned(), name.to_owned(), owner.to_owned())?;
     }
@@ -2652,10 +2801,21 @@ fn validate_package_names(
     for (module, entry) in package.modules() {
         for item in &entry.module.items {
             if let crate::ast::Item::FnDef(function) = item {
+                let method = module_fn_method_name(module, &function.name);
                 claim(
                     "selector:handle".to_owned(),
-                    module_fn_method_name(module, &function.name),
+                    method.clone(),
                     format!("body function `{module}.{}`", function.name),
+                )?;
+                claim(
+                    "selector:handle".to_owned(),
+                    format!("kioStep_{method}"),
+                    format!("body execution entry `{module}.{}`", function.name),
+                )?;
+                claim(
+                    "package".to_owned(),
+                    format!("kioInvoke_{method}"),
+                    format!("body invocation entry `{module}.{}`", function.name),
                 )?;
             }
         }
@@ -2969,7 +3129,7 @@ fn render_facade_export_method(
             let module = export.site.module_segments().join("/");
             let mut callee = format!("{package}.{}", module_fn_method_name(&module, name));
             let mut argument_offset = 0usize;
-            for stage in callable.stages() {
+            for (stage_index, stage) in callable.stages().iter().enumerate() {
                 if let Some(stage) = stage.type_stage() {
                     callee = facade_skin::invoke_type_stage(stage, &callee, &mut body, &mut fresh);
                 } else if let Some(stage) = stage.value_stage() {
@@ -2981,14 +3141,13 @@ fn render_facade_export_method(
                                  inventory"
                             )
                         });
-                    callee = facade_skin::invoke_value_stage(
-                        stage,
-                        &callee,
-                        stage_arguments,
-                        &mut body,
-                        &mut fresh,
-                    )
-                    .unwrap_or_else(go_skin_invariant);
+                    let invoke = if stage_index == 0 {
+                        facade_skin::invoke_named_value_stage
+                    } else {
+                        facade_skin::invoke_value_stage
+                    };
+                    callee = invoke(stage, &callee, stage_arguments, &mut body, &mut fresh)
+                        .unwrap_or_else(go_skin_invariant);
                     argument_offset = end;
                 }
             }
@@ -3070,7 +3229,7 @@ fn invoke_newtype_member(
     let mut value_stage = None;
     for stage in entry.stages() {
         if stage.type_stage().is_some() {
-            groups.push(Vec::new());
+            groups.push(GoClosureGroup::Type);
             continue;
         }
         let value = stage.value_stage().unwrap_or_else(|| {
@@ -3080,19 +3239,21 @@ fn invoke_newtype_member(
             unreachable!("a prepared newtype-member callable has exactly one value stage");
         }
         let source_groups = value.source_groups().unwrap_or_else(go_facade_invariant);
-        groups.push(
+        groups.push(GoClosureGroup::Value(
             (0..source_groups.len())
                 .map(|index| format!("__kio_member_arg{index}"))
                 .collect(),
-        );
+        ));
     }
     let Some(value_stage) = value_stage else {
         unreachable!("a prepared newtype-member callable has exactly one value stage");
     };
     let params = groups
         .iter()
-        .find(|group| !group.is_empty())
-        .cloned()
+        .find_map(|group| match group {
+            GoClosureGroup::Value(params) => Some(params.clone()),
+            GoClosureGroup::Type => None,
+        })
         .unwrap_or_default();
     let result = match member {
         GoLiveNewtypeMemberEntry::Constructor(_) => facades.construct_nominal(
@@ -3188,11 +3349,15 @@ fn render_existential_projector_value(
         render_existential_continuation_call(projector.continuation(), &continuation, payload)?;
     let mut continuation_body = GoBlock::default();
     continuation_body.line(format!("return {result}"));
-    let continuation_closure = render_go_closure(&[continuation], &continuation_body);
+    let continuation_closure =
+        GoClosureGroup::Value(vec![continuation]).render_entry(&continuation_body);
 
     let mut selected_body = GoBlock::default();
-    selected_body.line(format!("return any({continuation_closure})"));
-    Ok(format!("any({})", render_go_closure(&[], &selected_body)))
+    selected_body.line(format!("return kioDone(any({continuation_closure}))"));
+    Ok(format!(
+        "any({})",
+        GoClosureGroup::Type.render_entry(&selected_body)
+    ))
 }
 
 fn invoke_existential_projector_cut(
@@ -3218,7 +3383,7 @@ fn invoke_existential_projector_cut(
     };
     let selected_callee = fresh.fresh("existential_selected_callee");
     body.line(format!("var {selected_callee} any"));
-    body.line(format!("{selected_callee} = ({expression}).(func() any)()"));
+    body.line(format!("{selected_callee} = kioApplyType({expression})"));
 
     let (layout, slots) = match outer.view().unwrap_or_else(go_facade_invariant) {
         super::facade::GoLiveFacadeUseView::Function { layout, slots, .. } => (layout, slots),
@@ -3253,7 +3418,7 @@ fn invoke_existential_projector_cut(
     let result = fresh.fresh("existential_result");
     body.line(format!("var {result} any"));
     body.line(format!(
-        "{result} = ({selected_callee}).(func(any) any)({converted})"
+        "{result} = kioApplyValue({selected_callee}, {converted})"
     ));
     Ok(result)
 }
@@ -3268,7 +3433,7 @@ fn render_existential_continuation_call(
     loop {
         match cursor.view().unwrap_or_else(go_facade_invariant) {
             super::facade::GoLiveFacadeUseView::Forall { result, .. } => {
-                callee = format!("({callee}).(func() any)()");
+                callee = format!("kioApplyType({callee})");
                 cursor = result;
             }
             super::facade::GoLiveFacadeUseView::Function { layout, slots, .. } => {
@@ -3278,7 +3443,7 @@ fn render_existential_continuation_call(
                     && layout.source_params().is_empty()
                     && slots.is_empty()
                 {
-                    return Ok(format!("({callee}).(func() any)()"));
+                    return Ok(format!("kioTailValue({callee}, Unit{{}})"));
                 }
                 if layout.source_param_count() != 1
                     || layout.body_abi_arity() != 1
@@ -3302,7 +3467,7 @@ fn render_existential_continuation_call(
                         );
                     }
                 };
-                return Ok(format!("({callee}).(func(any) any)({argument})"));
+                return Ok(format!("kioTailValue({callee}, {argument})"));
             }
             _ => {
                 unreachable!("a validated prepared existential continuation is callable");
@@ -3331,21 +3496,6 @@ impl ExportSelector {
         }
     }
 }
-/// Every value group's param types, in declaration order — one inner
-/// vec per group. The exported facade flattens these across groups
-/// (`specs/backends/README.md` § Function-type FFI canonicalization)
-/// while the internal body stays curried one layer per group.
-fn value_group_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<Option<Type<Routed>>>> {
-    crate::backends::skin::erase_signature_value_groups(sig)
-}
-
-fn first_value_group_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Option<Type<Routed>>> {
-    value_group_param_types(sig)
-        .into_iter()
-        .next()
-        .unwrap_or_default()
-}
-
 /// The Go method name on the package handle for a module function. Names
 /// without source underscores retain the readable `mod_<module>_<leaf>`
 /// spelling. An underscore in either source component selects the reserved
@@ -3535,6 +3685,7 @@ impl GoStatementSink for GoBlock {
 #[derive(Clone, Copy)]
 enum GoDestination<'a> {
     Return,
+    ReturnStep,
     Assign(&'a str),
     Discard,
 }
@@ -3543,6 +3694,7 @@ impl GoDestination<'_> {
     fn write(self, out: &mut GoBlock, value: impl AsRef<str>) {
         match self {
             GoDestination::Return => out.line(format!("return {}", value.as_ref())),
+            GoDestination::ReturnStep => out.line(format!("return kioDone({})", value.as_ref())),
             GoDestination::Assign(name) => out.line(format!("{name} = {}", value.as_ref())),
             GoDestination::Discard => out.line(format!("_ = {}", value.as_ref())),
         }
@@ -3550,12 +3702,25 @@ impl GoDestination<'_> {
 }
 
 fn render_go_closure(params: &[String], body: &GoBlock) -> String {
+    render_go_closure_result(params, body, "any")
+}
+
+fn go_value_call(callee: &str, domain: &str, tail: bool) -> String {
+    let helper = if tail {
+        "kioTailValue"
+    } else {
+        "kioApplyValue"
+    };
+    format!("{helper}({callee}, {domain})")
+}
+
+fn render_go_closure_result(params: &[String], body: &GoBlock, result: &str) -> String {
     let params = params
         .iter()
         .map(|name| format!("{name} any"))
         .collect::<Vec<_>>()
         .join(", ");
-    let mut source = format!("func({params}) any {{\n");
+    let mut source = format!("func({params}) {result} {{\n");
     source.push_str(&indent_go_source(&body.source));
     source.push('}');
     source
@@ -3571,27 +3736,137 @@ fn indent_go_source(source: &str) -> String {
     indented
 }
 
-fn render_curried_closure(groups: &[Vec<String>], body: GoBlock) -> String {
+enum GoClosureGroup {
+    Type,
+    Value(Vec<String>),
+}
+
+impl GoClosureGroup {
+    fn params(&self) -> &[String] {
+        match self {
+            Self::Type => &[],
+            Self::Value(params) => params,
+        }
+    }
+
+    fn render(&self, body: &GoBlock) -> String {
+        match self {
+            Self::Type => render_go_closure(&[], body),
+            Self::Value(params) => render_value_closure(params, body),
+        }
+    }
+
+    fn render_entry(&self, body: &GoBlock) -> String {
+        match self {
+            Self::Type => format!(
+                "kioTypeEntry({})",
+                render_go_closure_result(&[], body, "kioStep")
+            ),
+            Self::Value(params) => format!(
+                "kioValueEntry({})",
+                render_value_closure_result(params, body, "kioStep")
+            ),
+        }
+    }
+}
+
+/// A private value stage receives its complete semantic domain, including Unit.
+/// Source binders only determine how that domain is unpacked inside the body.
+fn render_value_closure(params: &[String], body: &GoBlock) -> String {
+    render_value_closure_result(params, body, "any")
+}
+
+fn render_value_closure_result(params: &[String], body: &GoBlock, result: &str) -> String {
+    match params {
+        [] => render_go_closure_result(&["_".to_owned()], body, result),
+        [_] => render_go_closure_result(params, body, result),
+        _ => {
+            let mut unpacked = GoBlock::default();
+            unpacked.line(format!(
+                "__kio_domain_slots := kioProductSlots(__kio_domain, {})",
+                params.len()
+            ));
+            for (index, param) in params.iter().enumerate() {
+                unpacked.line(format!("{param} := __kio_domain_slots[{index}]"));
+                unpacked.line(format!("_ = {param}"));
+            }
+            unpacked.source.push_str(&body.source);
+            render_go_closure_result(&["__kio_domain".to_owned()], &unpacked, result)
+        }
+    }
+}
+
+fn signature_closure_groups(
+    sig: &crate::ast::Signature<Routed>,
+    bound: Vec<Vec<String>>,
+) -> Vec<GoClosureGroup> {
+    let mut bound = bound.into_iter();
+    let mut groups = Vec::new();
+    for group in sig.canonical_groups() {
+        match group {
+            crate::ast::SignatureGroupRef::Type(params) => {
+                for _ in params {
+                    assert!(bound.next().expect("bound type stage").is_empty());
+                    groups.push(GoClosureGroup::Type);
+                }
+            }
+            crate::ast::SignatureGroupRef::Value(_) => groups.push(GoClosureGroup::Value(
+                bound.next().expect("bound value stage"),
+            )),
+        }
+    }
+    if groups.is_empty() {
+        groups.push(GoClosureGroup::Value(
+            bound.next().expect("implicit Unit stage"),
+        ));
+    }
+    assert!(
+        bound.next().is_none(),
+        "all bound runtime stages are consumed"
+    );
+    groups
+}
+
+fn render_curried_closure(groups: &[GoClosureGroup], body: GoBlock) -> String {
+    render_curried(groups, body, false)
+}
+
+fn render_curried_entries(groups: &[GoClosureGroup], body: GoBlock) -> String {
+    render_curried(groups, body, true)
+}
+
+fn render_curried(groups: &[GoClosureGroup], body: GoBlock, guest: bool) -> String {
     let mut groups = groups.iter().rev();
     let innermost = groups
         .next()
         .expect("Go emitter function has at least one runtime stage");
-    let mut value = render_go_closure(innermost, &body);
+    let render = |group: &GoClosureGroup, body: &GoBlock| {
+        if guest {
+            group.render_entry(body)
+        } else {
+            group.render(body)
+        }
+    };
+    let mut value = render(innermost, &body);
     for group in groups {
         let mut wrapper = GoBlock::default();
-        GoDestination::Return.write(&mut wrapper, format!("any({value})"));
-        value = render_go_closure(group, &wrapper);
+        let destination = if guest {
+            GoDestination::ReturnStep
+        } else {
+            GoDestination::Return
+        };
+        destination.write(&mut wrapper, format!("any({value})"));
+        value = render(group, &wrapper);
     }
     format!("any({value})")
 }
 
 /// Render every module fn in `entry` as a method on the package handle.
 ///
-/// A module fn's first runtime stage becomes the Go method's parameters
-/// (each value parameter is `any`; a type binder is a nullary method), and
-/// the method returns `any`. Later stages are nested `func(...) any`
-/// closures built innermost-outward. Every type binder occupies one hidden
-/// nullary stage even though its type value is erased.
+/// The ordinary method retains its source parameter ABI and completes the
+/// private entry's steps. Named entries bind the resolved parameter slots
+/// directly; later stages retain guest entries with canonical value domains,
+/// including each executing type binder.
 fn render_module_fns(
     module_key: &str,
     entry: &crate::pass::resolve::ModuleEntry<Routed>,
@@ -3615,20 +3890,19 @@ fn render_module_fns(
                 &qualified_imports,
                 facades,
             );
-            let emitted_groups = emitter.bind_param_groups(&runtime_groups);
+            let bound = emitter.bind_param_groups(&runtime_groups);
+            let emitted_groups = signature_closure_groups(&f.sig, bound);
             emitter.bind_type_params(&f.sig);
             let mut body = GoBlock::default();
-            let body_value = emitter.emit_value(&f.body, &mut body)?;
-            // A fn returning a closure literal whose binder-grouping
-            // differs from its declared return function type's
-            // product-grouping (`t() -> Boolc = (A & A) -> A` returning
-            // `.[A](x, y)`) adapts the closure to the type's grouping.
-            let body_value = emitter.adapt_fn_value_for_type(body_value, &f.body, &f.ret);
-            body.line(format!("return {body_value}"));
-            // The first runtime stage's params are the method's; the inner
-            // stages curry as nested `func(...) any` closures. Go allows
-            // unused params, so no guard is needed.
-            let outer = emitted_groups.first().cloned().unwrap_or_default();
+            emitter.emit_result_into(
+                TailContext::body(&f.body),
+                GoDestination::ReturnStep,
+                &mut body,
+            )?;
+            let outer = emitted_groups
+                .first()
+                .expect("module runtime stage")
+                .params();
             let outer_list: String = outer
                 .iter()
                 .map(|name| format!("{name} any"))
@@ -3637,90 +3911,40 @@ fn render_module_fns(
             let method_body = if emitted_groups.len() == 1 {
                 indent_go_source(&body.source)
             } else {
-                let closure = render_curried_closure(&emitted_groups[1..], body);
-                format!("\treturn {closure}\n")
+                let closure = render_curried_entries(&emitted_groups[1..], body);
+                format!("\treturn kioDone({closure})\n")
             };
+            let handle = names.handle_ptr(&facades.host_binding_arguments());
+            let arguments = outer.join(", ");
             out.push_str(&format!(
-                "func (pkg {}) {method}({outer_list}) any {{\n{method_body}}}\n\n",
-                names.handle_ptr(&facades.host_binding_arguments()),
+                "func (pkg {handle}) {method}({outer_list}) any {{\n\treturn kioComplete(pkg.kioStep_{method}({arguments}))\n}}\n\n",
+            ));
+            let mut unpack = GoBlock::default();
+            for name in outer {
+                unpack.line(format!("_ = {name}"));
+            }
+            let unpack = indent_go_source(&unpack.source);
+            out.push_str(&format!(
+                "func (pkg {handle}) kioStep_{method}({outer_list}) kioStep {{\n{unpack}{method_body}}}\n\n",
+            ));
+            // A function literal inside a generic method captures Go's type
+            // dictionary even with an erased method-interface assertion. A
+            // nongeneric package-level entry has no per-transfer environment.
+            let signature = vec!["any"; outer.len()].join(", ");
+            let arguments = (0..outer.len())
+                .map(|index| match index {
+                    0 => "__kio_arguments.first".to_owned(),
+                    1 => "__kio_arguments.second".to_owned(),
+                    _ => format!("__kio_arguments.rest[{}]", index - 2),
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "func kioInvoke_{method}(__kio_owner any, __kio_arguments kioNamedArguments) kioStep {{\n\treturn __kio_owner.(interface {{ kioStep_{method}({signature}) kioStep }}).kioStep_{method}({arguments})\n}}\n\n",
             ));
         }
     }
     Ok(out)
-}
-
-/// Collect a fn signature's value-parameter name groups (each callable
-/// layer). Type-binder groups carry no runtime args and are dropped. An
-/// empty signature yields one empty group (a nullary fn).
-fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups: Vec<Vec<&str>> = sig
-        .canonical_groups()
-        .into_iter()
-        .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter_map(|p| match p {
-                        crate::ast::SignatureParam::Value(vp) => Some(vp.name.as_str()),
-                        crate::ast::SignatureParam::Type(_) => None,
-                    })
-                    .collect(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
-        })
-        .collect();
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
-}
-
-fn runtime_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
-    runtime_param_name_groups(sig)
-        .into_iter()
-        .map(|group| group.len())
-        .collect()
-}
-
-/// The signature of the closure literal a fn-valued expression
-/// ultimately evaluates to, peeling transparent wrappers: a bare
-/// `FnExpr`, a `let`/`Seq` whose tail is the closure, a nullary IIFE
-/// (`(.() { … })()`), and an identity-style single-arg call
-/// (`id(closure)` / `un_X(closure)`) whose argument is the closure. A
-/// fn value that does not reduce to a visible closure literal yields
-/// `None` (its grouping already matches its type — e.g. a bound
-/// reference). Recursion is depth-bounded by the AST.
-fn underlying_fn_expr_sig(e: &Expr<Routed>) -> Option<&crate::ast::Signature<Routed>> {
-    match e {
-        Expr::FnExpr { sig, .. } => Some(sig),
-        // A host- / module-fn referenced as a first-class value is
-        // emitted as a closure whose grouping is its sig's: a host-fn
-        // value binds its single value group's params; a module-fn value
-        // binds its first group and curries the inner groups through the
-        // method. Either way the sig describes the value's grouping.
-        Expr::LowHostFnValueRef { sig, .. } | Expr::LowModuleFnValueRef { sig, .. } => Some(sig),
-        Expr::Let { body, .. } | Expr::Seq { body, .. } => underlying_fn_expr_sig(body),
-        Expr::LowTypeApplication { callee, .. } => underlying_fn_expr_sig(callee),
-        // A nullary IIFE: a closure applied to no args. The callee is the
-        // wrapping closure; its body is what runs.
-        Expr::LowClosureCall { args, .. } if args.is_empty() => None,
-        Expr::LowIndirectCall { callee, args, .. } if args.is_empty() => {
-            // `(.() { tail })()` — peel to the callee's body.
-            if let Expr::FnExpr { body, .. } = callee.as_ref() {
-                underlying_fn_expr_sig(body)
-            } else {
-                None
-            }
-        }
-        // An identity-style call forwarding a single closure argument
-        // (`id(closure)`): the result is the argument's closure.
-        Expr::LowModuleCall { args, .. } | Expr::LowQualifiedModuleCall { args, .. }
-            if args.len() == 1 =>
-        {
-            underlying_fn_expr_sig(&args[0])
-        }
-        _ => None,
-    }
 }
 
 /// The value-arity of each value group of a fn signature, in order
@@ -3936,6 +4160,22 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         destination: GoDestination<'_>,
         out: &mut GoBlock,
     ) -> Result<(), EmitError> {
+        self.emit_result_into(TailContext::operand(e), destination, out)
+    }
+
+    fn emit_result_into(
+        &mut self,
+        context: TailContext<'_>,
+        destination: GoDestination<'_>,
+        out: &mut GoBlock,
+    ) -> Result<(), EmitError> {
+        let e = context.expr();
+        let tail = context.tail_stage().is_some();
+        let call_destination = if tail {
+            GoDestination::Return
+        } else {
+            destination
+        };
         match e {
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
             Expr::Unit { .. } => destination.write(out, "(Unit{})"),
@@ -3972,9 +4212,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 format!("any({})", self.emit_float_lit(digits, annotation)?),
             ),
             Expr::BoolLit { value, .. } => destination.write(out, format!("any({value})")),
-            Expr::Let {
-                name, value, body, ..
-            } => {
+            Expr::Let { name, value, .. } => {
                 let ident = self.fresh_name("bind");
                 out.line(format!("var {ident} any"));
                 self.emit_into(value, GoDestination::Assign(&ident), out)?;
@@ -3983,12 +4221,20 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     source: name.clone(),
                     emitted: ident,
                 });
-                self.emit_into(body, destination, out)?;
+                self.emit_result_into(
+                    context.result_child(ResultChild::LetBody),
+                    destination,
+                    out,
+                )?;
                 self.locals.pop();
             }
-            Expr::Seq { value, body, .. } => {
+            Expr::Seq { value, .. } => {
                 self.emit_into(value, GoDestination::Discard, out)?;
-                self.emit_into(body, destination, out)?;
+                self.emit_result_into(
+                    context.result_child(ResultChild::SeqBody),
+                    destination,
+                    out,
+                )?;
             }
             Expr::LowHostCall {
                 name,
@@ -3997,12 +4243,9 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 ..
             } => self.emit_low_host_call(name, module_path, args, destination, out)?,
             Expr::LowBoundRef { name, .. } => destination.write(out, self.local_name(name)),
-            Expr::EnrichedConditional {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => self.emit_conditional(cond, then_branch, else_branch, destination, out)?,
+            Expr::EnrichedConditional { cond, .. } => {
+                self.emit_conditional(context, cond, destination, out)?
+            }
             Expr::EnrichedTuple {
                 items, synth_ty, ..
             } => {
@@ -4029,7 +4272,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             }
             Expr::EnrichedMatch {
                 scrutinee, arms, ..
-            } => self.emit_match(scrutinee, arms, destination, out)?,
+            } => self.emit_match(context, scrutinee, arms, destination, out)?,
             Expr::EnrichedFieldGet {
                 target,
                 index,
@@ -4055,8 +4298,9 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 sig,
                 ..
             } => {
-                let value = self.emit_module_call(mangled, type_args.len(), args, sig, out)?;
-                destination.write(out, value);
+                let value =
+                    self.emit_module_call(mangled, type_args.len(), args, sig, tail, out)?;
+                call_destination.write(out, value);
             }
             Expr::LowQualifiedModuleCall {
                 mangled,
@@ -4065,9 +4309,15 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 sig,
                 ..
             } => {
-                let value =
-                    self.emit_qualified_module_call(mangled, type_args.len(), args, sig, out)?;
-                destination.write(out, value);
+                let value = self.emit_qualified_module_call(
+                    mangled,
+                    type_args.len(),
+                    args,
+                    sig,
+                    tail,
+                    out,
+                )?;
+                call_destination.write(out, value);
             }
             Expr::LowNewtypeCtor {
                 newtype,
@@ -4109,14 +4359,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 args,
                 ..
             } => {
-                // A call to a captured closure bound to local `name`. In
-                // the uniform body the closure is a Go `func(...any) any`,
-                // so apply it directly. The closure was emitted curried
-                // per value-group; a saturated call applies one group.
                 let callee =
                     self.emit_erased_type_applications(self.local_name(name), type_args.len(), out);
-                let value = self.emit_apply(&callee, args, out)?;
-                destination.write(out, value);
+                let value = self.emit_apply(&callee, args, tail, out)?;
+                call_destination.write(out, value);
             }
             Expr::LowIndirectCall {
                 callee,
@@ -4126,30 +4372,17 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             } => {
                 let c = self.emit_value(callee, out)?;
                 let c = self.emit_erased_type_applications(c, type_args.len(), out);
-                // The callee expression is `any`; assert it to the Go
-                // closure type for the arg count before applying. When the
-                // callee is a closure literal, its declared param types are
-                // in hand, so adapt each fn-valued arg to its slot's
-                // grouping (a flat fn value re-grouped into the product
-                // domain an abi-arity-1 slot expects — e.g. a 2-param host
-                // fn flowing into a `(A & B) -> C` parameter). Other callee
-                // forms carry no param types here; their args pass through.
-                match callee.as_ref() {
-                    Expr::FnExpr { sig, .. } => {
-                        let param_tys = first_value_group_param_types(sig);
-                        let value = self.emit_apply_adapting(&c, args, &param_tys, out)?;
-                        destination.write(out, value);
-                    }
-                    _ => {
-                        let value = self.emit_apply_erased(&c, args, out)?;
-                        destination.write(out, value);
-                    }
-                }
+                let value = self.emit_apply(&c, args, tail, out)?;
+                call_destination.write(out, value);
             }
             Expr::LowTypeApplication { callee, .. } => {
                 let c = self.emit_value(callee, out)?;
-                let value = self.emit_erased_type_applications(c, 1, out);
-                destination.write(out, value);
+                let value = if tail {
+                    format!("kioTailType({c})")
+                } else {
+                    self.emit_erased_type_applications(c, 1, out)
+                };
+                call_destination.write(out, value);
             }
             Expr::LowCpsProjectorApply {
                 newtype,
@@ -4169,9 +4402,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     receiver,
                     continuation,
                     continuation_ty,
+                    tail,
                     out,
                 )?;
-                destination.write(out, value);
+                call_destination.write(out, value);
             }
             Expr::LowHostFnValueRef {
                 name, module_path, ..
@@ -4210,7 +4444,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         module: Option<&str>,
         name: &str,
         member: &str,
-        type_args: &[Type<Routed>],
+        _type_args: &[Type<Routed>],
         payload: &Expr<Routed>,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
@@ -4227,16 +4461,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         };
         let value = self.emit_value(payload, out)?;
         if member == declaration.constructor.name {
-            let substitution = declaration
-                .type_params
-                .iter()
-                .chain(&declaration.existential_params)
-                .zip(type_args)
-                .map(|(parameter, argument)| (parameter.name.clone(), argument.clone()))
-                .collect();
-            let payload_type =
-                crate::backends::reconstruct::apply_subst(&declaration.payload, &substitution);
-            let value = self.adapt_fn_value_for_type(value, payload, &payload_type);
             Ok(self.facades.construct_nominal(&nominal, &value))
         } else {
             assert_eq!(
@@ -4255,6 +4479,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         receiver: &Expr<Routed>,
         continuation: &Expr<Routed>,
         continuation_ty: &Type<Routed>,
+        tail: bool,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
         let receiver_value = self.emit_value(receiver, out)?;
@@ -4281,14 +4506,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         let continuation_name =
             self.emit_erased_type_applications(continuation_name, type_stages, out);
         let args = if *abi_arity == 0 {
-            String::new()
+            "Unit{}".to_owned()
         } else {
             receiver_name
         };
-        Ok(format!(
-            "({continuation_name}).({})({args})",
-            go_closure_type(*abi_arity)
-        ))
+        Ok(go_value_call(&continuation_name, &args, tail))
     }
 
     /// `LowHostFnValueRef { name, module_path, .. }` → a Go closure that
@@ -4299,12 +4521,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     /// invokes the value-only host ABI, and converts the return into the
     /// internal representation.
     ///
-    /// The closure's natural rep is **flat** — one parameter per value
-    /// param, matching a same-arity call. When the value flows into a slot
-    /// whose function type groups those params differently (a product
-    /// domain, abi-arity 1), the flow site re-groups it via
-    /// [`Self::adapt_fn_value_for_type`] — keeping host- and module-fn
-    /// value-refs on the same flat convention.
     fn emit_host_fn_value_ref(
         &mut self,
         name: &str,
@@ -4327,7 +4543,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         for stage in entry.stages() {
             if let Some(type_stage) = stage.type_stage() {
                 type_stage.require_invoke_nullary();
-                groups.push(Vec::new());
+                groups.push(GoClosureGroup::Type);
                 continue;
             }
             let value = stage.value_stage().unwrap_or_else(|| {
@@ -4337,7 +4553,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             let params = (0..source_groups.len())
                 .map(|_| self.fresh_name("host_value_arg"))
                 .collect::<Vec<_>>();
-            groups.push(params);
+            groups.push(GoClosureGroup::Value(params));
             value_stages.push((value, source_groups));
         }
         if groups.is_empty() {
@@ -4392,7 +4608,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             let Some(value) = stage.value_stage() else {
                 continue;
             };
-            let params = &groups[stage_index];
+            let params = groups[stage_index].params();
             public_arguments.extend(self.expand_host_value_stage(
                 value,
                 &value_stages[value_index].1,
@@ -4470,11 +4686,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         .unwrap_or_else(go_skin_invariant))
     }
 
-    /// `LowModuleFnValueRef { mangled, sig }` → a Go closure forwarding to
-    /// the resolved package-handle module-fn method. The closure's params and
-    /// result are all the internal erased `any` (a module-fn method is
-    /// `any`-typed throughout), so no conversion is needed — only the
-    /// arity is reproduced. Cross-module imports resolve the method name.
+    /// Wrap the named method's first stage while retaining its direct-call ABI.
     fn emit_module_fn_value_ref(
         &mut self,
         mangled: &str,
@@ -4484,36 +4696,30 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Some(m) => m.clone(),
             None => module_fn_method_name(self.module_key, mangled),
         };
-        // The package-handle method binds the fn's **first** runtime stage and
-        // returns nested `func(...) any` closures for the inner stages
-        // (see `render_module_fns`). So the value-ref closure binds only
-        // the first group's params and forwards them to `pkg.method(...)`;
-        // the method's own currying supplies the inner-group layers, which
-        // a per-group application (`get()(x)(y)`) reaches through the
-        // erased-call assertions (`.(func(any) any)(…)`). Binding *every*
-        // group's params in one flat closure and passing them all to
-        // `pkg.method` is wrong on two counts — the method takes only the
-        // first group, and the flat closure can't be applied one group at
-        // a time — so a multi-group module-fn value failed at runtime.
-        let first_group = runtime_group_arities(sig).first().copied().unwrap_or(0);
-        let params: Vec<String> = (0..first_group).map(|_| self.fresh_name("arg")).collect();
+        let groups = runtime_param_name_groups(sig);
+        let params = groups[0]
+            .iter()
+            .map(|_| self.fresh_name("arg"))
+            .collect::<Vec<_>>();
+        let first_is_type = matches!(
+            sig.canonical_groups().first(),
+            Some(crate::ast::SignatureGroupRef::Type(_))
+        );
         let mut body = GoBlock::default();
-        body.line(format!("return pkg.{method}({})", params.join(", ")));
-        Ok(format!("any({})", render_go_closure(&params, &body)))
+        body.line(format!(
+            "return {}",
+            self.emit_method_invocation(&method, &params, true)
+        ));
+        let group = if first_is_type {
+            GoClosureGroup::Type
+        } else {
+            GoClosureGroup::Value(params)
+        };
+        let closure = group.render_entry(&body);
+        Ok(format!("any({closure})"))
     }
 
-    /// Lower a Kio closure `.(x, y) { body }` to a Go closure.
-    ///
-    /// A value group with `n ≥ 2` binders **destructures a single product
-    /// param** (Kio's multi-binder-in-one-group semantics: the binders
-    /// name the slots of one `(A & B & …)` argument). The function type
-    /// such a closure inhabits has `abi_arity 1` (one product param), and
-    /// every *call* through that type passes one product `[]any` (see
-    /// `emit_apply_erased`, which asserts `func(any) any` for an
-    /// abi-arity-1 type). So the closure takes one `any` product param and
-    /// peels each binder from it. A 0- or 1-binder group takes its binders
-    /// directly. Multiple value groups curry (each group its own closure
-    /// layer). The closure value is boxed to `any`.
+    /// Render each value abstraction over one semantic domain; type binders stay nullary.
     fn emit_fn_expr(
         &mut self,
         sig: &crate::ast::Signature<Routed>,
@@ -4523,94 +4729,21 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         let saved_locals = self.locals.len();
         let saved_types = self.type_params.len();
         self.bind_type_params(sig);
-        let emitted_groups = self.bind_param_groups(&groups);
+        let bound = self.bind_param_groups(&groups);
+        let emitted_groups = signature_closure_groups(sig, bound);
         let mut closure_body = GoBlock::default();
-        let body_value = self.emit_value(body, &mut closure_body);
+        let result = self.emit_result_into(
+            TailContext::body(body),
+            GoDestination::ReturnStep,
+            &mut closure_body,
+        );
         self.locals.truncate(saved_locals);
         self.type_params.truncate(saved_types);
-        let body_value = body_value?;
-        closure_body.line(format!("return {body_value}"));
-        // Each value group renders one closure layer taking its binders as
-        // separate params; multiple groups curry. Whether a single
-        // `n >= 2`-binder group actually destructures one product param
-        // (Kio's `.[A](x, y) : (A & A) -> A`) or is a genuine n-argument
-        // layer (`.[A][B](s, m) : (A) -> B -> …`) is *not* decidable from
-        // the binders — only from the function type the closure inhabits.
-        // So the literal stays multi-param, and a flow site that knows the
-        // expected type adapts it (see `adapt_fn_value_for_type`).
-        Ok(render_curried_closure(&emitted_groups, closure_body))
+        result?;
+        Ok(render_curried_entries(&emitted_groups, closure_body))
     }
 
-    /// Adapt a fn-valued expression `rendered` (whose source is `source`)
-    /// to the **product-grouping** the function type `expected` requires,
-    /// when the two differ.
-    ///
-    /// A Kio closure's binders are grouped one way (each value group's
-    /// binders), but the function type it flows into groups its
-    /// parameters another way (its `abi_arity` product params). When a
-    /// group's binder count differs from the type's first-group product
-    /// arity, the closure must be wrapped so a call through the typed slot
-    /// (which passes the type's grouping) reaches the closure's grouping.
-    ///
-    /// Concretely: a closure `.[A](x, y)` (one 2-binder group) flowing
-    /// into `(A & A) -> A` (abi_arity 1, one product param) is wrapped
-    /// `func(__a0 any) any { return inner(__a0[0], __a0[1]) }`; a closure
-    /// already matching the type's grouping is returned unchanged. Only a
-    /// `FnExpr` source with a known group structure is adapted; any other
-    /// fn value passes through (its grouping already matches its type).
-    fn adapt_fn_value_for_type(
-        &self,
-        rendered: String,
-        source: &Expr<Routed>,
-        expected: &Type<Routed>,
-    ) -> String {
-        // Find the closure literal the source ultimately evaluates to,
-        // peeling transparent wrappers (a nullary IIFE, a `let`, an
-        // identity module call like `id(closure)`). Its binder grouping
-        // is what a value of type `expected` carries at runtime.
-        let Some(sig) = underlying_fn_expr_sig(source) else {
-            return rendered;
-        };
-        let expected = peel_forall(expected);
-        let Type::Function {
-            param, abi_arity, ..
-        } = expected
-        else {
-            return rendered;
-        };
-        let groups = value_param_name_groups(sig);
-        // The closure's outermost group binder count vs. the type's first
-        // product-param arity. Only the common single-group case is
-        // adapted; a multi-group (curried) closure already lines its
-        // groups up with the type's curried params.
-        let Some(first_group) = groups.first() else {
-            return rendered;
-        };
-        let binder_count = first_group.len();
-        let type_arity = Type::right_spine_take(param, *abi_arity).len();
-        if binder_count == type_arity || groups.len() > 1 {
-            return rendered;
-        }
-        // Mismatch: the closure groups its binders as `binder_count`
-        // separate params, the type passes `type_arity` product slots.
-        // The church case is `binder_count > type_arity` (n binders, 1
-        // product): wrap so one product arg is peeled into n binder args.
-        if type_arity == 1 && binder_count >= 2 {
-            let peels: Vec<String> = (0..binder_count)
-                .map(|i| product_param_slot_access("__a0", i, binder_count))
-                .collect();
-            return format!(
-                "any(func(__a0 any) any {{ return ({rendered}).({})({}) }})",
-                go_closure_type(binder_count),
-                peels.join(", ")
-            );
-        }
-        rendered
-    }
-
-    /// Apply `count` erased type arguments to an internal closure. Each
-    /// application asserts the current `any` result to a nullary closure and
-    /// invokes it, preserving one observable call boundary per type binder.
+    /// Complete earlier executing type stages before their results are consumed.
     fn emit_erased_type_applications(
         &mut self,
         mut callee: String,
@@ -4620,62 +4753,29 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         for _ in 0..count {
             let applied = self.fresh_name("type_stage");
             out.line(format!("var {applied} any"));
-            out.line(format!("{applied} = ({callee}).(func() any)()"));
+            out.line(format!("{applied} = kioApplyType({callee})"));
             callee = applied;
         }
         callee
     }
 
-    /// Apply a closure named by Go expression `callee` (already a Go
-    /// `func` value-or-`any`) to `args`. The callee may be an `any`-typed
-    /// local; assert it to the arity-matched Go func type first.
+    /// Apply one private value stage after evaluating its arguments in order.
     fn emit_apply(
         &mut self,
         callee: &str,
         args: &[Expr<Routed>],
+        tail: bool,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
-        self.emit_apply_erased(callee, args, out)
-    }
-
-    /// Apply an `any`-typed callee expression to `args` by asserting it to
-    /// the arity-matched Go closure type `func(any, …) any` and calling.
-    fn emit_apply_erased(
-        &mut self,
-        callee: &str,
-        args: &[Expr<Routed>],
-        out: &mut GoBlock,
-    ) -> Result<String, EmitError> {
-        self.emit_apply_adapting(callee, args, &[], out)
-    }
-
-    /// Like [`Self::emit_apply_erased`], but adapts each fn-valued arg to
-    /// the callee's declared param type when known (`param_tys[i]`). A
-    /// flat fn value (a closure literal, a host- / module-fn value-ref)
-    /// flowing into a slot whose function type groups its parameters as a
-    /// product domain (abi-arity 1) is re-grouped by
-    /// [`Self::adapt_fn_value_for_type`] — the same bridge applied at
-    /// fn-return sites, here at the call-argument flow site. A missing /
-    /// non-function `param_tys[i]` leaves the arg unchanged (the adapt is
-    /// a no-op), so passing `&[]` recovers the unadapted apply.
-    fn emit_apply_adapting(
-        &mut self,
-        callee: &str,
-        args: &[Expr<Routed>],
-        param_tys: &[Option<Type<Routed>>],
-        out: &mut GoBlock,
-    ) -> Result<String, EmitError> {
-        let mut emitted = Vec::with_capacity(args.len());
-        for (i, a) in args.iter().enumerate() {
-            let rendered = self.emit_value(a, out)?;
-            let rendered = match param_tys.get(i).and_then(|t| t.as_ref()) {
-                Some(ty) => self.adapt_fn_value_for_type(rendered, a, ty),
-                None => rendered,
-            };
-            emitted.push(rendered);
-        }
-        let fn_ty = go_closure_type(args.len());
-        Ok(format!("({callee}).({fn_ty})({})", emitted.join(", ")))
+        let emitted = args
+            .iter()
+            .map(|arg| self.emit_value(arg, out))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(go_value_call(
+            callee,
+            &facade_skin::value_domain(&emitted),
+            tail,
+        ))
     }
 
     /// A qualified module call (`import <pkg>/<mod> as a; a.fn(...)`): the
@@ -4687,6 +4787,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         type_arg_count: usize,
         args: &[Expr<Routed>],
         sig: &crate::ast::Signature<Routed>,
+        tail: bool,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
         // `mangled` is `<alias>.<leaf>` (the alias is a single segment
@@ -4703,7 +4804,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             ))
         })?;
         let method = module_fn_method_name(module_key, leaf);
-        self.emit_grouped_method_call(&method, type_arg_count, args, sig, out)
+        self.emit_grouped_method_call(&method, type_arg_count, args, sig, tail, out)
     }
 
     /// Emit a call to a package-handle module-fn method `method` over `args`,
@@ -4720,32 +4821,35 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         type_arg_count: usize,
         args: &[Expr<Routed>],
         sig: &crate::ast::Signature<Routed>,
+        tail: bool,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
         let group_arities = value_group_arities(sig);
         let first = group_arities.first().copied().unwrap_or(0);
         let staged_callee = if type_arg_count > 0 {
+            if !sig.has_value_group() && tail && type_arg_count == 1 {
+                assert!(
+                    args.is_empty(),
+                    "a type-only direct call has no value arguments"
+                );
+                return Ok(self.emit_method_invocation(method, &[], true));
+            }
             let first_stage = self.fresh_name("type_stage");
             out.line(format!("var {first_stage} any"));
             out.line(format!("{first_stage} = pkg.{method}()"));
+            if !sig.has_value_group() && tail {
+                let before_final =
+                    self.emit_erased_type_applications(first_stage, type_arg_count - 2, out);
+                return Ok(format!("kioTailType({before_final})"));
+            }
             Some(self.emit_erased_type_applications(first_stage, type_arg_count - 1, out))
         } else {
             None
         };
-        // Each value arg, adapted to its declared param slot's grouping
-        // when the slot is a function type and the arg is a fn value
-        // whose binder grouping differs (a host-fn value of N args
-        // flowing into a `(N-slot product) -> R` slot).
-        let param_tys = sig_all_value_param_types(sig);
-        let mut emitted = Vec::with_capacity(args.len());
-        for (i, a) in args.iter().enumerate() {
-            let v = self.emit_value(a, out)?;
-            let v = match param_tys.get(i).and_then(|t| t.as_ref()) {
-                Some(t) => self.adapt_fn_value_for_type(v, a, t),
-                None => v,
-            };
-            emitted.push(v);
-        }
+        let emitted = args
+            .iter()
+            .map(|arg| self.emit_value(arg, out))
+            .collect::<Result<Vec<_>, _>>()?;
         // A direct call carries leading type applications on this node. The
         // method itself is the first nullary type stage; further binders are
         // nullary closures returned from it. Value applications then begin at
@@ -4764,19 +4868,24 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 let fresh: Vec<String> = (0..missing).map(|_| self.fresh_name("partial")).collect();
                 let mut all_args = emitted.clone();
                 all_args.extend(fresh.iter().cloned());
-                let fn_ty = go_closure_type(all_args.len());
                 let mut body = GoBlock::default();
                 body.line(format!(
-                    "return ({call}).({fn_ty})({})",
-                    all_args.join(", ")
+                    "return {}",
+                    go_value_call(&call, &facade_skin::value_domain(&all_args), true)
                 ));
-                return Ok(format!("any({})", render_go_closure(&fresh, &body)));
+                let closure = GoClosureGroup::Value(fresh).render_entry(&body);
+                let value = format!("any({closure})");
+                return Ok(if tail {
+                    format!("kioDone({value})")
+                } else {
+                    value
+                });
             }
             let first_args = &emitted[..first];
-            call = format!(
-                "({call}).({})({})",
-                go_closure_type(first),
-                first_args.join(", ")
+            call = go_value_call(
+                &call,
+                &facade_skin::value_domain(first_args),
+                tail && first == emitted.len(),
             );
             let mut consumed = first;
             for arity in group_arities.iter().skip(1) {
@@ -4784,10 +4893,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     break;
                 }
                 let slice = &emitted[consumed..(consumed + arity).min(emitted.len())];
-                call = format!(
-                    "({call}).({})({})",
-                    go_closure_type(slice.len()),
-                    slice.join(", ")
+                call = go_value_call(
+                    &call,
+                    &facade_skin::value_domain(slice),
+                    tail && consumed + slice.len() == emitted.len(),
                 );
                 consumed += arity;
             }
@@ -4805,25 +4914,51 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             let fresh: Vec<String> = (0..missing).map(|_| self.fresh_name("partial")).collect();
             let mut all_args = emitted.clone();
             all_args.extend(fresh.iter().cloned());
-            // Box the closure as `any` — the body is uniformly `any`, so a
-            // downstream curried application asserts it (`.(func(any) any)`)
-            // before applying, which requires an interface value.
             let mut body = GoBlock::default();
-            body.line(format!("return pkg.{method}({})", all_args.join(", ")));
-            return Ok(format!("any({})", render_go_closure(&fresh, &body)));
+            body.line(format!(
+                "return {}",
+                self.emit_method_invocation(method, &all_args, true)
+            ));
+            let closure = GoClosureGroup::Value(fresh).render_entry(&body);
+            let value = format!("any({closure})");
+            return Ok(if tail {
+                format!("kioDone({value})")
+            } else {
+                value
+            });
         }
-        let mut call = format!("pkg.{method}({})", emitted[..first].join(", "));
+        let mut call =
+            self.emit_method_invocation(method, &emitted[..first], tail && first == emitted.len());
         let mut consumed = first;
         for arity in group_arities.iter().skip(1) {
             if consumed >= emitted.len() {
                 break;
             }
             let slice = &emitted[consumed..(consumed + arity).min(emitted.len())];
-            let fn_ty = go_closure_type(slice.len());
-            call = format!("({call}).({fn_ty})({})", slice.join(", "));
+            call = go_value_call(
+                &call,
+                &facade_skin::value_domain(slice),
+                tail && consumed + slice.len() == emitted.len(),
+            );
             consumed += arity;
         }
         Ok(call)
+    }
+
+    fn emit_method_invocation(&self, method: &str, args: &[String], tail: bool) -> String {
+        if !tail {
+            return format!("pkg.{method}({})", args.join(", "));
+        }
+        let arguments = match args {
+            [] => "kioNamedArguments{}".to_owned(),
+            [first] => format!("kioNamedArguments{{first: {first}}}"),
+            [first, second] => format!("kioNamedArguments{{first: {first}, second: {second}}}"),
+            [first, second, rest @ ..] => format!(
+                "kioNamedArguments{{first: {first}, second: {second}, rest: []any{{{}}}}}",
+                rest.join(", ")
+            ),
+        };
+        format!("kioStep{{owner: pkg, arguments: {arguments}, invoke: kioInvoke_{method}}}")
     }
 
     /// `LowModuleCall { mangled, args }` → `pkg.<method>(<args>)` where
@@ -4845,30 +4980,38 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         type_arg_count: usize,
         args: &[Expr<Routed>],
         sig: &crate::ast::Signature<Routed>,
+        tail: bool,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
         let method = match self.selective_imports.get(mangled) {
             Some(m) => m.clone(),
             None => module_fn_method_name(self.module_key, mangled),
         };
-        self.emit_grouped_method_call(&method, type_arg_count, args, sig, out)
+        self.emit_grouped_method_call(&method, type_arg_count, args, sig, tail, out)
     }
 
     /// Lower an expression-valued conditional into Go statement control
     /// flow targeting the enclosing expression's destination.
     fn emit_conditional(
         &mut self,
+        context: TailContext<'_>,
         cond: &Expr<Routed>,
-        then_branch: &Expr<Routed>,
-        else_branch: &Expr<Routed>,
         destination: GoDestination<'_>,
         out: &mut GoBlock,
     ) -> Result<(), EmitError> {
         let c = self.emit_bool(cond, out)?;
         out.open(format!("if {c}"));
-        self.emit_into(then_branch, destination, out)?;
+        self.emit_result_into(
+            context.result_child(ResultChild::ThenBranch),
+            destination,
+            out,
+        )?;
         out.else_open();
-        self.emit_into(else_branch, destination, out)?;
+        self.emit_result_into(
+            context.result_child(ResultChild::ElseBranch),
+            destination,
+            out,
+        )?;
         out.close();
         Ok(())
     }
@@ -4888,52 +5031,28 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     /// A product `(A & B & C)` → the nested-binary erased value
     /// `[]any{a, []any{b, c}}` (the JS backend's representation, in Go's
     /// universal `[]any`). `[0]` is the head slot, `[1]` the nested
-    /// remainder. Matches `emit_project`'s peel. Adapts a fn-valued item
-    /// to its product-slot's grouping (from the tuple's inhabited type
-    /// `synth_ty`): a host-fn value stored in a `(F & …)` slot whose
-    /// `F` is a `(product) -> R` is wrapped so a later projection +
-    /// product-spread call reaches its N-param form. A non-function slot,
-    /// or a non-fn-value item, is emitted unchanged.
+    /// remainder. Callable items keep their canonical private representation.
     fn emit_tuple_typed(
         &mut self,
         items: &[Expr<Routed>],
-        synth_ty: &Type<Routed>,
+        _synth_ty: &Type<Routed>,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
         let n = items.len();
         if n == 0 {
             return Ok("(Unit{})".to_owned());
         }
-        let slots = Type::right_spine_product(synth_ty);
         let item_refs: Vec<&Expr<Routed>> = items.iter().collect();
         if let Some(plan) =
             bound_product_rebuild_plan(&item_refs, NominalValueRepresentation::Retained)
         {
-            return self.emit_tuple_with_cached_slots(&item_refs, Some(&slots), &plan, out);
+            return self.emit_tuple_with_cached_slots(&item_refs, &plan, out);
         }
         let mut rendered = Vec::with_capacity(n);
-        for i in 0..n {
-            rendered.push(self.emit_tuple_item(items, &slots, i, out)?);
+        for item in items {
+            rendered.push(self.emit_value(item, out)?);
         }
         Ok(Self::emit_tuple_from_rendered(&rendered))
-    }
-
-    /// Emit tuple item `i`, adapting it to slot `i`'s function-type
-    /// grouping when both are present.
-    fn emit_tuple_item(
-        &mut self,
-        items: &[Expr<Routed>],
-        slots: &[&Type<Routed>],
-        i: usize,
-        out: &mut GoBlock,
-    ) -> Result<String, EmitError> {
-        let v = self.emit_value(&items[i], out)?;
-        match slots.get(i) {
-            Some(slot) if matches!(slot, Type::Function { .. }) => {
-                Ok(self.adapt_fn_value_for_type(v, &items[i], slot))
-            }
-            _ => Ok(v),
-        }
     }
 
     fn emit_tuple_from_rendered(rendered: &[String]) -> String {
@@ -4949,7 +5068,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     fn emit_tuple_with_cached_slots(
         &mut self,
         items: &[&Expr<Routed>],
-        slot_tys: Option<&[&Type<Routed>]>,
         plan: &ProductRebuildPlan,
         out: &mut GoBlock,
     ) -> Result<String, EmitError> {
@@ -4963,16 +5081,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         for (i, projected_slot) in plan.slots.iter().enumerate() {
             let value = match projected_slot {
                 Some(slot) => format!("{slots_name}[{slot}]"),
-                None => {
-                    let item = items[i];
-                    let value = self.emit_value(item, out)?;
-                    match slot_tys.and_then(|slots| slots.get(i)).copied() {
-                        Some(slot_ty) if matches!(slot_ty, Type::Function { .. }) => {
-                            self.adapt_fn_value_for_type(value, item, slot_ty)
-                        }
-                        _ => value,
-                    }
-                }
+                None => self.emit_value(items[i], out)?,
             };
             rendered.push(value);
         }
@@ -5007,6 +5116,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     /// Match on a sum scrutinee by peeling it once to `(variant, payload)`.
     fn emit_match(
         &mut self,
+        context: TailContext<'_>,
         scrutinee: &Expr<Routed>,
         arms: &[crate::ast::EnrichedArm<Routed>],
         destination: GoDestination<'_>,
@@ -5034,7 +5144,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             let ident = self.bind_local(&arm.param);
             out.line(format!("{ident} := {payload}"));
             out.line(format!("_ = {ident}"));
-            self.emit_into(&arm.body, destination, out)?;
+            self.emit_result_into(
+                context.result_child(ResultChild::MatchArm(i)),
+                destination,
+                out,
+            )?;
             self.locals.pop();
             out.dedent();
         }
@@ -5206,21 +5320,6 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     }
 }
 
-/// The declared type of every value parameter across all value groups
-/// of a signature, in order. `None` for a value param with no declared
-/// type. Used to adapt a fn-value argument to its declared slot's
-/// grouping at a module-call site.
-fn sig_all_value_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Option<Type<Routed>>> {
-    host_sig_value_param_types(sig)
-}
-
-/// The declared type of each value parameter of a host fn signature, in
-/// order (a type-binder param carries no runtime arg and is skipped).
-/// `None` for a value param with no declared type (rare at Routed).
-fn host_sig_value_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Option<Type<Routed>>> {
-    value_group_param_types(sig).into_iter().flatten().collect()
-}
-
 /// Render a Go integer-typed literal. `*big.Int` (the `i128` / `u128`
 /// roles) has no literal syntax and `big.NewInt` only takes an `int64`,
 /// which a full-width i128 / u128 literal overflows; so a big.Int
@@ -5266,33 +5365,4 @@ fn go_string_lit(value: &str) -> String {
 /// (`type`, `range`, …) stays valid.
 fn go_local_ident(name: &str) -> String {
     format!("k_{name}")
-}
-
-/// The Go function type a body closure of value-arity `arity` is
-/// asserted to before application: `func(any, …, any) any` with `arity`
-/// `any` parameters. A nullary closure is `func() any`.
-fn go_closure_type(arity: usize) -> String {
-    let params = vec!["any"; arity].join(", ");
-    format!("func({params}) any")
-}
-
-/// Peel every leading `Forall` binder off a type, yielding its body
-/// (the host supplies no type arguments, so the binders erase). Returns
-/// the type unchanged if it is not a `Forall`.
-fn peel_forall(ty: &Type<Routed>) -> &Type<Routed> {
-    let mut t = ty;
-    while let Type::Forall { body, .. } = t {
-        t = body;
-    }
-    t
-}
-
-/// The Go access expression for slot `i` of an `n`-slot right-nested
-/// binary product held in `v_expr` (an `any`). Slot 0 is
-/// `v.([]any)[0]`; slot k (0 < k < n-1) peels `[1]` k times then `[0]`;
-/// the last slot peels `[1]` n-1 times. Same nesting as the body's
-/// `emit_project`; used to peel a destructured product param into its
-/// binders (see [`BodyEmitter::adapt_fn_value_for_type`]).
-fn product_param_slot_access(v_expr: &str, i: usize, n: usize) -> String {
-    format!("kioProductSlot({v_expr}, {i}, {n})")
 }

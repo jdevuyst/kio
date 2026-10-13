@@ -20,8 +20,8 @@ module. This page describes the surface a Swift host calls against.
 
 Swift is the **`erased-static`** family's **native-sum** member: a
 statically-typed host with a typed FFI skin over an **erased body**.
-Swift's body uses `Any`-valued execution interfaces while preserving the
-native type of each carried value. The host-facing **skin** is exact: bound types are
+Swift's body uses private `Any`-valued execution interfaces. Values cross the
+host boundary in their exact native representation. The host-facing **skin** is exact: bound types are
 Swift generic parameters, higher-kinded applications have generic nominal
 carriers, and `Any` appears only in internal storage and adapter bodies, never
 in a generated public type spelling (see [`README.md` § Higher-kinded

@@ -1,0 +1,13 @@
+module api;
+
+host type I32 role(i32);
+
+host fn tick();
+
+pub fn link(previous: I32 -> I32) -> I32 -> I32 {
+  .(value) { tick(); previous(value) }
+}
+
+pub fn type_link(previous: [A] I32) -> [A] I32 {
+  .[A] { tick(); previous(A) }
+}

@@ -1,0 +1,250 @@
+import pathlib
+import types
+import unittest
+
+
+def load_runtime():
+    path = pathlib.Path(__file__).with_name("runtime.py")
+    module = types.ModuleType("runtime_test")
+    exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), module.__dict__)
+    return module
+
+
+def reference(name):
+    return {"LowBoundRef": {"name": name}}
+
+
+def call(name, *arguments, tail=True):
+    data = {"name": name, "args": list(arguments), "type_args": []}
+    if tail:
+        data["tail"] = "value"
+    return {"LowClosureCall": data}
+
+
+def advance(name):
+    return {"LowTypeApplication": {"callee": reference(name), "tail": "type"}}
+
+
+def value_stage(*names):
+    return {"kind": "value", "params": list(names)}
+
+
+TYPE_STAGE = {"kind": "type", "params": []}
+STRING_IDENTITY = {"module": ["api"], "name": "String", "frame": "String"}
+
+
+def definition(stages, body):
+    return {"sig": {"stages": stages}, "body": body}
+
+
+def guest(runtime, stages, body, captures=None):
+    return runtime._make_fn("api", definition(stages, body), captures or {})
+
+
+def package_runtime(module, log):
+    compiled = types.SimpleNamespace(
+        modules={}, boundary={"sites": [], "host_bindings": []}
+    )
+    host = {"KioHostOut_api_String": lambda value: log.append(value) or value}
+    return module._PackageRuntime(compiled, host)
+
+
+class TailEntryTests(unittest.TestCase):
+    def setUp(self):
+        self.module = load_runtime()
+        self.log = []
+        self.runtime = package_runtime(self.module, self.log)
+
+    def test_package_instances_share_value_and_type_entries(self):
+        other = package_runtime(self.module, [])
+        value = guest(self.runtime, [value_stage("x")], reference("x"))
+        poly = guest(self.runtime, [TYPE_STAGE], reference("answer"), {"answer": 37})
+        for index in range(2048):
+            owner = self.runtime if index % 2 else other
+            value = guest(owner, [value_stage("x")], call("next", reference("x")), {"next": value})
+            poly = guest(owner, [TYPE_STAGE], advance("next"), {"next": poly})
+        self.assertEqual(value(41), 41)
+        self.assertEqual(value(43), 43)
+        self.assertEqual(poly.advance(), 37)
+        self.assertEqual(poly.advance(), 37)
+
+    def test_independent_artifacts_preserve_ordinary_invocation(self):
+        foreign_log = []
+        foreign = package_runtime(load_runtime(), foreign_log)
+        literal = {"StrLit": {"host_type": STRING_IDENTITY, "value": "foreign"}}
+        value = guest(foreign, [value_stage()], literal)
+        poly = guest(foreign, [TYPE_STAGE], literal)
+        for index in range(8):
+            owner = self.runtime if index % 2 else foreign
+            value = guest(owner, [value_stage()], call("next"), {"next": value})
+            poly = guest(owner, [TYPE_STAGE], advance("next"), {"next": poly})
+        self.assertEqual(value(None), "foreign")
+        self.assertEqual(poly.advance(), "foreign")
+        self.assertEqual(value(None), "foreign")
+        self.assertEqual(poly.advance(), "foreign")
+        self.assertEqual(foreign_log, ["foreign"] * 4)
+        self.assertEqual(self.log, [])
+
+    def test_opaque_callables_do_not_expose_metadata(self):
+        class OpaqueMetaclass(type):
+            def __getattribute__(cls, name):
+                raise AssertionError("metaclass attribute read: " + name)
+
+        class OpaqueCallable(metaclass=OpaqueMetaclass):
+            __slots__ = ()
+
+            def __getattribute__(self, name):
+                if name == "advance":
+                    return object.__getattribute__(self, name)
+                raise AssertionError("instance attribute read: " + name)
+
+            def __call__(self, value):
+                return value
+
+            def advance(self):
+                return 47
+
+        opaque = OpaqueCallable()
+        value = guest(self.runtime, [value_stage("x")], call("opaque", reference("x")), {"opaque": opaque})
+        poly = guest(self.runtime, [TYPE_STAGE], advance("opaque"), {"opaque": opaque})
+        self.assertEqual(value(53), 53)
+        self.assertEqual(poly.advance(), 47)
+
+    def test_host_method_names_do_not_grant_guest_entry_authority(self):
+        events = []
+
+        class HostCallable:
+            def _kio_tail_entry_v1(self):
+                raise AssertionError("an ordinary host method is not a guest entry")
+
+            @property
+            def __class__(self):
+                raise AssertionError("an ordinary host descriptor must not be read")
+
+            def __call__(self, value):
+                events.append("value")
+                return value
+
+            def advance(self):
+                events.append("type")
+                return 47
+
+        host = HostCallable()
+        value = guest(self.runtime, [value_stage("x")], call("host", reference("x")), {"host": host})
+        poly = guest(self.runtime, [TYPE_STAGE], advance("host"), {"host": host})
+        self.assertEqual(value(53), 53)
+        self.assertEqual(poly.advance(), 47)
+        self.assertEqual(events, ["value", "type"])
+
+    def test_guest_owner_and_residual_captures_survive_transfer(self):
+        foreign_log = []
+        foreign = package_runtime(self.module, foreign_log)
+        literal = {"StrLit": {"host_type": STRING_IDENTITY, "value": "owner"}}
+        value = guest(foreign, [value_stage()], literal)
+        poly = guest(foreign, [TYPE_STAGE], literal)
+        value_caller = guest(self.runtime, [value_stage()], call("target"), {"target": value})
+        type_caller = guest(self.runtime, [value_stage()], advance("target"), {"target": poly})
+        self.assertEqual(value_caller(None), "owner")
+        self.assertEqual(type_caller(None), "owner")
+        self.assertEqual(foreign_log, ["owner", "owner"])
+        self.assertEqual(self.log, [])
+        mixed = guest(foreign, [TYPE_STAGE, value_stage("x"), TYPE_STAGE], reference("x"))
+        left, right = mixed.advance()(59), mixed.advance()(61)
+        returned = guest(self.runtime, [value_stage()], reference("saved"), {"saved": left})
+        self.assertIs(returned(None), left)
+        self.assertEqual(left.advance(), 59)
+        self.assertEqual(right.advance(), 61)
+        self.assertEqual(left.advance(), 59)
+
+    def test_effect_order_callbacks_and_host_reentry(self):
+        events = []
+        callback = self.module.KioFn.lift(lambda value: events.append(value) or value)
+        type_stage = self.module._KioPoly(lambda: events.append("type") or callback)
+        argument = self.module.KioFn.lift(lambda _: events.append("argument") or 67)
+        staged_call = {"LowClosureCall": {
+            "name": "target", "type_args": [None], "tail": "value",
+            "args": [call("argument", {"Unit": {}}, tail=False)],
+        }}
+        staged = guest(self.runtime, [value_stage()], staged_call, {"target": type_stage, "argument": argument})
+        self.assertEqual(staged(None), 67)
+        self.assertEqual(events, ["type", "argument", 67])
+        twice = guest(self.runtime, [value_stage("callback")], {"Seq": {
+            "value": call("callback", {"Unit": {}}, tail=False),
+            "body": call("callback", {"Unit": {}}),
+        }})
+        twice(callback)
+        self.assertEqual(events[-2:], [None, None])
+        identity = guest(self.runtime, [value_stage("x")], reference("x"))
+        retained = guest(self.runtime, [value_stage("target")], {"FnExpr":
+            definition([value_stage("x")], call("target", reference("x")))
+        })(identity)
+        self.assertEqual(retained(71), 71)
+        self.assertEqual(retained(73), 73)
+        reentrant = self.module.KioFn.lift(lambda value: identity(value + 1) + 1)
+        reentry = guest(self.runtime, [value_stage("x")], call("host", reference("x")), {"host": reentrant})
+        self.assertEqual(reentry(79), 81)
+        marker = RuntimeError("host exception")
+
+        def fail(_):
+            raise marker
+
+        broken = guest(self.runtime, [value_stage()], call("host"), {"host": fail})
+        with self.assertRaises(RuntimeError) as raised:
+            broken(None)
+        self.assertIs(raised.exception, marker)
+        self.assertEqual(retained(83), 83)
+
+    def test_returned_projector_entries_forward_continuations(self):
+        site = {
+            "callable": {"facade": {"uses": [
+                {"kind": "function", "slots": [1]}, {"kind": "function"},
+            ]}},
+            "execution": {"root_uses": [
+                {"kind": "function", "layout": {"body_abi_arity": 1}},
+                {"kind": "function", "layout": {"body_abi_arity": 1}},
+            ]},
+        }
+        value = guest(self.runtime, [value_stage("x")], reference("x"))
+        continuation = {"FnExpr": definition([value_stage("next")], call("next", reference("x")))}
+        for _ in range(2048):
+            adapter = self.runtime._existential_projector_result(site, 0, value)
+            value = guest(self.runtime, [value_stage("x")], call("adapter", continuation), {"adapter": adapter})
+        self.assertEqual(value(89), 89)
+        self.assertEqual(value(97), 97)
+
+    def test_projector_type_advancement_and_unit_domain(self):
+        for arity in (0, 1):
+            events = []
+            payload = object()
+            site = {
+                "callable": {"facade": {"uses": [
+                    {"kind": "function", "slots": [1]},
+                    {"kind": "forall", "result": 2},
+                    {"kind": "forall", "result": 3},
+                    {"kind": "function"},
+                ]}},
+                "execution": {"root_uses": [
+                    {"kind": "function", "layout": {"body_abi_arity": 1}},
+                    {"kind": "invoke_forall"},
+                    {"kind": "invoke_forall"},
+                    {"kind": "function", "layout": {"body_abi_arity": arity}},
+                ]},
+            }
+            adapter = self.runtime._existential_projector_result(site, 0, payload)
+
+            def invoke(value):
+                self.assertIs(value, payload if arity else None)
+                events.append("value")
+                return 101
+
+            callback = self.module._KioPoly(lambda: events.append("first") or
+                self.module._KioPoly(lambda: events.append("second") or
+                    self.module.KioFn.lift(invoke)))
+            self.assertEqual(events, [])
+            self.assertEqual(adapter(callback), 101)
+            self.assertEqual(adapter(callback), 101)
+            self.assertEqual(events, ["first", "second", "value"] * 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

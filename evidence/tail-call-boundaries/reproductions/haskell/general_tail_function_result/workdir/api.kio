@@ -1,0 +1,7 @@
+module api;
+
+host fn tick();
+
+pub fn link(previous: [A] . -> .) -> [A] . -> . {
+  .[A] { tick(); previous(A) }
+}

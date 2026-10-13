@@ -1,0 +1,13 @@
+package rust_general_tail_calls;
+
+build {
+  target rust {
+    out "out/rust/";
+    baseline v1_85;
+    thread_safety ()
+  }
+}
+
+bridge {
+  api
+}

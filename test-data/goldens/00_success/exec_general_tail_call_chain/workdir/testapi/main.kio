@@ -1,0 +1,90 @@
+module testapi/main;
+
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import testapi(Bool, I32);
+import testapi/arith as arith;
+import testapi/calls as calls;
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+fn leaf() -> I32 { io.print("leaf\n"); 41 }
+
+fn link(previous: . -> I32) -> . -> I32 {
+  .() { calls.enter(previous) }
+}
+
+// The host loop constructs the chain; its invoked edges are ordinary calls.
+rec(iter.loop) fn build(remaining: I32, previous: . -> I32) -> . -> I32 {
+  if! arith.leq_i32(remaining, 0) {
+    previous
+  } else {
+    recur build(arith.sub_i32(remaining, 1), link(previous))
+  }
+}
+
+fn show(value: I32) { io.print(fmt.i32_to_string(value)); io.print("\n") }
+
+fn twice(next: . -> .) { next(); next() }
+
+fn tick() { io.print("tick\n") }
+
+fn consume(value: I32) -> I32 { io.print("consume\n"); value }
+
+// The inner call has pending work; the outer consume call remains tail.
+fn argument(next: . -> I32) -> I32 { consume(next()) }
+
+fn pending(next: . -> I32) -> I32 { let value = next(); io.print("after\n"); consume(value) }
+
+newtype Stored[A] : A { constructor make; projector get }
+
+newtype Saved <A> : A & (A -> I32) { constructor make; projector run }
+
+fn retain[A](value: A) -> Stored(A) { value.>Stored.make }
+
+fn bind[A][B](value: A, next: A -> B) -> B { next(value) }
+
+fn run_saved(saved: Saved) -> I32 {
+  Saved.run(saved)(.[A](state: A, next: A -> I32) { bind(state, next) })
+}
+
+fn stored_link(previous: . -> I32) -> . -> I32 {
+  let saved = Saved.make(((), previous));
+  let stored = retain(saved.>widen_sum!(Saved | .));
+  .() {
+    match! stored.>Stored.get {
+      .(saved: Saved) { run_saved(saved) };
+      .(_empty: .) { 0 }
+    }
+  }
+}
+
+rec(iter.loop) fn build_stored(remaining: I32, previous: . -> I32) -> . -> I32 {
+  if! arith.leq_i32(remaining, 0) {
+    previous
+  } else {
+    recur build_stored(arith.sub_i32(remaining, 1), stored_link(previous))
+  }
+}
+
+pub fn main() {
+  let short = build(8, leaf);
+  io.print("short built\n");
+  show(short());
+  show(short());
+  twice(tick);
+  show(argument(leaf));
+  show(pending(leaf));
+  let deep = build(1024, leaf);
+  io.print("deep built\n");
+  show(deep());
+  io.print("first returned\n");
+  show(deep());
+  io.print("second returned\n");
+  let stored = build_stored(1024, leaf);
+  io.print("stored built\n");
+  show(stored());
+  show(stored())
+}

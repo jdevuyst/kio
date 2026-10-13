@@ -53,13 +53,14 @@ mod runtime_tests {
     #[test]
     fn guest_binding_does_not_collect_argument_slots() {
         let guest = RUNTIME
-            .split_once("    private Object layer(")
+            .split_once("        GuestEntry entry, Object domain) {")
             .unwrap()
             .1
-            .split_once("    private Object nextLayer(")
+            .split_once("        Tag tagged = tag(expression);")
             .unwrap()
             .0;
         assert!(!guest.contains("productSlots("));
+        assert!(guest.contains("new LinkedHashMap<>(entry.env())"));
 
         let host = RUNTIME
             .split_once("    private Object hostLayer(")
@@ -2184,11 +2185,15 @@ fn render_body_stage_factories(
             let factory = format!(
                 "  private static final class Factory_{name} implements KioRuntime.StageFactory {{\n\
                  \x20   static final KioRuntime.StageFactory INSTANCE = new Factory_{name}();\n\
+                 \x20   private static final class Stage implements {carrier}, KioRuntime.GuestStage {{\n\
+                 \x20     private final java.util.function.Supplier<Object> body;\n\
+                 \x20     Stage(java.util.function.Supplier<Object> body) {{ this.body = body; }}\n\
+                 \x20     public java.util.function.Supplier<Object> body() {{ return body; }}\n\
+                 \x20     @SuppressWarnings(\"unchecked\")\n\
+                 \x20     public <KioType> {result} advance() {{ return ({result}) body.get(); }}\n\
+                 \x20   }}\n\
                  \x20   public Object create(java.util.function.Supplier<Object> body) {{\n\
-                 \x20     return new {carrier}() {{\n\
-                 \x20       @SuppressWarnings(\"unchecked\")\n\
-                 \x20       public <KioType> {result} advance() {{ return ({result}) body.get(); }}\n\
-                 \x20     }};\n\
+                 \x20     return new Stage(body);\n\
                  \x20   }}\n\
                  \x20   @SuppressWarnings(\"unchecked\")\n\
                  \x20   public Object advance(Object value) {{ return (({carrier}) value).<Object>advance(); }}\n\
@@ -2819,6 +2824,29 @@ mod tests {
     }
 
     #[test]
+    fn guest_tail_entries_retain_owner_and_bypass_typed_stage_results() {
+        let evaluator = RUNTIME
+            .split_once("        GuestEntry entry, Object domain) {")
+            .unwrap()
+            .1
+            .split_once("  private static final class Json")
+            .unwrap()
+            .0;
+        assert!(evaluator.contains("runtime = entry.runtime();"));
+        assert!(evaluator.contains("new LinkedHashMap<>(entry.env())"));
+        assert!(evaluator.contains("entry = guest;\n            continue;"));
+        assert!(
+            evaluator.contains(
+                "typeStage && callee instanceof GuestStage stage ? stage.body() : callee"
+            )
+        );
+        assert!(
+            evaluator.contains("(typeStage ? \"type\" : \"value\").equals(data.get(\"tail\"))")
+        );
+        assert!(!evaluator.contains("return eval(module, data.get(\"body\")"));
+    }
+
+    #[test]
     fn facade_and_host_names_preserve_semantic_components() {
         assert_eq!(host_member_name("foo/bar", "read"), "foo_bar__read");
         assert_eq!(host_member_name("foo_bar", "read"), "KioItem_fooBar__read");
@@ -3272,12 +3300,22 @@ mod tests {
                 .split_once("public Object create(")
                 .expect("factory creates a stage")
                 .1;
-            let (construction, advance) =
-                create.split_once(" advance()").expect("one generic stage");
+            let construction = create.split_once("\n    }").expect("create method end").0;
             assert!(!construction.contains("body.get()"), "{construction}");
-            let advance = advance.split_once("\n    }").expect("create method end").0;
+            let advance = factory
+                .split_once(" advance()")
+                .expect("one generic stage")
+                .1
+                .split_once('\n')
+                .expect("stage method end")
+                .0;
             assert_eq!(advance.matches("body.get()").count(), 1, "{advance}");
             assert!(!advance.contains(".advance()"), "{advance}");
+            assert!(factory.contains("private final java.util.function.Supplier<Object> body;"));
+            assert!(
+                factory
+                    .contains("public java.util.function.Supplier<Object> body() { return body; }")
+            );
         }
         assert!(emitted.shapes_java.contains("KioRuntime.stageKey("));
     }

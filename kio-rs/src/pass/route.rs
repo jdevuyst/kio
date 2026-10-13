@@ -29,6 +29,15 @@
 //! their bodies as declared — the one place aliases remain — but no host
 //! emitter needs alias machinery for *referenced* types.
 //!
+//! ## Private callable values
+//!
+//! Every private first-class value stage consumes one semantic domain, including
+//! Unit; each forall remains a separate executable type stage. Signatures and
+//! `abi_arity` still describe binder and native-entry layouts. Backends pack or
+//! unpack that domain at callable construction and invocation, so changing
+//! source grouping requires no result or argument eta wrapper here. Nominal
+//! constructors, projectors, and host boundary conversions remain explicit.
+//!
 //! ## Pipeline position
 //!
 //! ```text
@@ -271,39 +280,6 @@ struct ModuleCallInfo<'a> {
     ret_ty: Option<Type<Routed>>,
     declaring_module: &'a str,
     meta: &'a Meta<Enriched>,
-}
-
-#[derive(Clone)]
-enum SelectedAbiShape {
-    Function {
-        groups: Vec<SelectedAbiGroup>,
-        body: Box<SelectedAbiShape>,
-    },
-    Let {
-        binder: usize,
-        value: Box<SelectedAbiShape>,
-        body: Box<SelectedAbiShape>,
-    },
-    Seq {
-        body: Box<SelectedAbiShape>,
-    },
-    BoundRef {
-        binder: usize,
-    },
-    Value,
-    Unknown,
-}
-
-#[derive(Clone)]
-enum SelectedAbiGroup {
-    Type,
-    Value { arity: usize, binders: Vec<usize> },
-}
-
-#[derive(Clone)]
-struct SelectedAbiBinding {
-    binder: usize,
-    shape: SelectedAbiShape,
 }
 
 #[derive(Clone)]
@@ -988,15 +964,12 @@ struct Lowerer<'a> {
     module_ctx: ModuleCtx,
     host_env: HostEnvScope,
     next_call_callee_scope: Cell<usize>,
-    next_selected_abi_binder: Cell<usize>,
 }
 
 #[derive(Clone)]
 struct BoundLocal {
     name: String,
     ty: Option<Type<Routed>>,
-    selected_abi_binder: usize,
-    selected_abi_shape: Option<SelectedAbiShape>,
 }
 
 impl<'a> Lowerer<'a> {
@@ -1017,7 +990,6 @@ impl<'a> Lowerer<'a> {
             module_ctx: ModuleCtx::from_module(module, ctx, package_name, storage_path),
             host_env,
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         }
     }
 
@@ -1098,21 +1070,9 @@ impl<'a> Lowerer<'a> {
     }
 
     fn push_bound_routed(&self, name: &str, ty: Option<Type<Routed>>) {
-        self.push_bound_routed_with_abi(name, ty, None);
-    }
-
-    fn push_bound_routed_with_abi(
-        &self,
-        name: &str,
-        ty: Option<Type<Routed>>,
-        selected_abi_shape: Option<SelectedAbiShape>,
-    ) {
-        let selected_abi_binder = self.next_selected_abi_binder_id();
         self.bound.borrow_mut().push(BoundLocal {
             name: name.to_owned(),
             ty,
-            selected_abi_binder,
-            selected_abi_shape,
         });
     }
 
@@ -1131,27 +1091,6 @@ impl<'a> Lowerer<'a> {
 
     fn bound_routed_type(&self, name: &str) -> Option<Type<Routed>> {
         self.bound_type(name)
-    }
-
-    fn bound_selected_abi_binder(&self, name: &str) -> Option<usize> {
-        self.bound
-            .borrow()
-            .iter()
-            .rev()
-            .find(|binding| binding.name == name)
-            .map(|binding| binding.selected_abi_binder)
-    }
-
-    fn bound_selected_abi(
-        &self,
-        binder: usize,
-    ) -> Option<(Option<SelectedAbiShape>, Option<Type<Routed>>)> {
-        self.bound
-            .borrow()
-            .iter()
-            .rev()
-            .find(|binding| binding.selected_abi_binder == binder)
-            .map(|binding| (binding.selected_abi_shape.clone(), binding.ty.clone()))
     }
 
     // ---- container walks ----------------------------------------------
@@ -1281,11 +1220,8 @@ impl<'a> Lowerer<'a> {
                 }
             }
         }
-        let source_body_ty = self.enriched_expr_type_for_adapter(&d.body);
         let body = self.lower_expr(&d.body);
-        let body_ty = self.lowered_expr_type(&body).or(source_body_ty);
         let body_ret = self.routed_type(&d.ret);
-        let body = self.adapt_routed_value_to_expected(body, body_ty, &body_ret, d.meta.span);
         for _ in 0..pushed_values {
             self.pop_bound();
         }
@@ -1308,6 +1244,77 @@ impl<'a> Lowerer<'a> {
 
     // ---- expression lowering -------------------------------------------
 
+    /// A bound callable already has the private semantic-domain representation.
+    /// Forwarding exactly one value stage therefore preserves its value, even
+    /// when the lambda and the callable spell different native parameter groups.
+    fn forwarded_value_stage(
+        &self,
+        sig: &Signature<Enriched>,
+        body: &Expr<Enriched>,
+    ) -> Option<Expr<Routed>> {
+        let groups = sig.canonical_groups();
+        let [SignatureGroupRef::Value(params)] = groups.as_slice() else {
+            return None;
+        };
+        let Expr::Call { callee, args, .. } = body else {
+            return None;
+        };
+        let Expr::Path { segments, meta, .. } = callee.as_ref() else {
+            return None;
+        };
+        let [callee] = segments.as_slice() else {
+            return None;
+        };
+        if !self.is_bound(&callee.name) || sig.value_param_names().any(|name| name == callee.name) {
+            return None;
+        }
+        let forwards_domain = if params.is_empty() {
+            matches!(args.as_slice(), [CallArg::Value(Expr::Unit { .. })])
+        } else {
+            params.len() == args.len()
+                && params.iter().zip(args).all(|(param, arg)| {
+                    matches!((param, arg),
+                        (SignatureParam::Value(param), CallArg::Value(Expr::Path { segments, .. }))
+                        if segments.len() == 1 && segments[0].name == param.name)
+                })
+        };
+        forwards_domain.then(|| self.lower_path(segments, meta))
+    }
+
+    /// Apply the same identity one type stage at a time. In particular, an
+    /// abstraction over several stages cannot move a later call to an earlier
+    /// stage where its effects would become observable sooner.
+    fn forwarded_type_stage(
+        &self,
+        sig: &Signature<Enriched>,
+        body: &Expr<Routed>,
+    ) -> Option<Expr<Routed>> {
+        let groups = sig.canonical_groups();
+        let [SignatureGroupRef::Type(params)] = groups.as_slice() else {
+            return None;
+        };
+        let [SignatureParam::Type(param)] = *params else {
+            return None;
+        };
+        let Expr::LowTypeApplication {
+            callee, type_arg, ..
+        } = body
+        else {
+            return None;
+        };
+        let Expr::LowBoundRef { name, .. } = callee.as_ref() else {
+            return None;
+        };
+        let Type::Path { segments, args, .. } = type_arg else {
+            return None;
+        };
+        (self.is_bound(name)
+            && args.is_empty()
+            && segments.len() == 1
+            && segments[0].name == param.name)
+            .then(|| callee.as_ref().clone())
+    }
+
     fn lower_expr(&self, e: &Expr<Enriched>) -> Expr<Routed> {
         match e {
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
@@ -1324,6 +1331,9 @@ impl<'a> Lowerer<'a> {
                 meta,
                 caps: _,
             } => {
+                if let Some(callable) = self.forwarded_value_stage(sig, body) {
+                    return callable;
+                }
                 // FnExpr survives the Routed phase (see ast::Expr's
                 // doc). Walk the body in a scope that pushes the fn's
                 // value-params, so a recursive descent classifies the
@@ -1343,26 +1353,20 @@ impl<'a> Lowerer<'a> {
                     }
                 }
                 let lowered_body = self.lower_expr(body);
+                let forwarded_type = self.forwarded_type_stage(sig, &lowered_body);
                 let actual_ret = self
                     .lowered_expr_type(&lowered_body)
-                    .or_else(|| self.enriched_expr_type_for_adapter(body));
+                    .or_else(|| self.enriched_expr_type_for_value(body));
                 let written_ret = ret_ty.as_ref().map(|ret| self.routed_type(ret));
-                let lowered_body = if let Some(expected) = &written_ret {
-                    self.adapt_routed_value_to_expected(
-                        lowered_body,
-                        actual_ret.clone(),
-                        expected,
-                        meta.span,
-                    )
-                } else {
-                    lowered_body
-                };
                 let routed_ret = written_ret.or(actual_ret);
                 for _ in 0..pushed_values {
                     self.pop_bound();
                 }
                 for _ in 0..pushed_types {
                     self.pop_type_bound();
+                }
+                if let Some(callable) = forwarded_type {
+                    return callable;
                 }
                 let (sig, lowered_body) = lower_fn_expr_signature_and_body(
                     sig,
@@ -1394,13 +1398,15 @@ impl<'a> Lowerer<'a> {
                 body,
                 meta,
             } => {
-                let value_ty = self.enriched_expr_type_for_adapter(value);
+                let value_ty = self.enriched_expr_type_for_value(value);
                 let value = self.lower_expr(value);
                 let value_ty = value_ty.or_else(|| self.lowered_expr_type(&value));
-                let selected_abi_shape = self.selected_abi_shape(&value);
-                self.push_bound_routed_with_abi(name, value_ty, Some(selected_abi_shape));
+                self.push_bound_routed(name, value_ty);
                 let body = self.lower_expr(body);
                 self.pop_bound();
+                if matches!(&body, Expr::LowBoundRef { name: returned, .. } if returned == name) {
+                    return value;
+                }
                 Expr::Let {
                     occurrence: Default::default(),
                     name: name.clone(),
@@ -1486,16 +1492,7 @@ impl<'a> Lowerer<'a> {
                 ext: (),
             } => {
                 let synth_ty = self.routed_type(synth_ty);
-                let lowered_items = match expected_value_arg_tys(&synth_ty, items.len()) {
-                    Some(slot_tys) => items
-                        .iter()
-                        .zip(slot_tys)
-                        .map(|(item, slot_ty)| {
-                            self.lower_value_arg_as_value(item.clone(), slot_ty, meta.span, true)
-                        })
-                        .collect(),
-                    None => items.iter().map(|i| self.lower_expr(i)).collect(),
-                };
+                let lowered_items = items.iter().map(|item| self.lower_expr(item)).collect();
                 Expr::EnrichedTuple {
                     occurrence: Default::default(),
                     items: lowered_items,
@@ -1597,18 +1594,8 @@ impl<'a> Lowerer<'a> {
                 Expr::EnrichedConditional {
                     occurrence: Default::default(),
                     cond: Box::new(self.lower_expr(cond)),
-                    then_branch: Box::new(self.lower_value_arg_as_value(
-                        *then_branch.clone(),
-                        &result_ty,
-                        then_branch.meta().span,
-                        true,
-                    )),
-                    else_branch: Box::new(self.lower_value_arg_as_value(
-                        *else_branch.clone(),
-                        &result_ty,
-                        else_branch.meta().span,
-                        true,
-                    )),
+                    then_branch: Box::new(self.lower_expr(then_branch)),
+                    else_branch: Box::new(self.lower_expr(else_branch)),
                     result_ty,
                     meta: convert_meta(meta),
                     ext: (),
@@ -2254,8 +2241,8 @@ impl<'a> Lowerer<'a> {
             .collect();
         // Match the call site's Routed identity: a qualified projector
         // carries its declaring module, while a bare in-scope projector
-        // stays bare. A mismatch would introduce a function adapter around
-        // the rank-N continuation and make the host rendering ill-typed.
+        // stays bare. The rank-N continuation must retain that same
+        // nominal receiver identity in every host rendering.
         let nt_segments = if qualified {
             qualified_nominal_segments(&info.home, newtype, span)
         } else {
@@ -2929,15 +2916,9 @@ impl<'a> Lowerer<'a> {
             // `R` as its ordinary structural type argument. Use that exact
             // phase artifact; neither the continuation body nor an omitted
             // source return annotation is a second source of type truth.
-            let lowered_continuation = self.lower_expr(continuation);
+            let continuation = self.lower_expr(continuation);
             let continuation_ty =
                 cps_continuation_type(info, proj_type_args, result_ty.clone(), meta.span);
-            let continuation = self.adapt_routed_value_to_expected(
-                lowered_continuation,
-                None,
-                &continuation_ty,
-                meta.span,
-            );
             return Expr::LowCpsProjectorApply {
                 occurrence: Default::default(),
                 newtype: newtype.clone(),
@@ -3110,7 +3091,6 @@ impl<'a> Lowerer<'a> {
             &payload_ty,
             std::slice::from_ref(&payload_ty),
             span,
-            true,
         );
         let [payload]: [Expr<Routed>; 1] = std::mem::take(&mut canonical.args)
             .try_into()
@@ -3151,7 +3131,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn lower_call_value_args_for_sig_with_function_adapters(
+    fn lower_call_value_args_for_sig(
         &self,
         value_args: Vec<Expr<Enriched>>,
         sig: &Signature<Enriched>,
@@ -3165,7 +3145,7 @@ impl<'a> Lowerer<'a> {
                 if let Some(target_arity) = target_arity {
                     debug_assert_eq!(abi.target_slots.len(), target_arity);
                 }
-                self.lower_call_value_args_for_param_abi(value_args, &abi, span, true)
+                self.lower_call_value_args_for_param_abi(value_args, &abi, span)
             }
             None => CanonicalCallArgs::direct(self.lower_value_args(value_args)),
         }
@@ -3179,7 +3159,7 @@ impl<'a> Lowerer<'a> {
         span: crate::span::Span,
     ) -> CanonicalCallArgs {
         match function_param_abi_from_callee_ty(callee_ty, type_args) {
-            Some(abi) => self.lower_call_value_args_for_param_abi(value_args, &abi, span, true),
+            Some(abi) => self.lower_call_value_args_for_param_abi(value_args, &abi, span),
             None => CanonicalCallArgs::direct(self.lower_value_args(value_args)),
         }
     }
@@ -3385,217 +3365,6 @@ impl<'a> Lowerer<'a> {
         self.bound_routed_type(name)
     }
 
-    /// Recover the source ABI of a selected value whose ordinary Routed type
-    /// is unavailable. Literal functions contribute their syntactic binder
-    /// grouping recursively. Named and computed values are projected from
-    /// their ordinary Routed type into the same type-free shape.
-    /// The pass-local summary retains only callable group arities and stable
-    /// lexical binder identities; `expected` remains the sole semantic type
-    /// authority.
-    fn selected_value_abi_type(
-        &self,
-        value: &Expr<Routed>,
-        expected: &Type<Routed>,
-    ) -> Option<Type<Routed>> {
-        let shape = self.selected_abi_shape(value);
-        self.selected_shape_abi_type(&shape, expected, &[])
-    }
-
-    fn selected_abi_shape(&self, value: &Expr<Routed>) -> SelectedAbiShape {
-        self.selected_abi_shape_with_locals(value, &[])
-    }
-
-    fn next_selected_abi_binder_id(&self) -> usize {
-        let binder = self.next_selected_abi_binder.get();
-        self.next_selected_abi_binder.set(binder + 1);
-        binder
-    }
-
-    fn selected_abi_shape_with_locals(
-        &self,
-        value: &Expr<Routed>,
-        locals: &[(String, usize)],
-    ) -> SelectedAbiShape {
-        match value {
-            Expr::FnExpr { sig, body, .. } => {
-                let mut body_locals = locals.to_vec();
-                let mut groups = Vec::new();
-                for group in sig.canonical_groups() {
-                    match group {
-                        SignatureGroupRef::Type(params) => {
-                            groups
-                                .extend(std::iter::repeat_n(SelectedAbiGroup::Type, params.len()));
-                        }
-                        SignatureGroupRef::Value(params) => {
-                            let mut binders = Vec::with_capacity(params.len());
-                            for param in params {
-                                let SignatureParam::Value(param) = param else {
-                                    unreachable!(
-                                        "a value signature group contains only value binders"
-                                    );
-                                };
-                                let binder = self.next_selected_abi_binder_id();
-                                binders.push(binder);
-                                body_locals.push((param.name.clone(), binder));
-                            }
-                            groups.push(SelectedAbiGroup::Value {
-                                arity: params.len(),
-                                binders,
-                            });
-                        }
-                    }
-                }
-                SelectedAbiShape::Function {
-                    groups,
-                    body: Box::new(self.selected_abi_shape_with_locals(body, &body_locals)),
-                }
-            }
-            Expr::Let {
-                name, value, body, ..
-            } => {
-                let value = self.selected_abi_shape_with_locals(value, locals);
-                let binder = self.next_selected_abi_binder_id();
-                let mut body_locals = locals.to_vec();
-                body_locals.push((name.clone(), binder));
-                SelectedAbiShape::Let {
-                    binder,
-                    value: Box::new(value),
-                    body: Box::new(self.selected_abi_shape_with_locals(body, &body_locals)),
-                }
-            }
-            Expr::Seq { body, .. } => SelectedAbiShape::Seq {
-                body: Box::new(self.selected_abi_shape_with_locals(body, locals)),
-            },
-            Expr::LowBoundRef { name, .. } => {
-                if let Some((_, binder)) = locals.iter().rev().find(|(local, _)| local == name) {
-                    return SelectedAbiShape::BoundRef { binder: *binder };
-                }
-                self.bound_selected_abi_binder(name)
-                    .map(|binder| SelectedAbiShape::BoundRef { binder })
-                    .unwrap_or(SelectedAbiShape::Unknown)
-            }
-            other => self
-                .lowered_expr_type(other)
-                .as_ref()
-                .map(selected_abi_shape_from_type)
-                .unwrap_or(SelectedAbiShape::Unknown),
-        }
-    }
-
-    fn selected_shape_abi_type(
-        &self,
-        shape: &SelectedAbiShape,
-        expected: &Type<Routed>,
-        bindings: &[SelectedAbiBinding],
-    ) -> Option<Type<Routed>> {
-        if !type_has_callable_layer(expected) {
-            return Some(expected.clone());
-        }
-        match shape {
-            SelectedAbiShape::Function { groups, body } => {
-                self.selected_group_abi_type(groups, body, expected, bindings)
-            }
-            SelectedAbiShape::Let {
-                binder,
-                value,
-                body,
-                ..
-            } => {
-                let mut body_bindings = bindings.to_vec();
-                body_bindings.push(SelectedAbiBinding {
-                    binder: *binder,
-                    shape: value.as_ref().clone(),
-                });
-                self.selected_shape_abi_type(body, expected, &body_bindings)
-            }
-            SelectedAbiShape::Seq { body } => {
-                self.selected_shape_abi_type(body, expected, bindings)
-            }
-            SelectedAbiShape::BoundRef { binder } => {
-                for (index, binding) in bindings.iter().enumerate().rev() {
-                    if binding.binder == *binder {
-                        return self.selected_shape_abi_type(
-                            &binding.shape,
-                            expected,
-                            &bindings[..index],
-                        );
-                    }
-                }
-                let (shape, ty) = self.bound_selected_abi(*binder)?;
-                if let Some(shape) = shape {
-                    self.selected_shape_abi_type(&shape, expected, bindings)
-                } else {
-                    self.selected_shape_abi_type(
-                        &selected_abi_shape_from_type(&ty?),
-                        expected,
-                        bindings,
-                    )
-                }
-            }
-            SelectedAbiShape::Value => None,
-            SelectedAbiShape::Unknown => None,
-        }
-    }
-
-    fn selected_group_abi_type(
-        &self,
-        groups: &[SelectedAbiGroup],
-        result: &SelectedAbiShape,
-        expected: &Type<Routed>,
-        bindings: &[SelectedAbiBinding],
-    ) -> Option<Type<Routed>> {
-        let Some((group, remaining)) = groups.split_first() else {
-            return self.selected_shape_abi_type(result, expected, bindings);
-        };
-        match (group, expected) {
-            (
-                SelectedAbiGroup::Type,
-                Type::Forall {
-                    param, body, meta, ..
-                },
-            ) => Some(Type::Forall {
-                param: param.clone(),
-                body: Box::new(self.selected_group_abi_type(remaining, result, body, bindings)?),
-                meta: meta.clone(),
-            }),
-            (
-                SelectedAbiGroup::Value { arity, binders },
-                Type::Function {
-                    param,
-                    ret,
-                    meta,
-                    caps,
-                    ..
-                },
-            ) => {
-                let slots = function_abi_param_slot_types(param, *arity);
-                if !binders.is_empty() && binders.len() != slots.len() {
-                    return None;
-                }
-                let mut body_bindings = bindings.to_vec();
-                body_bindings.extend(binders.iter().zip(slots.iter()).map(|(binder, ty)| {
-                    SelectedAbiBinding {
-                        binder: *binder,
-                        shape: selected_abi_shape_from_type(ty),
-                    }
-                }));
-                Some(Type::Function {
-                    param: param.clone(),
-                    ret: Box::new(self.selected_group_abi_type(
-                        remaining,
-                        result,
-                        ret,
-                        &body_bindings,
-                    )?),
-                    meta: meta.clone(),
-                    abi_arity: *arity,
-                    caps: caps.clone(),
-                })
-            }
-            _ => None,
-        }
-    }
-
     fn public_routed_type(&self, ty: Type<Routed>) -> Type<Routed> {
         canonicalize_function_abi_type(unfold_type_alias_type(&ty, &self.unfold_env()))
     }
@@ -3662,7 +3431,6 @@ impl<'a> Lowerer<'a> {
         value_args: Vec<Expr<Enriched>>,
         abi: &CalleeParamAbi,
         span: crate::span::Span,
-        adapt_function_args: bool,
     ) -> CanonicalCallArgs {
         if value_args.is_empty() {
             return CanonicalCallArgs::default();
@@ -3687,23 +3455,9 @@ impl<'a> Lowerer<'a> {
                 &abi.param_ty,
                 &abi.target_slots,
                 span,
-                adapt_function_args,
             );
         }
-        let mut out = CanonicalCallArgs::default();
-        for (arg, expected) in value_args.into_iter().zip(&abi.target_slots) {
-            if matches!(expected, Type::Product { .. }) {
-                out.args.push(self.lower_value_arg_as_value(
-                    arg,
-                    expected,
-                    span,
-                    adapt_function_args,
-                ));
-            } else {
-                self.lower_value_arg_as_abi(arg, expected, span, adapt_function_args, &mut out);
-            }
-        }
-        out
+        CanonicalCallArgs::direct(self.lower_value_args(value_args))
     }
 
     fn lower_call_value_args_grouped_to_target_arity(
@@ -3712,21 +3466,12 @@ impl<'a> Lowerer<'a> {
         param_ty: &Type<Routed>,
         target_slots: &[Type<Routed>],
         span: crate::span::Span,
-        adapt_function_args: bool,
     ) -> CanonicalCallArgs {
-        let Some(source_tys) = expected_value_arg_tys(param_ty, value_args.len()) else {
+        if expected_value_arg_tys(param_ty, value_args.len()).is_none() {
             return CanonicalCallArgs::direct(self.lower_value_args(value_args));
-        };
-        let mut out = CanonicalCallArgs::default();
-        let mut source_values = Vec::with_capacity(value_args.len());
-        for (arg, expected) in value_args.into_iter().zip(source_tys) {
-            source_values.push(self.lower_value_arg_as_value(
-                arg,
-                expected,
-                span,
-                adapt_function_args,
-            ));
         }
+        let mut out = CanonicalCallArgs::default();
+        let mut source_values = self.lower_value_args(value_args);
 
         let value = match source_values.len() {
             0 => Expr::Unit {
@@ -3801,634 +3546,6 @@ impl<'a> Lowerer<'a> {
         out
     }
 
-    fn lower_value_arg_as_value(
-        &self,
-        arg: Expr<Enriched>,
-        expected: &Type<Routed>,
-        span: crate::span::Span,
-        adapt_function_args: bool,
-    ) -> Expr<Routed> {
-        if adapt_function_args
-            && let Some(adapter) = self.function_arg_adapter(&arg, expected, span)
-        {
-            return adapter;
-        }
-        let lowered = self.lower_expr_owned(arg.clone());
-        let actual_ty = self
-            .enriched_expr_type_for_source_adapter(&arg)
-            .or_else(|| self.lowered_expr_type(&lowered))
-            .or_else(|| self.enriched_expr_type_for_adapter(&arg));
-        self.adapt_routed_value_to_expected(lowered, actual_ty, expected, span)
-    }
-
-    fn lower_value_arg_as_abi(
-        &self,
-        arg: Expr<Enriched>,
-        expected: &Type<Routed>,
-        span: crate::span::Span,
-        adapt_function_args: bool,
-        out: &mut CanonicalCallArgs,
-    ) {
-        if adapt_function_args
-            && let Some(adapter) = self.function_arg_adapter(&arg, expected, span)
-        {
-            out.args.push(adapter);
-            return;
-        }
-        if matches!(expected, Type::Product { .. }) {
-            let slot_tys = product_abi_slot_types(expected);
-            let actual_ty = self
-                .enriched_expr_type_for_source_adapter(&arg)
-                .or_else(|| self.enriched_expr_type_for_adapter(&arg));
-            let arg = match arg {
-                Expr::EnrichedTuple { items, .. } if items.len() == slot_tys.len() => {
-                    for (item, expected_slot) in items.into_iter().zip(slot_tys.iter()) {
-                        self.lower_value_arg_as_abi(
-                            item,
-                            expected_slot,
-                            span,
-                            adapt_function_args,
-                            out,
-                        );
-                    }
-                    return;
-                }
-                other => other,
-            };
-
-            let temp = format!("__kio_call_arg{}__", out.wrappers.len());
-            let lowered = self.lower_expr_owned(arg);
-            let actual_ty = actual_ty.or_else(|| self.lowered_expr_type(&lowered));
-            out.wrappers.push(CallArgWrapper::Let {
-                name: temp.clone(),
-                value: lowered,
-                span,
-            });
-            let target = low_bound_ref(&temp, span);
-            let arity = product_abi_slot_count(expected);
-            let target_ty = actual_ty.as_ref().unwrap_or(expected);
-            let actual_slots = actual_ty
-                .as_ref()
-                .and_then(|ty| expected_value_arg_tys(ty, slot_tys.len()));
-            for (index, expected_slot) in slot_tys.iter().enumerate() {
-                let projected = Expr::EnrichedProject {
-                    occurrence: Default::default(),
-                    target: Box::new(target.clone()),
-                    index,
-                    arity,
-                    target_ty: (*target_ty).clone(),
-                    meta: Meta::new(span),
-                    ext: (),
-                };
-                let projected = actual_slots
-                    .as_ref()
-                    .and_then(|slots| slots.get(index))
-                    .map(|actual_slot| {
-                        self.adapt_routed_value_to_expected(
-                            projected.clone(),
-                            Some((**actual_slot).clone()),
-                            expected_slot,
-                            span,
-                        )
-                    })
-                    .unwrap_or(projected);
-                out.args.push(projected);
-            }
-            return;
-        }
-
-        let lowered = self.lower_expr_owned(arg.clone());
-        let actual_ty = self
-            .lowered_expr_type(&lowered)
-            .or_else(|| self.enriched_expr_type_for_adapter(&arg));
-        out.args
-            .push(self.adapt_routed_value_to_expected(lowered, actual_ty, expected, span));
-    }
-
-    fn function_arg_adapter(
-        &self,
-        arg: &Expr<Enriched>,
-        expected: &Type<Routed>,
-        span: crate::span::Span,
-    ) -> Option<Expr<Routed>> {
-        let actual_ty = self.enriched_expr_type_for_adapter(arg)?;
-        self.function_value_adapter_at_depth(
-            Expr::Unit {
-                source_trivia: Default::default(),
-                occurrence: Default::default(),
-                meta: Meta::new(span),
-            },
-            expected,
-            &actual_ty,
-            span,
-            0,
-        )?;
-        let callee = self.lower_expr_owned(arg.clone());
-        Some(
-            self.function_value_adapter(callee, expected, &actual_ty, span)
-                .expect("the type-only adapter preflight and materialization must agree"),
-        )
-    }
-
-    fn function_value_adapter(
-        &self,
-        callee: Expr<Routed>,
-        target_ty: &Type<Routed>,
-        source_ty: &Type<Routed>,
-        span: crate::span::Span,
-    ) -> Option<Expr<Routed>> {
-        let scope = self.next_call_callee_scope.get();
-        let callee_name = format!("__kio_call_callee{scope}__");
-        let adapter = self.function_value_adapter_at_depth(
-            low_bound_ref(&callee_name, span),
-            target_ty,
-            source_ty,
-            span,
-            0,
-        )?;
-        self.next_call_callee_scope.set(scope + 1);
-        Some(Expr::Let {
-            occurrence: Default::default(),
-            name: callee_name,
-            name_span: span,
-            ty: None,
-            pattern: (),
-            value: Box::new(callee),
-            body: Box::new(adapter),
-            meta: Meta::new(span),
-        })
-    }
-
-    fn function_value_adapter_at_depth(
-        &self,
-        callee: Expr<Routed>,
-        target_ty: &Type<Routed>,
-        source_ty: &Type<Routed>,
-        span: crate::span::Span,
-        depth: usize,
-    ) -> Option<Expr<Routed>> {
-        let (target_type_params, target_ty) = peel_function_foralls(target_ty);
-        let (source_type_params, source_ty) = peel_function_foralls(source_ty);
-        if target_type_params.len() != source_type_params.len() {
-            return None;
-        }
-        let source_subst: HashMap<String, Type<Routed>> = source_type_params
-            .iter()
-            .zip(&target_type_params)
-            .map(|(source, target)| {
-                (
-                    source.name.clone(),
-                    Type::Path {
-                        segments: vec![PathSegment::new(target.name.clone(), target.span)],
-                        args: Vec::new(),
-                        meta: Meta::new(target.span),
-                    },
-                )
-            })
-            .collect();
-        let source_ty = crate::pass::typecheck_core::subst_type(&source_ty, &source_subst);
-        let Type::Function {
-            param: target_param,
-            ret: target_ret,
-            abi_arity: target_abi_arity,
-            ..
-        } = &target_ty
-        else {
-            return None;
-        };
-        let Type::Function {
-            param: source_param,
-            ret: source_ret,
-            abi_arity: source_abi_arity,
-            ..
-        } = &source_ty
-        else {
-            return None;
-        };
-
-        let target_slots = function_abi_param_slot_types(target_param, *target_abi_arity);
-        let source_slots = function_abi_param_slot_types(source_param, *source_abi_arity);
-        let mut changed = target_slots.len() != source_slots.len();
-        let param_names: Vec<String> = (0..target_slots.len())
-            .map(|index| format!("__kio_fn{depth}_arg{index}__"))
-            .collect();
-        let params: Vec<SignatureParam<Routed>> = param_names
-            .iter()
-            .zip(target_slots.iter())
-            .map(|(name, ty)| {
-                SignatureParam::Value(Param {
-                    name: name.clone(),
-                    ty: Some(ty.clone()),
-                    pattern: (),
-                    meta: Meta::new(span),
-                })
-            })
-            .collect();
-
-        let target_values: Vec<_> = param_names
-            .iter()
-            .zip(target_slots.iter())
-            .map(|(name, ty)| (low_bound_ref(name, span), ty.clone()))
-            .collect();
-        let call_args = self.function_adapter_source_args(
-            &target_values,
-            &source_slots,
-            span,
-            depth,
-            &mut changed,
-        )?;
-
-        let type_stage_names: Vec<String> = (0..target_type_params.len())
-            .map(|index| format!("__kio_fn{depth}_type{index}_result__"))
-            .collect();
-        let value_callee = type_stage_names
-            .last()
-            .map(|name| low_bound_ref(name, span))
-            .unwrap_or_else(|| callee.clone());
-        let call = Expr::LowIndirectCall {
-            occurrence: Default::default(),
-            callee: Box::new(value_callee),
-            type_args: Vec::new(),
-            args: call_args,
-            meta: Meta::new(span),
-            ext: (),
-        };
-        let produced_name = format!("__kio_fn{depth}_result__");
-        let body = if let Some(adapter) = self.function_value_adapter_at_depth(
-            low_bound_ref(&produced_name, span),
-            target_ret,
-            source_ret,
-            span,
-            depth + 1,
-        ) {
-            changed = true;
-            Expr::Let {
-                occurrence: Default::default(),
-                name: produced_name,
-                name_span: span,
-                ty: None,
-                pattern: (),
-                value: Box::new(call),
-                body: Box::new(adapter),
-                meta: Meta::new(span),
-            }
-        } else {
-            call
-        };
-        if !changed {
-            return None;
-        }
-        // Even an erased Unit parameter is a real callable layer. Preserve
-        // its zero-slot value group so later applications cannot collapse it
-        // into the surrounding type-binder run.
-        let groups = vec![SignatureGroupKind::Value {
-            len: target_slots.len(),
-        }];
-        let mut adapter = Expr::FnExpr {
-            occurrence: Default::default(),
-            sig: Signature::from_parts(params, groups),
-            ret_ty: Some((**target_ret).clone()),
-            body: Box::new(body),
-            meta: Meta::new(span),
-            caps: Default::default(),
-        };
-        let mut residual_target_ty = target_ty.clone();
-        for (index, target_param) in target_type_params.iter().enumerate().rev() {
-            let source_stage = if index == 0 {
-                callee.clone()
-            } else {
-                low_bound_ref(&type_stage_names[index - 1], span)
-            };
-            let target_arg = Type::Path {
-                segments: vec![PathSegment::new(
-                    target_param.name.clone(),
-                    target_param.span,
-                )],
-                args: Vec::new(),
-                meta: Meta::new(target_param.span),
-            };
-            let applied_source_stage = Expr::LowTypeApplication {
-                occurrence: Default::default(),
-                callee: Box::new(source_stage),
-                type_arg: target_arg,
-                meta: Meta::new(span),
-                ext: (),
-            };
-            adapter = Expr::Let {
-                occurrence: Default::default(),
-                name: type_stage_names[index].clone(),
-                name_span: span,
-                ty: None,
-                pattern: (),
-                value: Box::new(applied_source_stage),
-                body: Box::new(adapter),
-                meta: Meta::new(span),
-            };
-            // The eager zero-slot call consumes this administrative value
-            // group immediately, exposing exactly one ordinary type stage.
-            let stage_closure = Expr::FnExpr {
-                occurrence: Default::default(),
-                sig: Signature::from_parts(
-                    vec![SignatureParam::Type(target_param.clone())],
-                    vec![
-                        SignatureGroupKind::Value { len: 0 },
-                        SignatureGroupKind::Type { len: 1 },
-                    ],
-                ),
-                ret_ty: Some(residual_target_ty.clone()),
-                body: Box::new(adapter),
-                meta: Meta::new(span),
-                caps: Default::default(),
-            };
-            adapter = Expr::LowIndirectCall {
-                occurrence: Default::default(),
-                callee: Box::new(stage_closure),
-                type_args: Vec::new(),
-                args: Vec::new(),
-                meta: Meta::new(span),
-                ext: (),
-            };
-            residual_target_ty = Type::Forall {
-                param: target_param.clone(),
-                body: Box::new(residual_target_ty),
-                meta: Meta::new(span),
-            };
-        }
-        Some(adapter)
-    }
-
-    fn function_adapter_source_args(
-        &self,
-        target_values: &[(Expr<Routed>, Type<Routed>)],
-        source_slots: &[Type<Routed>],
-        span: crate::span::Span,
-        depth: usize,
-        changed: &mut bool,
-    ) -> Option<Vec<Expr<Routed>>> {
-        if source_slots.is_empty() {
-            return Some(Vec::new());
-        }
-        if target_values.is_empty() && matches!(source_slots, [Type::Unit { .. }]) {
-            *changed = true;
-            return Some(vec![Expr::Unit {
-                source_trivia: Default::default(),
-                occurrence: Default::default(),
-                meta: Meta::new(span),
-            }]);
-        }
-
-        if target_values.len() == source_slots.len()
-            && target_values
-                .iter()
-                .zip(source_slots)
-                .all(|((_, actual), expected)| abi_type_shape_eq(actual, expected))
-        {
-            return Some(
-                target_values
-                    .iter()
-                    .zip(source_slots)
-                    .map(|((value, actual), expected)| {
-                        self.adapt_projected_function_slot(
-                            value.clone(),
-                            actual,
-                            expected,
-                            span,
-                            depth,
-                            changed,
-                        )
-                    })
-                    .collect(),
-            );
-        }
-
-        *changed = true;
-        let mut flat = Vec::new();
-        for (value, ty) in target_values {
-            flatten_abi_value_slot(value.clone(), ty, span, &mut flat);
-        }
-
-        let mut cursor = 0usize;
-        let mut args = Vec::with_capacity(source_slots.len());
-        for source_slot in source_slots {
-            let (value, actual_ty) =
-                build_value_for_abi_slot(&flat, &mut cursor, source_slot, span)?;
-            args.push(self.adapt_projected_function_slot(
-                value,
-                &actual_ty,
-                source_slot,
-                span,
-                depth,
-                changed,
-            ));
-        }
-        if cursor == flat.len() {
-            Some(args)
-        } else {
-            None
-        }
-    }
-
-    fn adapt_projected_function_slot(
-        &self,
-        value: Expr<Routed>,
-        value_ty: &Type<Routed>,
-        target_ty: &Type<Routed>,
-        span: crate::span::Span,
-        depth: usize,
-        changed: &mut bool,
-    ) -> Expr<Routed> {
-        let adapter = self.function_value_adapter_at_depth(
-            value.clone(),
-            target_ty,
-            value_ty,
-            span,
-            depth + 1,
-        );
-        if let Some(adapter) = adapter {
-            *changed = true;
-            adapter
-        } else {
-            value
-        }
-    }
-
-    fn adapt_routed_value_to_expected(
-        &self,
-        value: Expr<Routed>,
-        actual_ty: Option<Type<Routed>>,
-        expected_ty: &Type<Routed>,
-        span: crate::span::Span,
-    ) -> Expr<Routed> {
-        let actual_ty = actual_ty.or_else(|| {
-            if type_has_callable_layer(expected_ty) {
-                self.selected_value_abi_type(&value, expected_ty)
-            } else {
-                None
-            }
-        });
-        let Some(actual_ty) = actual_ty else {
-            return value;
-        };
-        if let Some(adapter) =
-            self.function_value_adapter(value.clone(), expected_ty, &actual_ty, span)
-        {
-            return adapter;
-        }
-        if !matches!(expected_ty, Type::Product { .. })
-            || !matches!(actual_ty, Type::Product { .. })
-        {
-            return value;
-        }
-        let value = match value {
-            Expr::Let {
-                occurrence: _,
-                name,
-                name_span,
-                ty,
-                pattern,
-                value: let_value,
-                body,
-                meta,
-            } => {
-                return Expr::Let {
-                    occurrence: Default::default(),
-                    name,
-                    name_span,
-                    ty,
-                    pattern,
-                    value: let_value,
-                    body: Box::new(self.adapt_routed_value_to_expected(
-                        *body,
-                        Some(actual_ty),
-                        expected_ty,
-                        span,
-                    )),
-                    meta,
-                };
-            }
-            Expr::Seq {
-                occurrence: _,
-                value: seq_value,
-                body,
-                meta,
-            } => {
-                return Expr::Seq {
-                    occurrence: Default::default(),
-                    value: seq_value,
-                    body: Box::new(self.adapt_routed_value_to_expected(
-                        *body,
-                        Some(actual_ty),
-                        expected_ty,
-                        span,
-                    )),
-                    meta,
-                };
-            }
-            other => other,
-        };
-        let arity = product_abi_slot_count(expected_ty);
-        let Some(expected_slots) = expected_value_arg_tys(expected_ty, arity) else {
-            return value;
-        };
-        let Some(actual_slots) = expected_value_arg_tys(&actual_ty, arity) else {
-            return value;
-        };
-
-        match value {
-            Expr::EnrichedTuple {
-                items,
-                meta,
-                ext: (),
-                ..
-            } if items.len() == arity => {
-                let mut changed = false;
-                let items = items
-                    .into_iter()
-                    .zip(actual_slots.into_iter().zip(expected_slots))
-                    .map(|(item, (actual_slot, expected_slot))| {
-                        let adapted = self.adapt_routed_value_to_expected(
-                            item.clone(),
-                            Some(actual_slot.clone()),
-                            expected_slot,
-                            span,
-                        );
-                        if adapted != item {
-                            changed = true;
-                        }
-                        adapted
-                    })
-                    .collect();
-                if changed {
-                    Expr::EnrichedTuple {
-                        occurrence: Default::default(),
-                        items,
-                        synth_ty: expected_ty.clone(),
-                        meta,
-                        ext: (),
-                    }
-                } else {
-                    Expr::EnrichedTuple {
-                        occurrence: Default::default(),
-                        items,
-                        synth_ty: actual_ty,
-                        meta,
-                        ext: (),
-                    }
-                }
-            }
-            other => {
-                let temp = "__kio_ret_abi__".to_owned();
-                let target = low_bound_ref(&temp, span);
-                let mut changed = false;
-                let items: Vec<_> = actual_slots
-                    .into_iter()
-                    .zip(expected_slots)
-                    .enumerate()
-                    .map(|(index, (actual_slot, expected_slot))| {
-                        let projected = Expr::EnrichedProject {
-                            occurrence: Default::default(),
-                            target: Box::new(target.clone()),
-                            index,
-                            arity,
-                            target_ty: actual_ty.clone(),
-                            meta: Meta::new(span),
-                            ext: (),
-                        };
-                        let adapted = self.adapt_routed_value_to_expected(
-                            projected.clone(),
-                            Some(actual_slot.clone()),
-                            expected_slot,
-                            span,
-                        );
-                        if adapted != projected {
-                            changed = true;
-                        }
-                        adapted
-                    })
-                    .collect();
-                if !changed {
-                    return other;
-                }
-                Expr::Let {
-                    occurrence: Default::default(),
-                    name: temp,
-                    name_span: span,
-                    ty: None,
-                    pattern: (),
-                    value: Box::new(other),
-                    body: Box::new(Expr::EnrichedTuple {
-                        occurrence: Default::default(),
-                        items,
-                        synth_ty: expected_ty.clone(),
-                        meta: Meta::new(span),
-                        ext: (),
-                    }),
-                    meta: Meta::new(span),
-                }
-            }
-        }
-    }
-
     fn wrap_canonical_call(
         &self,
         call: Expr<Routed>,
@@ -4470,7 +3587,7 @@ impl<'a> Lowerer<'a> {
         let host_env = self.declaring_unfold_env(&hsig.module_path);
         let routed_type_args =
             self.infer_call_type_args_for_sig(sig, &host_env, type_args, &value_args);
-        let canonical = self.lower_call_value_args_for_sig_with_function_adapters(
+        let canonical = self.lower_call_value_args_for_sig(
             value_args,
             sig,
             &host_env,
@@ -4659,7 +3776,7 @@ impl<'a> Lowerer<'a> {
         }
     }
 
-    fn enriched_expr_type_for_adapter(&self, expr: &Expr<Enriched>) -> Option<Type<Routed>> {
+    fn enriched_expr_type_for_value(&self, expr: &Expr<Enriched>) -> Option<Type<Routed>> {
         match expr {
             Expr::Path { segments, meta, .. } => {
                 if segments.len() == 1
@@ -4672,13 +3789,13 @@ impl<'a> Lowerer<'a> {
             Expr::Let {
                 name, value, body, ..
             } => {
-                let value_ty = self.enriched_expr_type_for_adapter(value);
+                let value_ty = self.enriched_expr_type_for_value(value);
                 self.push_bound_routed(name, value_ty);
-                let body_ty = self.enriched_expr_type_for_adapter(body);
+                let body_ty = self.enriched_expr_type_for_value(body);
                 self.pop_bound();
                 body_ty
             }
-            Expr::Seq { body, .. } => self.enriched_expr_type_for_adapter(body),
+            Expr::Seq { body, .. } => self.enriched_expr_type_for_value(body),
             Expr::FnExpr {
                 sig, ret_ty, meta, ..
             } => {
@@ -4756,36 +3873,6 @@ impl<'a> Lowerer<'a> {
         self.module_ctx.local_fns.get(name)
     }
 
-    fn enriched_expr_type_for_source_adapter(&self, expr: &Expr<Enriched>) -> Option<Type<Routed>> {
-        let source_ty = |ty: &Type<Enriched>| {
-            unfold_type_alias_type(&convert_type::<Enriched, Routed>(ty), &self.unfold_env())
-        };
-        match expr {
-            Expr::EnrichedTuple { synth_ty, .. } | Expr::EnrichedInject { synth_ty, .. } => {
-                Some(source_ty(synth_ty))
-            }
-            Expr::EnrichedMatch { result_ty, .. } | Expr::EnrichedConditional { result_ty, .. } => {
-                Some(source_ty(result_ty))
-            }
-            Expr::EnrichedProject {
-                index,
-                arity,
-                target_ty,
-                ..
-            } => product_slot_type(&source_ty(target_ty), *index, *arity),
-            Expr::EnrichedFieldGet {
-                field_name,
-                index,
-                arity,
-                target_ty,
-                ..
-            } => {
-                self.enriched_field_payload_type(&source_ty(target_ty), field_name, *index, *arity)
-            }
-            _ => None,
-        }
-    }
-
     fn low_module_call(
         &self,
         mangled: String,
@@ -4804,7 +3891,7 @@ impl<'a> Lowerer<'a> {
         let mut type_args =
             self.complete_call_type_args_for_sig(sig, &sig_env, type_args, &value_args);
         let returned_args = split_type_only_returned_args(sig, &mut type_args, &mut value_args);
-        let canonical = self.lower_call_value_args_for_sig_with_function_adapters(
+        let canonical = self.lower_call_value_args_for_sig(
             value_args,
             sig,
             &sig_env,
@@ -4851,7 +3938,7 @@ impl<'a> Lowerer<'a> {
         let mut type_args =
             self.complete_call_type_args_for_sig(sig, &sig_env, type_args, &value_args);
         let returned_args = split_type_only_returned_args(sig, &mut type_args, &mut value_args);
-        let canonical = self.lower_call_value_args_for_sig_with_function_adapters(
+        let canonical = self.lower_call_value_args_for_sig(
             value_args,
             sig,
             &sig_env,
@@ -4898,7 +3985,6 @@ impl<'a> Lowerer<'a> {
             return call;
         };
         let expected = canonicalize_function_abi_type(actual.clone());
-        let call = self.adapt_routed_value_to_expected(call, Some(actual), &expected, meta.span);
         if returned_types.is_empty() && returned_values.is_empty() {
             return call;
         }
@@ -5282,7 +4368,7 @@ fn function_abi_param_slot_types(param: &Type<Routed>, abi_arity: usize) -> Vec<
 
 /// Compare only callable ABI grouping. Nominal paths are all one
 /// runtime slot; name identity has already been checked by the typer
-/// and must not manufacture an eta adapter from bare versus qualified
+/// and must not distinguish equivalent bare versus qualified
 /// spellings of the same type.
 fn abi_type_shape_eq(a: &Type<Routed>, b: &Type<Routed>) -> bool {
     match (a, b) {
@@ -6384,42 +5470,6 @@ fn binary_product_component(
     }
 }
 
-fn build_value_for_abi_slot(
-    flat: &[(Expr<Routed>, Type<Routed>)],
-    cursor: &mut usize,
-    expected: &Type<Routed>,
-    span: crate::span::Span,
-) -> Option<(Expr<Routed>, Type<Routed>)> {
-    if matches!(expected, Type::Product { .. }) {
-        let expected_slots = product_abi_slot_types(expected);
-        if expected_slots.len() > 1 {
-            let mut nested_cursor = *cursor;
-            let mut items = Vec::with_capacity(expected_slots.len());
-            for slot in &expected_slots {
-                let (item, _) = build_value_for_abi_slot(flat, &mut nested_cursor, slot, span)?;
-                items.push(item);
-            }
-            if nested_cursor > *cursor {
-                *cursor = nested_cursor;
-                return Some((
-                    Expr::EnrichedTuple {
-                        occurrence: Default::default(),
-                        items,
-                        synth_ty: expected.clone(),
-                        meta: Meta::new(span),
-                        ext: (),
-                    },
-                    expected.clone(),
-                ));
-            }
-        }
-    }
-
-    let (value, actual_ty) = flat.get(*cursor)?.clone();
-    *cursor += 1;
-    Some((value, actual_ty))
-}
-
 fn instantiate_signature_type(
     sig: &Signature<Routed>,
     type_args: &[Type<Routed>],
@@ -7174,49 +6224,6 @@ fn function_param_abi_from_callee_ty(
     }
 }
 
-fn peel_function_foralls(ty: &Type<Routed>) -> (Vec<crate::ast::TypeParam>, Type<Routed>) {
-    let mut params = Vec::new();
-    let mut cur = ty.clone();
-    while let Type::Forall { param, body, .. } = cur {
-        params.push(param);
-        cur = *body;
-    }
-    (params, cur)
-}
-
-fn type_has_callable_layer(ty: &Type<Routed>) -> bool {
-    matches!(peel_function_foralls(ty).1, Type::Function { .. })
-}
-
-fn selected_abi_shape_from_type(ty: &Type<Routed>) -> SelectedAbiShape {
-    let mut groups = Vec::new();
-    let mut current = ty.clone();
-    loop {
-        match current {
-            Type::Forall { body, .. } => {
-                groups.push(SelectedAbiGroup::Type);
-                current = *body;
-            }
-            Type::Function { ret, abi_arity, .. } => {
-                groups.push(SelectedAbiGroup::Value {
-                    arity: abi_arity,
-                    binders: Vec::new(),
-                });
-                current = *ret;
-            }
-            _ => break,
-        }
-    }
-    if groups.is_empty() {
-        SelectedAbiShape::Value
-    } else {
-        SelectedAbiShape::Function {
-            groups,
-            body: Box::new(SelectedAbiShape::Value),
-        }
-    }
-}
-
 fn function_return_after_call(
     callee_ty: &Type<Routed>,
     type_args: &[Type<Routed>],
@@ -7511,19 +6518,13 @@ mod tests {
         )
     }
 
-    fn assert_branch_has_packed_callable_adapter(branch: &Expr<Routed>, result_name: &str) {
+    fn assert_callable_branch_keeps_its_signature(branch: &Expr<Routed>, result_name: &str) {
         assert!(
-            matches!(branch, Expr::Let { name, value, body, .. }
-                if matches!(value.as_ref(), Expr::FnExpr { body, .. }
-                    if matches!(body.as_ref(), Expr::LowBoundRef { name, .. }
-                        if name == result_name))
-                    && matches!(body.as_ref(), Expr::FnExpr { sig, body, .. }
-                        if sig.value_param_count() == 1
-                            && matches!(body.as_ref(), Expr::LowIndirectCall { callee, args, .. }
-                                if args.len() == 2
-                                    && matches!(callee.as_ref(), Expr::LowBoundRef { name: callee_name, .. }
-                                        if callee_name == name)))),
-            "branch-local flat callable must be adapted to one packed product argument: {branch:#?}"
+            matches!(branch, Expr::FnExpr { sig, body, .. }
+                if sig.value_param_count() == 2
+                    && matches!(body.as_ref(), Expr::LowBoundRef { name, .. }
+                        if name == result_name)),
+            "a selected branch retains its callable's own binders and result: {branch:#?}"
         );
     }
 
@@ -7621,54 +6622,6 @@ mod tests {
             .unwrap_or_else(|| panic!("missing routed function `{module}.{name}`"))
     }
 
-    fn unwrap_function_adapter_type_stage<'a>(
-        adapter: &'a Expr<Routed>,
-        expected_callee: &str,
-    ) -> (&'a str, &'a Expr<Routed>) {
-        let Expr::LowIndirectCall {
-            callee,
-            type_args,
-            args,
-            ..
-        } = adapter
-        else {
-            panic!("a function adapter type stage must expose one residual: {adapter:#?}");
-        };
-        assert!(type_args.is_empty());
-        assert!(args.is_empty());
-        let Expr::FnExpr { sig, body, .. } = callee.as_ref() else {
-            panic!("a function adapter type stage must wrap a closure: {callee:#?}");
-        };
-        assert_eq!(
-            sig.groups,
-            vec![
-                SignatureGroupKind::Value { len: 0 },
-                SignatureGroupKind::Type { len: 1 },
-            ]
-        );
-        let [SignatureParam::Type(param)] = sig.params.as_slice() else {
-            panic!("a function adapter type stage must bind one type: {sig:#?}");
-        };
-        let Expr::Let {
-            name, value, body, ..
-        } = body.as_ref()
-        else {
-            panic!("a function adapter type stage must bind its residual: {body:#?}");
-        };
-        let Expr::LowTypeApplication {
-            callee, type_arg, ..
-        } = value.as_ref()
-        else {
-            panic!("a function adapter type stage must apply its source: {value:#?}");
-        };
-        assert!(matches!(callee.as_ref(), Expr::LowBoundRef { name, .. }
-            if name == expected_callee));
-        assert!(matches!(type_arg, Type::Path { segments, args, .. }
-            if args.is_empty()
-                && segments.as_slice() == [PathSegment::new(param.name.clone(), param.span)]));
-        (name, body)
-    }
-
     #[test]
     fn returned_forall_type_application_keeps_one_boundary_per_binder() {
         let routed = full_pipeline_to_routed(&[(
@@ -7711,23 +6664,47 @@ mod tests {
              fn caller() -> N { stage()(N)(value()) }",
         )]);
         let Expr::Let {
+            name: type_result,
             value: type_stage,
-            body: value_stage,
+            body,
             ..
         } = &routed_fn(&routed, "test", "caller").body
         else {
             panic!(
-                "the type stage must be sequenced before the adapted value layer: {:#?}",
+                "the type stage must execute before the value argument: {:#?}",
                 routed_fn(&routed, "test", "caller").body
             )
         };
         assert!(
             matches!(type_stage.as_ref(), Expr::LowTypeApplication { .. }),
-            "the staging let must evaluate the type application first: {type_stage:?}"
+            "the first binding must perform the type application: {type_stage:?}"
         );
+        let Expr::Let {
+            name: value_callee,
+            value,
+            body,
+            ..
+        } = body.as_ref()
+        else {
+            panic!("the selected value call must bind its callee before its argument: {body:#?}")
+        };
+        assert!(matches!(value.as_ref(), Expr::LowBoundRef { name, .. } if name == type_result));
+        let Expr::Let {
+            name: value_argument,
+            value,
+            body,
+            ..
+        } = body.as_ref()
+        else {
+            panic!("the effectful value argument must follow the callee: {body:#?}")
+        };
+        assert!(matches!(value.as_ref(), Expr::LowHostCall { name, .. } if name == "value"));
         assert!(
-            first_low_host_call(value_stage).is_some_and(|name| name == "value"),
-            "the effectful value argument must remain in the later value stage: {value_stage:?}"
+            matches!(body.as_ref(), Expr::LowClosureCall { name, args, .. }
+                if name == value_callee
+                    && matches!(args.as_slice(), [Expr::LowBoundRef { name, .. }]
+                        if name == value_argument)),
+            "the final call must consume the staged callee and argument: {body:#?}"
         );
     }
 
@@ -8302,7 +7279,6 @@ mod tests {
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let callee: Expr<Enriched> = Expr::EnrichedFieldGet {
             occurrence: Default::default(),
@@ -8335,10 +7311,6 @@ mod tests {
         assert_unit_abi(
             "generic-call inference",
             lowerer.enriched_expr_type_for_inference(&callee),
-        );
-        assert_unit_abi(
-            "source adaptation",
-            lowerer.enriched_expr_type_for_source_adapter(&callee),
         );
         let routed_callee = lowerer.lower_expr(&callee);
         assert_unit_abi(
@@ -8410,7 +7382,6 @@ mod tests {
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let unit = Type::Unit { meta: test_meta() };
         let local_text = Type::synth_path(vec!["Text".to_owned()], vec![unit.clone()], span);
@@ -8458,65 +7429,30 @@ mod tests {
         );
     }
 
-    fn assert_flat_payload_adapted_to_packed_storage(payload: &Expr<Routed>) {
-        let Expr::Let {
-            name, value, body, ..
-        } = payload
-        else {
-            panic!(
-                "the stored flat payload must stage its function before adapting it: {payload:?}"
-            )
+    fn assert_flat_callable_payload_keeps_its_signature(
+        payload: &Expr<Routed>,
+        returned_binding: Option<&str>,
+    ) {
+        let Expr::FnExpr { sig, body, .. } = payload else {
+            panic!("a callable payload must retain its construction site: {payload:#?}")
         };
-        let Expr::FnExpr {
-            sig: source_sig, ..
-        } = value.as_ref()
-        else {
-            panic!("the staging let must retain the supplied flat function: {value:?}")
-        };
+        assert_eq!(sig.value_param_count(), 2);
         assert_eq!(
-            source_sig.value_param_count(),
-            2,
-            "the supplied flat function must retain its two-parameter ABI"
+            sig.params
+                .iter()
+                .filter(|p| matches!(p, SignatureParam::Type(_)))
+                .count(),
+            1
         );
-        let (type_stage, body) = unwrap_function_adapter_type_stage(body, name);
-        let Expr::FnExpr { sig, body, .. } = body else {
-            panic!("the staged payload must be wrapped in a value adapter: {body:?}")
-        };
-        assert_eq!(
-            sig.value_param_count(),
-            1,
-            "the adapter must expose the declared one-product-parameter ABI"
-        );
-        let adapter_param_name = &sig
-            .value_params()
-            .next()
-            .expect("the adapter has exactly one value parameter")
-            .name;
-        let Expr::LowIndirectCall { callee, args, .. } = body.as_ref() else {
-            panic!("the adapter must invoke the supplied flat function: {body:?}")
-        };
-        assert_eq!(
-            args.len(),
-            2,
-            "the flat source closure must receive two slots"
-        );
-        assert!(
-            matches!(callee.as_ref(), Expr::LowBoundRef { name: callee_name, .. }
-                if callee_name == type_stage),
-            "the adapter must call the residual from its type stage: {callee:?}"
-        );
-        for (index, arg) in args.iter().enumerate() {
-            assert!(
-                matches!(arg, Expr::EnrichedProject {
-                    target,
-                    index: projected_index,
-                    arity: 2,
-                    ..
-                } if *projected_index == index
-                    && matches!(target.as_ref(), Expr::LowBoundRef { name, .. }
-                        if name == adapter_param_name)),
-                "the adapter must project flat slot {index} from its packed argument: {arg:?}"
-            );
+        match returned_binding {
+            Some(expected) => assert!(
+                matches!(body.as_ref(), Expr::LowBoundRef { name, .. } if name == expected),
+                "the callable must retain its authored bound result: {body:#?}",
+            ),
+            None => assert!(
+                matches!(body.as_ref(), Expr::Unit { .. }),
+                "the callable must retain its authored Unit result: {body:#?}",
+            ),
         }
     }
 
@@ -8828,7 +7764,7 @@ mod tests {
         let Expr::LowNewtypeCtor { payload, .. } = &routed_fn(&routed, "test", "flat").body else {
             panic!("the local flat fixture must lower to a newtype constructor")
         };
-        assert_flat_payload_adapted_to_packed_storage(payload);
+        assert_flat_callable_payload_keeps_its_signature(payload, None);
 
         let Expr::LowNewtypeCtor { payload, .. } = &routed_fn(&routed, "test", "packed").body
         else {
@@ -8845,7 +7781,7 @@ mod tests {
         else {
             panic!("the local existential fixture must lower to a newtype constructor")
         };
-        assert_flat_payload_adapted_to_packed_storage(payload);
+        assert_flat_callable_payload_keeps_its_signature(payload, Some("_left"));
     }
 
     #[test]
@@ -8897,7 +7833,7 @@ mod tests {
         else {
             panic!("the qualified flat fixture must lower to a newtype constructor")
         };
-        assert_flat_payload_adapted_to_packed_storage(payload);
+        assert_flat_callable_payload_keeps_its_signature(payload, None);
 
         let Expr::LowQualifiedNewtypeMember { payload, .. } =
             &routed_fn(&routed, "main", "packed").body
@@ -8918,14 +7854,14 @@ mod tests {
         else {
             panic!("the qualified existential fixture must lower to a newtype constructor")
         };
-        assert_flat_payload_adapted_to_packed_storage(payload);
+        assert_flat_callable_payload_keeps_its_signature(payload, Some("_left"));
 
         let Expr::LowQualifiedNewtypeMember { payload, .. } =
             &routed_fn(&routed, "main", "nominal_result").body
         else {
             panic!("the qualified nominal-result fixture must lower to a newtype constructor")
         };
-        assert_two_forall_flat_source_adapter(payload);
+        assert_callable_keeps_two_type_stages(payload);
     }
 
     #[test]
@@ -9020,7 +7956,7 @@ mod tests {
     }
 
     #[test]
-    fn computed_function_value_is_staged_before_top_level_abi_adapter() {
+    fn computed_function_argument_keeps_its_single_producer_stage() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
             "module test; \
@@ -9037,33 +7973,14 @@ mod tests {
         let [payload] = args.as_slice() else {
             panic!("the local call must carry its one function argument: {args:?}")
         };
-        let Expr::Let {
-            name, value, body, ..
-        } = payload
-        else {
-            panic!("a computed function value must be evaluated before its adapter: {payload:?}")
-        };
         assert!(
-            matches!(value.as_ref(), Expr::LowIndirectCall {
-                callee,
-                type_args,
-                args,
-                ..
+            matches!(payload, Expr::LowIndirectCall {
+                callee, type_args, args, ..
             } if type_args.is_empty()
                 && args.is_empty()
                 && matches!(callee.as_ref(), Expr::LowHostFnValueRef { name, .. }
                     if name == "make")),
-            "the staging let must advance the original host function once: {value:?}"
-        );
-        let (type_stage, body) = unwrap_function_adapter_type_stage(body, name);
-        let Expr::FnExpr { body, .. } = body else {
-            panic!("the staged value must feed the existing value adapter: {body:?}")
-        };
-        assert!(
-            matches!(body.as_ref(), Expr::LowIndirectCall { callee, .. }
-                if matches!(callee.as_ref(), Expr::LowBoundRef { name: callee_name, .. }
-                    if callee_name == type_stage)),
-            "the adapter must call the staged value, not reevaluate the producer: {body:?}"
+            "the argument evaluates its producing host stage exactly once: {payload:#?}"
         );
     }
 
@@ -9119,7 +8036,7 @@ mod tests {
     }
 
     #[test]
-    fn cps_continuations_share_one_exact_type_adapter_for_all_value_forms() {
+    fn cps_continuations_retain_their_exact_type_for_all_value_forms() {
         let routed = full_pipeline_to_routed(&[(
             "test.kio",
             "module test; \
@@ -9164,37 +8081,12 @@ mod tests {
         };
 
         assert!(matches!(cps("literal"), Expr::FnExpr { .. }));
-        let Expr::Let {
-            name: named_stage,
-            value: named_value,
-            body: named_adapter,
-            ..
-        } = cps("named_value")
-        else {
-            panic!("the named continuation must be captured once")
-        };
         assert!(
-            matches!(named_value.as_ref(), Expr::LowModuleFnValueRef { mangled, .. }
+            matches!(cps("named_value"), Expr::LowModuleFnValueRef { mangled, .. }
             if mangled == "named")
         );
-        let (_named_residual, named_adapter) =
-            unwrap_function_adapter_type_stage(named_adapter, named_stage);
-        assert!(matches!(named_adapter, Expr::FnExpr { .. }));
-
-        let Expr::Let {
-            name: let_stage,
-            value: let_value,
-            body: let_adapter,
-            ..
-        } = cps("let_value")
-        else {
-            panic!("the let-bound continuation must be captured once")
-        };
-        assert!(matches!(let_value.as_ref(), Expr::LowBoundRef { name, .. }
+        assert!(matches!(cps("let_value"), Expr::LowBoundRef { name, .. }
             if name == "continuation"));
-        let (_let_residual, let_adapter) =
-            unwrap_function_adapter_type_stage(let_adapter, let_stage);
-        assert!(matches!(let_adapter, Expr::FnExpr { .. }));
         assert!(matches!(
             &routed_fn(&routed, "test", "let_value").body,
             Expr::Let { value, .. }
@@ -9348,21 +8240,9 @@ mod tests {
             let Expr::LowCpsProjectorApply { continuation, .. } = applied_cps(application) else {
                 unreachable!()
             };
-            let Expr::Let {
-                name: staged_continuation,
-                body,
-                ..
-            } = continuation.as_ref()
-            else {
-                panic!(
-                    "each retained reference must capture its continuation once: {continuation:#?}"
-                )
-            };
-            let (_type_stage, body) = unwrap_function_adapter_type_stage(body, staged_continuation);
             assert!(
-                matches!(body, Expr::FnExpr { body, .. }
-                    if matches!(body.as_ref(), Expr::Let { .. })),
-                "each retained reference must recover and eagerly stage its recursive function-result adapter: {continuation:#?}"
+                matches!(continuation.as_ref(), Expr::LowBoundRef { name, .. }
+                if name == "continuation")
             );
         }
     }
@@ -9403,83 +8283,15 @@ mod tests {
         let Expr::LowCpsProjectorApply { continuation, .. } = cps.as_ref() else {
             panic!("the final call must recover to a CPS projector application: {cps:#?}");
         };
-        let Expr::Let {
-            name: staged_continuation,
-            body,
-            ..
-        } = continuation.as_ref()
-        else {
-            panic!("the retained continuation must be captured once: {continuation:#?}")
-        };
-        let (_type_stage, body) = unwrap_function_adapter_type_stage(body, staged_continuation);
         assert!(
-            matches!(body, Expr::FnExpr { body, .. }
-                if matches!(body.as_ref(), Expr::Let { body, .. }
-                    if matches!(body.as_ref(), Expr::FnExpr { .. }))),
-            "the retained continuation must adapt the original flat `f`; the later packed `f` must not rebind its descriptor: {continuation:#?}"
+            matches!(continuation.as_ref(), Expr::LowBoundRef { name, .. }
+            if name == "continuation")
         );
-    }
-
-    #[test]
-    fn retained_continuation_alias_chain_keeps_constant_size_links() {
-        let span = Span::new(0, 0);
-        let pair = product_ty(path_ty("I32"), path_ty("I32"));
-        let expected = fn_ty(pair, path_ty("I32"), 1);
-        let ctx = LoweringCtx::default();
-        let lowerer = Lowerer {
-            bound: std::cell::RefCell::new(Vec::new()),
-            type_bound: std::cell::RefCell::new(Vec::new()),
-            ctx: &ctx,
-            module_path: "test".to_owned(),
-            module_ctx: ModuleCtx::default(),
-            host_env: HostEnvScope::default(),
-            next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
+        let Expr::Let { value, .. } = continuation_body.as_ref() else {
+            unreachable!()
         };
-        lowerer.push_bound_routed_with_abi(
-            "f0",
-            Some(expected.clone()),
-            Some(SelectedAbiShape::Function {
-                groups: vec![SelectedAbiGroup::Value {
-                    arity: 2,
-                    binders: Vec::new(),
-                }],
-                body: Box::new(SelectedAbiShape::Value),
-            }),
-        );
-
-        for index in 1..=256 {
-            let previous = format!("f{}", index - 1);
-            let shape = lowerer.selected_abi_shape(&Expr::LowBoundRef {
-                occurrence: Default::default(),
-                name: previous,
-                meta: Meta::new(span),
-                ext: (),
-            });
-            assert!(
-                matches!(shape, SelectedAbiShape::BoundRef { .. }),
-                "an alias descriptor must retain one stable link, not clone its predecessor"
-            );
-            lowerer.push_bound_routed_with_abi(
-                &format!("f{index}"),
-                Some(expected.clone()),
-                Some(shape),
-            );
-        }
-
-        let final_shape = lowerer.selected_abi_shape(&Expr::LowBoundRef {
-            occurrence: Default::default(),
-            name: "f256".to_owned(),
-            meta: Meta::new(span),
-            ext: (),
-        });
-        let actual = lowerer
-            .selected_shape_abi_type(&final_shape, &expected, &[])
-            .expect("a deep alias chain must resolve to its original callable shape");
-        assert!(
-            matches!(actual, Type::Function { abi_arity: 2, .. }),
-            "the alias chain must retain the original flat two-slot ABI: {actual:#?}"
-        );
+        assert!(matches!(value.as_ref(), Expr::FnExpr { body, .. }
+            if matches!(body.as_ref(), Expr::LowBoundRef { name, .. } if name == "f")));
     }
 
     #[test]
@@ -9502,32 +8314,19 @@ mod tests {
         else {
             panic!("the existential projector call must recover to CPS");
         };
-        let Expr::Let {
-            name: staged_continuation,
-            body,
-            ..
-        } = continuation.as_ref()
-        else {
-            panic!("the continuation value must be staged once: {continuation:#?}");
+        let Expr::FnExpr { sig, body, .. } = continuation.as_ref() else {
+            panic!("the continuation preserves its declared stages: {continuation:#?}");
         };
-        let (_type_stage, body) = unwrap_function_adapter_type_stage(body, staged_continuation);
-        let Expr::FnExpr { body, .. } = body else {
-            panic!("the continuation adapter must retain its value stage: {body:#?}");
-        };
-        let Expr::Let {
-            name, value, body, ..
-        } = body.as_ref()
-        else {
-            panic!("the produced function must be staged before its adapter: {body:#?}");
-        };
-        assert_eq!(name, "__kio_fn0_result__");
-        assert!(matches!(value.as_ref(), Expr::LowIndirectCall { .. }));
-        let Expr::FnExpr { body, .. } = body.as_ref() else {
-            panic!("the produced function must be repacked: {body:#?}");
-        };
-        assert!(matches!(body.as_ref(), Expr::LowIndirectCall { callee, .. }
-            if matches!(callee.as_ref(), Expr::LowBoundRef { name, .. }
-                if name == "__kio_fn0_result__")));
+        assert_eq!(
+            sig.params
+                .iter()
+                .filter(|p| matches!(p, SignatureParam::Type(_)))
+                .count(),
+            1
+        );
+        assert_eq!(sig.value_param_count(), 1);
+        assert!(matches!(body.as_ref(), Expr::FnExpr { sig, .. }
+            if sig.value_param_count() == 2));
     }
 
     #[test]
@@ -9760,94 +8559,6 @@ mod tests {
     }
 
     #[test]
-    fn declined_adapter_route_does_not_change_exact_routed_body() {
-        fn lowerer<'a>(ctx: &'a LoweringCtx) -> Lowerer<'a> {
-            Lowerer {
-                bound: std::cell::RefCell::new(Vec::new()),
-                type_bound: std::cell::RefCell::new(Vec::new()),
-                ctx,
-                module_path: "test".to_owned(),
-                module_ctx: ModuleCtx::default(),
-                host_env: HostEnvScope::default(),
-                next_call_callee_scope: Cell::new(0),
-                next_selected_abi_binder: Cell::new(0),
-            }
-        }
-
-        let span = Span::new(0, 0);
-        let unchanged = fn_ty(path_ty("A"), path_ty("A"), 1);
-        let target = fn_ty(product_ty(path_ty("A"), path_ty("B")), path_ty("A"), 1);
-        let source = fn_ty(product_ty(path_ty("A"), path_ty("B")), path_ty("A"), 2);
-        let ctx = LoweringCtx::default();
-
-        let probed = lowerer(&ctx);
-        assert!(
-            probed
-                .function_value_adapter(
-                    low_bound_ref("unchanged", span),
-                    &unchanged,
-                    &unchanged,
-                    span,
-                )
-                .is_none()
-        );
-        let after_declined_probe = probed
-            .function_value_adapter(low_bound_ref("callee", span), &target, &source, span)
-            .expect("the packed-to-flat boundary needs an adapter");
-
-        let direct = lowerer(&ctx);
-        let without_probe = direct
-            .function_value_adapter(low_bound_ref("callee", span), &target, &source, span)
-            .expect("the packed-to-flat boundary needs an adapter");
-
-        assert_eq!(after_declined_probe, without_probe);
-    }
-
-    #[test]
-    fn declined_outer_adapter_probe_does_not_consume_nested_adapter_binder() {
-        let enriched = full_pipeline_to_enriched(&[(
-            "test.kio",
-            "module test; \
-             type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn target[A]() -> Lens(A, A) { \
-               (
-                 , .(value: A) -> A { value }
-                 , .(new_value: A, _old_value: A) -> A { new_value }
-                 ) \
-             }",
-        )]);
-        let module = &enriched.module("test").expect("test module").module;
-        let target = module
-            .items
-            .iter()
-            .find_map(|item| match item {
-                Item::FnDef(def) if def.name == "target" => Some(def),
-                _ => None,
-            })
-            .expect("target function");
-        let span = target.meta.span;
-        let tuple = &target.body;
-        let Expr::EnrichedTuple { synth_ty, .. } = tuple else {
-            panic!("expected the lens product: {tuple:?}")
-        };
-        let ctx = LoweringCtx::from_package(&enriched);
-
-        let lowerer = Lowerer::new_for_module(&ctx, module, None, "test");
-        lowerer.push_type_bound("A");
-        let expected = lowerer.routed_type(synth_ty);
-        let after_declined_probe =
-            lowerer.lower_value_arg_as_value(tuple.clone(), &expected, span, true);
-        lowerer.pop_type_bound();
-
-        let direct_lowerer = Lowerer::new_for_module(&ctx, module, None, "test");
-        direct_lowerer.push_type_bound("A");
-        let direct = direct_lowerer.lower_expr_owned(tuple.clone());
-        direct_lowerer.pop_type_bound();
-
-        assert_eq!(after_declined_probe, direct);
-    }
-
-    #[test]
     fn generated_call_binders_ignore_unrelated_prior_declarations() {
         fn first_generated_callee(expr: &Expr<Routed>) -> Option<&str> {
             match expr {
@@ -9867,27 +8578,17 @@ mod tests {
         let baseline = full_pipeline_to_routed(&[(
             "test.kio",
             "module test; \
-             type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn target[A](_unit: .) -> Lens(A, A) { \
-               let get = .(value: A) -> A { value }; \
-               let put = .(new_value: A, _old_value: A) -> A { new_value }; \
-               (get, put) \
-             }",
+             host fn make() -> . -> .; \
+             host fn observe() -> .; \
+             fn target() -> . { make()(observe()) }",
         )]);
         let extended = full_pipeline_to_routed(&[(
             "test.kio",
             "module test; \
-             type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn unrelated[A](_unit: .) -> Lens(A, A) { \
-               let get = .(value: A) -> A { value }; \
-               let put = .(new_value: A, _old_value: A) -> A { new_value }; \
-               (get, put) \
-             } \
-             fn target[A](_unit: .) -> Lens(A, A) { \
-               let get = .(value: A) -> A { value }; \
-               let put = .(new_value: A, _old_value: A) -> A { new_value }; \
-               (get, put) \
-             }",
+             host fn make() -> . -> .; \
+             host fn observe() -> .; \
+             fn unrelated() -> . { make()(observe()) } \
+             fn target() -> . { make()(observe()) }",
         )]);
 
         let baseline_name = first_generated_callee(&routed_fn(&baseline, "test", "target").body);
@@ -10016,7 +8717,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     }
 
     #[test]
-    fn imported_newtype_function_adapter_keeps_its_provider_identity() {
+    fn imported_function_value_keeps_its_nominal_provider_identity() {
         let routed = full_pipeline_to_routed(&[
             (
                 "provider.kio",
@@ -10056,19 +8757,14 @@ pub fn keep_right(value: Shared) -> Shared { value }
         for caller in ["absent", "collision"] {
             let args = first_low_module_call(&routed_fn(&routed, caller, "exercise").body, "run")
                 .expect("exercise must call the imported callback consumer");
-            let [Expr::Let { body, .. }] = args.as_slice() else {
-                panic!("the flat callback must be staged before adaptation: {args:#?}")
+            let [Expr::LowModuleFnValueRef { sig, .. }] = args.as_slice() else {
+                panic!("the imported callback must retain its typed value reference: {args:#?}")
             };
-            let Expr::FnExpr { sig, .. } = body.as_ref() else {
-                panic!("the staged callback must feed a function adapter: {body:#?}")
-            };
-            let Some(Type::Product { left, .. }) =
+            assert_eq!(sig.value_param_count(), 2);
+            let Some(Type::Path { segments, .. }) =
                 sig.value_params().next().and_then(|p| p.ty.as_ref())
             else {
-                panic!("the adapter must expose the declared packed callback domain: {sig:#?}")
-            };
-            let Type::Path { segments, .. } = left.as_ref() else {
-                panic!("the callback's first slot must retain its nominal type: {left:#?}")
+                panic!("the callback's first slot must retain its nominal type: {sig:#?}")
             };
             assert_eq!(
                 segments.iter().map(PathSegment::as_str).collect::<Vec<_>>(),
@@ -10096,8 +8792,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             bound: std::cell::RefCell::new(vec![BoundLocal {
                 name: "value".to_owned(),
                 ty: Some(actual.clone()),
-                selected_abi_binder: 0,
-                selected_abi_shape: None,
             }]),
             type_bound: std::cell::RefCell::new(Vec::new()),
             ctx: &ctx,
@@ -10105,7 +8799,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(1),
         };
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
@@ -10168,7 +8861,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let type_for = |alias: &str| {
             lowerer.function_value_type_for_path(
@@ -10210,14 +8902,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
                 BoundLocal {
                     name: "nominal".to_owned(),
                     ty: Some(nominal),
-                    selected_abi_binder: 0,
-                    selected_abi_shape: None,
                 },
                 BoundLocal {
                     name: "generic".to_owned(),
                     ty: Some(inferred.clone()),
-                    selected_abi_binder: 1,
-                    selected_abi_shape: None,
                 },
             ]),
             type_bound: std::cell::RefCell::new(Vec::new()),
@@ -10226,7 +8914,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(2),
         };
         let sig = Signature::new(vec![
             SignatureParam::Value(Param {
@@ -10333,7 +9020,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
 
         let Expr::FnExpr {
@@ -10472,11 +9158,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
             ));
         }
         for (name, expected_member) in [("constructor", "make"), ("projector", "open")] {
-            let Expr::Let { value, .. } = &routed_fn(&routed, "consumer", name).body else {
-                panic!("{name} should bind its explicitly instantiated member value");
-            };
-            let Expr::LowTypeApplication { callee, .. } = value.as_ref() else {
-                panic!("{name} should instantiate the polymorphic member eta");
+            let Expr::LowTypeApplication { callee, .. } =
+                &routed_fn(&routed, "consumer", name).body
+            else {
+                panic!("{name} should return its explicitly instantiated member value");
             };
             let Expr::FnExpr { body, .. } = callee.as_ref() else {
                 panic!("{name} should eta-expand the terminal member");
@@ -10542,7 +9227,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
 
         for segments in [vec!["Envelope", "pack"], vec!["r", "Envelope", "pack"]] {
@@ -10690,7 +9374,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
 
         let Expr::FnExpr {
@@ -10799,7 +9482,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
 
         let lowered = lowerer.lower_path(
@@ -10884,7 +9566,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
 
         let Expr::FnExpr {
@@ -11220,7 +9901,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let sig = Signature::new(vec![
             SignatureParam::Type(crate::ast::TypeParam {
@@ -11309,8 +9989,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             bound: std::cell::RefCell::new(vec![BoundLocal {
                 name: "f".to_owned(),
                 ty: Some(actual_fn.clone()),
-                selected_abi_binder: 0,
-                selected_abi_shape: None,
             }]),
             type_bound: std::cell::RefCell::new(Vec::new()),
             ctx: &ctx,
@@ -11318,7 +9996,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx,
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(1),
         };
         let bound_f = Expr::Path {
             occurrence: Default::default(),
@@ -11328,15 +10005,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
 
         assert!(matches!(
-            lowerer.lower_value_arg_as_value(bound_f.clone(), &actual_fn, span, true),
+            lowerer.lower_expr(&bound_f),
             Expr::LowBoundRef { .. }
         ));
-        let mut canonical = CanonicalCallArgs::default();
-        lowerer.lower_value_arg_as_abi(bound_f, &actual_fn, span, true, &mut canonical);
-        assert!(matches!(
-            canonical.args.as_slice(),
-            [Expr::LowBoundRef { .. }]
-        ));
+        assert_eq!(lowerer.bound_routed_type("f"), Some(actual_fn.clone()));
 
         for call in [
             Expr::LowModuleCall {
@@ -11396,7 +10068,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
     }
 
     #[test]
-    fn nested_polymorphic_call_reaches_function_group_adapter() {
+    fn nested_polymorphic_call_reconstructs_its_residual_type() {
         let span = Span::new(0, 0);
         let forall = |name: &str, body: Type<Routed>| Type::Forall {
             param: crate::ast::TypeParam {
@@ -11412,18 +10084,12 @@ pub fn keep_right(value: Shared) -> Shared { value }
             "A",
             fn_ty(product_ty(path_ty("String"), path_ty("A")), path_ty("R"), 1),
         );
-        let source_cont = forall(
-            "B",
-            fn_ty(product_ty(path_ty("String"), path_ty("B")), path_ty("R"), 2),
-        );
         let p_ty = fn_ty(path_ty("Box"), target_cont.clone(), 1);
         let ctx = LoweringCtx::default();
         let lowerer = Lowerer {
             bound: std::cell::RefCell::new(vec![BoundLocal {
                 name: "p".to_owned(),
                 ty: Some(p_ty),
-                selected_abi_binder: 0,
-                selected_abi_shape: None,
             }]),
             type_bound: std::cell::RefCell::new(Vec::new()),
             ctx: &ctx,
@@ -11431,7 +10097,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(1),
         };
         let first_call = Expr::LowClosureCall {
             occurrence: Default::default(),
@@ -11450,51 +10115,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             lowerer.lowered_expr_type(&first_call),
             Some(target_cont.clone())
         );
-
-        let adapted = lowerer
-            .function_value_adapter(
-                Expr::LowBoundRef {
-                    occurrence: Default::default(),
-                    name: "k".to_owned(),
-                    meta: test_meta(),
-                    ext: (),
-                },
-                &target_cont,
-                &source_cont,
-                span,
-            )
-            .expect("one product slot must adapt to two source binders");
-        let Expr::Let {
-            name, value, body, ..
-        } = adapted
-        else {
-            panic!("a top-level function adapter must stage its callee");
-        };
-        assert!(
-            matches!(value.as_ref(), Expr::LowBoundRef { name, .. } if name == "k"),
-            "the staging let must preserve the original callee: {value:?}"
-        );
-        let (type_stage, body) = unwrap_function_adapter_type_stage(&body, &name);
-        let Expr::FnExpr { sig, body, .. } = body else {
-            panic!("function adapter must synthesize a value closure after its type stage");
-        };
-        assert_eq!(sig.canonical_groups().len(), 1);
-        let Expr::LowIndirectCall {
-            callee,
-            type_args,
-            args,
-            ..
-        } = body.as_ref()
-        else {
-            panic!("function adapter must call the original continuation");
-        };
-        assert!(
-            matches!(callee.as_ref(), Expr::LowBoundRef { name: callee_name, .. }
-                if callee_name == type_stage),
-            "the adapter must call the residual continuation: {callee:?}"
-        );
-        assert!(type_args.is_empty());
-        assert_eq!(args.len(), 2);
     }
 
     #[test]
@@ -11509,7 +10129,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let outer_sig =
             Signature::from_parts(Vec::new(), vec![SignatureGroupKind::Value { len: 0 }]);
@@ -11575,7 +10194,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let conditional = Expr::EnrichedConditional {
             occurrence: Default::default(),
@@ -11595,8 +10213,8 @@ pub fn keep_right(value: Shared) -> Shared { value }
         else {
             panic!("conditional must remain structurally recovered")
         };
-        assert_branch_has_packed_callable_adapter(&then_branch, "left");
-        assert_branch_has_packed_callable_adapter(&else_branch, "right");
+        assert_callable_branch_keeps_its_signature(&then_branch, "left");
+        assert_callable_branch_keeps_its_signature(&else_branch, "right");
     }
 
     #[test]
@@ -11662,7 +10280,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let source = Type::Forall {
             param: crate::ast::TypeParam {
@@ -11758,7 +10375,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let sig = Signature::from_parts(Vec::new(), vec![SignatureGroupKind::Value { len: 0 }]);
         let inferred: Expr<Enriched> = Expr::FnExpr {
@@ -11769,7 +10385,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             meta: test_meta_enriched(),
             caps: (),
         };
-        assert!(lowerer.enriched_expr_type_for_adapter(&inferred).is_none());
+        assert!(lowerer.enriched_expr_type_for_value(&inferred).is_none());
         assert!(
             lowerer
                 .enriched_expr_type_for_inference(&inferred)
@@ -11785,194 +10401,19 @@ pub fn keep_right(value: Shared) -> Shared { value }
             caps: (),
         };
         assert!(matches!(
-            lowerer.enriched_expr_type_for_adapter(&written),
+            lowerer.enriched_expr_type_for_value(&written),
             Some(Type::Function { ret, .. }) if matches!(ret.as_ref(), Type::Unit { .. })
         ));
     }
 
-    #[test]
-    fn selected_callable_shape_adapts_when_nominal_result_type_is_unavailable() {
-        let span = Span::new(0, 0);
-        let ctx = LoweringCtx::default();
-        let lowerer = Lowerer {
-            bound: std::cell::RefCell::new(Vec::new()),
-            type_bound: std::cell::RefCell::new(Vec::new()),
-            ctx: &ctx,
-            module_path: "test".to_owned(),
-            module_ctx: ModuleCtx::default(),
-            host_env: HostEnvScope::default(),
-            next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
-        };
-        let forall = |name: &str, body: Type<Routed>| Type::Forall {
-            param: crate::ast::TypeParam {
-                presentation: Default::default(),
-                name: name.to_owned(),
-                span,
-                kind: None,
-            },
-            body: Box::new(body),
-            meta: test_meta(),
-        };
-        let boxed = |item: Type<Routed>| Type::synth_path(vec!["Box".to_owned()], vec![item], span);
-        let a = path_ty("A");
-        let b = path_ty("B");
-        let source = Expr::FnExpr {
-            occurrence: Default::default(),
-            sig: Signature::from_parts(
-                vec![
-                    SignatureParam::Type(crate::ast::TypeParam {
-                        presentation: Default::default(),
-                        name: "A".to_owned(),
-                        span,
-                        kind: None,
-                    }),
-                    SignatureParam::Type(crate::ast::TypeParam {
-                        presentation: Default::default(),
-                        name: "B".to_owned(),
-                        span,
-                        kind: None,
-                    }),
-                    SignatureParam::Value(Param {
-                        name: "step".to_owned(),
-                        ty: Some(fn_ty(a.clone(), b.clone(), 1)),
-                        pattern: (),
-                        meta: test_meta(),
-                    }),
-                    SignatureParam::Value(Param {
-                        name: "value".to_owned(),
-                        ty: Some(boxed(a.clone())),
-                        pattern: (),
-                        meta: test_meta(),
-                    }),
-                ],
-                vec![
-                    SignatureGroupKind::Type { len: 1 },
-                    SignatureGroupKind::Type { len: 1 },
-                    SignatureGroupKind::Value { len: 2 },
-                ],
-            ),
-            ret_ty: None,
-            body: Box::new(Expr::LowNewtypeCtor {
-                occurrence: Default::default(),
-                newtype: "Box".to_owned(),
-                member: "mk_box".to_owned(),
-                type_args: vec![b.clone()],
-                payload: Box::new(low_bound_ref("mapped", span)),
-                meta: test_meta(),
-                ext: (),
-            }),
-            meta: test_meta(),
-            caps: Default::default(),
-        };
-        assert!(
-            lowerer.lowered_expr_type(&source).is_none(),
-            "a nominal constructor must not fabricate the enclosing lambda's semantic result type"
-        );
-        let expected = forall(
-            "A",
-            forall(
-                "B",
-                fn_ty(
-                    product_ty(fn_ty(a, b.clone(), 1), boxed(path_ty("A"))),
-                    boxed(b),
-                    1,
-                ),
-            ),
-        );
-
-        let adapted = lowerer.adapt_routed_value_to_expected(source, None, &expected, span);
-        assert_two_forall_flat_source_adapter(&adapted);
-    }
-
-    #[test]
-    fn selected_callable_shape_fallback_declines_unknown_and_noncallable_values() {
-        let span = Span::new(0, 0);
-        let ctx = LoweringCtx::default();
-        let lowerer = Lowerer {
-            bound: std::cell::RefCell::new(Vec::new()),
-            type_bound: std::cell::RefCell::new(Vec::new()),
-            ctx: &ctx,
-            module_path: "test".to_owned(),
-            module_ctx: ModuleCtx::default(),
-            host_env: HostEnvScope::default(),
-            next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
-        };
-        let unit_ty = Type::Unit { meta: test_meta() };
-        let callable_expected = fn_ty(unit_ty.clone(), unit_ty.clone(), 0);
-        for value in [
-            low_bound_ref("missing", span),
-            Expr::Unit {
-                source_trivia: Default::default(),
-                occurrence: Default::default(),
-                meta: test_meta(),
-            },
-        ] {
-            assert_eq!(
-                lowerer.adapt_routed_value_to_expected(
-                    value.clone(),
-                    None,
-                    &callable_expected,
-                    span,
-                ),
-                value
-            );
-        }
-
-        let callable_value = Expr::FnExpr {
-            occurrence: Default::default(),
-            sig: Signature::from_parts(Vec::new(), vec![SignatureGroupKind::Value { len: 0 }]),
-            ret_ty: Some(unit_ty),
-            body: Box::new(Expr::Unit {
-                source_trivia: Default::default(),
-                occurrence: Default::default(),
-                meta: test_meta(),
-            }),
-            meta: test_meta(),
-            caps: Default::default(),
-        };
-        assert_eq!(
-            lowerer.adapt_routed_value_to_expected(
-                callable_value.clone(),
-                None,
-                &path_ty("Nominal"),
-                span,
-            ),
-            callable_value
-        );
-    }
-
-    fn assert_function_adapter_type_stage_param(adapter: &Expr<Routed>, expected: &str) {
-        let Expr::LowIndirectCall { callee, .. } = adapter else {
-            panic!("a function adapter type stage must be an indirect call: {adapter:#?}")
-        };
-        let Expr::FnExpr { sig, .. } = callee.as_ref() else {
-            panic!("a function adapter type stage must wrap a closure: {callee:#?}")
-        };
-        let [SignatureParam::Type(param)] = sig.params.as_slice() else {
-            panic!("a function adapter type stage must bind one type: {sig:#?}")
-        };
-        assert_eq!(param.name, expected);
-    }
-
-    fn assert_two_forall_flat_source_adapter(adapter: &Expr<Routed>) {
-        let Expr::Let {
-            name: staged_callee,
-            value,
-            body,
-            ..
-        } = adapter
-        else {
-            panic!("a callable argument must stage its source once: {adapter:#?}")
-        };
+    fn assert_callable_keeps_two_type_stages(adapter: &Expr<Routed>) {
         let Expr::FnExpr {
             sig: source_sig,
             body: source_body,
             ..
-        } = value.as_ref()
+        } = adapter
         else {
-            panic!("the staged source must retain its flat closure: {value:#?}")
+            panic!("the callable must retain its typed source directly: {adapter:#?}")
         };
         assert_eq!(
             source_sig.groups,
@@ -11986,58 +10427,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
             source_body.as_ref(),
             Expr::LowNewtypeCtor { .. } | Expr::LowQualifiedNewtypeMember { .. }
         ));
-
-        assert_function_adapter_type_stage_param(body, "A");
-        let (first_stage, body) = unwrap_function_adapter_type_stage(body, staged_callee);
-        assert_function_adapter_type_stage_param(body, "B");
-        let (second_stage, body) = unwrap_function_adapter_type_stage(body, first_stage);
-        let Expr::FnExpr { sig, body, .. } = body else {
-            panic!("the adapted residual must expose its packed value stage: {body:#?}")
-        };
-        assert_eq!(sig.groups, vec![SignatureGroupKind::Value { len: 1 }]);
-        let adapter_param = &sig
-            .value_params()
-            .next()
-            .expect("the adapter has one packed value parameter")
-            .name;
-        let Expr::LowIndirectCall { callee, args, .. } = body.as_ref() else {
-            panic!("the packed adapter must call its residual flat source: {body:#?}")
-        };
-        assert!(matches!(callee.as_ref(), Expr::LowBoundRef { name, .. }
-            if name == second_stage));
-        assert_eq!(args.len(), 2);
-        for (expected_index, arg) in args.iter().enumerate() {
-            assert!(matches!(arg, Expr::EnrichedProject {
-                target,
-                index,
-                arity: 2,
-                ..
-            } if *index == expected_index
-                && matches!(target.as_ref(), Expr::LowBoundRef { name, .. }
-                    if name == adapter_param)));
-        }
-    }
-
-    fn assert_forall_flat_source_adapter(adapter: &Expr<Routed>) {
-        let Expr::Let {
-            name: staged_callee,
-            body,
-            ..
-        } = adapter
-        else {
-            panic!("a callable argument must stage its source once: {adapter:#?}")
-        };
-        let (_type_stage, body) = unwrap_function_adapter_type_stage(body, staged_callee);
-        let Expr::FnExpr { sig, body, .. } = body else {
-            panic!("the adapted residual must expose its packed value stage: {body:#?}")
-        };
-        assert_eq!(sig.groups, vec![SignatureGroupKind::Value { len: 1 }]);
-        assert!(matches!(body.as_ref(), Expr::LowIndirectCall { args, .. }
-            if args.len() == 2));
     }
 
     #[test]
-    fn inferred_fn_expr_partial_result_adapts_inline_and_let_bound_paths() {
+    fn inferred_fn_expr_partial_results_preserve_inline_and_let_bound_calls() {
         let routed = full_pipeline_to_routed(&[(
             "test",
             "module test; \
@@ -12053,14 +10446,155 @@ pub fn keep_right(value: Shared) -> Shared { value }
              }",
         )]);
 
-        for name in ["inline", "bound"] {
-            let args = first_low_module_call(&routed_fn(&routed, "test", name).body, "consume")
-                .unwrap_or_else(|| panic!("{name} must call consume"));
-            let [adapter] = args.as_slice() else {
-                panic!("consume must receive exactly one callable: {args:#?}")
-            };
-            assert_forall_flat_source_adapter(adapter);
+        let inline_args =
+            first_low_module_call(&routed_fn(&routed, "test", "inline").body, "consume")
+                .expect("inline must call consume");
+        assert!(matches!(inline_args.as_slice(),
+            [Expr::LowIndirectCall { callee, .. }]
+            if matches!(callee.as_ref(), Expr::FnExpr { .. })));
+
+        let bound_body = &routed_fn(&routed, "test", "bound").body;
+        let Expr::Let { value, .. } = bound_body else {
+            panic!("bound must retain its authored binding: {bound_body:#?}")
+        };
+        assert!(
+            matches!(value.as_ref(), Expr::LowIndirectCall { callee, .. }
+            if matches!(callee.as_ref(), Expr::FnExpr { .. }))
+        );
+        let bound_args =
+            first_low_module_call(bound_body, "consume").expect("bound must call consume");
+        assert!(
+            matches!(bound_args.as_slice(), [Expr::LowBoundRef { name, .. }]
+            if name == "value")
+        );
+    }
+
+    #[test]
+    fn residual_forwarding_stages_preserve_tail_type_applications() {
+        use crate::backends::tail_plan::{TailContext, TailStage};
+
+        let routed = full_pipeline_to_routed(&[(
+            "test.kio",
+            "module test; \
+             host type N; \
+             fn generic_unit(next: [A] A -> A) -> . -> . { next(.) } \
+             fn explicit_unit(next: [A] . -> .) -> . -> . { next(.) } \
+             fn product(next: [A] A -> A) -> (N & N) -> (N & N) { next(N & N) } \
+             fn remaining_type(next: [A][B] (A & B) -> A) -> [B] (. & B) -> . { next(.) }",
+        )]);
+
+        for name in ["generic_unit", "explicit_unit", "product", "remaining_type"] {
+            let body = &routed_fn(&routed, "test", name).body;
+            assert!(
+                matches!(body, Expr::LowTypeApplication { callee, .. }
+                    if matches!(callee.as_ref(), Expr::LowBoundRef { name, .. } if name == "next")),
+                "{name} must evaluate and return its one selected type stage directly: {body:#?}"
+            );
+            assert_eq!(TailContext::body(body).tail_stage(), Some(TailStage::Type));
         }
+    }
+
+    #[test]
+    fn forwarding_reduction_preserves_arguments_capture_and_stage_effects() {
+        let routed = full_pipeline_to_routed(&[(
+            "test.kio",
+            "module test; \
+             host type N; \
+             fn reordered(next: (N & N) -> N) -> (N & N) -> N { \
+               .(left: N, right: N) { next(right, left) } \
+             } \
+             fn duplicated(next: (N & N) -> N) -> (N & N) -> N { \
+               .(left: N, _right: N) { next(left, left) } \
+             } \
+             fn shadowed(next: N -> N, value: N) -> (N -> N) -> N { \
+               .(next: N -> N) { next(value) } \
+             } \
+             fn computed(make: . -> N -> N) -> N -> N { \
+               .(value: N) { make(())(value) } \
+             } \
+             fn unit_effect(next: . -> ., effect: . -> .) -> . -> . { \
+               .() { next(effect()) } \
+             } \
+             fn extra_work(next: N -> N, effect: . -> .) -> N -> N { \
+               .(value: N) { effect(); next(value) } \
+             } \
+             fn wrong_witness(next: [A] . -> .) -> [A] . -> . { \
+               .[A] { next(.) } \
+             } \
+             fn delayed_types(next: [A][B] A -> A) -> [A][B] A -> A { \
+               .[A][B] { next(A, B) } \
+             }",
+        )]);
+
+        for name in [
+            "reordered",
+            "duplicated",
+            "shadowed",
+            "computed",
+            "unit_effect",
+            "extra_work",
+            "wrong_witness",
+            "delayed_types",
+        ] {
+            let body = &routed_fn(&routed, "test", name).body;
+            assert!(
+                matches!(body, Expr::FnExpr { .. }),
+                "{name} must retain its authored abstraction: {body:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn callable_result_representation_preserves_semantic_tail_calls() {
+        use crate::backends::tail_plan::{ResultChild, TailContext};
+
+        fn assert_source_call_returns(body: &Expr<Routed>) {
+            let mut context = TailContext::body(body);
+            loop {
+                context = match context.expr() {
+                    Expr::Let { .. } => context.result_child(ResultChild::LetBody),
+                    Expr::Seq { .. } => context.result_child(ResultChild::SeqBody),
+                    _ => break,
+                };
+            }
+            assert!(
+                matches!(context.expr(), Expr::LowClosureCall { .. }),
+                "the source closure call must deliver the returned value directly: {body:#?}",
+            );
+            assert!(context.tail_stage().is_some());
+        }
+
+        let routed = full_pipeline_to_routed(&[(
+            "test",
+            "module test; \
+             host fn observe() -> .; \
+             fn make() -> [A] (A & A) -> A { \
+               let source = .(_seed: .)[A] { \
+                 .(left: A, _right: A) -> A { left } \
+               }; \
+               observe(); \
+               source(()) \
+             } \
+             fn returned() -> . -> [A] (A & A) -> A { \
+               .(_outer: .) -> [A] (A & A) -> A { \
+                 let source = .(_seed: .)[A] { \
+                   .(left: A, _right: A) -> A { left } \
+                 }; \
+                 observe(); \
+                 source(()) \
+               } \
+             }",
+        )]);
+        let make = routed_fn(&routed, "test", "make");
+        assert_source_call_returns(&make.body);
+        let returned = routed_fn(&routed, "test", "returned");
+        let Expr::FnExpr { body, .. } = &returned.body else {
+            panic!(
+                "returning a callable must preserve its delayed body: {:#?}",
+                returned.body
+            )
+        };
+        assert_source_call_returns(body);
     }
 
     #[test]
@@ -12092,13 +10626,25 @@ pub fn keep_right(value: Shared) -> Shared { value }
              }",
         )]);
 
-        for name in ["inferred", "called"] {
+        for name in ["inferred", "explicit", "called"] {
             let args = first_low_module_call(&routed_fn(&routed, "test", name).body, "consume")
                 .unwrap_or_else(|| panic!("{name} must call consume"));
-            let [adapter] = args.as_slice() else {
-                panic!("consume must receive exactly one callable: {args:#?}")
+            let [Expr::LowIndirectCall { callee, .. }] = args.as_slice() else {
+                panic!("consume must receive the anonymous call directly: {args:#?}")
             };
-            assert_forall_flat_source_adapter(adapter);
+            let Expr::FnExpr { body, .. } = callee.as_ref() else {
+                panic!("the anonymous producer must remain a direct callable: {callee:#?}")
+            };
+            if name == "called" {
+                let Expr::Let { body, .. } = body.as_ref() else {
+                    panic!("the callable must remain bound before invocation: {body:#?}")
+                };
+                assert!(matches!(body.as_ref(), Expr::LowClosureCall { name, .. }
+                    if name == "make"));
+            } else {
+                assert!(matches!(body.as_ref(), Expr::LowIndirectCall { callee, .. }
+                    if matches!(callee.as_ref(), Expr::FnExpr { .. })));
+            }
         }
 
         let explicit_args =
@@ -12117,7 +10663,8 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
         assert!(matches!(ret_ty, Type::Forall { body, .. }
             if matches!(body.as_ref(), Type::Function { abi_arity: 1, .. })));
-        assert_forall_flat_source_adapter(body);
+        assert!(matches!(body.as_ref(), Expr::LowIndirectCall { callee, .. }
+            if matches!(callee.as_ref(), Expr::FnExpr { .. })));
     }
 
     #[test]
@@ -12153,166 +10700,9 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
         assert!(matches!(ret_ty, Type::Forall { body, .. }
             if matches!(body.as_ref(), Type::Function { abi_arity: 1, .. })));
-        let [source_adapter] = identity_args.as_slice() else {
-            panic!("identity must receive one adapted source: {identity_args:#?}")
-        };
-        assert_forall_flat_source_adapter(source_adapter);
-    }
-
-    #[test]
-    fn function_adapter_applies_each_source_type_stage_at_the_matching_target_stage() {
-        let span = Span::new(0, 0);
-        let forall = |name: &str, body: Type<Routed>| Type::Forall {
-            param: crate::ast::TypeParam {
-                presentation: Default::default(),
-                name: name.to_owned(),
-                span,
-                kind: None,
-            },
-            body: Box::new(body),
-            meta: test_meta(),
-        };
-        let target = forall(
-            "A",
-            forall(
-                "B",
-                fn_ty(product_ty(path_ty("B"), path_ty("B")), path_ty("B"), 1),
-            ),
-        );
-        let source = forall(
-            "X",
-            forall(
-                "Y",
-                fn_ty(product_ty(path_ty("Y"), path_ty("Y")), path_ty("Y"), 2),
-            ),
-        );
-        let ctx = LoweringCtx::default();
-        let lowerer = Lowerer {
-            bound: std::cell::RefCell::new(Vec::new()),
-            type_bound: std::cell::RefCell::new(Vec::new()),
-            ctx: &ctx,
-            module_path: "test".to_owned(),
-            module_ctx: ModuleCtx::default(),
-            host_env: HostEnvScope::default(),
-            next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
-        };
-
-        let adapted = lowerer
-            .function_value_adapter(low_bound_ref("source", span), &target, &source, span)
-            .expect("the source's flat value group must adapt to one product slot");
-        let Expr::Let {
-            name: staged_callee,
-            body,
-            ..
-        } = adapted
-        else {
-            panic!("the source value must be captured once");
-        };
-        let (first_stage, body) = unwrap_function_adapter_type_stage(&body, &staged_callee);
-        let (second_stage, body) = unwrap_function_adapter_type_stage(body, first_stage);
-
-        let Expr::FnExpr { sig, body, .. } = body else {
-            panic!("the target value group must remain after both type stages: {body:#?}");
-        };
-        assert_eq!(sig.groups, vec![SignatureGroupKind::Value { len: 1 }]);
-        let Expr::LowIndirectCall {
-            callee,
-            type_args,
-            args,
-            ..
-        } = body.as_ref()
-        else {
-            panic!("the value stage must call the residual source function: {body:#?}");
-        };
-        assert!(matches!(callee.as_ref(), Expr::LowBoundRef { name, .. }
-            if name == second_stage));
-        assert!(type_args.is_empty());
-        assert_eq!(args.len(), 2);
-    }
-
-    #[test]
-    fn function_adapter_retains_zero_slot_layer_while_adapting_function_result() {
-        let span = Span::new(0, 0);
-        let forall = |name: &str, body: Type<Routed>| Type::Forall {
-            param: crate::ast::TypeParam {
-                presentation: Default::default(),
-                name: name.to_owned(),
-                span,
-                kind: None,
-            },
-            body: Box::new(body),
-            meta: test_meta(),
-        };
-        let unit = Type::Unit { meta: test_meta() };
-        let target_result = fn_ty(product_ty(path_ty("String"), path_ty("A")), path_ty("R"), 1);
-        let source_result = fn_ty(product_ty(path_ty("String"), path_ty("B")), path_ty("R"), 2);
-        let target = forall("A", fn_ty(unit.clone(), target_result, 0));
-        let source = forall("B", fn_ty(unit, source_result, 0));
-        let ctx = LoweringCtx::default();
-        let lowerer = Lowerer {
-            bound: std::cell::RefCell::new(Vec::new()),
-            type_bound: std::cell::RefCell::new(Vec::new()),
-            ctx: &ctx,
-            module_path: "testapi/main".to_owned(),
-            module_ctx: ModuleCtx::default(),
-            host_env: HostEnvScope::default(),
-            next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
-        };
-
-        let adapted = lowerer
-            .function_value_adapter(
-                Expr::LowBoundRef {
-                    occurrence: Default::default(),
-                    name: "continuation".to_owned(),
-                    meta: test_meta(),
-                    ext: (),
-                },
-                &target,
-                &source,
-                span,
-            )
-            .expect("the function-valued result must be adapted recursively");
-        let Expr::Let {
-            name: staged_callee,
-            body,
-            ..
-        } = adapted
-        else {
-            panic!("a function adapter must stage its callee once");
-        };
-        let (_type_stage, body) = unwrap_function_adapter_type_stage(&body, &staged_callee);
-        let Expr::FnExpr { sig, body, .. } = body else {
-            panic!("the staged callee must feed a value adapter: {body:?}");
-        };
-        assert_eq!(
-            sig.groups,
-            vec![SignatureGroupKind::Value { len: 0 }],
-            "the erased Unit parameter remains an explicit callable layer"
-        );
-        let Expr::Let {
-            name,
-            value,
-            body: result_adapter,
-            ..
-        } = body.as_ref()
-        else {
-            panic!(
-                "the outer call must be evaluated before adapting its function-valued result: {body:?}"
-            );
-        };
         assert!(
-            matches!(value.as_ref(), Expr::LowIndirectCall { .. }),
-            "the result-staging let must evaluate the outer call exactly once: {value:?}"
-        );
-        assert!(
-            name.starts_with("__kio_fn0_result__"),
-            "the staged result must use the adapter's generated binder: {name}"
-        );
-        assert!(
-            matches!(result_adapter.as_ref(), Expr::FnExpr { .. }),
-            "the staged result must feed the recursive function adapter: {result_adapter:?}"
+            matches!(identity_args.as_slice(), [Expr::LowBoundRef { name, .. }]
+            if name == "source")
         );
     }
 
@@ -12464,7 +10854,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             module_ctx: ModuleCtx::default(),
             host_env: HostEnvScope::default(),
             next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
         };
         let routed_unit = Type::Unit { meta: test_meta() };
         let routed_pair = product_ty(routed_unit.clone(), routed_unit.clone());
@@ -12493,7 +10882,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             &routed_pair,
             &[routed_unit.clone(), path_ty("String")],
             Span::new(0, 0),
-            false,
         );
         assert_eq!(mismatched.wrappers.len(), 1);
 
@@ -12502,7 +10890,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             &routed_pair,
             &[routed_unit.clone(), routed_unit],
             Span::new(0, 0),
-            false,
         );
 
         assert!(canonical.wrappers.is_empty());
@@ -12714,103 +11101,6 @@ pub fn keep_right(value: Shared) -> Shared { value }
             1,
             "same-module lookup must preserve the callee signature"
         );
-    }
-
-    #[test]
-    fn function_adapter_supplies_a_substituted_unit_slot() {
-        let span = Span::new(0, 0);
-        let ctx = LoweringCtx::default();
-        let lowerer = Lowerer {
-            bound: std::cell::RefCell::new(Vec::new()),
-            type_bound: std::cell::RefCell::new(Vec::new()),
-            ctx: &ctx,
-            module_path: "test".to_owned(),
-            module_ctx: ModuleCtx::default(),
-            host_env: HostEnvScope::default(),
-            next_call_callee_scope: Cell::new(0),
-            next_selected_abi_binder: Cell::new(0),
-        };
-        let unit = Type::Unit { meta: test_meta() };
-        let nullary = fn_ty(unit.clone(), path_ty("Result"), 0);
-        let unary = fn_ty(unit.clone(), path_ty("Result"), 1);
-        let adapter = lowerer
-            .function_value_adapter_at_depth(
-                low_bound_ref("callback", span),
-                &nullary,
-                &unary,
-                span,
-                0,
-            )
-            .expect("a nullary view supplies the generic callback's Unit slot");
-        let Expr::FnExpr { sig, body, .. } = adapter else {
-            panic!("the adapter must remain a delayed value stage")
-        };
-        assert!(sig.params.is_empty());
-        assert!(matches!(
-            sig.canonical_groups().as_slice(),
-            [SignatureGroupRef::Value(params)] if params.is_empty()
-        ));
-        assert!(
-            matches!(body.as_ref(), Expr::LowIndirectCall { callee, args, .. }
-            if matches!(callee.as_ref(), Expr::LowBoundRef { name, .. } if name == "callback")
-            && matches!(args.as_slice(), [Expr::Unit { .. }]))
-        );
-
-        let reverse = lowerer
-            .function_value_adapter_at_depth(
-                low_bound_ref("callback", span),
-                &unary,
-                &nullary,
-                span,
-                0,
-            )
-            .expect("a generic Unit slot can invoke a nullary callback");
-        assert!(matches!(reverse, Expr::FnExpr { sig, body, .. }
-            if sig.params.len() == 1
-            && matches!(body.as_ref(), Expr::LowIndirectCall { args, .. } if args.is_empty())));
-
-        let producer = Expr::LowIndirectCall {
-            occurrence: Default::default(),
-            callee: Box::new(low_bound_ref("produce", span)),
-            type_args: Vec::new(),
-            args: Vec::new(),
-            meta: test_meta(),
-            ext: (),
-        };
-        let captured = lowerer
-            .function_value_adapter(producer.clone(), &nullary, &unary, span)
-            .expect("the computed callback needs the same adapter");
-        let Expr::Let {
-            name, value, body, ..
-        } = captured
-        else {
-            panic!("the callback producer must be evaluated once before capture")
-        };
-        assert_eq!(*value, producer);
-        assert!(matches!(body.as_ref(), Expr::FnExpr { body, .. }
-            if matches!(body.as_ref(), Expr::LowIndirectCall { callee, args, .. }
-                if matches!(callee.as_ref(), Expr::LowBoundRef { name: callee_name, .. }
-                    if callee_name == &name)
-                && matches!(args.as_slice(), [Expr::Unit { .. }]))));
-
-        for source in [
-            fn_ty(path_ty("Value"), path_ty("Result"), 1),
-            fn_ty(product_ty(unit.clone(), unit.clone()), path_ty("Result"), 1),
-            fn_ty(product_ty(unit, path_ty("Value")), path_ty("Result"), 2),
-        ] {
-            assert!(
-                lowerer
-                    .function_value_adapter_at_depth(
-                        low_bound_ref("callback", span),
-                        &nullary,
-                        &source,
-                        span,
-                        0,
-                    )
-                    .is_none(),
-                "the Unit adapter must not fabricate non-Unit or grouped arguments"
-            );
-        }
     }
 
     #[test]

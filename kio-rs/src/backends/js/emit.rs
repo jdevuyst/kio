@@ -61,6 +61,7 @@ use crate::backends::product_rebuild::{
 use crate::backends::public_names::{
     FacadeSelector, encode_source_identity, host_module_key, host_name_core, module_facade_path,
 };
+use crate::backends::tail_plan::{ResultChild, TailContext, TailStage};
 #[cfg(feature = "cli")]
 use crate::cache::keys::{CacheTarget, EmitInputFingerprint, EmitTargetProfileFingerprint};
 type FnDef = crate::ast::FnDef<Routed>;
@@ -1806,8 +1807,13 @@ fn lower_fn_def(d: &FnDef, top: &TopLevel, out: &mut String) -> Result<(), EmitE
         type_params: signature_type_params(&d.sig).cloned().collect(),
     };
     let mut body_js = String::new();
-    lower_expr(&d.body, top, &mut locals, &mut body_js)?;
-    out.push_str(&wrap_js_signature_stages(&runtime_groups, body_js));
+    let body_context = TailContext::body(&d.body);
+    lower_expr_in_context(body_context, top, &mut locals, &mut body_js)?;
+    out.push_str(&wrap_js_signature_stages_with_tail(
+        &runtime_groups,
+        body_js,
+        body_context.has_tail_transfer(),
+    ));
     out.push_str(";\n");
     Ok(())
 }
@@ -1845,15 +1851,28 @@ fn runtime_signature_groups(sig: &Signature) -> Vec<JsRuntimeSignatureGroup<'_>>
     groups
 }
 
-fn wrap_js_signature_stages(groups: &[JsRuntimeSignatureGroup<'_>], mut body: String) -> String {
+fn wrap_js_signature_stages(groups: &[JsRuntimeSignatureGroup<'_>], body: String) -> String {
+    wrap_js_signature_stages_with_tail(groups, body, false)
+}
+
+fn wrap_js_signature_stages_with_tail(
+    groups: &[JsRuntimeSignatureGroup<'_>],
+    mut body: String,
+    mut tail: bool,
+) -> String {
     for group in groups.iter().rev() {
         body = match group {
+            JsRuntimeSignatureGroup::Type if tail => {
+                format!("__kioPoly(__kioGuest((__kioUnit, __kioTailCursor) => {body}))")
+            }
             JsRuntimeSignatureGroup::Type => format!("__kioPoly(() => {body})"),
             JsRuntimeSignatureGroup::Value(names) => {
                 let names = mangle_param_list(names);
-                match names.as_slice() {
+                let cursor = if tail { ", __kioTailCursor" } else { "" };
+                let value = match names.as_slice() {
+                    [] if tail => format!("((__kioUnit{cursor}) => {body})"),
                     [] => format!("(__kioUnit => {body})"),
-                    [name] => format!("(({name}) => {body})"),
+                    [name] => format!("(({name}{cursor}) => {body})"),
                     _ => {
                         let mut bindings = String::new();
                         for (index, name) in names.iter().enumerate() {
@@ -1866,11 +1885,21 @@ fn wrap_js_signature_stages(groups: &[JsRuntimeSignatureGroup<'_>], mut body: St
                                     .push_str(" = __kioDomain._0; __kioDomain = __kioDomain._1; ");
                             }
                         }
-                        format!("(__kioDomain => {{ {bindings}return {body}; }})")
+                        if tail {
+                            format!("((__kioDomain{cursor}) => {{ {bindings}return {body}; }})")
+                        } else {
+                            format!("(__kioDomain => {{ {bindings}return {body}; }})")
+                        }
                     }
+                };
+                if tail {
+                    format!("__kioGuest({value})")
+                } else {
+                    value
                 }
             }
         };
+        tail = false;
     }
     body
 }
@@ -1955,7 +1984,7 @@ fn lower_newtype(d: &Newtype, top: &TopLevel, out: &mut String) {
         let continuation =
             advance_erased_type_stages("__kioContinuation".to_owned(), d.existential_params.len());
         format!(
-            "(() => {{ const __kioPayload = {payload}; return __kioPoly(() => (__kioContinuation => ({continuation})(__kioPayload))); }})()"
+            "(() => {{ const __kioPayload = {payload}; return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, {continuation}, __kioPayload))); }})()"
         )
     };
     let projector = wrap_js_type_stages(
@@ -2015,7 +2044,7 @@ fn signature_type_params(sig: &Signature) -> impl Iterator<Item = &crate::ast::T
 }
 
 fn lower_statement_spine(
-    mut tail: &Expr,
+    mut tail: TailContext<'_>,
     top: &TopLevel,
     locals: &mut JsLocalScope,
     out: &mut String,
@@ -2025,10 +2054,8 @@ fn lower_statement_spine(
     out.push_str("(() => { ");
     let result = (|| {
         loop {
-            match tail {
-                Expr::Let {
-                    name, value, body, ..
-                } => {
+            match tail.expr() {
+                Expr::Let { name, value, .. } => {
                     // Each binder keeps its lexical scope: later declarations must
                     // not capture earlier initializers or closures through JS's TDZ.
                     out.push_str("{ const ");
@@ -2051,18 +2078,18 @@ fn lower_statement_spine(
                         out.push_str("; ");
                     }
                     locals.values.push(name.clone());
-                    tail = body;
+                    tail = tail.result_child(ResultChild::LetBody);
                 }
-                Expr::Seq { value, body, .. } => {
+                Expr::Seq { value, .. } => {
                     lower_expr(value, top, locals, out)?;
                     out.push_str("; ");
-                    tail = body;
+                    tail = tail.result_child(ResultChild::SeqBody);
                 }
                 _ => break,
             }
         }
         out.push_str("return ");
-        lower_expr(tail, top, locals, out)?;
+        lower_expr_in_context(tail, top, locals, out)?;
         out.push_str("; ");
         for _ in 0..blocks {
             out.push_str("} ");
@@ -2080,14 +2107,24 @@ fn lower_expr(
     locals: &mut JsLocalScope,
     out: &mut String,
 ) -> Result<(), EmitError> {
+    lower_expr_in_context(TailContext::operand(e), top, locals, out)
+}
+
+fn lower_expr_in_context(
+    context: TailContext<'_>,
+    top: &TopLevel,
+    locals: &mut JsLocalScope,
+    out: &mut String,
+) -> Result<(), EmitError> {
+    let e = context.expr();
     match e {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Unit { .. } => {
             out.push_str("null");
             Ok(())
         }
-        Expr::Let { .. } | Expr::Seq { .. } => lower_statement_spine(e, top, locals, out),
-        Expr::FnExpr { sig, body, .. } => {
+        Expr::Let { .. } | Expr::Seq { .. } => lower_statement_spine(context, top, locals, out),
+        Expr::FnExpr { sig, .. } => {
             // Wrap the arrow function in parentheses so an outer `Call`
             // applies to the arrow itself rather than to its body —
             // `((x) => x)(null)`, not the precedence-broken
@@ -2104,10 +2141,15 @@ fn lower_expr(
                 }
             }
             let mut body_js = String::new();
-            let body_result = lower_expr(body, top, locals, &mut body_js);
+            let body_context = context.result_child(ResultChild::FunctionBody);
+            let body_result = lower_expr_in_context(body_context, top, locals, &mut body_js);
             locals.values.truncate(mark);
             locals.type_params.truncate(type_mark);
-            out.push_str(&wrap_js_signature_stages(&runtime_groups, body_js));
+            out.push_str(&wrap_js_signature_stages_with_tail(
+                &runtime_groups,
+                body_js,
+                body_context.has_tail_transfer(),
+            ));
             body_result
         }
         Expr::StrLit { value, .. } => {
@@ -2202,24 +2244,11 @@ fn lower_expr(
             scrutinee, arms, ..
         } => {
             let mut ctx = ExprLowerCtx { top, locals };
-            lower_enriched_match(MatchEmit { scrutinee, arms }, &mut ctx, out)
+            lower_enriched_match(MatchEmit { scrutinee, arms }, context, &mut ctx, out)
         }
-        Expr::EnrichedConditional {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
+        Expr::EnrichedConditional { cond, .. } => {
             let mut ctx = ExprLowerCtx { top, locals };
-            lower_enriched_conditional(
-                ConditionalEmit {
-                    cond,
-                    then_branch,
-                    else_branch,
-                },
-                &mut ctx,
-                out,
-            )
+            lower_enriched_conditional(ConditionalEmit { cond }, context, &mut ctx, out)
         }
         Expr::EnrichedFieldGet {
             target,
@@ -2297,7 +2326,7 @@ fn lower_expr(
         } => {
             let callee = emit_host_fn_value_ref(name, module_path, sig, top)?;
             let mut ctx = ExprLowerCtx { top, locals };
-            emit_canonical_call(e, callee, type_args, args, &mut ctx, out)
+            emit_canonical_call(context, callee, type_args, args, &mut ctx, out)
         }
         Expr::LowModuleCall {
             mangled,
@@ -2308,7 +2337,7 @@ fn lower_expr(
             let mut callee = String::new();
             emit_module_fn_value_ref(mangled, top, &mut callee);
             let mut ctx = ExprLowerCtx { top, locals };
-            emit_canonical_call(e, callee, type_args, args, &mut ctx, out)
+            emit_canonical_call(context, callee, type_args, args, &mut ctx, out)
         }
         Expr::LowQualifiedModuleCall {
             alias,
@@ -2329,7 +2358,7 @@ fn lower_expr(
             });
             let callee = format!("{namespace}.{}", mangle_js_ident(member));
             let mut ctx = ExprLowerCtx { top, locals };
-            emit_canonical_call(e, callee, type_args, args, &mut ctx, out)
+            emit_canonical_call(context, callee, type_args, args, &mut ctx, out)
         }
         Expr::LowQualifiedNewtypeMember {
             module_path,
@@ -2374,7 +2403,7 @@ fn lower_expr(
         } => {
             let mut ctx = ExprLowerCtx { top, locals };
             emit_canonical_call(
-                e,
+                context,
                 mangle_js_ident(name).into_owned(),
                 type_args,
                 args,
@@ -2391,12 +2420,16 @@ fn lower_expr(
             let mut callable = String::new();
             lower_expr(callee, top, locals, &mut callable)?;
             let mut ctx = ExprLowerCtx { top, locals };
-            emit_canonical_call(e, callable, type_args, args, &mut ctx, out)
+            emit_canonical_call(context, callable, type_args, args, &mut ctx, out)
         }
         Expr::LowTypeApplication { callee, .. } => {
             let mut callable = String::new();
             lower_expr(callee, top, locals, &mut callable)?;
-            out.push_str(&format!("({callable}).advance()"));
+            if context.tail_stage() == Some(TailStage::Type) {
+                out.push_str(&format!("__kioTailAdvance(__kioTailCursor, {callable})"));
+            } else {
+                out.push_str(&format!("({callable}).advance()"));
+            }
             Ok(())
         }
         Expr::LowAbsurdCall { value_arg, .. } => emit_absurd_call(value_arg, top, locals, out),
@@ -2415,6 +2448,7 @@ fn lower_expr(
                 receiver,
                 continuation,
                 continuation_ty,
+                context.tail_stage(),
                 &mut ctx,
                 out,
             )
@@ -2576,29 +2610,34 @@ fn lower_enriched_inject(
 /// one-branch-only evaluation.
 struct ConditionalEmit<'a> {
     cond: &'a Expr,
-    then_branch: &'a Expr,
-    else_branch: &'a Expr,
 }
 
 fn lower_enriched_conditional(
     conditional: ConditionalEmit<'_>,
+    context: TailContext<'_>,
     ctx: &mut ExprLowerCtx<'_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
-    let ConditionalEmit {
-        cond,
-        then_branch,
-        else_branch,
-    } = conditional;
+    let ConditionalEmit { cond } = conditional;
     out.push('(');
     ctx.lower_expr(cond, out)?;
     out.push_str(" ? ");
     let mut then_rendered = String::new();
-    ctx.lower_expr(then_branch, &mut then_rendered)?;
+    lower_expr_in_context(
+        context.result_child(ResultChild::ThenBranch),
+        ctx.top,
+        ctx.locals,
+        &mut then_rendered,
+    )?;
     out.push_str(&then_rendered);
     out.push_str(" : ");
     let mut else_rendered = String::new();
-    ctx.lower_expr(else_branch, &mut else_rendered)?;
+    lower_expr_in_context(
+        context.result_child(ResultChild::ElseBranch),
+        ctx.top,
+        ctx.locals,
+        &mut else_rendered,
+    )?;
     out.push_str(&else_rendered);
     out.push(')');
     Ok(())
@@ -2614,6 +2653,7 @@ struct MatchEmit<'a> {
 
 fn lower_enriched_match(
     match_emit: MatchEmit<'_>,
+    context: TailContext<'_>,
     ctx: &mut ExprLowerCtx<'_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
@@ -2630,6 +2670,7 @@ fn lower_enriched_match(
                 arm,
                 payload_expr: "__sum[1]",
             },
+            context.result_child(ResultChild::MatchArm(k)),
             ctx,
             out,
         )?;
@@ -2648,6 +2689,7 @@ struct MatchArmEmit<'a> {
 
 fn lower_enriched_match_arm(
     arm_emit: MatchArmEmit<'_>,
+    context: TailContext<'_>,
     ctx: &mut ExprLowerCtx<'_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
@@ -2657,7 +2699,7 @@ fn lower_enriched_match_arm(
     out.push_str(") => ");
     ctx.locals.values.push(arm.param.clone());
     let mut body = String::new();
-    let body_result = ctx.lower_expr(&arm.body, &mut body);
+    let body_result = lower_expr_in_context(context, ctx.top, ctx.locals, &mut body);
     ctx.locals.values.pop();
     body_result?;
     out.push_str(&body);
@@ -2888,13 +2930,19 @@ fn emit_module_fn_value_ref(mangled: &str, top: &TopLevel, out: &mut String) {
 /// Apply one already-routed semantic value stage. The callee and each argument
 /// are evaluated once, in source order; explicit type stages run before values.
 fn emit_canonical_call(
-    source: &Expr,
+    context: TailContext<'_>,
     callee: String,
     type_args: &[Type],
     args: &[Expr],
     ctx: &mut ExprLowerCtx<'_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
+    let source = context.expr();
+    if context.tail_stage() == Some(TailStage::Type) {
+        let callable = advance_erased_type_stages(callee, type_args.len() - 1);
+        out.push_str(&format!("__kioTailAdvance(__kioTailCursor, {callable})"));
+        return Ok(());
+    }
     let callable = advance_erased_type_stages(callee, type_args.len());
     // Qualified type-only declaration references retain their forwarding call
     // in Routed. They select a value but do not consume a value stage.
@@ -2909,9 +2957,14 @@ fn emit_canonical_call(
         out.push_str(&callable);
         return Ok(());
     }
-    out.push('(');
+    let tail = context.tail_stage() == Some(TailStage::Value);
+    out.push_str(if tail {
+        "__kioTailCall(__kioTailCursor, "
+    } else {
+        "("
+    });
     out.push_str(&callable);
-    out.push_str(")(");
+    out.push_str(if tail { ", " } else { ")(" });
     let mut values = Vec::with_capacity(args.len());
     for argument in args {
         let mut value = String::new();
@@ -3011,6 +3064,7 @@ fn emit_cps_projector_apply(
     receiver: &Expr,
     continuation: &Expr,
     continuation_ty: &Type,
+    tail: Option<TailStage>,
     ctx: &mut ExprLowerCtx<'_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
@@ -3034,6 +3088,9 @@ fn emit_cps_projector_apply(
     out.push_str("; const __kio_cps_continuation = ");
     out.push_str(&continuation_js);
     out.push_str("; return ");
+    if tail == Some(TailStage::Value) {
+        out.push_str("__kioTailCall(__kioTailCursor, ");
+    }
     if module_path != ctx.top.module_key {
         out.push_str(&module_namespace_from_key(module_path));
         out.push('.');
@@ -3044,7 +3101,11 @@ fn emit_cps_projector_apply(
     for _ in type_args {
         out.push_str(".advance()");
     }
-    out.push_str("(__kio_cps_receiver).advance()(__kio_cps_continuation); })()");
+    if tail == Some(TailStage::Value) {
+        out.push_str("(__kio_cps_receiver).advance(), __kio_cps_continuation); })()");
+    } else {
+        out.push_str("(__kio_cps_receiver).advance()(__kio_cps_continuation); })()");
+    }
     Ok(())
 }
 
@@ -3265,12 +3326,14 @@ mod tests {
             ),
             "{js}"
         );
-        // Recovery has already represented the declaration-arity bridge as an
-        // ordinary lambda. Emission forwards that canonical function once.
-        assert_eq!(js.matches("(slot)(").count(), 1, "{js}");
-        assert_eq!(js.matches(" = two;").count(), 1, "{js}");
-        assert!(js.contains("(two)(({ _0: null, _1: null }))"), "{js}");
-        assert!(js.contains("(relay)(null)"), "{js}");
+        // Canonical private domains let the resolved function pass unchanged.
+        assert_eq!(js.matches("__kioTailCursor, slot, ").count(), 1, "{js}");
+        assert_eq!(js.matches("__kioTailCursor, slot, two)").count(), 1, "{js}");
+        assert!(
+            js.contains("__kioTailCursor, two, ({ _0: null, _1: null })"),
+            "{js}"
+        );
+        assert!(js.contains("__kioTailCursor, relay, null"), "{js}");
         assert!(
             !js.contains("__inner"),
             "canonical function values need no ABI adapter: {js}"
@@ -3540,6 +3603,44 @@ mod tests {
     }
 
     #[test]
+    fn tail_entries_wrap_only_executing_body_stages() {
+        let js = lower_typed(
+            "module main; \
+             host fn observe() -> .; \
+             fn leaf[A](value: A) -> A { value } \
+             fn nested(callback: . -> .) -> . -> . { .() { observe(); callback() } } \
+             fn staged[A](callback: A -> A)[B](value: A) -> A { callback(value) } \
+             fn ordered[A](callback: A -> A, value: A) -> A { let result = callback(value); observe(); result } \
+             fn returned_call[A](callback: A -> A, value: A) -> A { let result = callback(value); result }",
+        );
+        let declaration = |name: &str| {
+            js.lines()
+                .find(|line| line.trim_start().starts_with(&format!("const {name} = ")))
+                .unwrap()
+        };
+        assert!(!declaration("leaf").contains("__kioGuest"));
+        assert!(!declaration("ordered").contains("__kioGuest"));
+        let ordered = declaration("ordered");
+        assert!(
+            ordered.find("(callback)(value)").expect("operand call")
+                < ordered.find("observe()").expect("pending host effect"),
+            "{ordered}"
+        );
+        assert!(
+            declaration("returned_call")
+                .contains("__kioTailCall(__kioTailCursor, callback, value)")
+        );
+        assert_eq!(declaration("nested").matches("__kioGuest").count(), 1);
+        assert!(declaration("nested").contains("((callback) => __kioGuest"));
+        assert_eq!(declaration("staged").matches("__kioGuest").count(), 1);
+        assert!(
+            declaration("staged")
+                .contains("__kioPoly(() => ((callback) => __kioPoly(() => __kioGuest")
+        );
+        assert!(declaration("staged").contains("__kioTailCall(__kioTailCursor, callback, value)"));
+    }
+
+    #[test]
     fn field_projection_keeps_lexical_binders_and_alias_identity() {
         let package = typed_package_routed_many(
             &[
@@ -3589,9 +3690,9 @@ mod tests {
                 .find(|line| line.trim_start().starts_with(&format!("const {name} = ")))
                 .unwrap()
         };
-        assert!(declaration("local").contains("(f)(value)"));
+        assert!(declaration("local").contains("__kioTailCursor, f, value"));
         assert_eq!(declaration("specialized").matches(".advance()").count(), 1);
-        assert!(declaration("computed").contains("((f)(null))(value)"));
+        assert!(declaration("computed").contains("__kioTailCursor, (f)(null), value"));
     }
 
     #[test]
@@ -3612,7 +3713,7 @@ mod tests {
                 .find(|line| line.trim_start().starts_with(&format!("const {name} = ")))
                 .unwrap()
         };
-        assert!(declaration("stage").contains("(value).advance()"));
+        assert!(declaration("stage").contains("__kioTailAdvance(__kioTailCursor, value)"));
         assert!(declaration("cps").contains("const __kio_cps_continuation = continuation;"));
     }
 
@@ -3629,7 +3730,23 @@ mod tests {
         );
         let js =
             lower_package_to_factory_module(&package, "pkg").expect("render nested specialization");
-        assert_eq!(js.matches(").advance()").count(), 1, "{js}");
+        let nested = js
+            .lines()
+            .find(|line| line.trim_start().starts_with("const nested = "))
+            .expect("nested declaration");
+        assert_eq!(nested.matches("(generic)(null)").count(), 1, "{js}");
+        assert_eq!(
+            nested
+                .matches("__kioTailAdvance(__kioTailCursor, (generic)(null))")
+                .count(),
+            1,
+            "{js}"
+        );
+        assert!(
+            nested.contains("__kioTailCursor, consume, __kioGuest"),
+            "{js}"
+        );
+        assert!(!nested.contains(".advance()"), "{js}");
     }
 
     #[cfg(all(feature = "cli", feature = "surface"))]
@@ -3783,7 +3900,10 @@ mod tests {
              fn caller[A](y: A) -> A { id(A, y) }",
         );
         assert!(js.contains("const caller = __kioPoly("), "got: {js}");
-        assert!(js.contains("((id).advance())(y)"), "got: {js}");
+        assert!(
+            js.contains("__kioTailCursor, (id).advance(), y"),
+            "got: {js}"
+        );
     }
 
     #[test]
@@ -3826,7 +3946,7 @@ mod tests {
              fn caller(y: T) -> T { helper(y) }",
         );
         assert!(
-            js.contains("const caller = ((y) => (helper)(y))"),
+            js.contains("const caller = __kioGuest(((y, __kioTailCursor) => __kioTailCall(__kioTailCursor, helper, y)))"),
             "got: {js}"
         );
     }
@@ -3860,24 +3980,34 @@ mod tests {
         let staged_implicit = function_body("staged_implicit", "staged_explicit");
         let staged_explicit = function_body("staged_explicit", "staged_effectful");
         assert!(
-            staged_type_only.contains("const _kg0 = (staged).advance(); return (__kioUnit =>")
-                && staged_type_only.contains("return (_kg0)(null);"),
-            "a written type-only packet must retain the selected Unit layer: {js}"
+            function_body("staged", "staged_type_only")
+                .contains("__kioPoly(() => (__kioUnit => ((x) => x)))"),
+            "the selected type stage must return its Unit value layer: {js}"
         );
-        assert_eq!(staged_type_only.matches("(staged).advance()").count(), 1);
-        assert_eq!(staged_type_only.matches("(_kg0)(").count(), 1);
+        assert_eq!(
+            staged_type_only
+                .matches("__kioTailAdvance(__kioTailCursor, staged)")
+                .count(),
+            1,
+            "a written type-only packet must advance exactly one type stage: {js}"
+        );
         assert!(
-            staged_implicit.contains("(__kioUnit => ((staged).advance())(null))"),
+            !staged_type_only.contains("__kioTailCall(")
+                && !staged_type_only.contains(".advance()"),
+            "a written type-only packet must leave its returned value stage uncalled: {js}"
+        );
+        assert!(
+            staged_implicit.contains("__kioTailCall(__kioTailCursor, (staged).advance(), null)"),
             "a source-empty call must supply its Unit value: {js}"
         );
         assert!(
-            staged_explicit.contains("(__kioUnit => ((staged).advance())(null))"),
+            staged_explicit.contains("__kioTailCall(__kioTailCursor, (staged).advance(), null)"),
             "an explicit Unit value must saturate that same layer: {js}"
         );
 
         for stage in [staged_implicit, staged_explicit] {
             assert_eq!(
-                stage.matches("__kioUnit =>").count(),
+                stage.matches("(__kioUnit, __kioTailCursor) =>").count(),
                 1,
                 "a saturated call must not return another value layer: {stage}"
             );
@@ -3890,23 +4020,29 @@ mod tests {
             .split("const identity_saturated = ")
             .nth(1)
             .expect("identity_saturated wrapper is emitted");
+        for selected in [identity_non_unit_residual, identity_selected] {
+            assert_eq!(
+                selected
+                    .matches("__kioTailAdvance(__kioTailCursor, identity)")
+                    .count(),
+                1,
+                "a selected identity domain must advance exactly one type stage: {js}"
+            );
+            assert!(
+                !selected.contains("__kioTailCall(") && !selected.contains(".advance()"),
+                "both Unit and non-Unit selections must leave the value stage uncalled: {js}"
+            );
+        }
         assert!(
-            identity_non_unit_residual.contains("const _kg0 = (identity).advance();")
-                && identity_non_unit_residual.contains("=> (_kg0)(_kg1)"),
-            "a selected non-Unit identity domain must remain residual: {js}"
-        );
-        assert!(
-            identity_selected.contains("const _kg0 = (identity).advance();")
-                && identity_selected.contains("const _kg1 = null; return (_kg0)(_kg1)"),
-            "the type-selected Unit identity call must remain residual: {js}"
-        );
-        assert!(
-            identity_saturated.contains("(__kioUnit => ((identity).advance())(null))"),
+            identity_saturated
+                .contains("__kioTailCall(__kioTailCursor, (identity).advance(), null)"),
             "the explicit Unit identity call must be saturated: {js}"
         );
 
         assert_eq!(
-            identity_saturated.matches("__kioUnit =>").count(),
+            identity_saturated
+                .matches("(__kioUnit, __kioTailCursor) =>")
+                .count(),
             1,
             "a saturated identity call must not return another value layer: {identity_saturated}"
         );
@@ -3934,9 +4070,13 @@ mod tests {
 
     #[test]
     fn let_binding_iife() {
-        let js = lower("module x; fn f(x: .) -> . { let y = x; y }");
+        let js = lower(
+            "module x; host type T; host fn observe(value: T) -> .; \
+             fn f(x: T) -> T { let y = x; observe(y); y }",
+        );
         assert!(js.contains("const y = x"), "got: {js}");
         assert!(js.contains("return y"), "got: {js}");
+        assert_eq!(js.matches("__host__.x.observe(").count(), 1, "got: {js}");
     }
 
     #[test]
@@ -3958,7 +4098,7 @@ mod tests {
         );
         // The lifted inline callee stays parenthesized at the indirect
         // call site, preserving the arrow's value before applying `y`.
-        assert!(js.contains("(((x) => x))(y)"), "got: {js}");
+        assert!(js.contains("__kioTailCursor, ((x) => x), y"), "got: {js}");
     }
 
     #[test]
@@ -3987,7 +4127,10 @@ mod tests {
         // Reference site routes through `PKG_HELPER.greet`, which
         // resolves to a closure-scoped const inside the factory body
         // (declared by pkg/helper's inlined IIFE).
-        assert!(js.contains("(PKG_HELPER.greet)(null)"), "got: {js}");
+        assert!(
+            js.contains("__kioTailCursor, PKG_HELPER.greet, null"),
+            "got: {js}"
+        );
     }
 
     #[test]
@@ -4014,7 +4157,10 @@ mod tests {
             ],
             "pkg/main",
         );
-        assert!(js.contains("(PKG_HELPER.greet)(null)"), "got: {js}");
+        assert!(
+            js.contains("__kioTailCursor, PKG_HELPER.greet, null"),
+            "got: {js}"
+        );
     }
 
     // ---- Intrinsics ----------------------------------------------------
@@ -4157,7 +4303,7 @@ mod tests {
         );
         assert!(js.contains("__kioOpaqueOut("), "{js}");
         assert!(js.contains("__kioOpaqueIn("), "{js}");
-        assert!(js.contains("return __kioPoly(() => (__kioContinuation => ((__kioContinuation).advance())(__kioPayload)))"), "{js}");
+        assert!(js.contains("return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload)))"), "{js}");
         assert!(!js.contains("...__cps_args__"), "{js}");
     }
 
@@ -4304,10 +4450,17 @@ mod tests {
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
 
         assert!(js.contains("__kioPoly(() => ((value) => value))"), "{js}");
-        assert!(
-            js.contains("(identity).advance()") && !js.contains("(identity).advance())(null)"),
+        assert_eq!(
+            js.matches("__kioTailAdvance(__kioTailCursor, identity)")
+                .count(),
+            1,
             "{js}"
         );
+        assert!(
+            !js.contains("__kioTailCall(__kioTailCursor, identity,"),
+            "{js}"
+        );
+        assert!(!js.contains("(identity).advance())(null)"), "{js}");
         assert!(js.contains("MAIN.selected).advance())(null)"), "{js}");
     }
 
@@ -4455,7 +4608,7 @@ mod tests {
             !wrapper.contains(".advance()"),
             "the named head must not enter its returned result stage: {wrapper}"
         );
-        assert!(js.contains("return __kioPoly(() => (__kioContinuation => ((__kioContinuation).advance().advance())(__kioPayload)))"), "{js}");
+        assert!(js.contains("return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance().advance(), __kioPayload)))"), "{js}");
         assert_eq!(emitted_nominal_view(&js, "main", "Hidden")["sealed"], true);
     }
     #[test]
@@ -5253,46 +5406,33 @@ mod tests {
         };
 
         let receiver_binding = unique_position("const __kio_cps_receiver = v;");
-        let continuation_binding = unique_position("const __kio_cps_continuation =");
-        let callee_binding = unique_position("const __kio_call_callee");
-        let callee_name_start = callee_binding + "const ".len();
-        let callee_name_end = callee_name_start
-            + js[callee_name_start..]
-                .find(" =")
-                .expect("callee binding has an initializer");
-        let callee_name = &js[callee_name_start..callee_name_end];
-        let type_stage_binding = unique_position("const __kio_fn0_type");
-        let type_stage_name_start = type_stage_binding + "const ".len();
-        let type_stage_name_end = type_stage_name_start
-            + js[type_stage_name_start..]
-                .find(" =")
-                .expect("type-stage binding has an initializer");
-        let type_stage_name = &js[type_stage_name_start..type_stage_name_end];
-        let callee_evaluation = unique_position(&format!("({callee_name}).advance();"));
-        let type_stage_evaluation = unique_position(&format!("({type_stage_name})("));
-        let first_product_slot = unique_position(", 0, 2)");
-        let second_product_slot = unique_position(", 1, 2)");
+        let continuation_binding =
+            unique_position("const __kio_cps_continuation = __kioPoly(() => (__kioDomain => {");
+        let first_product_slot = unique_position("const _value = __kioDomain._0;");
+        let remaining_product = unique_position("__kioDomain = __kioDomain._1;");
+        let second_product_slot = unique_position("const _unit = __kioDomain;");
         let projector_call = unique_position(
-            "return Box.inspect(__kio_cps_receiver).advance()(__kio_cps_continuation);",
+            "return __kioTailCall(__kioTailCursor, Box.inspect(__kio_cps_receiver).advance(), __kio_cps_continuation);",
         );
 
         assert_eq!(js.matches("__kio_cps_receiver").count(), 2, "got: {js}");
         assert_eq!(js.matches("__kio_cps_continuation").count(), 2, "got: {js}");
-        assert_eq!(js.matches(callee_name).count(), 2, "got: {js}");
-        assert_eq!(js.matches(type_stage_name).count(), 2, "got: {js}");
-        assert_eq!(js.matches("__kioProductSlot(").count(), 2, "got: {js}");
+        assert_eq!(
+            js.matches("Box.inspect(__kio_cps_receiver).advance()")
+                .count(),
+            1,
+            "got: {js}"
+        );
+        assert!(!js.contains("__kioProductSlot("), "got: {js}");
         assert!(
             receiver_binding < continuation_binding
-                && continuation_binding < callee_binding
-                && callee_binding < type_stage_binding
-                && type_stage_binding < callee_evaluation
-                && callee_evaluation < type_stage_evaluation
-                && type_stage_evaluation < first_product_slot
-                && first_product_slot < second_product_slot
+                && continuation_binding < first_product_slot
+                && first_product_slot < remaining_product
+                && remaining_product < second_product_slot
                 && second_product_slot < projector_call,
             "CPS expression construction must preserve receiver-before-continuation order: {js}"
         );
-        assert!(js.contains("return __kioPoly(() => (__kioContinuation => ((__kioContinuation).advance())(__kioPayload)))"), "{js}");
+        assert!(js.contains("return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload)))"), "{js}");
         assert!(!js.contains("Box.box("), "got: {js}");
     }
 
@@ -5450,7 +5590,7 @@ mod tests {
             js.contains("const p = ((__kioHostArg0) => __host__.main.print(__kioHostArg0))"),
             "got: {js}"
         );
-        assert!(js.contains("(p)(s)"), "got: {js}");
+        assert!(js.contains("__kioTailCursor, p, s"), "got: {js}");
     }
 
     #[test]
@@ -5515,7 +5655,7 @@ mod tests {
             "expected mangled decl, got: {js}"
         );
         assert!(
-            js.contains("((__kio_default__).advance())(z)"),
+            js.contains("__kioTailCursor, (__kio_default__).advance(), z"),
             "expected mangled reference, got: {js}"
         );
         assert!(
@@ -5541,7 +5681,10 @@ mod tests {
 
     #[test]
     fn let_binding_with_reserved_name_mangles() {
-        let js = lower("module x; fn f(x: .) -> . { let return = x; return }");
+        let js = lower(
+            "module x; host type T; host fn observe(value: T) -> .; \
+             fn f(x: T) -> T { let return = x; observe(return); return }",
+        );
         assert!(
             js.contains("const __kio_return__ = x"),
             "expected mangled let, got: {js}"
@@ -5550,6 +5693,7 @@ mod tests {
             js.contains("return __kio_return__"),
             "expected mangled body reference, got: {js}"
         );
+        assert_eq!(js.matches("__kio_return__").count(), 3, "got: {js}");
     }
 
     #[test]

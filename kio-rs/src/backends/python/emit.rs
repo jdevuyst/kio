@@ -45,14 +45,22 @@ mod runtime_tests {
             .unwrap()
             .0;
         let guest = RUNTIME
-            .split_once("    def _make_fn(")
+            .split_once("    def eval(")
             .unwrap()
             .1
-            .split_once("    def eval(")
+            .split_once("            tag, data = _tag(expr)")
             .unwrap()
             .0;
         assert!(!callable.contains("_product_slots("));
         assert!(!guest.contains("_product_slots("));
+        assert!(guest.contains("kind = type(callee)"));
+        assert!(guest.contains("kind is not _KioGuestFunction and kind is not _KioGuestPoly"));
+        assert!(!guest.contains("_kio_tail_entry_v1"));
+        assert!(!guest.contains("isinstance("));
+        assert!(guest.contains("self = callee.runtime"));
+        assert!(guest.contains("local = dict(callee.env)"));
+        assert!(guest.contains("module_key, expr, env = callee.module, callee.body, local"));
+        assert!(!guest.contains("self.eval("));
 
         let host = RUNTIME
             .split_once("    def _host_fn_value(")
@@ -62,6 +70,23 @@ mod runtime_tests {
             .unwrap()
             .0;
         assert!(host.contains("_product_slots("));
+    }
+
+    #[test]
+    fn tail_calls_use_only_the_checked_terminal_stage() {
+        let evaluator = RUNTIME
+            .split_once("    def eval(")
+            .unwrap()
+            .1
+            .split_once("    def _literal(")
+            .unwrap()
+            .0;
+        assert!(
+            evaluator.contains("data.get(\"tail\") != (\"type\" if type_stage else \"value\")")
+        );
+        assert!(evaluator.contains("range(len(data[\"type_args\"]) - int(type_stage))"));
+        assert!(!evaluator.contains("return self.eval(module_key, arm[\"body\"]"));
+        assert!(!evaluator.contains("return self.eval(module_key, branch"));
     }
 }
 

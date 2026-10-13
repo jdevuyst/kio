@@ -1,0 +1,55 @@
+module api;
+
+host type I32 role(i32);
+
+host fn tick();
+
+host fn observe(value: I32) -> I32;
+
+pub newtype Chain : I32 -> I32 { constructor make; projector read }
+
+pub newtype Poly : [A] I32 { constructor make; projector read }
+
+pub fn root() -> Chain {
+  .(value) { value }.>Chain.make
+}
+
+fn forward(previous: Chain, value: I32) -> I32 { previous.>Chain.read(value) }
+
+fn forward_wide(first: I32, previous: Chain, middle: I32, another: I32, value: I32) -> I32 {
+  previous.>Chain.read(value)
+}
+
+pub fn link(previous: Chain) -> Chain {
+  .(value) { tick(); forward(previous, value) }.>Chain.make
+}
+
+pub fn wide_link(previous: Chain) -> Chain {
+  .(value) { tick(); forward_wide(value, previous, value, value, value) }.>Chain.make
+}
+
+pub fn ordered(first: I32, previous: Chain, middle: I32, another: I32, last: I32) -> I32 {
+  forward_wide(observe(first), previous, observe(middle), observe(another), observe(last))
+}
+
+fn zero() -> I32 { observe(0) }
+
+fn one(value: I32) -> I32 { observe(value) }
+
+pub fn call_zero() -> I32 { zero() }
+
+pub fn call_one(value: I32) -> I32 { one(value) }
+
+pub fn call(chain: Chain, value: I32) -> I32 { chain.>Chain.read(value) }
+
+pub fn type_root() -> Poly {
+  .[A] { 37 }.>Poly.make
+}
+
+fn advance[A](previous: Poly) -> I32 { previous.>Poly.read(A) }
+
+pub fn type_link(previous: Poly) -> Poly {
+  .[A] { tick(); advance(A, previous) }.>Poly.make
+}
+
+pub fn type_call(chain: Poly) -> I32 { chain.>Poly.read(.) }

@@ -1349,27 +1349,43 @@ v(2) {
 
     #[test]
     fn effectful_residual_module_call_uses_rank_n_lift() {
-        let emitted = render(
-            "module api; \
-             fn delay[X](value: X)[A] -> X { value } \
-             fn caller() -> . { \
-               let source = delay(.[B](left: B, _right: B) -> B { left }); \
-               () \
-             }",
-        )
-        .expect("render Haskell");
-        let caller = module_fn("api", "caller");
-        let body = emitted
-            .lines()
-            .find(|line| line.starts_with(&format!("{caller} _pkg =")))
-            .expect("caller body");
-
-        assert!(
-            body.contains(&standard_hs(
-                "kioPure @(forall (t_a :: %KIND%.Type). m (forall (t_b :: %KIND%.Type). m ((t_b, t_b) -> m t_b)))"
-            )),
-            "{body}"
+        let result_type = standard_hs(
+            "forall (t_a :: %KIND%.Type). m (forall (t_b :: %KIND%.Type). m ((t_b, t_b) -> m t_b))",
         );
+        for (argument, effectful) in [
+            (".[B](left: B, _right: B) -> B { left }", false),
+            ("produce()", true),
+        ] {
+            let emitted = render(&format!(
+                "module api; \
+                 host fn produce() -> [B] (B & B) -> B; \
+                 fn delay[X](value: X)[A] -> X {{ value }} \
+                 fn caller() -> . {{ let source = delay({argument}); () }}",
+            ))
+            .expect("render Haskell");
+            let caller = module_fn("api", "caller");
+            let body = emitted
+                .lines()
+                .find(|line| line.starts_with(&format!("{caller} _pkg =")))
+                .expect("caller body");
+
+            assert_eq!(
+                body.contains(&format!("kioPure @({result_type})")),
+                effectful,
+                "{body}"
+            );
+            assert!(body.contains(&format!("seq @({result_type})")), "{body}");
+            if effectful {
+                assert!(body.contains(&host_field("api", "produce")), "{body}");
+                assert!(body.contains("kioBind @(forall"), "{body}");
+            } else {
+                assert!(
+                    body.contains(&format!("k_source :: {result_type}")),
+                    "{body}"
+                );
+                assert!(!body.contains("kioBind"), "{body}");
+            }
+        }
     }
 
     #[test]
@@ -1426,9 +1442,35 @@ v(2) {
             .expect("native make body");
 
         assert_eq!(make.matches("case").count(), 0, "{make}");
-        assert_eq!(make.matches("@(~(__p").count(), 1, "{make}");
+        let locals = (0..WIDTH)
+            .map(|index| format!("k_p{index}"))
+            .collect::<Vec<_>>();
+        let pattern = locals
+            .iter()
+            .rev()
+            .cloned()
+            .reduce(|tail, head| format!("({head}, {tail})"))
+            .expect("nonempty closure domain");
+        assert_eq!(
+            make.matches(&format!("\\{pattern} ->")).count(),
+            1,
+            "{make}"
+        );
+        assert_eq!(make.matches('\\').count(), 1, "{make}");
+        let demanded = (0..WIDTH)
+            .map(|index| format!("__m{index}"))
+            .collect::<Vec<_>>();
+        let demand = locals
+            .iter()
+            .zip(&demanded)
+            .map(|(source, value)| format!("let {{ {value} = {source} }} in {value} `seq` "))
+            .collect::<String>();
         assert!(
-            (0..WIDTH).all(|index| make.contains(&format!("__p{index}"))),
+            make.contains(&format!(
+                "{demand}{} _pkg {}",
+                module_fn("api", "consume"),
+                demanded.join(" ")
+            )),
             "{make}"
         );
         assert!(make.len() < 4_000, "wide closure grew nonlinearly: {make}");

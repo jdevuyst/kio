@@ -1,0 +1,8 @@
+local O0: value and forall chains
+local O2: value and forall chains
+send O0: value and forall chains
+send O2: value and forall chains
+sync O0: value and forall chains
+sync O2: value and forall chains
+send_sync O0: value and forall chains
+send_sync O2: value and forall chains

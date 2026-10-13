@@ -3,8 +3,8 @@
 //! Consumes a `Package<Routed>` (post-recovery + post-resolution-lowering)
 //! and produces a self-contained Swift package as a [`SwiftPackage`].
 //!
-//! Swift's **body** carries canonical native values through erased (`Any`)
-//! execution interfaces, retaining private type witnesses at lexical stages.
+//! Swift's **body** carries canonical private values through erased (`Any`)
+//! execution interfaces, retaining exact native views at lexical stages.
 //! The **skin** is
 //! the host's exact typed contract — the `Host` protocol, generic semantic
 //! product/native-sum shells, declaration-owned nominal and application
@@ -35,6 +35,7 @@ use crate::backends::public_names::{
 };
 use crate::backends::reconstruct::RoutedBodyTypes;
 use crate::backends::skin::exact_nullary_host_type_table;
+use crate::backends::tail_plan::{ResultChild, TailContext, TailStage};
 use crate::backends::value_plan::{ValuePlan, ValueUse};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
@@ -1213,7 +1214,7 @@ fn prepared_body_to_public_args(
         .zip(body_values)
         .map(|(source, value)| {
             let ty = render_prepared_source_param_type(render, slots, source, scope, "H")?;
-            Ok(format!("__kioChecked({value}, as: ({ty}).self)"))
+            Ok(format!("__kioNativeChecked({value}, as: ({ty}).self)"))
         })
         .collect()
 }
@@ -1226,6 +1227,7 @@ fn render_existential_continuation(
     scope: &super::value::Scope,
     continuation: &str,
     packet: &str,
+    cursor: Option<&str>,
 ) -> Result<String, EmitError> {
     let mut scope = scope.clone();
     let mut advanced = continuation.to_owned();
@@ -1243,8 +1245,12 @@ fn render_existential_continuation(
         ));
     }
     let witness = types.witness(current, &scope, "H")?;
+    let invocation = match cursor {
+        Some(cursor) => format!("invokeTail(__kioContinuation, {packet}.payload, {cursor})"),
+        None => format!("invoke(__kioContinuation, {packet}.payload)"),
+    };
     Ok(format!(
-        "{{ () -> Any in precondition({packet}.witnesses.count == {index}); let __kioContinuation: Any = {advanced}; return __kioChecked({witness}, as: (any __KioFunctionWitness).self).invoke(__kioContinuation, {packet}.payload) }}()"
+        "{{ () -> Any in precondition({packet}.witnesses.count == {index}); let __kioContinuation: Any = {advanced}; return __kioChecked({witness}, as: (any __KioFunctionWitness).self).{invocation} }}()"
     ))
 }
 
@@ -1275,10 +1281,11 @@ fn render_existential_projection(
         &scope,
         "__kioContinuation",
         "__kioPacket",
+        Some("__kioCursor"),
     )?;
     let witness = types.witness(current, &scope, "H")?;
     let mut body = format!(
-        "__kioChecked({witness}, as: (any __KioFunctionWitness).self).construct {{ __kioContinuation in return {call} }}"
+        "__kioChecked({witness}, as: (any __KioFunctionWitness).self).constructTail {{ __kioContinuation, __kioCursor in return {call} }}"
     );
     for (witness, argument) in stages.into_iter().rev() {
         body = format!(
@@ -1470,7 +1477,7 @@ fn render_export_method(
         format!("_ = {internal}; return KioUnit()")
     } else {
         let ty = render_prepared_use(render, callable.ret_use, &callable.scope, "H")?;
-        format!("return __kioChecked({internal}, as: ({ty}).self)")
+        format!("return __kioNativeChecked({internal}, as: ({ty}).self)")
     };
     let mut out = String::new();
     push_doc(&mut out, boundary_docs::callable(package, site), "\t");
@@ -1867,15 +1874,26 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 Vec::new(),
             ));
         }
-        let emitted = self.emit_expr(body);
+        let tail = TailContext::body(body);
+        let cursor = tail.has_tail_transfer().then(|| self.fresh_name("cursor"));
+        let emitted = self.emit_context(tail, cursor.as_deref());
         self.type_binders.truncate(saved_binders);
         self.locals.truncate(saved_locals);
         self.local_types = saved_types;
         let mut result = emitted?;
-        for (type_stage, witness, argument, names) in stages.into_iter().rev() {
+        for (index, (type_stage, witness, argument, names)) in stages.into_iter().rev().enumerate()
+        {
+            let (construct, parameters) = if index == 0 {
+                match &cursor {
+                    Some(cursor) => ("constructTail", format!("{argument}, {cursor}")),
+                    None => ("construct", argument.clone()),
+                }
+            } else {
+                ("construct", argument.clone())
+            };
             if type_stage {
                 result = format!(
-                    "__kioChecked({witness}, as: (any __KioForallWitness).self).construct {{ {argument} in return {result} }}"
+                    "__kioChecked({witness}, as: (any __KioForallWitness).self).{construct} {{ {parameters} in return {result} }}"
                 );
             } else {
                 let mut bindings = String::new();
@@ -1888,7 +1906,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     bindings.push_str(&format!("let {name}: Any = {value}; _ = {name}; "));
                 }
                 result = format!(
-                    "__kioChecked({witness}, as: (any __KioFunctionWitness).self).construct {{ {argument} in {bindings}return {result} }}"
+                    "__kioChecked({witness}, as: (any __KioFunctionWitness).self).{construct} {{ {parameters} in {bindings}return {result} }}"
                 );
             }
         }
@@ -1897,6 +1915,17 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
 
     /// Render one Routed-phase expression to a Swift expression string.
     fn emit_expr(&mut self, e: &Expr<Routed>) -> Result<String, EmitError> {
+        self.emit_context(TailContext::operand(e), None)
+    }
+
+    fn emit_context(
+        &mut self,
+        context: TailContext<'_>,
+        cursor: Option<&str>,
+    ) -> Result<String, EmitError> {
+        let e = context.expr();
+        let value_cursor = cursor.filter(|_| context.tail_stage() == Some(TailStage::Value));
+        let type_cursor = cursor.filter(|_| context.tail_stage() == Some(TailStage::Type));
         match e {
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
             Expr::Unit { .. } => Ok("(KioUnit())".to_owned()),
@@ -1950,9 +1979,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 let exact = self.exact_host_type_name(annotation)?;
                 Ok(format!("(({value} as {exact}) as Any)"))
             }
-            Expr::Let {
-                name, value, body, ..
-            } => {
+            Expr::Let { name, value, .. } => {
                 let value_ty = self.expr_type(value);
                 let v = self.emit_expr(value)?;
                 let ident = swift_local_ident(name);
@@ -1961,7 +1988,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 if let Some(ty) = value_ty {
                     self.local_types.insert(name.clone(), ty);
                 }
-                let b = self.emit_expr(body);
+                let b = self.emit_context(context.result_child(ResultChild::LetBody), cursor);
                 self.local_types.remove(name);
                 if let Some(ty) = prior_ty {
                     self.local_types.insert(name.clone(), ty);
@@ -1975,9 +2002,9 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     "{{ () -> Any in let {ident}: Any = {v}; _ = {ident}; return {b} }}()"
                 ))
             }
-            Expr::Seq { value, body, .. } => {
+            Expr::Seq { value, .. } => {
                 let v = self.emit_expr(value)?;
-                let b = self.emit_expr(body)?;
+                let b = self.emit_context(context.result_child(ResultChild::SeqBody), cursor)?;
                 Ok(format!("{{ () -> Any in _ = {v}; return {b} }}()"))
             }
             Expr::LowHostCall {
@@ -1990,12 +2017,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 ..
             } => self.emit_low_host_call(name, module_path, type_args, args, sig, ret_ty),
             Expr::LowBoundRef { name, .. } => Ok(swift_local_ident(name)),
-            Expr::EnrichedConditional {
-                cond,
-                then_branch,
-                else_branch,
-                ..
-            } => self.emit_conditional(cond, then_branch, else_branch),
+            Expr::EnrichedConditional { cond, .. } => self.emit_conditional(context, cond, cursor),
             Expr::EnrichedTuple {
                 items, synth_ty, ..
             } => self.emit_tuple_typed(items, synth_ty),
@@ -2017,7 +2039,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 arms,
                 scrutinee_ty,
                 ..
-            } => self.emit_match(scrutinee, arms, scrutinee_ty),
+            } => self.emit_match(context, scrutinee, arms, scrutinee_ty, cursor),
             Expr::EnrichedFieldGet {
                 target,
                 index,
@@ -2029,36 +2051,32 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     "__kioChecked({field}, as: (any __KioNominalValue).self).__kioValue"
                 ))
             }
-            Expr::LowModuleCall {
-                mangled,
-                type_args,
-                args,
-                sig,
-                meta,
-                ..
-            } => {
+            Expr::LowModuleCall { mangled, .. } => {
                 let module = self
                     .selective_imports
                     .get(mangled)
                     .map(String::as_str)
                     .unwrap_or(self.module_key);
-                self.emit_module_call(module, mangled, type_args, args, sig, meta.span)
+                self.emit_module_call(
+                    context,
+                    module,
+                    mangled,
+                    cursor.filter(|_| context.tail_stage().is_some()),
+                )
             }
-            Expr::LowQualifiedModuleCall {
-                mangled,
-                type_args,
-                args,
-                sig,
-                meta,
-                ..
-            } => {
+            Expr::LowQualifiedModuleCall { mangled, .. } => {
                 let (alias, leaf) = mangled.split_once('.').ok_or_else(|| {
                     EmitError::internal("a qualified Swift module call has an import prefix")
                 })?;
                 let module = self.qualified_imports.get(alias).ok_or_else(|| {
                     EmitError::internal("a qualified Swift module call has a resolved import")
                 })?;
-                self.emit_module_call(module, leaf, type_args, args, sig, meta.span)
+                self.emit_module_call(
+                    context,
+                    module,
+                    leaf,
+                    cursor.filter(|_| context.tail_stage().is_some()),
+                )
             }
             Expr::LowNewtypeCtor {
                 newtype,
@@ -2101,8 +2119,8 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     .ok_or_else(|| {
                         EmitError::internal("Swift closure type applications cross a value stage")
                     })?;
-                let callee = self.emit_type_applications(callee, type_args)?;
-                self.emit_value_call(&callee, &ty, args)
+                let callee = self.emit_type_applications(callee, type_args, None)?;
+                self.emit_value_call(&callee, &ty, args, value_cursor)
             }
             Expr::LowIndirectCall {
                 callee,
@@ -2118,21 +2136,23 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     .ok_or_else(|| {
                         EmitError::internal("Swift indirect type applications cross a value stage")
                     })?;
-                let c = self.emit_type_applications(c, type_args)?;
-                self.emit_value_call(&c, &ty, args)
+                let c = self.emit_type_applications(c, type_args, None)?;
+                self.emit_value_call(&c, &ty, args, value_cursor)
             }
             Expr::LowTypeApplication {
                 callee, type_arg, ..
             } => {
                 let c = self.emit_expr(callee)?;
-                self.emit_type_applications(c, std::slice::from_ref(type_arg))
+                self.emit_type_applications(c, std::slice::from_ref(type_arg), type_cursor)
             }
             Expr::LowCpsProjectorApply {
                 receiver,
                 continuation,
                 continuation_ty,
                 ..
-            } => self.emit_cps_projector_apply(receiver, continuation, continuation_ty),
+            } => {
+                self.emit_cps_projector_apply(receiver, continuation, continuation_ty, value_cursor)
+            }
             Expr::LowHostFnValueRef {
                 name,
                 module_path,
@@ -2262,6 +2282,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         receiver: &Expr<Routed>,
         continuation: &Expr<Routed>,
         continuation_ty: &Type<Routed>,
+        cursor: Option<&str>,
     ) -> Result<String, EmitError> {
         let receiver = self.emit_expr(receiver)?;
         let continuation = self.emit_expr(continuation)?;
@@ -2284,6 +2305,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             &scope,
             "__kioContinuation",
             "__kioPacket",
+            cursor,
         )?;
         Ok(format!(
             "{{ () -> Any in let __kioPacket = __kioChecked(__kioChecked({receiver}, as: (any __KioNominalValue).self).__kioValue, as: __KioExistential.self); let __kioContinuation: Any = {continuation}; return {call} }}()"
@@ -2488,9 +2510,14 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         &self,
         mut callee: String,
         arguments: &[Type<Routed>],
+        cursor: Option<&str>,
     ) -> Result<String, EmitError> {
-        for argument in arguments {
-            callee = format!("__kioAdvance({callee}, {})", self.witness(argument)?);
+        for (index, argument) in arguments.iter().enumerate() {
+            let witness = self.witness(argument)?;
+            callee = match cursor.filter(|_| index + 1 == arguments.len()) {
+                Some(cursor) => format!("__kioAdvanceTail({callee}, {witness}, {cursor})"),
+                None => format!("__kioAdvance({callee}, {witness})"),
+            };
         }
         Ok(callee)
     }
@@ -2537,6 +2564,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         callee: &str,
         callee_type: &Type<Routed>,
         args: &[Expr<Routed>],
+        cursor: Option<&str>,
     ) -> Result<String, EmitError> {
         let Type::Function { param, .. } = callee_type else {
             return Err(EmitError::internal(
@@ -2549,20 +2577,39 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             .collect::<Result<Vec<_>, _>>()?;
         let argument = self.product_from_values(param, &values)?;
         let witness = self.witness(callee_type)?;
+        let invocation = match cursor {
+            Some(cursor) => format!("invokeTail(__kioCallee, __kioArgument, {cursor})"),
+            None => "invoke(__kioCallee, __kioArgument)".to_owned(),
+        };
         Ok(format!(
-            "{{ () -> Any in let __kioCallee: Any = {callee}; let __kioArgument: Any = {argument}; return __kioChecked({witness}, as: (any __KioFunctionWitness).self).invoke(__kioCallee, __kioArgument) }}()"
+            "{{ () -> Any in let __kioCallee: Any = {callee}; let __kioArgument: Any = {argument}; return __kioChecked({witness}, as: (any __KioFunctionWitness).self).{invocation} }}()"
         ))
     }
 
     fn emit_module_call(
         &mut self,
+        context: TailContext<'_>,
         module: &str,
         name: &str,
-        type_args: &[Type<Routed>],
-        args: &[Expr<Routed>],
-        sig: &crate::ast::Signature<Routed>,
-        span: crate::span::Span,
+        cursor: Option<&str>,
     ) -> Result<String, EmitError> {
+        let (type_args, args, sig, span) = match context.expr() {
+            Expr::LowModuleCall {
+                type_args,
+                args,
+                sig,
+                meta,
+                ..
+            }
+            | Expr::LowQualifiedModuleCall {
+                type_args,
+                args,
+                sig,
+                meta,
+                ..
+            } => (type_args, args, sig, meta.span),
+            _ => unreachable!("Swift module emission receives a routed module call"),
+        };
         let full_type = crate::backends::reconstruct::module_function_scheme(
             self.shapes.package(),
             module,
@@ -2577,7 +2624,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 EmitError::internal("Swift module type applications cross a value stage")
             })?;
         let method = module_fn_method_name(module, name);
-        let call = self.emit_type_applications(format!("self.{method}()"), type_args)?;
+        let call = self.emit_type_applications(
+            format!("self.{method}()"),
+            type_args,
+            cursor.filter(|_| !sig.has_value_group()),
+        )?;
         let first_arity = value_group_arities(sig)[0];
         if !sig.has_value_group() || (args.is_empty() && first_arity > 0) {
             if !args.is_empty() {
@@ -2592,20 +2643,20 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 "a typed Routed module call must complete exactly its first value group",
             ));
         }
-        self.emit_value_call(&call, &ty, args)
+        self.emit_value_call(&call, &ty, args, cursor)
     }
 
     /// `if cond { then } else { else }` → an immediately-invoked Swift
     /// closure with a real `if`/`else`.
     fn emit_conditional(
         &mut self,
+        context: TailContext<'_>,
         cond: &Expr<Routed>,
-        then_branch: &Expr<Routed>,
-        else_branch: &Expr<Routed>,
+        cursor: Option<&str>,
     ) -> Result<String, EmitError> {
         let c = self.emit_bool(cond)?;
-        let t = self.emit_expr(then_branch)?;
-        let e = self.emit_expr(else_branch)?;
+        let t = self.emit_context(context.result_child(ResultChild::ThenBranch), cursor)?;
+        let e = self.emit_context(context.result_child(ResultChild::ElseBranch), cursor)?;
         Ok(format!(
             "{{ () -> Any in if {c} {{ return {t} }} else {{ return {e} }} }}()"
         ))
@@ -2694,9 +2745,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     /// Match on a sum scrutinee by peeling it once to `(variant, payload)`.
     fn emit_match(
         &mut self,
+        context: TailContext<'_>,
         scrutinee: &Expr<Routed>,
         arms: &[crate::ast::EnrichedArm<Routed>],
         scrutinee_ty: &Type<Routed>,
+        cursor: Option<&str>,
     ) -> Result<String, EmitError> {
         let n = arms.len();
         if n == 0 {
@@ -2725,7 +2778,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 })
                 .clone();
             self.local_types.insert(arm.param.clone(), payload_ty);
-            let b = self.emit_expr(&arm.body);
+            let b = self.emit_context(context.result_child(ResultChild::MatchArm(i)), cursor);
             self.local_types.remove(&arm.param);
             if let Some(ty) = prior_ty {
                 self.local_types.insert(arm.param.clone(), ty);
@@ -2866,7 +2919,10 @@ mod tests {
             &emitted.shapes_swift,
             &emitted.runtime_swift,
         ] {
-            for line in source.lines().filter(|line| line.contains("public ")) {
+            for line in source
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("//") && line.contains("public "))
+            {
                 let signature = line.split(" {").next().unwrap_or(line);
                 assert!(
                     !signature.contains("Any"),
@@ -2893,6 +2949,51 @@ mod tests {
                 "func __kioProduct(_ slots: [Any], _ witnesses: [any __KioTypeWitness]) -> Any"
             )
         );
+    }
+
+    #[test]
+    fn private_entries_transfer_only_checked_final_applications() {
+        let package = single_api_package(
+            "module api; \
+             host type Atom; \
+             host fn host_leaf(value: Atom) -> Atom; \
+             host fn entered(); \
+             pub fn apply(next: Atom -> Atom, value: Atom) -> Atom { next(value) } \
+             pub fn pending(next: Atom -> Atom, value: Atom) -> Atom { \
+                 let result = next(value); host_leaf(result) \
+             } \
+             pub fn staged(next: [T] T -> T) -> Atom -> Atom { next(Atom) } \
+             pub fn type_pending(next: [T] T -> T, value: Atom) -> Atom { \
+                 let selected = next(Atom); selected(value) \
+             } \
+             pub fn capture(next: Atom -> Atom) -> Atom -> Atom { \
+                 .(value) { entered(); next(value) } \
+             }",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit private Swift entries");
+        let body = |name: &str| {
+            let method = module_fn_method_name("api", name);
+            emitted
+                .pkg_swift
+                .split(&format!("func {method}() -> Any {{"))
+                .nth(1)
+                .expect("a declared method has an emitted private body")
+                .split("\n\t}")
+                .next()
+                .unwrap()
+        };
+        assert!(body("apply").contains(".constructTail {"));
+        assert!(body("apply").contains(".invokeTail(__kioCallee, __kioArgument,"));
+        assert!(body("pending").contains(".invoke(__kioCallee, __kioArgument)"));
+        assert!(!body("pending").contains(".constructTail {"));
+        assert!(body("staged").contains("__kioAdvanceTail(k_next,"));
+        assert!(body("type_pending").contains("__kioAdvance(k_next,"));
+        assert!(!body("type_pending").contains("__kioAdvanceTail("));
+        assert_eq!(body("capture").matches(".constructTail {").count(), 1);
+        assert!(emitted.shapes_swift.contains(
+            "__KioEntry({ argument in body(__kioChecked(argument, as: (any __KioTypeWitness).self)) }"
+        ));
+        assert_no_public_any(&emitted);
     }
 
     #[test]
@@ -4080,7 +4181,7 @@ v(2) {
                     .contains("__kioAdvance(__kioContinuation, __kioPacket.witnesses[0])")
                 && emitted
                     .pkg_swift
-                    .contains(".invoke(__kioContinuation, __kioPacket.payload)"),
+                    .contains(".invokeTail(__kioContinuation, __kioPacket.payload, __kioCursor)"),
             "{}",
             emitted.pkg_swift
         );

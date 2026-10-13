@@ -149,6 +149,7 @@ pub mod rust;
 pub(crate) mod serialized_runtime_ir;
 pub mod skin;
 pub mod swift;
+pub(crate) mod tail_plan;
 pub mod ts;
 pub(crate) mod value_plan;
 

@@ -351,8 +351,7 @@ where
 
 /// Invoke one erased declaration-owned type stage.
 ///
-/// A method value and a later erased closure use the same route: first capture
-/// the callee as `any`, then assert and invoke exactly one nullary stage.
+/// A method value and a later guest entry both complete exactly one type stage.
 pub(crate) fn invoke_type_stage<S, N>(
     stage: &GoLiveTypeHeadStage<'_>,
     expression: &str,
@@ -370,19 +369,49 @@ where
         names,
         "type_result",
         ERASED_TYPE,
-        &format!("({callee}).(func() any)()"),
+        &format!("kioApplyType({callee})"),
     )
 }
 
 /// Apply one declaration-owned value stage to typed host arguments.
 ///
 /// The callee and arguments are evaluated once in call order. Conversion then
-/// proceeds `In` from left to right, and the capability's bound source groups map those
-/// facade slots to the erased body's exact source-parameter ABI.
+/// proceeds `In` from left to right. The capability's source groups first recover
+/// source arguments, then those arguments form the private stage's single domain.
 pub(crate) fn invoke_value_stage<S, N>(
     stage: &GoLiveValueHeadStage<'_, '_>,
     expression: &str,
     arguments: &[String],
+    statements: &mut S,
+    names: &mut N,
+) -> Result<String, GoFacadeSkinError>
+where
+    S: GoStatementSink,
+    N: GoFreshNames,
+{
+    invoke_value_stage_with_abi(stage, expression, arguments, false, statements, names)
+}
+
+/// A named module method retains its declaration's direct-call parameter ABI.
+pub(crate) fn invoke_named_value_stage<S, N>(
+    stage: &GoLiveValueHeadStage<'_, '_>,
+    expression: &str,
+    arguments: &[String],
+    statements: &mut S,
+    names: &mut N,
+) -> Result<String, GoFacadeSkinError>
+where
+    S: GoStatementSink,
+    N: GoFreshNames,
+{
+    invoke_value_stage_with_abi(stage, expression, arguments, true, statements, names)
+}
+
+fn invoke_value_stage_with_abi<S, N>(
+    stage: &GoLiveValueHeadStage<'_, '_>,
+    expression: &str,
+    arguments: &[String],
+    named: bool,
     statements: &mut S,
     names: &mut N,
 ) -> Result<String, GoFacadeSkinError>
@@ -419,13 +448,18 @@ where
     let source_groups = stage.source_groups()?;
     let body_arguments =
         convert_live_value_arguments(&source_groups, &arguments, statements, names)?;
-    let body_type = erased_function_type(source_groups.len());
+    let call = if named {
+        let body_type = erased_function_type(source_groups.len());
+        format!("({callee}).({body_type})({})", body_arguments.join(", "))
+    } else {
+        format!("kioApplyValue({callee}, {})", value_domain(&body_arguments))
+    };
     Ok(materialize(
         statements,
         names,
         "value_result",
         ERASED_TYPE,
-        &format!("({callee}).({body_type})({})", body_arguments.join(", ")),
+        &call,
     ))
 }
 
@@ -846,14 +880,7 @@ where
     S: GoStatementSink,
     N: GoFreshNames,
 {
-    let body_type = erased_function_type(layout.body_abi_arity());
-    let inner = materialize(
-        statements,
-        names,
-        "function_inner",
-        &body_type,
-        &format!("({expression}).({body_type})"),
-    );
+    let inner = materialize(statements, names, "function_inner", ERASED_TYPE, expression);
 
     let public = function.public_parameters()?;
     let mut parameters = Vec::with_capacity(public.len());
@@ -873,7 +900,7 @@ where
         names,
         "function_call",
         ERASED_TYPE,
-        &format!("{inner}({})", body_arguments.join(", ")),
+        &format!("kioApplyValue({inner}, {})", value_domain(&body_arguments)),
     );
     let returned = convert(result, &call, FfiDir::Out, &mut body, names)?;
     body.line(&format!("return {returned}"));
@@ -904,14 +931,25 @@ where
         function.boundary_type().as_str(),
         expression,
     );
-    let parameters = (0..layout.body_abi_arity())
-        .map(|_| names.fresh("function_param"))
-        .collect::<Vec<_>>();
-    let declarations = parameters
-        .iter()
-        .map(|name| format!("{name} any"))
-        .collect::<Vec<_>>();
+    let domain = names.fresh("function_domain");
+    let declarations = vec![format!("{domain} any")];
     let mut body = GoSourceBlock::with_indent(1);
+    let parameters = match layout.body_abi_arity() {
+        0 => Vec::new(),
+        1 => vec![domain],
+        arity => {
+            let unpacked = materialize(
+                &mut body,
+                names,
+                "function_domain_slots",
+                "[]any",
+                &format!("kioProductSlots({domain}, {arity})"),
+            );
+            (0..arity)
+                .map(|index| format!("{unpacked}[{index}]"))
+                .collect()
+        }
+    };
     let facade_arguments = expand_body_arguments(layout, slots, &parameters, &mut body, names)?;
     let facade_arguments =
         group_public_arguments(&function.public_parameters()?, &facade_arguments)?;
@@ -951,7 +989,7 @@ where
     let callee = materialize(statements, names, "forall_callee", source_type, expression);
     let mut body = GoSourceBlock::with_indent(1);
     let call = match direction {
-        FfiDir::Out => format!("({callee}).(func() any)()"),
+        FfiDir::Out => format!("kioApplyType({callee})"),
         FfiDir::In => format!("{callee}()"),
     };
     let applied = materialize(&mut body, names, "forall_result", applied_type, &call);
@@ -1041,7 +1079,7 @@ pub(crate) fn render_type_stage_helpers(
     let selected_type = selected.boundary_type()?;
     let mut selection = GoSourceBlock::with_indent(1);
     selection.line("host := stage.host");
-    selection.line("value := stage.value.kioIntoBody(host).(func() any)()");
+    selection.line("value := kioApplyType(stage.value.kioIntoBody(host))");
     let converted = match selected_arguments {
         Some(arguments) => format!("kioValue{spelling}_selectedFromBody{arguments}(host, value)"),
         None => {
@@ -1194,6 +1232,15 @@ fn right_nest(values: &[String]) -> Result<String, GoFacadeSkinError> {
         nested = format!("[]any{{{value}, {nested}}}");
     }
     Ok(nested)
+}
+
+/// Pack the complete private value-stage domain, independently of source ABI arity.
+pub(crate) fn value_domain(arguments: &[String]) -> String {
+    if arguments.is_empty() {
+        format!("{UNIT_TYPE}{{}}")
+    } else {
+        right_nest(arguments).expect("a nonempty domain is a right-nested product")
+    }
 }
 
 fn erased_function_type(arity: usize) -> String {
@@ -1479,7 +1526,7 @@ mod prepared_tests {
     }
 
     #[test]
-    fn declaration_value_heads_keep_canonical_unit_nullary() {
+    fn declaration_value_heads_use_one_private_domain_without_changing_named_abi() {
         let package = package(LIVE_SOURCE);
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare facade-skin declaration stages");
@@ -1491,14 +1538,19 @@ mod prepared_tests {
         assert!(abi0.slots().is_empty());
         let abi0_source = render_value_invocation(abi0, "nextAbi0()", &[]);
         assert_once(&abi0_source, "nextAbi0()");
-        assert!(abi0_source.contains(".(func() any)()"));
+        assert!(abi0_source.contains("kioApplyValue(") && abi0_source.contains(", Unit{})"));
+        let mut named = GoSourceBlock::default();
+        let mut names = TestNames::default();
+        invoke_named_value_stage(abi0, "nextNamed()", &[], &mut named, &mut names)
+            .expect("invoke named Unit stage");
+        assert!(named.finish().contains(".(func() any)()"));
 
         let unit_entry = live_entry(&catalog, "unitful");
         let unit = only_value_head(&unit_entry);
         assert!(unit.slots().is_empty());
         let unit_source = render_value_invocation(unit, "nextUnit()", &[]);
         assert_once(&unit_source, "nextUnit()");
-        assert!(unit_source.contains(".(func() any)()"));
+        assert!(unit_source.contains("kioApplyValue(") && unit_source.contains(", Unit{})"));
 
         let regroup_entry = live_entry(&catalog, "regroup");
         let regroup = only_value_head(&regroup_entry);
@@ -1516,8 +1568,8 @@ mod prepared_tests {
             assert_once(&regroup_source, expression);
         }
         assert_in_order(&regroup_source, &[".F0".to_owned(), ".F1".to_owned()]);
-        assert_eq!(regroup_source.matches("[]any{").count(), 1);
-        assert!(regroup_source.contains(".(func(any, any) any)("));
+        assert_eq!(regroup_source.matches("[]any{").count(), 2);
+        assert!(regroup_source.contains("kioApplyValue(") && regroup_source.contains(", []any{"));
     }
 
     #[test]
@@ -1591,6 +1643,11 @@ mod prepared_tests {
         );
         let direct_out = render_conversion(direct.returned(), "nextDirect()", FfiDir::Out);
         assert!(direct_out.contains(&format!("func() {TEXT_HOST}")));
+        assert!(direct_out.contains("kioApplyValue("), "{direct_out}");
+        assert!(direct_out.contains(", Unit{})"), "{direct_out}");
+        let direct_in = render_conversion(direct.returned(), "nextDirect()", FfiDir::In);
+        assert!(direct_in.contains(" any) any"), "{direct_in}");
+        assert!(!direct_in.contains("func() any"), "{direct_in}");
     }
 
     #[test]
@@ -1671,7 +1728,7 @@ mod prepared_tests {
         let function_out =
             render_conversion(function_entry.returned(), "nextFunctionOut()", FfiDir::Out);
         assert_once(&function_out, "nextFunctionOut()");
-        assert_eq!(function_out.matches(".(func(any) any)").count(), 1);
+        assert_eq!(function_out.matches("kioApplyValue(").count(), 1);
         assert_eq!(function_out.matches("[]any{").count(), 2);
         let function_in =
             render_conversion(function_entry.returned(), "nextFunctionIn()", FfiDir::In);
@@ -1687,7 +1744,7 @@ mod prepared_tests {
         let forall_out = render_conversion(forall_entry.returned(), "nextForallOut()", FfiDir::Out);
         assert_once(&forall_out, "nextForallOut()");
         assert!(forall_out.contains("TypeStage["));
-        assert!(!forall_out.contains(".(func() any)()"));
+        assert!(!forall_out.contains("kioApplyType("));
         let forall_in = render_conversion(forall_entry.returned(), "nextForallIn()", FfiDir::In);
         assert_once(&forall_in, "nextForallIn()");
         assert!(forall_in.contains(".value.kioIntoBody("));
@@ -1709,7 +1766,7 @@ mod prepared_tests {
         statements.line(&format!("_ = {value}"));
         let type_source = statements.finish();
         assert_once(&type_source, "nextTypeStage()");
-        assert!(type_source.contains(".(func() any)()"));
+        assert!(type_source.contains("kioApplyType("));
     }
 
     #[test]

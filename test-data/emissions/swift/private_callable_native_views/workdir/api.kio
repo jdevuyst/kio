@@ -1,0 +1,27 @@
+module api;
+
+pub newtype Saved[T] : T { pub constructor save; pub projector get }
+
+host fn transfer[T](value: T) -> T;
+
+pub fn identity[T](value: T) -> T { value }
+
+pub fn invoke(saved: Saved(. -> .)) { let call = saved.>Saved.get; call(()) }
+
+pub fn captured[T](value: T) -> Saved(. -> T) {
+  .(unit) { value }.>Saved.save
+}
+
+pub fn structured[T](value: T) -> Saved((. -> T) & T) {
+  (.(unit) { value }, value).>Saved.save
+}
+
+pub fn returned[T](value: T) -> . -> T {
+  identity(.(unit) { value })
+}
+
+pub fn through_host[T](value: T) -> Saved(. -> T) {
+  transfer(.(unit) { value }).>Saved.save
+}
+
+pub fn recover[T](saved: Saved(T)) -> T { saved.>Saved.get }

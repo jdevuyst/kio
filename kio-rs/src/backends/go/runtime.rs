@@ -68,6 +68,69 @@ const RUNTIME_SUPPORT_BODY: &str = r#"
 // value, so `struct{}` stands in; every `()` lowers to `Unit{}`.
 type Unit = struct{}
 
+type kioValueEntry func(any) kioStep
+type kioTypeEntry func() kioStep
+
+// Named entries already know their resolved parameter slots. Keep the common
+// arities inline instead of building and reopening a canonical value domain.
+type kioNamedArguments struct {
+	first any
+	second any
+	rest []any
+}
+
+type kioStep struct {
+	value any
+	callee any
+	domain any
+	owner any
+	invoke func(any, kioNamedArguments) kioStep
+	arguments kioNamedArguments
+	typeStage bool
+}
+
+func kioDone(value any) kioStep { return kioStep{value: value} }
+
+func kioTailValue(callee any, domain any) kioStep {
+	return kioStep{callee: callee, domain: domain}
+}
+
+func kioTailType(callee any) kioStep {
+	return kioStep{callee: callee, typeStage: true}
+}
+
+func kioComplete(step kioStep) any {
+	for {
+		if step.invoke != nil {
+			step = step.invoke(step.owner, step.arguments)
+		} else if step.callee == nil {
+			return step.value
+		} else if step.typeStage {
+			switch entry := step.callee.(type) {
+			case kioTypeEntry:
+				step = entry()
+			default:
+				return entry.(func() any)()
+			}
+		} else {
+			switch entry := step.callee.(type) {
+			case kioValueEntry:
+				step = entry(step.domain)
+			default:
+				return entry.(func(any) any)(step.domain)
+			}
+		}
+	}
+}
+
+func kioApplyValue(callee any, domain any) any {
+	return kioComplete(kioTailValue(callee, domain))
+}
+
+func kioApplyType(callee any) any {
+	return kioComplete(kioTailType(callee))
+}
+
 // Value transports a Kio value at a polymorphic or abstract position. Its
 // contents are private; typed boundary helpers prepare and recover native
 // views without inspecting an opaque host container.
@@ -94,7 +157,7 @@ type TypeStage[I, R, H any] struct {
 
 // Invoke executes one stage with its abstract Value interface.
 func (stage TypeStage[I, R, H]) Invoke() R {
-	return stage.result(stage.host, stage.value.kioIntoBody(stage.host).(func() any)())
+	return stage.result(stage.host, kioApplyType(stage.value.kioIntoBody(stage.host)))
 }
 
 // Erase transports the prepared value through an abstract host slot.

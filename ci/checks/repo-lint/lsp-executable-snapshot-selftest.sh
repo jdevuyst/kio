@@ -24,6 +24,7 @@ git -C "$fake_repo" init -q
 git -C "$fake_repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
   commit --allow-empty -qm fixture
 mkdir -p "$fake_repo/kio-rs/src/backends/js"
+mkdir -p "$fake_repo/kio-rs/src/backends/python"
 cp "$REPO_ROOT/README.md" "$fake_repo/README.md"
 cp "$fake_repo/README.md" "$fake_repo/kio-rs/README.md"
 git -C "$fake_repo" add -- README.md kio-rs/README.md
@@ -32,6 +33,9 @@ cp "$REPO_ROOT/ci/infra/check-readme-examples.sh" "$fake_repo/ci/infra/"
 cp "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.js" \
   "$REPO_ROOT/kio-rs/src/backends/js/value_runtime.test.mjs" \
   "$fake_repo/kio-rs/src/backends/js/"
+cp "$REPO_ROOT/kio-rs/src/backends/python/runtime.py" \
+  "$REPO_ROOT/kio-rs/src/backends/python/runtime.test.py" \
+  "$fake_repo/kio-rs/src/backends/python/"
 cp "$REPO_ROOT/ci/checks/orchestrators/kiodoc-tests.sh" \
   "$fake_repo/ci/checks/orchestrators/kiodoc-tests.sh"
 cp "$REPO_ROOT/ci/checks/orchestrators/lib/common.sh" \

@@ -10,19 +10,40 @@ cd "$scratch/workdir"
 "${KIO_BIN:?}" build "${KIO_TARGET:?}"
 
 find "out/$KIO_TARGET" -type f -name '*.py' -exec cat {} + > "$scratch/emitted"
-for payload in shared-first-effect shared-second-before shared-second-after shared-third-effect shared-fourth-effect; do
-  count=$(awk -v payload="$payload" '
-    {
-      rest = $0
-      while ((at = index(rest, payload)) != 0) {
-        count++
-        rest = substr(rest, at + length(payload))
-      }
-    }
-    END { print count + 0 }
-  ' "$scratch/emitted")
-  if [ "$count" -ne 1 ]; then
-    printf '%s has %s emitted copies; the measured shared-body count is 1\n' "$payload" "$count" >&2
-    exit 1
-  fi
-done
+python3 - "$scratch/emitted" <<'PY'
+import ast
+import json
+from pathlib import Path
+import sys
+
+tree = ast.parse(Path(sys.argv[1]).read_text(encoding="utf-8"))
+assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)
+               and any(isinstance(target, ast.Name) and target.id == "_KIO_IR"
+                       for target in node.targets)]
+assert len(assignments) == 1, "exactly one IR assignment"
+assignment = assignments[0]
+assert len(assignment.targets) == 1
+call = assignment.value
+assert isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+assert isinstance(call.func.value, ast.Name) and call.func.value.id == "json"
+assert call.func.attr == "loads" and len(call.args) == 1 and not call.keywords
+argument = call.args[0]
+# Python's parser joins adjacent literals and decodes their quoting without executing them.
+assert isinstance(argument, ast.Constant) and isinstance(argument.value, str)
+counts = dict.fromkeys([
+    "shared-first-effect", "shared-second-before", "shared-second-after",
+    "shared-third-effect", "shared-fourth-effect",
+], 0)
+pending = [json.loads(argument.value)]
+while pending:
+    value = pending.pop()
+    if isinstance(value, list):
+        pending.extend(value)
+    elif isinstance(value, dict):
+        payload = value.get("StrLit", {}).get("value")
+        if payload in counts:
+            counts[payload] += 1
+        pending.extend(value.values())
+for payload, count in counts.items():
+    assert count == 1, f"{payload} has {count} emitted copies; the measured shared-body count is 1"
+PY

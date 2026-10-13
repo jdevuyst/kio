@@ -1,0 +1,12 @@
+package go_general_tail_calls;
+
+build {
+  target go {
+    out "out/go/";
+    baseline v1_26
+  }
+}
+
+bridge {
+  api
+}

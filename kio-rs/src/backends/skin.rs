@@ -3,7 +3,7 @@
 //! Public callable topology, semantic slots, structural shells, and nominal
 //! dependencies are planned once in [`crate::backends::boundary_facade`]. This
 //! module retains only reusable conversion algorithms and IR helpers:
-//! boundary arity, exact type reach and substitution utilities,
+//! exact type reach and substitution utilities,
 //! canonical hashing, and the first-non-colliding key selector. A backend's
 //! public declaration catalog and naming policy stay in its prepared facade
 //! renderer; this module does not discover or register a second public shape
@@ -49,33 +49,6 @@ impl FfiDir {
             FfiDir::In => FfiDir::Out,
         }
     }
-}
-
-/// The semantic parameter arity of a polymorphic-function newtype payload
-/// at the host boundary.
-///
-/// The host sees the semantic right-spine product (except that a raw
-/// zero-arity domain remains zero slots), while the stored callable keeps the
-/// lowering ABI recorded by [`Type::Function::abi_arity`]. Recovery may pack
-/// several semantic slots into the stored callable's final argument, so its
-/// ABI arity does not determine the host arity.
-pub(crate) fn function_boundary_arity(param: &Type<Routed>, abi_arity: usize) -> usize {
-    let internal_slots = Type::right_spine_take(param, abi_arity);
-    assert_eq!(
-        internal_slots.len(),
-        abi_arity,
-        "Routed function parameter spine is shorter than its ABI arity"
-    );
-    let boundary_slots = if abi_arity == 0 {
-        Vec::new()
-    } else {
-        Type::right_spine_product(param)
-    };
-    assert!(
-        internal_slots.len() <= boundary_slots.len(),
-        "Routed function ABI has more slots than its semantic parameter spine"
-    );
-    boundary_slots.len()
 }
 
 /// Assign a host-visible key to each of `slot_count` spine slots by
@@ -402,41 +375,6 @@ pub(crate) fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> 
     }
     if groups.is_empty() {
         groups.push(Vec::new());
-    }
-    groups
-}
-
-pub(crate) fn erase_signature_value_groups(
-    sig: &crate::ast::Signature<Routed>,
-) -> Vec<Vec<Option<Type<Routed>>>> {
-    let mut scope = BTreeSet::new();
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                for param in params {
-                    if let crate::ast::SignatureParam::Type(param) = param {
-                        scope.insert(param.name.clone());
-                    }
-                }
-            }
-            crate::ast::SignatureGroupRef::Value(params) => {
-                groups.push(
-                    params
-                        .iter()
-                        .filter_map(|param| match param {
-                            crate::ast::SignatureParam::Value(param) => Some(
-                                param
-                                    .ty
-                                    .as_ref()
-                                    .map(|ty| erase_scoped_type_vars(ty, &scope)),
-                            ),
-                            crate::ast::SignatureParam::Type(_) => None,
-                        })
-                        .collect(),
-                );
-            }
-        }
     }
     groups
 }
@@ -972,21 +910,6 @@ mod tests {
             abi_arity,
             caps: crate::ast::FnTypeCapabilities::default(),
         }
-    }
-
-    #[test]
-    fn function_boundary_arity_separates_semantic_and_stored_partitions() {
-        let param = product(path("A"), product(path("B"), path("C")));
-        for abi_arity in 1..=3 {
-            assert_eq!(function_boundary_arity(&param, abi_arity), 3);
-        }
-    }
-
-    #[test]
-    fn function_boundary_arity_preserves_raw_zero_arity() {
-        let unit = Type::Unit { meta: meta() };
-        assert_eq!(function_boundary_arity(&unit, 0), 0);
-        assert_eq!(function_boundary_arity(&unit, 1), 1);
     }
 
     #[cfg(feature = "surface")]
