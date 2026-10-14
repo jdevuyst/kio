@@ -54,6 +54,10 @@ use crate::backends::boundary_facade::{
     FacadeBinderId, FacadeUse, FacadeUseId, PreparedBoundaryCallableSite,
     PreparedBoundaryCallableSites, QualifiedTypeName,
 };
+use crate::backends::closure_plan::{
+    CpsBinding, CpsRuntimePlan, ExecutableBodyPlan, StageInput, cps_continuation_runtime_shape,
+    cps_newtype_runtime_plan, signature_stages,
+};
 use crate::backends::product_rebuild::{
     NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
     render_cached_product_rebuild,
@@ -72,8 +76,6 @@ type EnrichedArm = crate::ast::EnrichedArm<Routed>;
 type Item = crate::ast::Item<Routed>;
 type Module = crate::ast::Module<Routed>;
 type Signature = crate::ast::Signature<Routed>;
-type SignatureGroupRef<'a> = crate::ast::SignatureGroupRef<'a, Routed>;
-type SignatureParam = crate::ast::SignatureParam<Routed>;
 type Type = crate::ast::Type<Routed>;
 #[cfg(feature = "cli")]
 type JsEmitCache = crate::cache::emit::EmitCache;
@@ -1799,22 +1801,29 @@ fn is_legal_js_identifier(s: &str) -> bool {
 // =========================================================================
 
 fn lower_fn_def(d: &FnDef, top: &TopLevel, out: &mut String) -> Result<(), EmitError> {
-    let runtime_groups = runtime_signature_groups(&d.sig);
+    let plan = ExecutableBodyPlan::new(&d.sig, &d.body);
+    let stages = js_executable_stages(&plan, &d.body);
+    let body_context = plan.entry_for_body(&d.body).body();
+    assert!(
+        stages[0].captures.is_empty(),
+        "a named body has no lexical captures"
+    );
     out.push_str("const ");
     out.push_str(&mangle_js_ident(&d.name));
     out.push_str(" = ");
     let mut locals = JsLocalScope {
-        values: runtime_groups
-            .iter()
-            .flat_map(|group| group.param_names().iter().map(|s| (*s).to_owned()))
-            .collect(),
+        values: stages
+            .last()
+            .expect("a guest entry has a stage")
+            .body_bindings()
+            .into(),
         type_params: signature_type_params(&d.sig).cloned().collect(),
+        plan,
     };
     let mut body_js = String::new();
-    let body_context = TailContext::body(&d.body);
     lower_expr_in_context(body_context, top, &mut locals, &mut body_js)?;
-    out.push_str(&wrap_js_signature_stages_with_tail(
-        &runtime_groups,
+    out.push_str(&wrap_js_executable_stages(
+        &stages,
         body_js,
         body_context.has_tail_transfer(),
     ));
@@ -1837,22 +1846,72 @@ impl JsRuntimeSignatureGroup<'_> {
     }
 }
 
-fn runtime_signature_groups(sig: &Signature) -> Vec<JsRuntimeSignatureGroup<'_>> {
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            SignatureGroupRef::Type(params) => {
-                groups.extend(params.iter().map(|_| JsRuntimeSignatureGroup::Type));
-            }
-            SignatureGroupRef::Value(params) => {
-                groups.push(JsRuntimeSignatureGroup::Value(value_param_names(params)));
-            }
+struct JsExecutableStage<'a> {
+    input: JsRuntimeSignatureGroup<'a>,
+    captures: Vec<&'a str>,
+}
+
+impl JsExecutableStage<'_> {
+    fn body_bindings(&self) -> Vec<String> {
+        self.captures
+            .iter()
+            .chain(self.input.param_names())
+            .map(|name| (*name).to_owned())
+            .collect()
+    }
+}
+
+fn js_executable_stages<'a>(
+    plan: &ExecutableBodyPlan<'a>,
+    body: &Expr,
+) -> Vec<JsExecutableStage<'a>> {
+    plan.entry_for_body(body)
+        .stages
+        .iter()
+        .map(|stage| JsExecutableStage {
+            input: match stage.input {
+                StageInput::Type(_) => JsRuntimeSignatureGroup::Type,
+                StageInput::Value(_) => JsRuntimeSignatureGroup::Value(
+                    stage
+                        .bindings
+                        .iter()
+                        .map(|id| plan.binding(*id).name)
+                        .collect(),
+                ),
+            },
+            captures: stage
+                .captures
+                .iter()
+                .map(|id| plan.binding(*id).name)
+                .collect(),
+        })
+        .collect()
+}
+
+fn wrap_js_executable_stages(
+    stages: &[JsExecutableStage<'_>],
+    mut body: String,
+    mut tail: bool,
+) -> String {
+    for pair in stages.windows(2) {
+        let available = pair[0].body_bindings().into_iter().collect::<HashSet<_>>();
+        assert!(
+            pair[1]
+                .captures
+                .iter()
+                .all(|name| available.contains(*name)),
+            "a residual capture must be available in the preceding planned stage"
+        );
+    }
+    for stage in stages.iter().rev() {
+        body = wrap_js_signature_stages_with_tail(std::slice::from_ref(&stage.input), body, tail);
+        if !stage.captures.is_empty() {
+            let names = mangle_param_list(&stage.captures).join(", ");
+            body = format!("(({names}) => {body})({names})");
         }
+        tail = false;
     }
-    if groups.is_empty() {
-        groups.push(JsRuntimeSignatureGroup::Value(Vec::new()));
-    }
-    groups
+    body
 }
 
 fn wrap_js_signature_stages(groups: &[JsRuntimeSignatureGroup<'_>], body: String) -> String {
@@ -1908,16 +1967,6 @@ fn wrap_js_signature_stages_with_tail(
     body
 }
 
-fn value_param_names(params: &[SignatureParam]) -> Vec<&str> {
-    params
-        .iter()
-        .filter_map(|p| match p {
-            SignatureParam::Value(vp) => Some(vp.name.as_str()),
-            SignatureParam::Type(_) => None,
-        })
-        .collect()
-}
-
 /// Render a value-parameter name list into the JS identifiers that
 /// appear in the emitted parameter list.
 ///
@@ -1969,6 +2018,44 @@ fn wrap_js_type_stages(mut value: String, count: usize) -> String {
     value
 }
 
+fn js_cps_binding(binding: CpsBinding) -> &'static str {
+    match binding {
+        CpsBinding::Payload => "__kioPayload",
+        CpsBinding::Continuation => "__kioContinuation",
+    }
+}
+
+fn render_js_cps_entry(recipe: &CpsRuntimePlan) -> String {
+    let captures = recipe
+        .captures()
+        .iter()
+        .map(|binding| js_cps_binding(*binding))
+        .collect::<Vec<_>>();
+    let continuation = js_cps_binding(CpsBinding::Continuation);
+    let mut stages = (0..recipe.type_stages)
+        .map(|_| JsExecutableStage {
+            input: JsRuntimeSignatureGroup::Type,
+            captures: captures.clone(),
+        })
+        .collect::<Vec<_>>();
+    stages.push(JsExecutableStage {
+        input: JsRuntimeSignatureGroup::Value(vec![continuation]),
+        captures,
+    });
+    let callee =
+        advance_erased_type_stages(continuation.to_owned(), recipe.continuation_type_stages);
+    let domain = match recipe.payload_arity {
+        0 => "null",
+        1 => js_cps_binding(CpsBinding::Payload),
+        _ => unreachable!("a checked CPS continuation receives at most one payload"),
+    };
+    wrap_js_executable_stages(
+        &stages,
+        format!("__kioTailCall(__kioTailCursor, {callee}, {domain})"),
+        true,
+    )
+}
+
 fn lower_newtype(d: &Newtype, top: &TopLevel, out: &mut String) {
     let name = QualifiedTypeName::new(
         top.module_key.split('/').map(str::to_owned).collect(),
@@ -1985,11 +2072,8 @@ fn lower_newtype(d: &Newtype, top: &TopLevel, out: &mut String) {
     let projected = if d.existential_params.is_empty() {
         payload
     } else {
-        let continuation =
-            advance_erased_type_stages("__kioContinuation".to_owned(), d.existential_params.len());
-        format!(
-            "(() => {{ const __kioPayload = {payload}; return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, {continuation}, __kioPayload))); }})()"
-        )
+        let entry = render_js_cps_entry(&cps_newtype_runtime_plan(d));
+        format!("(() => {{ const __kioPayload = {payload}; return {entry}; }})()")
     };
     let projector = wrap_js_type_stages(
         format!("__kioLeaf(__kioNominal => ({projected}))"),
@@ -2035,9 +2119,70 @@ fn literal_annotation_is_wide_int(annotation: &crate::ast::Type<Routed>, top: &T
     role.is_some_and(|role| role.is_wide_int())
 }
 
-struct JsLocalScope {
-    values: Vec<String>,
+struct JsValueScope {
+    stack: Vec<String>,
+    counts: HashMap<String, usize>,
+}
+
+impl From<Vec<String>> for JsValueScope {
+    fn from(values: Vec<String>) -> Self {
+        let mut scope = Self {
+            stack: Vec::new(),
+            counts: HashMap::new(),
+        };
+        for value in values {
+            scope.push(value);
+        }
+        scope
+    }
+}
+
+impl JsValueScope {
+    fn push(&mut self, name: String) {
+        *self.counts.entry(name.clone()).or_default() += 1;
+        self.stack.push(name);
+    }
+
+    fn len(&self) -> usize {
+        self.stack.len()
+    }
+
+    fn contains(&self, name: &str) -> bool {
+        self.counts.contains_key(name)
+    }
+
+    fn pop(&mut self) {
+        let name = self.stack.pop().expect("a JS lexical binding is active");
+        let count = self
+            .counts
+            .get_mut(&name)
+            .expect("a JS lexical binding is indexed");
+        *count -= 1;
+        if *count == 0 {
+            self.counts.remove(&name);
+        }
+    }
+
+    fn truncate(&mut self, len: usize) {
+        while self.len() > len {
+            self.pop();
+        }
+    }
+}
+
+struct JsLocalScope<'a> {
+    values: JsValueScope,
     type_params: Vec<crate::ast::TypeParam>,
+    plan: ExecutableBodyPlan<'a>,
+}
+
+impl JsLocalScope<'_> {
+    fn require_value(&self, name: &str) {
+        assert!(
+            self.values.contains(name),
+            "a routed bound value must be available in its planned JS entry: {name}"
+        );
+    }
 }
 
 fn signature_type_params(sig: &Signature) -> impl Iterator<Item = &crate::ast::TypeParam> {
@@ -2050,7 +2195,7 @@ fn signature_type_params(sig: &Signature) -> impl Iterator<Item = &crate::ast::T
 fn lower_statement_spine(
     mut tail: TailContext<'_>,
     top: &TopLevel,
-    locals: &mut JsLocalScope,
+    locals: &mut JsLocalScope<'_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let mark = locals.values.len();
@@ -2064,7 +2209,7 @@ fn lower_statement_spine(
                     // not capture earlier initializers or closures through JS's TDZ.
                     out.push_str("{ const ");
                     blocks += 1;
-                    let is_shadow = locals.values.iter().any(|n| n == name)
+                    let is_shadow = locals.values.contains(name)
                         || top.local_runtime_bindings.contains(name.as_str());
                     if is_shadow {
                         // Evaluate outside the new binder's scope. Separate
@@ -2108,7 +2253,7 @@ fn lower_statement_spine(
 fn lower_expr(
     e: &Expr,
     top: &TopLevel,
-    locals: &mut JsLocalScope,
+    locals: &mut JsLocalScope<'_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     lower_expr_in_context(TailContext::operand(e), top, locals, out)
@@ -2117,7 +2262,7 @@ fn lower_expr(
 fn lower_expr_in_context(
     context: TailContext<'_>,
     top: &TopLevel,
-    locals: &mut JsLocalScope,
+    locals: &mut JsLocalScope<'_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let e = context.expr();
@@ -2128,29 +2273,34 @@ fn lower_expr_in_context(
             Ok(())
         }
         Expr::Let { .. } | Expr::Seq { .. } => lower_statement_spine(context, top, locals, out),
-        Expr::FnExpr { sig, .. } => {
+        Expr::FnExpr { sig, body, .. } => {
             // Wrap the arrow function in parentheses so an outer `Call`
             // applies to the arrow itself rather than to its body —
             // `((x) => x)(null)`, not the precedence-broken
             // `(x) => x(null)`.
-            let runtime_groups = runtime_signature_groups(sig);
-            let mark = locals.values.len();
+            let stages = js_executable_stages(&locals.plan, body);
+            for name in &stages[0].captures {
+                locals.require_value(name);
+            }
+            let previous_values = std::mem::replace(
+                &mut locals.values,
+                stages
+                    .last()
+                    .expect("a guest entry has a stage")
+                    .body_bindings()
+                    .into(),
+            );
             let type_mark = locals.type_params.len();
             locals
                 .type_params
                 .extend(signature_type_params(sig).cloned());
-            for group in &runtime_groups {
-                for n in group.param_names() {
-                    locals.values.push((*n).to_owned());
-                }
-            }
             let mut body_js = String::new();
-            let body_context = context.result_child(ResultChild::FunctionBody);
+            let body_context = locals.plan.entry_for_body(body).body();
             let body_result = lower_expr_in_context(body_context, top, locals, &mut body_js);
-            locals.values.truncate(mark);
+            locals.values = previous_values;
             locals.type_params.truncate(type_mark);
-            out.push_str(&wrap_js_signature_stages_with_tail(
-                &runtime_groups,
+            out.push_str(&wrap_js_executable_stages(
+                &stages,
                 body_js,
                 body_context.has_tail_transfer(),
             ));
@@ -2305,7 +2455,10 @@ fn lower_expr_in_context(
         // variant dispatches to its per-variant emit helper; the
         // helpers below carry no classification logic, only the
         // syntactic templating for the JS surface.
-        Expr::LowBoundRef { name, .. } => emit_bound_ref(name, out),
+        Expr::LowBoundRef { name, .. } => {
+            locals.require_value(name);
+            emit_bound_ref(name, out)
+        }
         Expr::LowHostFnValueRef {
             name,
             module_path,
@@ -2405,6 +2558,7 @@ fn lower_expr_in_context(
             args,
             ..
         } => {
+            locals.require_value(name);
             let mut ctx = ExprLowerCtx { top, locals };
             emit_canonical_call(
                 context,
@@ -2473,12 +2627,12 @@ fn lower_expr_in_context(
 // Structural nodes retain binary topology. Recovered n-ary roots only
 // compress traversal: their final slot remains the complete right tail.
 
-struct ExprLowerCtx<'a, 'm> {
+struct ExprLowerCtx<'a, 'm, 'p> {
     top: &'a TopLevel<'m>,
-    locals: &'a mut JsLocalScope,
+    locals: &'a mut JsLocalScope<'p>,
 }
 
-impl ExprLowerCtx<'_, '_> {
+impl ExprLowerCtx<'_, '_, '_> {
     fn lower_expr(&mut self, expr: &Expr, out: &mut String) -> Result<(), EmitError> {
         lower_expr(expr, self.top, &mut *self.locals, out)
     }
@@ -2488,7 +2642,7 @@ impl ExprLowerCtx<'_, '_> {
 fn lower_enriched_tuple(
     items: &[Expr],
     top: &TopLevel,
-    locals: &mut JsLocalScope,
+    locals: &mut JsLocalScope<'_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     // The recovery guarantees `items.len() >= 2`.
@@ -2535,9 +2689,10 @@ fn canonical_js_domain(values: &[String]) -> String {
 fn lower_enriched_product_with_cached_slots(
     items: &[&Expr],
     plan: &ProductRebuildPlan,
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
+    ctx.locals.require_value(&plan.source);
     let rendered = render_cached_product_rebuild(
         plan,
         |slot| format!("__slots[{slot}]"),
@@ -2573,7 +2728,7 @@ fn lower_enriched_project(
     index: usize,
     arity: usize,
     top: &TopLevel,
-    locals: &mut JsLocalScope,
+    locals: &mut JsLocalScope<'_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     out.push_str("__kioProductSlot((");
@@ -2592,7 +2747,7 @@ struct InjectEmit<'a> {
 
 fn lower_enriched_inject(
     inject: InjectEmit<'_>,
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let InjectEmit {
@@ -2619,7 +2774,7 @@ struct ConditionalEmit<'a> {
 fn lower_enriched_conditional(
     conditional: ConditionalEmit<'_>,
     context: TailContext<'_>,
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let ConditionalEmit { cond } = conditional;
@@ -2658,7 +2813,7 @@ struct MatchEmit<'a> {
 fn lower_enriched_match(
     match_emit: MatchEmit<'_>,
     context: TailContext<'_>,
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let MatchEmit { scrutinee, arms } = match_emit;
@@ -2694,7 +2849,7 @@ struct MatchArmEmit<'a> {
 fn lower_enriched_match_arm(
     arm_emit: MatchArmEmit<'_>,
     context: TailContext<'_>,
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let MatchArmEmit { arm, payload_expr } = arm_emit;
@@ -2906,11 +3061,11 @@ fn emit_host_fn_value_ref(
     // Unbridged declarations cannot be supplied by this package's host, but
     // their unreachable bodies still compile under open-world extension.
     // Their resolved signature supplies execution stages, not facade authority.
-    let stages = runtime_signature_groups(sig)
-        .iter()
+    let stages = signature_stages(sig)
+        .into_iter()
         .map(|stage| match stage {
-            JsRuntimeSignatureGroup::Type => None,
-            JsRuntimeSignatureGroup::Value(names) => Some(names.len()),
+            StageInput::Type(_) => None,
+            StageInput::Value(params) => Some(params.len()),
         })
         .collect::<Vec<_>>();
     Ok(render_js_native_host_value(&accessor, &stages))
@@ -2938,7 +3093,7 @@ fn emit_canonical_call(
     callee: String,
     type_args: &[Type],
     args: &[Expr],
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let source = context.expr();
@@ -2992,7 +3147,7 @@ struct QualifiedNewtypeMemberEmit<'a> {
 
 fn emit_qualified_newtype_member(
     member_emit: QualifiedNewtypeMemberEmit<'_>,
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let QualifiedNewtypeMemberEmit {
@@ -3028,7 +3183,7 @@ fn emit_newtype_member(
     type_args: &[Type],
     payload: &Expr,
     top: &TopLevel,
-    locals: &mut JsLocalScope,
+    locals: &mut JsLocalScope<'_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     if let Some(ns) = top.cross_module_newtypes.get(newtype) {
@@ -3054,7 +3209,7 @@ fn emit_newtype_member(
 fn emit_absurd_call(
     value_arg: &Expr,
     top: &TopLevel,
-    locals: &mut JsLocalScope,
+    locals: &mut JsLocalScope<'_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     out.push_str("((__bottom__) => { throw new Error('Kio: __absurd__ on bottom value'); })(");
@@ -3069,7 +3224,7 @@ fn emit_cps_projector_apply(
     continuation: &Expr,
     continuation_ty: &Type,
     tail: Option<TailStage>,
-    ctx: &mut ExprLowerCtx<'_, '_>,
+    ctx: &mut ExprLowerCtx<'_, '_, '_>,
     out: &mut String,
 ) -> Result<(), EmitError> {
     let (newtype, module_path, type_args) = owner;
@@ -3078,13 +3233,10 @@ fn emit_cps_projector_apply(
     ctx.lower_expr(receiver, &mut receiver_js)?;
     let mut continuation_js = String::new();
     ctx.lower_expr(continuation, &mut continuation_js)?;
-    let (_, callable) = continuation_ty.peel_leading_foralls();
-    let Type::Function { abi_arity, .. } = callable else {
-        unreachable!("a routed CPS projector continuation has a function type")
-    };
-    assert!(
-        *abi_arity <= 1,
-        "a routed CPS projector continuation has zero or one ABI slot"
+    assert_eq!(
+        cps_continuation_runtime_shape(continuation_ty).0,
+        declaration.existential_params.len(),
+        "a checked CPS continuation consumes the declaration's existential binders"
     );
 
     out.push_str("(() => { const __kio_cps_receiver = ");
@@ -3636,12 +3788,58 @@ mod tests {
         );
         assert_eq!(declaration("nested").matches("__kioGuest").count(), 1);
         assert!(declaration("nested").contains("((callback) => __kioGuest"));
-        assert_eq!(declaration("staged").matches("__kioGuest").count(), 1);
+        let staged = declaration("staged");
+        assert_eq!(staged.matches("__kioPoly(").count(), 2, "{staged}");
+        assert_eq!(staged.matches("__kioLeaf(").count(), 1, "{staged}");
+        assert_eq!(staged.matches("__kioGuest(").count(), 1, "{staged}");
         assert!(
-            declaration("staged")
-                .contains("__kioPoly(() => __kioLeaf(((callback) => __kioPoly(() => __kioGuest")
+            staged.contains("__kioPoly(() => __kioLeaf(((callback) => ((callback) => __kioPoly(() => ((callback) => __kioGuest(((value, __kioTailCursor) => __kioTailCall(__kioTailCursor, callback, value)"),
+            "{staged}"
         );
-        assert!(declaration("staged").contains("__kioTailCall(__kioTailCursor, callback, value)"));
+        assert_eq!(staged.matches(")(callback)").count(), 2, "{staged}");
+    }
+
+    #[test]
+    fn executable_entries_snapshot_only_planned_captures() {
+        let js = lower_typed(
+            "module main; \
+             fn nested(kept: ., unused: .) -> . -> . { .() { kept } } \
+             fn residual(kept: ., unused: .)[A](value: A) -> . { kept }",
+        );
+        let declaration = |name: &str| {
+            js.lines()
+                .find(|line| line.trim_start().starts_with(&format!("const {name} = ")))
+                .unwrap()
+        };
+        let nested = declaration("nested");
+        assert!(
+            nested.contains("((kept) => __kioLeaf((__kioUnit => kept)))(kept)"),
+            "{nested}"
+        );
+        assert!(!nested.contains("(kept, unused) =>"), "{nested}");
+        let residual = declaration("residual");
+        assert_eq!(residual.matches("((kept) =>").count(), 2, "{residual}");
+        assert!(
+            residual.contains("__kioPoly(() => ((kept) => __kioLeaf(((value) => kept)))(kept))"),
+            "{residual}"
+        );
+        assert!(!residual.contains("(kept, unused) =>"), "{residual}");
+    }
+
+    #[test]
+    #[should_panic(expected = "a residual capture must be available")]
+    fn executable_stage_rejects_an_omitted_predecessor_capture() {
+        let stages = [
+            JsExecutableStage {
+                input: JsRuntimeSignatureGroup::Type,
+                captures: Vec::new(),
+            },
+            JsExecutableStage {
+                input: JsRuntimeSignatureGroup::Value(Vec::new()),
+                captures: vec!["required"],
+            },
+        ];
+        wrap_js_executable_stages(&stages, "required".to_owned(), false);
     }
 
     #[test]
@@ -4318,7 +4516,7 @@ mod tests {
         );
         assert!(js.contains("__kioOpaqueOut("), "{js}");
         assert!(js.contains("__kioOpaqueIn("), "{js}");
-        assert!(js.contains("return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload)))"), "{js}");
+        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload))))(__kioPayload)))(__kioPayload);"), "{js}");
         assert!(!js.contains("...__cps_args__"), "{js}");
     }
 
@@ -4626,7 +4824,7 @@ mod tests {
             !wrapper.contains(".advance()"),
             "the named head must not enter its returned result stage: {wrapper}"
         );
-        assert!(js.contains("return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance().advance(), __kioPayload)))"), "{js}");
+        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance().advance(), __kioPayload))))(__kioPayload)))(__kioPayload);"), "{js}");
         assert_eq!(emitted_nominal_view(&js, "main", "Hidden")["sealed"], true);
     }
     #[test]
@@ -5451,7 +5649,7 @@ mod tests {
                 && second_product_slot < projector_call,
             "CPS expression construction must preserve receiver-before-continuation order: {js}"
         );
-        assert!(js.contains("return __kioPoly(() => __kioGuest((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload)))"), "{js}");
+        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload))))(__kioPayload)))(__kioPayload);"), "{js}");
         assert!(!js.contains("Box.box("), "got: {js}");
     }
 
@@ -5643,10 +5841,8 @@ mod tests {
 
     #[test]
     fn intrinsic_reference_in_body_rejected() {
-        // Typecheck would fail without `import __intrinsics__;`; we don't
-        // run the typer here, so confirm that bypassing that earlier contract
-        // is classified as a compiler bug rather than a user-facing backend
-        // limitation.
+        // Bypassing the typer leaves an unresolved local reference. The shared
+        // lexical plan rejects this malformed artifact before body emission.
         let panic = std::panic::catch_unwind(|| lower("module x; fn f() -> . { __pair__ }"))
             .expect_err("an intrinsic value reference violates a typer invariant");
         let message = if let Some(message) = panic.downcast_ref::<String>() {
@@ -5656,7 +5852,16 @@ mod tests {
         } else {
             panic!("panic payload was not a string")
         };
-        assert!(message.contains("intrinsic `__pair__`"), "got: {message}");
+        assert!(
+            message.contains("a checked routed local reference has an active lexical binder"),
+            "got: {message}"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "intrinsic `__pair__` reached JavaScript lowering in value position")]
+    fn intrinsic_value_emission_rejects_a_bypassed_typer_invariant() {
+        let _ = emit_bound_ref("__pair__", &mut String::new());
     }
 
     // ---- JS reserved-identifier mangling ------------------------------

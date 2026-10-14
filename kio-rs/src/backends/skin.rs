@@ -350,35 +350,6 @@ pub(crate) fn erase_scoped_type_vars(ty: &Type<Routed>, scope: &BTreeSet<String>
     }
 }
 
-/// Binding layers for bodies whose erased type binders are nullary closures.
-/// Value groups retain their source names; an empty signature has one nullary
-/// value layer. This follows abstraction order, not public call inference.
-pub(crate) fn runtime_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                groups.extend(params.iter().map(|_| Vec::new()));
-            }
-            crate::ast::SignatureGroupRef::Value(params) => {
-                groups.push(
-                    params
-                        .iter()
-                        .filter_map(|param| match param {
-                            crate::ast::SignatureParam::Value(param) => Some(param.name.as_str()),
-                            crate::ast::SignatureParam::Type(_) => None,
-                        })
-                        .collect(),
-                );
-            }
-        }
-    }
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
-}
-
 pub(crate) fn qualify_newtype_declaration_payload(
     declaration: &Newtype<Routed>,
     module_path: &str,
@@ -806,6 +777,18 @@ mod tests {
 
     #[test]
     fn runtime_binding_groups_preserve_erased_and_value_stages() {
+        let groups = |signature: &Signature<Routed>| {
+            super::super::closure_plan::signature_stages(signature)
+                .into_iter()
+                .map(|stage| {
+                    stage
+                        .param_names()
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
         let type_param = |name: &str| TypeParam {
             presentation: Default::default(),
             name: name.to_owned(),
@@ -827,7 +810,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            runtime_param_name_groups(&signature),
+            groups(&signature),
             vec![
                 vec![],
                 vec![],
@@ -841,17 +824,17 @@ mod tests {
             type_param("A"),
             type_param("B"),
         ])]);
-        assert_eq!(
-            runtime_param_name_groups(&type_only),
-            vec![Vec::<&str>::new(), Vec::new()]
-        );
+        assert_eq!(groups(&type_only), vec![Vec::<&str>::new(), Vec::new()]);
     }
 
     #[test]
     fn runtime_binding_empty_signature_has_one_nullary_layer() {
         let signature = Signature::from_groups(vec![]);
         assert_eq!(
-            runtime_param_name_groups(&signature),
+            super::super::closure_plan::signature_stages(&signature)
+                .into_iter()
+                .map(super::super::closure_plan::StageInput::param_names)
+                .collect::<Vec<_>>(),
             vec![Vec::<&str>::new()]
         );
     }

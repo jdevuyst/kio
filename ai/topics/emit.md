@@ -22,6 +22,11 @@ Emitters run at the **tail** of the pipeline (see [`kio-rs/src/pass/mod.rs`](../
 - [`pass::structural_recovery`](../../kio-rs/src/pass/structural_recovery.rs) plus [`pass::optimize`](../../kio-rs/src/pass/optimize.rs) — `Prime → Enriched` and backend-neutral optimization: collapses right-leaning intrinsic chains into the n-ary `Expr::Enriched*` structural nodes (records / tuples / projections / sums / match / conditional), then optimizes that enriched package. The combined result is the enriched-cache boundary.
 - [`pass::route`](../../kio-rs/src/pass/route.rs) — `Enriched → Routed`: classifies every call site into an `Expr::Low*` variant (host fn, module fn, qualified module fn, closure, the newtype constructor / projector variants; indirect-call, one-binder `LowTypeApplication`, `__absurd__`), with mangled names pre-resolved and type-args pre-split from value-args. A direct call's adjacent leading binders may remain on that call's `type_args`; a standalone or computed type elimination is one nested `LowTypeApplication` per binder. Neither shape may cross a value-application boundary.
 - [`pass::capabilities`](../../kio-rs/src/pass/capabilities.rs) — annotates the `Routed` IR (escape / lifetime annotations the Rust backend consumes).
+- [`backends::closure_plan`](../../kio-rs/src/backends/closure_plan.rs) — prepares
+  executable type/value stages and exact lexical capture identities for a
+  checked body and its nested callables. Native emitters and the shared runtime
+  serializer consume these facts; host closure syntax and storage remain
+  backend-specific.
 
 The Kio' emitter consumes validated, canonical `Prime` directly. A host emitter consumes `Routed`, whose computations came from that strict Kio' and have been structurally recovered, optimized, routed, and annotated. Consequences:
 
@@ -34,6 +39,14 @@ The Kio' emitter consumes validated, canonical `Prime` directly. A host emitter 
   nodes already present in its tree. Never reconstruct either side from
   declaration parameter spelling, callee provenance, an ABI arity, or a
   producer-side side channel.
+
+Use the shared closure plan for executable-stage enumeration and lexical
+capture selection. A rendered identifier or source substring is not a binding
+identity. Keep term captures separate from type-witness and package-owner
+dependencies; existing value/boundary plans still own public type shape and
+conversion. Native closures may realize the planned environment without an
+extra boxed record. Serialized runtime environments select the planned
+bindings rather than retaining an entire surrounding activation.
 
 ## Callable purity and dispatch recovery
 

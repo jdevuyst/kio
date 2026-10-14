@@ -1934,6 +1934,58 @@ v(2) {
     }
 
     #[test]
+    fn nested_closure_uses_prepared_lexical_scope_across_type_stages() {
+        let output = render(
+            "module api; \
+             host type N; \
+             fn capture[A](kept: A, unused: N) -> [B] B -> [C] C -> A { \
+                 .[B](middle: B) { .[C](last: C) { kept } } \
+             } \
+             fn shadow[A](outer: A) -> A -> . -> A { \
+                 .(outer: A) { .(_unit: .) { outer } } \
+             }",
+        )
+        .expect("render exact native lexical closures");
+        let equation = |name| {
+            let prefix = format!("{} _pkg", module_fn("api", name));
+            output
+                .lines()
+                .find(|line| line.starts_with(&prefix))
+                .expect("native function equation")
+        };
+        let capture = equation("capture");
+        assert!(capture.contains("\\ @t_b -> pure"), "{capture}");
+        assert!(capture.contains("\\ @t_c -> pure"), "{capture}");
+        assert!(capture.contains("kioPure (k_kept)"), "{capture}");
+        assert!(
+            !capture.split_once(" = ").unwrap().1.contains("k_unused"),
+            "{capture}"
+        );
+        let shadow = equation("shadow");
+        let (declaration, body) = shadow.split_once(" = ").expect("native equation");
+        let outer = declaration.split_whitespace().last().expect("outer binder");
+        let (inner, _) = body
+            .split_once('\\')
+            .expect("returned value lambda")
+            .1
+            .split_once(" -> ")
+            .expect("returned lambda binder");
+        assert_ne!(
+            inner, outer,
+            "shadowed values retain distinct identities: {shadow}"
+        );
+        assert!(
+            body.contains(&format!("\\{inner} -> kioPure (")),
+            "{shadow}"
+        );
+        assert!(
+            body.contains(&format!("\\() -> kioPure ({inner})")),
+            "{shadow}"
+        );
+        assert!(!body.contains(&format!("kioPure ({outer})")), "{shadow}");
+    }
+
+    #[test]
     fn nested_closure_type_binder_survives_newtype_result_reconstruction() {
         let output = render(
             "module api; \

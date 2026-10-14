@@ -71,6 +71,66 @@ mod runtime_tests {
             .0;
         assert!(host.contains("productSlots("));
     }
+
+    #[test]
+    fn guest_entries_select_prepared_capture_keys_at_every_stage() {
+        let decoder = RUNTIME
+            .split_once("  private static List<SignatureStage> signatureRuntimeGroups(")
+            .unwrap()
+            .1
+            .split_once("  private static boolean signatureHasValueGroup(")
+            .unwrap()
+            .0;
+        assert!(decoder.contains("stage.get(\"captures\")"));
+        let construction = RUNTIME
+            .split_once("    private Object makeFn(")
+            .unwrap()
+            .1
+            .split_once("    private Object hostFnValue(")
+            .unwrap()
+            .0;
+        assert!(!construction.contains("new LinkedHashMap<>(env)"));
+        assert!(construction.contains("captureEnv(env, stages.get(index))"));
+        assert!(construction.contains("for (String name : stage.captures())"));
+        assert!(construction.contains("!env.containsKey(name)"));
+        assert!(construction.contains("captures.put(name, env.get(name))"));
+        assert!(construction.contains("stage.captures() == null"));
+        let activation = RUNTIME
+            .split_once("        GuestEntry entry, Object domain) {")
+            .unwrap()
+            .1
+            .split_once("        Tag tagged = tag(expression);")
+            .unwrap()
+            .0;
+        assert!(activation.contains("runtime.layer("));
+        assert!(activation.contains("entry.index() + 1,"));
+        assert!(activation.contains("local, runtime.compiled.child(entry.plan(), \"result\")"));
+    }
+
+    #[test]
+    fn existential_projector_uses_the_shared_synthetic_entry() {
+        let projector = RUNTIME
+            .split_once("    private KioObject exportNewtype(")
+            .unwrap()
+            .1
+            .split_once("    private Object fn(")
+            .unwrap()
+            .0;
+        assert!(projector.contains("makeFn(null, asMap(proj.get(\"cps_entry\"))"));
+        assert!(projector.contains("Collections.singletonMap(\"payload\", payload)"));
+        assert!(!projector.contains("compiled.child("));
+        assert!(!RUNTIME.contains("existentialResult("));
+        assert!(!RUNTIME.contains("Collections.nCopies(typeStages"));
+        let plan = RUNTIME
+            .split_once("    private PlanRef plan(Object index) {")
+            .unwrap()
+            .1
+            .split_once("    private Map<String, Object> node(")
+            .unwrap()
+            .0;
+        assert!(plan.contains("selected.get(\"plan\")"));
+        assert!(plan.contains("selected.get(\"node\")"));
+    }
 }
 
 fn java_site_support_origin(site: PreparedBoundaryCallableSite<'_>) -> BoundaryFacadeSupportOrigin {

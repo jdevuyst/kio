@@ -48,7 +48,7 @@
 
   private record Tag(String tag, Object data) {}
 
-  private record SignatureStage(boolean type, List<String> names) {}
+  private record SignatureStage(boolean type, List<String> names, List<String> captures) {}
 
   private static String variantName(Object value) {
     if (value instanceof String s) {
@@ -220,12 +220,14 @@
     List<SignatureStage> out = new ArrayList<>();
     for (Object raw : asList(sig.get("stages"))) {
       Map<String, Object> stage = asMap(raw);
+      List<String> captures = stage.containsKey("captures")
+          ? asList(stage.get("captures")).stream().map(KioRuntime::asString).toList() : null;
       if (asString(stage.get("kind")).equals("type")) {
-        out.add(new SignatureStage(true, List.of()));
+        out.add(new SignatureStage(true, List.of(), captures));
       } else {
         List<String> names = new ArrayList<>();
         for (Object name : asList(stage.get("params"))) names.add(asString(name));
-        out.add(new SignatureStage(false, names));
+        out.add(new SignatureStage(false, names, captures));
       }
     }
     if (out.isEmpty()) throw new IllegalStateException("a prepared callable has a stage");
@@ -285,6 +287,10 @@
 
     private PlanRef plan(Object index) {
       if (index instanceof PlanRef ref) return ref;
+      if (index instanceof Map<?, ?>) {
+        Map<String, Object> selected = asMap(index);
+        return new PlanRef(asInt(selected.get("plan")), asInt(selected.get("node")));
+      }
       int plan = asInt(index);
       return new PlanRef(plan, asInt(asMap(plans.get(plan)).get("root")));
     }
@@ -464,41 +470,9 @@
         if (args.length != 1) throw new IllegalStateException("newtype projector takes one receiver");
         Object payload = compiled.project(data.get("nominal"), args[0]);
         if (!asBool(data.get("has_existentials"))) return payload;
-        PlanRef plan = compiled.plan(proj.get("value_plan"));
-        while (asString(compiled.node(plan).get("kind")).equals("forall")) {
-          plan = compiled.child(plan, "result");
-        }
-        return existentialResult(compiled.child(plan, "result"), payload);
+        return makeFn(null, asMap(proj.get("cps_entry")), Collections.singletonMap("payload", payload));
       });
       return result;
-    }
-
-    private Object existentialResult(PlanRef plan, Object payload) {
-      Map<String, Object> node = compiled.node(plan);
-      if (asString(node.get("kind")).equals("forall")) {
-        return compiled.stage(plan).create(() -> existentialResult(compiled.child(plan, "result"), payload));
-      }
-      if (!asString(node.get("kind")).equals("function")) {
-        throw new IllegalStateException("prepared existential projector result is callable");
-      }
-      PlanRef continuation = compiled.child(plan, "domain");
-      PlanRef current = continuation;
-      int typeStages = 0;
-      while (asString(compiled.node(current).get("kind")).equals("forall")) {
-        typeStages++;
-        current = compiled.child(current, "result");
-      }
-      if (!asString(compiled.node(current).get("kind")).equals("function")) {
-        throw new IllegalStateException("prepared existential continuation is callable");
-      }
-      Object body = Map.of("LowClosureCall", Map.of(
-          "name", "continuation", "callee_plan", continuation,
-          "type_args", Collections.nCopies(typeStages, Map.of()),
-          "args", List.of(Map.of("LowBoundRef", Map.of("name", "payload"))),
-          "tail", "value"));
-      Map<String, Object> env = new LinkedHashMap<>();
-      env.put("payload", payload);
-      return layer(null, body, List.of(new SignatureStage(false, List.of("continuation"))), 0, env, plan);
     }
 
     private Object fn(String module, String name) {
@@ -514,12 +488,23 @@
 
     private Object makeFn(String module, Map<String, Object> def, Map<String, Object> env) {
       return layer(module, def.get("body"), signatureRuntimeGroups(asMap(def.get("sig"))), 0,
-          new LinkedHashMap<>(env), compiled.plan(def.get("value_plan")));
+          env, compiled.plan(def.get("value_plan")));
+    }
+
+    private static Map<String, Object> captureEnv(Map<String, Object> env, SignatureStage stage) {
+      if (stage.captures() == null) throw new IllegalStateException("a guest stage has prepared captures");
+      Map<String, Object> captures = new LinkedHashMap<>();
+      for (String name : stage.captures()) {
+        if (!env.containsKey(name)) throw new IllegalStateException("a prepared capture is available: " + name);
+        captures.put(name, env.get(name));
+      }
+      return captures;
     }
 
     private Object layer(String module, Object body, List<SignatureStage> stages,
         int index, Map<String, Object> env, PlanRef plan) {
-      GuestEntry entry = new GuestEntry(this, module, body, stages, index, env, plan);
+      GuestEntry entry = new GuestEntry(this, module, body, stages, index,
+          captureEnv(env, stages.get(index)), plan);
       return stages.get(index).type() ? compiled.stage(plan).create(entry) : entry;
     }
 

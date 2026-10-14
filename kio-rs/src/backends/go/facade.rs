@@ -33,6 +33,7 @@ use crate::backends::boundary_facade::{
     FacadeBinderId, FacadeKind, FacadeShellId, FacadeUse, FacadeUseId,
     PreparedBoundaryCallableSite, PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
 };
+use crate::backends::closure_plan::{CpsRuntimePlan, cps_boundary_runtime_plan};
 use crate::backends::public_names::readable_role_adapter_identity;
 
 use super::naming::{
@@ -3809,6 +3810,7 @@ pub(crate) struct GoLiveExistentialProjectorEntry<'site, 'source> {
     entry: GoLiveCallableEntry<'site, 'source>,
     continuation: GoLiveFacadeUseRef<'site, 'source>,
     selected_result: GoLiveFacadeUseRef<'site, 'source>,
+    runtime: CpsRuntimePlan,
 }
 
 impl<'site, 'source> GoLiveExistentialProjectorEntry<'site, 'source> {
@@ -3822,6 +3824,10 @@ impl<'site, 'source> GoLiveExistentialProjectorEntry<'site, 'source> {
 
     pub(crate) fn selected_result(&self) -> &GoLiveFacadeUseRef<'site, 'source> {
         &self.selected_result
+    }
+
+    pub(crate) fn runtime(&self) -> &CpsRuntimePlan {
+        &self.runtime
     }
 }
 
@@ -4004,11 +4010,17 @@ impl<'site, 'source> GoLiveFacadeSite<'site, 'source> {
             GoNewtypeMemberRole::Projector => {
                 let (continuation, selected_result) =
                     self.validate_existential_projector_cut(&entry, existential_params)?;
+                let runtime = cps_boundary_runtime_plan(
+                    self.site.callable().facade(),
+                    self.execution,
+                    self.site.callable().entry().returned,
+                );
                 Ok(GoLiveNewtypeMemberEntry::ExistentialProjector(
                     GoLiveExistentialProjectorEntry {
                         entry,
                         continuation,
                         selected_result,
+                        runtime,
                     },
                 ))
             }

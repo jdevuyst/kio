@@ -33,9 +33,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::ast::{
-    Expr, FnDef, Item, Newtype, Routed, SignatureGroupRef, SignatureParam, Type, TypeParam,
-};
+use crate::ast::{Expr, FnDef, Item, Newtype, Routed, SignatureParam, Type, TypeParam};
 use crate::pass::resolve::Package;
 
 use super::emit::{
@@ -48,6 +46,7 @@ use super::skin::instantiate_newtype_payload_in;
 use crate::backends::boundary_facade::{
     BoundaryFacadeSiteOwner, BoundaryNewtypeSurface, CallableSourceParamAdapter,
 };
+use crate::backends::closure_plan::{ExecutableBodyPlan, StageInput, signature_stages};
 use crate::backends::skin::FfiDir;
 
 /// A carrier newtype rendered as a native type constructor. Carries every
@@ -1469,11 +1468,13 @@ impl<'a> NativeCtx<'a> {
         f: &FnDef<Routed>,
     ) -> Result<String, EmitError> {
         let effect = self.effect_of(name);
+        let body_plan = ExecutableBodyPlan::new(&f.sig, &f.body);
         let recon = TypeRecon::new(&f.sig, self.package, &self.types.resolution, module_key);
         let mut emitter = NativeExprEmitter {
             ctx: self,
             module_key,
             recon,
+            body_plan: Some(&body_plan),
             type_params: fn_type_params(&f.sig).into_iter().cloned().collect(),
             locals: Vec::new(),
             projection_aliases: BTreeMap::new(),
@@ -1485,13 +1486,14 @@ impl<'a> NativeCtx<'a> {
         // order: invisible `@t_*` patterns retain each `forall` boundary,
         // the first value group stays positionally curried, and each later
         // value group is one tuple-pattern argument (the Kio ABI).
-        let value_groups = value_param_name_groups(&f.sig);
-        for g in &value_groups {
-            for n in g {
-                emitter.locals.push((*n).to_owned());
-            }
-        }
-        let body = emitter.emit(&f.body, effect)?;
+        let entry = body_plan.entry_for_body(&f.body);
+        emitter.locals = entry
+            .stages
+            .iter()
+            .flat_map(|stage| &stage.bindings)
+            .map(|binding| body_plan.binding(*binding).name.to_owned())
+            .collect();
+        let body = emitter.emit(entry.body().expr(), effect)?;
         let params = render_module_fn_patterns(&f.sig);
 
         // Reconstruct the fn's native type for its signature.
@@ -1545,29 +1547,22 @@ impl<'a> NativeCtx<'a> {
                 self.render_direct_generic_type(ty, type_params, module)
             }
         };
-        let groups = f.sig.canonical_groups();
-        let first_value = groups
-            .iter()
-            .position(|group| matches!(group, SignatureGroupRef::Value(_)));
+        let stages = signature_stages(&f.sig);
         let mut type_params = Vec::new();
-        let mut rendered_groups = Vec::with_capacity(groups.len());
-        for group in groups {
-            match group {
-                SignatureGroupRef::Type(params) => {
-                    let mut rendered = Vec::new();
-                    for param in params {
-                        let SignatureParam::Type(param) = param else {
-                            unreachable!("SignatureGroupRef::Type contains only type parameters")
-                        };
-                        rendered.push(super::skin::kinded_haskell_binder(
-                            param,
-                            self.shapes.standard_names(),
-                        ));
-                        type_params.push(param.clone());
+        let mut rendered_groups = Vec::with_capacity(stages.len());
+        for stage in stages {
+            match stage {
+                StageInput::Type(param) => {
+                    let rendered =
+                        super::skin::kinded_haskell_binder(param, self.shapes.standard_names());
+                    if let Some(RenderedGroup::Type(group)) = rendered_groups.last_mut() {
+                        group.push(rendered);
+                    } else {
+                        rendered_groups.push(RenderedGroup::Type(vec![rendered]));
                     }
-                    rendered_groups.push(RenderedGroup::Type(rendered));
+                    type_params.push(param.clone());
                 }
-                SignatureGroupRef::Value(params) => {
+                StageInput::Value(params) => {
                     let mut rendered = Vec::new();
                     for param in params {
                         let SignatureParam::Value(param) = param else {
@@ -1591,6 +1586,9 @@ impl<'a> NativeCtx<'a> {
             Effect::Effectful => format!("m {}", paren_ty(&ret)),
             Effect::Pure => ret,
         };
+        let first_value = rendered_groups
+            .iter()
+            .position(|group| matches!(group, RenderedGroup::Value(_)));
         for (index, group) in rendered_groups.into_iter().enumerate().rev() {
             match group {
                 RenderedGroup::Type(rendered) => {
@@ -1773,6 +1771,7 @@ impl<'a> NativeCtx<'a> {
             ctx: self,
             module_key,
             recon,
+            body_plan: None,
             type_params: fn_type_params(&f.sig).into_iter().cloned().collect(),
             locals: Vec::new(),
             projection_aliases: BTreeMap::new(),
@@ -1869,18 +1868,13 @@ impl<'a> NativeCtx<'a> {
         let mut call = format!("{mangled} _pkg");
         let mut offset = 0usize;
         let mut saw_value_group = false;
-        for group in f.sig.canonical_groups() {
-            match group {
-                SignatureGroupRef::Type(params) => {
-                    for param in params {
-                        let SignatureParam::Type(param) = param else {
-                            unreachable!("SignatureGroupRef::Type contains only type parameters")
-                        };
-                        call.push_str(" @");
-                        call.push_str(&hs_tyvar(&param.name));
-                    }
+        for stage in signature_stages(&f.sig) {
+            match stage {
+                StageInput::Type(param) => {
+                    call.push_str(" @");
+                    call.push_str(&hs_tyvar(&param.name));
                 }
-                SignatureGroupRef::Value(params) => {
+                StageInput::Value(params) => {
                     let size = params.len();
                     let slice = &natives[offset..offset + size];
                     if !saw_value_group {
@@ -1981,7 +1975,7 @@ impl<'a> NativeCtx<'a> {
         &self,
         entry: &HaskellCallableEntry,
         raw_ty: &Type<Routed>,
-        converter: &NativeExprEmitter<'_>,
+        converter: &NativeExprEmitter<'_, '_>,
         scope: &[TypeParam],
         module: Option<&str>,
     ) -> Result<(Vec<String>, Vec<String>, String), EmitError> {
@@ -2101,6 +2095,7 @@ impl<'a> NativeCtx<'a> {
                 ctx: self,
                 module_key,
                 recon,
+                body_plan: None,
                 type_params: all_params.clone(),
                 locals: Vec::new(),
                 projection_aliases: BTreeMap::new(),
@@ -2231,6 +2226,7 @@ impl<'a> NativeCtx<'a> {
                 ctx: self,
                 module_key,
                 recon,
+                body_plan: None,
                 type_params: scope.clone(),
                 locals: Vec::new(),
                 projection_aliases: BTreeMap::new(),
@@ -2309,6 +2305,7 @@ impl<'a> NativeCtx<'a> {
             ctx: self,
             module_key,
             recon,
+            body_plan: None,
             type_params: scope.clone(),
             locals: Vec::new(),
             projection_aliases: BTreeMap::new(),
@@ -2357,10 +2354,11 @@ impl<'a> NativeCtx<'a> {
 /// The native body-expression emitter for one module fn. Pure
 /// sub-expressions render as plain Haskell; effectful ones sequence through
 /// `m`.
-struct NativeExprEmitter<'a> {
+struct NativeExprEmitter<'a, 'plan> {
     ctx: &'a NativeCtx<'a>,
     module_key: &'a str,
     recon: TypeRecon<'a>,
+    body_plan: Option<&'plan ExecutableBodyPlan<'plan>>,
     /// Ordered, kinded type parameters of the enclosing module function.
     /// Boundary shapes key generic compounds by this lexical
     /// scope; a name-only set cannot distinguish kind changes.
@@ -2420,7 +2418,7 @@ impl<'scope, 'module> HaskellHostConversionContext<'scope, 'module> {
     }
 }
 
-impl NativeExprEmitter<'_> {
+impl NativeExprEmitter<'_, '_> {
     /// Emit `expr` at the given effect context. When `Effectful`, the
     /// result is an `m <native>` expression (host calls sequenced); when
     /// `Pure`, a plain `<native>` value.
@@ -2511,7 +2509,7 @@ impl NativeExprEmitter<'_> {
                 let value = if *value { "True" } else { "False" };
                 Ok(format!("({value} :: {ty})"))
             }
-            Expr::LowBoundRef { name, .. } => Ok(hs_local(name)),
+            Expr::LowBoundRef { name, .. } => Ok(self.local_ref(name)),
             Expr::Let {
                 name, value, body, ..
             } => {
@@ -2667,7 +2665,7 @@ impl NativeExprEmitter<'_> {
             // A direct closure-param call `step(x)` inside a dict op.
             Expr::LowClosureCall { name, args, .. } => {
                 let (binds, arg) = self.emit_pure_call_arg(args)?;
-                Ok(format!("({binds}{} {arg})", hs_local(name)))
+                Ok(format!("({binds}{} {arg})", self.local_ref(name)))
             }
             // A pure module call. `box_functor()` is nullary; the derived
             // transformer stack calls dict-building fns with value args
@@ -3020,7 +3018,7 @@ impl NativeExprEmitter<'_> {
                 let callee_ty = self.recon.bound_value_type(name);
                 self.emit_effectful_staged_apply(
                     String::new(),
-                    hs_local(name),
+                    self.local_ref(name),
                     callee_ty,
                     type_args,
                     args,
@@ -4692,28 +4690,38 @@ impl NativeExprEmitter<'_> {
         // lambda remains pure; invoking its value group either returns the
         // next polymorphic/function layer through `pure` or runs the final
         // body action.
-        let groups = value_param_name_groups(sig);
-        let canonical = sig.canonical_groups();
-        if canonical.is_empty() {
-            unreachable!(
-                "post-recovery FnExpr signatures have at least one canonical group; a direct \
-                 nullary function is represented by an empty Value group"
-            );
-        }
+        let plan = self
+            .body_plan
+            .expect("a routed closure belongs to its named body's executable plan");
+        let entry = plan.entry_for_body(body);
+        let final_stage = entry.stages.last().expect("every callable has a stage");
+        // Native lambdas retain the selected free variables themselves. Limit
+        // body rendering to the final stage's environment and input binders;
+        // type parameters remain independently scoped for native annotations.
+        let selected = final_stage
+            .captures
+            .iter()
+            .chain(&final_stage.bindings)
+            .map(|binding| plan.binding(*binding).name.to_owned())
+            .collect::<Vec<_>>();
+        let outer_locals = std::mem::replace(&mut self.locals, selected);
+        let excluded_types = self.recon.select_value_scope(&self.locals);
+        let outer_aliases = std::mem::take(&mut self.projection_aliases);
+        self.projection_aliases = outer_aliases
+            .iter()
+            .filter(|((name, _, _), _)| self.locals.contains(name))
+            .map(|(key, alias)| (key.clone(), alias.clone()))
+            .collect();
         // Seed each typed value param into the reconstruction env so the
         // body can spell types where it needs to (carrier boundaries).
         let mut priors: Vec<(String, Option<Type<Routed>>)> = Vec::new();
-        for p in &sig.params {
-            if let SignatureParam::Value(vp) = p
-                && let Some(ty) = &vp.ty
+        for binding in entry.stages.iter().flat_map(|stage| &stage.bindings) {
+            let binding = plan.binding(*binding);
+            if self.locals.iter().any(|name| name == binding.name)
+                && let Some(ty) = binding.ty
             {
-                let prior = self.recon.bind(&vp.name, ty.clone());
-                priors.push((vp.name.clone(), prior));
-            }
-        }
-        for g in &groups {
-            for n in g {
-                self.locals.push((*n).to_owned());
+                let prior = self.recon.bind(binding.name, ty.clone());
+                priors.push((binding.name.to_owned(), prior));
             }
         }
         let inserted_type_params = self.recon.push_type_params(sig);
@@ -4739,23 +4747,17 @@ impl NativeExprEmitter<'_> {
         // Otherwise projecting all N slots rebuilds every selector prefix and
         // grows the emitted expression (and GHC's parse/typecheck work)
         // quadratically.
-        let mut canonical_patterns = Vec::with_capacity(canonical.len());
-        let mut projection_priors = Vec::new();
-        let mut masked_projection_aliases = Vec::new();
-        let mut masked_names = BTreeSet::new();
-        for group in &canonical {
-            match group {
-                SignatureGroupRef::Type(_) => canonical_patterns.push(None),
-                SignatureGroupRef::Value(params) => {
+        let mut canonical_patterns = Vec::with_capacity(entry.stages.len());
+        for stage in &entry.stages {
+            match stage.input {
+                StageInput::Type(_) => canonical_patterns.push(None),
+                StageInput::Value(params) => {
                     let mut binders = Vec::with_capacity(params.len());
                     for param in params.iter() {
                         let SignatureParam::Value(param) = param else {
                             unreachable!("SignatureGroupRef::Value contains only value parameters")
                         };
-                        if masked_names.insert(param.name.clone()) {
-                            masked_projection_aliases
-                                .extend(self.take_projection_aliases(&param.name));
-                        }
+                        self.take_projection_aliases(&param.name);
                         let binder = hs_local(&param.name);
                         let Some(ty) = &param.ty else {
                             binders.push(binder);
@@ -4770,8 +4772,7 @@ impl NativeExprEmitter<'_> {
                         for index in 0..arity {
                             let alias = self.fresh_projection_var();
                             let key = (param.name.clone(), index, arity);
-                            let prior = self.projection_aliases.insert(key.clone(), alias.clone());
-                            projection_priors.push((key, prior));
+                            self.projection_aliases.insert(key, alias.clone());
                             aliases.push(alias);
                         }
                         binders.push(format!("{binder}@(~{})", nest_tuple_value(&aliases)));
@@ -4780,28 +4781,15 @@ impl NativeExprEmitter<'_> {
                 }
             }
         }
-        let b = self.emit_effectful(body);
-        for (key, prior) in projection_priors.into_iter().rev() {
-            match prior {
-                Some(alias) => {
-                    self.projection_aliases.insert(key, alias);
-                }
-                None => {
-                    self.projection_aliases.remove(&key);
-                }
-            }
-        }
-        self.restore_projection_aliases(masked_projection_aliases);
+        let b = self.emit_effectful(entry.body().expr());
         self.type_params.truncate(outer_type_params);
         self.recon.pop_type_params(inserted_type_params);
-        for g in &groups {
-            for _ in g {
-                self.locals.pop();
-            }
-        }
         for (name, prior) in priors.into_iter().rev() {
             self.recon.restore(&name, prior);
         }
+        self.recon.restore_value_scope(excluded_types);
+        self.locals = outer_locals;
+        self.projection_aliases = outer_aliases;
         let closure_type = closure_type?.ok_or_else(|| {
             EmitError::unsupported(
                 "Haskell native body: anonymous function result reconstruction gap",
@@ -4809,21 +4797,16 @@ impl NativeExprEmitter<'_> {
         })?;
         let mut acc = b?;
         let mut has_deeper_stage = false;
-        for (group, prepared_patterns) in canonical.into_iter().zip(canonical_patterns).rev() {
-            match group {
-                SignatureGroupRef::Type(params) => {
-                    for param in params.iter().rev() {
-                        let SignatureParam::Type(param) = param else {
-                            unreachable!("SignatureGroupRef::Type contains only type parameters")
-                        };
-                        if has_deeper_stage {
-                            acc = format!("pure ({acc})");
-                        }
-                        acc = format!("(\\ @{} -> {acc})", hs_tyvar(&param.name));
-                        has_deeper_stage = true;
+        for (stage, prepared_patterns) in entry.stages.iter().zip(canonical_patterns).rev() {
+            match stage.input {
+                StageInput::Type(param) => {
+                    if has_deeper_stage {
+                        acc = format!("pure ({acc})");
                     }
+                    acc = format!("(\\ @{} -> {acc})", hs_tyvar(&param.name));
+                    has_deeper_stage = true;
                 }
-                SignatureGroupRef::Value(_) => {
+                StageInput::Value(_) => {
                     let binders = prepared_patterns
                         .expect("every value signature group has prepared native patterns");
                     let pattern = nest_tuple_value(&binders);
@@ -4839,6 +4822,14 @@ impl NativeExprEmitter<'_> {
     }
 
     // --- helpers ----------------------------------------------------------
+
+    fn local_ref(&self, name: &str) -> String {
+        assert!(
+            self.locals.iter().any(|binding| binding == name),
+            "a routed value reference is present in its prepared lexical environment: {name}"
+        );
+        hs_local(name)
+    }
 
     fn resolve_module_fn(&self, mangled: &str) -> String {
         resolve_called_fn(mangled, self.module_key, self.ctx.package)
@@ -5395,11 +5386,11 @@ fn hs_kinded_tyvars(
 
 /// Every type-param name a signature binds, across every type group.
 fn fn_type_params(sig: &crate::ast::Signature<Routed>) -> Vec<&TypeParam> {
-    sig.params
-        .iter()
-        .filter_map(|param| match param {
-            SignatureParam::Type(param) => Some(param),
-            SignatureParam::Value(_) => None,
+    signature_stages(sig)
+        .into_iter()
+        .filter_map(|stage| match stage {
+            StageInput::Type(param) => Some(param),
+            StageInput::Value(_) => None,
         })
         .collect()
 }
@@ -5416,23 +5407,16 @@ fn fn_type_param_names(sig: &crate::ast::Signature<Routed>) -> Vec<&str> {
 /// first value group is positionally curried, while every later value group
 /// occupies one tuple-shaped argument.
 fn render_module_fn_patterns(sig: &crate::ast::Signature<Routed>) -> String {
-    let groups = sig.canonical_groups();
-    let first_value = groups
-        .iter()
-        .position(|group| matches!(group, SignatureGroupRef::Value(_)));
+    let stages = signature_stages(sig);
+    let first_value = stages.iter().position(|stage| stage.is_value());
     let mut rendered = String::new();
-    for (index, group) in groups.into_iter().enumerate() {
-        match group {
-            SignatureGroupRef::Type(params) => {
-                for param in params {
-                    let SignatureParam::Type(param) = param else {
-                        unreachable!("SignatureGroupRef::Type contains only type parameters")
-                    };
-                    rendered.push_str(" @");
-                    rendered.push_str(&hs_tyvar(&param.name));
-                }
+    for (index, stage) in stages.into_iter().enumerate() {
+        match stage {
+            StageInput::Type(param) => {
+                rendered.push_str(" @");
+                rendered.push_str(&hs_tyvar(&param.name));
             }
-            SignatureGroupRef::Value(params) => {
+            StageInput::Value(params) => {
                 let binders = params
                     .iter()
                     .map(|param| match param {
@@ -5492,17 +5476,12 @@ fn render_staged_foralls(
 fn native_call_stages(sig: &crate::ast::Signature<Routed>) -> Vec<NativeCallStage> {
     let mut saw_value = false;
     let mut stages = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            SignatureGroupRef::Type(params) => {
-                for param in params {
-                    let SignatureParam::Type(param) = param else {
-                        unreachable!("SignatureGroupRef::Type contains only type parameters")
-                    };
-                    stages.push(NativeCallStage::Type(hs_tyvar(&param.name)));
-                }
+    for stage in signature_stages(sig) {
+        match stage {
+            StageInput::Type(param) => {
+                stages.push(NativeCallStage::Type(hs_tyvar(&param.name)));
             }
-            SignatureGroupRef::Value(params) => {
+            StageInput::Value(params) => {
                 stages.push(NativeCallStage::Value {
                     arity: params.len(),
                     module_positional: !saw_value,
@@ -5560,22 +5539,20 @@ fn final_return_after_residual_signature(
 ) -> Type<Routed> {
     let mut after_first_value = false;
     let mut cursor = residual.clone();
-    for group in sig.canonical_groups() {
-        match group {
-            SignatureGroupRef::Value(_) if !after_first_value => {
+    for stage in signature_stages(sig) {
+        match stage {
+            StageInput::Value(_) if !after_first_value => {
                 after_first_value = true;
             }
-            SignatureGroupRef::Type(params) if after_first_value => {
-                for _ in params {
-                    let Type::Forall { body, .. } = cursor else {
-                        unreachable!(
-                            "a typed Routed host-call residual is missing a canonical type stage"
-                        );
-                    };
-                    cursor = *body;
-                }
+            StageInput::Type(_) if after_first_value => {
+                let Type::Forall { body, .. } = cursor else {
+                    unreachable!(
+                        "a typed Routed host-call residual is missing a canonical type stage"
+                    );
+                };
+                cursor = *body;
             }
-            SignatureGroupRef::Value(abi_params) if after_first_value => {
+            StageInput::Value(abi_params) if after_first_value => {
                 let Type::Function { ret, abi_arity, .. } = cursor else {
                     unreachable!(
                         "a typed Routed host-call residual is missing a canonical value stage"
@@ -5593,7 +5570,7 @@ fn final_return_after_residual_signature(
                 );
                 cursor = *ret;
             }
-            SignatureGroupRef::Type(_) | SignatureGroupRef::Value(_) => {}
+            StageInput::Type(_) | StageInput::Value(_) => {}
         }
     }
     cursor
@@ -5671,29 +5648,6 @@ fn hs_forall_params(
     vars.join(" ")
 }
 
-fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>> {
-    let mut groups: Vec<Vec<&str>> = sig
-        .canonical_groups()
-        .into_iter()
-        .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter_map(|p| match p {
-                        SignatureParam::Value(vp) => Some(vp.name.as_str()),
-                        SignatureParam::Type(_) => None,
-                    })
-                    .collect(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
-        })
-        .collect();
-    if groups.is_empty() {
-        groups.push(Vec::new());
-    }
-    groups
-}
-
 /// Every value group's param types, one inner vec per group, in
 /// declaration order. The exported wrapper's host surface takes all
 /// groups' params in one flat call (`specs/backends/README.md`
@@ -5702,10 +5656,10 @@ fn value_param_name_groups(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<&str>
 /// argument (a tuple when the group has two or more params), so the
 /// wrapper regroups its flat args to match.
 fn value_group_param_types(sig: &crate::ast::Signature<Routed>) -> Vec<Vec<Option<Type<Routed>>>> {
-    sig.canonical_groups()
+    signature_stages(sig)
         .into_iter()
-        .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
+        .filter_map(|stage| match stage {
+            StageInput::Value(params) => Some(
                 params
                     .iter()
                     .filter_map(|p| match p {
@@ -6109,6 +6063,7 @@ mod routed_invariant_tests {
                 ctx: context,
                 module_key: "api",
                 recon: TypeRecon::empty(context.package, &context.types.resolution, "api"),
+                body_plan: None,
                 type_params: Vec::new(),
                 locals: Vec::new(),
                 projection_aliases: BTreeMap::new(),

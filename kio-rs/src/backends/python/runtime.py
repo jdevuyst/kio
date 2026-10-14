@@ -323,15 +323,6 @@ def _call_value(fn, *args):
     return fn(_product_from_slots(args))
 
 
-# Type values erase, but their application boundaries do not: each type
-# binder is one explicit advance, while each value group stays one unary call.
-def _signature_runtime_groups(sig):
-    return [
-        (stage["kind"] == "type", stage.get("params", []))
-        for stage in sig["stages"]
-    ]
-
-
 def _signature_has_value_group(sig):
     return any(stage["kind"] == "value" for stage in sig["stages"])
 
@@ -595,64 +586,12 @@ class _PackageRuntime:
                     inventory["name"], values[0] if values else None
                 )
                 if inventory["existential_params"]:
-                    result = self._existential_projector_result(
-                        site, site["callable"]["returned"], payload
-                    )
+                    result = self._make_fn(None, site["cps_entry"], {"payload": payload})
                 else:
                     result = payload
             return result
 
         return _KioNamedFunction(expected, invoke, "public boundary")
-
-    def _existential_projector_result(self, site, use_id, payload):
-        use = site["callable"]["facade"]["uses"][use_id]
-        if use["kind"] == "forall":
-            action = site["execution"]["root_uses"][use_id]["kind"]
-            if action == "declaration_binder":
-                return self._existential_projector_result(
-                    site, use["result"], payload
-                )
-            if action != "invoke_forall":
-                raise RuntimeError("prepared forall has no execution action")
-            return _KioPoly(
-                lambda: self._existential_projector_result(
-                    site, use["result"], payload
-                ),
-            )
-        if use["kind"] == "function":
-            layout = site["execution"]["root_uses"][use_id]["layout"]
-            if layout["body_abi_arity"] != 1:
-                raise RuntimeError("existential projector takes one continuation")
-            body = self._existential_continuation_body(site, use["slots"][0])
-            return self._guest_stage(None, body, [(False, ["continuation"])], 0, {"payload": payload})
-        raise RuntimeError("existential projector has no prepared continuation stage")
-
-    def _existential_continuation_body(self, site, use_id):
-        plan = site["callable"]["facade"]
-        execution_uses = site["execution"]["root_uses"]
-        use = plan["uses"][use_id]
-        type_args = []
-        while use["kind"] == "forall":
-            action = execution_uses[use_id]["kind"]
-            if action == "invoke_forall":
-                type_args.append(None)
-            elif action != "declaration_binder":
-                raise RuntimeError("prepared forall has no execution action")
-            use_id = use["result"]
-            use = plan["uses"][use_id]
-        if use["kind"] != "function":
-            raise RuntimeError("existential continuation has no function stage")
-        execution = execution_uses[use_id]
-        if execution["kind"] != "function":
-            raise RuntimeError("prepared function has no execution layout")
-        arity = execution["layout"]["body_abi_arity"]
-        if arity not in (0, 1):
-            raise RuntimeError(f"existential continuation has invalid ABI arity {arity}")
-        return {"LowClosureCall": {
-            "name": "continuation", "type_args": type_args,
-            "args": [{"LowBoundRef": {"name": "payload"}}] if arity else [],
-            "tail": "value",
-        }}
 
     def fn(self, module_key, name):
         cache_key = (module_key, name)
@@ -664,18 +603,22 @@ class _PackageRuntime:
         return fn
 
     def _make_fn(self, module_key, fn_def, base_env):
-        groups = _signature_runtime_groups(fn_def["sig"])
-        return self._guest_stage(module_key, fn_def["body"], groups, 0, dict(base_env))
+        stages = fn_def["sig"]["stages"]
+        return self._guest_stage(module_key, fn_def["body"], stages, 0, base_env)
 
     def _guest_stage(self, module_key, body, groups, index, env):
-        kind = _KioGuestPoly if groups[index][0] else _KioGuestFunction
-        return kind(self, module_key, body, groups, index, env)
+        stage = groups[index]
+        captured = {name: env[name] for name in stage["captures"]}
+        kind = _KioGuestPoly if stage["kind"] == "type" else _KioGuestFunction
+        return kind(self, module_key, body, groups, index, captured)
 
     def eval(self, module_key, expr, env, callee=None, domain=None, type_stage=False, transfer=None):
         while True:
             if callee is not None:
                 self = callee.runtime
-                is_type, names = callee.groups[callee.index]
+                stage = callee.groups[callee.index]
+                is_type = stage["kind"] == "type"
+                names = stage.get("params", [])
                 if is_type != type_stage:
                     raise RuntimeError("checked call and guest stage disagree")
                 local = dict(callee.env)

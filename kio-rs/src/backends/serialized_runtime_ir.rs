@@ -18,6 +18,10 @@ use super::boundary_facade::{
     CallableExecutionStage, CallableSourceParamAdapter, CallableValueStageLayout, FacadeKind,
     FacadeShellId, FacadeUse, PreparedBoundaryCallableSites, QualifiedTypeName, SemanticKey,
 };
+use super::closure_plan::{
+    CpsBinding, CpsRuntimePlan, ExecutableBodyPlan, ExecutableEntry, StageInput, callable_spine,
+    cps_boundary_runtime_plan, cps_continuation_runtime_shape, cps_entry_plan, signature_stages,
+};
 use super::tail_plan::{ResultChild, TailContext, TailStage};
 use super::value_plan::{ValuePlan, ValueUse};
 
@@ -135,6 +139,8 @@ struct PythonBoundarySiteIr {
     doc: Option<String>,
     callable: PythonCallablePlanIr,
     execution: PythonCallableExecutionIr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cps_entry: Option<RuntimeSyntheticEntry>,
 }
 
 #[derive(Serialize)]
@@ -343,6 +349,23 @@ struct RuntimeTypeMember {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     value_plan: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cps_entry: Option<Box<RuntimeSyntheticEntry>>,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(untagged)]
+enum RuntimePlanRef {
+    Root(usize),
+    Node { plan: usize, node: usize },
+}
+
+#[derive(Serialize)]
+struct RuntimeSyntheticEntry {
+    sig: RuntimeSignature,
+    body: RuntimeExpr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value_plan: Option<RuntimePlanRef>,
 }
 
 #[derive(Serialize)]
@@ -363,11 +386,16 @@ struct RuntimeSignature {
     stages: Vec<RuntimeBodyStage>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum RuntimeBodyStage {
-    Type,
-    Value { params: Vec<String> },
+    Type {
+        captures: Vec<String>,
+    },
+    Value {
+        params: Vec<String>,
+        captures: Vec<String>,
+    },
 }
 
 #[derive(Serialize)]
@@ -470,6 +498,7 @@ struct RuntimeTypeScope {
     type_params: Vec<TypeParam>,
     values: RefCell<HashMap<String, Type<Routed>>>,
     plans: Rc<RefCell<BodyPlanCollector>>,
+    executable: Rc<HashMap<usize, Vec<RuntimeBodyStage>>>,
 }
 
 impl RuntimeTypeScope {
@@ -482,6 +511,7 @@ impl RuntimeTypeScope {
             type_params: Vec::new(),
             values: RefCell::new(HashMap::new()),
             plans: Rc::default(),
+            executable: Rc::default(),
         }
     }
 
@@ -501,6 +531,7 @@ impl RuntimeTypeScope {
             type_params: self.type_params.clone(),
             values: RefCell::default(),
             plans: Rc::clone(&self.plans),
+            executable: Rc::clone(&self.executable),
         }
     }
 
@@ -711,7 +742,7 @@ enum RuntimeExpr {
         type_args: Vec<RuntimeType>,
         args: Vec<RuntimeExpr>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        callee_plan: Option<usize>,
+        callee_plan: Option<RuntimePlanRef>,
         #[serde(skip_serializing_if = "Option::is_none")]
         applied_plan: Option<usize>,
     },
@@ -950,6 +981,33 @@ fn python_boundary_ir(
                     returned: entry.returned.index(),
                 },
                 execution: python_callable_execution(site.plan().facade(), execution)?,
+                cps_entry: match site.site().owner() {
+                    BoundaryFacadeSiteOwner::NewtypeProjector { newtype, .. } => {
+                        let module = package
+                            .module(&site.site().module_segments().join("/"))
+                            .expect("a live projector has its declaring module");
+                        let id = module
+                            .scope
+                            .lookup(newtype)
+                            .expect("a live projector has its exact nominal declaration");
+                        let declaration =
+                            crate::pass::resolve::declaration_by_id(&module.module, id)
+                                .and_then(|declaration| declaration.newtype())
+                                .expect("a live projector belongs to a newtype");
+                        (!declaration.existential_params.is_empty()).then(|| {
+                            runtime_cps_entry(
+                                &cps_boundary_runtime_plan(
+                                    plan.facade(),
+                                    execution,
+                                    entry.returned,
+                                ),
+                                None,
+                                None,
+                            )
+                        })
+                    }
+                    _ => None,
+                },
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1258,12 +1316,13 @@ fn runtime_items(
         Item::FnDef(def) => {
             let mut scope =
                 RuntimeTypeScope::sharing_plans(format!("fn:{module_key}:{}", def.name), plans);
+            scope.executable = runtime_body_entries(&def.sig, &def.body);
             let value_plan = scope.value_plan(
                 package,
                 module,
                 &def.sig.signature_ty(def.ret.clone(), def.meta.span),
             );
-            let sig = runtime_signature(package, module, &def.sig, &mut scope);
+            let sig = runtime_body_signature(package, module, &def.sig, &def.body, &mut scope);
             vec![RuntimeItem::FnDef(RuntimeFnDef {
                 vis: runtime_visibility(&def.vis),
                 name: def.name.clone(),
@@ -1331,6 +1390,28 @@ fn runtime_newtype(
             .expect("a checked newtype member has its declaration-owned scheme");
         member_scope.value_plan(package, module, &scheme)
     };
+    let projector_plan = member_plan(&def.projector.name);
+    let cps_entry = if def.existential_params.is_empty() {
+        None
+    } else {
+        projector_plan.map(|id| {
+            let plans = plans.borrow();
+            let plan = &plans.values[id];
+            let named = callable_spine(plan, plan.root());
+            let recipe = cps_entry_plan(plan, named.result);
+            Box::new(runtime_cps_entry(
+                &recipe.runtime(),
+                Some(RuntimePlanRef::Node {
+                    plan: id,
+                    node: named.result.index(),
+                }),
+                Some(RuntimePlanRef::Node {
+                    plan: id,
+                    node: recipe.entry.domain.index(),
+                }),
+            ))
+        })
+    };
     let mut scope =
         RuntimeTypeScope::sharing_plans(format!("newtype:{module_key}:{}", def.name), plans);
     let type_params = def
@@ -1359,11 +1440,13 @@ fn runtime_newtype(
             vis: runtime_visibility(&def.constructor.vis),
             name: def.constructor.name.clone(),
             value_plan: member_plan(&def.constructor.name),
+            cps_entry: None,
         },
         projector: RuntimeTypeMember {
             vis: runtime_visibility(&def.projector.vis),
             name: def.projector.name.clone(),
-            value_plan: member_plan(&def.projector.name),
+            value_plan: projector_plan,
+            cps_entry,
         },
     }
 }
@@ -1374,6 +1457,146 @@ fn runtime_visibility(vis: &Visibility) -> RuntimeVisibility {
     } else {
         RuntimeVisibility::Private
     }
+}
+
+fn runtime_body_entries(
+    sig: &Signature<Routed>,
+    body: &Expr<Routed>,
+) -> Rc<HashMap<usize, Vec<RuntimeBodyStage>>> {
+    let plan = ExecutableBodyPlan::new(sig, body);
+    Rc::new(
+        plan.entries()
+            .map(|entry| {
+                (
+                    entry.body().expr() as *const Expr<Routed> as usize,
+                    runtime_entry_stages(&plan, entry),
+                )
+            })
+            .collect(),
+    )
+}
+
+fn runtime_entry_stages(
+    plan: &ExecutableBodyPlan<'_>,
+    entry: &ExecutableEntry<'_>,
+) -> Vec<RuntimeBodyStage> {
+    let mut available = entry
+        .captures()
+        .iter()
+        .map(|id| (plan.binding(*id).name, *id))
+        .collect::<HashMap<_, _>>();
+    assert_eq!(available.len(), entry.captures().len());
+    entry
+        .stages
+        .iter()
+        .map(|stage| {
+            let captures = stage
+                .captures
+                .iter()
+                .map(|id| {
+                    let name = plan.binding(*id).name;
+                    assert_eq!(
+                        available.get(name),
+                        Some(id),
+                        "serialized captures select the exact available lexical binding"
+                    );
+                    name.to_owned()
+                })
+                .collect();
+            available = stage
+                .captures
+                .iter()
+                .map(|id| (plan.binding(*id).name, *id))
+                .collect();
+            for id in &stage.bindings {
+                available.insert(plan.binding(*id).name, *id);
+            }
+            runtime_stage(stage.input, captures)
+        })
+        .collect()
+}
+
+fn runtime_stage(input: StageInput<'_>, captures: Vec<String>) -> RuntimeBodyStage {
+    match input {
+        StageInput::Type(_) => RuntimeBodyStage::Type { captures },
+        StageInput::Value(_) => RuntimeBodyStage::Value {
+            params: input.param_names().into_iter().map(str::to_owned).collect(),
+            captures,
+        },
+    }
+}
+
+fn runtime_cps_entry(
+    recipe: &CpsRuntimePlan,
+    value_plan: Option<RuntimePlanRef>,
+    continuation_plan: Option<RuntimePlanRef>,
+) -> RuntimeSyntheticEntry {
+    let captures = recipe
+        .captures()
+        .iter()
+        .map(|binding| binding.name().to_owned())
+        .collect::<Vec<_>>();
+    let continuation = CpsBinding::Continuation.name().to_owned();
+    let mut stages = (0..recipe.type_stages)
+        .map(|_| RuntimeBodyStage::Type {
+            captures: captures.clone(),
+        })
+        .collect::<Vec<_>>();
+    stages.push(RuntimeBodyStage::Value {
+        params: vec![continuation.clone()],
+        captures,
+    });
+    let mut params = (0..recipe.type_stages)
+        .map(|_| RuntimeSignatureParam::Type {})
+        .collect::<Vec<_>>();
+    params.push(RuntimeSignatureParam::Value(RuntimeValueParam {
+        name: continuation.clone(),
+        ty: None,
+    }));
+    let mut groups = Vec::new();
+    if recipe.type_stages > 0 {
+        groups.push(RuntimeSignatureGroup::Type {
+            len: recipe.type_stages,
+        });
+    }
+    groups.push(RuntimeSignatureGroup::Value { len: 1 });
+    RuntimeSyntheticEntry {
+        sig: RuntimeSignature {
+            params,
+            groups,
+            stages,
+        },
+        value_plan,
+        body: RuntimeExpr::LowClosureCall {
+            tail: Some(TailStage::Value),
+            name: continuation,
+            type_args: (0..recipe.continuation_type_stages)
+                .map(|_| RuntimeType::Unit {})
+                .collect(),
+            args: recipe
+                .captures()
+                .iter()
+                .map(|binding| RuntimeExpr::LowBoundRef {
+                    name: binding.name().to_owned(),
+                })
+                .collect(),
+            callee_plan: continuation_plan,
+            applied_plan: None,
+        },
+    }
+}
+
+fn runtime_body_signature(
+    package: &Package<Routed>,
+    module: &Module<Routed>,
+    sig: &Signature<Routed>,
+    body: &Expr<Routed>,
+    scope: &mut RuntimeTypeScope,
+) -> RuntimeSignature {
+    let mut signature = runtime_signature(package, module, sig, scope);
+    signature.stages = scope.executable[&(body as *const Expr<Routed> as usize)].clone();
+    assert_eq!(signature.stages.len(), signature_stages(sig).len());
+    signature
 }
 
 fn runtime_signature(
@@ -1409,28 +1632,10 @@ fn runtime_signature(
             }
         })
         .collect();
-    let mut stages = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                stages.extend(params.iter().map(|_| RuntimeBodyStage::Type))
-            }
-            crate::ast::SignatureGroupRef::Value(params) => stages.push(RuntimeBodyStage::Value {
-                params: params
-                    .iter()
-                    .map(|param| {
-                        let SignatureParam::Value(param) = param else {
-                            unreachable!("a canonical value group contains value parameters")
-                        };
-                        param.name.clone()
-                    })
-                    .collect(),
-            }),
-        }
-    }
-    if stages.is_empty() {
-        stages.push(RuntimeBodyStage::Value { params: Vec::new() });
-    }
+    let stages = signature_stages(sig)
+        .into_iter()
+        .map(|input| runtime_stage(input, Vec::new()))
+        .collect();
     RuntimeSignature {
         params,
         groups: sig.groups.iter().map(runtime_signature_group).collect(),
@@ -1659,7 +1864,7 @@ fn runtime_expr_expected(
     };
     match expr {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        Expr::FnExpr { sig, .. } => {
+        Expr::FnExpr { sig, body, .. } => {
             let scheme = expected
                 .map(|ty| types.canonical(ty))
                 .or_else(|| scope.value_type(package, module, expr))
@@ -1669,7 +1874,7 @@ fn runtime_expr_expected(
             let value_plan = scope.value_plan(package, module, &scheme);
             let mut nested_scope = scope.clone();
             RuntimeExpr::FnExpr {
-                sig: runtime_signature(package, module, &sig, &mut nested_scope),
+                sig: runtime_body_signature(package, module, &sig, body, &mut nested_scope),
                 value_plan,
                 body: Box::new(runtime_expr_expected(
                     package,
@@ -2020,7 +2225,8 @@ fn runtime_expr_expected(
                 ),
                 callee_plan: (!type_args.is_empty())
                     .then(|| scope.value_plan(package, module, &scheme))
-                    .flatten(),
+                    .flatten()
+                    .map(RuntimePlanRef::Root),
                 applied_plan: scope.applied_value_plan(package, module, &scheme, type_args),
             }
         }
@@ -2146,17 +2352,6 @@ fn module_for_key<'a>(
         .module(key)
         .map(|entry| &entry.module)
         .unwrap_or(fallback)
-}
-
-fn cps_continuation_runtime_shape(continuation_ty: &Type<Routed>) -> (usize, usize) {
-    let (type_stages, callable) = continuation_ty.peel_leading_foralls();
-    let Type::Function { abi_arity, .. } = callable else {
-        unreachable!("a routed CPS projector continuation has a function value stage")
-    };
-    if *abi_arity > 1 {
-        unreachable!("a routed CPS projector continuation has zero or one payload ABI slot")
-    }
-    (type_stages, *abi_arity)
 }
 
 fn selective_target(module: &Module<Routed>, name: &str) -> Option<String> {
@@ -2409,6 +2604,72 @@ mod tests {
                     ValueUse::Bottom => assert_eq!(node["kind"], "bottom"),
                 }
             }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "serialized captures select the exact available lexical binding")]
+    fn serialized_capture_transition_rejects_a_dropped_middle_stage_capture() {
+        let package = routed(&full_prime(
+            "module x/main; host type N; fn entry(x: N)(y: N)(z: N) -> N { x }",
+        ));
+        let module = &package.module("x/main").unwrap().module;
+        let def = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::FnDef(def) => Some(def),
+                _ => None,
+            })
+            .unwrap();
+        let mut plan = ExecutableBodyPlan::new(&def.sig, &def.body);
+        assert_eq!(plan.entry_for_body(&def.body).stages.len(), 3);
+        plan.entry_for_body_mut(&def.body).stages[1]
+            .captures
+            .clear();
+        runtime_entry_stages(&plan, plan.entry_for_body(&def.body));
+    }
+
+    #[test]
+    fn synthetic_cps_serialization_selects_payload_and_executes_all_planned_stages() {
+        for payload_arity in 0..=1 {
+            let recipe = CpsRuntimePlan {
+                type_stages: 2,
+                continuation_type_stages: 3,
+                payload_arity,
+            };
+            let entry = runtime_cps_entry(
+                &recipe,
+                Some(RuntimePlanRef::Node { plan: 5, node: 7 }),
+                Some(RuntimePlanRef::Node { plan: 5, node: 9 }),
+            );
+            let json = serde_json::to_value(entry).unwrap();
+            let stages = json["sig"]["stages"].as_array().unwrap();
+            assert_eq!(stages.len(), 3);
+            for (index, stage) in stages.iter().enumerate() {
+                assert_eq!(stage["kind"], if index < 2 { "type" } else { "value" });
+                assert_eq!(
+                    stage["captures"],
+                    if payload_arity == 0 {
+                        serde_json::json!([])
+                    } else {
+                        serde_json::json!(["payload"])
+                    }
+                );
+            }
+            assert_eq!(stages[2]["params"], serde_json::json!(["continuation"]));
+            let call = &json["body"]["LowClosureCall"];
+            assert_eq!(call["type_args"].as_array().unwrap().len(), 3);
+            assert_eq!(call["args"].as_array().unwrap().len(), payload_arity);
+            assert_eq!(call["tail"], "value");
+            assert_eq!(
+                call["callee_plan"],
+                serde_json::json!({"plan": 5, "node": 9})
+            );
+            assert_eq!(
+                json["value_plan"],
+                serde_json::json!({"plan": 5, "node": 7})
+            );
         }
     }
 
@@ -2702,6 +2963,7 @@ mod tests {
             })
             .expect("selected definition");
         let mut scope = RuntimeTypeScope::new(format!("test-body:{module_path}:{name}"));
+        scope.executable = runtime_body_entries(&def.sig, &def.body);
         let _ = runtime_signature(package, module, &def.sig, &mut scope);
         serde_json::to_value(runtime_expr_expected(
             package,
@@ -3207,7 +3469,7 @@ mod tests {
                                 saw_closure = true;
                             }
                             RuntimeExpr::LowClosureCall {
-                                callee_plan: Some(id),
+                                callee_plan: Some(RuntimePlanRef::Root(id)),
                                 ..
                             } => {
                                 let plan = &plans[id];

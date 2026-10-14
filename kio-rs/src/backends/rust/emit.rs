@@ -51,13 +51,16 @@ use crate::backends::boundary_facade::{
     PreparedBoundaryCallableOriginRef, PreparedBoundaryCallableSite, PreparedBoundaryCallableSites,
     QualifiedTypeName,
 };
+use crate::backends::closure_plan::{
+    ExecutableBodyPlan, ExecutableEntry, StageInput, cps_continuation_runtime_shape,
+    signature_stages,
+};
 use crate::backends::product_rebuild::{
     NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
     render_cached_product_rebuild,
 };
 use crate::backends::public_names::{encode_host_identity, encode_source_identity, host_name_core};
 use crate::backends::reconstruct::{ReconProfile, apply_subst, build_typearg_subst_from_sig};
-use crate::backends::skin::runtime_param_name_groups;
 use crate::backends::tail_plan::{ResultChild, TailContext};
 use crate::backends::{boundary_docs, doc};
 use crate::host_descriptor::{self, BoundRequirement, HostDescriptor, HostTypeDecl};
@@ -6761,8 +6764,13 @@ fn emit_internal_fn_method(
     // stage accepts `Rc<dyn Any>` values and returns an execution step.
     // Later value stages curry as nested erased closures; type binders are
     // represented by their paired nullary execution stages.
-    let runtime_groups = runtime_param_name_groups(sig);
-    let value_stages = runtime_value_stages(sig);
+    let plan = ExecutableBodyPlan::new(sig, body);
+    let entry = plan.entry_for_body(body);
+    let runtime_groups: Vec<_> = entry
+        .stages
+        .iter()
+        .map(|stage| stage.input.param_names())
+        .collect();
     let mut params_rust = Vec::new();
     let internal_first_group: std::collections::HashSet<&str> = runtime_groups
         .first()
@@ -6798,14 +6806,6 @@ fn emit_internal_fn_method(
         escape_rust_keyword(name),
         context.shapes.crate_root
     ));
-    let fn_value_param_names: Vec<String> = sig
-        .params
-        .iter()
-        .filter_map(|p| match p {
-            crate::ast::SignatureParam::Value(v) => Some(v.name.clone()),
-            _ => None,
-        })
-        .collect();
     let fn_value_param_types = sig
         .params
         .iter()
@@ -6817,6 +6817,7 @@ fn emit_internal_fn_method(
         })
         .collect();
     let mut emit = BodyEmitter {
+        plan: &plan,
         package: context.package,
         prepared: context.prepared,
         shapes: context.shapes,
@@ -6824,7 +6825,7 @@ fn emit_internal_fn_method(
         qualified_imports: context.qualified_imports,
         self_ref: None,
         tparams: tparam_names.iter().cloned().collect(),
-        locals: fn_value_param_names,
+        active_values: entry_value_scope(&plan, entry),
         local_types: fn_value_param_types,
         fresh: 0,
     };
@@ -6838,7 +6839,7 @@ fn emit_internal_fn_method(
     if multi_group {
         emit.self_ref = Some("__pkg".to_owned());
     }
-    let body_rust = emit.emit_result(TailContext::body(body))?;
+    let body_rust = emit.emit_result(entry.body())?;
     // The erased internal fn binds only the first group and currys the inner
     // groups as nested boxed closures around the body.
     let mut body_out = body_rust;
@@ -6849,20 +6850,14 @@ fn emit_internal_fn_method(
         // first/earlier-stage value parameter out of an outer `Fn`
         // closure, degrading that outer stage to `FnOnce`.
         let mut layer_preludes = "let __pkg = __pkg.clone(); ".to_owned();
-        for outer_group in runtime_groups.iter().take(gi) {
-            for name in outer_group {
-                let id = escape_rust_keyword(name);
-                if body_out.contains(&format!("{id}.clone()"))
-                    || body_out.contains(&format!("&{id}"))
-                {
-                    layer_preludes.push_str(&format!("let {id} = {id}.clone(); "));
-                }
-            }
+        for binding in &entry.stages[gi].captures {
+            let id = escape_rust_keyword(plan.binding(*binding).name);
+            layer_preludes.push_str(&format!("let {id} = {id}.clone(); "));
         }
         let closure = erased_closure(
             &context.shapes.crate_root,
             &params,
-            value_stages[gi],
+            entry.stages[gi].input.is_value(),
             &body_out,
         );
         body_out = format!(
@@ -6893,6 +6888,7 @@ fn emit_internal_fn_method(
 /// domain, including Unit, while a type stage is nullary. Result positions
 /// return a step; operands complete their steps before consuming the value.
 struct BodyEmitter<'a> {
+    plan: &'a ExecutableBodyPlan<'a>,
     package: &'a Package<Routed>,
     /// The single package-complete boundary catalog. Host calls and host
     /// function values resolve their exact site here and consume the semantic
@@ -6928,13 +6924,9 @@ struct BodyEmitter<'a> {
     /// scope so a type-var slot renders as its name rather than failing a
     /// shape lookup.
     tparams: std::collections::HashSet<String>,
-    /// The Kio local-binding names currently in scope (fn / closure value
-    /// params, `let` binders, match-arm binders). A `move` closure
-    /// pre-clones the in-scope locals its body references so it captures
-    /// the `Rc` by clone (a refcount bump) rather than by move — a `Fn`
-    /// closure cannot move a captured binder out, and the same binder may
-    /// be referenced by sibling closures.
-    locals: Vec<String>,
+    /// Final-stage captures and inputs, extended only by this body's lexical
+    /// binders. Missing captures cannot fall back to Rust's ambient scope.
+    active_values: std::collections::HashSet<String>,
     /// Static types for value parameters and scoped binders whose type is
     /// available from Routed annotations. Conditional emission uses this to
     /// recover the exact role(bool) associated type without adding provenance
@@ -7181,20 +7173,27 @@ fn unpack_erased_domain(crate_root: &str, names: &[String]) -> String {
     }
 }
 
-fn runtime_value_stages(sig: &crate::ast::Signature<Routed>) -> Vec<bool> {
-    let mut stages = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                stages.extend(params.iter().map(|_| false))
-            }
-            crate::ast::SignatureGroupRef::Value(_) => stages.push(true),
-        }
+fn entry_value_scope(
+    plan: &ExecutableBodyPlan<'_>,
+    entry: &ExecutableEntry<'_>,
+) -> std::collections::HashSet<String> {
+    let mut available: std::collections::HashSet<_> = entry.captures().iter().copied().collect();
+    for stage in &entry.stages {
+        assert!(
+            stage.captures.iter().all(|id| available.contains(id)),
+            "a Rust stage capture must have storage in its enclosing stage"
+        );
+        available = stage
+            .captures
+            .iter()
+            .chain(&stage.bindings)
+            .copied()
+            .collect();
     }
-    if stages.is_empty() {
-        stages.push(true);
-    }
-    stages
+    available
+        .into_iter()
+        .map(|id| plan.binding(id).name.to_owned())
+        .collect()
 }
 
 fn done_value(crate_root: &str, value: &str) -> String {
@@ -7220,17 +7219,11 @@ fn erased_closure(crate_root: &str, names: &[String], value_stage: bool, body: &
 /// The value-arity of each value group of a fn signature, in order (each
 /// callable layer's param count). A nullary fn yields `[0]`.
 fn value_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
-    let arities: Vec<usize> = sig
-        .canonical_groups()
+    let arities: Vec<usize> = signature_stages(sig)
         .into_iter()
         .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter(|p| matches!(p, crate::ast::SignatureParam::Value(_)))
-                    .count(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
+            StageInput::Value(params) => Some(params.len()),
+            StageInput::Type(_) => None,
         })
         .collect();
     if arities.is_empty() { vec![0] } else { arities }
@@ -7323,6 +7316,13 @@ impl<'a> BodyEmitter<'a> {
 
     fn self_ref_str(&self) -> &str {
         self.self_ref.as_deref().unwrap_or("self")
+    }
+
+    fn require_local(&self, name: &str) {
+        assert!(
+            self.active_values.contains(name),
+            "a checked Rust local reference must belong to the planned entry scope: {name}"
+        );
     }
 
     fn crate_root(&self) -> &str {
@@ -7456,7 +7456,7 @@ impl<'a> BodyEmitter<'a> {
                 let value_ty = self.expr_type(value);
                 let v = self.emit_expr(value)?;
                 let safe = escape_rust_keyword(name);
-                self.locals.push(name.clone());
+                let added_value = self.active_values.insert(name.clone());
                 let prior_ty = self.local_types.remove(name);
                 if let Some(ty) = value_ty {
                     self.local_types.insert(name.clone(), ty);
@@ -7466,7 +7466,9 @@ impl<'a> BodyEmitter<'a> {
                 if let Some(ty) = prior_ty {
                     self.local_types.insert(name.clone(), ty);
                 }
-                self.locals.pop();
+                if added_value {
+                    self.active_values.remove(name);
+                }
                 let b = b?;
                 Ok(format!(
                     "{{ let {safe}: ::std::rc::Rc<dyn ::std::any::Any> = {v}; {b} }}"
@@ -7509,7 +7511,10 @@ impl<'a> BodyEmitter<'a> {
                 ..
             } => self.emit_match(context, scrutinee, arms, scrutinee_ty),
             Expr::EnrichedConditional { cond, .. } => self.emit_conditional(context, cond),
-            Expr::LowBoundRef { name, .. } => Ok(format!("{}.clone()", escape_rust_keyword(name))),
+            Expr::LowBoundRef { name, .. } => {
+                self.require_local(name);
+                Ok(format!("{}.clone()", escape_rust_keyword(name)))
+            }
             Expr::LowHostFnValueRef {
                 name,
                 module_path,
@@ -7557,6 +7562,7 @@ impl<'a> BodyEmitter<'a> {
                 args,
                 ..
             } => {
+                self.require_local(name);
                 let callee = self.emit_erased_type_applications(
                     format!("{}.clone()", escape_rust_keyword(name)),
                     type_args.len(),
@@ -7625,8 +7631,16 @@ impl<'a> BodyEmitter<'a> {
         sig: &crate::ast::Signature<Routed>,
         body: &Expr<Routed>,
     ) -> Result<String, EmitError> {
-        let groups = runtime_param_name_groups(sig);
-        let value_stages = runtime_value_stages(sig);
+        let plan = self.plan;
+        let entry = plan.entry_for_body(body);
+        for capture in entry.captures() {
+            self.require_local(plan.binding(*capture).name);
+        }
+        let groups: Vec<_> = entry
+            .stages
+            .iter()
+            .map(|stage| stage.input.param_names())
+            .collect();
         // Closures dispatch through a captured `let __pkg = self.clone();`
         // so they stay `'static` (no `&self` borrow). Set `self_ref`
         // around the body emit; restore after.
@@ -7649,13 +7663,8 @@ impl<'a> BodyEmitter<'a> {
                 _ => None,
             })
             .collect();
-        // The locals in scope *before* this closure are its capture
-        // candidates; the closure's own value-param binders shadow them
-        // inside the body. Push the closure params, emit, then pre-clone
-        // each outer local the body references so the `move` closure
-        // captures it by clone (refcount bump) — a `Fn` closure can't move
-        // a captured binder out, and sibling closures may reference it.
-        let outer_locals: Vec<String> = self.locals.clone();
+        // Value parameters shadow outer annotations only while rendering this
+        // entry. Capture identities are already resolved by the shared plan.
         let closure_params: Vec<String> =
             groups.iter().flatten().map(|n| (*n).to_owned()).collect();
         let closure_param_types: std::collections::HashMap<&str, Type<Routed>> = sig
@@ -7671,17 +7680,16 @@ impl<'a> BodyEmitter<'a> {
             .collect();
         let mut prior_param_types = Vec::with_capacity(closure_params.len());
         for n in &closure_params {
-            self.locals.push(n.clone());
             let prior = self.local_types.remove(n);
             if let Some(ty) = closure_param_types.get(n.as_str()) {
                 self.local_types.insert(n.clone(), ty.clone());
             }
             prior_param_types.push((n.clone(), prior));
         }
-        let body_src = self.emit_result(TailContext::body(body));
-        for _ in &closure_params {
-            self.locals.pop();
-        }
+        let outer_values =
+            std::mem::replace(&mut self.active_values, entry_value_scope(plan, entry));
+        let body_src = self.emit_result(entry.body());
+        self.active_values = outer_values;
         for (name, prior) in prior_param_types.into_iter().rev() {
             self.local_types.remove(&name);
             if let Some(ty) = prior {
@@ -7693,17 +7701,6 @@ impl<'a> BodyEmitter<'a> {
         }
         self.self_ref = saved_self;
         let body_src = body_src?;
-        // Which outer locals does the closure body reference? Pre-clone
-        // exactly those (an over-clone would just be a wasted refcount
-        // bump, but the precise set keeps the emit readable).
-        let captured: Vec<String> = outer_locals
-            .iter()
-            .filter(|n| {
-                let id = escape_rust_keyword(n);
-                body_src.contains(&format!("{id}.clone()")) || body_src.contains(&format!("&{id}"))
-            })
-            .cloned()
-            .collect();
         let mut acc = body_src;
         // A curried closure's inner layer captures `__pkg` and the outer
         // layers' binders; each layer is a `move` closure, and the outer
@@ -7720,20 +7717,9 @@ impl<'a> BodyEmitter<'a> {
             let mut layer_preludes = String::new();
             if gi > 0 {
                 layer_preludes.push_str("let __pkg = __pkg.clone(); ");
-                for n in &captured {
-                    let id = escape_rust_keyword(n);
-                    if acc.contains(&format!("{id}.clone()")) || acc.contains(&format!("&{id}")) {
-                        layer_preludes.push_str(&format!("let {id} = {id}.clone(); "));
-                    }
-                }
-                for outer_g in groups.iter().take(gi) {
-                    for n in outer_g {
-                        let id = escape_rust_keyword(n);
-                        if acc.contains(&format!("{id}.clone()")) || acc.contains(&format!("&{id}"))
-                        {
-                            layer_preludes.push_str(&format!("let {id} = {id}.clone(); "));
-                        }
-                    }
+                for binding in &entry.stages[gi].captures {
+                    let id = escape_rust_keyword(plan.binding(*binding).name);
+                    layer_preludes.push_str(&format!("let {id} = {id}.clone(); "));
                 }
             }
             // Box this layer as the erased `Rc<dyn Fn>` storage value, so
@@ -7744,7 +7730,12 @@ impl<'a> BodyEmitter<'a> {
             // parens — wrapping it would trip Rust's `unused_parens` lint.
             acc = format!(
                 "{{ {layer_preludes}{} }}",
-                erased_closure(self.crate_root(), &params, value_stages[gi], &acc)
+                erased_closure(
+                    self.crate_root(),
+                    &params,
+                    entry.stages[gi].input.is_value(),
+                    &acc
+                )
             );
             if gi > 0 {
                 acc = done_value(self.crate_root(), &acc);
@@ -7755,8 +7746,8 @@ impl<'a> BodyEmitter<'a> {
         // value so every layer's body captures them by clone.
         let s = self.self_ref_str().to_owned();
         let mut preludes = format!("let __pkg = {s}.clone(); ");
-        for n in &captured {
-            let id = escape_rust_keyword(n);
+        for binding in entry.captures() {
+            let id = escape_rust_keyword(plan.binding(*binding).name);
             preludes.push_str(&format!("let {id} = {id}.clone(); "));
         }
         Ok(format!("{{ {preludes}{acc} }}"))
@@ -7800,6 +7791,7 @@ impl<'a> BodyEmitter<'a> {
         items: &[&Expr<Routed>],
         plan: &ProductRebuildPlan,
     ) -> Result<String, EmitError> {
+        self.require_local(&plan.source);
         let product_crate_root = self.crate_root().to_owned();
         let wrap_crate_root = product_crate_root.clone();
         render_cached_product_rebuild(
@@ -7892,7 +7884,7 @@ impl<'a> BodyEmitter<'a> {
         let mut rendered_arms = Vec::with_capacity(n + 1);
         for (i, arm) in arms.iter().enumerate() {
             let ident = escape_rust_keyword(&arm.param);
-            self.locals.push(arm.param.clone());
+            let added_value = self.active_values.insert(arm.param.clone());
             let prior_ty = self.local_types.remove(&arm.param);
             let ty =
                 Type::right_spine_sum_slot_for_arity(scrutinee_ty, i, n).unwrap_or_else(|| {
@@ -7907,7 +7899,9 @@ impl<'a> BodyEmitter<'a> {
             if let Some(ty) = prior_ty {
                 self.local_types.insert(arm.param.clone(), ty);
             }
-            self.locals.pop();
+            if added_value {
+                self.active_values.remove(&arm.param);
+            }
             let body = body?;
             rendered_arms.push(format!(
                 "{i} => {{ let {ident}: ::std::rc::Rc<dyn ::std::any::Any> = __payload.clone(); {body} }}"
@@ -8109,8 +8103,8 @@ impl<'a> BodyEmitter<'a> {
             .get(mangled)
             .cloned()
             .unwrap_or_else(|| mangled.to_owned());
-        let groups = runtime_param_name_groups(sig);
-        let first = groups.first().cloned().unwrap_or_default();
+        let stage = signature_stages(sig)[0];
+        let first = stage.param_names();
         let s = self.self_ref_str().to_owned();
         let params: Vec<String> = (0..first.len()).map(|i| format!("__p{i}")).collect();
         let fwd: String = (0..first.len())
@@ -8118,12 +8112,7 @@ impl<'a> BodyEmitter<'a> {
             .collect::<Vec<_>>()
             .join(", ");
         let call = format!("__pkg.{method}({fwd})");
-        let closure = erased_closure(
-            self.crate_root(),
-            &params,
-            runtime_value_stages(sig)[0],
-            &call,
-        );
+        let closure = erased_closure(self.crate_root(), &params, stage.is_value(), &call);
         Ok(format!("{{ let __pkg = {s}.clone(); {closure} }}",))
     }
 
@@ -8484,17 +8473,10 @@ impl<'a> BodyEmitter<'a> {
         let cont = self.emit_expr(continuation)?;
         let receiver_name = self.fresh_name("cps_receiver");
         let continuation_name = self.fresh_name("cps_continuation");
-        let (type_stages, callable) = continuation_ty.peel_leading_foralls();
-        let Type::Function { abi_arity, .. } = callable else {
-            unreachable!("a routed CPS projector continuation has a function type")
-        };
-        assert!(
-            *abi_arity <= 1,
-            "a routed CPS projector continuation has zero or one ABI slot"
-        );
+        let (type_stages, abi_arity) = cps_continuation_runtime_shape(continuation_ty);
         let advanced =
             self.emit_erased_type_applications(format!("{continuation_name}.clone()"), type_stages);
-        let args = if *abi_arity == 0 {
+        let args = if abi_arity == 0 {
             Vec::new()
         } else {
             vec![format!("{receiver_name}.clone()")]
@@ -11366,6 +11348,153 @@ mod tests {
     }
 
     #[test]
+    fn executable_captures_are_lexical_not_rendered_text() {
+        let pkg = build_package(
+            r#"module main;
+            host type Text role(str);
+            pub fn quote(unused: Text) -> . -> Text {
+                .() { "unused.clone() and &unused" }
+            }
+            pub fn carry(kept: Text)[A](ignored: .) -> . -> Text {
+                .() { kept }
+            }
+            pub fn siblings(sibling: Text) -> (. -> Text) & (. -> Text) {
+                (.() { sibling }, .() { sibling })
+            }
+            pub fn shadow(outer: Text) -> Text -> . -> Text {
+                .(outer: Text) { .() { outer } }
+            }"#,
+            Some("bridge { main; }"),
+        );
+        let emitted = lower_package(&pkg, "captures").expect("planned Rust captures");
+        assert!(emitted.lib_rs.contains("unused.clone() and &unused"));
+        assert!(
+            !emitted.lib_rs.contains("let unused = unused.clone();"),
+            "literal text must not manufacture a lexical capture: {}",
+            emitted.lib_rs
+        );
+        assert_eq!(
+            emitted.lib_rs.matches("let kept = kept.clone();").count(),
+            3,
+            "both residual stages and the nested literal must retain kept: {}",
+            emitted.lib_rs
+        );
+        assert_eq!(
+            emitted
+                .lib_rs
+                .matches("let sibling = sibling.clone();")
+                .count(),
+            2
+        );
+        let shadow = pkg
+            .module("main")
+            .unwrap()
+            .module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ast::Item::FnDef(function) if function.name == "shadow" => Some(function),
+                _ => None,
+            })
+            .unwrap();
+        let Expr::FnExpr { sig, .. } = &shadow.body else {
+            panic!("the non-Unit shadow fixture returns its literal directly");
+        };
+        let names = signature_stages(sig)[0].param_names();
+        let inner = escape_rust_keyword(names[0]);
+        assert_ne!(inner, "outer", "the checked binder is alpha-renamed");
+        assert!(!emitted.lib_rs.contains("let outer = outer.clone();"));
+        assert_eq!(
+            emitted
+                .lib_rs
+                .matches(&format!("let {inner} = {inner}.clone();"))
+                .count(),
+            1,
+            "only the innermost entry captures the shadowing parameter: {}",
+            emitted.lib_rs
+        );
+    }
+
+    #[test]
+    fn missing_planned_capture_cannot_use_rust_ambient_storage() {
+        let pkg = build_package(
+            "module main; host type Atom; pub fn make(kept: Atom) -> [A] . -> Atom { .[A]() { kept } }",
+            Some("bridge { main; }"),
+        );
+        let function = pkg
+            .module("main")
+            .unwrap()
+            .module
+            .items
+            .iter()
+            .find_map(|item| {
+                if let crate::ast::Item::FnDef(function) = item {
+                    Some(function)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let Expr::FnExpr { body, .. } = &function.body else {
+            panic!("the mutation fixture returns its literal directly");
+        };
+        let prepared = PreparedBoundaryCallableSites::collect_live(&pkg).unwrap();
+        let shapes = BodyShapeRegistry::new(
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            "crate".to_owned(),
+            "CaptureHost".to_owned(),
+        );
+        let imports = std::collections::HashMap::new();
+        for removed_stage in [None, Some(0), Some(1)] {
+            let mut plan = ExecutableBodyPlan::new(&function.sig, &function.body);
+            if let Some(stage_index) = removed_stage {
+                let stage = &mut plan.entry_for_body_mut(body).stages[stage_index];
+                assert_eq!(stage.captures.len(), 1);
+                stage.captures.clear();
+            }
+            let entry = plan.entry_for_body(&function.body);
+            let mut emitter = BodyEmitter {
+                plan: &plan,
+                package: &pkg,
+                prepared: &prepared,
+                shapes: &shapes,
+                selective_imports: &imports,
+                qualified_imports: &imports,
+                self_ref: None,
+                tparams: Default::default(),
+                active_values: entry_value_scope(&plan, entry),
+                local_types: Default::default(),
+                fresh: 0,
+            };
+            let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                emitter.emit_result(entry.body())
+            }));
+            let Some(stage_index) = removed_stage else {
+                failure
+                    .expect("healthy planned capture does not panic")
+                    .expect("healthy emission");
+                continue;
+            };
+            let failure = failure.expect_err("missing capture must fail closed");
+            let message = failure
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| failure.downcast_ref::<&str>().copied())
+                .unwrap();
+            assert!(
+                message.contains(if stage_index == 0 {
+                    "a Rust stage capture must have storage"
+                } else {
+                    "a checked Rust local reference must belong to the planned entry scope"
+                }),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
     fn tail_transfers_and_operand_drivers_have_separate_scopes() {
         let pkg = build_package(
             "module main; \
@@ -11514,7 +11643,9 @@ mod tests {
             "ProductTailHost".to_owned(),
         );
         let imports = std::collections::HashMap::new();
+        let plan = ExecutableBodyPlan::new(&suffix.sig, &projected_tail);
         let mut emitter = BodyEmitter {
+            plan: &plan,
             package: &pkg,
             prepared: &prepared,
             shapes: &shapes,
@@ -11522,7 +11653,7 @@ mod tests {
             qualified_imports: &imports,
             self_ref: None,
             tparams: Default::default(),
-            locals: vec!["value".to_owned()],
+            active_values: entry_value_scope(&plan, plan.entry_for_body(&projected_tail)),
             local_types: Default::default(),
             fresh: 0,
         };
@@ -11652,7 +11783,14 @@ mod tests {
             "TestHost".into(),
         );
         let imports = std::collections::HashMap::new();
+        let crate::ast::Item::FnDef(function) =
+            package.module("main").unwrap().module.items.last().unwrap()
+        else {
+            panic!("expected Boolean fixture function");
+        };
+        let plan = ExecutableBodyPlan::new(&function.sig, &function.body);
         let mut emitter = BodyEmitter {
+            plan: &plan,
             package: &package,
             prepared: &prepared,
             shapes: &shapes,
@@ -11660,14 +11798,9 @@ mod tests {
             qualified_imports: &imports,
             self_ref: None,
             tparams: Default::default(),
-            locals: Vec::new(),
+            active_values: entry_value_scope(&plan, plan.entry_for_body(&function.body)),
             local_types: Default::default(),
             fresh: 0,
-        };
-        let crate::ast::Item::FnDef(function) =
-            package.module("main").unwrap().module.items.last().unwrap()
-        else {
-            panic!("expected Boolean fixture function");
         };
         emitter
             .emit_bool(&function.body)

@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(String);
+import testapi/io as io;
+import testapi/types as types;
+
+fn marked_pack() -> types.Pack(String) {
+  io.print("receiver\n");
+  types.Pack.pack(("projected\n", ()))
+}
+
+pub fn main() {
+  let unpack = marked_pack().>types.Pack.unpack;
+  io.print(unpack(.[Hidden](message: String, _payload: Hidden) { message }));
+  unpack(.[Hidden](message: String, _payload: Hidden) { io.print(message) })
+}

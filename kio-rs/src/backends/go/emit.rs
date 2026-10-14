@@ -31,12 +31,14 @@ use crate::backends::boundary_facade::{
     BoundaryFacadeSiteId, BoundaryFacadeSiteOwner, CallableSourceParamAdapter,
     PreparedBoundaryCallableSites, QualifiedTypeName,
 };
+use crate::backends::closure_plan::{
+    CpsBinding, ExecutableBodyPlan, ExecutableEntry, StageInput, cps_continuation_runtime_shape,
+    signature_stages,
+};
 use crate::backends::product_rebuild::{
     NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
 };
-use crate::backends::skin::{
-    FfiDir, HostRoleTable, exact_host_role, host_role_table, runtime_param_name_groups,
-};
+use crate::backends::skin::{FfiDir, HostRoleTable, exact_host_role, host_role_table};
 use crate::backends::tail_plan::{ResultChild, TailContext};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
@@ -69,6 +71,167 @@ mod facade_consumer_tests {
 
     const I32_HOST: &str = "KioHost_M1_C3_apiN3_I32";
     const TEXT_HOST: &str = "KioHost_M1_C3_apiN4_Text";
+
+    #[test]
+    fn planned_entries_materialize_only_required_capture_slots() {
+        let package = package(
+            "module api; host type Atom; \
+             pub fn nested(outer: Atom, unused: Atom) -> Atom -> Atom -> Atom { \
+                 .(first: Atom) { .(second: Atom) { outer } } \
+             } \
+             pub fn later(kept: Atom)[A](ignored: Atom) -> Atom { kept } \
+             pub fn siblings(sibling: Atom) -> (. -> Atom) & (. -> Atom) { \
+                 (.() { sibling }, .() { sibling }) \
+             } \
+             pub fn shadow(shadowed: Atom) -> Atom -> . -> Atom { \
+                 .(shadowed: Atom) { .() { shadowed } } \
+             }",
+        );
+        let emitted = lower_package(&package, "captures").expect("planned Go captures");
+        let aliases = emitted
+            .pkg_go
+            .lines()
+            .filter(|line| line.contains(" := k_"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            aliases
+                .iter()
+                .filter(|line| line.contains(" := k_outer_"))
+                .count(),
+            2,
+            "both nested entries need an exact outer capture: {}",
+            emitted.pkg_go
+        );
+        assert_eq!(
+            aliases
+                .iter()
+                .filter(|line| line.contains(" := k_kept_"))
+                .count(),
+            2,
+            "both named residual stages need the earlier-stage argument: {}",
+            emitted.pkg_go
+        );
+        assert_eq!(
+            aliases
+                .iter()
+                .filter(|line| line.contains(" := k_sibling_"))
+                .count(),
+            2
+        );
+        let shadow = package
+            .module("api")
+            .unwrap()
+            .module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ast::Item::FnDef(function) if function.name == "shadow" => Some(function),
+                _ => None,
+            })
+            .unwrap();
+        let Expr::FnExpr { sig, .. } = &shadow.body else {
+            panic!("the non-Unit shadow fixture returns its literal directly");
+        };
+        let names = signature_stages(sig)[0].param_names();
+        let inner = names[0];
+        assert_ne!(inner, "shadowed", "the checked binder is alpha-renamed");
+        let inner_prefix = format!(" := {}_", go_local_ident(inner));
+        assert_eq!(
+            aliases
+                .iter()
+                .filter(|line| line.contains(&inner_prefix))
+                .count(),
+            1,
+            "only the innermost entry captures the shadowing parameter: {}",
+            emitted.pkg_go
+        );
+        assert!(
+            !aliases.iter().any(|line| {
+                line.split_once(" := k_shadowed_")
+                    .is_some_and(|(_, suffix)| suffix.chars().all(|c| c.is_ascii_digit()))
+            }),
+            "the shadowed outer slot must not be captured: {}",
+            emitted.pkg_go
+        );
+        for unused in ["unused", "first", "second", "ignored"] {
+            assert!(
+                !aliases
+                    .iter()
+                    .any(|line| line.contains(&format!(" := k_{unused}_"))),
+                "unused binding {unused} must not enter a closure environment: {}",
+                emitted.pkg_go
+            );
+        }
+    }
+
+    #[test]
+    fn missing_planned_capture_cannot_use_go_ambient_storage() {
+        let package = package(
+            "module api; host type Atom; pub fn make(kept: Atom) -> [A] . -> Atom { .[A]() { kept } }",
+        );
+        let function = package
+            .module("api")
+            .unwrap()
+            .module
+            .items
+            .iter()
+            .find_map(|item| {
+                if let crate::ast::Item::FnDef(function) = item {
+                    Some(function)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let Expr::FnExpr { body, .. } = &function.body else {
+            panic!("the mutation fixture returns its literal directly");
+        };
+        let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
+        let facades = GoFacadeCatalog::prepare(&prepared).unwrap();
+        let roles = host_role_table(&host_descriptor::build_host_descriptor(&package));
+        let selective = Default::default();
+        let qualified = Default::default();
+        for removed_stage in [None, Some(0), Some(1)] {
+            let mut plan = ExecutableBodyPlan::new(&function.sig, &function.body);
+            if let Some(stage_index) = removed_stage {
+                let stage = &mut plan.entry_for_body_mut(body).stages[stage_index];
+                assert_eq!(stage.captures.len(), 1);
+                stage.captures.clear();
+            }
+            let entry = plan.entry_for_body(&function.body);
+            let mut emitter = BodyEmitter::new(
+                &package, &roles, "api", &selective, &qualified, &facades, &plan,
+            );
+            emitter.bind_entry(entry);
+            let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                emitter.emit_result_into(
+                    entry.body(),
+                    GoDestination::ReturnStep,
+                    &mut GoBlock::default(),
+                )
+            }));
+            let Some(stage_index) = removed_stage else {
+                failure
+                    .expect("healthy planned capture does not panic")
+                    .expect("healthy emission");
+                continue;
+            };
+            let failure = failure.expect_err("missing capture must fail closed");
+            let message = failure
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| failure.downcast_ref::<&str>().copied())
+                .unwrap();
+            assert!(
+                message.contains(if stage_index == 0 {
+                    "a stage captures an enclosing binding"
+                } else {
+                    "a checked Go local reference must belong to the planned entry scope"
+                }),
+                "{message}"
+            );
+        }
+    }
 
     #[test]
     fn native_docs_follow_selected_public_declarations() {
@@ -149,6 +312,12 @@ mod facade_consumer_tests {
         let package = package("module api; pub fn unit() -> . { () }");
         let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
         let facades = GoFacadeCatalog::prepare(&prepared).unwrap();
+        let crate::ast::Item::FnDef(function) =
+            package.module("api").unwrap().module.items.last().unwrap()
+        else {
+            panic!("expected Unit fixture function");
+        };
+        let plan = ExecutableBodyPlan::new(&function.sig, &function.body);
         let roles = HostRoleTable::new();
         let selective_imports = SelectiveImports::new();
         let qualified_imports = QualifiedImports::new();
@@ -159,6 +328,7 @@ mod facade_consumer_tests {
             &selective_imports,
             &qualified_imports,
             &facades,
+            &plan,
         );
         let meta = crate::ast::Meta::new(crate::span::Span::new(0, 0));
         let _ = emitter.emit_into(
@@ -1248,9 +1418,17 @@ v(2) {
         assert!(!single.contains("kioProductSlots("), "{single}");
         assert!(
             single.contains(
-                "kioTailValue(kioApplyType(__kio_member_continuation), __kio_member_arg0)"
+                "kioTailValue(kioApplyType(__kio_member_continuation), __kio_member_payload)"
             ),
             "{single}"
+        );
+        let captured = single
+            .find("var __kio_member_payload any = __kio_member_arg0")
+            .expect("the synthetic entry captures the payload");
+        let invoked = single.find("return kioTailValue(kioApplyType(__kio_member_continuation), __kio_member_payload)").unwrap();
+        assert!(
+            captured < invoked,
+            "capture precedes continuation execution: {single}"
         );
         assert_selected_result_is_returned(single);
 
@@ -1287,8 +1465,16 @@ v(2) {
         );
         assert!(host_arguments.ends_with('}'), "{host_call}");
         assert!(
-            packed.contains("kioTailValue(kioApplyType(kioApplyType(__kio_member_continuation)), __kio_member_arg0)"),
+            packed.contains("kioTailValue(kioApplyType(kioApplyType(__kio_member_continuation)), __kio_member_payload)"),
             "{packed}"
+        );
+        let captured = packed
+            .find("var __kio_member_payload any = __kio_member_arg0")
+            .expect("the synthetic entry captures the grouped payload intact");
+        let invoked = packed.find("return kioTailValue(kioApplyType(kioApplyType(__kio_member_continuation)), __kio_member_payload)").unwrap();
+        assert!(
+            captured < invoked,
+            "capture precedes continuation execution: {packed}"
         );
         assert_selected_result_is_returned(packed);
         let make_packed = emitted_method(&emitted.pkg_go, "CallExp_Api__Packed_makePacked");
@@ -3319,6 +3505,7 @@ fn invoke_newtype_member(
             GoClosureGroup::Type => None,
         })
         .unwrap_or_default();
+    let mut deepest = GoBlock::default();
     let result = match member {
         GoLiveNewtypeMemberEntry::Constructor(_) => facades.construct_nominal(
             nominal,
@@ -3337,10 +3524,10 @@ fn invoke_newtype_member(
             render_existential_projector_value(
                 projector,
                 &facades.project_nominal(nominal, payload),
-            )?
+                &mut deepest,
+            )
         }
     };
-    let mut deepest = GoBlock::default();
     deepest.line(format!("return {result}"));
     let mut callee = render_curried_closure(&groups, deepest);
     let mut argument_offset = 0usize;
@@ -3407,21 +3594,35 @@ fn invoke_newtype_member(
 fn render_existential_projector_value(
     projector: &GoLiveExistentialProjectorEntry<'_, '_>,
     payload: &str,
-) -> Result<String, EmitError> {
+    out: &mut GoBlock,
+) -> String {
+    let recipe = projector.runtime();
     let continuation = "__kio_member_continuation".to_owned();
-    let result =
-        render_existential_continuation_call(projector.continuation(), &continuation, payload)?;
+    let mut argument = "Unit{}";
+    for capture in recipe.captures() {
+        match capture {
+            CpsBinding::Payload => {
+                argument = "__kio_member_payload";
+                out.line(format!("var {argument} any = {payload}"));
+            }
+            CpsBinding::Continuation => {
+                unreachable!("the CPS continuation is an input, not a capture")
+            }
+        }
+    }
+    let mut callee = continuation.clone();
+    for _ in 0..recipe.continuation_type_stages {
+        callee = format!("kioApplyType({callee})");
+    }
     let mut continuation_body = GoBlock::default();
-    continuation_body.line(format!("return {result}"));
-    let continuation_closure =
-        GoClosureGroup::Value(vec![continuation]).render_entry(&continuation_body);
-
-    let mut selected_body = GoBlock::default();
-    selected_body.line(format!("return kioDone(any({continuation_closure}))"));
-    Ok(format!(
-        "any({})",
-        GoClosureGroup::Type.render_entry(&selected_body)
-    ))
+    continuation_body.line(format!("return kioTailValue({callee}, {argument})"));
+    let mut value = GoClosureGroup::Value(vec![continuation]).render_entry(&continuation_body);
+    for _ in 0..recipe.type_stages {
+        let mut selected_body = GoBlock::default();
+        selected_body.line(format!("return kioDone(any({value}))"));
+        value = GoClosureGroup::Type.render_entry(&selected_body);
+    }
+    format!("any({value})")
 }
 
 fn invoke_existential_projector_cut(
@@ -3485,59 +3686,6 @@ fn invoke_existential_projector_cut(
         "{result} = kioApplyValue({selected_callee}, {converted})"
     ));
     Ok(result)
-}
-
-fn render_existential_continuation_call(
-    cursor: &GoLiveFacadeUseRef<'_, '_>,
-    continuation: &str,
-    payload: &str,
-) -> Result<String, EmitError> {
-    let mut cursor = cursor.clone();
-    let mut callee = continuation.to_owned();
-    loop {
-        match cursor.view().unwrap_or_else(go_facade_invariant) {
-            super::facade::GoLiveFacadeUseView::Forall { result, .. } => {
-                callee = format!("kioApplyType({callee})");
-                cursor = result;
-            }
-            super::facade::GoLiveFacadeUseView::Function { layout, slots, .. } => {
-                if layout.source_param_count() == 0
-                    && layout.body_abi_arity() == 0
-                    && layout.facade_slot_count() == 0
-                    && layout.source_params().is_empty()
-                    && slots.is_empty()
-                {
-                    return Ok(format!("kioTailValue({callee}, Unit{{}})"));
-                }
-                if layout.source_param_count() != 1
-                    || layout.body_abi_arity() != 1
-                    || layout.facade_slot_count() != slots.len()
-                    || layout.source_params().len() != 1
-                    || layout.source_params()[0].facade_slots() != (0..slots.len())
-                {
-                    unreachable!(
-                        "the prepared existential projector continuation has one source payload \
-                         layout"
-                    );
-                }
-                let argument = match layout.source_params()[0].adapter() {
-                    CallableSourceParamAdapter::UnitValue if slots.is_empty() => "Unit{}",
-                    CallableSourceParamAdapter::Identity if slots.len() == 1 => payload,
-                    CallableSourceParamAdapter::RightNest if slots.len() > 1 => payload,
-                    _ => {
-                        unreachable!(
-                            "the prepared existential projector continuation adapter agrees with \
-                             its slots"
-                        );
-                    }
-                };
-                return Ok(format!("kioTailValue({callee}, {argument})"));
-            }
-            _ => {
-                unreachable!("a validated prepared existential continuation is callable");
-            }
-        }
-    }
 }
 
 fn go_skin_invariant<T>(error: facade_skin::GoFacadeSkinError) -> T {
@@ -3860,69 +4008,37 @@ fn render_value_closure_result(params: &[String], body: &GoBlock, result: &str) 
     }
 }
 
-fn signature_closure_groups(
-    sig: &crate::ast::Signature<Routed>,
-    bound: Vec<Vec<String>>,
-) -> Vec<GoClosureGroup> {
-    let mut bound = bound.into_iter();
-    let mut groups = Vec::new();
-    for group in sig.canonical_groups() {
-        match group {
-            crate::ast::SignatureGroupRef::Type(params) => {
-                for _ in params {
-                    assert!(bound.next().expect("bound type stage").is_empty());
-                    groups.push(GoClosureGroup::Type);
-                }
-            }
-            crate::ast::SignatureGroupRef::Value(_) => groups.push(GoClosureGroup::Value(
-                bound.next().expect("bound value stage"),
-            )),
-        }
-    }
-    if groups.is_empty() {
-        groups.push(GoClosureGroup::Value(
-            bound.next().expect("implicit Unit stage"),
-        ));
-    }
-    assert!(
-        bound.next().is_none(),
-        "all bound runtime stages are consumed"
-    );
-    groups
+struct GoEntryStage {
+    group: GoClosureGroup,
+    captures: GoBlock,
 }
 
 fn render_curried_closure(groups: &[GoClosureGroup], body: GoBlock) -> String {
-    render_curried(groups, body, false)
-}
-
-fn render_curried_entries(groups: &[GoClosureGroup], body: GoBlock) -> String {
-    render_curried(groups, body, true)
-}
-
-fn render_curried(groups: &[GoClosureGroup], body: GoBlock, guest: bool) -> String {
     let mut groups = groups.iter().rev();
     let innermost = groups
         .next()
         .expect("Go emitter function has at least one runtime stage");
-    let render = |group: &GoClosureGroup, body: &GoBlock| {
-        if guest {
-            group.render_entry(body)
-        } else {
-            group.render(body)
-        }
-    };
-    let mut value = render(innermost, &body);
+    let mut value = innermost.render(&body);
     for group in groups {
         let mut wrapper = GoBlock::default();
-        let destination = if guest {
-            GoDestination::ReturnStep
-        } else {
-            GoDestination::Return
-        };
-        destination.write(&mut wrapper, format!("any({value})"));
-        value = render(group, &wrapper);
+        GoDestination::Return.write(&mut wrapper, format!("any({value})"));
+        value = group.render(&wrapper);
     }
     format!("any({value})")
+}
+
+fn render_planned_entries(stages: &[GoEntryStage], mut body: GoBlock, out: &mut GoBlock) -> String {
+    let (first, inner) = stages
+        .split_first()
+        .expect("an executable entry has a stage");
+    for stage in inner.iter().rev() {
+        let value = stage.group.render_entry(&body);
+        body = GoBlock::default();
+        body.source.push_str(&stage.captures.source);
+        GoDestination::ReturnStep.write(&mut body, format!("any({value})"));
+    }
+    out.source.push_str(&first.captures.source);
+    format!("any({})", first.group.render_entry(&body))
 }
 
 /// Render every module fn in `entry` as a method on the package handle.
@@ -3945,7 +4061,8 @@ fn render_module_fns(
     for item in &entry.module.items {
         if let crate::ast::Item::FnDef(f) = item {
             let method = module_fn_method_name(module_key, &f.name);
-            let runtime_groups = runtime_param_name_groups(&f.sig);
+            let plan = ExecutableBodyPlan::new(&f.sig, &f.body);
+            let executable = plan.entry_for_body(&f.body);
             let mut emitter = BodyEmitter::new(
                 package,
                 roles,
@@ -3953,30 +4070,25 @@ fn render_module_fns(
                 &selective_imports,
                 &qualified_imports,
                 facades,
+                &plan,
             );
-            let bound = emitter.bind_param_groups(&runtime_groups);
-            let emitted_groups = signature_closure_groups(&f.sig, bound);
+            let stages = emitter.bind_entry(executable);
             emitter.bind_type_params(&f.sig);
             let mut body = GoBlock::default();
-            emitter.emit_result_into(
-                TailContext::body(&f.body),
-                GoDestination::ReturnStep,
-                &mut body,
-            )?;
-            let outer = emitted_groups
-                .first()
-                .expect("module runtime stage")
-                .params();
+            emitter.emit_result_into(executable.body(), GoDestination::ReturnStep, &mut body)?;
+            let outer = stages.first().expect("module runtime stage").group.params();
             let outer_list: String = outer
                 .iter()
                 .map(|name| format!("{name} any"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            let method_body = if emitted_groups.len() == 1 {
+            let method_body = if stages.len() == 1 {
                 indent_go_source(&body.source)
             } else {
-                let closure = render_curried_entries(&emitted_groups[1..], body);
-                format!("\treturn kioDone({closure})\n")
+                let mut wrapper = GoBlock::default();
+                let closure = render_planned_entries(&stages[1..], body, &mut wrapper);
+                GoDestination::ReturnStep.write(&mut wrapper, closure);
+                indent_go_source(&wrapper.source)
             };
             let handle = names.handle_ptr(&facades.host_binding_arguments());
             let arguments = outer.join(", ");
@@ -4014,17 +4126,11 @@ fn render_module_fns(
 /// The value-arity of each value group of a fn signature, in order
 /// (each callable layer's param count). A nullary fn yields `[0]`.
 fn value_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
-    let arities: Vec<usize> = sig
-        .canonical_groups()
+    let arities: Vec<usize> = signature_stages(sig)
         .into_iter()
         .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter(|p| matches!(p, crate::ast::SignatureParam::Value(_)))
-                    .count(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
+            StageInput::Value(params) => Some(params.len()),
+            StageInput::Type(_) => None,
         })
         .collect();
     if arities.is_empty() { vec![0] } else { arities }
@@ -4078,6 +4184,7 @@ struct GoLocalBinding {
 /// the next child, preserving Kio's strict left-to-right effect order without
 /// building nested call-once closures.
 struct BodyEmitter<'a, 'p> {
+    plan: &'a ExecutableBodyPlan<'a>,
     package: &'a Package<Routed>,
     /// Lexical type binders protect canonical resolution of annotated slots.
     type_params: Vec<crate::ast::TypeParam>,
@@ -4119,8 +4226,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         selective_imports: &'a SelectiveImports,
         qualified_imports: &'a QualifiedImports,
         facades: &'a GoFacadeCatalog<'p>,
+        plan: &'a ExecutableBodyPlan<'a>,
     ) -> Self {
         BodyEmitter {
+            plan,
             package,
             type_params: Vec::new(),
             locals: Vec::new(),
@@ -4150,11 +4259,68 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         emitted
     }
 
-    fn bind_param_groups(&mut self, groups: &[Vec<&str>]) -> Vec<Vec<String>> {
-        groups
+    fn bind_entry(&mut self, entry: &ExecutableEntry<'_>) -> Vec<GoEntryStage> {
+        let plan = self.plan;
+        let outer_count = self.locals.len();
+        // Resolve outer identities before this entry's parameters can shadow
+        // their source spelling. All subsequent stage transport uses IDs.
+        let mut values: std::collections::HashMap<_, _> = entry
+            .captures()
             .iter()
-            .map(|group| group.iter().map(|name| self.bind_local(name)).collect())
-            .collect()
+            .map(|id| (*id, self.local_name(plan.binding(*id).name)))
+            .collect();
+        let stages = entry
+            .stages
+            .iter()
+            .map(|stage| {
+                let mut captures = GoBlock::default();
+                let mut next_values = std::collections::HashMap::new();
+                for id in &stage.captures {
+                    let source = values
+                        .get(id)
+                        .expect("a stage captures an enclosing binding")
+                        .clone();
+                    let alias = self.bind_local(plan.binding(*id).name);
+                    captures.line(format!("{alias} := {source}"));
+                    captures.line(format!("_ = {alias}"));
+                    next_values.insert(*id, alias);
+                }
+                let params = stage
+                    .bindings
+                    .iter()
+                    .map(|id| {
+                        let name = self.bind_local(plan.binding(*id).name);
+                        next_values.insert(*id, name.clone());
+                        name
+                    })
+                    .collect();
+                let group = match stage.input {
+                    StageInput::Type(_) => GoClosureGroup::Type,
+                    StageInput::Value(_) => GoClosureGroup::Value(params),
+                };
+                values = next_values;
+                GoEntryStage { group, captures }
+            })
+            .collect();
+        self.locals.truncate(outer_count);
+        let final_stage = entry
+            .stages
+            .last()
+            .expect("an executable entry has a stage");
+        self.locals.extend(
+            final_stage
+                .captures
+                .iter()
+                .chain(&final_stage.bindings)
+                .map(|id| GoLocalBinding {
+                    source: plan.binding(*id).name.to_owned(),
+                    emitted: values
+                        .get(id)
+                        .expect("a final-stage binding has native storage")
+                        .clone(),
+                }),
+        );
+        stages
     }
 
     fn bind_type_params(&mut self, signature: &crate::ast::Signature<Routed>) {
@@ -4203,7 +4369,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             .rev()
             .find(|binding| binding.source == source)
             .map(|binding| binding.emitted.clone())
-            .unwrap_or_else(|| go_local_ident(source))
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "a checked Go local reference must belong to the planned entry scope: {source}"
+                )
+            })
     }
 
     fn emit_value(
@@ -4414,7 +4584,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 out.line("panic(\"kio: __absurd__ reached\")");
             }
             Expr::FnExpr { sig, body, .. } => {
-                let value = self.emit_fn_expr(sig, body)?;
+                let value = self.emit_fn_expr(sig, body, out)?;
                 destination.write(out, value);
             }
             Expr::LowClosureCall {
@@ -4559,17 +4729,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         out.line(format!("var {continuation_name} any"));
         out.line(format!("{continuation_name} = {continuation_value}"));
 
-        let (type_stages, callable) = continuation_ty.peel_leading_foralls();
-        let Type::Function { abi_arity, .. } = callable else {
-            unreachable!("a routed CPS projector continuation has a function type")
-        };
-        assert!(
-            *abi_arity <= 1,
-            "a routed CPS projector continuation has zero or one ABI slot"
-        );
+        let (type_stages, abi_arity) = cps_continuation_runtime_shape(continuation_ty);
         let continuation_name =
             self.emit_erased_type_applications(continuation_name, type_stages, out);
-        let args = if *abi_arity == 0 {
+        let args = if abi_arity == 0 {
             "Unit{}".to_owned()
         } else {
             receiver_name
@@ -4760,21 +4923,18 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Some(m) => m.clone(),
             None => module_fn_method_name(self.module_key, mangled),
         };
-        let groups = runtime_param_name_groups(sig);
-        let params = groups[0]
+        let stage = signature_stages(sig)[0];
+        let params = stage
+            .param_names()
             .iter()
             .map(|_| self.fresh_name("arg"))
             .collect::<Vec<_>>();
-        let first_is_type = matches!(
-            sig.canonical_groups().first(),
-            Some(crate::ast::SignatureGroupRef::Type(_))
-        );
         let mut body = GoBlock::default();
         body.line(format!(
             "return {}",
             self.emit_method_invocation(&method, &params, true)
         ));
-        let group = if first_is_type {
+        let group = if !stage.is_value() {
             GoClosureGroup::Type
         } else {
             GoClosureGroup::Value(params)
@@ -4788,23 +4948,23 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         &mut self,
         sig: &crate::ast::Signature<Routed>,
         body: &Expr<Routed>,
+        out: &mut GoBlock,
     ) -> Result<String, EmitError> {
-        let groups = runtime_param_name_groups(sig);
+        let plan = self.plan;
+        let entry = plan.entry_for_body(body);
         let saved_locals = self.locals.len();
         let saved_types = self.type_params.len();
         self.bind_type_params(sig);
-        let bound = self.bind_param_groups(&groups);
-        let emitted_groups = signature_closure_groups(sig, bound);
+        let stages = self.bind_entry(entry);
+        let entry_locals = self.locals.split_off(saved_locals);
+        let outer_locals = std::mem::replace(&mut self.locals, entry_locals);
         let mut closure_body = GoBlock::default();
-        let result = self.emit_result_into(
-            TailContext::body(body),
-            GoDestination::ReturnStep,
-            &mut closure_body,
-        );
-        self.locals.truncate(saved_locals);
+        let result =
+            self.emit_result_into(entry.body(), GoDestination::ReturnStep, &mut closure_body);
+        self.locals = outer_locals;
         self.type_params.truncate(saved_types);
         result?;
-        Ok(render_curried_entries(&emitted_groups, closure_body))
+        Ok(render_planned_entries(&stages, closure_body, out))
     }
 
     /// Complete earlier executing type stages before their results are consumed.

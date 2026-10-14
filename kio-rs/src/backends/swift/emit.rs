@@ -17,7 +17,8 @@
 use crate::backends::{boundary_docs, doc};
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use std::collections::{BTreeMap, HashMap};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::ast::{Expr, Role, Routed, Type};
 use crate::backends::boundary_facade::{
@@ -25,6 +26,10 @@ use crate::backends::boundary_facade::{
     BoundaryFacadeSupportOrigin, BoundaryHostBindingOrigin, CallableExecutionLayout,
     CallableExecutionStage, CallableSourceParamAdapter, CallableValueStageLayout, FacadeBinderId,
     FacadeUse, FacadeUseId, PreparedBoundaryCallableSite, PreparedBoundaryCallableSites,
+};
+use crate::backends::closure_plan::{
+    CallableSpine, CpsBinding, ExecutableBodyPlan, StageInput, TypeBindingId, WitnessCaptures,
+    WitnessContext, callable_spine, cps_entry_plan, signature_stages, typed_execution_stages,
 };
 use crate::backends::product_rebuild::{
     NominalValueRepresentation, bound_product_rebuild_plan, render_cached_product_rebuild,
@@ -36,7 +41,7 @@ use crate::backends::public_names::{
 use crate::backends::reconstruct::RoutedBodyTypes;
 use crate::backends::skin::exact_nullary_host_type_table;
 use crate::backends::tail_plan::{ResultChild, TailContext, TailStage};
-use crate::backends::value_plan::{ValuePlan, ValueUse};
+use crate::backends::value_plan::{ValuePlan, ValueUse, ValueUseId};
 use crate::host_descriptor;
 use crate::pass::resolve::Package;
 
@@ -1212,7 +1217,7 @@ fn prepared_body_to_public_args(
 /// then invoke its continuation at the exact payload type.
 fn render_existential_continuation(
     types: &super::value::Types<'_, '_>,
-    mut current: crate::backends::value_plan::ValueUseId,
+    spine: &CallableSpine,
     scope: &super::value::Scope,
     continuation: &str,
     packet: &str,
@@ -1220,20 +1225,18 @@ fn render_existential_continuation(
 ) -> Result<String, EmitError> {
     let mut scope = scope.clone();
     let mut advanced = continuation.to_owned();
-    let mut index = 0;
-    while let ValueUse::Forall { binder, result } = types.plan.use_at(current) {
+    for (index, stage) in spine.type_stages.iter().enumerate() {
         let witness = format!("{packet}.witnesses[{index}]");
-        scope.insert(*binder, witness.clone());
+        scope.insert(
+            stage
+                .binder
+                .expect("a planned continuation type stage binds a type"),
+            witness.clone(),
+        );
         advanced = format!("__kioAdvance({advanced}, {witness})");
-        current = *result;
-        index += 1;
     }
-    if !matches!(types.plan.use_at(current), ValueUse::Function { .. }) {
-        return Err(EmitError::internal(
-            "Swift existential continuation lost its typed value stage",
-        ));
-    }
-    let witness = types.witness(current, &scope, "H")?;
+    let index = spine.type_stages.len();
+    let witness = types.witness(spine.function, &scope, "H")?;
     let invocation = match cursor {
         Some(cursor) => format!("invokeTail(__kioContinuation, {packet}.payload, {cursor})"),
         None => format!("invoke(__kioContinuation, {packet}.payload)"),
@@ -1249,40 +1252,87 @@ fn render_existential_projection(
     scope: &super::value::Scope,
     target: &str,
 ) -> Result<String, EmitError> {
+    let recipe = cps_entry_plan(types.plan, root);
+    let witness_captures =
+        recipe.stage_witness_captures(types.plan, &scope.keys().copied().collect::<Vec<_>>());
+    let packet_captures = recipe
+        .runtime()
+        .captures()
+        .iter()
+        .map(|binding| match binding {
+            CpsBinding::Payload => "__kioPacket".to_owned(),
+            CpsBinding::Continuation => "__kioContinuation".to_owned(),
+        })
+        .collect::<Vec<_>>();
     let mut scope = scope.clone();
-    let mut current = root;
-    let mut stages = Vec::new();
-    while let ValueUse::Forall { binder, result } = types.plan.use_at(current) {
-        let witness = types.witness(current, &scope, "H")?;
-        let argument = format!("__kioSelected{}", stages.len());
-        scope.insert(*binder, argument.clone());
-        stages.push((witness, argument));
-        current = *result;
+    // Incoming witnesses can be expressions; Swift capture lists require bindings.
+    // Only ambient dependencies are named here: selected witnesses remain local
+    // to their planned type stage. These IIFE-local names are outside the k_
+    // namespace of source binders and distinct from the other runtime temporaries.
+    let captured = witness_captures
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let mut witness_bindings = String::new();
+    for (index, (_, value)) in scope
+        .iter_mut()
+        .filter(|(binder, _)| captured.contains(*binder))
+        .enumerate()
+    {
+        let binding = format!("__kioProjectionWitness{index}");
+        witness_bindings.push_str(&format!("let {binding}: any __KioTypeWitness = {value}; "));
+        *value = binding;
     }
-    let ValueUse::Function { domain, .. } = types.plan.use_at(current) else {
-        return Err(EmitError::internal(
-            "Swift existential projection lost its continuation stage",
-        ));
-    };
+    let mut stages = Vec::new();
+    for (index, stage) in recipe.entry.type_stages.iter().enumerate() {
+        let witness = types.witness(stage.use_id, &scope, "H")?;
+        let argument = format!("__kioSelected{}", stages.len());
+        let mut captures = packet_captures.clone();
+        captures.extend(
+            witness_captures[index]
+                .iter()
+                .map(|binder| scope[binder].clone()),
+        );
+        scope.insert(
+            stage.binder.expect("a planned CPS type stage binds a type"),
+            argument.clone(),
+        );
+        stages.push(SwiftClosureStage {
+            type_stage: true,
+            witness,
+            argument,
+            bindings: Vec::new(),
+            captures,
+        });
+    }
     let call = render_existential_continuation(
         types,
-        *domain,
+        &recipe.continuation,
         &scope,
         "__kioContinuation",
         "__kioPacket",
         Some("__kioCursor"),
     )?;
-    let witness = types.witness(current, &scope, "H")?;
-    let mut body = format!(
-        "__kioChecked({witness}, as: (any __KioFunctionWitness).self).constructTail {{ __kioContinuation, __kioCursor in return {call} }}"
+    let witness = types.witness(recipe.entry.function, &scope, "H")?;
+    let mut captures = packet_captures;
+    captures.extend(
+        witness_captures
+            .last()
+            .expect("a CPS entry has a final value stage")
+            .iter()
+            .map(|binder| scope[binder].clone()),
     );
-    for (witness, argument) in stages.into_iter().rev() {
-        body = format!(
-            "__kioChecked({witness}, as: (any __KioForallWitness).self).construct {{ {argument} in return {body} }}"
-        );
-    }
+    stages.push(SwiftClosureStage {
+        type_stage: false,
+        witness,
+        argument: "__kioContinuation".to_owned(),
+        bindings: Vec::new(),
+        captures,
+    });
+    let body = render_closure_stages(stages, call, Some("__kioCursor"));
     Ok(format!(
-        "{{ () -> Any in let __kioPacket = __kioChecked(__kioChecked({target}, as: (any __KioNominalValue).self).__kioValue, as: __KioExistential.self); return {body} }}()"
+        "{{ () -> Any in let __kioPacket = __kioChecked(__kioChecked({target}, as: (any __KioNominalValue).self).__kioValue, as: __KioExistential.self); {witness_bindings}return {body} }}()"
     ))
 }
 
@@ -1634,9 +1684,10 @@ fn render_module_fns(
                 prepared,
                 shapes,
                 literal_shapes,
+                ExecutableBodyPlan::new(&f.sig, &f.body),
             );
             let full_type = f.sig.signature_ty(f.ret.clone(), f.meta.span);
-            let body = emitter.callable_value(&f.sig, &full_type, &f.body)?;
+            let body = emitter.callable_value(&full_type, &f.body)?;
             out.push_str(&format!(
                 "\tfunc {method}() -> Any {{\n\t\treturn {body}\n\t}}\n"
             ));
@@ -1646,17 +1697,11 @@ fn render_module_fns(
 }
 
 fn value_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
-    let arities: Vec<usize> = sig
-        .canonical_groups()
+    let arities: Vec<usize> = signature_stages(sig)
         .into_iter()
         .filter_map(|group| match group {
-            crate::ast::SignatureGroupRef::Value(params) => Some(
-                params
-                    .iter()
-                    .filter(|p| matches!(p, crate::ast::SignatureParam::Value(_)))
-                    .count(),
-            ),
-            crate::ast::SignatureGroupRef::Type(_) => None,
+            StageInput::Value(params) => Some(params.len()),
+            StageInput::Type(_) => None,
         })
         .collect();
     if arities.is_empty() { vec![0] } else { arities }
@@ -1688,6 +1733,58 @@ fn build_selective_imports(
     crate::backends::selective_module_fn_import_owners(importer, package)
 }
 
+/// Host syntax for the stages selected by the shared executable plan.
+struct SwiftClosureStage {
+    type_stage: bool,
+    witness: String,
+    argument: String,
+    bindings: Vec<String>,
+    captures: Vec<String>,
+}
+
+fn render_closure_stages(
+    stages: Vec<SwiftClosureStage>,
+    mut body: String,
+    cursor: Option<&str>,
+) -> String {
+    for (index, stage) in stages.into_iter().rev().enumerate() {
+        let SwiftClosureStage {
+            type_stage,
+            witness,
+            argument,
+            bindings,
+            captures,
+        } = stage;
+        let (construct, parameters) = match cursor.filter(|_| index == 0) {
+            Some(cursor) => ("constructTail", format!("{argument}, {cursor}")),
+            None => ("construct", argument.clone()),
+        };
+        let captures = if captures.is_empty() {
+            String::new()
+        } else {
+            format!("[{}] ", captures.join(", "))
+        };
+        let mut prelude = String::new();
+        for (index, name) in bindings.iter().enumerate() {
+            let value = if bindings.len() == 1 {
+                argument.clone()
+            } else {
+                format!("kioProductSlot({argument}, {index}, {})", bindings.len())
+            };
+            prelude.push_str(&format!("let {name}: Any = {value}; _ = {name}; "));
+        }
+        let protocol = if type_stage {
+            "__KioForallWitness"
+        } else {
+            "__KioFunctionWitness"
+        };
+        body = format!(
+            "__kioChecked({witness}, as: (any {protocol}).self).{construct} {{ {captures}{parameters} in {prelude}return {body} }}"
+        );
+    }
+    body
+}
+
 /// Walks a module fn body and renders Swift expression source over the
 /// universal erased value model (`Any`). The enclosing method's `self` is
 /// the package handle, so host / module calls reach the reserved host storage
@@ -1696,6 +1793,10 @@ struct BodyEmitter<'a, 'p> {
     locals: Vec<String>,
     local_types: HashMap<String, Type<Routed>>,
     type_binders: Vec<(crate::ast::TypeParam, String)>,
+    type_binding_ids: Vec<TypeBindingId>,
+    witness_names: HashMap<TypeBindingId, String>,
+    witness_captures: RefCell<WitnessCaptures>,
+    witness_context: Option<WitnessContext>,
     fresh: usize,
     module_key: &'a str,
     selective_imports: &'a SelectiveImports,
@@ -1703,6 +1804,7 @@ struct BodyEmitter<'a, 'p> {
     prepared: &'a PreparedBoundaryCallableSites,
     facade_shapes: &'a super::skin::PreparedSwiftShapes<'p>,
     shapes: &'a super::skin::SwiftLiteralContext<'p>,
+    executable: ExecutableBodyPlan<'a>,
 }
 
 impl<'a, 'p> BodyEmitter<'a, 'p> {
@@ -1713,11 +1815,16 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         prepared: &'a PreparedBoundaryCallableSites,
         facade_shapes: &'a super::skin::PreparedSwiftShapes<'p>,
         shapes: &'a super::skin::SwiftLiteralContext<'p>,
+        executable: ExecutableBodyPlan<'a>,
     ) -> Self {
         BodyEmitter {
             locals: Vec::new(),
             local_types: HashMap::new(),
             type_binders: Vec::new(),
+            type_binding_ids: Vec::new(),
+            witness_names: HashMap::new(),
+            witness_captures: RefCell::default(),
+            witness_context: None,
             fresh: 0,
             module_key,
             selective_imports,
@@ -1725,6 +1832,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             prepared,
             facade_shapes,
             shapes,
+            executable,
         }
     }
 
@@ -1768,6 +1876,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
 
     fn witness(&self, ty: &Type<Routed>) -> Result<String, EmitError> {
         let plan = self.value_plan(ty)?;
+        self.record_witness(&plan, plan.root());
         let scope = plan
             .ambient_binders()
             .iter()
@@ -1783,9 +1892,28 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         .witness(plan.root(), &scope, "H")
     }
 
+    fn witness_bindings(&self, plan: &ValuePlan) -> Vec<(FacadeBinderId, TypeBindingId)> {
+        assert_eq!(plan.ambient_binders().len(), self.type_binding_ids.len());
+        plan.ambient_binders()
+            .iter()
+            .copied()
+            .zip(self.type_binding_ids.iter().copied())
+            .collect()
+    }
+
+    fn record_witness(&self, plan: &ValuePlan, use_id: ValueUseId) {
+        self.witness_captures.borrow_mut().record(
+            &self.executable,
+            self.witness_context
+                .expect("body witnesses have a planned execution context"),
+            plan,
+            use_id,
+            &self.witness_bindings(plan),
+        );
+    }
+
     fn callable_value(
         &mut self,
-        sig: &crate::ast::Signature<Routed>,
         full_type: &Type<Routed>,
         body: &Expr<Routed>,
     ) -> Result<String, EmitError> {
@@ -1803,103 +1931,127 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             .zip(self.type_binders.iter().map(|(_, value)| value.clone()))
             .collect::<super::value::Scope>();
         let saved_binders = self.type_binders.len();
-        let saved_locals = self.locals.len();
+        let saved_locals = self.locals.clone();
         let saved_types = self.local_types.clone();
-        let mut current = plan.root();
+        let entry = self.executable.entry_for_body(body);
+        let entry_id = entry.id;
+        let requires_owner = entry.requires_owner;
+        let body_stage = entry
+            .stages
+            .last()
+            .expect("every callable has an executing stage");
+        let body_locals = body_stage
+            .captures
+            .iter()
+            .chain(&body_stage.bindings)
+            .map(|binding| self.executable.binding(*binding).name.to_owned())
+            .collect::<Vec<_>>();
+        let typed_stages = entry.typed_stages(&plan);
+        let inputs = entry
+            .stages
+            .iter()
+            .map(|stage| {
+                let bindings = stage
+                    .bindings
+                    .iter()
+                    .map(|binding| {
+                        let binding = self.executable.binding(*binding);
+                        (binding.name.to_owned(), binding.ty.cloned())
+                    })
+                    .collect::<Vec<_>>();
+                let captures = stage
+                    .captures
+                    .iter()
+                    .map(|binding| swift_local_ident(self.executable.binding(*binding).name))
+                    .collect::<Vec<_>>();
+                (stage.input, stage.type_binding, bindings, captures)
+            })
+            .collect::<Vec<_>>();
+        let tail = entry.body();
+        let mut witness_bindings = self.witness_bindings(&plan);
         let mut stages = Vec::new();
-        for group in sig.canonical_groups() {
-            match group {
-                crate::ast::SignatureGroupRef::Type(params) => {
-                    for param in params {
-                        let crate::ast::SignatureParam::Type(param) = param else {
-                            unreachable!("a canonical type group contains type parameters")
-                        };
-                        let ValueUse::Forall { binder, result } = plan.use_at(current) else {
-                            return Err(EmitError::internal(
-                                "Swift signature type stage disagrees with its value plan",
-                            ));
-                        };
-                        let witness = types.witness(current, &scope, "H")?;
-                        let local = self.fresh_name("binder");
-                        stages.push((true, witness, local.clone(), Vec::new()));
-                        scope.insert(*binder, local.clone());
-                        self.type_binders.push((param.clone(), local));
-                        current = *result;
-                    }
+        for (index, ((input, type_binding, bindings, captures), stage)) in
+            inputs.into_iter().zip(typed_stages).enumerate()
+        {
+            // This witness constructs the entry; it executes before that
+            // entry's own argument becomes available.
+            self.witness_captures.borrow_mut().record(
+                &self.executable,
+                WitnessContext::Construct {
+                    entry: entry_id,
+                    stage: index,
+                },
+                &plan,
+                stage.use_id,
+                &witness_bindings,
+            );
+            let witness = types.witness(stage.use_id, &scope, "H")?;
+            match input {
+                StageInput::Type(param) => {
+                    let local = self.fresh_name("binder");
+                    stages.push(SwiftClosureStage {
+                        type_stage: true,
+                        witness,
+                        argument: local.clone(),
+                        bindings: Vec::new(),
+                        captures,
+                    });
+                    let binder = stage.binder.expect("a planned type stage binds a type");
+                    let type_binding =
+                        type_binding.expect("a planned type stage has lexical identity");
+                    scope.insert(binder, local.clone());
+                    witness_bindings.push((binder, type_binding));
+                    self.type_binding_ids.push(type_binding);
+                    self.witness_names.insert(type_binding, local.clone());
+                    self.type_binders.push((param.clone(), local));
                 }
-                crate::ast::SignatureGroupRef::Value(params) => {
-                    let ValueUse::Function { result, .. } = plan.use_at(current) else {
-                        return Err(EmitError::internal(
-                            "Swift signature value stage disagrees with its value plan",
-                        ));
-                    };
-                    let witness = types.witness(current, &scope, "H")?;
+                StageInput::Value(_) => {
                     let local = self.fresh_name("domain");
                     let mut names = Vec::new();
-                    for param in params {
-                        if let crate::ast::SignatureParam::Value(param) = param {
-                            self.locals.push(param.name.clone());
-                            if let Some(ty) = &param.ty {
-                                self.local_types.insert(param.name.clone(), ty.clone());
-                            }
-                            names.push(swift_local_ident(&param.name));
+                    for (name, ty) in bindings {
+                        self.locals.push(name.clone());
+                        if let Some(ty) = ty {
+                            self.local_types.insert(name.clone(), ty);
                         }
+                        names.push(swift_local_ident(&name));
                     }
-                    stages.push((false, witness, local, names));
-                    current = *result;
+                    stages.push(SwiftClosureStage {
+                        type_stage: false,
+                        witness,
+                        argument: local,
+                        bindings: names,
+                        captures,
+                    });
                 }
             }
         }
-        if stages.is_empty() {
-            let ValueUse::Function { .. } = plan.use_at(current) else {
-                return Err(EmitError::internal(
-                    "an empty Swift function signature has a Unit domain",
-                ));
-            };
-            stages.push((
-                false,
-                types.witness(current, &scope, "H")?,
-                self.fresh_name("domain"),
-                Vec::new(),
-            ));
-        }
-        let tail = TailContext::body(body);
         let cursor = tail.has_tail_transfer().then(|| self.fresh_name("cursor"));
+        self.locals = body_locals;
+        self.local_types
+            .retain(|name, _| self.locals.contains(name));
+        let saved_context = self.witness_context.replace(WitnessContext::Execute {
+            entry: entry_id,
+            stage: stages.len() - 1,
+        });
         let emitted = self.emit_context(tail, cursor.as_deref());
+        self.witness_context = saved_context;
         self.type_binders.truncate(saved_binders);
-        self.locals.truncate(saved_locals);
+        self.type_binding_ids.truncate(saved_binders);
+        self.locals = saved_locals;
         self.local_types = saved_types;
-        let mut result = emitted?;
-        for (index, (type_stage, witness, argument, names)) in stages.into_iter().rev().enumerate()
-        {
-            let (construct, parameters) = if index == 0 {
-                match &cursor {
-                    Some(cursor) => ("constructTail", format!("{argument}, {cursor}")),
-                    None => ("construct", argument.clone()),
-                }
-            } else {
-                ("construct", argument.clone())
-            };
-            if type_stage {
-                result = format!(
-                    "__kioChecked({witness}, as: (any __KioForallWitness).self).{construct} {{ {parameters} in return {result} }}"
-                );
-            } else {
-                let mut bindings = String::new();
-                for (index, name) in names.iter().enumerate() {
-                    let value = if names.len() == 1 {
-                        argument.clone()
-                    } else {
-                        format!("kioProductSlot({argument}, {index}, {})", names.len())
-                    };
-                    bindings.push_str(&format!("let {name}: Any = {value}; _ = {name}; "));
-                }
-                result = format!(
-                    "__kioChecked({witness}, as: (any __KioFunctionWitness).self).{construct} {{ {parameters} in {bindings}return {result} }}"
-                );
+        for (index, stage) in stages.iter_mut().enumerate() {
+            stage.captures.extend(
+                self.witness_captures
+                    .borrow()
+                    .captures(entry_id, index)
+                    .iter()
+                    .map(|binding| self.witness_names[binding].clone()),
+            );
+            if requires_owner {
+                stage.captures.push("self".to_owned());
             }
         }
-        Ok(result)
+        Ok(render_closure_stages(stages, emitted?, cursor.as_deref()))
     }
 
     /// Render one Routed-phase expression to a Swift expression string.
@@ -2005,7 +2157,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 ret_ty,
                 ..
             } => self.emit_low_host_call(name, module_path, type_args, args, sig, ret_ty),
-            Expr::LowBoundRef { name, .. } => Ok(swift_local_ident(name)),
+            Expr::LowBoundRef { name, .. } => {
+                assert!(
+                    self.locals.contains(name),
+                    "a Swift local reference belongs to the planned entry environment"
+                );
+                Ok(swift_local_ident(name))
+            }
             Expr::EnrichedConditional { cond, .. } => self.emit_conditional(context, cond, cursor),
             Expr::EnrichedTuple {
                 items, synth_ty, ..
@@ -2087,11 +2245,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     "{{ () -> Any in _ = {arg}; fatalError(\"kio: __absurd__ reached\") }}()"
                 ))
             }
-            Expr::FnExpr { sig, body, .. } => {
+            Expr::FnExpr { body, .. } => {
                 let full_type = self
                     .expr_type(e)
                     .ok_or_else(|| EmitError::internal("Swift closure has no phase-owned type"))?;
-                self.callable_value(sig, &full_type, body)
+                self.callable_value(&full_type, body)
             }
             Expr::LowClosureCall {
                 name,
@@ -2099,6 +2257,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 args,
                 ..
             } => {
+                assert!(
+                    self.locals.contains(name),
+                    "a Swift closure call belongs to the planned entry environment"
+                );
                 let callee = swift_local_ident(name);
                 let ty = self
                     .local_types
@@ -2245,6 +2407,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 ))
             } else {
                 let plan = self.value_plan(&result_ty)?;
+                self.record_witness(&plan, plan.root());
                 let scope = plan
                     .ambient_binders()
                     .iter()
@@ -2276,6 +2439,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         let receiver = self.emit_expr(receiver)?;
         let continuation = self.emit_expr(continuation)?;
         let plan = self.value_plan(continuation_ty)?;
+        self.record_witness(&plan, plan.root());
         let scope = plan
             .ambient_binders()
             .iter()
@@ -2290,7 +2454,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         };
         let call = render_existential_continuation(
             &types,
-            plan.root(),
+            &callable_spine(&plan, plan.root()),
             &scope,
             "__kioContinuation",
             "__kioPacket",
@@ -2320,58 +2484,59 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             shapes: self.facade_shapes,
         };
         let values = prepared_values(render);
-        let mut current = values.plan.root();
         let mut scope = super::value::Scope::new();
         let mut stages = Vec::new();
         let mut arguments = Vec::new();
         let mut witnesses = Vec::new();
-        for stage in execution.head_stages() {
-            let witness = values.witness(current, &scope, "H")?;
+        let mut stage_inputs = Vec::<Vec<String>>::new();
+        for (stage, typed) in execution
+            .head_stages()
+            .iter()
+            .zip(typed_execution_stages(execution, values.plan))
+        {
+            let witness = values.witness(typed.use_id, &scope, "H")?;
             let argument = self.fresh_name("host_stage");
-            match (stage, values.plan.use_at(current)) {
-                (CallableExecutionStage::Type { .. }, ValueUse::Forall { binder, result }) => {
+            let mut captures = typed
+                .captured_stages()
+                .flat_map(|index| stage_inputs[index].iter().cloned())
+                .collect::<Vec<_>>();
+            captures.push("self".to_owned());
+            match stage {
+                CallableExecutionStage::Type { .. } => {
                     witnesses.push(argument.clone());
-                    scope.insert(*binder, argument.clone());
-                    stages.push((true, witness, argument, Vec::new()));
-                    current = *result;
+                    stage_inputs.push(vec![argument.clone()]);
+                    scope.insert(
+                        typed
+                            .binder
+                            .expect("a planned host type stage binds a type"),
+                        argument.clone(),
+                    );
+                    stages.push(SwiftClosureStage {
+                        type_stage: true,
+                        witness,
+                        argument,
+                        bindings: Vec::new(),
+                        captures,
+                    });
                 }
-                (CallableExecutionStage::Value(layout), ValueUse::Function { result, .. }) => {
+                CallableExecutionStage::Value(layout) => {
                     let names = (0..layout.body_abi_arity())
                         .map(|index| format!("{argument}_{index}"))
                         .collect::<Vec<_>>();
                     arguments.extend(names.clone());
-                    stages.push((false, witness, argument, names));
-                    current = *result;
-                }
-                _ => {
-                    return Err(EmitError::internal(
-                        "Swift host execution stages disagree with their canonical value plan",
-                    ));
+                    stage_inputs.push(names.clone());
+                    stages.push(SwiftClosureStage {
+                        type_stage: false,
+                        witness,
+                        argument,
+                        bindings: names,
+                        captures,
+                    });
                 }
             }
         }
-        let mut body = self.opened_host_call(render, name, module_path, &witnesses, &arguments)?;
-        for (type_stage, witness, argument, names) in stages.into_iter().rev() {
-            if type_stage {
-                body = format!(
-                    "__kioChecked({witness}, as: (any __KioForallWitness).self).construct {{ {argument} in return {body} }}"
-                );
-            } else {
-                let mut bindings = String::new();
-                for (index, name) in names.iter().enumerate() {
-                    let value = if names.len() == 1 {
-                        argument.clone()
-                    } else {
-                        format!("kioProductSlot({argument}, {index}, {})", names.len())
-                    };
-                    bindings.push_str(&format!("let {name}: Any = {value}; "));
-                }
-                body = format!(
-                    "__kioChecked({witness}, as: (any __KioFunctionWitness).self).construct {{ {argument} in {bindings}return {body} }}"
-                );
-            }
-        }
-        Ok(body)
+        let body = self.opened_host_call(render, name, module_path, &witnesses, &arguments)?;
+        Ok(render_closure_stages(stages, body, None))
     }
 
     fn opened_host_call(
@@ -2544,7 +2709,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         };
         plan.right_spine_parts(plan.root(), arity, sum)
             .into_iter()
-            .map(|id| types.witness(id, &scope, "H"))
+            .map(|id| {
+                self.record_witness(&plan, id);
+                types.witness(id, &scope, "H")
+            })
             .collect()
     }
 
@@ -2683,6 +2851,10 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         if let Some(plan) =
             bound_product_rebuild_plan(&item_refs, NominalValueRepresentation::Retained)
         {
+            assert!(
+                self.locals.contains(&plan.source),
+                "a Swift product rebuild belongs to the planned entry environment"
+            );
             return render_cached_product_rebuild(
                 &plan,
                 |slot| format!("__slots[{slot}]"),
@@ -2981,6 +3153,99 @@ mod tests {
             "__KioEntry({ argument in body(__kioChecked(argument, as: (any __KioTypeWitness).self)) }"
         ));
         assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    fn executable_capture_lists_include_inert_factory_witnesses_only_where_needed() {
+        let package = single_api_package(
+            "module api; \
+             pub fn factory[A](value: A, unused: A) -> . -> A { .(unit) { value } } \
+             pub fn discard[A](unused: A) -> . { () }",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit planned Swift captures");
+        let body = |name: &str| {
+            let method = module_fn_method_name("api", name);
+            emitted
+                .pkg_swift
+                .split(&format!("func {method}() -> Any {{"))
+                .nth(1)
+                .unwrap()
+                .split("\n\t}")
+                .next()
+                .unwrap()
+        };
+        let factory = body("factory");
+        // A is required to construct the returned native-view factory in
+        // the value stage, although the returned body only reads value.
+        assert!(
+            factory.contains(".construct { [__kio_binder0] __kio_domain1 in"),
+            "{factory}"
+        );
+        assert!(
+            factory.contains(".construct { [k_value] __kio_domain2 in"),
+            "{factory}"
+        );
+        assert!(!factory.contains("[k_unused"), "{factory}");
+        let discard = body("discard");
+        assert!(!discard.contains(".construct { ["), "{discard}");
+        assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    #[should_panic(expected = "a Swift local reference belongs to the planned entry environment")]
+    fn missing_planned_capture_cannot_fall_back_to_implicit_swift_capture() {
+        let package = single_api_package(
+            "module api; host type Atom; \
+             pub fn capture(value: Atom) -> . -> Atom { .(unit) { value } }",
+        );
+        lower_package(&package, "Pkg").expect("the unmodified capture plan emits");
+        let module = &package.module("api").unwrap().module;
+        let function = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ast::Item::FnDef(function) if function.name == "capture" => Some(function),
+                _ => None,
+            })
+            .unwrap();
+        let Expr::FnExpr {
+            body: nested_body, ..
+        } = &function.body
+        else {
+            panic!("the capture control retains its nested callable");
+        };
+        let mut executable = ExecutableBodyPlan::new(&function.sig, &function.body);
+        let selected = &mut executable
+            .entry_for_body_mut(nested_body)
+            .stages
+            .last_mut()
+            .unwrap()
+            .captures;
+        assert_eq!(selected.len(), 1, "the control selects exactly value");
+        selected.clear();
+
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
+        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
+        let descriptor = host_descriptor::build_host_descriptor(&package);
+        let literal_shapes = super::super::skin::SwiftLiteralContext::new(
+            &package,
+            exact_nullary_host_type_table(&descriptor),
+        );
+        let selective_imports = build_selective_imports(module, &package);
+        let qualified_imports = build_qualified_imports(&module.imports);
+        let mut emitter = BodyEmitter::new(
+            "api",
+            &selective_imports,
+            &qualified_imports,
+            &prepared,
+            &shapes,
+            &literal_shapes,
+            executable,
+        );
+        let full_type = function
+            .sig
+            .signature_ty(function.ret.clone(), function.meta.span);
+        emitter.callable_value(&full_type, &function.body).unwrap();
     }
 
     #[test]
@@ -3324,6 +3589,11 @@ mod tests {
         let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
         let selective_imports = SelectiveImports::new();
         let qualified_imports = QualifiedImports::new();
+        let crate::ast::Item::FnDef(function) =
+            package.module("api").unwrap().module.items.last().unwrap()
+        else {
+            panic!("expected Boolean fixture function");
+        };
         let mut emitter = BodyEmitter::new(
             "api",
             &selective_imports,
@@ -3331,12 +3601,8 @@ mod tests {
             &prepared,
             &shapes,
             &literals,
+            ExecutableBodyPlan::new(&function.sig, &function.body),
         );
-        let crate::ast::Item::FnDef(function) =
-            package.module("api").unwrap().module.items.last().unwrap()
-        else {
-            panic!("expected Boolean fixture function");
-        };
         emitter
             .emit_bool(&function.body)
             .expect("checked Boolean condition emits");
@@ -3894,7 +4160,9 @@ v(2) {
         );
         assert!(
             emitted.pkg_swift.contains("host.api__hostId(")
-                && emitted.pkg_swift.contains(".construct { __kio_host_stage")
+                && emitted
+                    .pkg_swift
+                    .contains(".construct { [self] __kio_host_stage")
                 && emitted
                     .pkg_swift
                     .contains("let __kioOpenedType0: any __KioTypeWitness = __kio_host_stage")
@@ -4190,7 +4458,9 @@ v(2) {
 
         assert!(
             emitted.pkg_swift.contains("as: __KioExistential.self)")
-                && emitted.pkg_swift.contains(".construct { __kioSelected0 in")
+                && emitted
+                    .pkg_swift
+                    .contains(".construct { [__kioPacket] __kioSelected0 in")
                 && emitted
                     .pkg_swift
                     .contains("__kioAdvance(__kioContinuation, __kioPacket.witnesses[0])")
@@ -4209,6 +4479,42 @@ v(2) {
             "each existential projector opens its one retained hidden witness:\n{}",
             emitted.pkg_swift
         );
+        assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    fn existential_projectors_materialize_only_captured_ambient_witnesses() {
+        let package = single_api_package(
+            "module api; \
+             pub newtype Pack[A, Unused] <Hidden> : A & Hidden { \
+                 pub constructor pack; pub projector unpack \
+             }",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit generic existential projector");
+        let projector = emitted
+            .pkg_swift
+            .split("public func unpack<")
+            .nth(1)
+            .expect("the public projector is emitted")
+            .split("\n\t}")
+            .next()
+            .unwrap();
+
+        let packet = projector.find("let __kioPacket =").unwrap();
+        let binding = projector
+            .find("let __kioProjectionWitness0: any __KioTypeWitness = __KioNativeWitness<KioType_0>();")
+            .expect("the captured ambient witness is evaluated into a local");
+        let construct = projector.find(".construct {").unwrap();
+        assert!(packet < binding && binding < construct, "{projector}");
+        assert_eq!(projector.matches("let __kioProjectionWitness").count(), 1);
+        assert_eq!(projector.matches("__KioNativeWitness<").count(), 1);
+        assert!(
+            projector
+                .contains(".construct { [__kioPacket, __kioProjectionWitness0] __kioSelected0 in")
+        );
+        assert!(projector.contains(
+            ".constructTail { [__kioPacket, __kioProjectionWitness0, __kioSelected0] __kioContinuation, __kioCursor in"
+        ));
         assert_no_public_any(&emitted);
     }
 

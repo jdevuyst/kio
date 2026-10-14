@@ -20,7 +20,7 @@
 //! [`ReconProfile::reconstruct_other`]. Each `None` return is a reconstruction
 //! gap the caller copes with, never a silent erasure.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::ast::{Expr, ImportKind, Item, Kind, Routed, Signature, SignatureParam, Type};
 use crate::backends::reconstruct::{ReconProfile, build_typearg_subst_from_sig};
@@ -115,6 +115,22 @@ impl<'a> TypeRecon<'a> {
                 self.bound_param_tys.remove(name);
             }
         }
+    }
+
+    /// Select a closure's prepared value environment without changing the
+    /// independent lexical type-parameter scope. The returned bindings belong
+    /// to the enclosing body and are restored when its emission resumes.
+    pub(super) fn select_value_scope(&mut self, names: &[String]) -> HashMap<String, Type<Routed>> {
+        let names = names.iter().map(String::as_str).collect::<HashSet<_>>();
+        let (selected, excluded) = std::mem::take(&mut self.bound_param_tys)
+            .into_iter()
+            .partition(|(name, _)| names.contains(name.as_str()));
+        self.bound_param_tys = selected;
+        excluded
+    }
+
+    pub(super) fn restore_value_scope(&mut self, excluded: HashMap<String, Type<Routed>>) {
+        self.bound_param_tys.extend(excluded);
     }
 
     /// Enter the type binders of a nested closure, returning the names that
@@ -434,6 +450,25 @@ mod tests {
                 _ => None,
             })
             .unwrap_or_else(|| panic!("missing function `{module}.{name}`"))
+    }
+
+    #[test]
+    fn selected_value_scope_excludes_unused_bindings_and_restores_outer_types() {
+        let package = routed_package(&[(
+            "api.kio",
+            "module api; fn keep[A](kept: A, unused: .) -> A { kept }",
+        )]);
+        let definition = function(&package, "api", "keep");
+        let resolution = NewtypeResolution::build(&package);
+        let mut recon = TypeRecon::new(&definition.sig, &package, &resolution, "api");
+        let type_scope = recon.type_params.clone();
+        let excluded = recon.select_value_scope(&["kept".to_owned()]);
+        assert!(recon.bound_value_type("kept").is_some());
+        assert!(recon.bound_value_type("unused").is_none());
+        assert_eq!(recon.type_params, type_scope);
+        recon.restore_value_scope(excluded);
+        assert!(recon.bound_value_type("unused").is_some());
+        assert_eq!(recon.type_params, type_scope);
     }
 
     #[test]

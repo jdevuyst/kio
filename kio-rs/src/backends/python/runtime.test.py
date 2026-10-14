@@ -25,11 +25,11 @@ def advance(name):
     return {"LowTypeApplication": {"callee": reference(name), "tail": "type"}}
 
 
-def value_stage(*names):
-    return {"kind": "value", "params": list(names)}
+def value_stage(*names, captures=()):
+    return {"kind": "value", "params": list(names), "captures": list(captures)}
 
 
-TYPE_STAGE = {"kind": "type", "params": []}
+TYPE_STAGE = {"kind": "type", "params": [], "captures": []}
 STRING_IDENTITY = {"module": ["api"], "name": "String", "frame": "String"}
 
 
@@ -37,7 +37,19 @@ def definition(stages, body):
     return {"sig": {"stages": stages}, "body": body}
 
 
+def projector_entry(type_stages=0, arity=1):
+    return definition(
+        [value_stage("continuation", captures=("payload",) if arity else ())],
+        {"LowClosureCall": {
+            "name": "continuation", "type_args": [None] * type_stages,
+            "args": [reference("payload")] if arity else [], "tail": "value",
+        }},
+    )
+
+
 def guest(runtime, stages, body, captures=None):
+    if captures:
+        stages = [{**stages[0], "captures": list(captures)}, *stages[1:]]
     return runtime._make_fn("api", definition(stages, body), captures or {})
 
 
@@ -148,7 +160,7 @@ class TailEntryTests(unittest.TestCase):
         self.assertEqual(type_caller(None), "owner")
         self.assertEqual(foreign_log, ["owner", "owner"])
         self.assertEqual(self.log, [])
-        mixed = guest(foreign, [TYPE_STAGE, value_stage("x"), TYPE_STAGE], reference("x"))
+        mixed = guest(foreign, [TYPE_STAGE, value_stage("x"), {**TYPE_STAGE, "captures": ["x"]}], reference("x"))
         left, right = mixed.advance()(59), mixed.advance()(61)
         returned = guest(self.runtime, [value_stage()], reference("saved"), {"saved": left})
         self.assertIs(returned(None), left)
@@ -176,7 +188,7 @@ class TailEntryTests(unittest.TestCase):
         self.assertEqual(events[-2:], [None, None])
         identity = guest(self.runtime, [value_stage("x")], reference("x"))
         retained = guest(self.runtime, [value_stage("target")], {"FnExpr":
-            definition([value_stage("x")], call("target", reference("x")))
+            definition([value_stage("x", captures=("target",))], call("target", reference("x")))
         })(identity)
         self.assertEqual(retained(71), 71)
         self.assertEqual(retained(73), 73)
@@ -195,19 +207,11 @@ class TailEntryTests(unittest.TestCase):
         self.assertEqual(retained(83), 83)
 
     def test_returned_projector_entries_forward_continuations(self):
-        site = {
-            "callable": {"facade": {"uses": [
-                {"kind": "function", "slots": [1]}, {"kind": "function"},
-            ]}},
-            "execution": {"root_uses": [
-                {"kind": "function", "layout": {"body_abi_arity": 1}},
-                {"kind": "function", "layout": {"body_abi_arity": 1}},
-            ]},
-        }
+        entry = projector_entry()
         value = guest(self.runtime, [value_stage("x")], reference("x"))
-        continuation = {"FnExpr": definition([value_stage("next")], call("next", reference("x")))}
+        continuation = {"FnExpr": definition([value_stage("next", captures=("x",))], call("next", reference("x")))}
         for _ in range(2048):
-            adapter = self.runtime._existential_projector_result(site, 0, value)
+            adapter = self.runtime._make_fn(None, entry, {"payload": value})
             value = guest(self.runtime, [value_stage("x")], call("adapter", continuation), {"adapter": adapter})
         self.assertEqual(value(89), 89)
         self.assertEqual(value(97), 97)
@@ -216,21 +220,9 @@ class TailEntryTests(unittest.TestCase):
         for arity in (0, 1):
             events = []
             payload = object()
-            site = {
-                "callable": {"facade": {"uses": [
-                    {"kind": "function", "slots": [1]},
-                    {"kind": "forall", "result": 2},
-                    {"kind": "forall", "result": 3},
-                    {"kind": "function"},
-                ]}},
-                "execution": {"root_uses": [
-                    {"kind": "function", "layout": {"body_abi_arity": 1}},
-                    {"kind": "invoke_forall"},
-                    {"kind": "invoke_forall"},
-                    {"kind": "function", "layout": {"body_abi_arity": arity}},
-                ]},
-            }
-            adapter = self.runtime._existential_projector_result(site, 0, payload)
+            entry = projector_entry(type_stages=2, arity=arity)
+            adapter = self.runtime._make_fn(None, entry, {"payload": payload})
+            self.assertEqual(adapter.env, {"payload": payload} if arity else {})
 
             def invoke(value):
                 self.assertIs(value, payload if arity else None)
@@ -244,6 +236,63 @@ class TailEntryTests(unittest.TestCase):
             self.assertEqual(adapter(callback), 101)
             self.assertEqual(adapter(callback), 101)
             self.assertEqual(events, ["first", "second", "value"] * 2)
+
+    def test_entry_and_residual_environments_follow_exact_capture_plan(self):
+        kept, ignored = object(), object()
+        stages = [
+            value_stage("first", "unused", captures=("kept",)),
+            {**TYPE_STAGE, "captures": ["kept", "first"]},
+            value_stage("last", captures=("kept", "first")),
+        ]
+        body = {"EnrichedTuple": {"items": [reference("kept"), reference("first")]}}
+        fn = self.runtime._make_fn(
+            "api", definition(stages, body),
+            {"kept": kept, "ignored": ignored},
+        )
+        self.assertEqual(fn.env, {"kept": kept})
+        first = fn({"left": 103, "right": ignored})
+        second = fn({"left": 107, "right": ignored})
+        self.assertEqual(first.env, {"kept": kept, "first": 103})
+        self.assertEqual(second.env, {"kept": kept, "first": 107})
+        selected = first.advance()
+        self.assertEqual(selected.env, {"kept": kept, "first": 103})
+        self.assertEqual(selected(ignored), {"left": kept, "right": 103})
+        self.assertEqual(selected(ignored), {"left": kept, "right": 103})
+        self.assertEqual(second.advance()(None), {"left": kept, "right": 107})
+        self.assertEqual(fn.env, {"kept": kept})
+
+    def test_projector_result_type_stage_keeps_payload_without_invoking_callback(self):
+        events = []
+        payload = object()
+        entry = projector_entry()
+        entry["sig"]["stages"].insert(0, {**TYPE_STAGE, "captures": ["payload"]})
+        result = self.runtime._make_fn(None, entry, {"payload": payload, "unused": object()})
+        self.assertEqual(result.env, {"payload": payload})
+        first, second = result.advance(), result.advance()
+        self.assertEqual(events, [])
+        self.assertEqual(first.env, {"payload": payload})
+        callback = self.module.kio_lift(lambda value: events.append(value) or 113)
+        self.assertEqual(first(callback), 113)
+        self.assertEqual(second(callback), 113)
+        self.assertEqual(events, [payload, payload])
+
+    def test_nested_capture_selection_does_not_retain_activation_locals(self):
+        inner = definition([value_stage(captures=("saved",))], reference("saved"))
+        outer = guest(self.runtime, [value_stage("saved", "unused")], {"FnExpr": inner})
+        captured = object()
+        returned = outer({"left": captured, "right": object()})
+        self.assertEqual(returned.env, {"saved": captured})
+        self.assertIs(returned(None), captured)
+        self.assertIs(returned(None), captured)
+
+    def test_required_capture_is_not_recovered_from_an_ambient_environment(self):
+        fn = definition([value_stage(captures=("required",))], reference("required"))
+        with self.assertRaises(KeyError):
+            self.runtime._make_fn("api", fn, {"unrelated": 109})
+        omitted = definition([value_stage()], reference("required"))
+        broken = self.runtime._make_fn("api", omitted, {"required": 109})
+        with self.assertRaises(KeyError):
+            broken(None)
 
 
 if __name__ == "__main__":

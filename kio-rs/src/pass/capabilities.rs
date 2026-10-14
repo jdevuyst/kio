@@ -17,8 +17,8 @@
 //!   [`FnTypeCapabilities`] on every [`crate::ast::Type::Function`].
 //!   [`Lifetime::Stack`] for fn-typed value-params whose name
 //!   doesn't escape the surrounding fn body; [`Lifetime::Heap`]
-//!   everywhere else. The Rust backend uses this to choose between
-//!   `Rc<dyn Fn>` (heap) and `impl Fn` (stack).
+//!   everywhere else. Backend representation planning consumes this
+//!   lifetime classification independently of callable carrier syntax.
 //!
 //! ## Pipeline position
 //!
@@ -29,11 +29,9 @@
 //!                       → per-backend lowering
 //! ```
 //!
-//! The two passes are independent (no inter-pass dependencies);
-//! they could run in either order or fan out as a parallel pool.
-//! They run sequentially today because each is cheap and the
-//! pipeline plumbing is simpler. The framework is shaped to admit
-//! further per-position annotations later without restructuring.
+//! Escape annotation projects the shared executable body's capture plan.
+//! Lifetime annotation then consumes those captures when classifying values
+//! retained by nested callable entries.
 //!
 //! ## Per-module parallelism
 //!
@@ -56,7 +54,6 @@
 // off the sequential arm needs no import and rayon is absent.
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
-use std::collections::HashSet;
 
 use crate::ast::{Capabilities, EnrichedArm, Expr, Item, Lifetime, Routed, SignatureParam, Type};
 use crate::pass::resolve::{ModuleEntry, Package, PackageFileEntry};
@@ -87,8 +84,15 @@ fn annotate_module_entry(entry: ModuleEntry<Routed>) -> ModuleEntry<Routed> {
     } = entry;
     for item in &mut module.items {
         if let Item::FnDef(d) = item {
-            let outer = sig_value_param_names(&d.sig);
-            annotate_walk(&mut d.body, &outer);
+            let mut captures =
+                crate::backends::closure_plan::ExecutableBodyPlan::new(&d.sig, &d.body)
+                    .nested_capture_names()
+                    .into_iter();
+            annotate_walk(&mut d.body, &mut captures);
+            assert!(
+                captures.next().is_none(),
+                "every planned closure was annotated"
+            );
         }
     }
     ModuleEntry::<Routed> {
@@ -121,10 +125,8 @@ fn annotate_package_file_entry(entry: PackageFileEntry<Routed>) -> PackageFileEn
 /// closures); every other slot stays at the conservative default
 /// [`Lifetime::Heap`].
 ///
-/// The Rust backend consumes this annotation to choose between
-/// `Rc<dyn Fn>` (heap) and `impl Fn` (stack) per slot. JS ignores
-/// it (the JS backend stores fn values as native JS functions
-/// uniformly).
+/// This classifies value lifetimes; the backend's callable representation
+/// and public carrier remain separate decisions.
 ///
 /// **Parallelism.** Each module is annotated independently via
 /// rayon's `par_iter`; the pass has no cross-module state.
@@ -137,114 +139,71 @@ pub fn annotate_lifetime(package: Package<Routed>) -> Package<Routed> {
     Package::<Routed>::from_parts(modules, package_file)
 }
 
-/// Pull value-param names off a signature in declaration order.
-fn sig_value_param_names(sig: &crate::ast::Signature<Routed>) -> Vec<String> {
-    sig.params
-        .iter()
-        .filter_map(|p| match p {
-            SignatureParam::Value(v) => Some(v.name.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
-// ---- per-fn-body annotation --------------------------------------------
-
-/// Recursive walk: visits every `Expr::FnExpr` and writes its
-/// `caps`. The `outer` slice carries the binders visible to the
-/// *parent* of the current node (i.e., what would be captured if a
-/// `FnExpr` rooted here referenced them).
-fn annotate_walk(e: &mut Expr<Routed>, outer: &[String]) {
+fn annotate_walk(e: &mut Expr<Routed>, captures: &mut impl Iterator<Item = Vec<String>>) {
     match e {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        Expr::FnExpr {
-            sig, body, caps, ..
-        } => {
-            // Compute the captured-from set: outer-scope binders the
-            // body references (with the fn's own value-params
-            // shadowed). Order: first-occurrence in a left-to-right
-            // walk so emitted prologues are stable.
-            let outer_set: HashSet<&str> = outer.iter().map(String::as_str).collect();
-            let lambda_params: HashSet<&str> = sig
-                .params
-                .iter()
-                .filter_map(|p| match p {
-                    SignatureParam::Value(v) => Some(v.name.as_str()),
-                    _ => None,
-                })
-                .collect();
-            let captured_from = collect_captures(body, &outer_set, &lambda_params);
-            *caps = Capabilities { captured_from };
-            // Recurse into the body with the closure's own value-
-            // params added to the outer scope.
-            let mut new_outer: Vec<String> = outer.to_vec();
-            for p in &sig.params {
-                if let SignatureParam::Value(v) = p {
-                    new_outer.push(v.name.clone());
-                }
-            }
-            annotate_walk(body, &new_outer);
+        Expr::FnExpr { body, caps, .. } => {
+            *caps = Capabilities {
+                captured_from: captures
+                    .next()
+                    .expect("the shared body plan contains each nested callable"),
+            };
+            annotate_walk(body, captures);
         }
-        Expr::Let {
-            name, value, body, ..
-        } => {
-            annotate_walk(value, outer);
-            let mut new_outer: Vec<String> = outer.to_vec();
-            new_outer.push(name.clone());
-            annotate_walk(body, &new_outer);
+        Expr::Let { value, body, .. } => {
+            annotate_walk(value, captures);
+            annotate_walk(body, captures);
         }
         Expr::Seq { value, body, .. } => {
-            annotate_walk(value, outer);
-            annotate_walk(body, outer);
+            annotate_walk(value, captures);
+            annotate_walk(body, captures);
         }
         Expr::LowIndirectCall { callee, args, .. } => {
-            annotate_walk(callee, outer);
+            annotate_walk(callee, captures);
             for a in args {
-                annotate_walk(a, outer);
+                annotate_walk(a, captures);
             }
         }
-        Expr::LowTypeApplication { callee, .. } => annotate_walk(callee, outer),
+        Expr::LowTypeApplication { callee, .. } => annotate_walk(callee, captures),
         Expr::LowHostCall { args, .. }
         | Expr::LowModuleCall { args, .. }
         | Expr::LowQualifiedModuleCall { args, .. }
         | Expr::LowClosureCall { args, .. } => {
             for a in args {
-                annotate_walk(a, outer);
+                annotate_walk(a, captures);
             }
         }
         Expr::LowAbsurdCall { value_arg, .. } => {
-            annotate_walk(value_arg, outer);
+            annotate_walk(value_arg, captures);
         }
         Expr::LowNewtypeCtor { payload, .. } | Expr::LowQualifiedNewtypeMember { payload, .. } => {
-            annotate_walk(payload, outer);
+            annotate_walk(payload, captures);
         }
         Expr::LowNewtypeProj { target, .. } => {
-            annotate_walk(target, outer);
+            annotate_walk(target, captures);
         }
         Expr::LowCpsProjectorApply {
             receiver,
             continuation,
             ..
         } => {
-            annotate_walk(receiver, outer);
-            annotate_walk(continuation, outer);
+            annotate_walk(receiver, captures);
+            annotate_walk(continuation, captures);
         }
         Expr::EnrichedTuple { items, .. } => {
             for it in items {
-                annotate_walk(it, outer);
+                annotate_walk(it, captures);
             }
         }
         Expr::EnrichedInject { payload, .. } => {
-            annotate_walk(payload, outer);
+            annotate_walk(payload, captures);
         }
         Expr::EnrichedMatch {
             scrutinee, arms, ..
         } => {
-            annotate_walk(scrutinee, outer);
+            annotate_walk(scrutinee, captures);
             for arm in arms.iter_mut() {
-                let mut new_outer: Vec<String> = outer.to_vec();
-                new_outer.push(arm.param.clone());
-                annotate_walk(&mut arm.body, &new_outer);
+                annotate_walk(&mut arm.body, captures);
             }
         }
         Expr::EnrichedConditional {
@@ -253,12 +212,12 @@ fn annotate_walk(e: &mut Expr<Routed>, outer: &[String]) {
             else_branch,
             ..
         } => {
-            annotate_walk(cond, outer);
-            annotate_walk(then_branch, outer);
-            annotate_walk(else_branch, outer);
+            annotate_walk(cond, captures);
+            annotate_walk(then_branch, captures);
+            annotate_walk(else_branch, captures);
         }
         Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
-            annotate_walk(target, outer);
+            annotate_walk(target, captures);
         }
         // Leaves and `Low*` value-position variants — nothing to
         // descend into.
@@ -273,178 +232,6 @@ fn annotate_walk(e: &mut Expr<Routed>, outer: &[String]) {
         // The surface-residual `Path` / `Call` and every surface-only
         // variant are statically unreachable at the Routed phase —
         // discharge via `match *ext {}`.
-        Expr::Path { ext, .. } => match *ext {},
-        Expr::Call { ext, .. } => match *ext {},
-        Expr::Tuple { ext, .. } => match *ext {},
-        Expr::FnPlaceholder { ext, .. } => match *ext {},
-        Expr::LabelValue { ext, .. } => match *ext {},
-        Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Elaborator { ext, .. } => match *ext {},
-        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { ext, .. } => match *ext {},
-        Expr::Ufcs { ext, .. } => match *ext {},
-        Expr::OpChain { ext, .. } => match *ext {},
-        Expr::RecCall { ext, .. } => match *ext {},
-    }
-}
-
-/// Shadowing-aware walker: collects outer-scope binders the
-/// expression references (excluding any in `lambda_params`, which the
-/// closure itself owns). Returns them in first-occurrence order so
-/// the emitted prologue is stable across runs.
-///
-/// Computing captures in the IR layer means each closure's capture
-/// set is computed once per translation rather than re-walked at
-/// every per-backend emit.
-fn collect_captures<'a>(
-    e: &'a Expr<Routed>,
-    outer: &HashSet<&'a str>,
-    lambda_params: &HashSet<&'a str>,
-) -> Vec<String> {
-    let mut found: Vec<String> = Vec::new();
-    let mut seen: HashSet<&'a str> = HashSet::new();
-    let mut blocked: HashSet<&'a str> = lambda_params.iter().copied().collect();
-    walk(e, outer, &mut blocked, &mut found, &mut seen);
-    found
-}
-
-fn walk<'a>(
-    e: &'a Expr<Routed>,
-    outer: &HashSet<&str>,
-    blocked: &mut HashSet<&'a str>,
-    found: &mut Vec<String>,
-    seen: &mut HashSet<&'a str>,
-) {
-    match e {
-        crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        Expr::LowBoundRef { name, .. } => {
-            let n: &str = name.as_str();
-            if outer.contains(n) && !blocked.contains(n) && seen.insert(n) {
-                found.push(n.to_owned());
-            }
-        }
-        Expr::LowClosureCall { name, args, .. } => {
-            let n: &str = name.as_str();
-            if outer.contains(n) && !blocked.contains(n) && seen.insert(n) {
-                found.push(n.to_owned());
-            }
-            for a in args {
-                walk(a, outer, blocked, found, seen);
-            }
-        }
-        Expr::LowHostCall { args, .. }
-        | Expr::LowModuleCall { args, .. }
-        | Expr::LowQualifiedModuleCall { args, .. } => {
-            for a in args {
-                walk(a, outer, blocked, found, seen);
-            }
-        }
-        Expr::LowIndirectCall { callee, args, .. } => {
-            walk(callee, outer, blocked, found, seen);
-            for a in args {
-                walk(a, outer, blocked, found, seen);
-            }
-        }
-        Expr::LowTypeApplication { callee, .. } => {
-            walk(callee, outer, blocked, found, seen);
-        }
-        Expr::LowAbsurdCall { value_arg, .. } => {
-            walk(value_arg, outer, blocked, found, seen);
-        }
-        Expr::LowNewtypeCtor { payload, .. } | Expr::LowQualifiedNewtypeMember { payload, .. } => {
-            walk(payload, outer, blocked, found, seen);
-        }
-        Expr::LowNewtypeProj { target, .. } => {
-            walk(target, outer, blocked, found, seen);
-        }
-        Expr::LowCpsProjectorApply {
-            receiver,
-            continuation,
-            ..
-        } => {
-            walk(receiver, outer, blocked, found, seen);
-            walk(continuation, outer, blocked, found, seen);
-        }
-        Expr::FnExpr { sig, body, .. } => {
-            // Nested closure: its params and any captures within its
-            // body that are themselves from the *outer* scope count
-            // as captures of the enclosing closure. Shadow only the
-            // inner closure's own value-params for the inner body
-            // walk.
-            let added: Vec<&str> = sig
-                .params
-                .iter()
-                .filter_map(|p| match p {
-                    SignatureParam::Value(v) => {
-                        let n: &str = v.name.as_str();
-                        if blocked.insert(n) { Some(n) } else { None }
-                    }
-                    _ => None,
-                })
-                .collect();
-            walk(body, outer, blocked, found, seen);
-            for n in added {
-                blocked.remove(n);
-            }
-        }
-        Expr::Let {
-            name, value, body, ..
-        } => {
-            walk(value, outer, blocked, found, seen);
-            let n: &str = name.as_str();
-            let added = blocked.insert(n);
-            walk(body, outer, blocked, found, seen);
-            if added {
-                blocked.remove(n);
-            }
-        }
-        Expr::Seq { value, body, .. } => {
-            walk(value, outer, blocked, found, seen);
-            walk(body, outer, blocked, found, seen);
-        }
-        Expr::EnrichedTuple { items, .. } => {
-            for it in items {
-                walk(it, outer, blocked, found, seen);
-            }
-        }
-        Expr::EnrichedInject { payload, .. } => {
-            walk(payload, outer, blocked, found, seen);
-        }
-        Expr::EnrichedMatch {
-            scrutinee, arms, ..
-        } => {
-            walk(scrutinee, outer, blocked, found, seen);
-            for EnrichedArm { param, body, .. } in arms {
-                let n: &str = param.as_str();
-                let added = blocked.insert(n);
-                walk(body, outer, blocked, found, seen);
-                if added {
-                    blocked.remove(n);
-                }
-            }
-        }
-        Expr::EnrichedConditional {
-            cond,
-            then_branch,
-            else_branch,
-            ..
-        } => {
-            walk(cond, outer, blocked, found, seen);
-            walk(then_branch, outer, blocked, found, seen);
-            walk(else_branch, outer, blocked, found, seen);
-        }
-        Expr::EnrichedProject { target, .. } | Expr::EnrichedFieldGet { target, .. } => {
-            walk(target, outer, blocked, found, seen);
-        }
-        Expr::Unit { .. }
-        | Expr::StrLit { .. }
-        | Expr::IntLit { .. }
-        | Expr::FloatLit { .. }
-        | Expr::BoolLit { .. }
-        | Expr::LowHostFnValueRef { .. }
-        | Expr::LowModuleFnValueRef { .. } => {}
-        // Surface-residual variants are statically unreachable at the
-        // Routed phase.
         Expr::Path { ext, .. } => match *ext {},
         Expr::Call { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
