@@ -6,8 +6,100 @@ const source = readFileSync(new URL('./value_runtime.js', import.meta.url), 'utf
 assert.doesNotMatch(source, /__kio(?:Protect|NeedsProtection|ValueRef|BoundaryValueRef|RunAdapted|Callable)|adapt\(/,
   'ordinary host values have neither an admission walker nor adapter-layer dispatch');
 const realm = vm.createContext({});
-const loadRuntime = (context = realm) => vm.runInContext('(() => {\n' + source + '\nreturn { context: __kioNominalContext, poly: __kioPoly, guest: __kioGuest, guestPoly: __kioGuestPoly, lift: __kioLeaf, liftStage: __kioLiftStage, call: __kioTailCall, advance: __kioTailAdvance }; })()', context);
+const loadRuntime = (context = realm) => vm.runInContext('(() => {\n' + source + '\nreturn { context: __kioNominalContext, poly: __kioPoly, guest: __kioGuest, guestPoly: __kioGuestPoly, lift: __kioLeaf, liftStage: __kioLiftStage, call: __kioTailCall, advance: __kioTailAdvance, callWithResume: __kioCallWithResume, advanceWithResume: __kioAdvanceWithResume }; })()', context);
 const runtime = loadRuntime();
+
+function legacyRun(target, domain, typeStage = false, lookup = () => {}) {
+  let pending = true;
+  const transfer = Object.freeze({
+    get resume() { lookup(); return undefined; },
+    call(next, value) { target = next; domain = value; typeStage = false; pending = true; },
+    advance(next) { target = next; domain = undefined; typeStage = true; pending = true; },
+  });
+  let result;
+  try {
+    while (pending) {
+      pending = false;
+      result = typeStage ? target.kioStep(transfer) : target.kioStep(domain, transfer);
+    }
+    return result;
+  } finally {
+    target = undefined;
+    domain = undefined;
+  }
+}
+
+{
+  const foreign = loadRuntime();
+  const events = [];
+  const leafResult = runtime.lift(value => value + 1);
+  let chain = runtime.lift(value => ({ total: value, returned: leafResult }));
+  for (let index = 0; index < 20000; index++) {
+    const next = chain;
+    const owner = index % 2 ? runtime : foreign;
+    chain = owner.guest((value, cursor) => owner.callWithResume(cursor, next, value,
+      (result, _nextCursor) => {
+        events.push(index);
+        return { total: result.total + 1, returned: result.returned };
+      }));
+  }
+  for (const input of [7, 11]) {
+    const result = chain(input);
+    assert.equal(result.total, input + 20000);
+    assert.equal(result.returned, leafResult, 'a callable result is data, not a resume');
+    assert.deepEqual(events.splice(0), Array.from({ length: 20000 }, (_, index) => index));
+  }
+  let lookups = 0;
+  assert.equal(legacyRun(chain, 13, false, () => lookups++).total, 20013);
+  assert.equal(lookups, 1, 'only the outer genuine pending edge uses legacy fallback');
+  assert.equal(events.splice(0).length, 20000);
+}
+
+{
+  const leaf = runtime.lift(value => value + 1);
+  let chain = leaf;
+  const cursors = new Set();
+  for (let index = 0; index < 20000; index++) {
+    const next = chain;
+    const entry = (value, cursor) => {
+      cursors.add(cursor);
+      return runtime.call(cursor, next, value);
+    };
+    if (index % 2) {
+      chain = runtime.guest(entry);
+    } else {
+      const old = value => legacyRun(old, value);
+      old.kioStep = entry;
+      chain = Object.freeze(old);
+    }
+  }
+  assert.equal(legacyRun(chain, 17, false, () => { throw new Error('tail capability lookup'); }), 18);
+  assert.equal(cursors.size, 1, 'mixed legacy/new tail entries retain one legacy driver');
+  cursors.clear();
+  assert.equal(chain(19), 20);
+  assert.equal(cursors.size, 1, 'new drivers also accept unchanged legacy entries');
+}
+
+{
+  const events = [];
+  const returned = runtime.lift(value => value);
+  let stage = runtime.poly(() => returned);
+  for (let index = 0; index < 2048; index++) {
+    const next = stage;
+    stage = runtime.guestPoly((_, cursor) => runtime.advanceWithResume(cursor, next,
+      (result, _nextCursor) => { events.push(index); return result; }));
+  }
+  assert.equal(stage.advance(), returned);
+  assert.deepEqual(events.splice(0), Array.from({ length: 2048 }, (_, index) => index));
+  assert.equal(legacyRun(stage, undefined, true), returned);
+  assert.equal(events.splice(0).length, 2048);
+  const failure = new Error('pending child failure');
+  const broken = runtime.guest((value, cursor) => runtime.callWithResume(cursor,
+    runtime.lift(() => { throw failure; }), value,
+    () => { throw new Error('a failed child must discard its resume'); }));
+  assert.throws(() => broken(null), error => error === failure);
+  assert.equal(stage.advance(), returned, 'failed invocations cannot poison retained entries');
+}
 
 {
   const owners = [];

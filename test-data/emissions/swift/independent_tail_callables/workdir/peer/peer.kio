@@ -20,6 +20,10 @@ pub fn link[T](previous: . -> T) -> . -> T {
   .() { mark(); previous() }
 }
 
+pub fn pending_link[T](previous: . -> T) -> . -> T {
+  .() { mark(); let result = previous(); mark(); result }
+}
+
 pub fn keep[T](value: T) -> T { value.>pack.>unpack }
 
 pub fn higher[T](previous: (. -> T) -> . -> T) -> (. -> T) -> . -> T {

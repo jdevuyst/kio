@@ -343,13 +343,16 @@
       List<SignatureStage> stages, int index, Map<String, Object> env, PlanRef plan)
       implements Shapes.Fn1<Object, Object>, java.util.function.Supplier<Object> {
     public Object apply(Object domain) {
-      return runtime.eval(null, null, null, this, domain);
+      return runtime.eval(this, domain);
     }
 
     public Object get() {
       return apply(null);
     }
   }
+
+  private record ControlFrame(PackageRuntime runtime, String module, Map<String, Object> graph,
+      int block, String result, Map<String, Object> saved) {}
 
   private static final class ModuleContext {
     private final Map<String, Map<String, Object>> fns = new LinkedHashMap<>();
@@ -532,173 +535,247 @@
           : hostLayer(name, module, stages, index + 1, values, result);
     }
 
-    private Object eval(String module, Object expression, Map<String, Object> env) {
-      return eval(module, expression, env, null, null);
+    private static Object slot(Map<String, Object> slots, Object key) {
+      String name = asString(key);
+      if (!slots.containsKey(name)) throw new IllegalStateException("a prepared control slot is available: " + name);
+      return slots.get(name);
     }
 
-    private Object eval(String module, Object expression, Map<String, Object> env,
-        GuestEntry entry, Object domain) {
+    private static Object operand(Object expression, Map<String, Object> slots) {
+      Tag tagged = tag(expression);
+      if (!tagged.tag().equals("ControlSlot")) {
+        throw new IllegalStateException("an atomic control operand is a prepared slot");
+      }
+      return slot(slots, asMap(tagged.data()).get("slot"));
+    }
+
+    private static Map<String, Object> block(Map<String, Object> graph, int index) {
+      return asMap(asList(graph.get("blocks")).get(index));
+    }
+
+    private static void supply(Map<String, Object> graph, int target,
+        Map<String, Object> slots, Object value) {
+      Object input = block(graph, target).get("input");
+      if (input == null) throw new IllegalStateException("a control edge targets a result input");
+      slots.put(asString(input), value);
+    }
+
+    private static Map<String, Object> savedSlots(Map<String, Object> slots, List<Object> live) {
+      Map<String, Object> saved = new LinkedHashMap<>();
+      for (Object key : live) saved.put(asString(key), slot(slots, key));
+      return saved;
+    }
+
+    private Object atom(String module, Map<String, Object> operation, Map<String, Object> slots) {
+      String kind = asString(operation.get("atom"));
+      Tag tagged = tag(operation.get("node"));
+      Map<String, Object> data = asMap(tagged.data());
+      if (kind.equals("named_callable")) {
+        return fn(asString(data.get("module_path")), asString(data.get("mangled")));
+      }
+      if (kind.equals("cps_payload")) {
+        return compiled.project(data.get("nominal"), operand(data.get("receiver"), slots));
+      }
+      switch (tagged.tag()) {
+      case "Unit": return new Shapes.Unit();
+      case "FnExpr": {
+        Map<String, Object> captures = new LinkedHashMap<>();
+        for (Object raw : asList(operation.get("bindings"))) {
+          Map<String, Object> binding = asMap(raw);
+          captures.put(asString(binding.get("name")), slot(slots, binding.get("slot")));
+        }
+        return makeFn(module, data, captures);
+      }
+      case "StrLit": return role(data.get("host_type"), data.get("value"), "__fromRole");
+      case "IntLit": return role(data.get("host_type"),
+          new BigInteger(asString(data.get("digits")).replace("_", "")), "__fromRole");
+      case "FloatLit": return role(data.get("host_type"),
+          Double.parseDouble(asString(data.get("digits")).replace("_", "")), "__fromRole");
+      case "BoolLit": return role(data.get("host_type"), data.get("value"), "__fromRole");
+      case "EnrichedTuple": {
+        List<Object> values = new ArrayList<>();
+        for (Object item : asList(data.get("items"))) values.add(operand(item, slots));
+        return productFromSlots(values);
+      }
+      case "EnrichedProject":
+        return productSlot(operand(data.get("target"), slots), asInt(data.get("index")), asInt(data.get("arity")));
+      case "EnrichedFieldGet":
+        return compiled.project(data.get("nominal"), productSlot(operand(data.get("target"), slots),
+            asInt(data.get("index")), asInt(data.get("arity"))));
+      case "EnrichedInject":
+        return sumInject(operand(data.get("payload"), slots), asInt(data.get("variant")), asInt(data.get("variants")));
+      case "LowHostFnValueRef":
+        return hostFnValue(asString(data.get("name")), asString(data.get("module_path")),
+            asMap(data.get("sig")), data.get("value_plan"));
+      case "LowModuleFnValueRef":
+        return fn(asString(data.get("module_path")), asString(data.get("mangled")));
+      case "LowHostCall": {
+        Object callee = hostFnValue(asString(data.get("name")), asString(data.get("module_path")),
+            asMap(data.get("sig")), data.get("callee_plan"));
+        int count = listOrEmpty(data.get("type_args")).size();
+        if (count != 0) callee = advance(callee, compiled.plan(data.get("callee_plan")), count).value();
+        if (count != 0 && !signatureHasValueGroup(asMap(data.get("sig")))) return callee;
+        List<Object> values = new ArrayList<>();
+        for (Object argument : asList(data.get("args"))) values.add(operand(argument, slots));
+        return applyValue(callee, productFromSlots(values));
+      }
+      case "LowNewtypeCtor":
+        return compiled.construct(data.get("nominal"), operand(data.get("payload"), slots));
+      case "LowNewtypeProj":
+        return compiled.project(data.get("nominal"), operand(data.get("target"), slots));
+      case "LowQualifiedNewtypeMember": {
+        Object payload = operand(data.get("payload"), slots);
+        return asBool(data.get("constructor")) ? compiled.construct(data.get("nominal"), payload)
+            : compiled.project(data.get("nominal"), payload);
+      }
+      case "LowAbsurdCall":
+        operand(data.get("value_arg"), slots);
+        throw new IllegalStateException("Kio: __absurd__ on bottom value");
+      default: throw new IllegalStateException("a prepared atomic operation has no guest control: " + tagged.tag());
+      }
+    }
+
+    private Object eval(GuestEntry entry, Object domain) {
+      ArrayList<ControlFrame> frames = new ArrayList<>();
       PackageRuntime runtime = this;
-      while (true) {
-        if (entry != null) {
-          runtime = entry.runtime();
-          SignatureStage stage = entry.stages().get(entry.index());
-          Map<String, Object> local = new LinkedHashMap<>(entry.env());
-          if (!stage.type()) {
-            for (int i = 0; i < stage.names().size(); i++) {
-              if (i + 1 == stage.names().size()) {
-                local.put(stage.names().get(i), domain);
-              } else {
-                Shapes.Product<?, ?> pair = (Shapes.Product<?, ?>) domain;
-                local.put(stage.names().get(i), pair.left());
-                domain = pair.right();
+      String module = null;
+      Map<String, Object> graph = null;
+      Map<String, Object> slots = new LinkedHashMap<>();
+      int current = 0;
+      Object result = null;
+      boolean returning = false;
+      try {
+        while (true) {
+          if (returning) {
+            if (frames.isEmpty()) return result;
+            int last = frames.size() - 1;
+            ControlFrame frame = frames.set(last, null);
+            frames.remove(last);
+            runtime = frame.runtime();
+            module = frame.module();
+            graph = frame.graph();
+            current = frame.block();
+            slots = frame.saved();
+            slots.put(frame.result(), result);
+            result = null;
+            returning = false;
+          }
+          if (entry != null) {
+            runtime = entry.runtime();
+            SignatureStage stage = entry.stages().get(entry.index());
+            Map<String, Object> local = new LinkedHashMap<>(entry.env());
+            if (!stage.type()) {
+              for (int i = 0; i < stage.names().size(); i++) {
+                if (i + 1 == stage.names().size()) {
+                  local.put(stage.names().get(i), domain);
+                } else {
+                  Shapes.Product<?, ?> pair = (Shapes.Product<?, ?>) domain;
+                  local.put(stage.names().get(i), pair.left());
+                  domain = pair.right();
+                }
               }
             }
-          }
-          if (entry.index() + 1 < entry.stages().size()) {
-            return runtime.layer(entry.module(), entry.body(), entry.stages(), entry.index() + 1,
-                local, runtime.compiled.child(entry.plan(), "result"));
-          }
-          module = entry.module();
-          expression = entry.body();
-          env = local;
-          entry = null;
-        }
-        Tag tagged = tag(expression);
-        Map<String, Object> data = tagged.data() instanceof Map<?, ?> ? asMap(tagged.data()) : Map.of();
-        Object callee;
-        PlanRef plan = null;
-        boolean typeStage = false;
-        switch (tagged.tag()) {
-        case "Unit": return new Shapes.Unit();
-        case "Let": {
-          Object value = runtime.eval(module, data.get("value"), env);
-          Map<String, Object> local = new LinkedHashMap<>(env);
-          local.put(asString(data.get("name")), value);
-          env = local;
-          expression = data.get("body");
-          continue;
-        }
-        case "Seq":
-          runtime.eval(module, data.get("value"), env);
-          expression = data.get("body");
-          continue;
-        case "FnExpr": return runtime.makeFn(module, data, env);
-        case "StrLit": return runtime.role(data.get("host_type"), data.get("value"), "__fromRole");
-        case "IntLit": return runtime.role(data.get("host_type"),
-            new BigInteger(asString(data.get("digits")).replace("_", "")), "__fromRole");
-        case "FloatLit": return runtime.role(data.get("host_type"),
-            Double.parseDouble(asString(data.get("digits")).replace("_", "")), "__fromRole");
-        case "BoolLit": return runtime.role(data.get("host_type"), data.get("value"), "__fromRole");
-        case "EnrichedTuple": {
-          List<Object> values = new ArrayList<>();
-          for (Object item : asList(data.get("items"))) values.add(runtime.eval(module, item, env));
-          return productFromSlots(values);
-        }
-        case "EnrichedProject":
-          return productSlot(runtime.eval(module, data.get("target"), env),
-              asInt(data.get("index")), asInt(data.get("arity")));
-        case "EnrichedFieldGet":
-          return runtime.compiled.project(data.get("nominal"),
-              productSlot(runtime.eval(module, data.get("target"), env),
-                  asInt(data.get("index")), asInt(data.get("arity"))));
-        case "EnrichedInject":
-          return sumInject(runtime.eval(module, data.get("payload"), env),
-              asInt(data.get("variant")), asInt(data.get("variants")));
-        case "EnrichedMatch": {
-          List<Object> arms = asList(data.get("arms"));
-          SumPayload value = sumPayload(runtime.eval(module, data.get("scrutinee"), env), arms.size());
-          Map<String, Object> arm = asMap(arms.get(value.index()));
-          Map<String, Object> local = new LinkedHashMap<>(env);
-          local.put(asString(arm.get("param")), value.payload());
-          env = local;
-          expression = arm.get("body");
-          continue;
-        }
-        case "EnrichedConditional":
-          expression = asBool(runtime.role(data.get("host_type"),
-              runtime.eval(module, data.get("cond"), env), "__toRole"))
-              ? data.get("then_branch") : data.get("else_branch");
-          continue;
-        case "LowBoundRef": return env.get(asString(data.get("name")));
-        case "LowHostFnValueRef":
-          return runtime.hostFnValue(asString(data.get("name")), asString(data.get("module_path")),
-              asMap(data.get("sig")), data.get("value_plan"));
-        case "LowModuleFnValueRef":
-          return runtime.fn(asString(data.get("module_path")), asString(data.get("mangled")));
-        case "LowHostCall":
-        case "LowModuleCall":
-        case "LowQualifiedModuleCall":
-        case "LowClosureCall":
-        case "LowIndirectCall": {
-          String callTag = tagged.tag();
-          boolean named = !callTag.equals("LowClosureCall") && !callTag.equals("LowIndirectCall");
-          callee = switch (callTag) {
-            case "LowHostCall" -> runtime.hostFnValue(asString(data.get("name")),
-                asString(data.get("module_path")), asMap(data.get("sig")), data.get("callee_plan"));
-            case "LowModuleCall", "LowQualifiedModuleCall" ->
-                runtime.fn(asString(data.get("module_path")), asString(data.get("mangled")));
-            case "LowClosureCall" -> env.get(asString(data.get("name")));
-            default -> runtime.eval(module, data.get("callee"), env);
-          };
-          List<Object> types = listOrEmpty(data.get("type_args"));
-          typeStage = named && !types.isEmpty() && !signatureHasValueGroup(asMap(data.get("sig")));
-          if (!types.isEmpty()) {
-            Applied applied = runtime.advance(callee, runtime.compiled.plan(data.get("callee_plan")),
-                types.size() - (typeStage ? 1 : 0));
-            callee = applied.value();
-            plan = applied.plan();
-          }
-          List<Object> arguments = new ArrayList<>();
-          for (Object argument : asList(data.get("args"))) arguments.add(runtime.eval(module, argument, env));
-          if (typeStage && !arguments.isEmpty()) {
-            throw new IllegalStateException("type-only call has value arguments");
-          }
-          domain = productFromSlots(arguments);
-          break;
-        }
-        case "LowTypeApplication":
-          callee = runtime.eval(module, data.get("callee"), env);
-          plan = runtime.compiled.plan(data.get("callee_plan"));
-          typeStage = true;
-          domain = null;
-          break;
-        case "LowNewtypeCtor":
-          return runtime.compiled.construct(data.get("nominal"), runtime.eval(module, data.get("payload"), env));
-        case "LowNewtypeProj":
-          return runtime.compiled.project(data.get("nominal"), runtime.eval(module, data.get("target"), env));
-        case "LowQualifiedNewtypeMember": {
-          Object payload = runtime.eval(module, data.get("payload"), env);
-          return asBool(data.get("constructor")) ? runtime.compiled.construct(data.get("nominal"), payload)
-              : runtime.compiled.project(data.get("nominal"), payload);
-        }
-        case "LowAbsurdCall":
-          runtime.eval(module, data.get("value_arg"), env);
-          throw new IllegalStateException("Kio: __absurd__ on bottom value");
-        case "LowCpsProjectorApply": {
-          Object payload = runtime.compiled.project(data.get("nominal"), runtime.eval(module, data.get("receiver"), env));
-          callee = runtime.eval(module, data.get("continuation"), env);
-          int count = asInt(data.get("continuation_type_stages"));
-          if (count != 0) callee = runtime.advance(callee,
-              runtime.compiled.plan(data.get("continuation_plan")), count).value();
-          int arity = asInt(data.get("continuation_abi_arity"));
-          if (arity != 0 && arity != 1) throw new IllegalStateException("invalid prepared CPS arity");
-          domain = arity == 0 ? new Shapes.Unit() : payload;
-          break;
-        }
-        default: throw new IllegalStateException("java target cannot evaluate routed expression " + tagged.tag());
-        }
-        if ((typeStage ? "type" : "value").equals(data.get("tail"))) {
-          Object candidate = typeStage && callee instanceof GuestStage stage ? stage.body() : callee;
-          if (candidate instanceof GuestEntry guest) {
-            if (guest.stages().get(guest.index()).type() != typeStage) {
-              throw new IllegalStateException("checked call and guest stage disagree");
+            if (entry.index() + 1 < entry.stages().size()) {
+              result = runtime.layer(entry.module(), entry.body(), entry.stages(), entry.index() + 1,
+                  local, runtime.compiled.child(entry.plan(), "result"));
+              entry = null;
+              domain = null;
+              returning = true;
+              continue;
             }
-            entry = guest;
+            module = entry.module();
+            Tag control = tag(entry.body());
+            if (!control.tag().equals("Control")) throw new IllegalStateException("a guest body has a prepared control graph");
+            graph = asMap(asMap(control.data()).get("graph"));
+            slots.clear();
+            for (Object raw : asList(graph.get("inputs"))) {
+              Map<String, Object> input = asMap(raw);
+              slots.put(asString(input.get("slot")), slot(local, input.get("name")));
+            }
+            current = asInt(graph.get("start"));
+            local.clear();
+            entry = null;
+            domain = null;
+          }
+          Map<String, Object> block = block(graph, current);
+          for (Object raw : asList(block.get("operations"))) {
+            Map<String, Object> operation = asMap(raw);
+            Object value = switch (asString(operation.get("kind"))) {
+              case "bind" -> slot(slots, operation.get("input"));
+              case "atom" -> runtime.atom(module, operation, slots);
+              default -> throw new IllegalStateException("unknown prepared control operation");
+            };
+            slots.put(asString(operation.get("output")), value);
+          }
+          Map<String, Object> exit = asMap(block.get("exit"));
+          switch (asString(exit.get("kind"))) {
+          case "return":
+            result = slot(slots, exit.get("slot"));
+            slots.clear();
+            returning = true;
+            continue;
+          case "jump": {
+            Object value = slot(slots, exit.get("argument"));
+            current = asInt(exit.get("block"));
+            supply(graph, current, slots, value);
             continue;
           }
+          case "branch": {
+            Map<String, Object> node = asMap(tag(exit.get("node")).data());
+            boolean condition = asBool(runtime.role(node.get("host_type"), slot(slots, exit.get("condition")), "__toRole"));
+            current = asInt(exit.get(condition ? "then_block" : "else_block"));
+            continue;
+          }
+          case "match": {
+            List<Object> arms = asList(exit.get("arms"));
+            SumPayload selected = sumPayload(slot(slots, exit.get("scrutinee")), arms.size());
+            current = asInt(arms.get(selected.index()));
+            supply(graph, current, slots, selected.payload());
+            continue;
+          }
+          case "invoke": {
+            Object callee = slot(slots, exit.get("callee"));
+            boolean typeStage = asString(exit.get("stage")).equals("type");
+            List<Object> arguments = new ArrayList<>();
+            for (Object argument : asList(exit.get("arguments"))) arguments.add(slot(slots, argument));
+            domain = typeStage ? null : productFromSlots(arguments);
+            Object resumeIndex = exit.get("resume");
+            if (resumeIndex != null) {
+              Map<String, Object> resume = asMap(asList(graph.get("resumes")).get(asInt(resumeIndex)));
+              int target = asInt(resume.get("block"));
+              String input = asString(resume.get("result"));
+              if (!input.equals(block(graph, target).get("input"))) {
+                throw new IllegalStateException("a resume supplies its exact block input");
+              }
+              frames.add(new ControlFrame(runtime, module, graph, target, input,
+                  savedSlots(slots, asList(resume.get("live")))));
+            }
+            Object candidate = typeStage && callee instanceof GuestStage stage ? stage.body() : callee;
+            slots.clear();
+            if (candidate instanceof GuestEntry guest) {
+              if (guest.stages().get(guest.index()).type() != typeStage) {
+                throw new IllegalStateException("checked call and guest stage disagree");
+              }
+              entry = guest;
+              continue;
+            }
+            if (typeStage) {
+              PlanRef plan = runtime.compiled.plan(exit.get("type_plan"));
+              for (int i = 0; i < asInt(exit.get("type_index")); i++) plan = runtime.compiled.child(plan, "result");
+              result = runtime.compiled.stage(plan).advance(callee);
+            } else {
+              result = applyValue(callee, domain);
+            }
+            domain = null;
+            returning = true;
+            continue;
+          }
+          default: throw new IllegalStateException("unknown prepared control exit");
+          }
         }
-        return typeStage ? runtime.compiled.stage(plan).advance(callee) : applyValue(callee, domain);
+      } finally {
+        frames.clear();
+        slots.clear();
       }
     }
   }

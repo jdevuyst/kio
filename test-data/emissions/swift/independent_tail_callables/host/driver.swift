@@ -82,6 +82,23 @@ for _ in 0..<2 {
     state.events.removeAll()
 }
 
+// Each separately compiled module resumes its own work after its child returns.
+var pending = root
+var retainedPending = [pending]
+for index in 0..<depth {
+    pending = index % 2 == 0 ? first.api.pendingLink(pending) : second.peer.pendingLink(pending)
+    pending = index % 2 == 0 ? second.peer.keep(pending) : first.api.keep(pending)
+    retainedPending.append(pending)
+}
+precondition(state.events.isEmpty)
+precondition(state.packs == [depth, depth] && state.unpacks == state.packs)
+let pendingExpected = expected + (0..<depth).map { $0 % 2 }
+for _ in 0..<2 {
+    precondition(pending(Unit()) == "captured")
+    precondition(state.events == pendingExpected)
+    state.events.removeAll()
+}
+
 // Native input is explicitly lifted. Nested callback arguments and results
 // have the same shared Swift type across separately compiled artifact modules.
 var nativeCalls = 0
@@ -149,6 +166,8 @@ state.events.removeAll()
 // Retained-prefix release keeps ARC teardown separate from invocation depth.
 value = root
 while !retained.isEmpty { _ = retained.popLast() }
+pending = root
+while !retainedPending.isEmpty { _ = retainedPending.popLast() }
 poly = nativePoly
 while !retainedPoly.isEmpty { _ = retainedPoly.popLast() }
 print("independent Swift callbacks ok")

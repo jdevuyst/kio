@@ -135,6 +135,7 @@
 pub(crate) mod boundary_docs;
 pub mod boundary_facade;
 pub(crate) mod closure_plan;
+pub(crate) mod control_plan;
 pub(crate) mod doc;
 pub mod go;
 pub mod haskell;

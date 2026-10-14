@@ -64,7 +64,7 @@ public func __kioNativeChecked<T>(_ value: Any, as _: T.Type) -> T {
 }
 
 // Retain the checked no-transfer proof so a terminal invocation needs no cursor.
-// A terminal body can still perform effects and non-tail calls.
+// A terminal body can still perform native effects.
 enum __KioEntryBody {
     case terminal((Any) -> Any)
     case resumable((Any, __KioCursor) -> Any)
@@ -91,6 +91,16 @@ public final class __KioEntry: __KioPrivateValue {
 public final class __KioCursor {
     var next: __KioEntry?
     var argument: Any = KioUnit()
+    private var resumes: [(Any, __KioCursor) -> Any] = []
+
+    public func pushResume(_ resume: @escaping (Any, __KioCursor) -> Any) {
+        resumes.append(resume)
+    }
+
+    fileprivate func popResume() -> ((Any, __KioCursor) -> Any)? {
+        resumes.popLast()
+    }
+
     func transfer(_ entry: __KioEntry, _ argument: Any) -> Any {
         self.next = entry
         self.argument = argument
@@ -104,12 +114,18 @@ public func __kioRun(_ entry: __KioEntry, _ argument: Any) -> Any {
     var current = entry
     var argument = argument
     while true {
-        let result: Any
+        var result: Any
         switch current.body {
-        case .terminal(let body): return body(argument)
+        case .terminal(let body): result = body(argument)
         case .resumable(let body): result = body(argument, cursor)
         }
-        guard let next = cursor.next else { return result }
+        // Removing a frame relinquishes the stack's ownership before its body
+        // runs. The frame receives this invocation's cursor, never a saved one.
+        while cursor.next == nil {
+            guard let resume = cursor.popResume() else { return result }
+            result = resume(result, cursor)
+        }
+        let next = cursor.next!
         current = next
         argument = cursor.argument
         cursor.next = nil

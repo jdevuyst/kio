@@ -489,6 +489,16 @@ The linkage operation requires a transferred target to preserve the current
 step's result type. Its erased control channel does not statically prove that
 obligation for a manually authored implementation.
 
+`Transfer` also has an optional readonly `resume: <Handle>Resume` field.
+The extension's value operation relates a `Callable<A, S>`, its input `A`,
+and a resume entry `(result: S, transfer: Transfer) => R | undefined`.
+Its type operation likewise pairs the selected stage's result `S` with that
+resume input. The enclosing step must return `R`; as with base tail transfers,
+this enclosing-result obligation is semantic, not encoded by the erased
+transfer control. The optional field permits controls providing only `call`
+and `advance`. Lookup, completion fallback and lifetime follow the
+[JS cooperative protocol](js.md#cooperative-callable-protocol).
+
 ## Higher-kinded types
 
 TypeScript is in the `typed-dynamic` family, whose HKT strategy is the

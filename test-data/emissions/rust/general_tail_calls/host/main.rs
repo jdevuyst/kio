@@ -10,10 +10,59 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use poly::readPoly_ret_impl as _;
 
 #[derive(Clone)]
-struct Host(Arc<AtomicUsize>, Arc<AtomicUsize>);
+struct Host(Arc<AtomicUsize>, Arc<AtomicUsize>, Arc<Leases>);
+
+#[derive(Default)]
+struct Leases {
+    live: AtomicUsize,
+    made: AtomicUsize,
+    finished: AtomicUsize,
+}
+
+impl Leases {
+    fn reset(&self) {
+        assert_eq!(self.live.load(Ordering::Relaxed), 0);
+        self.made.store(0, Ordering::Relaxed);
+        self.finished.store(0, Ordering::Relaxed);
+    }
+}
+
+struct LeaseOwner(Arc<Leases>);
+
+impl Drop for LeaseOwner {
+    fn drop(&mut self) {
+        self.0.live.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(Clone)]
+struct Lease(Arc<LeaseOwner>);
+
+impl PartialEq for Lease {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
 
 impl RustGeneralTailCallsHost for Host {
     type api__I32 = i32;
+    type api__Lease = Lease;
+
+    fn api__borrow(&self) -> Lease {
+        self.2.live.fetch_add(1, Ordering::Relaxed);
+        self.2.made.fetch_add(1, Ordering::Relaxed);
+        Lease(Arc::new(LeaseOwner(self.2.clone())))
+    }
+
+    fn api__finish(&self, _lease: Lease, value: i32) -> i32 {
+        let finished = self.2.finished.fetch_add(1, Ordering::Relaxed);
+        assert_eq!(
+            self.2.live.load(Ordering::Relaxed),
+            self.2.made.load(Ordering::Relaxed) - finished,
+            "each completed frame releases its lease before the next resume"
+        );
+        value + 1
+    }
 
     fn api__tick(&self) {
         self.0.fetch_add(1, Ordering::Relaxed);
@@ -44,10 +93,12 @@ fn exercise() {
     const DEPTH: usize = 20_001;
     let counts = [Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0))];
     let panic_after = Arc::new(AtomicUsize::new(0));
+    let leases = Arc::new(Leases::default());
     let packages = counts.each_ref().map(|count| {
         rust_general_tail_calls::create_rustGeneralTailCalls(Host(
             count.clone(),
             panic_after.clone(),
+            leases.clone(),
         ))
     });
     assert_eq!(
@@ -121,6 +172,39 @@ fn exercise() {
         value_counts[1] + DEPTH - 1
     );
     drop(top);
+    while retained.pop().is_some() {}
+
+    let mut retained = vec![value::arg0::<Host>::new(|argument| argument)];
+    for index in 0..DEPTH {
+        retained.push(
+            packages[index % 2]
+                .api
+                .pendingLink(retained.last().unwrap().clone()),
+        );
+    }
+    let top = retained.last().unwrap();
+    #[cfg(thread_safe)]
+    require_send_sync(top);
+    assert_eq!(top.call(41), 41 + DEPTH as i32);
+    assert_eq!(leases.made.load(Ordering::Relaxed), DEPTH);
+    assert_eq!(leases.finished.load(Ordering::Relaxed), DEPTH);
+    assert_eq!(leases.live.load(Ordering::Relaxed), 0);
+
+    leases.reset();
+    panic_after.store(257, Ordering::Relaxed);
+    let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| top.call(43)))
+        .expect_err("the host panic unwinds queued guest resume frames");
+    assert_eq!(failure.downcast_ref::<&str>(), Some(&"expected host panic"));
+    assert_eq!(leases.made.load(Ordering::Relaxed), 257);
+    assert_eq!(leases.finished.load(Ordering::Relaxed), 0);
+    assert_eq!(leases.live.load(Ordering::Relaxed), 0);
+
+    leases.reset();
+    assert_eq!(top.call(47), 47 + DEPTH as i32);
+    assert_eq!(leases.finished.load(Ordering::Relaxed), DEPTH);
+    assert_eq!(leases.live.load(Ordering::Relaxed), 0);
+    // Callable environments stay independently anchored; only invocation-local
+    // leases measure frame cleanup, including the exceptional path above.
     while retained.pop().is_some() {}
 }
 

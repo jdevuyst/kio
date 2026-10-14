@@ -27,6 +27,13 @@ Emitters run at the **tail** of the pipeline (see [`kio-rs/src/pass/mod.rs`](../
   checked body and its nested callables. Native emitters and the shared runtime
   serializer consume these facts; host closure syntax and storage remain
   backend-specific.
+- [`backends::control_plan`](../../kio-rs/src/backends/control_plan.rs) — lowers
+  checked executable entries to ordered child-free operations, explicit
+  application stages, result destinations and exact live saved slots. Explicit
+  frame emitters and the shared runtime serializer consume this one sequencing
+  owner; they do not rediscover pending work in source children or rendered code.
+  Go and Haskell retain their native growing-stack realization without allocating
+  an unused control graph.
 
 The Kio' emitter consumes validated, canonical `Prime` directly. A host emitter consumes `Routed`, whose computations came from that strict Kio' and have been structurally recovered, optimized, routed, and annotated. Consequences:
 
@@ -279,6 +286,16 @@ extraction and explicit host-authored wrappers remain distinct controls. Trace
 conversion ownership and execution order rather than cancelling adapters from
 equal types alone. A converter may execute host-provided code. A final type
 stage returning a function must not invoke that function prematurely.
+
+For pending guest work, consume `backends/control_plan.rs` alongside the shared
+lexical plan. An atomic operation may render only its planned operand slots;
+executing type and value stages are graph edges even in operand positions.
+Keep one-shot resume frames separate from reusable closures, preserve the exact
+checked result producer and witness dependencies, and release each frame before
+resuming through the invocation-local driver. A graph-proven entry with no
+pending work may retain its direct syntax realization; nested entries make that
+decision independently. Native managed-stack realizations preserve ordinary
+sequencing and require genuine pending-work evidence, not a constant-stack claim.
 
 For shared callable support, test separately compiled packages linked against
 one common support module, including owner isolation and nominal privacy.

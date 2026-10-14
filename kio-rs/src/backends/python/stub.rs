@@ -376,6 +376,7 @@ impl<'a> PreparedPythonStub<'a> {
         self.declare_protocol_typevar("KioFn_Result", ProtocolPolarity::Covariant);
         self.declare_typevar("KioFn_Input");
         self.declare_typevar("KioFn_Output");
+        self.declare_typevar("KioResume_Output");
         self.protocol_variances.insert(
             "KioFn".to_owned(),
             vec![ProtocolPolarity::Contravariant, ProtocolPolarity::Covariant],
@@ -388,6 +389,14 @@ impl<'a> PreparedPythonStub<'a> {
             "class KioTransfer(__kio_typing__.Protocol):\n    def call(self, target: KioFn[KioFn_Input, object], domain: KioFn_Input, /) -> None: ...\n    def advance(self, target: KioStage, /) -> None: ...\n".to_owned());
         self.protocol_defs.insert("KioStage".to_owned(),
             "class KioStage(__kio_typing__.Protocol):\n    def kio_step(self, transfer: KioTransfer, /) -> object: ...\n".to_owned());
+        self.protocol_defs.insert("KioResume".to_owned(),
+            "class KioResume(__kio_typing__.Protocol[KioFn_Arg, KioFn_Result]):\n    def __call__(self, result: KioFn_Arg, transfer: KioTransfer, /) -> KioFn_Result | None: ...\n".to_owned());
+        self.protocol_defs.insert("KioResumeStage".to_owned(),
+            "class KioResumeStage(__kio_typing__.Protocol[KioFn_Result]):\n    def advance(self) -> KioFn_Result: ...\n    def kio_step(self, transfer: KioTransfer, /) -> object: ...\n".to_owned());
+        self.protocol_defs.insert("KioResumeCapability".to_owned(),
+            "class KioResumeCapability(__kio_typing__.Protocol):\n    def call(self, target: KioFn[KioFn_Input, KioFn_Output], domain: KioFn_Input, resume: KioResume[KioFn_Output, KioResume_Output], /) -> None: ...\n    def advance(self, target: KioResumeStage[KioFn_Output], resume: KioResume[KioFn_Output, KioResume_Output], /) -> None: ...\n".to_owned());
+        self.protocol_defs.insert("KioResumeTransfer".to_owned(),
+            "class KioResumeTransfer(KioTransfer, __kio_typing__.Protocol):\n    @property\n    def resume(self) -> KioResumeCapability: ...\n".to_owned());
         self.protocol_defs.insert("kio_lift".to_owned(),
             "def kio_lift(body: __kio_typing__.Callable[[KioFn_Input], KioFn_Output], /) -> KioFn[KioFn_Input, KioFn_Output]: ...\n".to_owned());
         for name in [
@@ -398,6 +407,11 @@ impl<'a> PreparedPythonStub<'a> {
             "KioFn_Output",
             "KioTransfer",
             "KioStage",
+            "KioResume",
+            "KioResumeStage",
+            "KioResumeCapability",
+            "KioResumeTransfer",
+            "KioResume_Output",
         ] {
             self.shared_owners
                 .insert(name.to_owned(), "core".to_owned());
@@ -4656,10 +4670,16 @@ v(2) {
                 "history-only Python runtime declaration survived: {retired}\n{retained_runtime}"
             );
         }
-        assert!(
-            !retained_runtime.contains("\"live\":"),
-            "the live-only Python runtime retained a history-origin flag:\n{retained_runtime}"
-        );
+        let retained_ir =
+            crate::backends::serialized_runtime_ir::python_package_ir(&pkg, Some(&history.1))
+                .expect("serialize retained Python IR");
+        let retained_json = serde_json::to_string(&retained_ir).expect("encode retained Python IR");
+        for history_flag in ["\"live\":true", "\"live\":false"] {
+            assert!(
+                !retained_json.contains(history_flag),
+                "the live-only Python runtime retained a history-origin flag:\n{retained_json}"
+            );
+        }
         for declaration in [
             "\"name\":\"Live\"",
             "\"name\":\"Live_box\"",

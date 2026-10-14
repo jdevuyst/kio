@@ -1,6 +1,6 @@
 #!/bin/sh
-# SUBJECT: Rust callable and forall facades reuse deep captured chains on a bounded host stack in every thread-safety mode.
-# CONTRACT: specs/backends/rust.md § Thread safety; specs/backends/rust.md § Higher-rank value parameters
+# SUBJECT: Rust callable and forall facades reuse deep tail/pending chains and release pending frame values on completion or panic on a bounded host stack in every thread-safety mode.
+# CONTRACT: specs/backends/README.md § Calls with work remaining; specs/backends/rust.md § Thread safety; specs/backends/rust.md § Higher-rank value parameters
 set -eu
 
 scratch=$(mktemp -d "${TMPDIR:?}/emissions.rust-tail-calls.XXXXXX")

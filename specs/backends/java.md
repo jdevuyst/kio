@@ -341,6 +341,15 @@ and a package runtime guard surfaces as an unchecked Java exception.
 Arguments are evaluated call-by-value in declaration order
 ([`README.md` § 9](README.md#9-call-by-value-evaluation-order)).
 
+Generated guest calls use an iterative driver for both
+[tail transfers](README.md#tail-calls-within-generated-code) and
+[calls with work remaining](README.md#calls-with-work-remaining). Pending calls
+save their continuation and live values in invocation-local heap storage;
+tail transfers add no pending frame. Returning a callable does not invoke it.
+Unchanged callable transport through host storage preserves this behavior
+between instances of the same compatible generated artifact. Native host calls
+and synchronous host re-entry keep Java's ordinary call-stack behavior.
+
 ## FFI surface
 
 Host values follow the shared

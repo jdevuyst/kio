@@ -130,6 +130,20 @@ fn let_initializer_and_shadowed_body_capture_distinct_lexical_identities() {
         plan.binding(shadowed).origin,
         BindingOrigin::Local { .. }
     ));
+    let Expr::Let {
+        value, body: inner, ..
+    } = &body
+    else {
+        panic!()
+    };
+    assert_eq!(plan.scope_bindings(value), [initializer]);
+    assert_eq!(plan.scope_bindings(inner), [shadowed]);
+    let Some(BindingDefinition::Local { value: definition }) = plan.binding_definition(shadowed)
+    else {
+        panic!()
+    };
+    assert_eq!(plan.local_binding(&body), shadowed);
+    assert!(std::ptr::eq(definition, value.as_ref()));
 }
 
 #[test]
@@ -248,6 +262,48 @@ fn construction_witness_runs_before_the_stage_input() {
     );
     assert_eq!(captures.captures(entry.id, 1), &[binder]);
     assert!(captures.captures(entry.id, 2).is_empty());
+}
+
+#[test]
+fn unopened_continuation_captures_outer_witness_but_not_packet_bound_hidden_witness() {
+    let path = |name: &str| Type::synth_path(vec![name.into()], vec![], Span::new(0, 0));
+    let ty = Type::Forall {
+        param: type_param("Outer"),
+        body: Box::new(Type::Forall {
+            param: type_param("Hidden"),
+            body: Box::new(Type::Function {
+                param: Box::new(path("Hidden")),
+                ret: Box::new(path("Outer")),
+                abi_arity: 1,
+                caps: Default::default(),
+                meta: meta(),
+            }),
+            meta: meta(),
+        }),
+        meta: meta(),
+    };
+    let facade = BoundaryFacadePlan::from_prepared_scheme(
+        PreparedBoundaryScheme::try_new(&ty, &BTreeSet::new()).unwrap(),
+    );
+    let plan = ValuePlan::from_facade(&facade);
+    let ValueUse::Forall {
+        binder: outer,
+        result,
+    } = plan.use_at(plan.root())
+    else {
+        panic!()
+    };
+    let spine = callable_spine(&plan, *result);
+    let hidden = spine.type_stages[0].binder.unwrap();
+    assert_eq!(spine.outer_witness_captures(&plan, &[*outer]), [*outer]);
+    assert_eq!(
+        plan.free_binders(spine.function, &[*outer, hidden]),
+        [*outer, hidden]
+    );
+    assert!(
+        std::panic::catch_unwind(|| plan.free_binders(spine.function, &[*outer])).is_err(),
+        "a terminal function cannot claim its hidden binder is already in the outer ambient scope"
+    );
 }
 
 #[test]

@@ -208,9 +208,12 @@ Ordinary function composition also avoids unnecessary waiting frames. When a
 Kio function finishes by calling another Kio function, generated code continues
 in the called function without keeping a frame just to return its result. This
 includes calling a function parameter, such as the final `next(value)` in a
-binding helper. This does not guarantee stack safety for calls with work
-remaining afterwards, native host callbacks, or calls between independently
-generated artifacts.
+binding helper. When the caller still has work to do, Kio retains that work
+in managed storage instead; a deeper chain can therefore need more memory.
+Both behaviors apply through the documented callable types, including unchanged
+transport through host storage and compatible independently generated packages.
+They do not capture waiting host calls or recover Kio's calling behavior after
+an explicit conversion to a native host function.
 See the [backend contract](../../specs/backends/README.md#tail-calls-within-generated-code)
 for the precise boundary.
 

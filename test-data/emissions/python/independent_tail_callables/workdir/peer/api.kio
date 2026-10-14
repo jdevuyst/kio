@@ -36,3 +36,11 @@ pub fn type_link(previous: [A] A -> (A & (. -> A))) -> [A] A -> (A & (. -> A)) {
 }
 
 pub fn keep_type(value: [A] A -> (A & (. -> A))) -> [A] A -> (A & (. -> A)) { value.>keep }
+
+pub fn pending_value_link(previous: . -> (Number & (. -> Number))) -> . -> (Number & (. -> Number)) {
+  .() { mark(31); let result = previous(); mark(32); result }
+}
+
+pub fn pending_type_link(previous: [A] A -> (A & (. -> A))) -> [A] A -> (A & (. -> A)) {
+  .[A] { mark(41); let result = previous(A); mark(42); result }
+}

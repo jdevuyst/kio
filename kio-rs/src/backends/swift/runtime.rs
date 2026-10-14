@@ -81,8 +81,12 @@ mod tests {
         let terminal = run.find("if case .terminal(let body)").unwrap();
         let cursor = run.find("let cursor = __KioCursor()").unwrap();
         assert!(terminal < cursor);
-        assert!(run.contains("case .terminal(let body): return body(argument)"));
+        assert!(run.contains("case .terminal(let body): result = body(argument)"));
         assert!(run.contains("case .resumable(let body): result = body(argument, cursor)"));
+        let pop = run.find("let resume = cursor.popResume()").unwrap();
+        let resume = run.find("result = resume(result, cursor)").unwrap();
+        assert!(pop < resume);
+        assert!(!run.contains("return __kioRun("));
 
         let construction = runtime
             .split("private struct __KioFunctionType")

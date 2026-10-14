@@ -55,6 +55,10 @@ use crate::backends::closure_plan::{
     ExecutableBodyPlan, ExecutableEntry, StageInput, cps_continuation_runtime_shape,
     signature_stages,
 };
+use crate::backends::control_plan::ControlPlan;
+
+#[path = "control.rs"]
+mod control;
 use crate::backends::product_rebuild::{
     NominalValueRepresentation, ProductRebuildPlan, bound_product_rebuild_plan,
     render_cached_product_rebuild,
@@ -6765,6 +6769,7 @@ fn emit_internal_fn_method(
     // Later value stages curry as nested erased closures; type binders are
     // represented by their paired nullary execution stages.
     let plan = ExecutableBodyPlan::new(sig, body);
+    let control = ControlPlan::new(&plan);
     let entry = plan.entry_for_body(body);
     let runtime_groups: Vec<_> = entry
         .stages
@@ -6818,6 +6823,8 @@ fn emit_internal_fn_method(
         .collect();
     let mut emit = BodyEmitter {
         plan: &plan,
+        control: &control,
+        control_name: name,
         package: context.package,
         prepared: context.prepared,
         shapes: context.shapes,
@@ -6839,7 +6846,7 @@ fn emit_internal_fn_method(
     if multi_group {
         emit.self_ref = Some("__pkg".to_owned());
     }
-    let body_rust = emit.emit_result(entry.body())?;
+    let body_rust = emit.emit_entry_body(entry)?;
     // The erased internal fn binds only the first group and currys the inner
     // groups as nested boxed closures around the body.
     let mut body_out = body_rust;
@@ -6872,6 +6879,7 @@ fn emit_internal_fn_method(
     }
     out.push_str(&format!("        {body_out}\n"));
     out.push_str("    }\n");
+    emit.emit_control_methods(out)?;
     Ok(())
 }
 
@@ -6886,9 +6894,12 @@ fn emit_internal_fn_method(
 /// carriers, and a higher-kinded `F(A)` is an ordinary erased value.
 /// Callable entries return execution steps: a value stage accepts one packed
 /// domain, including Unit, while a type stage is nullary. Result positions
-/// return a step; operands complete their steps before consuming the value.
+/// return a step; the shared control plan places pending operands in one-shot
+/// resume frames instead of recursively completing another driver.
 struct BodyEmitter<'a> {
     plan: &'a ExecutableBodyPlan<'a>,
+    control: &'a ControlPlan<'a>,
+    control_name: &'a str,
     package: &'a Package<Routed>,
     /// The single package-complete boundary catalog. Host calls and host
     /// function values resolve their exact site here and consume the semantic
@@ -6932,9 +6943,6 @@ struct BodyEmitter<'a> {
     /// recover the exact role(bool) associated type without adding provenance
     /// to the IR.
     local_types: std::collections::HashMap<String, Type<Routed>>,
-    /// Allocates backend-reserved block locals. Kio source identifiers
-    /// cannot enter the `__kio_` namespace; the monotone suffix keeps
-    /// sibling generated bindings distinct.
     fresh: usize,
 }
 
@@ -7134,7 +7142,7 @@ fn erased_call(crate_root: &str, callee: &str, args: &[String], tail: bool) -> S
         .first()
         .map_or_else(|| "None".to_owned(), |arg| format!("Some({arg})"));
     format!(
-        "{{ let __kio_tail_callee = {callee}; let __kio_tail_domain = {domain}; {crate_root}::__kio_runtime::Step::Apply {{ callee: __kio_tail_callee, domain: __kio_tail_domain }} }}"
+        "{{ let __kio_tail_callee = {callee}; let __kio_tail_domain = {domain}; {crate_root}::__kio_runtime::Step::Invoke({crate_root}::__kio_runtime::Invocation::Apply {{ callee: __kio_tail_callee, domain: __kio_tail_domain }}) }}"
     )
 }
 
@@ -7307,7 +7315,6 @@ impl<'a> BodyEmitter<'a> {
         self.fresh += 1;
         format!("__kio_{class}{index}")
     }
-
     fn expr_type(&self, expr: &Expr<Routed>) -> Option<Type<Routed>> {
         let recon = RustTypeRecon { emit: self };
         let mut locals = std::collections::HashMap::new();
@@ -7688,7 +7695,7 @@ impl<'a> BodyEmitter<'a> {
         }
         let outer_values =
             std::mem::replace(&mut self.active_values, entry_value_scope(plan, entry));
-        let body_src = self.emit_result(entry.body());
+        let body_src = self.emit_entry_body(entry);
         self.active_values = outer_values;
         for (name, prior) in prior_param_types.into_iter().rev() {
             self.local_types.remove(&name);
@@ -7700,8 +7707,7 @@ impl<'a> BodyEmitter<'a> {
             self.tparams.remove(n);
         }
         self.self_ref = saved_self;
-        let body_src = body_src?;
-        let mut acc = body_src;
+        let mut acc = body_src?;
         // A curried closure's inner layer captures `__pkg` and the outer
         // layers' binders; each layer is a `move` closure, and the outer
         // layer is `Fn` (callable repeatedly), so a bare `move` would move
@@ -7930,9 +7936,12 @@ impl<'a> BodyEmitter<'a> {
         Ok(format!("if {c} {{ {t} }} else {{ {e} }}"))
     }
 
-    /// Render an expression in Boolean position without replacing the host's
-    /// exact type with Rust `bool`.
     fn emit_bool(&mut self, e: &Expr<Routed>) -> Result<String, EmitError> {
+        let value = self.emit_expr(e)?;
+        self.emit_bool_value(e, &value)
+    }
+
+    fn emit_bool_value(&self, e: &Expr<Routed>, value: &str) -> Result<String, EmitError> {
         let condition_ty = self.expr_type(e).expect(
             "Rust emitter: structural recovery preserves the checked conditional's exact Boolean type",
         );
@@ -7949,8 +7958,7 @@ impl<'a> BodyEmitter<'a> {
         let exact = self
             .shapes
             .render_use(&condition_ty, TypeCtx::Shape, &tparams)?;
-        let value = self.emit_expr(e)?;
-        let recovered = self.unbox_any(&exact, &value);
+        let recovered = self.unbox_any(&exact, value);
         let true_value = format!("<{exact} as ::std::convert::From<bool>>::from(true)");
         Ok(format!("{recovered} == {true_value}"))
     }
@@ -8129,6 +8137,22 @@ impl<'a> BodyEmitter<'a> {
         sig: &crate::ast::Signature<Routed>,
         ret_ty: &Type<Routed>,
     ) -> Result<String, EmitError> {
+        let values = args
+            .iter()
+            .map(|argument| self.emit_expr(argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.emit_host_call_values(name, module_path, type_args, &values, sig, ret_ty)
+    }
+
+    fn emit_host_call_values(
+        &self,
+        name: &str,
+        module_path: &str,
+        type_args: &[Type<Routed>],
+        args: &[String],
+        sig: &crate::ast::Signature<Routed>,
+        ret_ty: &Type<Routed>,
+    ) -> Result<String, EmitError> {
         let _ = (type_args, sig, ret_ty);
         let site_id = boundary_site_id(
             module_path,
@@ -8156,10 +8180,7 @@ impl<'a> BodyEmitter<'a> {
             );
         }
 
-        let erased_arguments = args
-            .iter()
-            .map(|argument| self.emit_expr(argument))
-            .collect::<Result<Vec<_>, _>>()?;
+        let erased_arguments = args;
         let converter = PreparedRustConverter {
             site,
             shapes: PreparedRustRenderContext::new(
@@ -8412,13 +8433,22 @@ impl<'a> BodyEmitter<'a> {
     }
 
     fn emit_method_invocation(&self, method: &str, args: &[String], tail: bool) -> String {
-        let receiver = self.self_ref_str();
-        if !tail {
-            return complete_call(
+        if tail {
+            format!(
+                "{}::__kio_runtime::Step::Invoke({})",
                 self.crate_root(),
-                &format!("{receiver}.{method}({})", args.join(", ")),
-            );
+                self.method_invocation(method, args)
+            )
+        } else {
+            complete_call(
+                self.crate_root(),
+                &format!("{}.{method}({})", self.self_ref_str(), args.join(", ")),
+            )
         }
+    }
+
+    fn method_invocation(&self, method: &str, args: &[String]) -> String {
+        let receiver = self.self_ref_str();
         let names = (0..args.len())
             .map(|index| format!("__kio_tail_arg_{index}"))
             .collect::<Vec<_>>();
@@ -8451,8 +8481,8 @@ impl<'a> BodyEmitter<'a> {
         }
         let arguments = names.join(", ");
         format!(
-            "{{ let __kio_tail_owner = {receiver}.clone(); let __kio_tail_arguments = {argument_packet}; {}::__kio_runtime::Step::Named {{ owner: __kio_tail_owner, arguments: __kio_tail_arguments, invoke: |__kio_owner, __kio_arguments| {{ let __kio_pkg = __kio_owner.downcast::<Self>().expect(\"named entry retains its package owner\"); {bindings} __kio_pkg.{method}({arguments}) }} }} }}",
-            self.crate_root()
+            "{{ let __kio_tail_owner = {receiver}.clone(); let __kio_tail_arguments = {argument_packet}; {root}::__kio_runtime::Invocation::Named {{ owner: __kio_tail_owner, arguments: __kio_tail_arguments, invoke: |__kio_owner, __kio_arguments| {{ let __kio_pkg = __kio_owner.downcast::<Self>().expect(\"named entry retains its package owner\"); {bindings} __kio_pkg.{method}({arguments}) }} }} }}",
+            root = self.crate_root()
         )
     }
 
@@ -11454,22 +11484,25 @@ mod tests {
                 assert_eq!(stage.captures.len(), 1);
                 stage.captures.clear();
             }
-            let entry = plan.entry_for_body(&function.body);
-            let mut emitter = BodyEmitter {
-                plan: &plan,
-                package: &pkg,
-                prepared: &prepared,
-                shapes: &shapes,
-                selective_imports: &imports,
-                qualified_imports: &imports,
-                self_ref: None,
-                tparams: Default::default(),
-                active_values: entry_value_scope(&plan, entry),
-                local_types: Default::default(),
-                fresh: 0,
-            };
             let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                emitter.emit_result(entry.body())
+                let control = ControlPlan::new(&plan);
+                let entry = plan.entry_for_body(&function.body);
+                let mut emitter = BodyEmitter {
+                    plan: &plan,
+                    control: &control,
+                    control_name: "capture_test",
+                    package: &pkg,
+                    prepared: &prepared,
+                    shapes: &shapes,
+                    selective_imports: &imports,
+                    qualified_imports: &imports,
+                    self_ref: None,
+                    tparams: Default::default(),
+                    active_values: entry_value_scope(&plan, entry),
+                    local_types: Default::default(),
+                    fresh: 0,
+                };
+                emitter.emit_entry_body(entry)
             }));
             let Some(stage_index) = removed_stage else {
                 failure
@@ -11487,7 +11520,7 @@ mod tests {
                 message.contains(if stage_index == 0 {
                     "a Rust stage capture must have storage"
                 } else {
-                    "a checked Rust local reference must belong to the planned entry scope"
+                    "a control entry reads only its planned lexical inputs"
                 }),
                 "{message}"
             );
@@ -11495,7 +11528,98 @@ mod tests {
     }
 
     #[test]
-    fn tail_transfers_and_operand_drivers_have_separate_scopes() {
+    fn pending_result_can_be_captured_by_a_direct_boolean_closure() {
+        let pkg = build_multi_module_package(
+            &[
+                "module main; import control(if); host type Bool role(bool); \
+                 pub fn make(next: . -> Bool) -> . -> Bool { \
+                   let flag = next(); .() { if! flag { .t } else { .f } } \
+                 }",
+                include_str!("../../../../test-data/poc/elab/workdir/control.kio"),
+            ],
+            Some("bridge { main; }"),
+        );
+        let function = pkg
+            .module("main")
+            .unwrap()
+            .module
+            .items
+            .iter()
+            .find_map(|item| {
+                if let crate::ast::Item::FnDef(function) = item {
+                    Some(function)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        let bodies = ExecutableBodyPlan::new(&function.sig, &function.body);
+        let control = ControlPlan::new(&bodies);
+        assert!(
+            control
+                .entry(bodies.entry_for_body(&function.body).id)
+                .has_pending_work()
+        );
+        assert!(
+            bodies.entries().skip(1).any(|entry| {
+                let graph = control.entry(entry.id);
+                !graph.has_pending_work()
+                    && graph.blocks.iter().any(|block| {
+                        matches!(
+                            block.exit,
+                            crate::backends::control_plan::Exit::Branch { .. }
+                        )
+                    })
+            }),
+            "the retained result is consumed in a direct nested conditional"
+        );
+        let emitted = lower_package(&pkg, "pending_boolean_capture")
+            .expect("the captured local retains its exact checked Boolean type");
+        assert!(emitted.lib_rs.contains("Step::Pending"));
+        assert!(emitted.lib_rs.contains("main__Bool"));
+        assert!(emitted.lib_rs.contains("::std::convert::From<bool>"));
+    }
+
+    #[test]
+    fn pending_frames_retain_only_the_shared_live_values() {
+        let pkg = build_package(
+            "module main; host type Atom; \
+             pub fn after(next: . -> Atom, kept: Atom, unused: Atom) -> Atom { \
+               let _ = next(); kept \
+             }",
+            Some("bridge { main; }"),
+        );
+        let emitted = lower_package(&pkg, "pending_live_values").expect("live frame emit");
+        assert!(
+            emitted
+                .lib_rs
+                .contains("values: vec![__kio_binding1.clone()]")
+        );
+        assert!(
+            !emitted
+                .lib_rs
+                .contains("values: vec![__kio_binding0.clone()")
+        );
+        assert!(!emitted.lib_rs.contains("__kio_binding2.clone()"));
+        assert!(emitted.lib_rs.contains("invoke: Self::__kio_control_"));
+        assert!(!emitted.lib_rs.contains("Box::new(move |__kio_result|"));
+        assert!(
+            emitted
+                .lib_rs
+                .contains("drop(__kio_values);\n        __kio_owner.__kio_control_")
+        );
+        assert!(
+            emitted
+                .runtime_rs
+                .contains("Step::Done(value) => match frames.pop()")
+        );
+        assert!(!emitted.runtime_rs.contains("Box<Step>"));
+        assert!(!emitted.runtime_rs.contains("FnOnce"));
+        assert!(emitted.runtime_rs.contains("fn run(self, result:"));
+    }
+
+    #[test]
+    fn tail_transfers_and_pending_frames_have_separate_scopes() {
         let pkg = build_package(
             "module main; \
              pub fn forward(next: . -> .) { next() } \
@@ -11506,23 +11630,41 @@ mod tests {
         );
         let krate = lower_package(&pkg, "tail_scopes").expect("tail scopes emit");
         let method = |name: &str| {
+            let method = mangle_module_fn("main", name);
+            let compiled = format!("__kio_control_{}_{}_e0_b0", method.len(), method);
+            let selected = if krate.lib_rs.contains(&format!("fn {compiled}(")) {
+                compiled
+            } else {
+                method
+            };
             let (_, body) = krate
                 .lib_rs
-                .split_once(&format!("fn {}(", mangle_module_fn("main", name)))
+                .split_once(&format!("fn {selected}("))
                 .expect("private method");
             body.split_once("\n    }").expect("method end").0
         };
         for name in ["forward", "type_tail"] {
             let body = method(name);
-            assert!(body.contains("::__kio_runtime::Step::Apply"), "{body}");
+            assert!(
+                body.contains("::__kio_runtime::Invocation::Apply"),
+                "{body}"
+            );
             assert!(!body.contains("::__kio_runtime::complete("), "{body}");
         }
         let before = method("before");
-        assert!(before.contains("::__kio_runtime::complete("), "{before}");
-        assert!(!before.contains("::__kio_runtime::Step::Apply"), "{before}");
+        assert!(
+            before.contains("::__kio_runtime::Step::Pending"),
+            "{before}"
+        );
+        assert!(before.contains("invoke: Self::__kio_control_"), "{before}");
+        assert!(!before.contains("Box::new(move |__kio_result|"), "{before}");
+        assert!(!before.contains("::__kio_runtime::complete("), "{before}");
         let leaf = method("leaf");
         assert!(!leaf.contains("::__kio_runtime::complete("), "{leaf}");
-        assert!(!leaf.contains("::__kio_runtime::Step::Apply"), "{leaf}");
+        assert!(
+            !leaf.contains("::__kio_runtime::Invocation::Apply"),
+            "{leaf}"
+        );
     }
 
     #[test]
@@ -11545,11 +11687,11 @@ mod tests {
         assert!(
             krate
                 .lib_rs
-                .contains("Step::Named { owner: __kio_tail_owner")
+                .contains("Invocation::Named { owner: __kio_tail_owner")
         );
         assert!(krate.lib_rs.contains("__kio_owner.downcast::<Self>()"));
         assert!(krate.lib_rs.contains("self: &::std::rc::Rc<Self>"));
-        assert!(!krate.runtime_rs.contains("Box<dyn FnOnce"));
+        assert!(!krate.lib_rs.contains("Box::new(move |__kio_result|"));
         assert!(!krate.lib_rs.contains("tail_call(move"));
         for variant in ["None", "One(", "Two(", "Many(vec!["] {
             assert!(
@@ -11644,8 +11786,11 @@ mod tests {
         );
         let imports = std::collections::HashMap::new();
         let plan = ExecutableBodyPlan::new(&suffix.sig, &projected_tail);
+        let control = ControlPlan::new(&plan);
         let mut emitter = BodyEmitter {
             plan: &plan,
+            control: &control,
+            control_name: "product_tail_test",
             package: &pkg,
             prepared: &prepared,
             shapes: &shapes,
@@ -11789,8 +11934,11 @@ mod tests {
             panic!("expected Boolean fixture function");
         };
         let plan = ExecutableBodyPlan::new(&function.sig, &function.body);
+        let control = ControlPlan::new(&plan);
         let mut emitter = BodyEmitter {
             plan: &plan,
+            control: &control,
+            control_name: "routed_invariant_test",
             package: &package,
             prepared: &prepared,
             shapes: &shapes,
@@ -11841,12 +11989,15 @@ mod tests {
     )]
     fn routed_invariant_untyped_condition_panics() {
         with_routed_invariant_emitter(|emitter| {
-            let _ = emitter.emit_bool(&Expr::LowBoundRef {
-                occurrence: (),
-                name: "missing".into(),
-                meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
-                ext: (),
-            });
+            let _ = emitter.emit_bool_value(
+                &Expr::LowBoundRef {
+                    occurrence: (),
+                    name: "missing".into(),
+                    meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
+                    ext: (),
+                },
+                "condition",
+            );
         });
     }
 

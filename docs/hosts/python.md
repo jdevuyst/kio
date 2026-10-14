@@ -412,6 +412,13 @@ too. Re-lifting a native wrapper that invokes a saved guest is a real host call,
 not unchanged transport. The advanced structural operation is described in the
 [callable contract](../../specs/backends/python.md#ffi-surface).
 
+Work remaining after a guest call is held separately from reusable callback
+captures. Normal hosts use the calls and lift helpers above. Advanced control
+implementations may supply the optional `resume` capability, described by
+`KioResumeTransfer`; the base `KioTransfer` Protocol requires only `call` and
+`advance`. Resume typing pairs a child result with its continuation input,
+while the enclosing result and synchronous lifetime remain linkage obligations.
+
 For a structural annotation, use the readable argument/result view instead of
 an encoded shape name: for example,
 `KioViewCtor_api__Shadow__makeShadow_Arg0[BoxString]` describes the input to

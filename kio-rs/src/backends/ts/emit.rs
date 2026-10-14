@@ -142,6 +142,7 @@ struct TsNames {
     callable: String,
     poly: String,
     transfer: String,
+    resume: String,
     host_types: String,
     type_lambda: String,
     partial_type_lambda: String,
@@ -158,6 +159,7 @@ impl TsNames {
             callable: format!("{}Callable", brand.handle),
             poly: format!("{}Poly", brand.handle),
             transfer: format!("{}Transfer", brand.handle),
+            resume: format!("{}Resume", brand.handle),
             host_types: format!("{}HostTypes", brand.handle),
             type_lambda: format!("{}TypeLambda", brand.handle),
             partial_type_lambda: format!("{}PartialTypeLambda", brand.handle),
@@ -174,6 +176,7 @@ impl TsNames {
             &self.callable,
             &self.poly,
             &self.transfer,
+            &self.resume,
             &self.host_types,
             &self.type_lambda,
             &self.partial_type_lambda,
@@ -301,10 +304,11 @@ pub fn lower_package_to_dts_with_signature(
 
 fn render_callable_protocol(names: &TsNames, out: &mut String) {
     out.push_str(&format!(
-        "\nexport interface {transfer} {{\n  call<A>(target: {callable}<A, unknown>, value: A): void;\n  advance(target: {{ kioStep(transfer: {transfer}): unknown }}): void;\n}}\n\nexport interface {callable}<A, R> {{\n  (value: A): R;\n  kioStep(value: A, transfer: {transfer}): R | undefined;\n}}\n\nexport interface {poly}<Advance extends () => unknown> {{\n  advance: Advance;\n  kioStep(transfer: {transfer}): ReturnType<Advance> | undefined;\n}}\n",
+        "\nexport interface {transfer} {{\n  call<A>(target: {callable}<A, unknown>, value: A): void;\n  advance(target: {{ kioStep(transfer: {transfer}): unknown }}): void;\n  readonly resume?: {resume};\n}}\n\nexport interface {resume} {{\n  call<A, S, R>(target: {callable}<A, S>, value: A, resume: (result: S, transfer: {transfer}) => R | undefined): void;\n  advance<S, R>(target: {{ kioStep(transfer: {transfer}): S | undefined }}, resume: (result: S, transfer: {transfer}) => R | undefined): void;\n}}\n\nexport interface {callable}<A, R> {{\n  (value: A): R;\n  kioStep(value: A, transfer: {transfer}): R | undefined;\n}}\n\nexport interface {poly}<Advance extends () => unknown> {{\n  advance: Advance;\n  kioStep(transfer: {transfer}): ReturnType<Advance> | undefined;\n}}\n",
         callable = names.callable,
         poly = names.poly,
         transfer = names.transfer,
+        resume = names.resume,
     ));
 }
 
@@ -2242,6 +2246,10 @@ v(2) {
             "{dts}"
         );
         assert!(dts.contains("export interface FacadeTransfer {"), "{dts}");
+        assert!(dts.contains("readonly resume?: FacadeResume;"), "{dts}");
+        assert!(dts.contains("export interface FacadeResume {"), "{dts}");
+        let names = TsNames::from_brand(&js::Brand::derive("facade"));
+        assert!(names.is_support_type("FacadeResume"));
         assert!(dts.contains("export namespace createFacade {"), "{dts}");
         assert!(
             dts.contains("function lift<A, R>(body: (value: A) => R): FacadeCallable<A, R>;"),

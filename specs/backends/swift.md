@@ -95,6 +95,10 @@ shared support module under `out`:
   use the same support definitions and calling contract. See the shared
   [runtime-support contract](README.md#runtime-support-library).
 
+Compatible generated sources link against one support implementation providing
+all the linkage they use. `KioRuntime` identifies that shared source-level
+interface, not a binary ABI guarantee for precompiled Swift modules.
+
 ### Native documentation
 
 [Retained boundary documentation](README.md#doc-comments-on-the-emitted-surface) is emitted as
@@ -552,11 +556,15 @@ and function aliases extend the same path.
 
 ### Callback transport and native bridges
 
-`KioFn` and generated polymorphic carriers preserve guest tail-transfer
+`KioFn` and generated polymorphic carriers preserve guest execution
 identity through unchanged host storage and reinsertion. Compatible
 independently generated modules share the same `KioFn<A, R>` and control
 engine; nominal types owned by different package modules remain distinct.
-This implements the shared [tail-call contract](README.md#tail-calls-within-generated-code).
+This implements the shared [tail-call contract](README.md#tail-calls-within-generated-code)
+and [calls-with-work-remaining contract](README.md#calls-with-work-remaining).
+Pending guest work uses invocation-local heap storage, released as each
+completed call resumes its caller; it does not grow the native call stack
+with guest call depth. Callable results remain values until explicitly invoked.
 Selecting a polymorphic carrier's type still executes exactly that stage;
 merely constructing, storing or copying a callable executes no stage.
 
@@ -564,7 +572,7 @@ merely constructing, storing or copying a callable executes no stage.
 for Swift APIs such as `map`. Calling that closure invokes the carrier, but
 wrapping it in another `KioFn` creates a host function boundary rather than
 recovering the original guest entry. Arbitrary host callbacks that reenter
-generated code do not acquire a tail-transfer guarantee.
+generated code do not acquire the guest call-stack guarantee.
 
 Opaque containers keep their actual native type arguments. A host migrating
 storage from `Box<(A) -> R>` to the Kio function representation uses

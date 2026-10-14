@@ -282,6 +282,12 @@ Use the typed lifts for native bodies; the low-level transfer operation is a
 generated-code linkage protocol with additional semantic obligations, not a
 fully type-checked host callback construction API.
 
+Pending work after a guest call uses the optional `GreeterTransfer.resume`
+capability. `GreeterResume` pairs each child result type with its resume
+entry's input; the enclosing result obligation remains part of the
+[linkage contract](../../specs/backends/ts.md#ffi-surface). Normal hosts need
+no additional adapter; controls providing only `call` and `advance` are valid.
+
 `GreeterTypes<B>` provides a readable declaration-keyed catalogue of selected
 host types, fixed role types, and reachable public Kio newtype constructors for
 generic host-side composition.

@@ -1,0 +1,64 @@
+module testapi/main;
+
+import testapi(I32);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+type Thunk = . -> I32;
+
+fn show(value: I32) { io.print(fmt.i32_to_string(value)); io.print("\n") }
+
+fn leaf() -> I32 { io.print("leaf\n"); 41 }
+
+fn link(previous: Thunk) -> Thunk {
+  .() { arith.sub_i32(previous(), -1) }
+}
+
+fn twice(step: Thunk -> Thunk) -> Thunk -> Thunk {
+  .(value: Thunk) { step(step(value)) }
+}
+
+fn trace_link(previous: Thunk, label: I32) -> Thunk {
+  .() {
+    show(label);
+    let result = previous();
+    show(arith.sub_i32(0, label));
+    arith.sub_i32(result, -1)
+  }
+}
+
+fn left() -> I32 { io.print("left\n"); 50 }
+
+fn right() -> I32 { io.print("right\n"); 7 }
+
+fn pair(first: Thunk, second: Thunk) -> I32 & I32 { (first(), second()) }
+
+fn make_leaf() -> Thunk { io.print("make\n"); leaf }
+
+fn wrap_result(next: . -> Thunk) -> Thunk { let result = next(); io.print("wrapped\n"); result }
+
+pub fn main() {
+  let traced = trace_link(trace_link(leaf, 2), 1);
+  show(traced());
+  let .(a, b) = pair(left, right);
+  show(arith.sub_i32(a, b));
+  let returned = wrap_result(make_leaf);
+  io.print("ready\n");
+  show(returned());
+  let two = twice(link);
+  let four = twice(two);
+  let eight = twice(four);
+  let sixteen = twice(eight);
+  let thirty_two = twice(sixteen);
+  let sixty_four = twice(thirty_two);
+  let one_twenty_eight = twice(sixty_four);
+  let two_fifty_six = twice(one_twenty_eight);
+  let five_twelve = twice(two_fifty_six);
+  let links_deep = twice(five_twelve);
+  let deep = links_deep(leaf);
+  io.print("built\n");
+  show(deep());
+  io.print("again\n");
+  show(deep())
+}

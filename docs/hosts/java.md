@@ -316,6 +316,14 @@ as Unit still takes a value. A named method wider than 254 reference
 parameters uses one prepared argument container with typed accessors and a
 builder.
 
+Generated Kio call chains, including calls with work left after the child
+returns, keep their pending work in heap storage rather than growing Java's
+call stack. Passing a Kio callable unchanged through host storage preserves
+this behavior. A host-written lambda that calls it is a separate Java call;
+host callbacks and synchronous re-entry retain Java's ordinary stack limits.
+See the shared [calling convention](../../specs/backends/README.md#calls-with-work-remaining)
+for the resource and compatible-artifact boundaries.
+
 Declaration-owned types follow their source module paths under `Shapes`:
 `api/types.Pick_first` becomes `Shapes.KioModule_api.KioModule_types.Pick_first`.
 Module holder classes have a fixed `KioModule_` prefix; type leaves retain

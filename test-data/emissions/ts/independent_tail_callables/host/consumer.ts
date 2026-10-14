@@ -60,4 +60,40 @@ if (false) {
   instances[0].keepValue(() => ({_0: 37, _1: () => 41}));
 }
 check(stored.every(n => n === depth), "invocation-time storage");
+
+function pendingTrace(before: number, root: number, after: number): void {
+  const expected = Array.from({length: depth}, (_, offset) =>
+    [(depth - 1 - offset) % 2, before]);
+  expected.push([0, root]);
+  expected.push(...Array.from({length: depth}, (_, index) => [index % 2, after]));
+  check(JSON.stringify(events) === JSON.stringify(expected), "pending owner or unwind order");
+  events.length = 0;
+}
+const pendingValues = [instances[0].valueRoot()];
+for (let i = 0; i < depth; i++) {
+  const linked = instances[i % 2].pendingValueLink(pendingValues[pendingValues.length - 1]);
+  pendingValues.push(linked, instances[1 - i % 2].keepValue(linked));
+}
+check(events.length === 0 && stored.every(n => n === 3 * depth / 2), "pending value transport effects");
+for (let i = 0; i < 2; i++) {
+  const result = pendingValues[pendingValues.length - 1](null);
+  pendingTrace(31, 12, 32);
+  check(result._0 === 37 && result._1(null) === 41, "pending nested value result");
+  check(JSON.stringify(events) === "[[0,13]]", "pending returned callback is data with its original owner");
+  events.length = 0;
+}
+const pendingStages = [instances[0].typeRoot()];
+for (let i = 0; i < depth; i++) {
+  const linked = instances[i % 2].pendingTypeLink(pendingStages[pendingStages.length - 1]);
+  pendingStages.push(linked, instances[1 - i % 2].keepType(linked));
+}
+check(events.length === 0 && stored.every(n => n === 2 * depth), "pending type transport effects");
+const pendingNumber = pendingStages[pendingStages.length - 1].advance<number>();
+pendingTrace(41, 22, 42);
+const pendingText = pendingStages[pendingStages.length - 1].advance<string>();
+pendingTrace(41, 22, 42);
+selected(pendingNumber, 97);
+selected(pendingNumber, 101);
+selected(pendingText, "pending");
+check(stored.every(n => n === 2 * depth), "pending invocation-time storage");
 console.log("independent tail callables ok");

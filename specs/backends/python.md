@@ -422,6 +422,28 @@ The step operation is generated-code linkage: any requested target must preserve
 the current step's result type. The erased control interface does not prove
 that obligation for a manually authored implementation; ordinary hosts use the
 typed lifts.
+
+At a call with pending work, generated entries obtain the optional
+`transfer.resume` capability, treating an absent attribute or `None` as
+absence. `KioResumeCapability` describes its `call(target, domain, resume)` and
+`advance(target, resume)` methods. Each schedules the child and one pending
+resume, returning `None`. `KioResume[S, R]` receives the exact child's result
+`S` and the current transfer, then returns `R` or makes a terminal request.
+Its enclosing-result obligation remains semantic; a base tail request still
+requires the same result type, rather than performing this `S` to `R`
+transformation. `KioResumeStage[S]` exposes a type stage's ordinary selected
+result, and `KioResumeTransfer` describes controls offering the extension.
+The base `KioTransfer` Protocol requires only `call` and `advance`.
+
+Pending entries resume in last-in, first-out order and are released before
+invocation. Resume entries do not retain the synchronous transfer capability.
+When the extension is absent, a local invocation completes that pending call
+and its resume; pure tail calls use `call` and `advance` directly. Controls
+providing only these two methods are valid. The fallback does not replace a
+called entry's own execution strategy. The optional attribute lookup is on
+the caller-created control, not the native callback; a custom control
+descriptor can observe it.
+
 Compatible carriers exchange between independently generated artifacts without
 a shared runtime or registry. This does not merge nominal classes or grant
 access to opaque values. Storage preserves the unchanged carrier; lifting a

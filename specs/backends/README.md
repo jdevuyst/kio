@@ -211,13 +211,40 @@ capability. A host-authored function that calls a Kio callback is likewise a
 new host computation, not unchanged transport. Compiler-generated adapters
 must preserve the tail transfer and its required argument/result conversions.
 
-This is not a bound on arbitrary host computation, explicit native-function
-bridges, or source computations with work remaining after a call. Nor does it
-make otherwise incompatible public types interchangeable between artifacts.
+This tail-call rule is not a bound on arbitrary host computation or explicit
+native-function bridges. Calls with work remaining follow the rule below.
+Neither rule makes incompatible public types interchangeable between artifacts.
 Host runtimes and host-supplied sequencing operations retain their own
 resource behavior.
 Invocation depth is also distinct from the space occupied or reclaimed by
 captured values.
+
+#### Calls with work remaining
+
+**Applies when:** generated Kio code calls another Kio callable through its
+documented, compatible representation and must continue computing after that
+call returns.
+
+Pending guest computation uses managed storage: explicit saved continuations
+or a growing host-runtime stack. A backend may retain one managed runtime frame
+per pending call; this is not a constant-frame bound. Unlike a tail transfer,
+each such call may retain its own pending work and live values, so space can
+grow with depth. Available memory and host-runtime resource limits still apply.
+
+Returning from the child resumes the caller once, with that child's result.
+Callee evaluation, executing type-application stages, arguments, constructed
+values and selected branches retain their specified evaluation order. A
+returned function or polymorphic value is data; returning it does not execute
+another application stage.
+
+Unchanged transport of documented callables through host storage preserves
+this behavior. A host-authored callback, an explicit native-function bridge,
+or synchronous host re-entry starts a separate host computation; pending host
+work is not captured. Host-supplied sequencing operations, including a host's
+Monad implementation, retain their own operational and resource behavior.
+That boundary does not reclassify generated pending computation as host work.
+This rule also places no depth bound on destruction of arbitrary captured
+value graphs.
 
 ### 2. Type erasure at the FFI
 

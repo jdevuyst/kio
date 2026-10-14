@@ -23,11 +23,10 @@
 //!    + Sync`, and every emitted lifetime / `Clone` bound gains the same
 //!    markers so the wrapped values satisfy the `Arc`-flavored bounds.
 //!
-//! The emitter only ever spells a `dyn` trait object as the direct
-//! child of an `Rc<…>` wrapper (`Rc<dyn Fn(…) -> …>` or
-//! `Rc<dyn Any>`), so the marker suffix can be placed reliably by
-//! scanning to the matching `>` of the enclosing `Arc<` after the
-//! wrap-shape swap. See [`insert_dyn_markers`].
+//! Emitted trait objects are direct children of `Rc<…>` reusable value
+//! wrappers, including the owner and saved values in resume frames. Their marker
+//! suffixes are placed at the matching wrapper `>` after the wrap-shape swap.
+//! See [`insert_dyn_markers`].
 //!
 //! The runtime-support file (`src/__kio_runtime.rs`) is transformed from the
 //! same canonical source by [`runtime_arc`]. The shared lifetime-bound pass
@@ -184,12 +183,9 @@ fn swap_rc_to_arc_in_code(src: &str) -> String {
 }
 
 /// Insert the marker suffix at the end of every emitted code-position `dyn` trait
-/// object. The emitter only ever spells a `dyn` trait object as the
-/// direct child of a (now-swapped) `Arc<…>` wrapper —
-/// `Arc<dyn Fn(…) -> …>` and `Arc<dyn ::std::any::Any>` (and the
-/// runtime file's `Arc<dyn Any>` short form). So for each `Arc<dyn`
-/// occurrence we find the matching `>` that closes that `Arc<` and
-/// splice the marker in just before it.
+/// object. Trait objects are the direct child of a (now-swapped) `Arc<…>`
+/// value wrapper. Find the matching wrapper `>` and splice the marker
+/// immediately before it.
 ///
 /// Finding the matching close handles nesting correctly: an
 /// `Arc<dyn Fn(Arc<dyn Any>) -> Arc<dyn Any>>` return type contains
@@ -217,11 +213,11 @@ fn insert_dyn_markers_in_code(src: &str, marker: &str) -> String {
     // the `>` at that index). Collected in a set-like sorted vec; the
     // scan emits markers as it reaches each close.
     let needle = b"Arc<dyn";
-    // For each `Arc<dyn` match, compute the index of its closing `>`
+    // For each wrapper match, compute the index of its closing `>`
     // and record it.
     let mut marker_before: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
     while i + needle.len() <= bytes.len() {
-        if &bytes[i..i + needle.len()] == needle {
+        if bytes[i..].starts_with(needle) {
             // Position of the `<` that opens this wrapper.
             let open = i + 3; // `Arc` is 3 bytes; `<` follows.
             debug_assert_eq!(bytes[open], b'<');
@@ -493,6 +489,25 @@ mod tests {
             assert_eq!(
                 transform_emitted_source(source, mode),
                 "fn(Arc<dyn Any + Send + Sync>, NamedArguments) -> Step; enum NamedArguments { None, One(Arc<dyn Any + Send + Sync>), Two(Arc<dyn Any + Send + Sync>, Arc<dyn Any + Send + Sync>), Many(Vec<Arc<dyn Any + Send + Sync>>) }"
+            );
+        }
+    }
+
+    #[test]
+    fn pending_frame_fields_receive_the_same_thread_bounds_as_values() {
+        let source = "struct Resume { owner: Rc<dyn Any>, values: Vec<Rc<dyn Any>>, invoke: fn(Rc<dyn Any>, Vec<Rc<dyn Any>>, Rc<dyn Any>) -> Step }";
+        assert_eq!(
+            transform_emitted_source(source, ThreadSafety::RcLocal),
+            source
+        );
+        for mode in [
+            ThreadSafety::Send,
+            ThreadSafety::Sync,
+            ThreadSafety::SendSync,
+        ] {
+            assert_eq!(
+                transform_emitted_source(source, mode),
+                "struct Resume { owner: Arc<dyn Any + Send + Sync>, values: Vec<Arc<dyn Any + Send + Sync>>, invoke: fn(Arc<dyn Any + Send + Sync>, Vec<Arc<dyn Any + Send + Sync>>, Arc<dyn Any + Send + Sync>) -> Step }"
             );
         }
     }

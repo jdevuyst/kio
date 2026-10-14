@@ -255,6 +255,14 @@ parameters, not the contents of a product parameter: substituting
 `A := B & C` in `A -> R` remains one `KioFn1` argument whose facade is a
 `Product`.
 
+Deep calls between generated Kio functions do not require a larger Rust thread
+stack. Work that continues after a child call uses heap memory, so its memory
+cost can grow with call depth. You use the same callable values and thread-safety
+settings. Your own Rust callbacks and calls back into Kio from a host method
+still use ordinary Rust calling behavior. See
+[calls with work remaining](../../specs/backends/README.md#calls-with-work-remaining)
+for the boundary and resource guarantees.
+
 A rank-N value (`[A] ...`) has a site-owned
 `KioForall_<site>` implementation trait with a generic
 `specialize<A: KioType>(&self)` method. It selects one type and returns the

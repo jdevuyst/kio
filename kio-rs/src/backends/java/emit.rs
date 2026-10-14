@@ -53,10 +53,10 @@ mod runtime_tests {
     #[test]
     fn guest_binding_does_not_collect_argument_slots() {
         let guest = RUNTIME
-            .split_once("        GuestEntry entry, Object domain) {")
+            .split_once("    private Object eval(GuestEntry entry, Object domain) {")
             .unwrap()
             .1
-            .split_once("        Tag tagged = tag(expression);")
+            .split_once("          Map<String, Object> block = block(graph, current);")
             .unwrap()
             .0;
         assert!(!guest.contains("productSlots("));
@@ -96,10 +96,10 @@ mod runtime_tests {
         assert!(construction.contains("captures.put(name, env.get(name))"));
         assert!(construction.contains("stage.captures() == null"));
         let activation = RUNTIME
-            .split_once("        GuestEntry entry, Object domain) {")
+            .split_once("    private Object eval(GuestEntry entry, Object domain) {")
             .unwrap()
             .1
-            .split_once("        Tag tagged = tag(expression);")
+            .split_once("          Map<String, Object> block = block(graph, current);")
             .unwrap()
             .0;
         assert!(activation.contains("runtime.layer("));
@@ -130,6 +130,66 @@ mod runtime_tests {
             .0;
         assert!(plan.contains("selected.get(\"plan\")"));
         assert!(plan.contains("selected.get(\"node\")"));
+    }
+
+    #[test]
+    fn control_operands_are_slots_and_frames_save_only_prepared_live_values() {
+        let operand = RUNTIME
+            .split_once("    private static Object operand(")
+            .unwrap()
+            .1
+            .split_once("    private static Map<String, Object> block(")
+            .unwrap()
+            .0;
+        assert!(operand.contains("tagged.tag().equals(\"ControlSlot\")"));
+        assert!(!operand.contains("eval("));
+        let saved = RUNTIME
+            .split_once("    private static Map<String, Object> savedSlots(")
+            .unwrap()
+            .1
+            .split_once("    private Object atom(")
+            .unwrap()
+            .0;
+        assert!(saved.contains("for (Object key : live)"));
+        assert!(saved.contains("slot(slots, key)"));
+        assert!(!saved.contains("new LinkedHashMap<>(slots)"));
+        assert!(RUNTIME.contains("if (!slots.containsKey(name))"));
+        let atoms = RUNTIME
+            .split_once("    private Object atom(")
+            .unwrap()
+            .1
+            .split_once("    private Object eval(")
+            .unwrap()
+            .0;
+        assert!(!atoms.contains("eval("));
+        assert!(!atoms.contains("case \"LowIndirectCall\""));
+        assert!(!atoms.contains("case \"LowTypeApplication\""));
+    }
+
+    #[test]
+    fn control_results_resume_iteratively_and_release_popped_frames() {
+        let evaluator = RUNTIME
+            .split_once("    private Object eval(GuestEntry entry, Object domain) {")
+            .unwrap()
+            .1
+            .split_once("  private static final class Json")
+            .unwrap()
+            .0;
+        let returning = evaluator.split_once("if (returning) {").unwrap().1;
+        let pop = returning.find("frames.set(last, null)").unwrap();
+        let restore = returning.find("slots = frame.saved();").unwrap();
+        let supply = returning
+            .find("slots.put(frame.result(), result);")
+            .unwrap();
+        assert!(pop < restore && restore < supply);
+        assert!(evaluator.contains("boolean returning = false;"));
+        assert!(!evaluator.contains("result != null"));
+        assert!(evaluator.contains("input.equals(block(graph, target).get(\"input\"))"));
+        assert!(evaluator.contains("savedSlots(slots, asList(resume.get(\"live\")))"));
+        assert!(evaluator.contains("runtime.compiled.plan(exit.get(\"type_plan\"))"));
+        assert!(evaluator.contains("i < asInt(exit.get(\"type_index\"))"));
+        assert!(evaluator.contains("} finally {\n        frames.clear();\n        slots.clear();"));
+        assert!(!evaluator.contains("eval("));
     }
 }
 
@@ -2886,7 +2946,7 @@ mod tests {
     #[test]
     fn guest_tail_entries_retain_owner_and_bypass_typed_stage_results() {
         let evaluator = RUNTIME
-            .split_once("        GuestEntry entry, Object domain) {")
+            .split_once("    private Object eval(GuestEntry entry, Object domain) {")
             .unwrap()
             .1
             .split_once("  private static final class Json")
@@ -2894,16 +2954,23 @@ mod tests {
             .0;
         assert!(evaluator.contains("runtime = entry.runtime();"));
         assert!(evaluator.contains("new LinkedHashMap<>(entry.env())"));
-        assert!(evaluator.contains("entry = guest;\n            continue;"));
+        assert!(evaluator.contains("entry = guest;\n              continue;"));
         assert!(
             evaluator.contains(
                 "typeStage && callee instanceof GuestStage stage ? stage.body() : callee"
             )
         );
-        assert!(
-            evaluator.contains("(typeStage ? \"type\" : \"value\").equals(data.get(\"tail\"))")
-        );
-        assert!(!evaluator.contains("return eval(module, data.get(\"body\")"));
+        let pending = evaluator
+            .split_once("if (resumeIndex != null) {")
+            .unwrap()
+            .1
+            .split_once("Object candidate =")
+            .unwrap()
+            .0;
+        assert!(pending.contains("frames.add(new ControlFrame(runtime, module, graph"));
+        assert_eq!(evaluator.matches("frames.add(").count(), 1);
+        assert!(!evaluator.contains("data.get(\"tail\")"));
+        assert!(!evaluator.contains("eval("));
     }
 
     #[test]

@@ -22,6 +22,7 @@ use super::closure_plan::{
     CpsBinding, CpsRuntimePlan, ExecutableBodyPlan, ExecutableEntry, StageInput, callable_spine,
     cps_boundary_runtime_plan, cps_continuation_runtime_shape, cps_entry_plan, signature_stages,
 };
+use super::control_plan::{AtomKind, ChildRole, Completion, ControlPlan, Exit, Operation, Slot};
 use super::tail_plan::{ResultChild, TailContext, TailStage};
 use super::value_plan::{ValuePlan, ValueUse};
 
@@ -353,7 +354,7 @@ struct RuntimeTypeMember {
     cps_entry: Option<Box<RuntimeSyntheticEntry>>,
 }
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Serialize, serde::Deserialize)]
 #[serde(untagged)]
 enum RuntimePlanRef {
     Root(usize),
@@ -623,6 +624,12 @@ impl RuntimeTypeScope {
 
 #[derive(Serialize)]
 enum RuntimeExpr {
+    Control {
+        graph: RuntimeControlGraph,
+    },
+    ControlSlot {
+        slot: String,
+    },
     FnExpr {
         sig: RuntimeSignature,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -772,10 +779,9 @@ enum RuntimeExpr {
     LowCpsProjectorApply {
         #[serde(skip_serializing_if = "Option::is_none")]
         tail: Option<TailStage>,
-        // These are the continuation type's erased leading `forall`
-        // applications and first value-stage ABI arity. Keeping both on the
-        // serialized node makes execution depend only on the already-routed
-        // continuation contract, never on reopening its newtype declaration.
+        // The typed metadata retains the routed continuation's leading
+        // `forall` count and first value-stage ABI arity. The shared control
+        // graph supplies its executable applications.
         continuation_type_stages: usize,
         continuation_abi_arity: usize,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -799,6 +805,81 @@ enum RuntimeExpr {
         mangled: String,
         module_path: String,
     },
+}
+
+#[derive(Serialize)]
+struct RuntimeControlBinding {
+    slot: String,
+    name: String,
+}
+
+#[derive(Serialize)]
+struct RuntimeControlGraph {
+    start: usize,
+    inputs: Vec<RuntimeControlBinding>,
+    blocks: Vec<RuntimeControlBlock>,
+    resumes: Vec<RuntimeControlResume>,
+}
+
+#[derive(Serialize)]
+struct RuntimeControlBlock {
+    input: Option<String>,
+    operations: Vec<RuntimeControlOperation>,
+    exit: RuntimeControlExit,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RuntimeControlOperation {
+    Bind {
+        output: String,
+        input: String,
+    },
+    Atom {
+        output: String,
+        atom: &'static str,
+        node: serde_json::Value,
+        bindings: Vec<RuntimeControlBinding>,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum RuntimeControlExit {
+    Return {
+        slot: String,
+    },
+    Jump {
+        block: usize,
+        argument: String,
+    },
+    Branch {
+        node: serde_json::Value,
+        condition: String,
+        then_block: usize,
+        else_block: usize,
+    },
+    Match {
+        node: serde_json::Value,
+        scrutinee: String,
+        arms: Vec<usize>,
+    },
+    Invoke {
+        callee: String,
+        stage: TailStage,
+        type_index: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        type_plan: Option<RuntimePlanRef>,
+        arguments: Vec<String>,
+        resume: Option<usize>,
+    },
+}
+
+#[derive(Serialize)]
+struct RuntimeControlResume {
+    block: usize,
+    result: String,
+    live: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -1316,7 +1397,9 @@ fn runtime_items(
         Item::FnDef(def) => {
             let mut scope =
                 RuntimeTypeScope::sharing_plans(format!("fn:{module_key}:{}", def.name), plans);
-            scope.executable = runtime_body_entries(&def.sig, &def.body);
+            let bodies = ExecutableBodyPlan::new(&def.sig, &def.body);
+            let control = ControlPlan::new(&bodies);
+            scope.executable = runtime_body_entries(&bodies);
             let value_plan = scope.value_plan(
                 package,
                 module,
@@ -1329,14 +1412,22 @@ fn runtime_items(
                 sig,
                 ret: runtime_type(package, module, &def.ret, &scope),
                 value_plan,
-                body: runtime_expr_expected(
-                    package,
-                    module_key,
-                    module,
-                    TailContext::body(&def.body),
-                    &scope,
-                    Some(&def.ret),
-                ),
+                body: RuntimeExpr::Control {
+                    graph: runtime_control_graph(
+                        &bodies,
+                        &control,
+                        &def.body,
+                        serde_json::to_value(runtime_expr_expected(
+                            package,
+                            module_key,
+                            module,
+                            TailContext::body(&def.body),
+                            &scope,
+                            Some(&def.ret),
+                        ))
+                        .expect("runtime expression metadata is serializable"),
+                    ),
+                },
             })]
         }
         Item::Newtype(def) => vec![RuntimeItem::Newtype(runtime_newtype(
@@ -1460,20 +1551,344 @@ fn runtime_visibility(vis: &Visibility) -> RuntimeVisibility {
 }
 
 fn runtime_body_entries(
-    sig: &Signature<Routed>,
-    body: &Expr<Routed>,
+    plan: &ExecutableBodyPlan<'_>,
 ) -> Rc<HashMap<usize, Vec<RuntimeBodyStage>>> {
-    let plan = ExecutableBodyPlan::new(sig, body);
     Rc::new(
         plan.entries()
             .map(|entry| {
                 (
                     entry.body().expr() as *const Expr<Routed> as usize,
-                    runtime_entry_stages(&plan, entry),
+                    runtime_entry_stages(plan, entry),
                 )
             })
             .collect(),
     )
+}
+
+fn runtime_slot(slot: Slot) -> String {
+    match slot {
+        Slot::Binding(id) => format!("b{}", id.index()),
+        Slot::Temporary(index) => format!("t{index}"),
+    }
+}
+
+fn runtime_slot_expr(slot: Slot) -> serde_json::Value {
+    serde_json::to_value(RuntimeExpr::ControlSlot {
+        slot: runtime_slot(slot),
+    })
+    .expect("a control slot is serializable")
+}
+
+fn runtime_control_binding(
+    plan: &ExecutableBodyPlan<'_>,
+    id: super::closure_plan::BindingId,
+) -> RuntimeControlBinding {
+    RuntimeControlBinding {
+        slot: runtime_slot(Slot::Binding(id)),
+        name: plan.binding(id).name.to_owned(),
+    }
+}
+
+/// The existing typed serializer supplies metadata once. This projection moves
+/// its children out, then installs only checked slot reads at operation sites.
+/// Neither runtime receives an executable source subtree to rediscover order.
+fn collect_control_nodes(
+    bodies: &ExecutableBodyPlan<'_>,
+    control: &ControlPlan<'_>,
+    source: &Expr<Routed>,
+    mut node: serde_json::Value,
+    nodes: &mut HashMap<usize, serde_json::Value>,
+) {
+    let fields = node
+        .as_object_mut()
+        .expect("a runtime expression is tagged")
+        .values_mut()
+        .next()
+        .unwrap();
+    let mut child = |source: &Expr<Routed>, value: &mut serde_json::Value| {
+        collect_control_nodes(bodies, control, source, value.take(), nodes);
+    };
+    match source {
+        Expr::FnExpr { body, .. } => {
+            let graph = runtime_control_graph(bodies, control, body, fields["body"].take());
+            fields["body"] = serde_json::to_value(RuntimeExpr::Control { graph })
+                .expect("a nested control graph is serializable");
+        }
+        Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
+            child(value, &mut fields["value"]);
+            child(body, &mut fields["body"]);
+        }
+        Expr::LowIndirectCall { callee, args, .. } => {
+            child(callee, &mut fields["callee"]);
+            for (index, arg) in args.iter().enumerate() {
+                child(arg, &mut fields["args"][index]);
+            }
+        }
+        Expr::LowTypeApplication { callee, .. } => child(callee, &mut fields["callee"]),
+        Expr::LowHostCall { args, .. }
+        | Expr::LowModuleCall { args, .. }
+        | Expr::LowQualifiedModuleCall { args, .. }
+        | Expr::LowClosureCall { args, .. } => {
+            for (index, arg) in args.iter().enumerate() {
+                child(arg, &mut fields["args"][index]);
+            }
+        }
+        Expr::EnrichedTuple { items, .. } => {
+            for (index, item) in items.iter().enumerate() {
+                child(item, &mut fields["items"][index]);
+            }
+        }
+        Expr::EnrichedProject { target, .. }
+        | Expr::EnrichedFieldGet { target, .. }
+        | Expr::LowNewtypeProj { target, .. } => child(target, &mut fields["target"]),
+        Expr::EnrichedInject { payload, .. }
+        | Expr::LowNewtypeCtor { payload, .. }
+        | Expr::LowQualifiedNewtypeMember { payload, .. } => child(payload, &mut fields["payload"]),
+        Expr::LowAbsurdCall { value_arg, .. } => child(value_arg, &mut fields["value_arg"]),
+        Expr::LowCpsProjectorApply {
+            receiver,
+            continuation,
+            ..
+        } => {
+            child(receiver, &mut fields["receiver"]);
+            child(continuation, &mut fields["continuation"]);
+        }
+        Expr::EnrichedConditional {
+            cond,
+            then_branch,
+            else_branch,
+            ..
+        } => {
+            child(cond, &mut fields["cond"]);
+            child(then_branch, &mut fields["then_branch"]);
+            child(else_branch, &mut fields["else_branch"]);
+        }
+        Expr::EnrichedMatch {
+            scrutinee, arms, ..
+        } => {
+            child(scrutinee, &mut fields["scrutinee"]);
+            for (index, arm) in arms.iter().enumerate() {
+                child(&arm.body, &mut fields["arms"][index]["body"]);
+            }
+        }
+        Expr::LowBoundRef { .. }
+        | Expr::LowHostFnValueRef { .. }
+        | Expr::LowModuleFnValueRef { .. }
+        | Expr::Unit { .. }
+        | Expr::StrLit { .. }
+        | Expr::IntLit { .. }
+        | Expr::FloatLit { .. }
+        | Expr::BoolLit { .. } => {}
+        Expr::BlockCall { ext, .. } => match *ext {},
+        Expr::Path { ext, .. } | Expr::Call { ext, .. } => match *ext {},
+        Expr::Tuple { ext, .. } => match *ext {},
+        Expr::FnPlaceholder { ext, .. } => match *ext {},
+        Expr::LabelValue { ext, .. } => match *ext {},
+        Expr::RowLet { ext, .. } => match *ext {},
+        Expr::Elaborator { ext, .. } | Expr::UserElaborator { ext, .. } => match *ext {},
+        Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
+        Expr::Ufcs { ext, .. } => match *ext {},
+        Expr::OpChain { ext, .. } => match *ext {},
+        Expr::RecCall { ext, .. } => match *ext {},
+    }
+    nodes.insert(source as *const Expr<Routed> as usize, node);
+}
+
+fn runtime_control_graph(
+    bodies: &ExecutableBodyPlan<'_>,
+    control: &ControlPlan<'_>,
+    body: &Expr<Routed>,
+    node: serde_json::Value,
+) -> RuntimeControlGraph {
+    let entry = bodies.entry_for_body(body);
+    let graph = control.entry(entry.id);
+    graph.validate(bodies);
+    let mut nodes = HashMap::new();
+    collect_control_nodes(bodies, control, body, node, &mut nodes);
+    let metadata = |source: &Expr<Routed>| nodes[&(source as *const Expr<Routed> as usize)].clone();
+    let blocks = graph
+        .blocks
+        .iter()
+        .map(|block| {
+            let operations = block
+                .operations
+                .iter()
+                .map(|operation| match operation {
+                    Operation::Bind { binding, input, .. } => RuntimeControlOperation::Bind {
+                        output: runtime_slot(Slot::Binding(*binding)),
+                        input: runtime_slot(*input),
+                    },
+                    Operation::Atom {
+                        output,
+                        source,
+                        kind,
+                        operands,
+                    } => {
+                        let mut node = metadata(source);
+                        let fields = node.as_object_mut().unwrap().values_mut().next().unwrap();
+                        let mut bindings = Vec::new();
+                        let atom = match kind {
+                            AtomKind::Leaf => "leaf",
+                            AtomKind::Closure(id) => {
+                                bindings = bodies
+                                    .entry(*id)
+                                    .captures()
+                                    .iter()
+                                    .map(|id| runtime_control_binding(bodies, *id))
+                                    .collect();
+                                "closure"
+                            }
+                            AtomKind::Tuple => "tuple",
+                            AtomKind::Project => "project",
+                            AtomKind::Inject => "inject",
+                            AtomKind::Field => "field",
+                            AtomKind::Nominal => "nominal",
+                            AtomKind::HostCall => "host_call",
+                            AtomKind::Absurd => "absurd",
+                            AtomKind::NamedCallable => {
+                                fields["args"] = serde_json::json!([]);
+                                fields.as_object_mut().unwrap().remove("applied_plan");
+                                "named_callable"
+                            }
+                            AtomKind::CpsPayload => {
+                                fields.as_object_mut().unwrap().remove("continuation");
+                                "cps_payload"
+                            }
+                        };
+                        for operand in operands {
+                            let value = runtime_slot_expr(operand.slot);
+                            match operand.role {
+                                ChildRole::Argument(index) => fields["args"][index] = value,
+                                ChildRole::Item(index) => fields["items"][index] = value,
+                                ChildRole::Payload => fields["payload"] = value,
+                                ChildRole::Target => fields["target"] = value,
+                                ChildRole::Receiver => fields["receiver"] = value,
+                                ChildRole::Absurd => fields["value_arg"] = value,
+                            }
+                        }
+                        RuntimeControlOperation::Atom {
+                            output: runtime_slot(*output),
+                            atom,
+                            node,
+                            bindings,
+                        }
+                    }
+                })
+                .collect();
+            let exit = match &block.exit {
+                Exit::Return(slot) => RuntimeControlExit::Return {
+                    slot: runtime_slot(*slot),
+                },
+                Exit::Jump { block, argument } => RuntimeControlExit::Jump {
+                    block: *block,
+                    argument: runtime_slot(*argument),
+                },
+                Exit::Branch {
+                    source,
+                    condition,
+                    then_block,
+                    else_block,
+                } => {
+                    let mut node = metadata(source);
+                    let fields = node
+                        .as_object_mut()
+                        .unwrap()
+                        .values_mut()
+                        .next()
+                        .unwrap()
+                        .as_object_mut()
+                        .unwrap();
+                    fields.remove("then_branch");
+                    fields.remove("else_branch");
+                    fields.insert("cond".to_owned(), runtime_slot_expr(*condition));
+                    RuntimeControlExit::Branch {
+                        node,
+                        condition: runtime_slot(*condition),
+                        then_block: *then_block,
+                        else_block: *else_block,
+                    }
+                }
+                Exit::Match {
+                    source,
+                    scrutinee,
+                    arms,
+                } => {
+                    let mut node = metadata(source);
+                    let fields = node
+                        .as_object_mut()
+                        .unwrap()
+                        .values_mut()
+                        .next()
+                        .unwrap()
+                        .as_object_mut()
+                        .unwrap();
+                    fields.remove("arms");
+                    fields.insert("scrutinee".to_owned(), runtime_slot_expr(*scrutinee));
+                    RuntimeControlExit::Match {
+                        node,
+                        scrutinee: runtime_slot(*scrutinee),
+                        arms: arms.clone(),
+                    }
+                }
+                Exit::Invoke(invoke) => {
+                    // Slot execution and frame capture are already checked by
+                    // the shared graph. Only an opaque typed factory needs its
+                    // prepared callee descriptor at the runtime boundary.
+                    let type_plan = if invoke.stage == TailStage::Type {
+                        let node = metadata(invoke.source);
+                        let fields = node.as_object().unwrap().values().next().unwrap();
+                        let key = if matches!(invoke.source, Expr::LowCpsProjectorApply { .. }) {
+                            "continuation_plan"
+                        } else {
+                            "callee_plan"
+                        };
+                        fields.get(key).map(|plan| {
+                            serde_json::from_value(plan.clone())
+                                .expect("a type invocation retains its prepared plan descriptor")
+                        })
+                    } else {
+                        None
+                    };
+                    RuntimeControlExit::Invoke {
+                        callee: runtime_slot(invoke.callee),
+                        stage: invoke.stage,
+                        type_index: invoke.type_index,
+                        type_plan,
+                        arguments: invoke.arguments.iter().copied().map(runtime_slot).collect(),
+                        resume: match invoke.completion {
+                            Completion::Return => None,
+                            Completion::Resume(id) => Some(id),
+                        },
+                    }
+                }
+            };
+            RuntimeControlBlock {
+                input: block.input.map(runtime_slot),
+                operations,
+                exit,
+            }
+        })
+        .collect();
+    let stage = entry.stages.last().unwrap();
+    RuntimeControlGraph {
+        start: graph.start,
+        inputs: stage
+            .captures
+            .iter()
+            .chain(&stage.bindings)
+            .map(|id| runtime_control_binding(bodies, *id))
+            .collect(),
+        blocks,
+        resumes: graph
+            .resumes
+            .iter()
+            .map(|resume| RuntimeControlResume {
+                block: resume.block,
+                result: runtime_slot(resume.result),
+                live: resume.live.iter().copied().map(runtime_slot).collect(),
+            })
+            .collect(),
+    }
 }
 
 fn runtime_entry_stages(
@@ -1567,21 +1982,71 @@ fn runtime_cps_entry(
             stages,
         },
         value_plan,
-        body: RuntimeExpr::LowClosureCall {
-            tail: Some(TailStage::Value),
-            name: continuation,
-            type_args: (0..recipe.continuation_type_stages)
-                .map(|_| RuntimeType::Unit {})
-                .collect(),
-            args: recipe
-                .captures()
-                .iter()
-                .map(|binding| RuntimeExpr::LowBoundRef {
-                    name: binding.name().to_owned(),
-                })
-                .collect(),
-            callee_plan: continuation_plan,
-            applied_plan: None,
+        body: runtime_cps_control(recipe, continuation_plan),
+    }
+}
+
+fn runtime_cps_control(
+    recipe: &CpsRuntimePlan,
+    continuation_plan: Option<RuntimePlanRef>,
+) -> RuntimeExpr {
+    let continuation = "c_continuation".to_owned();
+    let payload = "c_payload".to_owned();
+    let saved = if recipe.payload_arity == 0 {
+        Vec::new()
+    } else {
+        vec![payload.clone()]
+    };
+    let mut inputs = vec![RuntimeControlBinding {
+        slot: continuation.clone(),
+        name: CpsBinding::Continuation.name().to_owned(),
+    }];
+    if recipe.payload_arity == 1 {
+        inputs.push(RuntimeControlBinding {
+            slot: payload.clone(),
+            name: CpsBinding::Payload.name().to_owned(),
+        });
+    }
+    let mut blocks = Vec::new();
+    let mut resumes = Vec::new();
+    for (index, stage) in recipe.invocations().enumerate() {
+        let final_stage = stage.resume.is_none();
+        let arguments = if final_stage {
+            saved.clone()
+        } else {
+            Vec::new()
+        };
+        let callee = if index == 0 {
+            continuation.clone()
+        } else {
+            format!("t{}", index - 1)
+        };
+        blocks.push(RuntimeControlBlock {
+            input: (index > 0).then(|| callee.clone()),
+            operations: Vec::new(),
+            exit: RuntimeControlExit::Invoke {
+                callee,
+                stage: stage.stage,
+                type_index: stage.type_index,
+                type_plan: (!final_stage).then_some(continuation_plan).flatten(),
+                arguments,
+                resume: stage.resume,
+            },
+        });
+        if !final_stage {
+            resumes.push(RuntimeControlResume {
+                block: index + 1,
+                result: format!("t{index}"),
+                live: saved.clone(),
+            });
+        }
+    }
+    RuntimeExpr::Control {
+        graph: RuntimeControlGraph {
+            start: 0,
+            inputs,
+            blocks,
+            resumes,
         },
     }
 }
@@ -2658,19 +3123,177 @@ mod tests {
                 );
             }
             assert_eq!(stages[2]["params"], serde_json::json!(["continuation"]));
-            let call = &json["body"]["LowClosureCall"];
-            assert_eq!(call["type_args"].as_array().unwrap().len(), 3);
-            assert_eq!(call["args"].as_array().unwrap().len(), payload_arity);
-            assert_eq!(call["tail"], "value");
-            assert_eq!(
-                call["callee_plan"],
-                serde_json::json!({"plan": 5, "node": 9})
-            );
+            let graph = &json["body"]["Control"]["graph"];
+            assert_eq!(graph["blocks"].as_array().unwrap().len(), 4);
+            assert_eq!(graph["resumes"].as_array().unwrap().len(), 3);
+            for index in 0..3 {
+                assert_eq!(graph["blocks"][index]["exit"]["stage"], "type");
+                assert_eq!(graph["blocks"][index]["exit"]["type_index"], index);
+                assert_eq!(graph["blocks"][index]["exit"]["resume"], index);
+                assert_eq!(
+                    graph["blocks"][index]["exit"]["type_plan"],
+                    serde_json::json!({"plan": 5, "node": 9})
+                );
+                assert_eq!(
+                    graph["resumes"][index]["live"].as_array().unwrap().len(),
+                    payload_arity
+                );
+            }
+            assert_eq!(graph["blocks"][3]["exit"]["stage"], "value");
+            assert!(graph["blocks"][3]["exit"]["resume"].is_null());
+            let call = &graph["blocks"][3]["exit"];
+            assert_eq!(call["arguments"].as_array().unwrap().len(), payload_arity);
+            assert!(call.get("type_plan").is_none());
+            for block in graph["blocks"].as_array().unwrap() {
+                assert!(block.get("live").is_none());
+                assert!(block["exit"].get("node").is_none());
+                assert!(block["exit"].get("receiver").is_none());
+            }
             assert_eq!(
                 json["value_plan"],
                 serde_json::json!({"plan": 5, "node": 7})
             );
         }
+    }
+
+    #[test]
+    fn boxed_synthetic_member_preserves_unboxed_serialized_bytes() {
+        #[derive(Serialize)]
+        struct UnboxedMember<'a> {
+            vis: &'a RuntimeVisibility,
+            name: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            value_plan: Option<usize>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            cps_entry: Option<&'a RuntimeSyntheticEntry>,
+        }
+
+        for with_cps in [false, true] {
+            let member = RuntimeTypeMember {
+                vis: RuntimeVisibility::Public,
+                name: "open".to_owned(),
+                value_plan: Some(5),
+                cps_entry: with_cps.then(|| {
+                    Box::new(runtime_cps_entry(
+                        &CpsRuntimePlan {
+                            type_stages: 2,
+                            continuation_type_stages: 3,
+                            payload_arity: 1,
+                        },
+                        Some(RuntimePlanRef::Node { plan: 5, node: 7 }),
+                        Some(RuntimePlanRef::Node { plan: 5, node: 9 }),
+                    ))
+                }),
+            };
+            let unboxed = UnboxedMember {
+                vis: &member.vis,
+                name: &member.name,
+                value_plan: member.value_plan,
+                cps_entry: member.cps_entry.as_deref(),
+            };
+            let boxed_bytes = serde_json::to_vec(&member).unwrap();
+            assert_eq!(boxed_bytes, serde_json::to_vec(&unboxed).unwrap());
+            let json: serde_json::Value = serde_json::from_slice(&boxed_bytes).unwrap();
+            if with_cps {
+                assert_eq!(
+                    json["cps_entry"]["sig"]["stages"].as_array().unwrap().len(),
+                    3
+                );
+                assert_eq!(
+                    json["cps_entry"]["sig"]["stages"][2]["captures"],
+                    serde_json::json!(["payload"])
+                );
+                assert_eq!(
+                    json["cps_entry"]["body"]["Control"]["graph"]["blocks"]
+                        .as_array()
+                        .unwrap()
+                        .len(),
+                    4
+                );
+            } else {
+                assert!(json.get("cps_entry").is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn control_serialization_keeps_nested_code_once_and_executable_children_as_slots() {
+        let package = routed(&full_prime(
+            "module x/main; host type Text role(str); \
+             host fn note(value: Text) -> .; \
+             fn run(f: . -> .) -> . -> . { \
+               let before = f(); \
+               .() { let inside = f(); note(\"nested-once\"(Text)) } \
+             }",
+        ));
+        let module = &package.module("x/main").unwrap().module;
+        let emitted =
+            serde_json::to_value(runtime_module(&package, "x/main", module, &Rc::default()))
+                .unwrap();
+        let text = serde_json::to_string(&emitted).unwrap();
+        assert_eq!(
+            text.matches("nested-once").count(),
+            1,
+            "nested closure code is serialized once"
+        );
+        let mut pending = vec![&emitted];
+        let mut controls = 0;
+        let mut resumes = 0;
+        let mut atom_count = 0;
+        while let Some(value) = pending.pop() {
+            match value {
+                serde_json::Value::Object(object) => {
+                    assert!(
+                        !object.contains_key("Let") && !object.contains_key("Seq"),
+                        "source sequencing trees do not survive beside their control graph"
+                    );
+                    if let Some(control) = object.get("Control") {
+                        controls += 1;
+                        resumes += control["graph"]["resumes"].as_array().unwrap().len();
+                        for block in control["graph"]["blocks"].as_array().unwrap() {
+                            assert!(block.get("live").is_none());
+                        }
+                    }
+                    if object.get("kind").and_then(serde_json::Value::as_str) == Some("invoke") {
+                        assert!(!object.contains_key("node"));
+                        assert!(!object.contains_key("receiver"));
+                    }
+                    if object.get("kind").and_then(serde_json::Value::as_str) == Some("atom") {
+                        atom_count += 1;
+                        let node = object["node"].as_object().unwrap();
+                        let (tag, fields) = node.iter().next().unwrap();
+                        if tag != "FnExpr" {
+                            for key in ["target", "payload", "receiver", "value_arg"] {
+                                if let Some(child) = fields.get(key) {
+                                    assert!(
+                                        child.get("ControlSlot").is_some(),
+                                        "an atomic operand is a slot read"
+                                    );
+                                }
+                            }
+                            for key in ["items", "args"] {
+                                if let Some(children) = fields.get(key) {
+                                    assert!(
+                                        children
+                                            .as_array()
+                                            .unwrap()
+                                            .iter()
+                                            .all(|child| child.get("ControlSlot").is_some()),
+                                        "all atomic argument children are slot reads"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    pending.extend(object.values());
+                }
+                serde_json::Value::Array(array) => pending.extend(array),
+                _ => {}
+            }
+        }
+        assert_eq!(controls, 2);
+        assert_eq!(resumes, 2);
+        assert!(atom_count >= 3);
     }
 
     #[test]
@@ -2713,7 +3336,7 @@ mod tests {
                             if stages == RuntimeStageRepresentation::Erased {
                                 assert!(object.keys().all(|key| !key.ends_with("_plan")));
                             }
-                            applications += usize::from(object.contains_key("applied_plan"));
+                            applications += usize::from(object.contains_key("type_plan"));
                             pending.extend(object.values());
                         }
                         serde_json::Value::Array(array) => pending.extend(array),
@@ -2952,6 +3575,15 @@ mod tests {
         module_path: &str,
         name: &str,
     ) -> serde_json::Value {
+        canonical_body_with_plans(package, module_path, name, &Rc::default())
+    }
+
+    fn canonical_body_with_plans(
+        package: &Package<Routed>,
+        module_path: &str,
+        name: &str,
+        plans: &Rc<RefCell<BodyPlanCollector>>,
+    ) -> serde_json::Value {
         let module = &package.module(module_path).expect("module").module;
         let body = routed_body(package, module_path, name);
         let def = module
@@ -2962,8 +3594,9 @@ mod tests {
                 _ => None,
             })
             .expect("selected definition");
-        let mut scope = RuntimeTypeScope::new(format!("test-body:{module_path}:{name}"));
-        scope.executable = runtime_body_entries(&def.sig, &def.body);
+        let mut scope =
+            RuntimeTypeScope::sharing_plans(format!("test-body:{module_path}:{name}"), plans);
+        scope.executable = runtime_body_entries(&ExecutableBodyPlan::new(&def.sig, &def.body));
         let _ = runtime_signature(package, module, &def.sig, &mut scope);
         serde_json::to_value(runtime_expr_expected(
             package,
@@ -3252,12 +3885,13 @@ mod tests {
             while let Some(node) = pending.pop() {
                 match node {
                     serde_json::Value::Object(object) => {
-                        for tag in ["LowClosureCall", "LowIndirectCall"] {
-                            if let Some(call) = object.get(tag) {
-                                assert_eq!(call["type_args"], serde_json::json!([]));
-                                assert!(call.get("applied_plan").is_none());
-                                unknown += 1;
-                            }
+                        if object.get("kind").is_some_and(|kind| kind == "invoke") {
+                            assert_eq!(object["stage"], "value");
+                            assert!(object["type_index"].is_null());
+                            assert!(!object.contains_key("type_plan"));
+                            assert!(!object.contains_key("node"));
+                            assert!(!object.contains_key("receiver"));
+                            unknown += 1;
                         }
                         pending.extend(object.values());
                     }
@@ -3289,6 +3923,15 @@ mod tests {
             let module = &package.module("x/main").unwrap().module;
             let plans = Rc::default();
             let emitted = runtime_module(&package, "x/main", module, &plans);
+            let canonical = ["direct", "local", "computed"]
+                .into_iter()
+                .map(|name| {
+                    (
+                        name,
+                        canonical_body_with_plans(&package, "x/main", name, &plans),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
             let collected = plans.borrow();
             let plans = &collected.values;
             let mut checked = BTreeSet::new();
@@ -3299,62 +3942,62 @@ mod tests {
                 if !matches!(def.name.as_str(), "direct" | "local" | "computed") {
                     continue;
                 }
-                let mut pending = vec![&def.body];
+                let RuntimeExpr::Control { graph } = &def.body else {
+                    panic!("a serialized entry has a checked control graph")
+                };
                 let mut applications = Vec::new();
-                let mut computed_producers = 0;
+                let mut pending = vec![&canonical[def.name.as_str()]];
                 while let Some(node) = pending.pop() {
                     match node {
-                        RuntimeExpr::Let { value, body, .. } => {
-                            pending.extend([value.as_ref(), body.as_ref()]);
+                        serde_json::Value::Object(object) => {
+                            for (tag, call) in object {
+                                if let Some(plan) =
+                                    call.get("applied_plan").and_then(|p| p.as_u64())
+                                {
+                                    applications.push((
+                                        if tag == "LowTypeApplication" {
+                                            "type"
+                                        } else {
+                                            "call"
+                                        },
+                                        plan as usize,
+                                        call["callee_plan"].as_u64().unwrap() as usize,
+                                    ));
+                                }
+                            }
+                            pending.extend(object.values());
                         }
-                        RuntimeExpr::Seq { value, body } => {
-                            pending.extend([value.as_ref(), body.as_ref()]);
-                        }
-                        RuntimeExpr::FnExpr { body, .. } => pending.push(body),
-                        RuntimeExpr::LowTypeApplication {
-                            callee,
-                            applied_plan,
+                        serde_json::Value::Array(array) => pending.extend(array),
+                        _ => {}
+                    }
+                }
+                let mut computed_producers = 0;
+                let mut type_invocations = Vec::new();
+                for block in &graph.blocks {
+                    for operation in &block.operations {
+                        if let RuntimeControlOperation::Atom {
+                            atom: "named_callable",
+                            node,
                             ..
-                        } => {
-                            applications.push(("type", applied_plan.unwrap()));
-                            pending.push(callee);
+                        } = operation
+                        {
+                            computed_producers +=
+                                usize::from(node["LowModuleCall"]["mangled"] == "generic");
                         }
-                        RuntimeExpr::LowModuleCall {
-                            mangled,
-                            args,
-                            applied_plan,
-                            ..
-                        } => {
-                            computed_producers += usize::from(mangled == "generic");
-                            applications.extend(applied_plan.map(|plan| ("call", plan)));
-                            pending.extend(args);
-                        }
-                        RuntimeExpr::LowQualifiedModuleCall {
-                            args, applied_plan, ..
-                        }
-                        | RuntimeExpr::LowClosureCall {
-                            args, applied_plan, ..
-                        } => {
-                            applications.extend(applied_plan.map(|plan| ("call", plan)));
-                            pending.extend(args);
-                        }
-                        RuntimeExpr::LowIndirectCall {
-                            callee,
-                            args,
-                            applied_plan,
-                            ..
-                        } => {
-                            applications.extend(applied_plan.map(|plan| ("indirect", plan)));
-                            pending.push(callee);
-                            pending.extend(args);
-                        }
-                        RuntimeExpr::Unit {}
-                        | RuntimeExpr::LowBoundRef { .. }
-                        | RuntimeExpr::LowModuleFnValueRef { .. } => {}
-                        other => panic!(
-                            "unexpected fixture expression: {}",
-                            serde_json::to_string(other).unwrap()
-                        ),
+                    }
+                    if let RuntimeControlExit::Invoke {
+                        stage: TailStage::Type,
+                        type_plan: Some(RuntimePlanRef::Root(plan)),
+                        type_index,
+                        ..
+                    } = &block.exit
+                    {
+                        assert_eq!(*type_index, Some(0));
+                        assert!(matches!(
+                            plans[*plan].use_at(plans[*plan].root()),
+                            ValueUse::Forall { .. }
+                        ));
+                        type_invocations.push(*plan);
                     }
                 }
                 assert_eq!(
@@ -3363,18 +4006,36 @@ mod tests {
                     "{} must specialize once before its value stage escapes",
                     def.name
                 );
-                let (variant, applied) = applications[0];
+                let (variant, applied, callee_plan) = applications[0];
+                assert_eq!(
+                    type_invocations,
+                    vec![callee_plan],
+                    "the sparse invocation retains the exact prepared callee descriptor"
+                );
                 if def.name == "computed" {
                     assert_eq!(variant, "type");
                     assert_eq!(computed_producers, 1);
-                    let RuntimeExpr::LowTypeApplication { callee, tail, .. } = &def.body else {
-                        panic!("computed specialization executes before returning its value stage")
-                    };
-                    assert_eq!(*tail, Some(TailStage::Type));
                     assert!(
-                        matches!(callee.as_ref(), RuntimeExpr::LowModuleCall { mangled, tail: None, .. }
-                            if mangled == "generic"),
-                        "the computed callee executes once as an operand before specialization"
+                        matches!(
+                            graph.blocks[0].exit,
+                            RuntimeControlExit::Invoke {
+                                stage: TailStage::Value,
+                                resume: Some(_),
+                                ..
+                            }
+                        ),
+                        "the computed callee executes once as an operand"
+                    );
+                    assert!(
+                        matches!(
+                            graph.blocks.last().unwrap().exit,
+                            RuntimeControlExit::Invoke {
+                                stage: TailStage::Type,
+                                resume: None,
+                                ..
+                            }
+                        ),
+                        "specialization returns its callable result without executing it"
                     );
                 } else {
                     assert_eq!(computed_producers, 0);
@@ -3455,9 +4116,19 @@ mod tests {
                                 .use_at(plans[def.value_plan.unwrap()].root()),
                             ValueUse::Forall { .. }
                         ));
-                        match def.body {
-                            RuntimeExpr::FnExpr { value_plan, .. } => {
-                                let plan = &plans[value_plan.unwrap()];
+                        let RuntimeExpr::Control { graph } = def.body else {
+                            panic!("a serialized body has a checked control graph")
+                        };
+                        for block in &graph.blocks {
+                            for operation in &block.operations {
+                                let RuntimeControlOperation::Atom { node, .. } = operation else {
+                                    continue;
+                                };
+                                let Some(function) = node.get("FnExpr") else {
+                                    continue;
+                                };
+                                let plan =
+                                    &plans[function["value_plan"].as_u64().unwrap() as usize];
                                 assert!(matches!(
                                     plan.use_at(plan.root()),
                                     ValueUse::Function { .. }
@@ -3468,18 +4139,19 @@ mod tests {
                                 );
                                 saw_closure = true;
                             }
-                            RuntimeExpr::LowClosureCall {
-                                callee_plan: Some(RuntimePlanRef::Root(id)),
+                            if let RuntimeControlExit::Invoke {
+                                stage: TailStage::Type,
+                                type_plan: Some(RuntimePlanRef::Root(id)),
                                 ..
-                            } => {
-                                let plan = &plans[id];
+                            } = &block.exit
+                            {
+                                let plan = &plans[*id];
                                 assert!(matches!(
                                     plan.use_at(plan.root()),
                                     ValueUse::Forall { .. }
                                 ));
                                 saw_application = true;
                             }
-                            _ => {}
                         }
                     }
                     RuntimeItem::Newtype(def) => {
@@ -3728,7 +4400,8 @@ mod tests {
             assert_path(&function["sig"]["params"][0]["Value"]["ty"], module_path);
             assert_path(&function["ret"], module_path);
 
-            let call = &function["body"]["LowHostCall"];
+            let call = &function["body"]["Control"]["graph"]["blocks"][0]["operations"][0]["node"]
+                ["LowHostCall"];
             assert_path(&call["sig"]["params"][0]["Value"]["ty"], module_path);
             assert_path(&call["ret_ty"], module_path);
         }

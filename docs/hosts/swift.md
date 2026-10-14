@@ -92,7 +92,10 @@ Each emitted artifact includes its support source: no runtime package needs
 to be downloaded or installed. When combining compatible generated packages,
 compile and link one copy of `KioRuntime`. Its callable and structural types
 are shared; package instances and declaration-owned nominal types remain
-separate. The complete static-library commands appear in the worked example.
+separate. Use a support implementation providing the interfaces required by
+all the generated sources you compile. This source-level integration does not
+promise binary compatibility for already-compiled Swift modules. The complete
+static-library commands appear in the worked example.
 
 ## How Swift hosts the package
 
@@ -404,11 +407,14 @@ precondition([1, 2].map(nativeIncrement) == [2, 3])
 ```
 
 Keep the carrier itself when storing a callback for later Kio use. Guest
-tail calls retain their stack-safety guarantee when carriers pass unchanged
+calls retain their stack-safety guarantee when carriers pass unchanged
 through host storage, including between compatible generated packages.
+When a guest caller has more work to do after a call returns, that work is
+saved in heap storage rather than by keeping a native Swift call on the stack.
+Returning a function does not call it.
 Extracting `callAsFunction` and wrapping that native closure again creates a
 host callback boundary; arbitrary host code that calls back into Kio is not
-covered by that tail-transfer guarantee.
+covered by that guest call-stack guarantee.
 
 Opaque containers keep their real Swift type arguments. When updating host
 code from native closure storage, change `Box<(A) -> R>` to

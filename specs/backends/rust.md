@@ -451,6 +451,11 @@ Rust-specific instantiations.
   invoked it and inherits the host's threading model. Re-entrancy
   is permitted: a host method invoked from a package call may call
   back into `MyKiopkg<H>` methods.
+  For [calls with work remaining](README.md#calls-with-work-remaining), Rust
+  retains pending guest work in heap-backed frames rather than one Rust stack
+  frame per guest call. This applies to every thread-safety setting and uses
+  the same public callable carriers. Host-authored callbacks and synchronous
+  host re-entry retain ordinary Rust stack behavior.
 - **[§ 2 Type erasure.](README.md#2-type-erasure-at-the-ffi)**
   Polymorphism maps to representation-marker generics. A `[A]`-quantified
   `host fn` `host fn id[A](v: A) -> A;` in module `m` emits

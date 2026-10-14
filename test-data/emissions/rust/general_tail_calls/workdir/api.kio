@@ -2,7 +2,13 @@ module api;
 
 host type I32 role(i32);
 
+host type Lease;
+
 host fn tick();
+
+host fn borrow() -> Lease;
+
+host fn finish(lease: Lease, value: I32) -> I32;
 
 fn forward(previous: I32 -> I32, value: I32) -> I32 { previous(value) }
 
@@ -14,6 +20,10 @@ pub fn link(previous: I32 -> I32) -> I32 -> I32 {
 
 pub fn wide_link(previous: I32 -> I32) -> I32 -> I32 {
   .(value) { tick(); forward_wide(value, previous, value) }
+}
+
+pub fn pending_link(previous: I32 -> I32) -> I32 -> I32 {
+  .(value) { let lease = borrow(); tick(); let result = previous(value); finish(lease, result) }
 }
 
 pub fn ordered(first: I32, previous: I32 -> I32, last: I32) -> I32 {

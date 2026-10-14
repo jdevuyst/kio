@@ -67,41 +67,116 @@ class KioTransfer:
         raise NotImplementedError("a transfer control implements advance")
 
 
-class _KioTransfer(KioTransfer):
-    __slots__ = ("target", "domain", "type_stage", "pending")
+class KioResume(_KioTypeIndex):
+    def __call__(self, result, transfer):
+        raise NotImplementedError("a resume entry consumes its child result")
+
+
+class KioResumeStage(_KioTypeStage):
+    __slots__ = ()
+
+
+class KioResumeCapability:
+    __slots__ = ()
+
+    def call(self, target, domain, resume):
+        raise NotImplementedError("a resume control schedules a value stage")
+
+    def advance(self, target, resume):
+        raise NotImplementedError("a resume control schedules a type stage")
+
+
+class KioResumeTransfer(KioTransfer):
+    __slots__ = ()
+
+    @property
+    def resume(self):
+        raise NotImplementedError("a resume transfer exposes its control capability")
+
+
+class _KioTransfer(KioResumeTransfer):
+    __slots__ = ("target", "domain", "type_stage", "pending", "frames")
 
     def __init__(self, target, domain, type_stage):
         self.target = target
         self.domain = domain
         self.type_stage = type_stage
         self.pending = True
+        self.frames = []
 
-    def call(self, target, domain):
+    @property
+    def resume(self):
+        return self
+
+    def call(self, target, domain, resume=None):
+        if resume is not None:
+            self.frames.append(resume)
         self.target = target
         self.domain = domain
         self.type_stage = False
         self.pending = True
 
-    def advance(self, target):
+    def advance(self, target, resume=None):
+        if resume is not None:
+            self.frames.append(resume)
         self.target = target
         self.domain = None
         self.type_stage = True
         self.pending = True
 
 
-def _kio_run(target, domain, type_stage):
+def _kio_run(target, domain, type_stage, initial_resume=None):
     transfer = _KioTransfer(target, domain, type_stage)
+    if initial_resume is not None:
+        transfer.frames.append(initial_resume)
+    initial_resume = None
+    target = None
+    domain = None
+    resume = None
+    continuation = None
+    result = None
     try:
-        while transfer.pending:
+        while True:
             transfer.pending = False
-            if transfer.type_stage:
+            if resume is not None:
+                continuation = resume
+                resume = None
+                result = continuation(transfer.domain, transfer)
+                continuation = None
+            elif transfer.type_stage:
                 result = transfer.target.kio_step(transfer)
             else:
                 result = transfer.target.kio_step(transfer.domain, transfer)
-        return result
+            if transfer.pending:
+                continue
+            if not transfer.frames:
+                return result
+            resume = transfer.frames.pop()
+            transfer.target = None
+            transfer.domain = result
+            transfer.type_stage = False
+            result = None
     finally:
+        transfer.frames.clear()
         transfer.target = None
         transfer.domain = None
+        resume = None
+        continuation = None
+        result = None
+
+
+def _kio_call_with_resume(transfer, target, domain, resume):
+    capability = getattr(transfer, "resume", None)
+    if capability is not None:
+        return capability.call(target, domain, resume)
+    return _kio_run(target, domain, False, resume)
+
+
+def _kio_advance_with_resume(transfer, target, resume):
+    capability = getattr(transfer, "resume", None)
+    if capability is not None:
+        return capability.advance(target, resume)
+    return _kio_run(target, None, True, resume)
 
 
 def _variant_name(value):
@@ -294,7 +369,7 @@ class _KioGuestFunction(_KioGuest, KioFn):
         return _kio_run(self, domain, False)
 
     def kio_step(self, domain, transfer):
-        return self.runtime.eval(None, None, None, self, domain, False, transfer)
+        return self.runtime._enter_guest(self, domain, False, transfer)
 
 
 class _KioGuestPoly(_KioGuest, _KioTypeStage):
@@ -304,7 +379,27 @@ class _KioGuestPoly(_KioGuest, _KioTypeStage):
         return _kio_run(self, None, True)
 
     def kio_step(self, transfer):
-        return self.runtime.eval(None, None, None, self, None, True, transfer)
+        return self.runtime._enter_guest(self, None, True, transfer)
+
+
+class _KioBlockResume:
+    __slots__ = ("runtime", "module", "graph", "block", "result", "saved")
+
+    def __init__(self, runtime, module, graph, resume, slots):
+        self.runtime = runtime
+        self.module = module
+        self.graph = graph
+        self.block = resume["block"]
+        self.result = resume["result"]
+        self.saved = {slot: slots[slot] for slot in resume["live"]}
+
+    def __call__(self, result, transfer):
+        saved = self.saved
+        if saved is None:
+            raise RuntimeError("a pending resume is entered once")
+        self.saved = None
+        saved[self.result] = result
+        return self.runtime._run_control(self.module, self.graph, self.block, saved, transfer)
 
 
 class _KioNamedFunction:
@@ -612,145 +707,136 @@ class _PackageRuntime:
         kind = _KioGuestPoly if stage["kind"] == "type" else _KioGuestFunction
         return kind(self, module_key, body, groups, index, captured)
 
-    def eval(self, module_key, expr, env, callee=None, domain=None, type_stage=False, transfer=None):
-        while True:
-            if callee is not None:
-                self = callee.runtime
-                stage = callee.groups[callee.index]
-                is_type = stage["kind"] == "type"
-                names = stage.get("params", [])
-                if is_type != type_stage:
-                    raise RuntimeError("checked call and guest stage disagree")
-                local = dict(callee.env)
-                if not is_type:
-                    for slot, name in enumerate(names):
-                        if slot + 1 == len(names):
-                            local[name] = domain
-                        else:
-                            local[name] = domain["left"]
-                            domain = domain["right"]
-                if callee.index + 1 < len(callee.groups):
-                    return self._guest_stage(
-                        callee.module, callee.body, callee.groups, callee.index + 1, local
-                    )
-                module_key, expr, env = callee.module, callee.body, local
-                callee = None
-            tag, data = _tag(expr)
-            if tag == "Let":
-                value = self.eval(module_key, data["value"], env)
-                local = dict(env)
-                local[data["name"]] = value
-                env = local
-                expr = data["body"]
-                continue
-            if tag == "Seq":
-                self.eval(module_key, data["value"], env)
-                expr = data["body"]
-                continue
+    def _control_operand(self, expression, slots):
+        tag, data = _tag(expression)
+        if tag != "ControlSlot":
+            raise RuntimeError("a control operation operand is an evaluated slot")
+        return slots[data["slot"]]
+
+    def _control_atom(self, module_key, operation, slots):
+        tag, data = _tag(operation["node"])
+        kind = operation["atom"]
+        if kind == "closure":
+            if tag != "FnExpr":
+                raise RuntimeError("a closure operation constructs its checked entry")
+            env = {binding["name"]: slots[binding["slot"]] for binding in operation["bindings"]}
+            return self._make_lambda(module_key, data, env)
+        if kind == "named_callable":
+            if tag not in ("LowModuleCall", "LowQualifiedModuleCall"):
+                raise RuntimeError("a named callable operation has a resolved declaration")
+            return self.fn(data["module_path"], data["mangled"])
+        if kind == "cps_payload":
+            if tag != "LowCpsProjectorApply":
+                raise RuntimeError("a CPS payload operation has its exact projector")
+            return self._nominal_unwrap(data["nominal"], self._control_operand(data["receiver"], slots))
+        if kind == "leaf":
             if tag == "Unit":
                 return None
-            if tag == "FnExpr":
-                return self._make_lambda(module_key, data, env)
-            if tag == "StrLit":
+            if tag in ("StrLit", "BoolLit"):
                 return self._literal(data, data["value"])
             if tag == "IntLit":
                 return self._literal(data, int(data["digits"].replace("_", "")))
             if tag == "FloatLit":
                 return self._literal(data, float(data["digits"].replace("_", "")))
-            if tag == "BoolLit":
-                return self._literal(data, data["value"])
-            if tag == "EnrichedTuple":
-                return _product_from_slots([self.eval(module_key, item, env) for item in data["items"]])
-            if tag == "EnrichedProject":
-                return _product_slot(
-                    self.eval(module_key, data["target"], env), data["index"], data["arity"]
-                )
-            if tag == "EnrichedFieldGet":
-                carrier = _product_slot(
-                    self.eval(module_key, data["target"], env), data["index"], data["arity"]
-                )
-                return self._nominal_unwrap(data["nominal"], carrier)
-            if tag == "EnrichedInject":
-                return _sum_inject(
-                    self.eval(module_key, data["payload"], env), data["variant"], data["variants"]
-                )
-            if tag == "EnrichedMatch":
-                variant, payload = _sum_payload(
-                    self.eval(module_key, data["scrutinee"], env), len(data["arms"])
-                )
-                arm = data["arms"][variant]
-                local = dict(env)
-                local[arm["param"]] = payload
-                expr, env = arm["body"], local
-                continue
-            if tag == "EnrichedConditional":
-                condition = self.eval(module_key, data["cond"], env)
-                native = self._role_adapter(_role_adapter_identity(data["host_type"]), "in", condition)
-                expr = data["then_branch"] if native else data["else_branch"]
-                continue
-            if tag == "LowBoundRef":
-                return env[data["name"]]
             if tag == "LowHostFnValueRef":
                 return self._host_fn_value(data["name"], data["module_path"], data["sig"], data["ret_ty"])
             if tag == "LowModuleFnValueRef":
                 return self.fn(data["module_path"], data["mangled"])
-            if tag in ("LowQualifiedNewtypeMember", "LowNewtypeCtor", "LowNewtypeProj"):
-                payload = data.get("payload", data.get("target"))
-                value = self.eval(module_key, payload, env)
-                constructor = tag == "LowNewtypeCtor" or (
-                    tag == "LowQualifiedNewtypeMember" and data["constructor"]
-                )
-                operation = self._nominal_wrap if constructor else self._nominal_unwrap
-                return operation(data["nominal"], value)
-            if tag == "LowAbsurdCall":
-                self.eval(module_key, data["value_arg"], env)
-                raise RuntimeError("Kio: __absurd__ on bottom value")
-            if tag == "LowTypeApplication":
-                callee = self.eval(module_key, data["callee"], env)
-                domain, type_stage = None, True
-            elif tag == "LowCpsProjectorApply":
-                receiver = self.eval(module_key, data["receiver"], env)
-                payload = self._nominal_unwrap(data["nominal"], receiver)
-                callee = self.eval(module_key, data["continuation"], env)
-                callee = _apply_type_stages(callee, range(data["continuation_type_stages"]))
-                arity = data["continuation_abi_arity"]
-                if arity not in (0, 1):
-                    raise RuntimeError(f"CPS projector continuation has invalid ABI arity {arity}")
-                domain, type_stage = payload if arity else None, False
-            elif tag in ("LowHostCall", "LowModuleCall", "LowQualifiedModuleCall",
-                         "LowClosureCall", "LowIndirectCall"):
-                if tag == "LowHostCall":
-                    callee = self._host_fn_value(
-                        data["name"], data["module_path"], data["sig"], data["ret_ty"]
-                    )
-                elif tag in ("LowModuleCall", "LowQualifiedModuleCall"):
-                    callee = self.fn(data["module_path"], data["mangled"])
-                elif tag == "LowClosureCall":
-                    callee = env[data["name"]]
+        if kind == "tuple" and tag == "EnrichedTuple":
+            return _product_from_slots([self._control_operand(item, slots) for item in data["items"]])
+        if kind in ("project", "field") and tag in ("EnrichedProject", "EnrichedFieldGet"):
+            value = _product_slot(self._control_operand(data["target"], slots), data["index"], data["arity"])
+            return self._nominal_unwrap(data["nominal"], value) if kind == "field" else value
+        if kind == "inject" and tag == "EnrichedInject":
+            return _sum_inject(self._control_operand(data["payload"], slots), data["variant"], data["variants"])
+        if kind == "nominal" and tag in ("LowQualifiedNewtypeMember", "LowNewtypeCtor", "LowNewtypeProj"):
+            expression = data.get("payload", data.get("target"))
+            value = self._control_operand(expression, slots)
+            constructor = tag == "LowNewtypeCtor" or (tag == "LowQualifiedNewtypeMember" and data["constructor"])
+            return (self._nominal_wrap if constructor else self._nominal_unwrap)(data["nominal"], value)
+        if kind == "host_call" and tag == "LowHostCall":
+            callee = self._host_fn_value(data["name"], data["module_path"], data["sig"], data["ret_ty"])
+            callee = _apply_type_stages(callee, data["type_args"])
+            if data["type_args"] and not _signature_has_value_group(data["sig"]):
+                if data["args"]:
+                    raise RuntimeError("a type-only host call has no value operands")
+                return callee
+            return callee(_product_from_slots([self._control_operand(arg, slots) for arg in data["args"]]))
+        if kind == "absurd" and tag == "LowAbsurdCall":
+            self._control_operand(data["value_arg"], slots)
+            raise RuntimeError("Kio: __absurd__ on bottom value")
+        raise RuntimeError(f"invalid child-free control operation {kind}: {tag}")
+
+    def _run_control(self, module_key, graph, block_index, slots, transfer):
+        try:
+            while True:
+                block = graph["blocks"][block_index]
+                for operation in block["operations"]:
+                    if operation["kind"] == "bind":
+                        slots[operation["output"]] = slots[operation["input"]]
+                    elif operation["kind"] == "atom":
+                        slots[operation["output"]] = self._control_atom(module_key, operation, slots)
+                    else:
+                        raise RuntimeError("a control operation is a bind or child-free atom")
+                exit = block["exit"]
+                kind = exit["kind"]
+                if kind == "return":
+                    return slots[exit["slot"]]
+                if kind == "jump":
+                    block_index = exit["block"]
+                    slots[graph["blocks"][block_index]["input"]] = slots[exit["argument"]]
+                    continue
+                if kind == "branch":
+                    _, data = _tag(exit["node"])
+                    native = self._role_adapter(_role_adapter_identity(data["host_type"]), "in", slots[exit["condition"]])
+                    block_index = exit["then_block"] if native else exit["else_block"]
+                    continue
+                if kind == "match":
+                    variant, payload = _sum_payload(slots[exit["scrutinee"]], len(exit["arms"]))
+                    block_index = exit["arms"][variant]
+                    slots[graph["blocks"][block_index]["input"]] = payload
+                    continue
+                if kind != "invoke" or exit["stage"] not in ("value", "type"):
+                    raise RuntimeError("a control exit has a checked operation and stage")
+                callee = slots[exit["callee"]]
+                domain = _product_from_slots([slots[slot] for slot in exit["arguments"]])
+                if exit["resume"] is None:
+                    if exit["stage"] == "type":
+                        transfer.advance(callee)
+                    else:
+                        transfer.call(callee, domain)
+                    return None
+                resume = _KioBlockResume(self, module_key, graph, graph["resumes"][exit["resume"]], slots)
+                if exit["stage"] == "type":
+                    return _kio_advance_with_resume(transfer, callee, resume)
+                return _kio_call_with_resume(transfer, callee, domain, resume)
+        finally:
+            slots.clear()
+
+    def _enter_guest(self, callee, domain, type_stage, transfer):
+        stage = callee.groups[callee.index]
+        is_type = stage["kind"] == "type"
+        if is_type != type_stage:
+            raise RuntimeError("checked call and guest stage disagree")
+        local = dict(callee.env)
+        if not is_type:
+            names = stage["params"]
+            for slot, name in enumerate(names):
+                if slot + 1 == len(names):
+                    local[name] = domain
                 else:
-                    callee = self.eval(module_key, data["callee"], env)
-                type_stage = bool(data["type_args"]) and tag in (
-                    "LowHostCall", "LowModuleCall", "LowQualifiedModuleCall"
-                ) and not _signature_has_value_group(data["sig"])
-                callee = _apply_type_stages(
-                    callee, range(len(data["type_args"]) - int(type_stage))
-                )
-                if type_stage:
-                    if data["args"]:
-                        raise RuntimeError("a routed type-only head has value arguments")
-                    domain = None
-                else:
-                    args = [self.eval(module_key, arg, env) for arg in data["args"]]
-                    domain = _product_from_slots(args)
-            else:
-                raise RuntimeError(f"python target cannot evaluate routed expression {tag}")
-            if transfer is None or data.get("tail") != ("type" if type_stage else "value"):
-                return callee.advance() if type_stage else callee(domain)
-            if type_stage:
-                transfer.advance(callee)
-            else:
-                transfer.call(callee, domain)
-            return None
+                    local[name] = domain["left"]
+                    domain = domain["right"]
+        if callee.index + 1 < len(callee.groups):
+            return self._guest_stage(
+                callee.module, callee.body, callee.groups, callee.index + 1, local
+            )
+        tag, data = _tag(callee.body)
+        if tag != "Control" or transfer is None:
+            raise RuntimeError("an executing guest entry has checked control and an invocation driver")
+        graph = data["graph"]
+        slots = {binding["slot"]: local[binding["name"]] for binding in graph["inputs"]}
+        return self._run_control(callee.module, graph, graph["start"], slots, transfer)
 
     def _literal(self, data, value):
         return self._role_adapter(_role_adapter_identity(data["host_type"]), "out", value)

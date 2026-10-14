@@ -10,14 +10,26 @@ use super::boundary_facade::{
     BoundaryFacadeExecutionUse, BoundaryFacadePlan, CallableExecutionLayout,
     CallableExecutionStage, FacadeBinderId, FacadeUseId,
 };
-use super::tail_plan::TailContext;
+use super::tail_plan::{TailContext, TailStage};
 use super::value_plan::{ValuePlan, ValueUse, ValueUseId};
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct BindingId(usize);
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct EntryId(usize);
+
+impl EntryId {
+    pub(crate) fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl BindingId {
+    pub(crate) fn index(self) -> usize {
+        self.0
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct TypeBindingId(usize);
@@ -140,6 +152,24 @@ pub(crate) struct CallableSpine {
     pub(crate) result: ValueUseId,
 }
 
+impl CallableSpine {
+    pub(crate) fn outer_witness_captures(
+        &self,
+        plan: &ValuePlan,
+        ambient: &[FacadeBinderId],
+    ) -> Vec<FacadeBinderId> {
+        let root = self
+            .type_stages
+            .first()
+            .map_or(self.function, |stage| stage.use_id);
+        plan.free_binders(root, ambient)
+    }
+
+    pub(crate) fn invocations(&self) -> impl Iterator<Item = CpsInvocationStage> {
+        continuation_invocations(self.type_stages.len())
+    }
+}
+
 pub(crate) fn callable_spine(plan: &ValuePlan, root: ValueUseId) -> CallableSpine {
     let mut current = root;
     let mut type_stages = Vec::new();
@@ -198,7 +228,17 @@ pub(crate) struct CpsRuntimePlan {
     pub(crate) payload_arity: usize,
 }
 
+pub(crate) struct CpsInvocationStage {
+    pub(crate) stage: TailStage,
+    pub(crate) type_index: Option<usize>,
+    pub(crate) resume: Option<usize>,
+}
+
 impl CpsRuntimePlan {
+    pub(crate) fn invocations(&self) -> impl Iterator<Item = CpsInvocationStage> + '_ {
+        continuation_invocations(self.continuation_type_stages)
+    }
+
     pub(crate) fn captures(&self) -> &'static [CpsBinding] {
         match self.payload_arity {
             0 => &[],
@@ -206,6 +246,21 @@ impl CpsRuntimePlan {
             _ => unreachable!("a checked CPS continuation receives at most one payload"),
         }
     }
+}
+
+fn continuation_invocations(count: usize) -> impl Iterator<Item = CpsInvocationStage> {
+    (0..=count).map(move |index| {
+        let is_type = index < count;
+        CpsInvocationStage {
+            stage: if is_type {
+                TailStage::Type
+            } else {
+                TailStage::Value
+            },
+            type_index: is_type.then_some(index),
+            resume: is_type.then_some(index),
+        }
+    })
 }
 
 pub(crate) fn cps_newtype_runtime_plan(declaration: &Newtype<Routed>) -> CpsRuntimePlan {
@@ -364,14 +419,13 @@ pub(crate) struct WitnessCaptures {
 }
 
 impl WitnessCaptures {
-    pub(crate) fn record(
-        &mut self,
+    pub(crate) fn dependencies(
         bodies: &ExecutableBodyPlan<'_>,
         context: WitnessContext,
         plan: &ValuePlan,
         use_id: ValueUseId,
         scope: &[(FacadeBinderId, TypeBindingId)],
-    ) {
+    ) -> Vec<TypeBindingId> {
         let (entry, stage, include_input) = match context {
             WitnessContext::Execute { entry, stage } => (entry, stage, true),
             WitnessContext::Construct { entry, stage } => (entry, stage, false),
@@ -403,23 +457,39 @@ impl WitnessCaptures {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        for binder in plan.free_binders(use_id, &ambient) {
-            let binding = scope
-                .iter()
-                .find(|(candidate, _)| *candidate == binder)
-                .expect("every free witness binder has an exact lexical mapping")
-                .1;
-            let source = bodies.type_binding(binding).param;
-            let selected = plan.binder(binder);
-            assert_eq!(
-                source.name, selected.name,
-                "witness mapping preserves its binder"
-            );
-            assert_eq!(
-                source.effective_kind(),
-                selected.kind,
-                "witness mapping preserves its binder kind"
-            );
+        plan.free_binders(use_id, &ambient)
+            .into_iter()
+            .map(|binder| {
+                let binding = scope
+                    .iter()
+                    .find(|(candidate, _)| *candidate == binder)
+                    .expect("every free witness binder has an exact lexical mapping")
+                    .1;
+                let source = bodies.type_binding(binding).param;
+                let selected = plan.binder(binder);
+                assert_eq!(
+                    source.name, selected.name,
+                    "witness mapping preserves its binder"
+                );
+                assert_eq!(
+                    source.effective_kind(),
+                    selected.kind,
+                    "witness mapping preserves its binder kind"
+                );
+                binding
+            })
+            .collect()
+    }
+
+    pub(crate) fn record(
+        &mut self,
+        bodies: &ExecutableBodyPlan<'_>,
+        context: WitnessContext,
+        plan: &ValuePlan,
+        use_id: ValueUseId,
+        scope: &[(FacadeBinderId, TypeBindingId)],
+    ) {
+        for binding in Self::dependencies(bodies, context, plan, use_id, scope) {
             self.require(bodies, context, binding);
         }
     }
@@ -480,6 +550,23 @@ pub(crate) struct ExecutableBodyPlan<'a> {
     bindings: Vec<ValueBinding<'a>>,
     type_bindings: Vec<TypeBinding<'a>>,
     entry_by_body: HashMap<usize, EntryId>,
+    references: HashMap<usize, BindingId>,
+    locals: HashMap<usize, BindingId>,
+    arms: HashMap<(usize, usize), BindingId>,
+    scopes: HashMap<usize, Option<usize>>,
+    scope_nodes: Vec<(BindingId, Option<usize>)>,
+    definitions: HashMap<BindingId, BindingDefinition<'a>>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum BindingDefinition<'a> {
+    Local {
+        value: &'a Expr<Routed>,
+    },
+    Arm {
+        source: &'a Expr<Routed>,
+        index: usize,
+    },
 }
 
 impl<'a> ExecutableBodyPlan<'a> {
@@ -490,9 +577,16 @@ impl<'a> ExecutableBodyPlan<'a> {
                 bindings: Vec::new(),
                 type_bindings: Vec::new(),
                 entry_by_body: HashMap::new(),
+                references: HashMap::new(),
+                locals: HashMap::new(),
+                arms: HashMap::new(),
+                scopes: HashMap::new(),
+                scope_nodes: Vec::new(),
+                definitions: HashMap::new(),
             },
             values: HashMap::new(),
             types: Vec::new(),
+            scope: None,
         };
         builder.callable(sig, body, None);
         builder.plan
@@ -524,6 +618,38 @@ impl<'a> ExecutableBodyPlan<'a> {
         &self.bindings[id.0]
     }
 
+    pub(crate) fn reference_binding(&self, expr: &Expr<Routed>) -> BindingId {
+        self.references[&(expr as *const Expr<Routed> as usize)]
+    }
+
+    pub(crate) fn local_binding(&self, expr: &Expr<Routed>) -> BindingId {
+        self.locals[&(expr as *const Expr<Routed> as usize)]
+    }
+
+    pub(crate) fn arm_binding(&self, expr: &Expr<Routed>, index: usize) -> BindingId {
+        self.arms[&(expr as *const Expr<Routed> as usize, index)]
+    }
+
+    pub(crate) fn binding_definition(&self, binding: BindingId) -> Option<BindingDefinition<'a>> {
+        self.definitions.get(&binding).copied()
+    }
+
+    /// Exact active lexical identities, nearest binding first. The persistent
+    /// parent chain shares prefixes instead of copying a scope at every node.
+    pub(crate) fn scope_bindings(&self, expr: &Expr<Routed>) -> Vec<BindingId> {
+        let mut scope = self.scopes[&(expr as *const Expr<Routed> as usize)];
+        let mut names = HashSet::new();
+        let mut result = Vec::new();
+        while let Some(index) = scope {
+            let (binding, parent) = self.scope_nodes[index];
+            if names.insert(self.binding(binding).name) {
+                result.push(binding);
+            }
+            scope = parent;
+        }
+        result
+    }
+
     pub(crate) fn type_binding(&self, id: TypeBindingId) -> &TypeBinding<'a> {
         &self.type_bindings[id.0]
     }
@@ -547,6 +673,7 @@ struct Builder<'a> {
     plan: ExecutableBodyPlan<'a>,
     values: HashMap<&'a str, BindingId>,
     types: Vec<TypeBindingId>,
+    scope: Option<usize>,
 }
 
 #[derive(Default)]
@@ -573,10 +700,13 @@ impl<'a> Builder<'a> {
     ) -> (BindingId, Option<BindingId>) {
         let id = BindingId(self.plan.bindings.len());
         self.plan.bindings.push(ValueBinding { name, ty, origin });
+        self.plan.scope_nodes.push((id, self.scope));
+        self.scope = Some(self.plan.scope_nodes.len() - 1);
         (id, self.values.insert(name, id))
     }
 
     fn restore(&mut self, name: &'a str, previous: Option<BindingId>) {
+        self.scope = self.plan.scope_nodes[self.scope.expect("a restored binding has a scope")].1;
         if let Some(previous) = previous {
             self.values.insert(name, previous);
         } else {
@@ -668,20 +798,25 @@ impl<'a> Builder<'a> {
         id
     }
 
-    fn reference(&self, name: &str, uses: &mut Uses) {
-        uses.insert(
-            *self
-                .values
-                .get(name)
-                .expect("a checked routed local reference has an active lexical binder"),
-        );
+    fn reference(&mut self, expr: &Expr<Routed>, name: &str, uses: &mut Uses) {
+        let binding = *self
+            .values
+            .get(name)
+            .expect("a checked routed local reference has an active lexical binder");
+        self.plan
+            .references
+            .insert(expr as *const Expr<Routed> as usize, binding);
+        uses.insert(binding);
     }
 
     fn walk(&mut self, expr: &'a Expr<Routed>, entry: EntryId, uses: &mut Uses) {
+        self.plan
+            .scopes
+            .insert(expr as *const Expr<Routed> as usize, self.scope);
         match expr {
-            Expr::LowBoundRef { name, .. } => self.reference(name, uses),
+            Expr::LowBoundRef { name, .. } => self.reference(expr, name, uses),
             Expr::LowClosureCall { name, args, .. } => {
-                self.reference(name, uses);
+                self.reference(expr, name, uses);
                 for arg in args {
                     self.walk(arg, entry, uses);
                 }
@@ -701,7 +836,14 @@ impl<'a> Builder<'a> {
                 ..
             } => {
                 self.walk(value, entry, uses);
-                let (_, previous) = self.bind(name, ty.as_ref(), BindingOrigin::Local { entry });
+                let (binding, previous) =
+                    self.bind(name, ty.as_ref(), BindingOrigin::Local { entry });
+                self.plan
+                    .locals
+                    .insert(expr as *const Expr<Routed> as usize, binding);
+                self.plan
+                    .definitions
+                    .insert(binding, BindingDefinition::Local { value });
                 self.walk(body, entry, uses);
                 self.restore(name, previous);
             }
@@ -753,8 +895,19 @@ impl<'a> Builder<'a> {
                 scrutinee, arms, ..
             } => {
                 self.walk(scrutinee, entry, uses);
-                for arm in arms {
-                    let (_, previous) = self.bind(&arm.param, None, BindingOrigin::Local { entry });
+                for (index, arm) in arms.iter().enumerate() {
+                    let (binding, previous) =
+                        self.bind(&arm.param, None, BindingOrigin::Local { entry });
+                    self.plan
+                        .arms
+                        .insert((expr as *const Expr<Routed> as usize, index), binding);
+                    self.plan.definitions.insert(
+                        binding,
+                        BindingDefinition::Arm {
+                            source: expr,
+                            index,
+                        },
+                    );
                     self.walk(&arm.body, entry, uses);
                     self.restore(&arm.param, previous);
                 }

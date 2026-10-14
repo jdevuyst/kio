@@ -129,8 +129,7 @@ pub(crate) enum NamedArguments {
     Many(Vec<Rc<dyn Any>>),
 }
 
-pub(crate) enum Step {
-    Done(Rc<dyn Any>),
+pub(crate) enum Invocation {
     Apply { callee: Rc<dyn Any>, domain: Option<Rc<dyn Any>> },
     Named {
         owner: Rc<dyn Any>,
@@ -139,19 +138,57 @@ pub(crate) enum Step {
     },
 }
 
-pub(crate) fn complete(mut step: Step) -> Rc<dyn Any> {
-    loop {
-        step = match step {
-            Step::Done(value) => return value,
-            Step::Apply { callee, domain: Some(domain) } => {
+impl Invocation {
+    fn run(self) -> Step {
+        match self {
+            Self::Apply { callee, domain: Some(domain) } => {
                 let entry: Rc<dyn Fn(Rc<dyn Any>) -> Step> = from_any(callee);
                 entry(domain)
             }
-            Step::Apply { callee, domain: None } => {
+            Self::Apply { callee, domain: None } => {
                 let entry: Rc<dyn Fn() -> Step> = from_any(callee);
                 entry()
             }
-            Step::Named { owner, invoke, arguments } => invoke(owner, arguments),
+            Self::Named { owner, invoke, arguments } => invoke(owner, arguments),
+        }
+    }
+}
+
+/// A one-shot frame uses a named native entry, not a distinct generic closure
+/// vtable for every resume edge in a long sequential body.
+pub(crate) struct Resume {
+    pub(crate) owner: Rc<dyn Any>,
+    pub(crate) values: Vec<Rc<dyn Any>>,
+    pub(crate) invoke: fn(Rc<dyn Any>, Vec<Rc<dyn Any>>, Rc<dyn Any>) -> Step,
+}
+
+impl Resume {
+    fn run(self, result: Rc<dyn Any>) -> Step {
+        (self.invoke)(self.owner, self.values, result)
+    }
+}
+
+pub(crate) enum Step {
+    Done(Rc<dyn Any>),
+    Invoke(Invocation),
+    Pending { call: Invocation, resume: Resume },
+}
+
+pub(crate) fn complete(mut step: Step) -> Rc<dyn Any> {
+    // Frames own only their live values and package owner, never another frame
+    // or this vector. Vec drops its elements iteratively if native code panics.
+    let mut frames: Vec<Resume> = Vec::new();
+    loop {
+        step = match step {
+            Step::Done(value) => match frames.pop() {
+                Some(resume) => resume.run(value),
+                None => return value,
+            },
+            Step::Invoke(call) => call.run(),
+            Step::Pending { call, resume } => {
+                frames.push(resume);
+                call.run()
+            }
         };
     }
 }

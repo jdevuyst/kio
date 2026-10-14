@@ -1,0 +1,72 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/arith as arith;
+import testapi/fmt as fmt;
+import testapi/io as io;
+
+type Stage = [A] I32;
+
+newtype Pack <A> : A { constructor make; projector read }
+
+fn show(value: I32) { io.print(fmt.i32_to_string(value)); io.print("\n") }
+
+fn leaf[A] -> I32 { io.print("type leaf\n"); 73 }
+
+fn link(previous: Stage) -> Stage {
+  .[A] { let result = previous(A); arith.sub_i32(result, -1) }
+}
+
+fn twice(step: Stage -> Stage) -> Stage -> Stage {
+  .(value: Stage) { step(step(value)) }
+}
+
+fn unpack(saved: Pack, previous: Stage) -> . -> I32 {
+  Pack.read(saved)(.[A](_payload: A) {
+    let result = previous(A);
+    io.print("after child\n");
+    .() { result }
+  })
+}
+
+fn function_leaf[A] -> A -> A {
+  io.print("function stage\n");
+  .(value) { io.print("function call\n"); value }
+}
+
+fn wrap_stage(previous: [A] A -> A) -> [A] A -> A {
+  .[A] { let result = previous(A); io.print("after stage\n"); result }
+}
+
+pub fn main() {
+  let two = twice(link);
+  let four = twice(two);
+  let eight = twice(four);
+  let sixteen = twice(eight);
+  let thirty_two = twice(sixteen);
+  let sixty_four = twice(thirty_two);
+  let one_twenty_eight = twice(sixty_four);
+  let two_fifty_six = twice(one_twenty_eight);
+  let five_twelve = twice(two_fifty_six);
+  let links_deep = twice(five_twelve);
+  let deep = links_deep(leaf);
+  io.print("built\n");
+  show(deep(I32));
+  show(deep(String));
+  let saved = Pack.make("payload");
+  io.print("packed\n");
+  let returned = unpack(saved, deep);
+  io.print("ready\n");
+  show(returned());
+  show(returned());
+  let again = unpack(saved, deep);
+  io.print("ready again\n");
+  show(again());
+  let functions = wrap_stage(function_leaf);
+  let number = functions(I32);
+  io.print("number ready\n");
+  show(number(89));
+  let text = functions(String);
+  io.print("text ready\n");
+  io.print(text("text\n"))
+}

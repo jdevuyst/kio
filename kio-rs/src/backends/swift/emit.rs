@@ -19,6 +19,9 @@ use crate::backends::{boundary_docs, doc};
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
+
+mod control;
 
 use crate::ast::{Expr, Role, Routed, Type};
 use crate::backends::boundary_facade::{
@@ -28,9 +31,11 @@ use crate::backends::boundary_facade::{
     FacadeUse, FacadeUseId, PreparedBoundaryCallableSite, PreparedBoundaryCallableSites,
 };
 use crate::backends::closure_plan::{
-    CallableSpine, CpsBinding, ExecutableBodyPlan, StageInput, TypeBindingId, WitnessCaptures,
-    WitnessContext, callable_spine, cps_entry_plan, signature_stages, typed_execution_stages,
+    BindingId, CallableSpine, CpsBinding, EntryId, ExecutableBodyPlan, StageInput, TypeBindingId,
+    WitnessCaptures, WitnessContext, callable_spine, cps_entry_plan, signature_stages,
+    typed_execution_stages,
 };
+use crate::backends::control_plan::{ControlPlan, ControlWitnessCaptures};
 use crate::backends::product_rebuild::{
     NominalValueRepresentation, bound_product_rebuild_plan, render_cached_product_rebuild,
 };
@@ -1223,8 +1228,14 @@ fn render_existential_continuation(
     packet: &str,
     cursor: Option<&str>,
 ) -> Result<String, EmitError> {
+    let mut captures = vec![packet.to_owned()];
+    captures.extend(
+        spine
+            .outer_witness_captures(types.plan, &scope.keys().copied().collect::<Vec<_>>())
+            .iter()
+            .map(|binder| scope[binder].clone()),
+    );
     let mut scope = scope.clone();
-    let mut advanced = continuation.to_owned();
     for (index, stage) in spine.type_stages.iter().enumerate() {
         let witness = format!("{packet}.witnesses[{index}]");
         scope.insert(
@@ -1233,16 +1244,38 @@ fn render_existential_continuation(
                 .expect("a planned continuation type stage binds a type"),
             witness.clone(),
         );
-        advanced = format!("__kioAdvance({advanced}, {witness})");
     }
     let index = spine.type_stages.len();
     let witness = types.witness(spine.function, &scope, "H")?;
     let invocation = match cursor {
-        Some(cursor) => format!("invokeTail(__kioContinuation, {packet}.payload, {cursor})"),
+        Some(_) => format!("invokeTail(__kioContinuation, {packet}.payload, __kioCpsCursor)"),
         None => format!("invoke(__kioContinuation, {packet}.payload)"),
     };
+    let mut call =
+        format!("__kioChecked({witness}, as: (any __KioFunctionWitness).self).{invocation}");
+    for stage in spine.invocations().collect::<Vec<_>>().into_iter().rev() {
+        if stage.stage == TailStage::Value {
+            assert!(stage.resume.is_none());
+            continue;
+        }
+        let index = stage
+            .type_index
+            .expect("a synthetic type stage selects its packet witness");
+        assert_eq!(stage.resume, Some(index));
+        assert!(
+            cursor.is_some(),
+            "pending continuation stages execute in their caller's driver"
+        );
+        call = format!(
+            "{{ () -> Any in __kioCpsCursor.pushResume {{ [{}] __kioContinuation, __kioCpsCursor in return {call} }}; return __kioAdvanceTail(__kioContinuation, {packet}.witnesses[{index}], __kioCpsCursor) }}()",
+            captures.join(", "),
+        );
+    }
+    let cursor = cursor.map_or_else(String::new, |cursor| {
+        format!("let __kioCpsCursor = {cursor}; ")
+    });
     Ok(format!(
-        "{{ () -> Any in precondition({packet}.witnesses.count == {index}); let __kioContinuation: Any = {advanced}; return __kioChecked({witness}, as: (any __KioFunctionWitness).self).{invocation} }}()"
+        "{{ () -> Any in precondition({packet}.witnesses.count == {index}); let __kioContinuation: Any = {continuation}; {cursor}return {call} }}()"
     ))
 }
 
@@ -1687,10 +1720,12 @@ fn render_module_fns(
                 ExecutableBodyPlan::new(&f.sig, &f.body),
             );
             let full_type = f.sig.signature_ty(f.ret.clone(), f.meta.span);
+            emitter.helper_prefix = format!("__kio_control_{method}");
             let body = emitter.callable_value(&full_type, &f.body)?;
             out.push_str(&format!(
                 "\tfunc {method}() -> Any {{\n\t\treturn {body}\n\t}}\n"
             ));
+            out.push_str(&emitter.helpers);
         }
     }
     Ok(out)
@@ -1797,6 +1832,13 @@ struct BodyEmitter<'a, 'p> {
     witness_names: HashMap<TypeBindingId, String>,
     witness_captures: RefCell<WitnessCaptures>,
     witness_context: Option<WitnessContext>,
+    binding_names: RefCell<HashMap<BindingId, String>>,
+    binding_types: HashMap<BindingId, Type<Routed>>,
+    control: Rc<ControlPlan<'a>>,
+    control_witnesses: RefCell<ControlWitnessCaptures>,
+    control_context: Option<(EntryId, usize)>,
+    helper_prefix: String,
+    helpers: String,
     fresh: usize,
     module_key: &'a str,
     selective_imports: &'a SelectiveImports,
@@ -1817,6 +1859,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         shapes: &'a super::skin::SwiftLiteralContext<'p>,
         executable: ExecutableBodyPlan<'a>,
     ) -> Self {
+        let control = Rc::new(ControlPlan::new(&executable));
         BodyEmitter {
             locals: Vec::new(),
             local_types: HashMap::new(),
@@ -1825,6 +1868,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             witness_names: HashMap::new(),
             witness_captures: RefCell::default(),
             witness_context: None,
+            binding_names: RefCell::default(),
+            binding_types: HashMap::new(),
+            control,
+            control_witnesses: RefCell::default(),
+            control_context: None,
+            helper_prefix: String::new(),
+            helpers: String::new(),
             fresh: 0,
             module_key,
             selective_imports,
@@ -1840,6 +1890,21 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         let index = self.fresh;
         self.fresh += 1;
         format!("__kio_{class}{index}")
+    }
+
+    fn binding_name(&self, binding: BindingId) -> String {
+        let mut names = self.binding_names.borrow_mut();
+        if let Some(name) = names.get(&binding) {
+            return name.clone();
+        }
+        let readable = swift_local_ident(self.executable.binding(binding).name);
+        let name = if names.values().any(|name| *name == readable) {
+            format!("__kioBinding{}", names.len())
+        } else {
+            readable
+        };
+        names.insert(binding, name.clone());
+        name
     }
 
     fn expr_type(&self, expr: &Expr<Routed>) -> Option<Type<Routed>> {
@@ -1902,6 +1967,16 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     }
 
     fn record_witness(&self, plan: &ValuePlan, use_id: ValueUseId) {
+        if let Some((entry, block)) = self.control_context {
+            self.control_witnesses.borrow_mut().record(
+                &self.executable,
+                entry,
+                block,
+                plan,
+                use_id,
+                &self.witness_bindings(plan),
+            );
+        }
         self.witness_captures.borrow_mut().record(
             &self.executable,
             self.witness_context
@@ -1918,6 +1993,17 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         body: &Expr<Routed>,
     ) -> Result<String, EmitError> {
         let plan = self.value_plan(full_type)?;
+        let saved_control = self.control_context.take();
+        if let Some((entry, block)) = saved_control {
+            self.control_witnesses.borrow_mut().record(
+                &self.executable,
+                entry,
+                block,
+                &plan,
+                plan.root(),
+                &self.witness_bindings(&plan),
+            );
+        }
         let types = super::value::Types {
             plan: &plan,
             shapes: self.facade_shapes,
@@ -1955,14 +2041,17 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     .bindings
                     .iter()
                     .map(|binding| {
-                        let binding = self.executable.binding(*binding);
-                        (binding.name.to_owned(), binding.ty.cloned())
+                        (
+                            *binding,
+                            self.executable.binding(*binding).name.to_owned(),
+                            self.executable.binding(*binding).ty.cloned(),
+                        )
                     })
                     .collect::<Vec<_>>();
                 let captures = stage
                     .captures
                     .iter()
-                    .map(|binding| swift_local_ident(self.executable.binding(*binding).name))
+                    .map(|binding| self.binding_name(*binding))
                     .collect::<Vec<_>>();
                 (stage.input, stage.type_binding, bindings, captures)
             })
@@ -2008,12 +2097,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 StageInput::Value(_) => {
                     let local = self.fresh_name("domain");
                     let mut names = Vec::new();
-                    for (name, ty) in bindings {
+                    for (binding, name, ty) in bindings {
                         self.locals.push(name.clone());
                         if let Some(ty) = ty {
+                            self.binding_types.insert(binding, ty.clone());
                             self.local_types.insert(name.clone(), ty);
                         }
-                        names.push(swift_local_ident(&name));
+                        names.push(self.binding_name(binding));
                     }
                     stages.push(SwiftClosureStage {
                         type_stage: false,
@@ -2025,7 +2115,8 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 }
             }
         }
-        let cursor = tail.has_tail_transfer().then(|| self.fresh_name("cursor"));
+        let pending = self.control.entry(entry_id).has_pending_work();
+        let cursor = (pending || tail.has_tail_transfer()).then(|| self.fresh_name("cursor"));
         self.locals = body_locals;
         self.local_types
             .retain(|name, _| self.locals.contains(name));
@@ -2033,12 +2124,28 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             entry: entry_id,
             stage: stages.len() - 1,
         });
-        let emitted = self.emit_context(tail, cursor.as_deref());
+        let emitted = if pending {
+            self.emit_control(
+                entry_id,
+                cursor.as_deref().expect("pending entries use a cursor"),
+            )
+        } else {
+            self.emit_context(tail, cursor.as_deref())
+        };
         self.witness_context = saved_context;
         self.type_binders.truncate(saved_binders);
         self.type_binding_ids.truncate(saved_binders);
         self.locals = saved_locals;
         self.local_types = saved_types;
+        self.control_context = saved_control;
+        if let Some((entry, block)) = saved_control {
+            self.control_witnesses.borrow_mut().require(
+                &self.executable,
+                entry,
+                block,
+                self.witness_captures.borrow().captures(entry_id, 0),
+            );
+        }
         for (index, stage) in stages.iter_mut().enumerate() {
             stage.captures.extend(
                 self.witness_captures
@@ -2123,7 +2230,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Expr::Let { name, value, .. } => {
                 let value_ty = self.expr_type(value);
                 let v = self.emit_expr(value)?;
-                let ident = swift_local_ident(name);
+                let ident = self.binding_name(self.executable.local_binding(e));
                 self.locals.push(name.clone());
                 let prior_ty = self.local_types.remove(name);
                 if let Some(ty) = value_ty {
@@ -2162,12 +2269,12 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     self.locals.contains(name),
                     "a Swift local reference belongs to the planned entry environment"
                 );
-                Ok(swift_local_ident(name))
+                Ok(self.binding_name(self.executable.reference_binding(e)))
             }
             Expr::EnrichedConditional { cond, .. } => self.emit_conditional(context, cond, cursor),
             Expr::EnrichedTuple {
                 items, synth_ty, ..
-            } => self.emit_tuple_typed(items, synth_ty),
+            } => self.emit_tuple_typed(e, items, synth_ty),
             Expr::EnrichedProject {
                 target,
                 index,
@@ -2225,20 +2332,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     cursor.filter(|_| context.tail_stage().is_some()),
                 )
             }
-            Expr::LowNewtypeCtor {
-                newtype,
-                member,
-                type_args,
-                payload,
-                ..
-            } => self.emit_newtype_member(None, newtype, member, type_args, payload),
-            Expr::LowNewtypeProj {
-                newtype,
-                member,
-                type_args,
-                target,
-                ..
-            } => self.emit_newtype_member(None, newtype, member, type_args, target),
+            Expr::LowNewtypeCtor { payload, .. }
+            | Expr::LowNewtypeProj {
+                target: payload, ..
+            } => {
+                let value = self.emit_expr(payload)?;
+                self.emit_newtype_member_value(e, value)
+            }
             Expr::LowAbsurdCall { value_arg, .. } => {
                 let arg = self.emit_expr(value_arg)?;
                 Ok(format!(
@@ -2261,7 +2361,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                     self.locals.contains(name),
                     "a Swift closure call belongs to the planned entry environment"
                 );
-                let callee = swift_local_ident(name);
+                let callee = self.binding_name(self.executable.reference_binding(e));
                 let ty = self
                     .local_types
                     .get(name)
@@ -2314,6 +2414,33 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Expr::LowModuleFnValueRef { mangled, sig, .. } => {
                 self.emit_module_fn_value_ref(mangled, sig)
             }
+            Expr::LowQualifiedNewtypeMember { payload, .. } => {
+                let value = self.emit_expr(payload)?;
+                self.emit_newtype_member_value(e, value)
+            }
+        }
+    }
+
+    fn emit_newtype_member_value(
+        &mut self,
+        source: &Expr<Routed>,
+        value: String,
+    ) -> Result<String, EmitError> {
+        let (module, name, member, arguments, payload) = match source {
+            Expr::LowNewtypeCtor {
+                newtype,
+                member,
+                type_args,
+                payload,
+                ..
+            }
+            | Expr::LowNewtypeProj {
+                newtype,
+                member,
+                type_args,
+                target: payload,
+                ..
+            } => (None, newtype, member, type_args, payload),
             Expr::LowQualifiedNewtypeMember {
                 module_path,
                 newtype,
@@ -2321,18 +2448,15 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 type_args,
                 payload,
                 ..
-            } => self.emit_newtype_member(Some(module_path), newtype, member, type_args, payload),
-        }
-    }
-
-    fn emit_newtype_member(
-        &mut self,
-        module: Option<&str>,
-        name: &str,
-        member: &str,
-        arguments: &[Type<Routed>],
-        payload: &Expr<Routed>,
-    ) -> Result<String, EmitError> {
+            } => (
+                Some(module_path.as_str()),
+                newtype,
+                member,
+                type_args,
+                payload,
+            ),
+            _ => unreachable!("a nominal operation retains its resolved member"),
+        };
         let caller_module = &self
             .shapes
             .package()
@@ -2377,8 +2501,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             &arguments,
         )
         .ok_or_else(|| EmitError::internal("Swift newtype member lost its instantiated result"))?;
-        let value = self.emit_expr(payload)?;
-        if member == declaration.constructor.name {
+        if member == &declaration.constructor.name {
             let hidden = arguments
                 .get(declaration.type_params.len()..)
                 .ok_or_else(|| {
@@ -2400,7 +2523,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Ok(format!(
                 "__kioChecked({witness}, as: (any __KioNominalWitness).self).construct({payload})"
             ))
-        } else if member == declaration.projector.name {
+        } else if member == &declaration.projector.name {
             if declaration.existential_params.is_empty() {
                 Ok(format!(
                     "__kioChecked({value}, as: (any __KioNominalValue).self).__kioValue"
@@ -2839,6 +2962,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     /// Exact binary native nodes carried through the erased interface.
     fn emit_tuple_typed(
         &mut self,
+        source: &Expr<Routed>,
         items: &[Expr<Routed>],
         synth_ty: &Type<Routed>,
     ) -> Result<String, EmitError> {
@@ -2855,15 +2979,21 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 self.locals.contains(&plan.source),
                 "a Swift product rebuild belongs to the planned entry environment"
             );
+            let source_name = self.binding_name(
+                self.executable
+                    .scope_bindings(source)
+                    .into_iter()
+                    .find(|binding| self.executable.binding(*binding).name == plan.source)
+                    .expect("a product rebuild has its exact active source binding"),
+            );
             return render_cached_product_rebuild(
                 &plan,
                 |slot| format!("__slots[{slot}]"),
                 |index| self.emit_expr(&items[index]),
                 construct,
-                |source, arity, tuple| {
-                    let source = swift_local_ident(source);
+                |_, arity, tuple| {
                     format!(
-                        "{{ () -> Any in let __slots = kioProductSlots({source}, {arity}); return {tuple} }}()"
+                        "{{ () -> Any in let __slots = kioProductSlots({source_name}, {arity}); return {tuple} }}()"
                     )
                 },
             );
@@ -2928,7 +3058,7 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             "let (__variant, __payload) = kioSumPayload(__m, {n}); switch __variant {{ "
         ));
         for (i, arm) in arms.iter().enumerate() {
-            let ident = swift_local_ident(&arm.param);
+            let ident = self.binding_name(self.executable.arm_binding(context.expr(), i));
             self.locals.push(arm.param.clone());
             let prior_ty = self.local_types.remove(&arm.param);
             let payload_ty = Type::right_spine_sum_slot_for_arity(scrutinee_ty, i, n)
@@ -3093,6 +3223,18 @@ mod tests {
         }
     }
 
+    fn private_callable_source<'a>(emitted: &'a SwiftPackage, name: &str) -> &'a str {
+        let method = module_fn_method_name("api", name);
+        emitted
+            .pkg_swift
+            .split(&format!("func {method}() -> Any {{"))
+            .nth(1)
+            .expect("a declared method has an emitted private body")
+            .split("\n\tfunc ")
+            .next()
+            .unwrap()
+    }
+
     #[test]
     fn prepared_wide_product_uses_bounded_runtime_nesting() {
         let values = (0..255)
@@ -3111,7 +3253,7 @@ mod tests {
     }
 
     #[test]
-    fn private_entries_transfer_only_checked_final_applications() {
+    fn private_entries_transfer_with_explicit_pending_resumes() {
         let package = single_api_package(
             "module api; \
              host type Atom; \
@@ -3130,24 +3272,16 @@ mod tests {
              }",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit private Swift entries");
-        let body = |name: &str| {
-            let method = module_fn_method_name("api", name);
-            emitted
-                .pkg_swift
-                .split(&format!("func {method}() -> Any {{"))
-                .nth(1)
-                .expect("a declared method has an emitted private body")
-                .split("\n\t}")
-                .next()
-                .unwrap()
-        };
+        let body = |name: &str| private_callable_source(&emitted, name);
         assert!(body("apply").contains(".constructTail {"));
         assert!(body("apply").contains(".invokeTail(__kioCallee, __kioArgument,"));
-        assert!(body("pending").contains(".invoke(__kioCallee, __kioArgument)"));
-        assert!(!body("pending").contains(".constructTail {"));
+        assert!(body("pending").contains(".invokeTail("));
+        assert_eq!(body("pending").matches(".pushResume {").count(), 1);
+        assert!(body("pending").contains(".constructTail {"));
+        assert!(!body("pending").contains(".invoke("));
         assert!(body("staged").contains("__kioAdvanceTail(k_next,"));
-        assert!(body("type_pending").contains("__kioAdvance(k_next,"));
-        assert!(!body("type_pending").contains("__kioAdvanceTail("));
+        assert!(body("type_pending").contains("__kioAdvanceTail(k_next,"));
+        assert_eq!(body("type_pending").matches(".pushResume {").count(), 1);
         assert_eq!(body("capture").matches(".constructTail {").count(), 1);
         assert!(emitted.shapes_swift.contains(
             "__KioEntry({ argument in body(__kioChecked(argument, as: (any __KioTypeWitness).self)) }"
@@ -3192,6 +3326,99 @@ mod tests {
     }
 
     #[test]
+    fn resumed_closure_construction_retains_captured_callable_types() {
+        let package = single_api_package(
+            "module api; host type Atom; \
+             pub fn make(next: Atom -> Atom, saved: Atom, pause: . -> .) -> Atom -> Atom { \
+                 pause(); .(ignored) { next(saved) } \
+             }",
+        );
+        let emitted =
+            lower_package(&package, "Pkg").expect("emit a closure constructed after resumption");
+        assert_eq!(emitted.pkg_swift.matches(".pushResume {").count(), 1);
+        assert!(
+            emitted
+                .pkg_swift
+                .contains(".constructTail { [k_next, k_saved]")
+        );
+        assert!(
+            emitted
+                .pkg_swift
+                .contains(".invokeTail(__kioCallee, __kioArgument,")
+        );
+        assert!(
+            emitted
+                .pkg_swift
+                .contains("__kioResult, __kioResumeCursor in")
+        );
+        assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    fn a_resumed_block_can_schedule_another_pending_invocation() {
+        let package = single_api_package(
+            "module api; host type Atom; \
+             host fn combine(left: Atom, right: Atom) -> Atom; \
+             pub fn pending(next: . -> Atom) -> Atom { combine(next(), next()) }",
+        );
+        let emitted = lower_package(&package, "Pkg").expect("emit successive pending invocations");
+        let body = private_callable_source(&emitted, "pending");
+        assert_eq!(body.matches(".pushResume {").count(), 2);
+        assert_eq!(body.matches(".invokeTail(").count(), 2);
+        assert!(!body.contains(".invoke("));
+        assert!(!body.contains("[__kioCursor"));
+        assert_no_public_any(&emitted);
+    }
+
+    #[test]
+    #[should_panic(expected = "a resume saves exactly its live inputs")]
+    fn missing_resume_capture_cannot_fall_back_to_a_swift_activation() {
+        let package = single_api_package(
+            "module api; host type Atom; \
+             host fn combine(left: Atom, right: Atom) -> Atom; \
+             pub fn pending(next: . -> Atom, saved: Atom) -> Atom { combine(next(), saved) }",
+        );
+        lower_package(&package, "Pkg").expect("the unmodified pending plan emits");
+        let module = &package.module("api").unwrap().module;
+        let function = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                crate::ast::Item::FnDef(function) if function.name == "pending" => Some(function),
+                _ => None,
+            })
+            .unwrap();
+        let executable = ExecutableBodyPlan::new(&function.sig, &function.body);
+        let entry = executable.entry_for_body(&function.body).id;
+        let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
+        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
+        let descriptor = host_descriptor::build_host_descriptor(&package);
+        let literal_shapes = super::super::skin::SwiftLiteralContext::new(
+            &package,
+            exact_nullary_host_type_table(&descriptor),
+        );
+        let selective_imports = build_selective_imports(module, &package);
+        let qualified_imports = build_qualified_imports(&module.imports);
+        let mut emitter = BodyEmitter::new(
+            "api",
+            &selective_imports,
+            &qualified_imports,
+            &prepared,
+            &shapes,
+            &literal_shapes,
+            executable,
+        );
+        let graph = Rc::get_mut(&mut emitter.control).unwrap().entry_mut(entry);
+        assert_eq!(graph.resumes.len(), 1);
+        assert_eq!(graph.resumes[0].live.len(), 1);
+        graph.resumes[0].live.clear();
+        let full_type = function
+            .sig
+            .signature_ty(function.ret.clone(), function.meta.span);
+        emitter.callable_value(&full_type, &function.body).unwrap();
+    }
+
+    #[test]
     #[should_panic(expected = "a Swift local reference belongs to the planned entry environment")]
     fn missing_planned_capture_cannot_fall_back_to_implicit_swift_capture() {
         let package = single_api_package(
@@ -3214,15 +3441,7 @@ mod tests {
         else {
             panic!("the capture control retains its nested callable");
         };
-        let mut executable = ExecutableBodyPlan::new(&function.sig, &function.body);
-        let selected = &mut executable
-            .entry_for_body_mut(nested_body)
-            .stages
-            .last_mut()
-            .unwrap()
-            .captures;
-        assert_eq!(selected.len(), 1, "the control selects exactly value");
-        selected.clear();
+        let executable = ExecutableBodyPlan::new(&function.sig, &function.body);
 
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
         let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
@@ -3242,6 +3461,15 @@ mod tests {
             &literal_shapes,
             executable,
         );
+        let selected = &mut emitter
+            .executable
+            .entry_for_body_mut(nested_body)
+            .stages
+            .last_mut()
+            .unwrap()
+            .captures;
+        assert_eq!(selected.len(), 1, "the control selects exactly value");
+        selected.clear();
         let full_type = function
             .sig
             .signature_ty(function.ret.clone(), function.meta.span);
@@ -4148,16 +4376,20 @@ v(2) {
             "{}",
             emitted.pkg_swift
         );
+        let call = private_callable_source(&emitted, "call");
+        let callee = call.find(&format!("self.{id_method}()")).unwrap();
+        let resume = call.find(".pushResume {").unwrap();
+        let advance = call.find("__kioAdvanceTail(").unwrap();
+        let invoke = call
+            .find("__KioFunctionWitness).self).invokeTail(")
+            .unwrap();
         assert!(
-            emitted
-                .pkg_swift
-                .contains(&format!("__kioAdvance(self.{id_method}(),"))
-                && emitted
-                    .pkg_swift
-                    .contains("__KioFunctionWitness).self).invoke("),
-            "{}",
-            emitted.pkg_swift
+            callee < resume && resume < advance && advance < invoke,
+            "{call}"
         );
+        assert_eq!(call.matches("__kioAdvanceTail(").count(), 1, "{call}");
+        assert_eq!(call.matches(".invokeTail(").count(), 1, "{call}");
+        assert!(!call.contains(".invoke("), "{call}");
         assert!(
             emitted.pkg_swift.contains("host.api__hostId(")
                 && emitted
@@ -4461,12 +4693,15 @@ v(2) {
                 && emitted
                     .pkg_swift
                     .contains(".construct { [__kioPacket] __kioSelected0 in")
+                && emitted.pkg_swift.contains(
+                    "__kioAdvanceTail(__kioContinuation, __kioPacket.witnesses[0], __kioCpsCursor)"
+                )
+                && emitted.pkg_swift.contains(
+                    ".invokeTail(__kioContinuation, __kioPacket.payload, __kioCpsCursor)"
+                )
                 && emitted
                     .pkg_swift
-                    .contains("__kioAdvance(__kioContinuation, __kioPacket.witnesses[0])")
-                && emitted
-                    .pkg_swift
-                    .contains(".invokeTail(__kioContinuation, __kioPacket.payload, __kioCursor)"),
+                    .contains("__kioCpsCursor.pushResume { [__kioPacket"),
             "{}",
             emitted.pkg_swift
         );

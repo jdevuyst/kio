@@ -136,6 +136,14 @@ package. No shared runtime or registration step is needed. A native wrapper
 such as `createGreeter.lift(value => saved(value))` is a real host call, not
 unchanged transport. Named host-record methods keep their ordinary JS functions.
 
+Generated callbacks also preserve work after a guest call returns. The control
+protocol keeps that pending work separate from reusable callback captures, so
+retained callbacks can be called again or reentered independently. Hosts use
+the calls and lift helpers above. Advanced control implementations can
+provide the optional resume capability described in the
+[cooperative protocol](../../specs/backends/js.md#cooperative-callable-protocol);
+controls providing only `call` and `advance` are also valid.
+
 ### 3. Instantiate and invoke
 
 ```js

@@ -42,6 +42,9 @@
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+#[path = "control_emit.rs"]
+mod control_emit;
+
 // `backends::js::emit` consumes the `Routed` phase: the resolution-lowering pass
 // (`crate::pass::route`) has classified every call into one of the
 // fifteen `Expr::Low*` variants, and `crate::pass::structural_recovery`'s
@@ -1802,15 +1805,13 @@ fn is_legal_js_identifier(s: &str) -> bool {
 
 fn lower_fn_def(d: &FnDef, top: &TopLevel, out: &mut String) -> Result<(), EmitError> {
     let plan = ExecutableBodyPlan::new(&d.sig, &d.body);
+    let control = std::rc::Rc::new(crate::backends::control_plan::ControlPlan::new(&plan));
     let stages = js_executable_stages(&plan, &d.body);
     let body_context = plan.entry_for_body(&d.body).body();
     assert!(
         stages[0].captures.is_empty(),
         "a named body has no lexical captures"
     );
-    out.push_str("const ");
-    out.push_str(&mangle_js_ident(&d.name));
-    out.push_str(" = ");
     let mut locals = JsLocalScope {
         values: stages
             .last()
@@ -1819,14 +1820,26 @@ fn lower_fn_def(d: &FnDef, top: &TopLevel, out: &mut String) -> Result<(), EmitE
             .into(),
         type_params: signature_type_params(&d.sig).cloned().collect(),
         plan,
+        control,
+        control_programs: Vec::new(),
+        emitted_control_entries: HashSet::new(),
     };
     let mut body_js = String::new();
-    lower_expr_in_context(body_context, top, &mut locals, &mut body_js)?;
-    out.push_str(&wrap_js_executable_stages(
-        &stages,
-        body_js,
-        body_context.has_tail_transfer(),
-    ));
+    let needs_driver = control_emit::lower_body(body_context, top, &mut locals, &mut body_js)?;
+    out.push_str("const ");
+    out.push_str(&mangle_js_ident(&d.name));
+    out.push_str(" = ");
+    if !locals.control_programs.is_empty() {
+        out.push_str("(() => { ");
+        for program in &locals.control_programs {
+            out.push_str(program);
+        }
+        out.push_str("return ");
+    }
+    out.push_str(&wrap_js_executable_stages(&stages, body_js, needs_driver));
+    if !locals.control_programs.is_empty() {
+        out.push_str("; })()");
+    }
     out.push_str(";\n");
     Ok(())
 }
@@ -2042,18 +2055,27 @@ fn render_js_cps_entry(recipe: &CpsRuntimePlan) -> String {
         input: JsRuntimeSignatureGroup::Value(vec![continuation]),
         captures,
     });
-    let callee =
-        advance_erased_type_stages(continuation.to_owned(), recipe.continuation_type_stages);
     let domain = match recipe.payload_arity {
         0 => "null",
         1 => js_cps_binding(CpsBinding::Payload),
         _ => unreachable!("a checked CPS continuation receives at most one payload"),
     };
-    wrap_js_executable_stages(
-        &stages,
-        format!("__kioTailCall(__kioTailCursor, {callee}, {domain})"),
-        true,
-    )
+    let mut body = String::new();
+    for invocation in recipe.invocations().collect::<Vec<_>>().into_iter().rev() {
+        let callee = match invocation.type_index {
+            Some(0) => continuation.to_owned(),
+            Some(index) => format!("__kioCpsNext{}", index - 1),
+            None if recipe.continuation_type_stages == 0 => continuation.to_owned(),
+            None => format!("__kioCpsNext{}", recipe.continuation_type_stages - 1),
+        };
+        body = match invocation.resume {
+            Some(index) => format!(
+                "__kioAdvanceWithResume(__kioTailCursor, {callee}, (__kioCpsNext{index}, __kioTailCursor) => {body})"
+            ),
+            None => format!("__kioTailCall(__kioTailCursor, {callee}, {domain})"),
+        };
+    }
+    wrap_js_executable_stages(&stages, body, true)
 }
 
 fn lower_newtype(d: &Newtype, top: &TopLevel, out: &mut String) {
@@ -2174,6 +2196,9 @@ struct JsLocalScope<'a> {
     values: JsValueScope,
     type_params: Vec<crate::ast::TypeParam>,
     plan: ExecutableBodyPlan<'a>,
+    control: std::rc::Rc<crate::backends::control_plan::ControlPlan<'a>>,
+    control_programs: Vec<String>,
+    emitted_control_entries: HashSet<crate::backends::closure_plan::EntryId>,
 }
 
 impl JsLocalScope<'_> {
@@ -2296,15 +2321,15 @@ fn lower_expr_in_context(
                 .extend(signature_type_params(sig).cloned());
             let mut body_js = String::new();
             let body_context = locals.plan.entry_for_body(body).body();
-            let body_result = lower_expr_in_context(body_context, top, locals, &mut body_js);
+            let body_result = control_emit::lower_body(body_context, top, locals, &mut body_js);
             locals.values = previous_values;
             locals.type_params.truncate(type_mark);
             out.push_str(&wrap_js_executable_stages(
                 &stages,
                 body_js,
-                body_context.has_tail_transfer(),
+                body_result.as_ref().copied().unwrap_or(false),
             ));
-            body_result
+            body_result.map(|_| ())
         }
         Expr::StrLit { value, .. } => {
             out.push('"');
@@ -2413,41 +2438,8 @@ fn lower_expr_in_context(
         } => {
             let mut selected = String::new();
             lower_enriched_project(target, *index, *arity, top, locals, &mut selected)?;
-            let frame = if let Some(package) = top.package {
-                let values = HashMap::new();
-                let types = super::super::reconstruct::RoutedBodyTypes {
-                    package,
-                    module: top.module,
-                    type_params: &locals.type_params,
-                    values: &values,
-                };
-                let canonical = types.canonical(target_ty);
-                let slot = super::super::reconstruct::nth_product_slot_ty_for_arity(
-                    &canonical, *index, *arity,
-                )
-                .expect("a routed field projection fits its resolved product arity");
-                let nominal = types
-                    .nominal(slot)
-                    .expect("a routed field projection selects a nominal slot");
-                super::super::serialized_runtime_ir::exact_nominal_identity_frame(&nominal)
-            } else {
-                let slot = super::super::reconstruct::nth_product_slot_ty_for_arity(
-                    target_ty, *index, *arity,
-                )
-                .expect("a routed field projection fits its resolved product arity");
-                let Type::Path { segments, .. } = slot else {
-                    unreachable!("a routed field projection selects a nominal slot")
-                };
-                let (name, module) = segments.split_last().expect("a nominal path is nonempty");
-                let module = if module.is_empty() {
-                    top.module_key.split('/').map(str::to_owned).collect()
-                } else {
-                    module.iter().map(|part| part.name.clone()).collect()
-                };
-                let nominal = QualifiedTypeName::new(module, &name.name)
-                    .expect("a field has an exact nominal identity");
-                super::super::serialized_runtime_ir::exact_nominal_identity_frame(&nominal)
-            };
+            let frame =
+                control_emit::field_frame(target_ty, *index, *arity, top, &locals.type_params);
             out.push_str(&js_nominal_operation(top, &frame, &selected, false));
             Ok(())
         }
@@ -3758,6 +3750,22 @@ mod tests {
         lower_module_with_key(&entry.module, module_path, None, None, None).expect("lower")
     }
 
+    fn assert_unique_js_order(source: &str, markers: &[&str]) {
+        let mut previous = None;
+        for marker in markers {
+            let positions = source
+                .match_indices(marker)
+                .map(|(position, _)| position)
+                .collect::<Vec<_>>();
+            assert_eq!(positions.len(), 1, "expected one `{marker}` in: {source}");
+            assert!(
+                previous.is_none_or(|position| position < positions[0]),
+                "wrong order at `{marker}` in: {source}"
+            );
+            previous = Some(positions[0]);
+        }
+    }
+
     #[test]
     fn tail_entries_wrap_only_executing_body_stages() {
         let js = lower_typed(
@@ -3775,13 +3783,19 @@ mod tests {
                 .unwrap()
         };
         assert!(!declaration("leaf").contains("__kioGuest"));
-        assert!(!declaration("ordered").contains("__kioGuest"));
         let ordered = declaration("ordered");
-        assert!(
-            ordered.find("(callback)(value)").expect("operand call")
-                < ordered.find("observe()").expect("pending host effect"),
-            "{ordered}"
+        assert_eq!(ordered.matches("__kioGuest(").count(), 1, "{ordered}");
+        assert_unique_js_order(
+            ordered,
+            &[
+                "__kioCallWithResume(__kioTailCursor, __kio_b0, __kio_b1,",
+                "const __kio_t0 = __kioInput;",
+                "observe()",
+                "return __kio_b2;",
+            ],
         );
+        assert!(ordered.contains("const __kio_b2 = __kio_t0;"), "{ordered}");
+        assert!(ordered.contains("{b0: callback, b1: value}"), "{ordered}");
         assert!(
             declaration("returned_call")
                 .contains("__kioTailCall(__kioTailCursor, callback, value)")
@@ -3824,6 +3838,76 @@ mod tests {
             "{residual}"
         );
         assert!(!residual.contains("(kept, unused) =>"), "{residual}");
+    }
+
+    #[test]
+    fn pending_slot_restore_keeps_exact_mapping_in_one_binding() {
+        let js = lower_typed(
+            "module main; host type Atom; \
+             fn collect(value: Atom, callback: Atom -> Atom) -> Atom & Atom & Atom & Atom \
+             { (callback(value), callback(value), callback(value), callback(value)) }",
+        );
+        let body = js
+            .lines()
+            .find(|line| line.trim_start().starts_with("const collect = "))
+            .expect("subject declaration");
+        assert_eq!(body.matches(" = __kioSaved; ").count(), 5, "{body}");
+        assert!(!body.contains(" = __kioSaved."), "{body}");
+        assert_unique_js_order(
+            body,
+            &[
+                "case 0: { const {b0: __kio_b0, b1: __kio_b1} = __kioSaved; __kioSaved = undefined; __kioInput = undefined;",
+                "__kioResume(__kioControl0, 1, {b0: __kio_b0, b1: __kio_b1})",
+                "case 1: { const {b0: __kio_b0, b1: __kio_b1} = __kioSaved; const __kio_t0 = __kioInput;",
+                "case 2: { const {b0: __kio_b0, b1: __kio_b1, t0: __kio_t0} = __kioSaved; const __kio_t1 = __kioInput;",
+                "case 3: { const {b0: __kio_b0, b1: __kio_b1, t0: __kio_t0, t1: __kio_t1} = __kioSaved; const __kio_t2 = __kioInput;",
+                "case 4: { const {t0: __kio_t0, t1: __kio_t1, t2: __kio_t2} = __kioSaved; const __kio_t3 = __kioInput; __kioSaved = undefined; __kioInput = undefined;",
+                "({ _0: __kio_t0, _1: ({ _0: __kio_t1, _1: ({ _0: __kio_t2, _1: __kio_t3 }) }) })",
+            ],
+        );
+    }
+
+    #[test]
+    fn pending_operands_use_shared_blocks_and_tail_only_entries_keep_direct_syntax() {
+        let js = lower_typed(
+            "module main; import __intrinsics__; host type Bool role(bool); \
+             newtype Box : . { constructor make; projector read; }; \
+             fn callee(maker: . -> (. -> .)) -> . { maker()() } \
+             fn condition(test: . -> Bool) -> . { __if_then_else__(., test(), .() { () }, .() { () }) } \
+             fn constructor(callback: . -> .) -> Box { Box.make(callback()) } \
+             fn stage(callback: [A] . -> .) -> . { callback(., ()) } \
+             fn delayed(callback: . -> .) -> . -> . { .() { callback(); () } } \
+             fn tail(callback: . -> .) -> . { callback() }",
+        );
+        let declaration = |name: &str| {
+            js.lines()
+                .find(|line| line.trim_start().starts_with(&format!("const {name} = ")))
+                .expect("subject declaration")
+        };
+        for name in ["callee", "condition", "constructor", "delayed"] {
+            let value = declaration(name);
+            assert!(value.contains("function __kioControl"), "{name}: {value}");
+            assert!(
+                value.contains("__kioCallWithResume(__kioTailCursor"),
+                "{name}: {value}"
+            );
+            assert!(
+                value.contains("__kioResume(__kioControl"),
+                "{name}: {value}"
+            );
+        }
+        let stage = declaration("stage");
+        assert!(
+            stage.contains("__kioAdvanceWithResume(__kioTailCursor"),
+            "{stage}"
+        );
+        assert!(stage.contains("__kioTailCall(__kioTailCursor"), "{stage}");
+        let tail = declaration("tail");
+        assert!(!tail.contains("__kioControl"), "{tail}");
+        assert!(
+            tail.contains("__kioTailCall(__kioTailCursor, callback, null)"),
+            "{tail}"
+        );
     }
 
     #[test]
@@ -3894,7 +3978,16 @@ mod tests {
         };
         assert!(declaration("local").contains("__kioTailCursor, f, value"));
         assert_eq!(declaration("specialized").matches(".advance()").count(), 1);
-        assert!(declaration("computed").contains("__kioTailCursor, (f)(null), value"));
+        let computed = declaration("computed");
+        assert_unique_js_order(
+            computed,
+            &[
+                "__kioCallWithResume(__kioTailCursor, __kio_b0, null,",
+                "const __kio_t0 = __kioInput;",
+                "__kioTailCall(__kioTailCursor, __kio_t0, __kio_b1)",
+            ],
+        );
+        assert!(computed.contains("{b0: f, b1: value}"), "{computed}");
     }
 
     #[test]
@@ -3916,7 +4009,17 @@ mod tests {
                 .unwrap()
         };
         assert!(declaration("stage").contains("__kioTailAdvance(__kioTailCursor, value)"));
-        assert!(declaration("cps").contains("const __kio_cps_continuation = continuation;"));
+        let cps = declaration("cps");
+        assert_unique_js_order(
+            cps,
+            &[
+                ".unwrap(__kio_b0)",
+                "__kioAdvanceWithResume(__kioTailCursor, __kio_b1,",
+                "const __kio_t1 = __kioInput;",
+                "__kioTailCall(__kioTailCursor, __kio_t1, __kio_t0)",
+            ],
+        );
+        assert!(cps.contains("{b0: value, b1: continuation}"), "{cps}");
     }
 
     #[test]
@@ -3936,13 +4039,14 @@ mod tests {
             .lines()
             .find(|line| line.trim_start().starts_with("const nested = "))
             .expect("nested declaration");
-        assert_eq!(nested.matches("(generic)(null)").count(), 1, "{js}");
-        assert_eq!(
-            nested
-                .matches("__kioTailAdvance(__kioTailCursor, (generic)(null))")
-                .count(),
-            1,
-            "{js}"
+        assert_unique_js_order(
+            nested,
+            &[
+                "const __kio_t0 = generic;",
+                "__kioCallWithResume(__kioTailCursor, __kio_t0, null,",
+                "const __kio_t1 = __kioInput;",
+                "__kioTailAdvance(__kioTailCursor, __kio_t1)",
+            ],
         );
         assert!(
             nested.contains("__kioTailCursor, consume, __kioGuest"),
@@ -4104,11 +4208,20 @@ mod tests {
              fn id[A](x: A) -> A { x } \
              fn caller[A](y: A) -> A { id(A, y) }",
         );
-        assert!(js.contains("const caller = __kioPoly("), "got: {js}");
+        assert_unique_js_order(
+            &js,
+            &[
+                "const __kio_t0 = id;",
+                "__kioAdvanceWithResume(__kioTailCursor, __kio_t0,",
+                "const __kio_t1 = __kioInput;",
+                "__kioTailCall(__kioTailCursor, __kio_t1, __kio_b0)",
+            ],
+        );
         assert!(
-            js.contains("__kioTailCursor, (id).advance(), y"),
+            js.contains("return __kioPoly(() => __kioGuest(((y, __kioTailCursor) =>"),
             "got: {js}"
         );
+        assert!(js.contains("{b0: y}"), "got: {js}");
     }
 
     #[test]
@@ -4203,16 +4316,16 @@ mod tests {
                 && !staged_type_only.contains(".advance()"),
             "a written type-only packet must leave its returned value stage uncalled: {js}"
         );
-        assert!(
-            staged_implicit.contains("__kioTailCall(__kioTailCursor, (staged).advance(), null)"),
-            "a source-empty call must supply its Unit value: {js}"
-        );
-        assert!(
-            staged_explicit.contains("__kioTailCall(__kioTailCursor, (staged).advance(), null)"),
-            "an explicit Unit value must saturate that same layer: {js}"
-        );
-
         for stage in [staged_implicit, staged_explicit] {
+            assert_unique_js_order(
+                stage,
+                &[
+                    "const __kio_t0 = staged;",
+                    "__kioAdvanceWithResume(__kioTailCursor, __kio_t0,",
+                    "const __kio_t1 = __kioInput;",
+                    "__kioTailCall(__kioTailCursor, __kio_t1, null)",
+                ],
+            );
             assert_eq!(
                 stage.matches("(__kioUnit, __kioTailCursor) =>").count(),
                 1,
@@ -4240,10 +4353,15 @@ mod tests {
                 "both Unit and non-Unit selections must leave the value stage uncalled: {js}"
             );
         }
-        assert!(
-            identity_saturated
-                .contains("__kioTailCall(__kioTailCursor, (identity).advance(), null)"),
-            "the explicit Unit identity call must be saturated: {js}"
+        assert_unique_js_order(
+            identity_saturated,
+            &[
+                "const __kio_t0 = identity;",
+                "__kioAdvanceWithResume(__kioTailCursor, __kio_t0,",
+                "const __kio_t1 = __kioInput;",
+                "const __kio_t2 = null;",
+                "__kioTailCall(__kioTailCursor, __kio_t1, __kio_t2)",
+            ],
         );
 
         assert_eq!(
@@ -4262,7 +4380,7 @@ mod tests {
             .find("observe()")
             .expect("explicit Unit operand is evaluated");
         let apply = effectful
-            .find("(staged).advance()")
+            .find("__kioAdvanceWithResume(__kioTailCursor, __kio_t1,")
             .expect("the empty value group is applied");
         assert!(
             observe < apply,
@@ -4516,7 +4634,7 @@ mod tests {
         );
         assert!(js.contains("__kioOpaqueOut("), "{js}");
         assert!(js.contains("__kioOpaqueIn("), "{js}");
-        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload))))(__kioPayload)))(__kioPayload);"), "{js}");
+        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioAdvanceWithResume(__kioTailCursor, __kioContinuation, (__kioCpsNext0, __kioTailCursor) => __kioTailCall(__kioTailCursor, __kioCpsNext0, __kioPayload)))))(__kioPayload)))(__kioPayload);"), "{js}");
         assert!(!js.contains("...__cps_args__"), "{js}");
     }
 
@@ -4824,7 +4942,7 @@ mod tests {
             !wrapper.contains(".advance()"),
             "the named head must not enter its returned result stage: {wrapper}"
         );
-        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance().advance(), __kioPayload))))(__kioPayload)))(__kioPayload);"), "{js}");
+        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioAdvanceWithResume(__kioTailCursor, __kioContinuation, (__kioCpsNext0, __kioTailCursor) => __kioAdvanceWithResume(__kioTailCursor, __kioCpsNext0, (__kioCpsNext1, __kioTailCursor) => __kioTailCall(__kioTailCursor, __kioCpsNext1, __kioPayload))))))(__kioPayload)))(__kioPayload);"), "{js}");
         assert_eq!(emitted_nominal_view(&js, "main", "Hidden")["sealed"], true);
     }
     #[test]
@@ -5621,24 +5739,27 @@ mod tests {
             positions[0]
         };
 
-        let receiver_binding = unique_position("const __kio_cps_receiver = v;");
-        let continuation_binding = unique_position(
-            "const __kio_cps_continuation = __kioPoly(() => __kioLeaf((__kioDomain => {",
-        );
+        let receiver_binding =
+            unique_position("const __kio_t0 = __kioOpaqueIn(\"M1_C1_xN3_Box\", __kio_b0);");
+        let continuation_binding =
+            unique_position("const __kio_t1 = __kioPoly(() => __kioLeaf((__kioDomain => {");
         let first_product_slot = unique_position("const _value = __kioDomain._0;");
         let remaining_product = unique_position("__kioDomain = __kioDomain._1;");
         let second_product_slot = unique_position("const _unit = __kioDomain;");
         let projector_call = unique_position(
-            "return __kioTailCall(__kioTailCursor, Box.inspect(__kio_cps_receiver).advance(), __kio_cps_continuation);",
+            "return __kioAdvanceWithResume(__kioTailCursor, __kio_t1, __kioResume(__kioControl0, 1, {b0: __kio_b0, t0: __kio_t0}));",
         );
-
-        assert_eq!(js.matches("__kio_cps_receiver").count(), 2, "got: {js}");
-        assert_eq!(js.matches("__kio_cps_continuation").count(), 2, "got: {js}");
-        assert_eq!(
-            js.matches("Box.inspect(__kio_cps_receiver).advance()")
-                .count(),
-            1,
-            "got: {js}"
+        assert_unique_js_order(
+            &js,
+            &[
+                "const __kio_t2 = __kioInput;",
+                "__kioTailCall(__kioTailCursor, __kio_t2, __kio_t0)",
+            ],
+        );
+        assert!(js.contains("{b0: v}"), "got: {js}");
+        assert!(
+            !js.contains("Box.inspect("),
+            "the checked CPS operation uses its declaration-owned payload directly: {js}"
         );
         assert!(!js.contains("__kioProductSlot("), "got: {js}");
         assert!(
@@ -5649,7 +5770,7 @@ mod tests {
                 && second_product_slot < projector_call,
             "CPS expression construction must preserve receiver-before-continuation order: {js}"
         );
-        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioTailCall(__kioTailCursor, (__kioContinuation).advance(), __kioPayload))))(__kioPayload)))(__kioPayload);"), "{js}");
+        assert!(js.contains("return ((__kioPayload) => __kioPoly(() => ((__kioPayload) => __kioGuest(((__kioContinuation, __kioTailCursor) => __kioAdvanceWithResume(__kioTailCursor, __kioContinuation, (__kioCpsNext0, __kioTailCursor) => __kioTailCall(__kioTailCursor, __kioCpsNext0, __kioPayload)))))(__kioPayload)))(__kioPayload);"), "{js}");
         assert!(!js.contains("Box.box("), "got: {js}");
     }
 
@@ -5882,9 +6003,18 @@ mod tests {
             js.contains("const __kio_default__ = __kioPoly(() => __kioLeaf(((y) => y)))"),
             "expected mangled decl, got: {js}"
         );
+        assert_unique_js_order(
+            &js,
+            &[
+                "const __kio_t0 = __kio_default__;",
+                "__kioAdvanceWithResume(__kioTailCursor, __kio_t0,",
+                "const __kio_t1 = __kioInput;",
+                "__kioTailCall(__kioTailCursor, __kio_t1, __kio_b0)",
+            ],
+        );
         assert!(
-            js.contains("__kioTailCursor, (__kio_default__).advance(), z"),
-            "expected mangled reference, got: {js}"
+            js.contains("{b0: z}"),
+            "expected original argument binding, got: {js}"
         );
         assert!(
             !js.contains("const default ="),

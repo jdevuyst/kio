@@ -9,18 +9,25 @@ mod runtime_tests {
     use super::RUNTIME;
 
     #[test]
-    fn statement_spine_does_not_reenter_the_evaluator() {
+    fn control_blocks_do_not_reenter_an_ast_evaluator() {
         let spine = RUNTIME
-            .split_once("    def eval(")
+            .split_once("    def _run_control(")
             .unwrap()
             .1
-            .split_once("        if tag == \"Unit\":")
+            .split_once("    def _enter_guest(")
             .unwrap()
             .0;
         assert!(spine.contains("while True:"));
-        assert!(spine.contains("local = dict(env)"));
-        assert_eq!(spine.matches("expr = data[\"body\"]").count(), 2);
-        assert!(!spine.contains("self.eval(module_key, data[\"body\"]"));
+        assert!(spine.contains("slots[operation[\"output\"]] = slots[operation[\"input\"]]"));
+        assert!(spine.contains("block_index = exit[\"block\"]"));
+        assert!(
+            spine
+                .contains("block_index = exit[\"then_block\"] if native else exit[\"else_block\"]")
+        );
+        assert!(spine.contains("block_index = exit[\"arms\"][variant]"));
+        assert!(!spine.contains("self._run_control("));
+        assert!(!RUNTIME.contains("self.eval("));
+        assert!(!RUNTIME.contains("    def eval("));
     }
 
     #[test]
@@ -45,10 +52,10 @@ mod runtime_tests {
             .unwrap()
             .0;
         let guest = RUNTIME
-            .split_once("    def eval(")
+            .split_once("    def _enter_guest(")
             .unwrap()
             .1
-            .split_once("            tag, data = _tag(expr)")
+            .split_once("    def _literal(")
             .unwrap()
             .0;
         assert!(!callable.contains("_product_slots("));
@@ -56,10 +63,13 @@ mod runtime_tests {
         assert!(!guest.contains("type(callee)"));
         assert!(!guest.contains("_kio_tail_entry_v1"));
         assert!(!guest.contains("isinstance("));
-        assert!(guest.contains("self = callee.runtime"));
         assert!(guest.contains("local = dict(callee.env)"));
-        assert!(guest.contains("module_key, expr, env = callee.module, callee.body, local"));
+        assert!(guest.contains(
+            "return self._run_control(callee.module, graph, graph[\"start\"], slots, transfer)"
+        ));
         assert!(!guest.contains("self.eval("));
+        assert!(RUNTIME.contains("self.runtime._enter_guest(self, domain, False, transfer)"));
+        assert!(RUNTIME.contains("self.runtime._enter_guest(self, None, True, transfer)"));
 
         let host = RUNTIME
             .split_once("    def _host_fn_value(")
@@ -72,22 +82,26 @@ mod runtime_tests {
     }
 
     #[test]
-    fn tail_calls_use_only_the_checked_terminal_stage() {
+    fn checked_control_exits_separate_tail_and_pending_stages() {
         let evaluator = RUNTIME
-            .split_once("    def eval(")
+            .split_once("    def _run_control(")
             .unwrap()
             .1
-            .split_once("    def _literal(")
+            .split_once("    def _enter_guest(")
             .unwrap()
             .0;
-        assert!(
-            evaluator.contains("data.get(\"tail\") != (\"type\" if type_stage else \"value\")")
-        );
-        assert!(evaluator.contains("transfer.advance(callee)"));
-        assert!(evaluator.contains("transfer.call(callee, domain)"));
-        assert!(evaluator.contains("range(len(data[\"type_args\"]) - int(type_stage))"));
-        assert!(!evaluator.contains("return self.eval(module_key, arm[\"body\"]"));
-        assert!(!evaluator.contains("return self.eval(module_key, branch"));
+        assert!(evaluator.contains("exit[\"stage\"] not in (\"value\", \"type\")"));
+        let (tail, pending) = evaluator
+            .split_once("                resume = _KioBlockResume")
+            .unwrap();
+        assert!(tail.contains("if exit[\"resume\"] is None:"));
+        assert!(tail.contains("transfer.advance(callee)"));
+        assert!(tail.contains("transfer.call(callee, domain)"));
+        assert!(!tail.contains("_with_resume("));
+        assert!(pending.contains("_kio_advance_with_resume(transfer, callee, resume)"));
+        assert!(pending.contains("_kio_call_with_resume(transfer, callee, domain, resume)"));
+        assert!(!evaluator.contains("callee.advance()"));
+        assert!(!evaluator.contains("callee(domain)"));
     }
 }
 

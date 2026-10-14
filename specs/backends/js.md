@@ -516,6 +516,25 @@ A requested target must have the same result as the current step; the control
 interface does not encode that semantic obligation. Ordinary hosts use the
 typed lift helpers rather than implementing the control operation themselves.
 
+For a call with work remaining after its result, generated entries read the
+optional `transfer.resume` capability. It provides
+`call(target, domain, resumeEntry)` and `advance(target, resumeEntry)`. Each
+operation schedules the selected child stage and one continuation, then
+returns `undefined`. A resume entry receives `(childResult, transfer)` and
+either returns the enclosing result or makes its own terminal control request.
+Unlike a base tail transfer, a resume may transform a child result of type
+`S` into an enclosing result of type `R`; it must consume that exact child's
+result and satisfy the enclosing result contract.
+
+The driver resumes pending entries in last-in, first-out order, releasing each
+before invoking it. Entries do not retain the synchronous transfer capability.
+An absent `resume` uses a completing local invocation for that pending call;
+ordinary tail requests use `call` and `advance` directly. Controls providing
+only these two methods are valid. The fallback does not replace a called
+entry's own execution strategy. This optional property lookup is on
+the caller's control object, never on a native callback; a custom control
+Proxy can observe it. The capability adds no shared runtime or registration.
+
 Compatible carriers implementing this protocol exchange directly between
 independently generated artifacts without a shared runtime, registry or linking
 context. This does not merge nominal owners or make incompatible value shapes
