@@ -185,6 +185,28 @@ AGENTS.md ties many implementation changes to specific spec / docs / tooling upd
 
 For each commit cluster, list the *expected* pairings and the *observed* ones. Mismatches are the primary finding.
 
+### Instruction and audit coherence
+
+For each change cluster, assess whether authoring guidance, workflow skills,
+automated checks or audit procedures rely on rules or assumptions it changes.
+An unchanged public contract does not imply unchanged audit assumptions.
+Identify the owning guidance and affected consumers; briefly explain whether
+they were updated, already sufficient or inapplicable. Use the existing review,
+not a new registry, mandatory matrix or blanket instruction-editing requirement.
+
+Keep each norm in one authoritative home: public behavior in its specification,
+universal agent gates in `AGENTS.md`, domain guidance in its topic or workflow,
+and test strategy in `TESTING.md` or the corpus contract. Brief discovery
+summaries and audience-specific explanations remain useful; link to the owner
+rather than maintaining competing requirements or duplicated mechanics.
+Change `AGENTS.md` only when its universal rules or discovery routes change.
+
+Audit skills retain independent, concrete checks against those owners, including
+counterexamples and evidence limits; a pointer or assurance that the authoring
+workflow was followed is not a substitute. Assess this impact as part of the
+original change, but update files only within its authority: report-only review,
+protected-text approval and unrelated-finding boundaries still apply.
+
 ### Corpus and expected-output changes
 
 Apply [`TESTING.md` § Corpus and expected-output maintenance](../../../TESTING.md#corpus-and-expected-output-maintenance)

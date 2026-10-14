@@ -29,6 +29,14 @@ their corresponding `audit-*` skill under `ai/skills/`.
 
 ## 2. Contribution-policy mirror set
 
+Check that issue, PR and comment guidance preserves both parts of `AGENTS.md`'s
+GitHub-post approval gate: explicit authorization for the particular external
+action and approval of the exact text, including titles. A workflow must not
+turn discussion of a possible post or approval of a draft into permission to
+publish it. One clearly stated approval can cover both requirements. An approved
+issue or PR does not authorize a follow-up comment; a finding or general request
+to track work supplies neither missing approval.
+
 `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/*`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/pr-auto-close.yml`, `.github/workflows/pr-policy-check.yml`, `.github/workflows/contrib-run.yml`, and `test-data/contrib/README.md` form a single policy mirror set — see [`ai/topics/contributing.md`](../../topics/contributing.md) for the canonical statement of what propagates between them. Read all seven and check:
 
 - The required-fields and checklists in the templates match what `CONTRIBUTING.md` says contributors must do.

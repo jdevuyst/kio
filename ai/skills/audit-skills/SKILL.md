@@ -98,6 +98,16 @@ For each `ai/skills/*/SKILL.md`:
   Check that links preserve discovery and that historical evidence is not
   asserted as current validation. `audit-agents-md` owns the topic-file side
   of this placement boundary.
+- Check instruction and audit coherence against
+  [`review-commits`](../review-commits/SKILL.md#instruction-and-audit-coherence).
+  Trace a changed rule or checking assumption through its owning guidance and
+  affected workflows/checks. Flag contradictory requirements and independently
+  maintained mechanics, not helpful summaries or audience-specific explanations.
+  Test whether an audit could detect a violation even when the author claims to
+  have followed the workflow; name-only links and self-certification do not
+  establish coverage. Missing historical review evidence is unverified, not
+  proof that no assessment occurred. Do not infer drift merely because a
+  related file was not edited.
 
 Hits are findings.
 

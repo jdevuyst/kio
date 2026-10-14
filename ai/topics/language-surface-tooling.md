@@ -66,6 +66,9 @@ Use that argument to choose the affected surface area:
 - Public contracts: update `specs/grammar.md`, `specs/language.md`, `specs/prime.md` when the grammar or lowering boundary changes; update `specs/style.md` for formatter behavior and `specs/cli.md` for LSP/editor behavior.
 - Public docs: update affected guides, tutorials, and runnable snippets in `docs/`.
 - Tests: add focused parser/formatter/type/normalizer/LSP/highlight/VS Code coverage plus success and negative goldens for the new behavior and any rejected old behavior.
+- Agent guidance and audits: assess affected authoring instructions, workflows
+  and checking assumptions using
+  [`review-commits`' coherence check](../skills/review-commits/SKILL.md#instruction-and-audit-coherence).
 
 For syntax touching row forms, labels, field access/update, imports, dispatch, or inference, state the open-world argument explicitly before implementing the rule.
 

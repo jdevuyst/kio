@@ -289,6 +289,13 @@ Estimate peak as roughly one cold `kio-rs` rustc's resident size per concurrentl
 
 ## Per-session worktrees
 
+Use `experiment/<descriptive-topic>` for an explicitly experimental branch whose
+adoption is undecided. Keep staged changes separately reviewable and record
+measurements in `evidence/` against exact commits as well as the branch name;
+the branch tip alone is not a stable measurement reference. An experiment name
+does not authorize merging, pushing, or weakening correctness checks. Keep
+unrelated repairs independently recoverable when practical.
+
 Default to one worktree per active session or feature stream, not one worktree per small topic or follow-up. Keep the session worktree under the configured sibling-worktree area, reuse it for related edits and focused checks, and run the final `ci/all.sh` gate from that same worktree. Reusing the worktree keeps its `target/` cache warm across the inevitable follow-up edits that happen after review or user feedback.
 
 When the session genuinely ends and its branch has been fast-forwarded into `main`, it is fine to remove the session worktree. Do not remove and recreate a worktree between related follow-ups just because a subtask was merged; that discards the exact cache state the next gate needs.

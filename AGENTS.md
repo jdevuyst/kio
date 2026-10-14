@@ -1,8 +1,8 @@
 # Agent instructions
 
-Read this file first: it governs repository agent instructions.
+Read this file first.
 
-Update `AGENTS.md` alongside changes to project conventions, goals, or tooling.
+Assess [guidance and audit impact](ai/skills/review-commits/SKILL.md#instruction-and-audit-coherence) per change; update affected owners.
 
 ## About Kio
 
@@ -18,15 +18,13 @@ Formal guarantees the language commits to: sound, decidable type system; strongl
 
 ## What belongs in AGENTS.md vs. `ai/topics/<topic>.md`
 
-This always-loaded entry point contains only:
+Include only:
 
-- **Universal rules** — every must, never, and gate, before first action. Put extended rationale/catalogues in the owning topic, `TESTING.md` or `CONTRIBUTING.md`.
-- **The trigger table** — action → topic; read before acting. Triggers must be recognizable from tool arguments (e.g., editing `.kio`); fuzzy triggers belong in the universal core.
-- **The pointer set** — on-demand catalogues for the area being worked on.
+- **Universal rules** — every must, never and gate, read before acting. Extended rationale: topics, `TESTING.md` or `CONTRIBUTING.md`.
+- **Triggers** — action → topic, read before acting; recognizable from tool arguments. Otherwise use universal rules.
+- **Pointers** — on-demand topic catalogues.
 
-Durable implementation evidence belongs in `evidence/`, not instruction files. [`audit-agents-md`](ai/skills/audit-agents-md/SKILL.md) checks placement and size.
-
-`audit-agents-md` checks: `AGENTS.md ≤ 40,000 characters`; resolving topic triggers/pointers; every `ai/topics/*.md` referenced here (no orphans); resolving tracked `AGENTS.md § …` references.
+Keep durable implementation evidence in `evidence/`. [`audit-agents-md`](ai/skills/audit-agents-md/SKILL.md) checks placement, the 40,000-character cap, topic/section links, and a pointer here to every topic.
 
 ## Universal rules
 
@@ -72,6 +70,7 @@ These rules apply to every change in this repo. Read them before the first tool 
 
 - **Visually review landing-page changes.** An agent or user must inspect the rendered result; automated checks alone do not suffice.
 - **Blog sign-off requires successful review.** Before DCO-signing new or edited posts, [`review-blog-post`](ai/skills/review-blog-post/SKILL.md) must pass on final text/code/harnesses. Edits require renewed affected review; optional suggestions may be declined. Review grants no edit/sign-off/push authority.
+- **GitHub posts.** Creating/editing issues, PRs or comments requires explicit user authorization for the action AND approval of exact text, including titles. Draft approval alone is not permission to post; one explicit approval can cover both. Discussion or a general tracking request grants neither.
 
 ## Trigger table
 

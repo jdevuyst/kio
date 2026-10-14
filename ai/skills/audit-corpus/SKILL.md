@@ -18,7 +18,13 @@ The skill has two halves. **Shared checks** (§§ 1–9) apply to each corpus wh
 
 Read first: AGENTS.md § Universal rules (the four rules named in § Shared principles), [`TESTING.md`](../../../TESTING.md), [`test-data/README.md`](../../../test-data/README.md), and the per-corpus contracts [`test-data/emissions/README.md`](../../../test-data/emissions/README.md), [`test-data/poc/README.md`](../../../test-data/poc/README.md), [`test-data/castles/README.md`](../../../test-data/castles/README.md), and [`test-data/contrib/README.md`](../../../test-data/contrib/README.md). The cross-backend caveat-citation mechanics overlap [`audit-test-strategy`](../audit-test-strategy/SKILL.md) § 8 and [`audit-spec-drift`](../audit-spec-drift/SKILL.md) § 7 — this skill is the history-and-source-shape lens plus the per-corpus maturity contracts; defer the two-banner-plus-emitter enumeration to those.
 
-Findings are bugs in the corpus, not in the audit — when a check fires, fix the case (or the missing golden / the underlying emitter), do not relax the check.
+Verify candidate findings against the owning contract before classifying them;
+an audit check can be stale or misapplied. Repair directions below apply only
+to confirmed findings within an authorized fix directive, following
+[`audit-fix-mode.md`](../../topics/audit-fix-mode.md). In fix mode, correct a
+faulty check when the contract justifies it, but never weaken a sound check or
+reshape a case to hide a bug. Ambiguous contracts require a user decision, not an
+audit-authored rule.
 
 Start with source and existing execution receipts. Record their source/binary
 identity, selected cases and implementations, assertions, and outcome; missing
