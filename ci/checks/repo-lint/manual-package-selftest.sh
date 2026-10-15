@@ -13,13 +13,14 @@ trap 'exit 129' HUP
 mkdir -p "$scratch/ci" "$scratch/kio-rs/src" "$scratch/docs" "$scratch/specs"
 cp "$REPO_ROOT/ci/package-kio.sh" "$scratch/ci/"
 printf 'guide\n' >"$scratch/KIO-FOR-AGENTS.md"
+printf 'terminology\n' >"$scratch/TERMINOLOGY.md"
 printf 'page\n' >"$scratch/docs/page.md"
 printf 'grammar\n' >"$scratch/specs/grammar.md"
 printf 'manifest\n' >"$scratch/kio-rs/Cargo.toml"
 printf 'source\n' >"$scratch/kio-rs/src/lib.rs"
 printf '/src/ignored.rs\n/manual/\n' >"$scratch/kio-rs/.gitignore"
 git -C "$scratch" init -q
-git -C "$scratch" add -- docs specs KIO-FOR-AGENTS.md kio-rs
+git -C "$scratch" add -- docs specs KIO-FOR-AGENTS.md TERMINOLOGY.md kio-rs
 git -C "$scratch" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm fixture
 cat >"$scratch/ci/cargo.sh" <<'EOF'
 #!/bin/sh
@@ -119,5 +120,11 @@ reject_before_cargo
 git -C "$scratch" mv docs/renamed.md docs/page.md
 printf 'changed\n' >>"$scratch/KIO-FOR-AGENTS.md"
 git -C "$scratch" add -- KIO-FOR-AGENTS.md
+reject_before_cargo
+printf 'guide\n' >"$scratch/KIO-FOR-AGENTS.md"
+git -C "$scratch" add -- KIO-FOR-AGENTS.md
+printf 'changed\n' >>"$scratch/TERMINOLOGY.md"
+reject_before_cargo
+git -C "$scratch" add -- TERMINOLOGY.md
 reject_before_cargo
 printf '%s\n' 'manual-package-selftest: preparation, flags, exit status, and tracked input guards pass'

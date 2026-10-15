@@ -238,7 +238,10 @@ pub fn documentation_help(template: &str) -> String {
             .count();
         let reference = target[..length].trim_end_matches('.');
         let path = reference.split('#').next().expect("documentation path");
-        if path.starts_with("docs/") || path.starts_with("specs/") || path == "KIO-FOR-AGENTS.md" {
+        if path.starts_with("docs/")
+            || path.starts_with("specs/")
+            || matches!(path, "KIO-FOR-AGENTS.md" | "TERMINOLOGY.md")
+        {
             rendered.push_str(&format!(
                 "kio manual cat {path} ({KIO_DOCS_BASE_URL}/{reference})"
             ));
@@ -264,6 +267,12 @@ fn documentation_routes_share_targets_and_keep_fragments_web_only() {
         documentation_help("{base}/docs/README.md and {base}/KIO-FOR-AGENTS.md"),
         format!(
             "kio manual cat docs/README.md ({KIO_DOCS_BASE_URL}/docs/README.md) and kio manual cat KIO-FOR-AGENTS.md ({KIO_DOCS_BASE_URL}/KIO-FOR-AGENTS.md)"
+        )
+    );
+    assert_eq!(
+        documentation_help("{base}/TERMINOLOGY.md#data-shapes-and-types"),
+        format!(
+            "kio manual cat TERMINOLOGY.md ({KIO_DOCS_BASE_URL}/TERMINOLOGY.md#data-shapes-and-types)"
         )
     );
     assert_eq!(

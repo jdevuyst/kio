@@ -116,6 +116,18 @@ For every link from one document under `docs/` to another, compare any surroundi
 
 Check that every doc file in `docs/` is reachable from some index (the [`docs/README.md`](../../../docs/README.md) catalog or a forward link from another doc). Orphan docs are a finding.
 
+## 8. Terminology coverage and precision
+
+Apply [`docs.md` § Terminology](../../topics/docs.md#terminology). Start from
+tutorials, guide explanations, README claims and CLI workflows, then ask which
+Kio-specific distinctions a reader needs to find in `TERMINOLOGY.md`. Flag
+omissions that leave a concrete confusion unresolved, even when a guide teaches
+the subject; rows/records and library elaborators are useful omission controls.
+Grouped entries and synonym routes count: do not require one entry per heading.
+Then compare glossary entries with their current contract and teaching links,
+and flag textbook material, duplication or peripheral implementation detail.
+Correct existing entries and working links alone do not establish coverage.
+
 ## How to report
 
 Order findings by their effect on a reader's ability to understand and use Kio, not by the directory or document class in which they occur.
@@ -134,6 +146,8 @@ Group findings into:
 7. **Orphan pages** — docs not reachable from any index.
 8. **Learning-path or standalone failures** — central coverage gaps, concepts used before introduction, circular prerequisites, missing routing, or explanations that require non-docs material.
 9. **Link-structure mismatches** — a description, destination, or reading order disagrees about coverage, audience, purpose, or prerequisites; state which part should change and why, without presuming that any one side is authoritative.
+10. **Terminology gaps or overgrowth** — a missing Kio-specific distinction,
+    inaccurate explanation, competing definition, or unnecessary reference material.
 
 For each finding, cite the affected doc pages and the governing evidence: the relevant spec section for correctness drift, or the description, destination, ordering context, and `ai/topics/docs.md` contract for learning-path, coverage, reachability, and link-structure findings.
 

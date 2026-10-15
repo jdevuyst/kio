@@ -6,9 +6,33 @@ The `docs/` directory holds **pedagogical material** for Kio — tutorials, topi
 
 The current layout is one cluster per kind under `docs/`: `tutorials/` for learning-oriented walkthroughs, `guides/` for topic- and task-oriented pieces, `poc/` for case studies, `hosts/` for per-host integration guides. The catalog of specific files is [`docs/README.md`](../../docs/README.md).
 
+## Terminology
+
+[`TERMINOLOGY.md`](../../TERMINOLOGY.md) is the priority vocabulary reference
+for Kio-specific or idiosyncratic language, package, hosting and tool concepts.
+Read it before introducing, renaming, removing or redefining a central
+reader-facing concept. Assess whether the change needs a glossary update,
+is already covered, or needs no entry; update it with the owning contract and
+first learning-path explanation when affected. The glossary owns concise
+meaning and routing, specifications own behavior, and `DESIGN.md` owns design
+commitments. Surface conflicts rather than resolving them through glossary
+edits. Changing an established term's meaning requires explicit user approval;
+meaning-preserving corrections and punctuation do not.
+
+Keep the reference useful to programmers, rather than expanding it into a
+textbook or API inventory. Group related distinctions and link to their public
+owners; audience-specific teaching explanations remain appropriate elsewhere.
+Review coverage from the learning path and CLI workflows as well as checking
+existing entries against contracts. A missing concept is a finding when it
+leaves a concrete Kio-specific confusion unresolved; an accurate linked guide
+alone does not make a glossary route unnecessary. Also flag redundant entries,
+generic prerequisite material and peripheral implementation detail. Do not
+require an entry per heading or maintain a separate term registry.
+
 ## Website and offline bundle inputs
 
-`docs/`, `specs/`, and the explicit root `KIO-FOR-AGENTS.md` are also inputs
+`docs/`, `specs/`, and the explicit root files `KIO-FOR-AGENTS.md` and
+`TERMINOLOGY.md` are also inputs
 to the installed `kio manual` bundle. It preserves tracked regular files,
 including non-Markdown assets and tracked files matching ignore rules, at their
 original repository-relative paths and bytes. Untracked/generated ignored
@@ -20,7 +44,7 @@ rendering and original-source offline reading: relative links, assets,
 prerequisites, Kiodoc presentation, and version correspondence. Essential
 authoring knowledge must not depend on an unbundled checkout path; distinguish
 further-reading links from instructions needed for the page's advertised task.
-Do not expand the bundle roots or rewrite source during extraction to conceal
+Do not expand the bundle inventory or rewrite source during extraction to conceal
 an offline gap. The source trees remain canonical, never hand-maintained copies.
 
 Checkout builds regenerate their indexed per-file tar.gz payload from current

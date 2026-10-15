@@ -21,6 +21,7 @@ Options:
 Start reading:
   kio manual cat docs/README.md
   kio manual cat KIO-FOR-AGENTS.md
+  kio manual cat TERMINOLOGY.md
 
 Discover contents: kio manual tree
 Archive formats and extraction: kio manual export --help";
@@ -40,7 +41,7 @@ fn help(operation: Option<&str>) -> String {
 
 const EXPORT_HELP: &str = "Usage: kio manual export [--format=FORMAT]
 
-Exports KIO-FOR-AGENTS.md and the bundled docs/ and specs/ trees.
+Exports KIO-FOR-AGENTS.md, TERMINOLOGY.md, and the bundled docs/ and specs/ trees.
 Archive contents match: kio manual tree
 Default format: tar.gz-concat (concatenated single-file tar.gz archives).
 Prefer tar.gz-concat for direct compressed export, or tar for immediate
@@ -390,7 +391,7 @@ mod tests {
     fn listings_and_tree_match_the_index() {
         assert_eq!(
             invoke(&["ls"]).unwrap(),
-            b"KIO-FOR-AGENTS.md\ndocs/\nspecs/\n"
+            b"KIO-FOR-AGENTS.md\nTERMINOLOGY.md\ndocs/\nspecs/\n"
         );
         let tree = String::from_utf8(invoke(&["tree"]).unwrap()).unwrap();
         let mut directories = Vec::new();

@@ -27,6 +27,9 @@ Walk AGENTS.md's trigger table and pointer set; every linked `ai/topics/<file>.m
 
 - For each `[...](ai/topics/<file>.md)` link in AGENTS.md, confirm the file is present at the path.
 - Surface a broken-link finding when it isn't.
+- Check the `TERMINOLOGY.md` read trigger and its docs-topic owner resolve,
+  preserve specification/design authority, and route maintenance without
+  duplicating the glossary or imposing exact-text approval on ordinary edits.
 
 ```sh
 grep -oE 'ai/topics/[a-z0-9-]+\.md' AGENTS.md | sort -u | while read -r f; do

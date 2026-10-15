@@ -14,6 +14,7 @@ const posixBoundary = { skip: process.platform === 'win32' && 'fake executable s
 
 test('shared Reference sidebar retains current main links and order', () => {
   assert.deepEqual(docsReference(), { text: 'Reference', items: [
+    { text: 'Terminology', link: 'https://github.com/jdevuyst/kio/blob/main/TERMINOLOGY.md' },
     { text: 'Language spec', link: 'https://github.com/jdevuyst/kio/blob/main/specs/language.md' },
     { text: 'CLI spec', link: 'https://github.com/jdevuyst/kio/blob/main/specs/cli.md' },
     { text: 'Package spec', link: 'https://github.com/jdevuyst/kio/blob/main/specs/package.md' },

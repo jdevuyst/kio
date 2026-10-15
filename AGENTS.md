@@ -2,7 +2,7 @@
 
 Read this file first.
 
-Assess [guidance and audit impact](ai/skills/review-commits/SKILL.md#instruction-and-audit-coherence) per change; update affected owners.
+[Assess guidance/audit impact](ai/skills/review-commits/SKILL.md#instruction-and-audit-coherence); update affected owners.
 
 ## About Kio
 
@@ -24,7 +24,7 @@ Include only:
 - **Triggers** — action → topic, read before acting; recognizable from tool arguments. Otherwise use universal rules.
 - **Pointers** — on-demand topic catalogues.
 
-Keep durable implementation evidence in `evidence/`. [`audit-agents-md`](ai/skills/audit-agents-md/SKILL.md) checks placement, the 40,000-character cap, topic/section links, and a pointer here to every topic.
+Keep durable evidence in `evidence/`. [`audit-agents-md`](ai/skills/audit-agents-md/SKILL.md) checks placement, the 40,000-character cap and links/routing.
 
 ## Universal rules
 
@@ -74,10 +74,11 @@ These rules apply to every change in this repo. Read them before the first tool 
 
 ## Trigger table
 
-Before taking the listed action, read the linked topic file.
+Read the linked topic before acting.
 
 | Action | Topic file |
 | --- | --- |
+| Changing Kio terms or reader-facing concepts | [TERMINOLOGY.md](TERMINOLOGY.md), then [owner](ai/topics/docs.md#terminology) |
 | Editing under `specs/` | [`ai/topics/specs.md`](ai/topics/specs.md) |
 | Editing under `docs/` | [`ai/topics/docs.md`](ai/topics/docs.md) — teaching and publication |
 | Packaging or publishing the `kio-lang` source crate | [`ai/topics/docs.md`](ai/topics/docs.md) § Website and offline bundle inputs — automatic preparation, archive completeness and dirty guards |
@@ -102,8 +103,6 @@ Before taking the listed action, read the linked topic file.
 | Running an `audit-*` skill, the `audit` umbrella skill, or `review-commits` with a fix directive | [`ai/topics/audit-fix-mode.md`](ai/topics/audit-fix-mode.md) |
 
 ## Pointer set
-
-On-demand reference catalogues.
 
 - [`ai/topics/repo-layout.md`](ai/topics/repo-layout.md) — top-level directories and their contracts (paired-jobs rule for `ci/`, the bucketed organization under `ci/`, what lives in `test-data/` vs. `ci/infra/`).
 - [`ai/topics/local-tools.md`](ai/topics/local-tools.md) — local tool mechanics: devcontainer, tool-version source of truth, sccache, scheduler-native Cargo serialization.

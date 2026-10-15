@@ -147,6 +147,12 @@ tone/format with its siblings; use rich formatting appropriately; and not
 contain stale/placeholder wording. Report messages that read as
 developer-facing debug output rather than polished user output.
 
+Check Kio-specific vocabulary against `TERMINOLOGY.md`, especially host versus
+host language and backend versus build target. Qualify ambiguous technical
+nouns when the distinction matters; ordinary verb uses of "target" need no
+mechanical replacement. Route meaningful missing distinctions through
+[`docs.md` § Terminology](../../topics/docs.md#terminology).
+
 ### B3. REPL / doc / lsp output
 
 The REPL inspector (`:scope`, `:doc`, `:ls`, type/normalize output),

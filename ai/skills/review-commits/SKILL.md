@@ -201,6 +201,12 @@ summaries and audience-specific explanations remain useful; link to the owner
 rather than maintaining competing requirements or duplicated mechanics.
 Change `AGENTS.md` only when its universal rules or discovery routes change.
 
+For central reader-facing concept changes, apply
+[`docs.md` § Terminology](../../topics/docs.md#terminology): record a glossary
+update, existing coverage, or why no entry is useful. Check meaningful omissions
+and unnecessary growth as well as accuracy; linked teaching prose does not
+replace the vocabulary reference or the specification's behavioral authority.
+
 Audit skills retain independent, concrete checks against those owners, including
 counterexamples and evidence limits; a pointer or assurance that the authoring
 workflow was followed is not a substitute. Assess this impact as part of the

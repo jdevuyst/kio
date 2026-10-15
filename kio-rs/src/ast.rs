@@ -4569,30 +4569,20 @@ pub enum Type<P: Phase = Surface> {
         abi_arity: usize,
         caps: P::FnTypeCapabilities,
     },
-    /// `(A & B)` — anonymous product. Always explicitly parenthesized
-    /// in Kio'; right-associative `A & B & C` sugar is not in scope.
+    /// Binary product; `A & B & C` parses as `A & (B & C)` in Kio and Kio'.
     Product {
         left: Box<Type<P>>,
         right: Box<Type<P>>,
         meta: Meta<P>,
     },
-    /// `(A | B)` — anonymous sum. Always explicitly parenthesized in
-    /// Kio'; right-associative `A | B | C` sugar is not in scope.
+    /// Binary sum; `A | B | C` parses as `A | (B | C)` in Kio and Kio'.
     Sum {
         left: Box<Type<P>>,
         right: Box<Type<P>>,
         meta: Meta<P>,
     },
-    /// `{f: X}`, `{f}`, `{f: X, g: Y}` — label-derived type sugar.
-    /// **Stripped during label-elab** by looking each label up in the
-    /// per-module label table, producing `F(args)` (or a chain
-    /// of `&` for multi-label forms). Bare `f` and `f(T, ...)` in
-    /// type position are emitted by the parser as `Type::Path` and
-    /// rewritten in the same pass.
-    ///
-    /// Per-label leading trivia flows onto each `labels[i]`'s
-    /// `meta.leading_trivia`. Dropped at the `label_elab` boundary
-    /// along with the variant itself.
+    /// Defensive constructed-AST shape rejected by label elaboration:
+    /// braced labels are value syntax, not type syntax.
     LabelSugar {
         labels: Vec<LabelSugarLabel<P>>,
         meta: Meta<P>,

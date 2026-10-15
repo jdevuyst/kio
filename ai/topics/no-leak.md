@@ -17,7 +17,7 @@ The rule governs the **public project artifacts** — the files a clone publishe
 - `specs/`
 - `evidence/`
 - `docs/` except `docs/blog/*.md`
-- `README.md`, `ROADMAP.md`, `INSTALL.md`, `KIO-FOR-AGENTS.md`
+- `README.md`, `ROADMAP.md`, `INSTALL.md`, `KIO-FOR-AGENTS.md`, `TERMINOLOGY.md`
 - `kio-rs/` source and its comments (and any future compiler crate)
 - `ci/`
 - `test-data/`

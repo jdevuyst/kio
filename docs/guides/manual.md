@@ -8,10 +8,12 @@ and these commands work from any directory:
 kio manual
 kio manual cat docs/README.md
 kio manual cat KIO-FOR-AGENTS.md
+kio manual cat TERMINOLOGY.md
 ```
 
 Start with the documentation catalog for tutorials and topic guides. The
 portable agent instructions help an AI assistant navigate the same material.
+The terminology reference explains Kio-specific terms and distinctions.
 For precise language rules, read `kio manual cat specs/language.md`.
 
 ## Discovering and reading files
@@ -26,7 +28,7 @@ kio manual cat docs/guides/products.md
 
 `ls` lists a directory's immediate children. `tree` shows its complete subtree,
 with indentation and `/` after directory names. Their default is the virtual
-root containing `KIO-FOR-AGENTS.md`, `docs/`, and `specs/`.
+root containing `KIO-FOR-AGENTS.md`, `TERMINOLOGY.md`, `docs/`, and `specs/`.
 
 `cat` writes the complete file exactly as bundled. Save a single file with
 redirection, for example `kio manual cat specs/language.md > language.md`.
@@ -34,7 +36,7 @@ Paths use `/` and name bundled files, not files in your project. Resolve a
 document's relative links within this tree and open the destination with
 `kio manual cat`. Website and external repository links still need network
 access; exporting the manual does not include linked packages or other files
-outside these three bundle roots.
+outside this bundle inventory.
 
 The bundled files are their original Markdown and assets, rather than rendered
 website pages. Kiodoc fence attributes and hidden harnesses remain visible in

@@ -16,9 +16,9 @@ workspace=$(mktemp -d out/manual.XXXXXX)
 mkdir "$workspace/unrelated"
 cd "$workspace/unrelated"
 
-git -C "$root" ls-files -- docs specs KIO-FOR-AGENTS.md | LC_ALL=C sort >../inventory
+git -C "$root" ls-files -- docs specs KIO-FOR-AGENTS.md TERMINOLOGY.md | LC_ALL=C sort >../inventory
 "$KIO_BIN" manual ls >../root-list
-printf 'KIO-FOR-AGENTS.md\ndocs/\nspecs/\n' >../expected-list
+printf 'KIO-FOR-AGENTS.md\nTERMINOLOGY.md\ndocs/\nspecs/\n' >../expected-list
 cmp ../expected-list ../root-list
 "$KIO_BIN" --no-cache manual tree --no-cache >../tree
 "$KIO_BIN" manual tree . >../root-tree

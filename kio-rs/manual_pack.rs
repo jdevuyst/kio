@@ -20,6 +20,7 @@ pub fn assemble(root: &Path) -> io::Result<Bundle> {
             "docs",
             "specs",
             "KIO-FOR-AGENTS.md",
+            "TERMINOLOGY.md",
         ])
         .output()?;
     if !output.status.success() {
@@ -49,10 +50,12 @@ pub fn assemble(root: &Path) -> io::Result<Bundle> {
     }
     paths.sort();
     paths.dedup();
-    if !paths.iter().any(|path| path == "KIO-FOR-AGENTS.md") {
-        return Err(io::Error::other(
-            "KIO-FOR-AGENTS.md must be tracked before bundling",
-        ));
+    for required in ["KIO-FOR-AGENTS.md", "TERMINOLOGY.md"] {
+        if !paths.iter().any(|path| path == required) {
+            return Err(io::Error::other(format!(
+                "{required} must be tracked before bundling"
+            )));
+        }
     }
     pack_paths(root, &paths)
 }
@@ -125,11 +128,13 @@ pub fn validate(bundle: &Bundle) -> io::Result<()> {
     let mut offset = 0usize;
     let mut previous = "";
     let mut found_guide = false;
+    let mut found_terminology = false;
     while let Some(line) = lines.next() {
         if let Some(expected) = line.strip_prefix("identity\t") {
             return if lines.next().is_none()
                 && offset == bundle.payload.len()
                 && found_guide
+                && found_terminology
                 && expected == identity.finalize().to_hex().as_str()
             {
                 Ok(())
@@ -210,6 +215,7 @@ pub fn validate(bundle: &Bundle) -> io::Result<()> {
             return Err(invalid());
         }
         found_guide |= fields[0] == "KIO-FOR-AGENTS.md";
+        found_terminology |= fields[0] == "TERMINOLOGY.md";
         previous = fields[0];
         offset = end;
     }
@@ -217,7 +223,9 @@ pub fn validate(bundle: &Bundle) -> io::Result<()> {
 }
 
 pub fn valid_path(path: &str) -> bool {
-    (path == "KIO-FOR-AGENTS.md" || path.starts_with("docs/") || path.starts_with("specs/"))
+    (matches!(path, "KIO-FOR-AGENTS.md" | "TERMINOLOGY.md")
+        || path.starts_with("docs/")
+        || path.starts_with("specs/"))
         && path
             .split('/')
             .all(|part| !part.is_empty() && part != "." && part != "..")
@@ -300,8 +308,17 @@ mod tests {
         fs::create_dir_all(root.path().join("docs/assets")).unwrap();
         fs::create_dir_all(root.path().join("specs")).unwrap();
         let long = format!("docs/assets/{}.bin", "asset-".repeat(30));
-        let paths = vec!["KIO-FOR-AGENTS.md".into(), long, "specs/empty.md".into()];
-        for (path, bytes) in paths.iter().zip([b"guide".as_slice(), b"\0\xff\r\n", b""]) {
+        let paths = vec![
+            "KIO-FOR-AGENTS.md".into(),
+            "TERMINOLOGY.md".into(),
+            long,
+            "specs/empty.md".into(),
+        ];
+        for (path, bytes) in
+            paths
+                .iter()
+                .zip([b"guide".as_slice(), b"terminology", b"\0\xff\r\n", b""])
+        {
             fs::write(root.path().join(path), bytes).unwrap();
         }
         (root, paths)
@@ -318,7 +335,7 @@ mod tests {
         let snapshot_dir = root.path().join("snapshot");
         snapshot(&bundle, &snapshot_dir, false).unwrap();
         snapshot(&bundle, &snapshot_dir, true).unwrap();
-        fs::write(root.path().join(&paths[1]), b"changed").unwrap();
+        fs::write(root.path().join("TERMINOLOGY.md"), b"changed").unwrap();
         assert!(
             snapshot(
                 &pack_paths(root.path(), &paths).unwrap(),
@@ -347,9 +364,32 @@ mod tests {
     }
 
     #[test]
+    fn both_root_references_are_required_in_checkout_and_packaged_inventories() {
+        let (root, paths) = fixture();
+        git(root.path(), &["init", "--quiet"]);
+        for omitted in ["KIO-FOR-AGENTS.md", "TERMINOLOGY.md"] {
+            let partial: Vec<_> = paths
+                .iter()
+                .filter(|path| *path != omitted)
+                .cloned()
+                .collect();
+            assert!(validate(&pack_paths(root.path(), &partial).unwrap()).is_err());
+            git(root.path(), &["read-tree", "--empty"]);
+            let mut add = vec!["add", "--"];
+            add.extend(partial.iter().map(String::as_str));
+            git(root.path(), &add);
+            assert!(assemble(root.path()).is_err());
+        }
+    }
+
+    #[test]
     fn packaged_validation_rejects_hidden_entries_and_incomplete_end_markers() {
         let (root, _) = fixture();
-        let bundle = pack_paths(root.path(), &["KIO-FOR-AGENTS.md".into()]).unwrap();
+        let bundle = pack_paths(
+            root.path(),
+            &["KIO-FOR-AGENTS.md".into(), "TERMINOLOGY.md".into()],
+        )
+        .unwrap();
         let mut original = Vec::new();
         flate2::read::GzDecoder::new(bundle.payload.as_slice())
             .read_to_end(&mut original)
@@ -360,11 +400,23 @@ mod tests {
                 .operating_system(255)
                 .write(Vec::new(), flate2::Compression::default());
             encoder.write_all(decoded).unwrap();
-            let payload = encoder.finish().unwrap();
-            let index = bundle.index.replace(
-                &format!("\t{}\n", bundle.payload.len()),
-                &format!("\t{}\n", payload.len()),
-            );
+            let mut payload = encoder.finish().unwrap();
+            let mut lines = bundle.index.lines();
+            let mut index = format!("{}\n", lines.next().unwrap());
+            let first: Vec<_> = lines.next().unwrap().split('\t').collect();
+            let second: Vec<_> = lines.next().unwrap().split('\t').collect();
+            writeln!(index, "{}\t{}\t0\t{}", first[0], first[1], payload.len()).unwrap();
+            writeln!(
+                index,
+                "{}\t{}\t{}\t{}",
+                second[0],
+                second[1],
+                payload.len(),
+                second[3]
+            )
+            .unwrap();
+            writeln!(index, "{}", lines.next().unwrap()).unwrap();
+            payload.extend_from_slice(&bundle.payload[first[3].parse::<usize>().unwrap()..]);
             Bundle { index, payload }
         };
         validate(&repack(&original)).unwrap();
@@ -442,11 +494,20 @@ mod tests {
         fs::write(root.path().join(".gitignore"), b"docs/assets/\n").unwrap();
         git(
             root.path(),
-            &["add", "-f", "--", "KIO-FOR-AGENTS.md", "docs", "specs"],
+            &[
+                "add",
+                "-f",
+                "--",
+                "KIO-FOR-AGENTS.md",
+                "TERMINOLOGY.md",
+                "docs",
+                "specs",
+            ],
         );
         fs::write(root.path().join("docs/untracked.md"), b"not bundled").unwrap();
         let first = assemble(root.path()).unwrap();
-        assert!(first.index.contains(&paths[1]));
+        assert!(first.index.contains(&paths[2]));
+        assert!(first.index.contains("TERMINOLOGY.md"));
         assert!(!first.index.contains("untracked.md"));
         validate(&first).unwrap();
         let snapshot_dir = root.path().join("snapshot");
@@ -480,7 +541,14 @@ mod tests {
         symlink("../KIO-FOR-AGENTS.md", root.path().join("docs/link.md")).unwrap();
         git(
             root.path(),
-            &["add", "--", "KIO-FOR-AGENTS.md", "docs", "specs"],
+            &[
+                "add",
+                "--",
+                "KIO-FOR-AGENTS.md",
+                "TERMINOLOGY.md",
+                "docs",
+                "specs",
+            ],
         );
         assert!(assemble(root.path()).is_err());
         git(root.path(), &["rm", "-f", "--quiet", "--", "docs/link.md"]);

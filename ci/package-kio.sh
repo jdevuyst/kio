@@ -21,7 +21,7 @@ for manual_arg in "$@"; do
 done
 
 # Cargo checks crate files; the canonical manual inputs live outside that crate.
-if ! git -C "$REPO_ROOT" diff --quiet HEAD -- docs specs KIO-FOR-AGENTS.md; then
+if ! git -C "$REPO_ROOT" diff --quiet HEAD -- docs specs KIO-FOR-AGENTS.md TERMINOLOGY.md; then
   printf '%s\n' 'manual sources have uncommitted changes; commit them before packaging' >&2
   exit 1
 fi

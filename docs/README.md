@@ -2,6 +2,9 @@
 
 Learn Kio here — tutorials to get started, topic guides for specific tasks, case studies of complete packages, and host guides for embedding Kio in a runtime. For the precise contracts, see [`specs/`](../specs/).
 
+Use the [terminology reference](../TERMINOLOGY.md) to look up Kio-specific
+terms and distinctions while following the learning path.
+
 ## Tutorials
 
 New to Kio? Start here — these read top to bottom.

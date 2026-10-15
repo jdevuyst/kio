@@ -17,7 +17,7 @@ pub fn prepare(core_root: &std::path::Path) {
     let output = PathBuf::from(env::var_os("OUT_DIR").expect("build output directory"));
     let root = core_root.parent().expect("crate parent");
     if manual_pack::is_checkout(core_root) {
-        for path in ["docs", "specs", "KIO-FOR-AGENTS.md"] {
+        for path in ["docs", "specs", "KIO-FOR-AGENTS.md", "TERMINOLOGY.md"] {
             println!("cargo:rerun-if-changed={}", root.join(path).display());
         }
         let git_dir = Command::new("git")

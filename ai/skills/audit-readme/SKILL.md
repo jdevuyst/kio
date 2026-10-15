@@ -25,6 +25,9 @@ Check:
 - Each bullet's gloss is a single line — no enumeration of subarticles. A bullet like `docs/` followed by `(tutorials, guides, host integrations)` is admissible as part of the gloss; a bullet that *links* into `docs/tutorials/`, `docs/guides/`, etc. as separate sub-items is over-enumeration and is a finding.
 - No bullet links directly at a specific `docs/<subdir>/<page>.md`, `specs/<page>.md`, or other deep file — those are the home's job to enumerate. If a specific spec needs surfacing to passers-by, the right move is a Features bullet or a `docs/` guide that quotes it.
 - Per-link verification: each bullet's link resolves to an existing path.
+- Verify the root terminology reference remains discoverable through its
+  `TERMINOLOGY.md` bullet, with an accurate concise gloss. Meaning and coverage
+  belong to `audit-docs-drift` and `audit-spec-drift`.
 
 ## 2. About Kio framing mirror
 

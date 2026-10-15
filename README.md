@@ -81,6 +81,7 @@ Get the Kio editor extension from the [Visual Studio Marketplace](https://market
 ## Documentation
 
 - [Guides and tutorials](docs/) — learn and use Kio.
+- [Terminology](TERMINOLOGY.md) — Kio-specific terms and distinctions.
 - [Writing Kio with AI](KIO-FOR-AGENTS.md) — guidance for coding agents.
 - [Reference libraries and examples](test-data/poc/) — reusable modules and worked examples.
 - [Language specifications](specs/) — authoritative contracts.

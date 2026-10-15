@@ -33,7 +33,7 @@ __INSERT_CODE_HERE__
 
 That sounds pointless until you see what it buys: a *uniform shape* for "might have failed." A function that always succeeds can still hand back a `(String | !)`, and a caller that handles both arms works whether or not failure is actually reachable.
 
-`widen_sum!` adds a `!` arm as an unreachable extension; `narrow_sum!` drops it back via its `!`-elimination rule — `A | !` is `A`:
+`widen_sum!` adds a `!` arm as an unreachable extension; `narrow_sum!` drops it back via its `!`-elimination rule. These are explicit conversions: `A | !` and `A` remain distinct types.
 
 ```kio {@module}
 fn never_fails(s: String) -> String | ! { s.>widen_sum! }

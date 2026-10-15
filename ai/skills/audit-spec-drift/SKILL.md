@@ -24,6 +24,12 @@ handoffs, unexplained shorthand, and maintenance bookkeeping that obscure the
 contract. Preserve formal precision and audience-appropriate technical detail;
 specialized terminology alone is not a finding.
 
+Compare relevant explanations in `TERMINOLOGY.md` with the owning contract.
+Flag misleading shorthand and meaningful missing distinctions under
+[`docs.md` § Terminology](../../topics/docs.md#terminology); do not turn the
+glossary into a duplicate specification. A genuine ambiguity needs a contract
+decision, and glossary wording cannot supply behavioral authority.
+
 For a prose-focused request, keep the audit within that scope: consult linked
 contracts or implementation evidence only to resolve a specific doubt. Do not
 expand it automatically into the implementation comparisons below. Distinguish

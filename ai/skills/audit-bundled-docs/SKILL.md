@@ -15,7 +15,7 @@ or platform runs without their required authority and resource coordination.
 ## Inventory and contents
 
 Compare the packer's explicit tracked-file inventory with `docs/`, `specs/`,
-and `KIO-FOR-AGENTS.md`. Check regular non-Markdown assets, tracked ignored
+`KIO-FOR-AGENTS.md`, and `TERMINOLOGY.md`. Check regular non-Markdown assets, tracked ignored
 files, exclusions of untracked/generated inputs, rejection of symlinks and
 unsupported ancestors, stable ordering, and path safety. One inventory must
 produce the index and finished single-file tar.gz members. Confirm original

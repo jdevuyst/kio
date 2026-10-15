@@ -7,6 +7,10 @@ The `specs/` directory holds the authoritative specifications. These are
 kept strictly consistent with the implementation. Pedagogical walkthroughs
 live in `docs/`; see [`ai/topics/docs.md`](docs.md).
 
+Use [`TERMINOLOGY.md`](../../TERMINOLOGY.md) for preferred vocabulary and
+[`docs.md` § Terminology](docs.md#terminology) for glossary impact and ownership.
+Concise glossary explanations do not replace or override specification rules.
+
 **Write for human technical readers.** State rules, conditions, and exceptions
 explicitly, and explain notation or specialized terms before relying on them.
 Examples expose or directly reference the prerequisites needed to interpret

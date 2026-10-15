@@ -19,7 +19,7 @@ network access, package discovery, compiler-cache initialization, browser, or
 pager. It works from any current directory. Top-level `kio --help` explicitly
 points to this offline capability.
 
-The virtual root contains `KIO-FOR-AGENTS.md` and the complete tracked `docs/`
+The virtual root contains `KIO-FOR-AGENTS.md`, `TERMINOLOGY.md`, and the complete tracked `docs/`
 and `specs/` trees, including regular non-Markdown files. Tracked files remain
 included even when an ignore rule matches them; untracked and generated ignored
 files are excluded. Symlinks and other non-regular entries are rejected during
@@ -100,7 +100,7 @@ kio manual export --format=tar.gz | tar -xzf -
 Prefer `tar.gz-concat` for direct compressed export, or `tar` for immediate
 local extraction without recompression. Choose `tar.gz` when a conventional
 compressed archive is needed. These describe processing choices, not a promised
-end-to-end timing advantage. Export help briefly names `KIO-FOR-AGENTS.md`
+end-to-end timing advantage. Export help briefly names `KIO-FOR-AGENTS.md` and `TERMINOLOGY.md`
 before `docs/` and `specs/`, identifies the default, points to `kio manual tree`
 for complete contents, and includes these commands and their explanation.
 

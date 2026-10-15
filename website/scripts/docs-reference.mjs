@@ -1,4 +1,5 @@
 const entries = [
+  { text: 'Terminology', source: 'TERMINOLOGY.md', kind: 'blob' },
   { text: 'Language spec', source: 'specs/language.md', kind: 'blob' },
   { text: 'CLI spec', source: 'specs/cli.md', kind: 'blob' },
   { text: 'Package spec', source: 'specs/package.md', kind: 'blob' },

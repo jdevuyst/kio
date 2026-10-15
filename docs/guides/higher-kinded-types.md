@@ -24,7 +24,7 @@ Properties of type constructors in Kio:
 
 The kind-`*→*` binder `[*F]` in a function signature can stay abstract — code parametric over `[*F]` works against any concrete type constructor. This is how generic combinators (`sequence`, `traverse`, …) abstract over the choice of type constructor without committing to a specific one.
 
-This guide is the **language reference** for the HKT machinery — kind annotations, how type-constructor application works, the polymorphic newtype payload contract, the multi-arity story. For a worked, executable walkthrough that builds first-class `Functor` / `Monad` instances over arity-1 brands, consumes them with imported `do!` sequencing, and derives one with `derive!`, see the case study [`docs/poc/hkt.md`](../poc/hkt.md).
+This guide explains the HKT machinery — kind annotations, type-constructor application, polymorphic newtype payloads, and multiple type arguments. The [language reference](../../specs/language.md#higher-kinded-types) defines the precise rules. For a worked, executable walkthrough that builds first-class `Functor` / `Monad` instances over arity-1 brands, consumes them with imported `do!` sequencing, and derives one with `derive!`, see the case study [`docs/poc/hkt.md`](../poc/hkt.md).
 
 Assumed setup: a module whose host supplies `String` with `role(str)`,
 `print: String -> .`, and `string_concat: (String & String) -> String`.
