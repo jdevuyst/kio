@@ -1,21 +1,25 @@
 # Installing Kio from source
 
-This guide builds the `kio` binary and the VS Code extension from a source checkout, then wires the editor up to the binary so diagnostics, hover, and format-on-save work. You need a Rust toolchain for the binary, plus Node.js and the Tree-sitter CLI for the extension. After installing and activating mise as described in [`INSTALL.md`](../../INSTALL.md), install their pinned versions from the repository root:
+This guide builds the `kio` binary and the VS Code extension from a source checkout, then wires the editor up to the binary so diagnostics, hover, and format-on-save work. You need Rust for the binary, plus Node.js and the Tree-sitter CLI for the extension. Provide the [native prerequisites](../../INSTALL.md#native-prerequisites), then install only these pinned tools from the repository root. On Windows, use Git Bash; Rust setup is supported and Node.js setup is best-effort:
 
 ```sh
-mise trust mise.toml
-mise install --locked rust node tree-sitter
+sh ci/install-target-language-toolchains.sh rust js
+sh ci/impl-toolchain.sh toolchain-general-install rust,js -- tree-sitter
 ```
+
+The installer bootstraps its verified mise automatically. Rust and Node.js live
+in the project toolchain store; Tree-sitter is a general mise helper. The commands
+below select those tools explicitly, without account activation or profile edits.
 
 The extension build runs `tree-sitter build --wasm`, which also needs the WASI SDK. Tree-sitter downloads it on first use unless it is already cached or supplied through `TREE_SITTER_WASI_SDK_PATH`, so allow network access for that first build. See [Tree-sitter's Wasm build instructions](https://tree-sitter.github.io/tree-sitter/cli/build.html#-w--wasm). Installing the extension requires VS Code's `code` command on your `PATH`.
 
 ## Building the `kio` binary
 
-The `kio` binary is produced by the Rust crate in `kio-rs/`. Build it from there:
+The `kio` binary is produced by the Rust crate in `kio-rs/`. From the repository
+root, build it in the selected Rust environment:
 
 ```sh
-cd kio-rs
-cargo build --release --bin kio
+sh ci/impl-toolchain.sh toolchain-exec rust -- cargo build --manifest-path kio-rs/Cargo.toml --release --bin kio
 ```
 
 The compiled binary lands at `kio-rs/target/release/kio`.
@@ -29,11 +33,10 @@ The user-facing surface of the language server is documented in [`specs/cli.md` 
 From the repository root:
 
 ```sh
-cd tools/vscode-kio
-npm install
-npm run build
-npm run package        # -> kio.vsix
-code --install-extension kio.vsix
+sh ci/impl-toolchain.sh toolchain-exec js --helpers tree-sitter -- npm --prefix tools/vscode-kio install
+sh ci/impl-toolchain.sh toolchain-exec js --helpers tree-sitter -- npm --prefix tools/vscode-kio run build
+sh ci/impl-toolchain.sh toolchain-exec js --helpers tree-sitter -- npm --prefix tools/vscode-kio run package
+code --install-extension tools/vscode-kio/kio.vsix
 ```
 
 The extension always provides syntax highlighting, and adds diagnostics plus the rest of the language-server features once it finds a `kio` binary to spawn. For how the highlighting layers and the language-server client fit together, see [`tools/vscode-kio/README.md`](../../tools/vscode-kio/README.md).

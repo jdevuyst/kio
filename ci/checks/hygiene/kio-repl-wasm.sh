@@ -14,7 +14,8 @@ cd "$REPO_ROOT/kio-repl-wasm"
 
 for tool in node wasm-pack; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    printf 'kio-repl-wasm: %s not found on PATH; run mise install --locked.\n' "$tool" >&2
+    printf 'kio-repl-wasm: %s not found on PATH.\n' "$tool" >&2
+    printf '%s\n' '  run sh ci/impl-toolchain.sh install-core, then sh ci/impl-toolchain.sh toolchain-exec js,rust --core -- sh ci/checks/hygiene/kio-repl-wasm.sh from the repo root.' >&2
     exit 2
   fi
 done

@@ -1,191 +1,175 @@
 ---
 name: audit-install
-description: Verify the install story stays coherent — every path and command INSTALL.md names resolves (incl. inside code blocks, which markdown-link-check can't see), tools are mise-owned, install-dev-env mirrors INSTALL.md, install docs agree, required PATH dirs documented
+description: Audit checkout setup coherence, exact toolchain ownership and activation, supported platform sets, INSTALL.md/install-dev-env pairing, and distributed install instructions
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
-# Install / setup coherence audit
+# Install and setup coherence audit
 
-`INSTALL.md` is the human-facing setup doc; [`install-dev-env`](../install-dev-env/SKILL.md) is its agent-run automation; both anchor on `mise.toml`, `mise.optional.toml`, `mise.lock`, `mise.optional.lock`, `ci/impl-toolchain.sh`, and the devcontainer. This audit keeps the set coherent. The shape mirrors [`audit-readme`](../audit-readme/SKILL.md) (top-level doc integrity) and [`audit-agents-md`](../audit-agents-md/SKILL.md) §2 / §4 (references resolve). The weekly markdown-link-check workflow already covers `INSTALL.md`'s *links*; this covers what it can't — the path / command references inside code blocks, plus the skill pairing.
+Read [INSTALL.md](../../../INSTALL.md),
+[install-dev-env](../install-dev-env/SKILL.md),
+[local-tools.md](../../topics/local-tools.md), and
+[install-from-source.md](../../../docs/guides/install-from-source.md).
+Follow actual setup callers through `ci/impl-toolchain.sh` and
+`tools/toolchains/`; prose agreement alone does not establish correctness.
+This audit is read-only: do not install tools or mutate account configuration
+unless the user separately requests setup or validation that requires it.
 
-Read `INSTALL.md`, `ai/skills/install-dev-env/SKILL.md`, and `docs/guides/install-from-source.md` before starting.
+## 1. References and command contracts
 
-## 1. References resolve
-
-Every file, path, and command `INSTALL.md` names must still exist:
-
-```sh
-for p in .devcontainer mise.toml mise.optional.toml mise.lock mise.optional.lock ci/all.sh ci/impl-toolchain.sh; do
-  [ -e "$p" ] && echo "ok   $p" || echo "MISS $p"
-done
-```
-
-- The paths above (`.devcontainer/`, `mise.toml`, `mise.optional.toml`, `mise.lock`, `mise.optional.lock`, `ci/all.sh`, `ci/impl-toolchain.sh`) all resolve.
-- Commands in code blocks name real entrypoints: `sh ci/all.sh SAMPLE_IMPL`, `sh ci/impl-toolchain.sh ...`, `sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y`, `sh ci/impl-toolchain.sh install-report-tools`, `cargo build` in `kio-rs/`.
-- The Windows toolchain subset `INSTALL.md` lists (`node npm:typescript python go java rust ghcup`) must match real `mise.toml [tools]` entries — a tool renamed or dropped in `mise.toml` leaves this list stale.
-
-```sh
-awk '/^\[tools\]/{f=1;next} /^\[/{f=0} f && NF' mise.toml
-```
-
-## 2. Mise-owned tool coverage
-
-Every non-OS tool that Kio installs or depends on must be installed through mise, named or categorised in `INSTALL.md`, and represented in `mise.toml` or `mise.optional.toml`. This includes tools installed by mise-managed package-manager backends: `cargo:*`, `npm:*`, and pipx-backed Python CLI entries are acceptable because the mise config and lock files own the name, version, and install entry point. Non-mise setup is limited to the mise bootstrap itself and OS/runtime libraries required by mise-managed tools. If a change adds non-mise repo tooling, report it as unsupported unless the provisioning policy in `ai/topics/local-tools.md` is revised in the same change.
-
-- Cargo-backed report/audit CLIs (`cargo:cargo-fuzz`, `cargo:cargo-mutants`, `cargo:cargo-llvm-cov`, `cargo:cargo-audit`) are mise entries in `mise.optional.toml`, not direct `cargo install` Dockerfile steps. They are optional tools and should be reachable through `ci/impl-toolchain.sh report-mise-tools` and installable through `ci/impl-toolchain.sh install-report-tools`, not present in `core-mise-tools`.
-- npm-backed CLIs (`npm:typescript`, `npm:markdownlint-cli2`) are mise entries, not direct `npm install -g` Dockerfile or CI steps.
-- pipx-backed Python CLIs (`yamllint` today) are mise entries, not direct `pipx install` Dockerfile or CI steps.
-- `wasm-pack` is a mise entry (`aqua:wasm-bindgen/wasm-pack` today), not a direct `cargo install` Dockerfile step.
-- `ci/impl-toolchain.sh core-mise-tools` should be a subset of real `mise.toml [tools]` entries; `ci/impl-toolchain.sh report-mise-tools` should be a subset of real `mise.optional.toml [tools]` entries.
-- `INSTALL.md` must explain that package-manager-backed mise tools are allowed only when the mise config and lock files own the version and install entry point.
-- Cargo-backed tools must not be shadowed by stale binaries in `$CARGO_HOME/bin`; their resolved path should sit under `mise where <tool>`.
+Check every setup path/link and code-block command against the checkout.
+Include root/optional mise configurations and locks, delegated manifests,
+`ci/install-target-language-toolchains.sh`, container lifecycle scripts, and
+native CI jobs. Confirm referenced environment IDs exist with matching
+configuration/lock pairs. Exercise non-mutating help/list/plan operations where
+prerequisites are available; identify unavailable prerequisites rather than
+calling unexecuted commands verified.
 
 ```sh
-if find .devcontainer .github ci -type f \
-  \( -name Dockerfile -o -name '*.sh' -o -name '*.yml' -o -name '*.yaml' \) \
-  -exec grep -nE 'cargo install|npm install -g|pipx install' {} +; then
-  echo 'unexpected direct package-manager tool install'
-fi
-root_tool_keys=$(
-  awk '
-    /^\[tools\]/{f=1; next}
-    /^\[/{f=0}
-    f && /=/ {
-      key=$0
-      sub(/[[:space:]]+=[[:space:]].*/, "", key)
-      gsub(/^"|"$/, "", key)
-      print key
-    }
-  ' mise.toml
-)
-optional_tool_keys=$(
-  awk '
-    /^\[tools\]/{f=1; next}
-    /^\[/{f=0}
-    f && /=/ {
-      key=$0
-      sub(/[[:space:]]+=[[:space:]].*/, "", key)
-      gsub(/^"|"$/, "", key)
-      print key
-    }
-  ' mise.optional.toml
-)
-missing_core=$(
-  sh ci/impl-toolchain.sh core-mise-tools |
-    while IFS= read -r tool; do
-      printf '%s\n' "$root_tool_keys" | grep -Fxq "$tool" || printf '%s\n' "$tool"
-    done
-)
-missing_report=$(
-  sh ci/impl-toolchain.sh report-mise-tools |
-    while IFS= read -r tool; do
-      printf '%s\n' "$optional_tool_keys" | grep -Fxq "$tool" || printf '%s\n' "$tool"
-    done
-)
-[ -z "$missing_core" ] || printf 'core mise tools not in mise.toml:\n%s\n' "$missing_core"
-[ -z "$missing_report" ] || printf 'report mise tools not in mise.optional.toml:\n%s\n' "$missing_report"
-
-for spec in cargo:cargo-fuzz cargo:cargo-mutants cargo:cargo-llvm-cov cargo:cargo-audit; do
-  exe=${spec#cargo:}
-  path=$(MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 mise -E optional which "$exe" 2>/dev/null || true)
-  if [ -z "$path" ]; then
-    printf 'cargo-backed tool not installed; shadow check skipped: %s\n' "$exe"
-    continue
-  fi
-  root=$(MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 mise -E optional where "$spec" 2>/dev/null || true)
-  if [ -z "$root" ]; then
-    # `which` resolved a binary but mise has no install for the spec:
-    # that IS the shadow condition (an unmanaged binary on PATH), and
-    # without the guard the empty $root would make the case below
-    # match any absolute path and silently pass.
-    printf 'cargo-backed tool shadowed: %s resolves to %s but mise has no install for %s\n' "$exe" "$path" "$spec"
-    continue
-  fi
-  case "$path" in
-    "$root"/*) ;;
-    *) printf 'cargo-backed tool shadowed: %s resolves to %s, expected under %s\n' "$exe" "$path" "$root" ;;
-  esac
-done
+sh ci/install-target-language-toolchains.sh
+sh ci/install-target-language-toolchains.sh --list
+sh ci/impl-toolchain.sh supported-languages
+sh ci/impl-toolchain.sh portability-languages
+sh ci/impl-toolchain.sh toolchain-environments
 ```
 
-## 3. Backend-extra bootstrap coverage
+The no-argument facade displays concise choices without installation. Help/list
+work before bootstrap. Plan inspection requires the pinned mise; the explicit
+`toolchain-bootstrap` operation installs only that verified manager. A plan must
+not silently download or install target tools. Explicit
+language requests, supported-set, portability-set, and exact-environment selection
+must agree between help, implementation, INSTALL.md, and install-dev-env.
 
-`ci/impl-toolchain.sh` is the selector-to-tool mapping used by Linux CI directly on the hosted Ubuntu runner after mise provisions the core tools. The ordinary gate does not run inside the published devcontainer. `INSTALL.md` must document the same local route for selected backend extras; audit the devcontainer's separate provisioning path against the same tool ownership.
+## 2. Version and mechanism ownership
 
-- `INSTALL.md` names `ci/impl-toolchain.sh install <impls>` for Linux backend extras and `ci/impl-toolchain.sh extra-mise-tools <impls> | xargs mise install --locked -y` for macOS backend extras.
-- `INSTALL.md` says Linux system packages are installed through `mise bootstrap packages apply` with manager-qualified specs such as `apt:...`, not by direct user-facing `apt-get install` instructions.
-- The install-dev-env skill mentions the same helper and does not instruct agents to install Swift/Haskell libraries manually.
+Trace exact tool requests to native mise config/lock files or explicit delegated
+manifests, not a duplicated workflow/script version table. Inspect root and
+`mise.<environment>.toml` overlays with their locks, `tools/toolchains/mise.version`
+and checksums, `rustup.toml`, and `ghcup.toml`. Check both manager and child pins,
+verified download identities, and required compiler options/components/targets.
+A manager pin alone does not identify its compiler. Installation receipts are
+observations, never editable pin authority.
+Assess Swift's native archive/signature route against INSTALL.md's exception;
+its required Linux signature check is not a checked-in archive digest.
+
+General helper CLIs remain mise-owned. Package-manager-backed mise entries
+(`cargo:`, `npm:`, pipx) are legitimate; direct global package-manager installs
+in setup callers are findings unless part of an explicitly owned manager route.
+Optional Cargo-backed report tools remain in the optional configuration,
+reachable through `install-report-tools`, and absent from ordinary core setup.
+Check inventory outputs against real mise entries; an inventory is not itself
+an installer. Discover new manifest kinds rather than assuming only GHCup and
+Rustup can delegate.
+
+Dependency discovery and lock maintenance use the pinned native mise executable
+against tracked online checkout configuration, outside verified execution's
+offline snapshot. Check that maintenance instructions update the real config/lock
+owners rather than a copied snapshot and work without account mise activation.
+
+For installed package-manager-backed helpers, compare the selected executable
+origin with its exact mise installation. Stale binaries in `CARGO_HOME/bin` or
+another account directory must not shadow a pinned optional report/audit tool.
+
+Inspect `install-core`: Linux/macOS shared Node.js/TypeScript/Python/Rust target
+installations serve core development, while general helpers stay in ordinary
+mise storage; Windows retains its Rust/compiler route. The human facade remains
+thin; dependency closure, setup, verification, and execution have one shared
+owner. Source builds and native SDK prerequisites are explicit.
+
+## 3. Project storage, activation, and nonmutation
+
+Trace mise data/cache/state/configuration roots and Rustup/Cargo/GHCup child
+roots to `.toolchains/` or an explicitly selected absolute `KIO_TOOLCHAINS_ROOT`.
+General helper storage stays separate. Check setup-writer coordination and
+idle-store cleanup guidance. No `HOME` replacement, account-default selection,
+shell-profile mutation, or discarded Cargo configuration/credentials/compiler
+cache may manufacture isolation. Follow actual child-manager invocations;
+putting a binary below `.toolchains/` alone proves none of these properties.
+
+Inspect `toolchain-exec`, shell exports, and GitHub exports. Setup cannot alter
+its parent's environment. Each process receives its own selection, including
+PATH, manager homes, exact environment, native SDK settings, and nested tool
+lookups. Confirm callers preserve cwd and use `--core` where general helpers
+are required. Two installed endpoints must not share a mutable selection file
+that makes concurrent jobs change each other's tools.
+
+Execution verifies versions and origins before launching, rejects missing or
+mismatched tools, and disables install-on-execution. General mise activation or
+an account `~/.ghcup/bin` directory cannot substitute for owned child selection.
+An ambient executable with the expected spelling is insufficient evidence.
+With existing installations, non-mutating verification can provide local evidence:
 
 ```sh
-sh ci/impl-toolchain.sh extra-system-packages kio@swift,kio@haskell
-grep -q 'mise bootstrap packages' INSTALL.md || echo 'INSTALL.md: missing mise bootstrap package route'
-grep -q 'ci/impl-toolchain.sh install' INSTALL.md || echo 'INSTALL.md: missing impl-toolchain install route'
-grep -q 'ci/impl-toolchain.sh extra-mise-tools' INSTALL.md || echo 'INSTALL.md: missing macOS backend-extra route'
+sh ci/impl-toolchain.sh toolchain-verify rust
+sh ci/impl-toolchain.sh toolchain-exec rust -- rustc --version
 ```
 
-## 4. INSTALL.md ↔ install-dev-env in sync
+Use existing focused provisioning self-tests/receipts for configuration preservation,
+cross-directory and concurrent selection, native paths, installation reuse, and
+namespace/options handling. Separate source inspection from actual platform
+execution; an audit does not silently commission a cold multi-platform install.
 
-The skill automates the steps the doc documents; they must agree on the *setup procedure*:
+## 4. Platform sets and setup callers
 
-- Each core step in `INSTALL.md` (install mise; `mise trust` + `sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y` on Linux/macOS; optional `ci/impl-toolchain.sh install <impls>` for backend extras; optional `install-report-tools` for deep report/audit tools; build + `ci/all.sh SAMPLE_IMPL`) has a matching step in `install-dev-env`, and vice versa.
-- The commands match (same `mise install --locked`, same verify). A command changed in one but not the other is the finding.
-- The build entry point is a deliberate scope difference, not drift: `INSTALL.md` is public host-user guidance and uses ordinary Cargo, while the agent-run `install-dev-env` skill runs the same build through `ci/cargo.sh` because it operates in a tracked repository workspace. Compare the working directory, Cargo subcommand, and arguments rather than requiring the wrapper prefix to match.
-- The skill may *additionally* automate or optimize (detection, cache-warming) — extra automation isn't a divergence; a contradicting or missing *core* step is.
+Compare supported and portability definitions with local instructions, GitHub
+jobs, and container setup. Linux admits all eight current languages; macOS
+supports JS/TS/Rust/Swift, Windows Rust. Native requests outside those sets,
+including implicit core dependencies such as Python on macOS, warn upfront that
+setup is best-effort; set flags exclude that remainder.
+The smaller portability option remains available on Linux.
 
-This is a judgment pass (like `audit-docs-drift`): flag divergence for review, don't mechanically diff prose.
+Native setup and GitHub use the same compiler version authority and route.
+Windows requires Git Bash/MSYS path conversion; macOS Swift requires its SDK
+resolution. Explicit native SDK/image prerequisites do not authorize arbitrary
+ambient compiler fallback. System libraries route through mise bootstrap with
+manager-qualified specs and visible privilege requirements.
 
-## 5. INSTALL.md ↔ install-from-source.md consistency
+Full Linux sampling setup installs every configured backend, not only whichever
+tools happen to be on PATH. A smaller native job does not imply the complete
+POSIX integration suite is supported. Test coverage must not contract silently
+because provisioning failed.
 
-The two install docs cross-reference each other. Confirm they don't contradict — the Cargo build invocation, the toolchain expectations, and the cross-links between them still hold.
+Trace ordinary CI restore/verify/save ordering: the cache key includes platform,
+exact config/locks, provisioning recipes, selected environments/tools and store-root
+compatibility. Include child stores, verify cache hits, and save after all requested
+setup succeeds. Release preparation uses the same routes with fresh install/download
+roots and tiny native witnesses; cached success is not cold-install evidence.
+Inspect the release owner's outage handling without weakening existing gates.
 
-The supported distribution and source-build instructions expose only the
-public `kio` binary. Confirm that the release wrapper declares only that binary
-and that public source-build commands select it explicitly (for example,
-`cargo build --release --bin kio`). Internal compiler, corpus-oracle,
-generator, and runner binaries remain repository or CI tools rather than
-public installation workflows.
+## 5. Human and agent guidance agree
 
-## 6. Sub-managed tool PATH is complete for a local checkout
+Compare INSTALL.md and install-dev-env procedures by outcome: bootstrap, core
+setup, explicit language/set/environment choices, optional report tools,
+activation, cache warming, and scoped verification. Commands name the same
+operations. Detection and optional automation are allowed additions; a missing
+or contradictory core step is a finding. Build commands in tracked workspaces
+use `ci/cargo.sh`; public instructions for installed users or emitted projects
+use ordinary Cargo. Compare cwd, subcommand, and arguments across that boundary.
 
-`mise activate` exposes mise's shims, but some mise-managed tools are managers that install a compiler or runner elsewhere. The standing case is `ghcup` installing `ghc` into `~/.ghcup/bin`, which is *not* a shim (`mise which ghc` reports "not a mise bin"). Future tools may have the same shape. The `.devcontainer/Dockerfile` is the source of truth for the runtime PATH; `INSTALL.md` must not leave a local checkout unable to reach a pinned compiler.
+## 6. Distributed source installs and offline manual
 
-- Inspect `mise.toml` for manager-shaped tools or postinstall hooks (`postinstall`, `ghcup`, future equivalents).
-- For every sub-managed compiler dir required by those tools, the Dockerfile's `PATH` carries both the mise shims and that dir.
-- For every such dir, `INSTALL.md` documents adding it for a local checkout. A sub-managed compiler dir present in the Dockerfile PATH but absent from `INSTALL.md` is the finding — a local user can't build or run that backend.
-- Do not stop at `ghcup`: if a future mise-managed tool installs its real compiler outside mise shims, add that path to the Dockerfile and to `INSTALL.md`, and update this audit's examples if useful.
+INSTALL.md and install-from-source.md cross-links, requirements, and source-build
+commands agree about their distinct full-development and minimal-install scopes.
+Distribution and public source-build routes expose only the `kio` binary;
+internal compiler, oracle, generator, and runner binaries remain repository tools.
 
-```sh
-awk '/^\[tools\]/{f=1;next} /^\[/{f=0} f && /postinstall|ghcup/ { print }' mise.toml
-grep -oE '[^:"]*\.ghcup/bin' .devcontainer/Dockerfile | head -1
-grep -q '\.ghcup/bin' INSTALL.md || echo 'INSTALL.md: missing ~/.ghcup/bin PATH note'
-```
+Every distributed route carries the complete offline manual. Inspect Git-free
+packaged-crate builds and unrelated-directory installed-binary access. Require
+actual native Windows tar.exe, macOS, and Linux extraction evidence, including
+published pipe/named-file forms, byte parity, and cmd.exe/PowerShell >=7.4 transfer.
+Check conventional alternatives without ignore-zeros as well as the default format.
+Record versions/commands; upstream manuals or Linux bsdtar do not prove native
+behavior. [audit-bundled-docs](../audit-bundled-docs/SKILL.md) owns detailed
+inventory, freshness, and binary-size checks.
 
-Agent-shell wiring (`BASH_ENV` → mise shims + `~/.ghcup/bin`, for the Bash tool's non-interactive shells) is an agent-environment concern owned by [`ai/topics/local-tools.md`](../../topics/local-tools.md) § Toolchains on PATH, not `INSTALL.md`; this audit checks only the human/local story.
+## Report
 
-## 7. Distributed offline manual
+Report findings with file/line and concrete failed invariant, grouped by broken
+references/commands, pin or mechanism ownership, storage/activation/nonmutation,
+platform/cache integration, guidance drift, and distributed-install consistency.
+State which conclusions came from source, existing receipts, or executed checks,
+and identify missing platform evidence without treating it as a pass.
 
-Every distributed installation route must carry the complete offline manual,
-including the normal crate install and distribution-wrapper binary. Inspect
-Git-free packaged-crate build evidence and unrelated-directory installed-binary
-access. Require actual Windows-supplied tar.exe acceptance for the default
-format, both published pipe and named-file extraction, complete byte parity,
-and cmd.exe/PowerShell >=7.4 transfer; also require native macOS/Linux evidence
-and conventional alternatives without ignore-zeros. Record versions and
-commands. Upstream manuals and a Linux bsdtar run are research, not native
-Windows/macOS runtime evidence. Use `audit-bundled-docs` for detailed inventory,
-freshness, and binary-size checks.
-
-## How to report
-
-Group findings into:
-
-1. **Broken references** — a path / command in `INSTALL.md` that no longer resolves, or a Windows-subset tool absent from `mise.toml`.
-2. **Mise tool coverage gaps** — a non-OS tool installed outside mise, a mise-owned tool missing from `INSTALL.md`, or a package-manager-backed/aqua CLI no longer represented in `mise.toml`.
-3. **Backend-extra bootstrap gaps** — `INSTALL.md` or `install-dev-env` missing the `ci/impl-toolchain.sh` / `mise bootstrap packages` route.
-4. **Skill ↔ doc drift** — a setup step present in one of `INSTALL.md` / `install-dev-env` but missing or contradicted in the other.
-5. **Cross-doc contradictions** — `INSTALL.md` vs `docs/guides/install-from-source.md`.
-6. **PATH gaps** — a sub-managed compiler dir (e.g. `~/.ghcup/bin`, or a future equivalent) in the devcontainer Dockerfile's PATH that `INSTALL.md` doesn't tell a local checkout to add.
-
-For each finding, cite the file and line.
-
-**Default: report only.** If invoked with a fix-it directive, follow [`ai/topics/audit-fix-mode.md`](../../topics/audit-fix-mode.md) — fix the stale reference, or re-sync the skill and doc together, then re-run.
+Default: report only. With a fix directive follow
+[audit-fix-mode.md](../../topics/audit-fix-mode.md), re-sync paired owners, and
+rerun affected checks.

@@ -1,89 +1,123 @@
 ---
 name: install-dev-env
-description: Bring a fresh or bare checkout to a working Kio dev environment — bootstrap mise if absent, install the pinned toolchains, warm caches, verify with a smoke build. Idempotent agent automation of INSTALL.md
+description: Provision a checkout's core Kio development environment and explicitly selected target-language toolchains, warm caches, and verify setup; mirrors INSTALL.md
 allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 
-# Install the dev environment (kio)
+# Install the development environment
 
-Provision a checkout so the toolchain-dependent skills and `ci/all.sh` can run. This is the agent-run automation of [`INSTALL.md`](../../../INSTALL.md) — the human doc and this skill are the same steps, kept in sync by [`audit-install`](../audit-install/SKILL.md). The devcontainer already does all of this (its Dockerfile installs `mise`; the lifecycle scripts warm the caches); the gap this fills is a **bare host** where `mise` isn't present — the case that blocks `upgrade-deps` and `ci/all.sh` from running at all.
+Automate [INSTALL.md](../../../INSTALL.md). Read it and
+[local-tools.md](../../topics/local-tools.md) before provisioning; they own
+the human setup procedure and tool/storage policy. Keep this workflow paired
+with them. [audit-install](../audit-install/SKILL.md) checks the pairing.
 
-## 1. Detect what's already there
+## Select the setup scope
 
-```sh
-command -v mise >/dev/null 2>&1 && echo "mise: present" || echo "mise: absent"
-```
-
-- `mise` present and `sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y` a no-op → core tools are already provisioned; jump to **5. Verify** unless backend extras are needed.
-- `mise` present but tools missing → skip to **3. Provision**.
-- `mise` absent → **2. Bootstrap** (the bare-host case).
-
-## 2. Bootstrap mise (bare host only)
-
-Per [`INSTALL.md`](../../../INSTALL.md) § Install mise, OS-aware. A freshly-installed `mise` isn't on `PATH` until activated, so activate it in the current shell before step 3:
-
-- **Linux**: `curl https://mise.run | sh`, then `eval "$(~/.local/bin/mise activate bash)"`, and append that activation to `~/.bashrc` for future shells.
-- **macOS**: `brew install mise`, then `eval "$(mise activate bash)"`.
-- **Windows**: `scoop install mise` + the PowerShell activation INSTALL.md lists.
-
-## 3. Provision the pinned toolchains
+Inspect existing tools and the requested checks before installing. Linux/macOS
+core setup provides Node.js, TypeScript, Python, and Rust plus general helper
+CLIs; it does not implicitly install every target language. Windows core setup
+provides the supported Rust/compiler development route. Select only the additional
+languages the task needs. Full Linux `ci/all.sh SAMPLE_IMPL` needs all eight
+languages even though each case executes one implementation. Do not choose an
+installed subset to evade requested coverage.
 
 ```sh
-mise trust mise.toml
-sh ci/impl-toolchain.sh install-browser-system-packages
-sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y
-mise exec -- python3 --version
+sh ci/install-target-language-toolchains.sh
+sh ci/install-target-language-toolchains.sh --list
 ```
 
-On macOS, use the same `core-mise-tools` command for the baseline local setup; `mise install --locked -y` is reserved for intentionally installing every pinned optional backend-extra and audit tool. On Windows install the portability subset INSTALL.md names (`node npm:typescript python go java rust ghcup http:kio-firefox`). The browser runtime-package helper provisions supported Debian/Ubuntu libraries through mise bootstrap and is a no-op on macOS/Windows. The mise configs also own package-manager-backed CLIs (`npm:typescript`, `npm:pyright`, `npm:markdownlint-cli2`, pipx-backed `yamllint`, and the optional Cargo-backed tools from `sh ci/impl-toolchain.sh install-report-tools`) plus the `aqua:wasm-bindgen/wasm-pack` entry; do not reintroduce direct `cargo install`, `npm install -g`, or `pipx install` setup steps for them.
+Plan inspection needs the pinned mise. Bootstrap only that verified manager if
+absent; the plan operation itself does not download target-language tools:
 
-The Cargo-backed report/audit tools (`cargo-fuzz`, `cargo-mutants`, `cargo-llvm-cov`, `cargo-audit`) are deliberately outside the core devcontainer and baseline local setup because they can source-build. Install them only when a deep report/audit or dependency-upgrade pass needs them:
+```sh
+sh ci/impl-toolchain.sh toolchain-bootstrap
+sh ci/install-target-language-toolchains.sh swift haskell --plan
+```
+
+No arguments display help. `--supported-set` selects the supported development
+toolchains on this OS; `--portability-set` selects the smaller set, including
+on Linux. The native macOS/Windows supported sets match their GitHub jobs;
+explicit other-language requests warn that setup is best-effort. Do not infer
+complete POSIX suite support from a native portability job.
+
+## Provision
+
+Follow INSTALL.md's native prerequisites, including the C/C++ compiler/linker
+environment on Linux, Xcode's tools/SDK on macOS, and Git Bash/MSYS plus the
+MSVC C++ build tools/Windows SDK on Windows. The installer bootstraps
+the verified pinned mise itself; no account installation/profile edit is required.
+
+```sh
+sh ci/impl-toolchain.sh install-core
+sh ci/install-target-language-toolchains.sh swift haskell
+```
+
+The second command illustrates explicitly requested extras, not a standing
+instruction to install them. For a full Linux environment use
+`sh ci/install-target-language-toolchains.sh --supported-set` after core setup.
+Linux system libraries route through mise bootstrap and may need administrative
+privileges.
+On macOS, core setup's Python helper dependency is best-effort and warns before
+setup; use `--portability-set` for the supported native target-tool subset alone.
+
+Exact tool requests/download identities live in native mise config/lock files;
+delegated manager/child pins live under `tools/toolchains/`. Project language
+tools and manager stores use `.toolchains/`; helpers use ordinary mise storage.
+For Swift's native archive/signature route and Linux GnuPG prerequisite, follow
+[INSTALL.md's ownership exception](../../../INSTALL.md#tool-ownership-and-storage).
+Use an explicitly selected absolute `KIO_TOOLCHAINS_ROOT` consistently when
+sharing a store. Preserve account defaults, shell profiles, `HOME`, Cargo
+configuration/credentials, and configured compiler caches.
+
+For a named exact environment, pass the same `--environment ID` to installation
+and execution; `toolchain-environments` lists IDs.
+
+Optional Cargo-backed report/audit tools remain opt-in:
 
 ```sh
 sh ci/impl-toolchain.sh install-report-tools
 ```
 
-For local backend-extra checks, use the same helpers CI uses:
+This also prepares pinned fuzz Rust. Run stable report/audit commands through
+`toolchain-exec rust --environment optional --reports -- COMMAND`; the fuzz wrapper selects the fuzz
+environment. Optional tools stay outside ordinary core activation.
 
-- **Linux**: `sh ci/impl-toolchain.sh install kio@swift,kio@haskell` — installs backend-extra mise tools and routes backend distro libraries through `mise bootstrap packages apply`.
-- **macOS**: `sh ci/impl-toolchain.sh extra-mise-tools <impls> | xargs mise install --locked -y` — installs the backend-extra mise tools directly; there's no distro-package step to route.
+## Warm and verify
 
-## 4. Warm the caches (optional, recommended)
-
-Reuse the devcontainer's provisioning rather than re-deriving it — both scripts are POSIX sh, guarded, and idempotent:
-
-```sh
-sh .devcontainer/on-create.sh        # cargo fetch per crate + npm ci per package
-sh .devcontainer/update-content.sh   # cargo build --tests per crate
-```
-
-## 5. Verify — the failure is the point
+An installer cannot change its parent shell. Execute through the shared owner;
+`--core` activates and verifies the separately stored general helpers as well:
 
 ```sh
-export SCCACHE_IDLE_TIMEOUT=0
-sccache --dist-status >/dev/null
-( cd kio-rs && sh ../ci/cargo.sh build )
-sh ci/all.sh SAMPLE_IMPL
+sh ci/impl-toolchain.sh toolchain-exec js,ts,python,rust --core -- sh .devcontainer/on-create.sh
+sh ci/impl-toolchain.sh toolchain-exec js,ts,python,rust --core -- sh .devcontainer/update-content.sh
+sh ci/impl-toolchain.sh toolchain-exec rust --core -- sh ci/cargo.sh build --manifest-path kio-rs/Cargo.toml
 ```
 
-The exported idle policy and contact-or-start probe are the canonical lifecycle
-from [`INSTALL.md`](../../../INSTALL.md) § Build and check and AGENTS.md §
-Universal rules ("Don't bypass or break a configured compiler cache").
+These cache-warming examples apply to Linux/macOS and are optional. Windows's
+Rust route uses target-only execution without the general helper pool. Before
+builds follow AGENTS.md's configured compiler-cache readiness rule. Choose gating
+coverage through [local-ci.md](../../topics/local-ci.md); after full Linux setup
+the baseline is:
 
-A green run means the environment is provisioned end to end. A *failure* is what verifying is *for* — read its cause and route it (step 6).
+```sh
+sh ci/impl-toolchain.sh toolchain-exec js,ts,python,rust,go,java,swift,haskell --core -- sh ci/all.sh SAMPLE_IMPL
+```
 
-## 6. Close provisioning gaps (don't document around them)
+Execution verifies exact versions/origins and does not install missing tools.
+Missing/wrong tools are setup failures; do not fall back to account compilers,
+rewrite goldens, skip required checks, or change language contracts.
 
-A gap the verify finds is a provisioning *bug* to fix, not a limitation to note. Scope it tightly to what this skill owns — **a tool the build/CI needs that isn't on PATH** (`command not found`, or a check that silently skips for a missing binary):
+## Close gaps and report
 
-- Add the tool to `mise.toml` (the source of truth — prefer a mise registry name or an `aqua:` / `github:` backend over a system package), then `mise lock` + `mise install` + re-verify.
-- For the Python backend runner, `mise.toml` pins Python. If `python3` / `python` is missing, repair mise activation or installation rather than falling back to an OS package.
-- If the provisioning *procedure* changed (a new step, not just a new pinned tool), reflect it in [`INSTALL.md`](../../../INSTALL.md) **and in this skill**, kept in sync ([`audit-install`](../audit-install/SKILL.md) guards the pairing).
+Repair missing-tool provisioning only within the requested setup scope and
+established ownership. Add general helpers to mise, direct target tools to
+native mise config/locks, and delegated child requests to their existing handler
+manifest. A changed procedure updates INSTALL.md and this skill together.
+Do not install tools to conceal code failures or unavailable network services.
 
-Beyond missing tools, **any setup friction feeds back into the owning document** (AGENTS.md § Universal rules — Tooling friction feeds back into the instructions): a documented command that fails as written, a step that turned out to be missing, an error whose diagnosis was nonobvious. Route by owner — the human setup story to [`INSTALL.md`](../../../INSTALL.md) (a public artifact: the full no-leak bar applies), agent-shell and toolchain mechanics to [`ai/topics/local-tools.md`](../../topics/local-tools.md) (§ Toolchains on PATH, § Compiler cache), container provisioning to the `.devcontainer/` scripts, and this skill wherever its own steps said otherwise. Gate every addition on the portability filter in [`ai/topics/no-leak.md`](../../topics/no-leak.md): write only what holds on a fresh clone on any machine, phrased from symptoms ("if X fails with Y, check Z"); a problem specific to the current machine's state is a report item (step 7), not documentation.
-
-A failure from a **code bug, a golden mismatch, or a missing network / service is *not* a provisioning gap** — report it (step 7), never paper over it by installing tools. The question is always "is the *environment* missing something," not "make `ci/all.sh` green by any means."
-
-## 7. Report
-
-Summarize what was already present, what got bootstrapped or installed, what provisioning gaps were closed (and the `mise.toml` / INSTALL.md / skill updates that closed them), any failure that *wasn't* a provisioning gap, and any machine-specific friction that failed the portability gate — that belongs here, not in the docs. If `mise` hit a GitHub API rate limit resolving release metadata, the escape hatch (per INSTALL.md) is `gh auth login` or a `MISE_GITHUB_TOKEN`.
+Route reproducible setup friction to INSTALL.md, agent mechanics to local-tools,
+and container lifecycle changes to their scripts. Apply the
+[no-leak portability filter](../../topics/no-leak.md) before documenting it;
+machine-specific state belongs in the report. Report installed/reused tools,
+selected environments and platforms, verification results, remaining prerequisites,
+and failures outside provisioning scope.

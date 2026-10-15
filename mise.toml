@@ -8,8 +8,8 @@ node = "24.21.0"
 go = "1.27.2"
 swift = "6.4.0"
 java = "temurin-21.0.12+101.0.LTS"
-ghcup = { version = "0.2.6.2", postinstall = "ghcup install ghc 9.10.3 --set" }
-rust = { version = "1.99.0", profile = "minimal", components = "rustfmt,clippy", targets = "wasm32-unknown-unknown", postinstall = "rustup toolchain install nightly --profile minimal" }
+ghcup = "0.2.6.2"
+rust = { version = "1.99.0", profile = "minimal", components = "rustfmt,clippy", targets = "wasm32-unknown-unknown" }
 actionlint = "1.7.7"
 zizmor = "1.24.1"
 sccache = "0.15.0"

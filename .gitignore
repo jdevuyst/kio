@@ -51,3 +51,6 @@ kio-repl-wasm/target/
 # crate, so nothing else writes here; per-crate target/ dirs are
 # ignored by each crate's own .gitignore.
 /target/
+
+# Project-owned target-language installations and manager state.
+/.toolchains/

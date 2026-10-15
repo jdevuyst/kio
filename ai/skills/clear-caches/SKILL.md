@@ -27,6 +27,13 @@ The default run is worktree-local only. **Never** touches:
 
 - `~/.cargo/registry/`, `~/.cargo/git/`, `~/.npm/`, `~/.cache/sccache/` — out of repo. Slower to re-download / re-populate and not the source of worktree-local disk pressure.
 - `~/.cache/tree-sitter/wasi-sdk/` — machine-shared downloaded SDK, outside the default worktree wipe; see [`local-tools.md`](../../topics/local-tools.md#tree-sitter-webassembly-builds).
+- `.toolchains/` and any explicit `KIO_TOOLCHAINS_ROOT` — installed compilers,
+  runtimes and manager state share this store with regenerable download caches.
+  They are outside the default wipe, including when the root is checkout-local.
+  An explicit shared root can serve other worktrees. Separate download-cache or
+  whole-store removal requires deliberate scope and idle users; route to
+  [local-tools.md](../../topics/local-tools.md#toolchains-on-path-selected-execution-environments)
+  and [INSTALL.md](../../../INSTALL.md#tool-ownership-and-storage).
 - The shared test-runner artifact cache under `~/.cache/kio/` (or `$XDG_CACHE_HOME/kio/`) — machine-wide, shared across worktrees; clearing it is a separate explicit step (below), not part of the default wipe.
 - The CI scheduler bootstrap cache below the Git common directory — shared by sibling worktrees; clearing it is a separate explicit step (below), not part of the default wipe.
 - Docker images and BuildKit cache — daemon-wide, shared across builds; clearing them is a separate explicit step (below), not part of the default wipe.

@@ -1,0 +1,6 @@
+[metadata]
+url = "https://raw.githubusercontent.com/haskell/ghcup-metadata/fabf6ffe5ce8597bd223e6a277bf8126c75f981b/ghcup-0.0.9.yaml"
+sha256 = "4ec571732ee851b94576de89336fbbb762933ac755534f8f54eed72ef73145d4"
+
+[ghc.development]
+version = "9.10.3"

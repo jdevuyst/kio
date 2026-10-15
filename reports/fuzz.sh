@@ -74,6 +74,12 @@ EOF
   shift
 done
 
+if [ "${KIO_TOOLCHAIN_ENVIRONMENT:-}" != fuzz ]; then
+  set -- "--timeout=$TIMEOUT"
+  [ -z "$TARGET" ] || set -- "$@" "--target=$TARGET"
+  exec sh "$REPO_ROOT/ci/impl-toolchain.sh" toolchain-exec rust --environment fuzz --reports -- sh "$0" "$@"
+fi
+
 if ! sh "$REPO_ROOT/ci/cargo.sh" fuzz --version >/dev/null 2>&1; then
   printf 'error: cargo-fuzz is not installed.\n' >&2
   printf 'Install the pinned optional Cargo tools with:\n' >&2
@@ -88,14 +94,14 @@ cd "$REPO_ROOT/kio-rs"
 if [ -n "$TARGET" ]; then
   targets=$TARGET
 else
-  targets=$(sh "$REPO_ROOT/ci/cargo.sh" +nightly fuzz list)
+  targets=$(sh "$REPO_ROOT/ci/cargo.sh" fuzz list)
 fi
 
 overall_exit=0
 for target in $targets; do
   printf '\n---- fuzz target: %s (budget %ds) ----\n' "$target" "$TIMEOUT"
   exit_code=0
-  sh "$REPO_ROOT/ci/cargo.sh" +nightly fuzz run "$target" -- -max_total_time="$TIMEOUT" \
+  sh "$REPO_ROOT/ci/cargo.sh" fuzz run "$target" -- -max_total_time="$TIMEOUT" \
     || exit_code=$?
   case "$exit_code" in
     0)

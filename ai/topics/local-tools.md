@@ -19,15 +19,21 @@ implementation.
 
 For each changed script, review its actual callers, state applicable platforms, and provide focused evidence there. ShellCheck verifies shell syntax, not the portability of external utilities. Existing non-portable paths remain repair work rather than authority for more platform-specific machinery.
 
-`.devcontainer/` is the canonical core build and test environment for Kio. The `Dockerfile` pins mise and installs the core toolchain from the repository root [`mise.toml`](../../mise.toml) / [`mise.lock`](../../mise.lock), while the same root mise files pin backend-extra toolchains that CI installs on demand. Optional Cargo-backed audit/report tools are pinned in [`mise.optional.toml`](../../mise.optional.toml) so they stay out of the default active mise environment.
+`.devcontainer/` is the canonical core build and test environment for Kio.
+The container and hosted CI use the shared provisioning owner described below.
+Exact tool requests remain in root mise configuration/locks; optional Cargo-backed
+audit/report tools use [`mise.optional.toml`](../../mise.optional.toml) so they
+stay out of the default active environment.
 
 Three audiences consume the same image:
 
 - **Local VS Code** — "Reopen in Container" against `.devcontainer/devcontainer.json`.
 - **GitHub Codespaces** — opens a prebuilt environment when the prebuild snapshot is current; the prebuild trigger lives in the Codespaces UI, with the source-of-truth values mirrored in [`.devcontainer/README.md`](../../.devcontainer/README.md).
-- **Pages build** — standalone [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml) uses `ghcr.io/jdevuyst/kio-devcontainer:latest`; release preparation instead uses [`.github/workflows/build-release-site.yml`](../../.github/workflows/build-release-site.yml) with the exact accepted image digest, retaining the built site for deployment. Release publication and monthly/manual [`.github/workflows/devcontainer-publish.yml`](../../.github/workflows/devcontainer-publish.yml) share candidate-image acceptance before promotion. The Linux test gate in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) instead installs core tools and the complete eight-backend sampling pool directly on its hosted runner through `ci/impl-toolchain.sh`. macOS / Windows portability jobs run `jdx/mise-action` against the same root mise files for every tool with a proven runner route.
+- **Pages build** — standalone [`.github/workflows/pages.yml`](../../.github/workflows/pages.yml) uses `ghcr.io/jdevuyst/kio-devcontainer:latest`; release preparation instead uses [`.github/workflows/build-release-site.yml`](../../.github/workflows/build-release-site.yml) with the exact accepted image digest, retaining the built site for deployment. Release publication and monthly/manual [`.github/workflows/devcontainer-publish.yml`](../../.github/workflows/devcontainer-publish.yml) share candidate-image acceptance before promotion. The Linux test gate in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) instead installs core tools and the complete eight-backend sampling pool directly on its hosted runner through `ci/impl-toolchain.sh`. Native portability jobs consume the same pin and provisioning owners for their declared language sets.
 
-Tool-version bumps land in `mise.toml`, `mise.optional.toml`, `mise.lock`, and `mise.optional.lock`, and the Dockerfile changes only when the mise version, core tool set, system packages, or an escape-hatch install changes. The published image picks up the core tools from the root mise files at build time; hosted Linux, macOS and Windows test jobs install their core and selected backend tools directly from those pins. Dependency and tool-version *upgrades* — reason-driven (security / end-of-life / deprecation), not "a newer version exists" — are driven by the [`upgrade-deps`](../skills/upgrade-deps/SKILL.md) skill, not an automated bot.
+Tool-version changes update their native mise configuration/locks or delegated
+manager manifest under `tools/toolchains/`, never copied workflow constants.
+Dependency upgrades follow [`upgrade-deps`](../skills/upgrade-deps/SKILL.md).
 
 ## Website browser tasks
 
@@ -112,52 +118,136 @@ host compilers used by availability-driven checks. An ambient system compiler
 or executable shim is not a substitute for installation from the root mise
 pins. Tool availability and per-case execution multiplicity are separate axes.
 
-Start every language runtime, compiler, package manager, runner tool, linter, formatter, and repo helper CLI from `mise.toml`. Kio does not support repo tooling that cannot be installed through mise. If a future tool genuinely requires a different route, revise this policy in the same change before adding the tool.
+### Ownership and installation
+
+Use `sh ci/impl-toolchain.sh install-core` for ordinary core development. On
+Linux/macOS it installs the shared Node.js/TypeScript/Python/Rust environment and
+general helpers; Windows selects its Rust/compiler route. It does not implicitly
+install all target languages. The human entry point
+`ci/install-target-language-toolchains.sh` accepts explicit language IDs,
+`--supported-set`, or `--portability-set`; no arguments display help. These sets
+are distinct on Linux as well as native portability hosts. Linux supports all
+eight languages; macOS supports JS/TS/Rust/Swift; Windows supports Rust. Requests
+outside the native supported sets warn before setup that it is best-effort,
+including macOS core setup's Python helper dependency.
+Do not infer full-suite platform support from a native compiler/portability job.
+
+General runtimes, package managers, linters, formatters, and helper CLIs start
+from tracked mise configuration. Target-language toolchains use mise directly
+where suitable and bounded ecosystem-manager handlers where needed. Exact
+requests and route-specific download identities belong to root `mise.toml`/`mise.lock`, native
+`mise.<environment>.toml`/lock overlays, and the delegated manifests under
+`tools/toolchains/`. `development` selects the root configuration. The shared
+`ci/impl-toolchain.sh` owner maps languages and implementation selectors to
+dependencies; its handlers own setup and verification. Do not introduce another
+language/version table in a facade, workflow, or documentation.
+
+`tools/toolchains/mise.version` and `mise.sha256` pin and verify the provisioning
+bootstrap. `rustup.toml` owns the exact Rustup bootstrap; the mise Rust request
+owns compiler version/options. `ghcup.toml` owns exact child GHC requests plus a
+commit-pinned, checksummed upstream metadata document; mise owns GHCup itself.
+Pinning a manager alone is insufficient. Native SDKs and system libraries are
+explicit external prerequisites, with the same selected compiler version locally
+and in GitHub jobs. Do not silently substitute an ambient compiler or download a
+different version because a platform route fails.
+
+Swift archive selection and Linux signature verification follow the
+[native-route exception in INSTALL.md](../../INSTALL.md#tool-ownership-and-storage).
 
 “Through mise” includes mise tool specs that deliberately delegate to a package manager installed by mise: `cargo:*` for Cargo-backed CLIs, `npm:*` for npm-backed CLIs, and pipx-backed Python CLIs such as `yamllint`. Those tools are allowed because the tool name, version, and install entry point are declared in the mise config and lock files. Do not add direct `cargo install`, `npm install -g`, or `pipx install` steps in the Dockerfile, CI, or setup docs.
 
-Prefer mise core tools and registry shorthands first, then explicit binary-oriented backends (`http:`, `github:`, `aqua:`, `conda:`, `pkgx:`) before writing install glue. Toolchain-shaped targets use concrete tools rather than invented language names: `dotnet` for C# / F#, `ghcup` / `ghc` / `cabal` for Haskell-family work, `clang` / `cmake` / `ninja` for C/C++, and so on. When a backend-extra toolchain needs distro shared libraries, route those through `mise bootstrap packages apply` with explicit manager-qualified specs such as `apt:libgmp-dev`; that is still a system package install, but mise remains the orchestration entry point.
+Prefer maintained binary routes and ordinary mise tools before adding glue.
+Delegation uses a bounded upstream-manager handler, not arbitrary executable
+recipes in a data manifest. When distro shared libraries are needed, route them
+through `mise bootstrap packages apply` with explicit manager-qualified specs
+such as `apt:libgmp-dev`; privileged system-package work remains visible.
 
-Source builds are visible cost, not the default. A source-building path such as `ruby-build`, `kerl`, opam compiler builds, or a Cargo plugin compile needs an explicit reason and should be represented as a mise entry or a clearly named mise postinstall hook so the cost is reviewable. The optional Cargo-backed report/audit tools use mise's `cargo:` backend; they may still compile from source, but `mise.optional.toml` owns their versions and install entry point. Because they are opt-in tools, `ci/impl-toolchain.sh core-mise-tools`, ordinary `mise exec`, and the core devcontainer image omit them; install them on demand with `sh ci/impl-toolchain.sh install-report-tools`.
+Source builds are visible cost, not the default. An intentional source-building
+route needs an explicit reason and tracked mechanism/pins. Optional Cargo-backed
+report/audit tools may compile from source; `mise.optional.toml` owns their
+versions and `sh ci/impl-toolchain.sh install-report-tools` installs them on
+demand. They stay out of ordinary core setup.
 
-Python is pinned through mise. The devcontainer includes it because
-`yamllint` is installed through mise's `pipx:yamllint` backend, so
-`kio@python` is part of the core implementation pool at no
-additional image cost. The Python backend contract is still a Python
-3.10+ floor: the runner command is `python3` on Linux/macOS and
-`python` on Windows, and those commands should resolve through mise in
-the devcontainer and in local checkouts.
+Python is shared by core checks and Python-backend execution. Its exact mise
+pin differs from its documented runtime floor. Select it through the
+project execution owner (`python3` on Linux/macOS; `python` on Windows).
 
-When a tool needs GitHub release metadata, use the locked route where possible. `mise.lock` records URLs/checksums for the common Linux/macOS/Windows platforms and `jdx/mise-action` passes `${{ github.token }}` by default. Docker builds do not inherit that token automatically; if `mise install` needs GitHub API access, pass it as a BuildKit secret and expose it only for that `RUN` as `MISE_GITHUB_TOKEN`.
+When a tool needs GitHub release metadata, use its locked route where possible.
+CI supplies a token explicitly when needed. Docker builds do not inherit one;
+pass it as a BuildKit secret and expose it only for that install command as
+`MISE_GITHUB_TOKEN`.
 
-If a hosted-runner platform lacks a no-source-build binary route for a backend toolchain, skip that platform/tool cell explicitly and narrow the test impl list for that runner. This is a runner-tooling gap, not evidence that the backend is portable on that platform. Try mise backends, including `http:` / `github:` direct-binary routes, before skipping; do not use `continue-on-error` or a source build to make the matrix look green.
+If an explicitly requested supported route fails, report the setup failure.
+Do not narrow a requested implementation set to installed tools, silently skip
+it, or use `continue-on-error`. Best-effort native requests remain visible gaps,
+not conformance evidence. A deliberate platform coverage change follows the
+ordinary contract/scope gates.
 
-Homebrew, Scoop, Chocolatey, and native OS package managers are not repo-tooling routes. Use them for bootstrapping mise and for OS/runtime libraries required by mise-managed tools; on Linux backend-extra libraries should go through `mise bootstrap packages apply` where supported. Do not use them to install a linter, compiler, runner, formatter, or helper CLI unless this policy is deliberately revised in the same change.
+Homebrew, Scoop, Chocolatey, and OS package managers bootstrap mise or explicit
+OS/SDK prerequisites; they do not silently replace tracked toolchain routes.
 
-## Toolchains on PATH: mise shims, ghcup, and agent shells
+## Toolchains on PATH: selected execution environments
 
-`mise activate` (equivalently, the mise shims directory) puts the pinned tools on PATH — with one exception: `ghc`. `mise.toml` pins `ghcup` (the Haskell toolchain *manager*), which installs `ghc` itself into `~/.ghcup/bin`, *outside* mise's shims, so `mise which ghc` returns "not a mise bin". The canonical PATH therefore carries **both** the mise shims **and** `~/.ghcup/bin`; the devcontainer `Dockerfile` is the source of truth and sets exactly this (`…/share/mise/shims:…/.ghcup/bin:…`). `go`, `java` / `javac`, `swift`, `node`, `rg`, and the rest are native mise tools and ride the shims with no extra step.
+The default target-language store is `<checkout>/.toolchains/`, including mise
+data/cache/state/configuration and child Rustup/Cargo/GHCup stores. General
+helpers retain ordinary mise storage. `KIO_TOOLCHAINS_ROOT` permits an explicitly
+chosen absolute shared root; use it consistently for setup and execution.
+Setup writers serialize within that store. Remove or change it only while its
+users are idle; no automatic cleanup policy makes active compilers safe to delete.
+The store contains installed payloads and regenerable download caches; those
+are different cleanup scopes. The default `clear-caches` workflow removes neither.
+Deliberate download-cache cleanup leaves compiler payloads and manager selection
+state intact; whole-store removal requires reinstalling the selected environments.
+Do not replace `HOME`, change account defaults, edit shell profiles, clear Cargo
+configuration/credentials, or bypass configured compiler caches to achieve
+isolation.
 
-Mise trust is path-scoped. In each fresh checkout or sibling worktree, run `mise trust` at the repository root before using `mise exec`, `mise install`, or a tool provided by mise; otherwise mise rejects the local `mise.toml` even when another worktree for the same repository was already trusted.
-
-**Agents (the Bash tool) need extra wiring beyond `INSTALL.md`'s `.bashrc` line.** The Bash tool spawns a *non-login, non-interactive* shell, which sources only `$BASH_ENV` — not `~/.bashrc` (it returns early when non-interactive) and not `~/.profile` (login-only). So a `mise activate` line in `~/.bashrc` (what `INSTALL.md` sets up for interactive users) never reaches an agent's tool shells: `go` / `swift` / `ghc` are absent and even `node` falls back to the system copy. Point `BASH_ENV` at a snippet that prepends the toolchain dirs — in whatever mechanism the agent harness provides for env vars; for Claude Code, for example, `settings.json`:
-
-```jsonc
-// settings.json (Claude Code)
-"env": { "BASH_ENV": "/absolute/path/to/bash-env.sh" }
-```
+Use the shared execution operation in interactive and non-interactive shells:
 
 ```sh
-# bash-env.sh — sourced by every non-interactive Bash tool shell
-case ":$PATH:" in
-  *":$HOME/.local/share/mise/shims:"*) ;;
-  *) export PATH="$HOME/.local/share/mise/shims:$HOME/.ghcup/bin:$PATH" ;;
-esac
+sh ci/impl-toolchain.sh toolchain-verify rust
+sh ci/impl-toolchain.sh toolchain-exec rust --core -- sh ci/cargo.sh build --manifest-path kio-rs/Cargo.toml
+sh ci/impl-toolchain.sh toolchain-exec python --environment ENVIRONMENT -- python3 --version
 ```
 
-**Diagnostic — a wholesale runner failure is a PATH gap, not a broken runner.** If every `go` / `java` / `swift` / `haskell` golden fails the same way (empty output, exit 1), that is almost always this PATH gap. Verify the compiler resolves — `go version`, `javac -version`, `java -version`, `swift --version`, `ghc --numeric-version` — *before* concluding anything about the runner. Calling a backend runner "known broken" on the strength of a missing toolchain hides a real, fixable environment fault, which `AGENTS.md` § Universal rules — "Bugs surface; never hide them" — forbids.
+`toolchain-environments` lists valid IDs; `development` is the default. Setup
+and execution take the same `--environment` argument. Execution verifies exact
+versions and origins before launching, preserves cwd and required SDK/manager
+state, disables install-on-execution, and carries selection into nested mise
+execution. `--core` also verifies/activates the general helper pool for repository
+builds and gates; omit it for a plain tool witness or Windows's Rust-only route.
+Use separate per-process selections for concurrent endpoints. A child
+installer cannot mutate its parent's PATH; ordinary mise activation or adding
+an account GHCup directory is insufficient to select this project environment.
+Agents need no `BASH_ENV` or profile changes when using this operation.
+
+If an entire backend fails similarly, verify the selected tools before diagnosing
+the runner. A missing compiler or wrong origin is a provisioning error, never
+evidence that the backend is unsupported. `toolchain-plan` inspects exact
+selection without downloading; `toolchain-verify` checks existing setup. A bare
+checkout can run help/list immediately; plan inspection needs the pinned mise,
+obtainable separately with `sh ci/impl-toolchain.sh toolchain-bootstrap`.
+
+Verified execution uses an offline configuration snapshot. Upstream version
+discovery and native lock regeneration instead run the pinned bootstrap
+executable from an ordinary shell against the tracked checkout configuration;
+see [upgrade-deps](../skills/upgrade-deps/SKILL.md) for that maintenance path.
+Do not update pins or locks inside an activated snapshot.
+
+Ordinary CI restores the actual owned stores, verifies them even on cache hits,
+and saves only after successful complete setup. `toolchain-key` derives a key
+from platform, exact configuration, provisioning recipes, store root, and
+selection. Include delegated child stores; general mise caching alone omits
+them. Receipts record observations and never become another editable pin source.
+Release preparation exercises fresh install/download roots and tiny native
+witnesses through these same routes; cached tools do not prove cold download
+success. See the release skill for outage handling and publication ordering.
 
 ## Compiler cache
+
+Run the tool commands below inside the selected execution environment, for example
+`sh ci/impl-toolchain.sh toolchain-exec rust --core -- sccache --dist-status`.
+The target-language installer does not put general helpers on its parent's PATH.
 
 Two cache layers accelerate the compiled backends, stacked: the **test-runner artifact cache** (content-addressed compiled binaries, keyed by source bytes + toolchain) sits above the **sccache compiler wrapper** (object-level rustc caching). A warm artifact cache skips the compile entirely; sccache only speeds up the artifact cache's *misses*, and only for rust.
 

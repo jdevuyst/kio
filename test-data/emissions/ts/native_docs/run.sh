@@ -2,7 +2,11 @@
 # SUBJECT: TypeScript JSDoc attaches live callable and nominal docs while the declaration skin remains strictly valid.
 # CONTRACT: specs/backends/ts.md § Boundary documentation
 set -eu
-if command -v mise >/dev/null 2>&1; then tsc_path=$(mise which tsc); else tsc_path=$(command -v tsc); fi
+if command -v mise >/dev/null 2>&1; then
+  tsc_path=$(MISE_ENABLE_TOOLS="${MISE_ENABLE_TOOLS:+$MISE_ENABLE_TOOLS,}npm:typescript" mise which tsc)
+else
+  tsc_path=$(command -v tsc)
+fi
 scratch=$(mktemp -d "${TMPDIR:?}/emissions.ts-native-docs.XXXXXX")
 trap 'rm -rf "$scratch"' 0 HUP INT TERM
 cp -R workdir "$scratch/workdir"

@@ -55,4 +55,28 @@ for component in major minor patch; do
   grep -F 'version-check: mismatch' "$scratch/mismatch.log" | grep -F 'tools/tree-sitter-kio/src/parser.c' >/dev/null
 done
 
-printf 'version-check-selftest: pass (matching parser metadata; major/minor/patch mismatch rejected)\n'
+write_metadata "$major" "$minor" "$patch"
+for file in dist-workspace.toml mise.optional.toml mise.optional.lock; do
+  cp "$fixture/$file" "$scratch/dist-original"
+  case "$file" in
+    dist-workspace.toml) sed '/^cargo-dist-version *=/s/"[^"]*"/"0.0.0"/' "$scratch/dist-original" >"$fixture/$file" ;;
+    mise.optional.toml) sed '/axodotdev\/cargo-dist/s/= *"[^"]*"/= "0.0.0"/' "$scratch/dist-original" >"$fixture/$file" ;;
+    mise.optional.lock) sed '/^\[\[tools[.]"aqua:axodotdev\/cargo-dist"\]\]$/{n;s/^version = "[^"]*"$/version = "0.0.0"/;}' "$scratch/dist-original" >"$fixture/$file" ;;
+  esac
+  if sh "$check" >"$scratch/dist-mismatch.log" 2>&1; then
+    printf 'version-check-selftest: accepted mismatched dist version in %s\n' "$file" >&2
+    exit 1
+  fi
+  grep -F 'version-check: dist-version mismatch' "$scratch/dist-mismatch.log" | grep -F "$file" >/dev/null
+  cp "$scratch/dist-original" "$fixture/$file"
+done
+
+sed '/^\[\[tools[.]"aqua:axodotdev\/cargo-dist"\]\]$/{n;d;}' "$fixture/mise.optional.lock" >"$scratch/missing-lock-version"
+cp "$scratch/missing-lock-version" "$fixture/mise.optional.lock"
+if sh "$check" >"$scratch/missing-lock-version.log" 2>&1; then
+  printf 'version-check-selftest: accepted missing locked dist version\n' >&2
+  exit 1
+fi
+grep -F 'mise.optional.lock: dist-version extractor matched no line' "$scratch/missing-lock-version.log" >/dev/null
+
+printf 'version-check-selftest: pass (parser metadata and dist version mirrors; mismatches and missing dist lock pin rejected)\n'

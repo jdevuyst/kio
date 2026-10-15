@@ -166,27 +166,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+      - uses: ./.github/actions/setup-toolchains
         with:
-          version: 2026.6.14
-          install_args: rust
-
-      - name: Install toolchains
-        shell: bash
-        run: |
-          # Core toolchain plus every backend's tooling, so the case runs
-          # on all the backends it declares (full matrix).
-          sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y
-          sh ci/impl-toolchain.sh install "$(sh ci/impl-toolchain.sh select --count=999)"
-
-      - name: Finalize toolchain resolution
-        shell: bash
-        run: |
-          # Pin the repo's versions as mise's global config so shims
-          # resolve from the /tmp build dirs the harness invokes compilers
-          # in (mirrors ci.yml).
-          mkdir -p "$HOME/.config/mise"
-          cp mise.toml "$HOME/.config/mise/config.toml"
+          selection: supported
+          core: 'true'
 
       - name: Run the contrib case
         shell: bash

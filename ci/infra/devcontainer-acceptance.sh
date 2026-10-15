@@ -17,8 +17,10 @@ case "${1-}" in -h|--help) usage; exit 0 ;; esac
 [ "$#" -eq 7 ] || { usage >&2; exit 2; }
 [ "$(uname -s)" = Linux ] || { printf 'acceptance requires Linux; no platform skip\n' >&2; exit 2; }
 image=$1 refresh=$2 server=$3 editor=$4 output=$5 cpus=$6 memory=$7
+toolchain_exports=$(sh "$repo/ci/impl-toolchain.sh" toolchain-env js --helpers 'npm:@devcontainers/cli')
+eval "$toolchain_exports"
 node "$driver" validate "$image" "$refresh" "$server" "$editor" "$output" "$cpus" "$memory"
-for tool in docker mise git node tar ps; do
+for tool in docker devcontainer git node tar ps; do
   command -v "$tool" >/dev/null || { printf 'missing tool: %s\n' "$tool" >&2; exit 2; }
 done
 if [ -z "${TMPDIR-}" ] || [ ! -d "$TMPDIR" ]; then
@@ -75,10 +77,10 @@ phase() {
   printf 'devcontainer-acceptance: %s\n' "$label"
   node "$driver" execute "$output" "$label" "$@"
 }
-dc() { mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer "$@"; }
+dc() { devcontainer "$@"; }
 phase pull docker pull "$image"
 phase registry docker buildx imagetools inspect "$image" --raw
-phase cli mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer --version
+phase cli devcontainer --version
 phase ownership docker run --rm --name "$name-uid" --label "kio.acceptance=$name-uid" --user vscode --entrypoint id "$image" -u
 node "$driver" ownership "$output/ownership.log"
 docker image inspect "$image" > "$control/image.json"
@@ -93,23 +95,23 @@ phase checkout git clone --local --no-checkout "$repo" "$workspace"
 git -C "$workspace" checkout --detach "$base"
 node "$driver" prepare "$repo" "$workspace" "$control" "$image" "$name" "$cpus" "$memory" "$server" "$editor" "$base" "$refresh"
 config="$control/devcontainer.json"
-phase create mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer up \
+phase create devcontainer up \
   --workspace-folder "$workspace" --config "$config" --skip-post-attach --log-format json
 container=$(docker inspect --format '{{.Id}}' "$name")
 docker inspect "$container" > "$control/container-created.json"
 node "$driver" container-image "$control/image.json" "$control/container-created.json" "$control/provenance.json"
 node "$driver" hooks "$output/create.log"
-phase tools mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer exec \
+phase tools devcontainer exec \
   --container-id "$container" --workspace-folder "$workspace" --config "$config" \
   node /acceptance/driver.cjs tools "$base"
-phase server mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer exec \
+phase server devcontainer exec \
   --container-id "$container" --workspace-folder "$workspace" --config "$config" \
   node /acceptance/driver.cjs server
 
 attach() {
-  phase "$1-attach" mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer run-user-commands \
+  phase "$1-attach" devcontainer run-user-commands \
     --container-id "$container" --workspace-folder "$workspace" --config "$config" --log-format json
-  phase "$1-editor" mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer exec \
+  phase "$1-editor" devcontainer exec \
     --container-id "$container" --workspace-folder "$workspace" --config "$config" \
     xvfb-run -a node /acceptance/driver.cjs editor "$1"
   docker inspect "$container" > "$output/$1-container.json"
@@ -118,20 +120,20 @@ attach() {
 }
 attach first
 phase restart docker restart "$container"
-phase reconnect mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer up \
+phase reconnect devcontainer up \
   --workspace-folder "$workspace" --config "$config" --expect-existing-container --skip-post-attach --log-format json
 attach reconnect
 
 git -C "$workspace" checkout --detach "$refresh"
 # --prebuild is the official CLI's explicit updateContent rerun path.
-phase refresh mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer run-user-commands \
+phase refresh devcontainer run-user-commands \
   --container-id "$container" --workspace-folder "$workspace" --config "$config" --prebuild --log-format json
 node "$driver" hooks "$output/refresh.log" update
-phase refresh-tools mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer exec \
+phase refresh-tools devcontainer exec \
   --container-id "$container" --workspace-folder "$workspace" --config "$config" \
   node /acceptance/driver.cjs tools "$refresh"
 attach refreshed
-phase injection mise -C "$repo" -E optional exec 'npm:@devcontainers/cli' -- devcontainer exec \
+phase injection devcontainer exec \
   --container-id "$container" --workspace-folder "$workspace" --config "$config" \
   xvfb-run -a node /acceptance/driver.cjs injection
 finished=1

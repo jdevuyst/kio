@@ -2,12 +2,8 @@
 #
 # Kio dev container image.
 #
-# Single source of truth entry point for the Kio build toolchain. The
-# Dockerfile pins mise and runs the repository's `mise.toml` /
-# `mise.lock`; the root mise files pin the language/runtime tools
-# shared by the image and direct macOS / Windows CI runners. Bespoke
-# installs remain here only when a pinned no-source-build mise route is
-# not available.
+# The image uses the same repository provisioning owner and native mise
+# configuration as local development and hosted CI.
 #
 # Scope: linux/amd64 and linux/arm64, matching the publish workflow's
 # multi-arch build.
@@ -16,7 +12,7 @@
 # last (specific pinned tool versions) so an unrelated tool bump
 # invalidates the smallest tail of layers.
 
-FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04 AS core
 
 # Microsoft base ships: non-root `vscode` user with passwordless sudo,
 # git, curl, gnupg, ca-certificates, build-essential, locale wiring,
@@ -96,59 +92,34 @@ RUN apt-get update \
 
 # ----- mise-managed toolchains ---------------------------------------
 #
-# Root `mise.toml` / `mise.lock` pin both core tools and backend-extra
-# toolchains. The published image installs only the core set; Linux CI
-# installs backend extras on demand through `ci/impl-toolchain.sh`.
-# Python is core here because `yamllint` is a pipx-backed linter; the
-# Python target itself is selected by `ci/impl-toolchain.sh`.
-# Rust's postinstall hook adds nightly + rustfmt/clippy/wasm32.
+# The image installs only core development tools. Target-language storage
+# is separate from general helpers, and caller Cargo configuration remains
+# in CARGO_HOME rather than the provisioning manager's private Cargo home.
 #
 # The build-push workflow passes the GitHub token as a BuildKit secret
 # so GitHub-backed release metadata can authenticate without baking a
 # token into an image layer.
 
-ENV MISE_VERSION=2026.6.14 \
+ENV KIO_TOOLCHAINS_ROOT=/opt/kio-toolchain/.toolchains \
+    KIO_GENERAL_MISE_DATA_DIR=/usr/local/share/mise \
     MISE_DATA_DIR=/usr/local/share/mise \
-    MISE_GLOBAL_CONFIG_FILE=/opt/kio-toolchain/mise.toml \
-    GHCUP_INSTALL_BASE_PREFIX=/usr/local \
-    RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/share/mise/shims:/usr/local/.ghcup/bin:/home/vscode/.cargo/bin:/usr/local/cargo/bin:/usr/local/bin:$PATH
-
-RUN MISE_INSTALL_PATH=/usr/local/bin/mise \
-    MISE_INSTALL_HELP=0 \
-    MISE_VERSION="${MISE_VERSION}" \
-    sh -c 'curl -fsSL "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/install.sh" | sh'
+    BASH_ENV=/opt/kio-toolchain/activate.sh
 
 WORKDIR /opt/kio-toolchain
-COPY mise.toml mise.lock ./
+COPY mise*.toml mise*.lock ./
+COPY ci/impl-toolchain.sh ci/impl-toolchain.sh
+COPY tools/toolchains tools/toolchains
+COPY .devcontainer/activate.sh activate.sh
 RUN --mount=type=secret,id=github_token,required=false \
     set -eu; \
     if [ -f /run/secrets/github_token ]; then \
         export MISE_GITHUB_TOKEN="$(cat /run/secrets/github_token)"; \
     fi; \
-    mise trust /opt/kio-toolchain/mise.toml; \
-    mise install --locked -y \
-        node \
-        rust \
-        tree-sitter \
-        actionlint \
-        zizmor \
-        sccache \
-        shellcheck \
-        python \
-        pipx \
-        ripgrep \
-        'aqua:wasm-bindgen/wasm-pack' \
-        npm:typescript \
-        npm:pyright \
-        pipx:mypy \
-        npm:markdownlint-cli2 \
-        'github:mszostok/codeowners-validator[exe=codeowners-validator]' \
-        http:kio-firefox; \
-    mise install --locked -y yamllint; \
-    mkdir -p /usr/local/.ghcup; \
-    chmod -R a+w "$MISE_DATA_DIR" "$RUSTUP_HOME" "$CARGO_HOME" /usr/local/.ghcup
+    sh ci/impl-toolchain.sh install-core; \
+    sh ci/impl-toolchain.sh toolchain-env js,ts,python,rust --core > /opt/kio-toolchain/environment.sh; \
+    mkdir -p "$CARGO_HOME"; \
+    chmod -R a+rwX "$KIO_TOOLCHAINS_ROOT" /usr/local/share/mise "$CARGO_HOME"
 
 # ----- interactive terminal guidance ---------------------------------
 #
@@ -161,15 +132,16 @@ RUN --mount=type=secret,id=github_token,required=false \
 COPY .devcontainer/terminal-help.sh /usr/local/share/kio-devcontainer/terminal-help.sh
 RUN set -eu; \
     printf '%s\n' \
+        '. /opt/kio-toolchain/activate.sh' \
         '[ -r /usr/local/share/kio-devcontainer/terminal-help.sh ] && . /usr/local/share/kio-devcontainer/terminal-help.sh' \
         > /etc/profile.d/kio-backend-extras.sh; \
     printf '\n%s\n%s\n' \
-        '# Kio backend-extra guidance.' \
+        '. /opt/kio-toolchain/activate.sh' \
         '[ -r /usr/local/share/kio-devcontainer/terminal-help.sh ] && . /usr/local/share/kio-devcontainer/terminal-help.sh' \
         >> /etc/bash.bashrc; \
     if [ -d /etc/zsh ]; then \
         printf '\n%s\n%s\n' \
-            '# Kio backend-extra guidance.' \
+            '. /opt/kio-toolchain/activate.sh' \
             '[ -r /usr/local/share/kio-devcontainer/terminal-help.sh ] && . /usr/local/share/kio-devcontainer/terminal-help.sh' \
             >> /etc/zsh/zshrc; \
     fi
@@ -184,6 +156,7 @@ RUN set -eu; \
 # from `/opt/kio-extension/kio.vsix` rather than rebuilding the
 # extension from source.
 
+FROM core AS development
 COPY .devcontainer/kio.vsix /opt/kio-extension/kio.vsix
 
 # Image default user is root (no trailing USER directive). Two

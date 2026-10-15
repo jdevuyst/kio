@@ -1,5 +1,12 @@
 **
-!mise.toml
-!mise.lock
+!mise*.toml
+!mise*.lock
+!ci/
+!ci/impl-toolchain.sh
+!tools/
+!tools/toolchains/
+!tools/toolchains/**
 !.devcontainer/
 !.devcontainer/kio.vsix
+!.devcontainer/activate.sh
+!.devcontainer/terminal-help.sh

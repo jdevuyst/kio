@@ -19,6 +19,16 @@ function augment(raw) {
   const build = raw.match(/^  build-local-artifacts:\n([\s\S]*?)(?=^  [\w-]+:)/m)?.[1];
   assert(build && /    needs:\n(?:      - [\w-]+\n)*      - custom-release-credentials\n/.test(build), 'missing build prerequisite');
   assert(!raw.includes("needs.custom-release-credentials.result"), 'already augmented');
+  const setup = '      - name: Set up exact release tools\n        uses: ./.github/actions/setup-toolchains\n        with:\n          selection: js,rust\n          helpers: aqua:axodotdev/cargo-dist\n';
+  const planInstall = /      - name: Install dist\n[\s\S]*?(?=      # sure would)/;
+  assert(planInstall.test(raw), 'upstream plan installer changed');
+  raw = raw.replace(planInstall, setup);
+  const localInstall = /      - name: Install Rust non-interactively if not already installed\n[\s\S]*?      - name: Install dist\n        run: \$\{\{ matrix\.install_dist\.run \}\}\n/;
+  assert(localInstall.test(raw), 'upstream local installer changed');
+  raw = raw.replace(localInstall, setup);
+  const cachedInstall = /      - name: Install cached dist\n        uses: actions\/download-artifact@v8\n        with:\n          name: cargo-dist-cache\n          path: ~\/\.cargo\/bin\/\n      - run: chmod \+x ~\/\.cargo\/bin\/dist\n/g;
+  assert.equal([...raw.matchAll(cachedInstall)].length, 2, 'upstream cached dist consumers changed');
+  raw = raw.replace(cachedInstall, setup);
   const localCondition = '    if: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include';
   assert.equal(raw.split(localCondition).length, 2, 'upstream build condition changed');
   const verified = "needs.custom-release-credentials.outputs.verified == 'true' && ";

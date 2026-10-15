@@ -4,11 +4,12 @@ This directory defines the Kio dev container: a core image consumed by
 local VS Code "Reopen in Container", GitHub Codespaces, and the Pages build.
 The Linux test gate instead installs the shared mise tool pins directly
 on its hosted runner.
-The Dockerfile pins mise; the repository root `mise.toml` and
+The shared owner verifies the pinned mise bootstrap; the repository root `mise.toml` and
 `mise.lock` pin both the core tools the image installs and the target
 extras CI installs on demand. The lifecycle hooks wired in
 `devcontainer.json` (`on-create.sh`, `update-content.sh`,
-`post-attach.sh`) trust the workspace mise config, warm Cargo
+`post-attach.sh`) reconcile the mounted checkout's core environment with the image's
+owned `/opt/kio-toolchain/.toolchains` pool, warm Cargo
 registries, install npm dependencies, build the `kio` binary the editor's
 language server runs (`refresh-kio.sh`), and install the baked vscode-kio
 extension into the editor (`find-code-cli.sh` locates the CLI that
@@ -57,7 +58,8 @@ VSIX baked into the image.
 Install the official consumer CLI from the optional mise pins:
 
 ```sh
-mise -E optional install --locked 'npm:@devcontainers/cli'
+sh ci/install-target-language-toolchains.sh js
+sh ci/impl-toolchain.sh toolchain-general-install js -- 'npm:@devcontainers/cli'
 ```
 
 Supply cached official VS Code Server and Linux Electron distributions
@@ -66,7 +68,8 @@ inputs, a fresh absolute output directory, and explicit Docker CPU and
 memory limits:
 
 ```sh
-sh ci/infra/devcontainer-acceptance.sh \
+sh ci/impl-toolchain.sh toolchain-exec js --helpers 'npm:@devcontainers/cli' -- \
+  sh ci/infra/devcontainer-acceptance.sh \
   'ghcr.io/jdevuyst/kio-devcontainer@sha256:<published-digest>' \
   '<full-refresh-commit>' "$SERVER_ARCHIVE" "$EDITOR_DIRECTORY" \
   "$ACCEPTANCE_OUTPUT" "$ACCEPTANCE_CPUS" "$ACCEPTANCE_MEMORY"
@@ -126,12 +129,16 @@ The GHCR image carries the mise-managed core toolchain (`cargo`, `node`,
 Python, tree-sitter, lints, etc.) **plus** the pre-built vscode-kio
 extension (`.vsix`). Go, Swift, Java, and Haskell stay pinned in
 `mise.toml` / `mise.lock` as backend extras; Linux CI selects them with
-`ci/impl-toolchain.sh` before invoking `ci/all.sh`. When those extras
+`ci/install-target-language-toolchains.sh` before invoking `ci/all.sh`. When those extras
 need distro shared libraries, the script installs them through
 `mise bootstrap packages apply apt:...`.
 Interactive terminals print a one-time hint with currently runnable
 impl selectors, all accepted impl selectors, and the
-`ci/impl-toolchain.sh install ...` command. Set
+explicit-language installer command. Image shells load a fixed core selection;
+explicit `toolchain-exec` selections take precedence, including in child shells.
+The owner reconciles changed checkout pins without editing a user's global mise
+configuration or Cargo configuration. General helpers remain in
+`/usr/local/share/mise`; the non-root `vscode` user can update both pools. Set
 `KIO_DEVCONTAINER_HIDE_TARGET_HELP=1` to suppress that hint.
 The Codespaces snapshot adds the repo cloned and the lifecycle scripts
 already run (`cargo fetch` done, `npm ci` done, the extension installed

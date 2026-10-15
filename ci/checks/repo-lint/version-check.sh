@@ -59,13 +59,11 @@
 # own version, unrelated to the repo version, so it is NOT in the mirror
 # list above). It is pinned in three places that must agree:
 #   - dist-workspace.toml            (`cargo-dist-version`)
-#   - .github/workflows/release.yml  (installer download URL tag)
 #   - mise.optional.toml             (`aqua:axodotdev/cargo-dist`)
-# `dist generate` rewrites the first two from the config in lockstep, but
-# mise.optional.toml is hand-maintained, so nothing tied it to the other
-# two. The fourth pass below asserts the three agree with each other (no
-# hard-coded expected: an intentional dist bump just has to update all
-# three, which is exactly the discipline the check enforces).
+#   - mise.optional.lock             (the same tool's locked version)
+# Release jobs select this helper through shared toolchain setup, so its
+# mise request and lock must agree with the dist configuration. The fourth
+# pass below compares these owners without a hard-coded expected version.
 #
 # POSIX sh only.
 
@@ -174,8 +172,8 @@ fi
 # `dist` versions independently of the repo.
 dist_mirrors="\
 dist-workspace.toml${TAB}/^cargo-dist-version *= *\"/{s/.*\"\\(.*\\)\".*/\\1/p;q;}
-.github/workflows/release.yml${TAB}/cargo-dist\\/releases\\/download/{s|.*/download/v\\([0-9][^/]*\\)/.*|\\1|p;q;}
-mise.optional.toml${TAB}/axodotdev\\/cargo-dist/{s/.*= *\"\\([^\"]*\\)\".*/\\1/p;q;}"
+mise.optional.toml${TAB}/axodotdev\\/cargo-dist/{s/.*= *\"\\([^\"]*\\)\".*/\\1/p;q;}
+mise.optional.lock${TAB}/^\\[\\[tools[.]\"aqua:axodotdev\\/cargo-dist\"\\]\\]$/{n;s/^version = \"\\([^\"]*\\)\"$/\\1/p;q;}"
 
 dist_expected=""
 dist_expected_file=""

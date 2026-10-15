@@ -60,16 +60,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install dist
-        # we specify bash to get pipefail; it guards against the `curl` command
-        # failing. otherwise `sh` won't catch that `curl` returned non-0
-        shell: bash
-        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.32.0/cargo-dist-installer.sh | sh"
-      - name: Cache dist
-        uses: actions/upload-artifact@v7
+      - name: Set up exact release tools
+        uses: ./.github/actions/setup-toolchains
         with:
-          name: cargo-dist-cache
-          path: ~/.cargo/bin/dist
+          selection: js,rust
+          helpers: aqua:axodotdev/cargo-dist
       # sure would be cool if github gave us proper conditionals...
       # so here's a doubly-nested ternary-via-truthiness to try to provide the best possible
       # functionality based on whether this is a pull_request, and whether it's from a fork.
@@ -125,15 +120,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install Rust non-interactively if not already installed
-        if: ${{ matrix.container }}
-        run: |
-          if ! command -v cargo > /dev/null 2>&1; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          fi
-      - name: Install dist
-        run: ${{ matrix.install_dist.run }}
+      - name: Set up exact release tools
+        uses: ./.github/actions/setup-toolchains
+        with:
+          selection: js,rust
+          helpers: aqua:axodotdev/cargo-dist
       # Get the dist-manifest
       - name: Fetch local artifacts
         uses: actions/download-artifact@v8
@@ -184,12 +175,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install cached dist
-        uses: actions/download-artifact@v8
+      - name: Set up exact release tools
+        uses: ./.github/actions/setup-toolchains
         with:
-          name: cargo-dist-cache
-          path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/dist
+          selection: js,rust
+          helpers: aqua:axodotdev/cargo-dist
       # Get all the local artifacts for the global tasks to use (for e.g. checksums)
       - name: Fetch local artifacts
         uses: actions/download-artifact@v8
@@ -249,12 +239,11 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-      - name: Install cached dist
-        uses: actions/download-artifact@v8
+      - name: Set up exact release tools
+        uses: ./.github/actions/setup-toolchains
         with:
-          name: cargo-dist-cache
-          path: ~/.cargo/bin/
-      - run: chmod +x ~/.cargo/bin/dist
+          selection: js,rust
+          helpers: aqua:axodotdev/cargo-dist
       # Fetch artifacts from scratch-storage
       - name: Fetch artifacts
         uses: actions/download-artifact@v8

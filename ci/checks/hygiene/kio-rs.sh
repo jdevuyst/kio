@@ -37,7 +37,8 @@ cd "$REPO_ROOT/kio-rs"
 sh "$REPO_ROOT/ci/cargo.sh" fmt --check
 
 command -v node >/dev/null 2>&1 || {
-  printf '%s\n' "hygiene/kio-rs: node not found — the JavaScript value-runtime tests require the pinned Node toolchain (run mise install)." >&2
+  printf '%s\n' "hygiene/kio-rs: node not found — the JavaScript value-runtime tests require the pinned Node toolchain." >&2
+  printf '%s\n' '  run sh ci/impl-toolchain.sh install-core, then sh ci/impl-toolchain.sh toolchain-exec js,rust --core -- sh ci/checks/hygiene/kio-rs.sh from the repo root.' >&2
   exit 1
 }
 node src/backends/js/value_runtime.test.mjs

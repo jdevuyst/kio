@@ -56,8 +56,10 @@ function managedBrowser() {
     }
   }
   try {
+    const env = { ...process.env }
+    if (env.KIO_GENERAL_MISE_DATA_DIR) env.MISE_DATA_DIR = env.KIO_GENERAL_MISE_DATA_DIR
     const install = execFileSync('mise', ['where', toolchain.tool], {
-      cwd: repoRoot, encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe']
+      cwd: repoRoot, env, encoding: 'utf8', timeout, stdio: ['ignore', 'pipe', 'pipe']
     }).trim()
     return { ...toolchain, executablePath: path.join(install, toolchain.executable) }
   } catch (error) {

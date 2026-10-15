@@ -1006,44 +1006,34 @@ The non-emitter deliverables, each with a sweep:
   `cd website && npm run prepare:docs && npm run audit` after adding the
   host guide. [`audit-website`](../audit-website/SKILL.md) is the
   mechanical backstop for this count/list sync.
-- **Toolchain provisioning** — start with a root `mise.toml` entry for the
-  host compiler/runtime or the concrete toolchain pieces the runner needs.
-  Declare the exact development/CI resolution in the mise configuration and
-  regenerate `mise.lock` where that backend supports locking. If the mise tool
-  is an installer for a delegated sub-toolchain, pin both the installer and the
-  actual compiler/runtime in the visible configuration or install hook; do not
-  pretend the lock resolves the delegated version. Do not substitute the
-  public floor for this reproducibility resolution. The exact resolution runs
-  the backend corpus, while the admission floor toolchain or a mode that
-  truthfully enforces it compiles the emitted artifact and complete host-fence
-  set with exactly the ordinary stable source pragmas, manifest/edition
-  declarations, and language modes named by the floor. Feed every
-  source/language-version flag or generated manifest/directive that can affect
-  compilation into the runner's build-cache identity.
-  Prefer mise core/registry names first, then explicit binary backends
-  (`http:`, `github:`, `aqua:`, `conda:`, `pkgx:`) before any bespoke
-  shell. If the backend needs a sub-toolchain managed by an upstream installer
-  (the standing example is `ghcup` installing GHC), keep that command as a
-  visible mise postinstall hook or a Dockerfile escape hatch with the pinned
-  version in `mise.toml`. Source builds are not an acceptable silent default.
-  A Dockerfile / workflow install step is an escape hatch only after a
-  concrete no-source-build mise/direct-binary route failed or was rejected,
-  and it carries a one-line reason. A compiler installed by such a manager
-  lands *outside* mise's shims (ghcup puts `ghc` in `~/.ghcup/bin`), so its
-  bin directory must be on PATH in **all three** environments that run the
-  runner — the `.devcontainer/Dockerfile`, `INSTALL.md` for local checkouts,
-  and agents' `BASH_ENV` snippet (see
-  [`ai/topics/local-tools.md`](../../topics/local-tools.md) § Toolchains on
-  PATH). If a runner fails *wholesale* — every case empty-output / exit 1 —
+- **Toolchain provisioning** — follow the shared ownership and mechanism policy
+  in [local-tools.md](../../topics/local-tools.md#toolchain-provisioning-policy).
+  Add direct compiler/runtime requests to native mise config/locks; bounded
+  delegated-manager handlers pin both manager and child tool plus verified
+  metadata/download identities. Do not copy versions into Dockerfiles/workflows
+  or infer a child pin from its manager. Target installations and child stores
+  use `.toolchains/`; general helpers retain ordinary mise storage. Extend
+  `ci/impl-toolchain.sh` and its thin human facade for language/set/environment
+  selection, explicit native prerequisites, exact verification, and per-process
+  execution. Prove side-by-side selection, reuse, and account-default/configuration
+  preservation. Prefer maintained binary routes; source builds need an explicit
+  reason and visible cost. Do not substitute the public floor for exact pins.
+  The exact resolution runs the corpus; the admission floor toolchain or a mode that
+  truthfully enforces the floor compiles emitted artifacts and all host fences
+  with the documented stable source pragmas, manifest/edition declarations and
+  language settings. Include those settings and selected exact environment in
+  native artifact cache identity. Container, CI and local commands consume the
+  same selected execution owner, including delegated child paths and SDK state;
+  account shims or agent profile edits are insufficient. If a runner fails
+  *wholesale* — every case empty-output / exit 1 —
   check tool resolution as an early hypothesis, then inspect the first concrete
   stderr/setup/runtime cause before choosing a repair. That status alone does
   not distinguish a PATH gap from a runner defect. Never disable failing
   backend cases to hide the cause (`AGENTS.md` §
   Universal rules — "Bugs surface; never hide them").
-- **`.devcontainer/Dockerfile`** — add only the system packages or
-  escape-hatch install steps the mise route cannot cover. The Dockerfile pins
-  mise and consumes root `mise.toml` / `mise.lock`; it is not where ordinary
-  language tool versions belong.
+- **`.devcontainer/Dockerfile`** — consume the shared provisioning owner and
+  bootstrap pin. Add explicit system/SDK prerequisites where required; ordinary
+  tool versions and delegated installation recipes stay with their shared owners.
 - **CI** — add the backend to the enumerations that fan out the matrix: the
   selector, availability and provisioning maps applicable to the new target in
   [`ci/impl-toolchain.sh`](../../../ci/impl-toolchain.sh), proving the selector
@@ -1055,10 +1045,11 @@ The non-emitter deliverables, each with a sweep:
   separate marker registry. Local/direct emissions stay all-cases by default;
   the normal GitHub sampled lane selects one case for every available backend,
   not one global emission. Update the
-  portability job's mise install arguments for any hosted-runner OS with a
-  proven binary route. If a runner OS lacks one after trying explicit mise
-  backends and a direct binary download, exclude that backend/platform cell
-  explicitly and do not count the exclusion as portability coverage. Confirm
+  supported/portability set and selected environment for each admitted native
+  route, with focused native installation/execution evidence. Other explicit
+  native requests warn upfront that setup is best-effort; do not silently add
+  them to supported bulk sets. A failed supported setup is a failure, never
+  permission to reduce requested coverage to installed tools. Confirm
   the paired-jobs and bucket rules in
   [`ai/topics/repo-layout.md`](../../topics/repo-layout.md) when touching
   `ci/`. (The runner is one crate already in the version mirror; no

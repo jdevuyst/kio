@@ -2,7 +2,11 @@
 # SUBJECT: Native JSDoc documents live host requirements and public function/type properties without publishing private docs.
 # CONTRACT: specs/backends/js.md § Boundary documentation
 set -eu
-if command -v mise >/dev/null 2>&1; then tsc_path=$(mise which tsc); else tsc_path=$(command -v tsc); fi
+if command -v mise >/dev/null 2>&1; then
+  tsc_path=$(MISE_ENABLE_TOOLS="${MISE_ENABLE_TOOLS:+$MISE_ENABLE_TOOLS,}npm:typescript" mise which tsc)
+else
+  tsc_path=$(command -v tsc)
+fi
 scratch=$(mktemp -d "${TMPDIR:?}/emissions.js-native-docs.XXXXXX")
 trap 'rm -rf "$scratch"' 0 HUP INT TERM
 cp -R workdir "$scratch/workdir"

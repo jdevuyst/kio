@@ -19,6 +19,11 @@ For each `.github/workflows/*.yml`:
 - Trace scheduled and default manual coverage through the effective `ci/all.sh` argv to each corpus owner: implementation sampling and case sampling are independent axes. Check actual selectors, caps, fixed verifiers, and narrowed-out invariant routing against [`local-ci.md`](../../topics/local-ci.md), not step names or labels. Use executable forwarding evidence and bounded case/implementation counts when the wiring is uncertain.
 - Account for generated-program count separately from corpus case sampling. Keep the dynamic-Prime verifier's smoke policy distinct from ordinary loader goldens and the loader POC, which follow their own corpus policies.
 - Tool provisioning covers every mandatory check's dependencies, including availability-driven host tools outside a runtime selection. A command or shim on `PATH` does not prove that the repository-pinned version is installed; trace the installation closure before the checks run.
+- Follow local composite setup actions into the same provisioning owner used by
+  checkout/container setup. Native environment options, child-manager pins,
+  exact executable origins and process-local activation must survive export to
+  later steps. Cache restore precedes complete setup/verification; cache save
+  follows every requested environment, including delegated tools.
 
 Conversely, ordinary gating scripts under `ci/checks/` must be reachable from
 `ci.yml` through their owning gate. Release-only and opt-in consumer helpers
@@ -75,6 +80,15 @@ recovery machinery retained after its stated purpose has ended.
 
 ### Publication dependencies and artifact identity
 
+- Verify the early manual fresh-installer path in `prepare-release.yml` and its
+  mandatory release-skill receipt reconciliation. It uses empty owned manager,
+  download and install state on supported Linux/macOS/Windows routes, tiny native
+  compile/run witnesses and repeated setup. Receipts identify source, input
+  hashes, requested artifacts, observed versions/origins and cost. Changed
+  provisioning inputs require affected revalidation; outage evidence is not a
+  pass and cannot waive the existing publication graph. Generated release jobs
+  use the shared exact provisioning action before their first tool use, not
+  rolling Rustup or cargo-dist installer scripts.
 - For release-workflow changes, including repairs and cleanup, verify the
   `publish-release` independent-review gate: a non-author reviewer examined the
   actual candidate, findings were resolved, and later changes received affected-

@@ -119,14 +119,44 @@ jobs:
             libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 \
             libdbus-1-3 libdbus-glib-1-2 libxtst6 fonts-liberation
 
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
-        with:
-          version: 2026.6.14
-          install_args: rust
-
-      - name: Install core toolchain
+      - name: Resolve owned toolchain cache key
+        id: toolchain-cache-key
         shell: bash
-        run: sh ci/impl-toolchain.sh core-mise-tools | xargs mise install --locked -y
+        run: |
+          languages=$(sh ci/impl-toolchain.sh supported-languages | tr '\n' ',')
+          printf 'key=toolchains-%s\n' "$(sh ci/impl-toolchain.sh toolchain-key "$languages")" >>"$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        id: mise-cache
+        with:
+          path: |
+            .toolchains/bootstrap
+            .toolchains/config
+            .toolchains/mise
+            .toolchains/npm
+            .toolchains/downloads
+            .toolchains/swift
+            ~/.local/share/mise
+          key: ${{ steps.toolchain-cache-key.outputs.key }}-mise
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        id: rust-cache
+        with:
+          path: |
+            .toolchains/rustup
+            .toolchains/cargo-manager
+          key: ${{ steps.toolchain-cache-key.outputs.key }}-rust
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        id: ghc-cache
+        with:
+          path: |
+            .toolchains/ghcup
+            .toolchains/cabal
+          key: ${{ steps.toolchain-cache-key.outputs.key }}-ghc
+
+      - uses: ./.github/actions/setup-toolchains
+        with:
+          selection: supported
+          core: 'true'
 
       - name: Select implementation sample
         id: impls
@@ -148,33 +178,32 @@ jobs:
           printf 'selected impls: %s\n' "$impls"
           printf 'tooling impls: %s\n' "$tool_impls"
 
-      - name: Install required backend tooling
-        shell: bash
-        env:
-          IMPLS: ${{ steps.impls.outputs.tool_impls }}
-        run: sh ci/impl-toolchain.sh install "$IMPLS"
-
-      - name: Finalize toolchain resolution
-        shell: bash
-        run: |
-          # The test harness invokes swiftc/rustc/etc. from /tmp build
-          # dirs — outside the repo, where no mise.toml is in scope, so a
-          # bare shim has no version to resolve ("No version is set for
-          # shim: swiftc"). The devcontainer image bakes this in; on the
-          # host we replicate it by pinning the repo's versions as mise's
-          # global config so shims resolve from any working directory.
-          mkdir -p "$HOME/.config/mise"
-          cp mise.toml "$HOME/.config/mise/config.toml"
-          # Ensure rustfmt/clippy are on the mise-managed rust toolchain:
-          # the hygiene checks run `cargo fmt`, and some install paths do
-          # not apply the `components` mise.toml declares.
-          mise exec rust -- rustup component add rustfmt clippy \
-            || rustup component add rustfmt clippy
-          # Same install paths drop the `targets` mise.toml declares on the
-          # same entry, and checks/hygiene/kio-repl-wasm builds for
-          # wasm32-unknown-unknown.
-          mise exec rust -- rustup target add wasm32-unknown-unknown \
-            || rustup target add wasm32-unknown-unknown
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        if: steps.mise-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .toolchains/bootstrap
+            .toolchains/config
+            .toolchains/mise
+            .toolchains/npm
+            .toolchains/downloads
+            .toolchains/swift
+            ~/.local/share/mise
+          key: ${{ steps.toolchain-cache-key.outputs.key }}-mise
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .toolchains/rustup
+            .toolchains/cargo-manager
+          key: ${{ steps.toolchain-cache-key.outputs.key }}-rust
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
+        if: steps.ghc-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            .toolchains/ghcup
+            .toolchains/cabal
+          key: ${{ steps.toolchain-cache-key.outputs.key }}-ghc
 
       - name: Pre-warm the tree-sitter wasi-sdk
         shell: bash
@@ -319,20 +348,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+      - uses: ./.github/actions/setup-toolchains
         with:
-          version: 2026.6.14
-          # macOS keeps Node, TypeScript, Rust and Swift for its native
-          # castle sample; Windows needs only Rust for its compile checks.
-          install_args: ${{ matrix.os == 'macos-latest' && 'node npm:typescript rust swift' || 'rust' }}
-
-      - name: Set SDKROOT (macOS Swift)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          # The mise-installed Swift toolchain's swiftc needs the macOS
-          # SDK to resolve `import Foundation`; point SDKROOT at Xcode's.
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> "$GITHUB_ENV"
+          selection: portability
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32  # v2
         with:

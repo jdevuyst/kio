@@ -28,6 +28,8 @@ for (const witness of ['custom-release-credentials.outputs.verified', 'custom-pr
   for (const output of ['', 'false']) assert.equal(evaluate(condition, {[witness]: output}), false);
 assert(host.includes('      - custom-prepare-release\n'));
 assert(host.includes('Point of no return'));
+assert.equal((actual.match(/uses: \.\/\.github\/actions\/setup-toolchains/g) || []).length, 4);
+assert(!/sh\.rustup\.rs|cargo-dist-installer|cargo-dist-cache|matrix\.install_dist\.run/.test(actual));
 // The previously shipped graph hosted binaries before any container acceptance.
 const before = condition.replace(" && needs.custom-prepare-release.result == 'success' && needs.custom-prepare-release.outputs.ready == 'true'", '');
 assert.equal(evaluate(before, {'custom-prepare-release.result': 'failure'}), true);

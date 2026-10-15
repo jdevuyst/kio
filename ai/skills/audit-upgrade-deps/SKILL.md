@@ -18,7 +18,14 @@ git ls-files \
   | grep -vE '(^|/)node_modules/'
 ```
 
-Cargo, npm, and mise are handled today (GitHub Actions too, but its pins aren't a manifest file, so it won't appear above). Any other kind — a `go.mod`, a `pyproject.toml` — is an **orphan finding**: `upgrade-deps` needs a new handler, or the manifest needs a stated exemption.
+Also enumerate tracked files under `tools/toolchains/` and inspect handler reads
+to discover delegated child/compiler manifests and exact bootstrap/checksum
+owners; those requests need not use a conventional dependency-manifest filename.
+The native mise overlays remain mise dependencies, while delegated compiler pins,
+upstream metadata snapshots, and Rustup/mise bootstrap identities have the
+delegated-toolchain handler. A manager's mise entry does not cover its child's
+version. Cargo, npm, mise, delegated toolchains/bootstrap, and GitHub Actions
+are handled; any other real kind needs a handler or a stated exemption.
 
 ## 2. No dangling — every handler resolves
 
@@ -27,6 +34,9 @@ The reverse: each ecosystem `upgrade-deps` claims to handle must still have at l
 - Cargo → `git ls-files '*Cargo.toml'` non-empty.
 - npm → at least one tracked `package.json` outside `node_modules/`.
 - mise → at least one tracked `mise*.toml` present with a `[tools]` table.
+- Delegated toolchains/bootstrap → tracked pins/manifests under
+  `tools/toolchains/` actually consumed by provisioning handlers. Confirm the
+  update route covers both manager bootstrap and child/version metadata owners.
 - GitHub Actions → at least one `.github/workflows/*.yml` carrying a `uses:` pin.
 
 A handler with no surviving manifest is a **dangling finding** — the ecosystem left the repo and the handler should be retired from the skill.
@@ -36,6 +46,8 @@ A handler with no surviving manifest is a **dangling finding** — the ecosystem
 `upgrade-deps` names canonical sources and tools. Confirm each still resolves:
 
 - The files it points at exist: `ci/checks/repo-lint/version-check.sh`, `mise.toml`, `mise.optional.toml`, `mise.lock`, `mise.optional.lock`, [`ai/topics/local-tools.md`](../../topics/local-tools.md).
+- Exact-environment overlays have their native lock files, and bootstrap/child
+  manifest references resolve.
 - The tools it invokes are spelled correctly: `mise`, `npm` (with `npm audit`), `cargo` (with `cargo update`), and `cargo audit` — the last pinned as `cargo:cargo-audit` in `mise.optional.toml` and installed on demand through `ci/impl-toolchain.sh install-report-tools`, not assumed as a standing core binary.
 - The out-of-scope carve-out still holds: `upgrade-deps` must not touch `version-check.sh`'s mirror list — that is `audit-versioning`'s domain.
 

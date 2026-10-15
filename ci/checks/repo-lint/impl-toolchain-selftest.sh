@@ -6,6 +6,9 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../../.." && pwd)
+# Parse the real owner before the selection fixture substitutes its dispatch.
+# shellcheck source=tools/toolchains/provision.sh disable=SC1091
+. "${KIO_TEST_PROVISION_SOURCE:-$REPO_ROOT/tools/toolchains/provision.sh}"
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 trap 'exit 130' INT
@@ -14,11 +17,11 @@ trap 'exit 129' HUP
 
 fixture="$scratch/repo with spaces"
 bin="$scratch/bin with spaces"
-mkdir -p "$fixture/ci" "$bin"
+mkdir -p "$fixture/ci" "$fixture/tools/toolchains" "$bin"
 # Redirect only OS metadata to a fixture; all package selection/install code
 # runs unchanged, while the mise shim prevents host package mutation.
 sed "s@/etc/os-release@$scratch/os-release@g" "$REPO_ROOT/ci/impl-toolchain.sh" >"$fixture/ci/impl-toolchain.sh"
-for utility in sh dirname awk tr cksum; do
+for utility in sh dirname awk tr cksum sed; do
   ln -s "$(command -v "$utility")" "$bin/$utility"
 done
 
@@ -63,18 +66,18 @@ for row in '2 go go go' '3 java javac java' '1 swift swiftc swift' '7 haskell gh
     exit 1
   fi
   if [ "$target" = go ]; then
-    cat >"$bin/mise" <<'EOF'
-#!/bin/sh
-printf '%s\n' "$*" >>"$KIO_TEST_MISE_LOG"
+    cat >"$fixture/tools/toolchains/provision.sh" <<'EOF'
+# Dispatch fixture only: language and dependency selection use the real owner.
+toolchain_dispatch() {
+  printf '%s|%s|%s\n' "$1" "$2" "$(toolchain_tool_names "$2")" >>"$KIO_TEST_MISE_LOG"
+}
 EOF
-    chmod +x "$bin/mise"
     core=$(PATH="$bin" sh "$fixture/ci/impl-toolchain.sh" core-impls)
     core_tools=$(PATH="$bin" sh "$fixture/ci/impl-toolchain.sh" tooling-impls "$core")
     PATH="$bin" KIO_TEST_MISE_LOG="$scratch/mise.log" \
       sh "$fixture/ci/impl-toolchain.sh" install "$core_tools" >"$scratch/install.log"
-    installed_tools=$(sed -n '/^install /p' "$scratch/mise.log")
-    assert_equal "$installed_tools" 'install --locked -y go' 'ambient Go installed from locked pins'
-    rm "$bin/mise"
+    installed_tools=$(sed -n '1p' "$scratch/mise.log")
+    assert_equal "$installed_tools" 'toolchain-install|js,ts,python,rust,go|node npm:typescript python npm:pyright rust go' 'ambient Go uses the same exact owned selection as the core tools'
   fi
   if [ "$target" = java ]; then
     installed=$(PATH="$bin" sh "$fixture/ci/impl-toolchain.sh" installed-impls)

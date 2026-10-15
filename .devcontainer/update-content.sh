@@ -30,9 +30,9 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 
 cd "$REPO_ROOT"
 
-if command -v mise >/dev/null 2>&1 && [ -f mise.toml ]; then
-  mise trust mise.toml >/dev/null
-fi
+sh ci/impl-toolchain.sh install-core
+toolchain_exports=$(sh ci/impl-toolchain.sh toolchain-env js,ts,python,rust --core)
+eval "$toolchain_exports"
 
 cargo_build_tests_workspace() {
   ws=$1

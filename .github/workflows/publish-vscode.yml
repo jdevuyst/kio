@@ -56,12 +56,10 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+      - uses: ./.github/actions/setup-toolchains
         if: steps.credential.outputs.available == 'true'
         with:
-          version: 2026.6.14
-          install_args: node
-          cache: false
+          selection: js
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         if: steps.credential.outputs.available == 'true'
@@ -119,12 +117,10 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+      - uses: ./.github/actions/setup-toolchains
         if: steps.credential.outputs.available == 'true'
         with:
-          version: 2026.6.14
-          install_args: node
-          cache: false
+          selection: js
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         if: steps.credential.outputs.available == 'true'

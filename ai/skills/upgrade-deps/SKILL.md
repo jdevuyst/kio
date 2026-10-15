@@ -8,13 +8,44 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write, Skill
 
 Bump the repo's *pinned* dependencies and absorb the fallout, keeping `ci/all.sh` green. A doer, not an `audit-*` — those ask "is the checkout self-consistent?" against in-repo ground truth; this reconciles the checkout against the *outside world* (what's been superseded, gone EOL, or deprecated upstream), so its verdict changes when reality moves, not when the checkout does.
 
-Run it in the mise-provisioned toolchain — the devcontainer, or any host with `mise` active. The `mise outdated` / `mise lock` steps need `mise` on PATH; the Cargo / npm / Actions handlers use their native tools and work without it.
+Run builds and tests in the provisioned development environment through
+`ci/impl-toolchain.sh toolchain-exec <languages> --core -- COMMAND` so project
+language tools and ordinary mise helpers share explicit selection; see
+[local-tools.md](../../topics/local-tools.md). Stable report/audit commands use
+`toolchain-exec rust --environment optional --reports -- COMMAND` after
+`install-report-tools`.
+Do not let missing selected tools fall back to account compilers. Mise upstream
+discovery and lock regeneration need the tracked configuration and online
+maintenance context, rather than verified execution's offline configuration
+snapshot; keep these operations outside `toolchain-exec`.
+
+For native mise discovery/lock commands, start an ordinary fresh shell without
+`toolchain-env` exports or an enclosing `toolchain-exec`, then run from the
+checkout root:
+
+```sh
+repo_mise=$(sh ci/impl-toolchain.sh toolchain-bootstrap)
+"$repo_mise" trust mise.toml
+MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 "$repo_mise" outdated
+MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 "$repo_mise" -E optional outdated
+```
+
+Use that same pinned executable for `lock` or `-E ENVIRONMENT lock` after
+editing tracked configuration. These operations intentionally use the original
+checkout configuration and network, not a verified immutable snapshot. They
+do not require an account mise installation. Reinstall affected environments
+through the shared owner before returning to verified build/test execution.
 
 ## The invariant
 
 Every upgrade leaves the tree green under `ci/all.sh`, or it doesn't land. That is the whole point of the skill — not "bump and let CI catch it later," but "bump, keep it green, and prove it." Iterate the fix loop with the narrowest gating coverage (see [`local-ci.md`](../../topics/local-ci.md) and [`TESTING.md`](../../../TESTING.md) § Local iteration); run **full `ci/all.sh` as the final gate** before the work is done.
 
-For toolchain bumps the invariant has teeth: Kio's correctness is emitted code behaving *per spec on the host runtime*, so a `node` / `go` / `swift` / `ghc` / `rust` / wasm point release is verified by the **backend goldens actually running** under `ci/all.sh`. "It compiles" is not "it's verified."
+For toolchain bumps the invariant has teeth: emitted code must behave per spec
+on the actual selected runtime. Run backend goldens under the affected tools
+and retain focused native host-interface witnesses where the ordinary runner
+embeds another runtime. In particular, selecting Node does not change the
+QuickJS runtime embedded by the ordinary JS/TS runner. Compilation or a checker
+pass is not runtime verification.
 
 ## What counts as a dependency — discover, don't hard-code
 
@@ -25,9 +56,15 @@ Don't trust a baked-in list; *discover* the surface each run, so a newly-added c
 | Cargo | every tracked `Cargo.toml` | edit the manifest, then run `sh <repo-root>/ci/cargo.sh update -p <crate>` from that workspace |
 | npm | every tracked `package.json` (outside `node_modules/`) | edit the manifest, regenerate `package-lock.json` |
 | mise | tracked `mise*.toml [tools]` files | edit the mise config, then `mise lock` or the matching `mise -E <env> lock` |
+| Delegated toolchains and bootstrap | tracked manifests and bootstrap pins under `tools/toolchains/` | update the owning native manager/child request and verified upstream artifact or metadata identities; use the shared provisioning handler |
 | GitHub Actions | `uses:` pins in `.github/workflows/*.yml` | repin the SHA / tag |
 
-Discover with e.g. `git ls-files '*Cargo.toml' '*package.json' 'mise*.toml'`, each mise `[tools]` table, and the workflows' `uses:` lines — never a hard-coded path list. The handler set above is all that's fixed, and [`audit-upgrade-deps`](../audit-upgrade-deps/SKILL.md) pins it against reality: every real manifest *kind* has a handler, and every handler still resolves to a real manifest.
+Discover with e.g. `git ls-files '*Cargo.toml' '*package.json' 'mise*.toml' 'tools/toolchains/*'`, each mise `[tools]` table, delegated handlers' manifest reads, and the workflows' `uses:` lines — never a hard-coded path list. Include exact native environment overlays and their locks. The handler set above is all that's fixed, and [`audit-upgrade-deps`](../audit-upgrade-deps/SKILL.md) pins it against reality: every real manifest *kind* has a handler, and every handler still resolves to a real manifest.
+
+Mise's manager pin does not cover delegated child compilers: discover those
+requests and their metadata/checksum owners separately, including GHCup/GHC and
+Rustup bootstrap. Reinstall/verify affected environments through the shared
+owner, retaining side-by-side selection and configuration/default nonmutation.
 
 Out of scope: Kio's *own* repo-wide version (the mirror list in `ci/checks/repo-lint/version-check.sh`) — not a dependency, and `audit-versioning`'s domain. Leave it alone.
 

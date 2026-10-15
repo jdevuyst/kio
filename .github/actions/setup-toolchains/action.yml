@@ -1,0 +1,47 @@
+name: Set up exact Kio toolchains
+description: Install and export the same owned environments used by local development.
+inputs:
+  selection:
+    description: supported, portability, or explicit comma-separated language IDs.
+    required: true
+  core:
+    description: Install and activate the general development helper pool.
+    default: 'false'
+  helpers:
+    description: Explicit comma-separated general helper IDs.
+    default: ''
+outputs:
+  languages:
+    value: ${{ steps.setup.outputs.languages }}
+  key:
+    value: ${{ steps.setup.outputs.key }}
+runs:
+  using: composite
+  steps:
+    - name: Install and verify selected environments
+      id: setup
+      shell: bash
+      env:
+        TOOLCHAIN_SELECTION: ${{ inputs.selection }}
+        TOOLCHAIN_CORE: ${{ inputs.core }}
+        TOOLCHAIN_HELPERS: ${{ inputs.helpers }}
+        MISE_GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -efu
+        case "$TOOLCHAIN_SELECTION" in
+          supported) languages=$(sh ci/impl-toolchain.sh supported-languages | tr '\n' ',') ;;
+          portability) languages=$(sh ci/impl-toolchain.sh portability-languages | tr '\n' ',') ;;
+          *) languages=$TOOLCHAIN_SELECTION ;;
+        esac
+        if [ "$TOOLCHAIN_CORE" = true ]; then sh ci/impl-toolchain.sh install-core; fi
+        sh ci/impl-toolchain.sh toolchain-install "$languages"
+        if [ -n "$TOOLCHAIN_HELPERS" ]; then
+          helpers=$(printf '%s' "$TOOLCHAIN_HELPERS" | tr ',' ' ')
+          sh ci/impl-toolchain.sh toolchain-general-install "$languages" -- $helpers
+        fi
+        set --
+        if [ "$TOOLCHAIN_CORE" = true ]; then set -- --core; fi
+        if [ -n "$TOOLCHAIN_HELPERS" ]; then set -- "$@" --helpers "$TOOLCHAIN_HELPERS"; fi
+        sh ci/impl-toolchain.sh toolchain-github-env "$languages" "$@"
+        printf 'languages=%s\n' "$languages" >>"$GITHUB_OUTPUT"
+        printf 'key=%s\n' "$(sh ci/impl-toolchain.sh toolchain-key "$languages")" >>"$GITHUB_OUTPUT"

@@ -47,13 +47,8 @@ _kio_devcontainer_target_help() {
   printf 'Currently runnable implementation selectors: %s\n' "$installed"
   printf 'All accepted implementation selectors: %s\n' "$available"
   printf 'Install backend extras from the repo root, for example:\n'
-  printf '  sh ci/impl-toolchain.sh install kio@go,kio@java\n'
-  # shellcheck disable=SC2016 # Literal shell examples for the terminal banner.
-  printf '  impls=$(sh ci/impl-toolchain.sh select --extra-count=3 --seed=local)\n'
-  # shellcheck disable=SC2016 # Literal shell examples for the terminal banner.
-  printf '  sh ci/impl-toolchain.sh install "$impls"\n'
-  # shellcheck disable=SC2016 # Literal shell examples for the terminal banner.
-  printf '  sh ci/all.sh "$impls"\n'
+  printf '  sh ci/install-target-language-toolchains.sh go java\n'
+  printf '  sh ci/impl-toolchain.sh toolchain-exec go,java -- go version\n'
   printf 'Set KIO_DEVCONTAINER_HIDE_TARGET_HELP=1 to hide this message.\n'
   printf '\n'
 }

@@ -3,9 +3,9 @@
 
 set -eu
 
-# Wrapper identity is exercised causally below; ambient developer settings
+# Compiler and wrapper identity is exercised causally below; ambient developer settings
 # must not become an unrecorded fixture input.
-unset RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER \
+unset RUSTC RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER \
   CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)

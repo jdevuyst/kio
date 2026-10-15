@@ -29,12 +29,18 @@ WEBSITE_DIR="$REPO_ROOT/website"
 for tool in node npm wasm-pack cargo mise; do
   if ! command -v "$tool" >/dev/null 2>&1; then
     printf 'website-e2e: %s not found on PATH.\n' "$tool" >&2
-    printf '%s\n' '  run mise install --locked from the repo root, or use the devcontainer.' >&2
+    printf '%s\n' '  run sh ci/impl-toolchain.sh install-core, then sh ci/impl-toolchain.sh toolchain-exec js,rust --core -- sh ci/checks/orchestrators/website-e2e.sh from the repo root.' >&2
     exit 2
   fi
 done
 
-if ! (cd "$REPO_ROOT" && mise where http:kio-firefox) >/dev/null 2>&1; then
+if ! (
+  cd "$REPO_ROOT"
+  if [ -n "${KIO_GENERAL_MISE_DATA_DIR:-}" ]; then
+    export MISE_DATA_DIR="$KIO_GENERAL_MISE_DATA_DIR"
+  fi
+  mise where http:kio-firefox
+) >/dev/null 2>&1; then
   printf '%s\n' 'website-e2e: mise-managed Firefox is missing; run mise install --locked http:kio-firefox.' >&2
   exit 2
 fi

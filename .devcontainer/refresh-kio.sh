@@ -31,15 +31,13 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 
 cd "$REPO_ROOT"
 
-if ! command -v cargo >/dev/null 2>&1; then
-  echo "refresh-kio: cargo not on PATH; skipping (the language server keeps whatever binary is there)"
-  exit 0
-fi
-
 if [ ! -f kio-rs/Cargo.toml ]; then
   echo "refresh-kio: no kio-rs/Cargo.toml; skipping"
   exit 0
 fi
+
+toolchain_exports=$(sh ci/impl-toolchain.sh toolchain-env rust --core)
+eval "$toolchain_exports"
 
 echo "refresh-kio: cargo build --bin kio (the language server's binary)"
 ( cd kio-rs && sh "$REPO_ROOT/ci/cargo.sh" build --bin kio )

@@ -43,7 +43,17 @@ any requested tool list over ambient compilers used by availability-driven
 checks, including compile-only `javac`. Its executable-shim detection does
 not grant runtime implementation eligibility or change case coverage.
 
-Tool requirements match what the root [`mise.toml`](../../mise.toml) / [`mise.lock`](../../mise.lock) pins. [`.devcontainer/Dockerfile`](../../.devcontainer/Dockerfile) installs the core set; `ci/impl-toolchain.sh` maps implementation names to Linux CI backend-extra mise tools and `mise bootstrap packages` specs; macOS / Windows portability jobs install their direct runner tools with `jdx/mise-action` from the same root mise files, excluding platform/tool cells that lack a proven no-source-build route.
+Exact tool requirements live in native mise config/locks and delegated manifests
+under `tools/toolchains/`; see
+[Toolchain provisioning policy](local-tools.md#toolchain-provisioning-policy).
+The container and native jobs consume `ci/impl-toolchain.sh` and its human
+installer facade. Linux installs core development helpers plus all eight target
+languages; native macOS/Windows jobs select the supported portability sets.
+The shared GitHub export operation carries each selected environment into later
+steps; it also applies the same selection to the current command where needed.
+Linux requests `--core` to verify/activate general helpers; native target-only
+jobs do not install that helper pool. Swift's SDK selection remains explicit.
+No account config copies or ambient compiler fallback supply version authority.
 
 Cargo invocations in `ci/` scripts use the `dev` profile (output under
 `target/debug/`). The shared corpus-tool helper gives only its full and reduced

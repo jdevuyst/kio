@@ -6,11 +6,10 @@
 // once (by `.github/workflows/devcontainer-publish.yml`) and pulled
 // by every consumer (CI Linux jobs, local "Reopen in Container",
 // Codespaces prebuilds). The Dockerfile is the source-of-truth entry
-// point: it pins mise, and the repository's mise.toml / mise.lock pin
-// the tool versions.
+// point: it uses the repository provisioning owner and native mise pins.
 //
 // Lifecycle hooks (onCreateCommand / updateContentCommand /
-// postAttachCommand) trust the workspace mise.toml, warm Cargo
+// postAttachCommand) reconcile the mounted checkout's core environment, warm Cargo
 // registries, install npm dependencies, and install the baked
 // vscode-kio extension into the editor. Paths are resolved from the
 // workspace root (`${containerWorkspaceFolder}`), not from
@@ -21,34 +20,20 @@
   "name": "kio",
   "image": "ghcr.io/jdevuyst/kio-devcontainer:latest",
   "remoteUser": "vscode",
+  "userEnvProbe": "loginInteractiveShell",
   "onCreateCommand": ".devcontainer/on-create.sh",
   "updateContentCommand": ".devcontainer/update-content.sh",
   "postAttachCommand": ".devcontainer/post-attach.sh",
   // Per-user cargo state lives under the vscode home so credentials
-  // and any plugin caches are owned by the interactive user. mise and
-  // the shared toolchain installs stay under /usr/local.
-  //
-  // PATH extension (`/home/vscode/.cargo/bin` + `/usr/local/cargo/bin`)
-  // is done in the Dockerfile via `ENV PATH=…:$PATH`, not here:
-  // `${containerEnv:PATH}` is invalid inside `containerEnv` itself
-  // (it can only reference variables already set on the container,
-  // and `containerEnv` IS the container env). When the substitution
-  // fails it passes through as the literal string, which then
-  // becomes a single garbage PATH entry and the rest of the system
-  // PATH (`/usr/bin`, `/bin`, …) falls off — breaking even `sleep`,
-  // which crashes the dev container entrypoint.
+  // and plugin caches are owned by the interactive user. Target toolchains
+  // stay in the image's owned /opt pool; general helpers stay under /usr/local.
   "containerEnv": {
-    "CARGO_HOME": "/home/vscode/.cargo",
-    "RUSTUP_HOME": "/usr/local/rustup"
+    "CARGO_HOME": "/home/vscode/.cargo"
   },
   // Put the built `kio` / `kio-prime` binaries on PATH so they run by
-  // name in terminals after a build, instead of only via
-  // `./kio-rs/target/<profile>/kio`. `release` first (the profile
-  // verified to run in-container), then `debug` as a fallback for the
-  // default `cargo build` output. Unlike `containerEnv`,
-  // `${containerEnv:PATH}` IS valid here — `remoteEnv` is resolved
-  // after the container env exists — so this sidesteps the PATH
-  // pitfall documented on `containerEnv` above.
+  // name in interactive terminals after a build: activate.sh adds release
+  // then debug directories. Keep the probed shell PATH rather than replace
+  // it with the image's unactivated base PATH.
   // `KIO_BIN` names the binary the vscode-kio extension spawns for
   // `kio lsp` — its resolution order is `kio.server.path` → `KIO_BIN`
   // → `PATH`. Naming it explicitly keeps the language server off the
@@ -60,7 +45,6 @@
   // in step with the checkout. A developer who wants a different
   // server sets `kio.server.path`.
   "remoteEnv": {
-    "PATH": "${containerWorkspaceFolder}/kio-rs/target/release:${containerWorkspaceFolder}/kio-rs/target/debug:${containerEnv:PATH}",
     "KIO_BIN": "${containerWorkspaceFolder}/kio-rs/target/debug/kio"
   },
   "customizations": {

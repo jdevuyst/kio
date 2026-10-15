@@ -1,0 +1,21 @@
+version = "1.29.1"
+
+[platform.linux-x64]
+triple = "x86_64-unknown-linux-gnu"
+sha256 = "dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71"
+
+[platform.linux-arm64]
+triple = "aarch64-unknown-linux-gnu"
+sha256 = "15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433"
+
+[platform.macos-x64]
+triple = "x86_64-apple-darwin"
+sha256 = "259e2b84274434085163fe8d556510571772cda2aa6d87ca6aa664f57bc644e3"
+
+[platform.macos-arm64]
+triple = "aarch64-apple-darwin"
+sha256 = "ec1b9233e7f72990ecd8e62063fa7f6c3dfc2bec8e97f88bff165f9100ac696a"
+
+[platform.windows-x64]
+triple = "x86_64-pc-windows-msvc"
+sha256 = "6f4bef66261261fcb43131be8720bab817d403a09edec7455c371974b90bdb7e"

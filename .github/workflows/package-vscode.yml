@@ -22,11 +22,10 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
-      - uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d  # v4.2.0
+      - uses: ./.github/actions/setup-toolchains
         with:
-          version: 2026.6.14
-          install_args: node tree-sitter
-          cache: false
+          selection: js
+          helpers: tree-sitter
 
       - name: Build the .vsix
         working-directory: tools/vscode-kio
