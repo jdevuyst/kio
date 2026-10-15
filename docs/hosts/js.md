@@ -8,6 +8,12 @@ This guide walks through compiling a Kio package to JavaScript and calling into 
 
 ## The build target
 
+The concrete generation baseline is `es2020`. Write `baseline es2020`
+to keep that compatibility contract across compiler upgrades, or `baseline latest`
+to follow the compiler's newest baseline. Omission and `baseline ()` also follow
+the newest baseline until `kio fmt` pins them to its concrete name. See
+[baseline selection](../../specs/package.md#per-target-keys) for the shared rules.
+
 A package emits to JavaScript by declaring a `js` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
@@ -17,7 +23,8 @@ build {
   cache "out/.kio-cache/";
 
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 
@@ -192,7 +199,8 @@ build {
   cache "out/.kio-cache/";
 
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

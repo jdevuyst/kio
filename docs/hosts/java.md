@@ -25,6 +25,12 @@ narrative companion.
 
 ## The build target
 
+The concrete generation baseline is `v21`. Write `baseline v21`
+to keep that compatibility contract across compiler upgrades, or `baseline latest`
+to follow the compiler's newest baseline. Omission and `baseline ()` also follow
+the newest baseline until `kio fmt` pins them to its concrete name. See
+[baseline selection](../../specs/package.md#per-target-keys) for the shared rules.
+
 A package emits to Java by declaring a `java` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
@@ -34,7 +40,8 @@ build {
   cache "out/.kio-cache/";
 
   target java {
-    out "out/java/"
+    out "out/java/";
+    baseline v21
   }
 }
 
@@ -152,7 +159,8 @@ build {
   cache "out/.kio-cache/";
 
   target java {
-    out "out/java/"
+    out "out/java/";
+    baseline v21
   }
 }
 

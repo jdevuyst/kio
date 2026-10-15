@@ -24,6 +24,9 @@ calls against; everything about the runtime `.js` is governed by
 
 ## Language version
 
+The generation baseline is `v5_0`; see
+[baseline selection](../package.md#per-target-keys).
+
 The `.d.ts` targets **TypeScript 5.0+** and is written to type-check cleanly
 under `--strict` (`--noImplicitAny`, `--strictNullChecks`, …). The runtime
 `.js` is the JS backend's, so its floor is the JS backend's **ECMAScript 2020**

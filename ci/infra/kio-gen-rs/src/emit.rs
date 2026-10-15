@@ -80,23 +80,28 @@ build {
   cache \"out/.kio-cache/\";
 
   target (js, \"js\") {
-    out \"out/js/\"
+    out \"out/js/\";
+    baseline es2020
   };
 
   target ts {
-    out \"out/ts/\"
+    out \"out/ts/\";
+    baseline v5_0
   };
 
   target python {
-    out \"out/python/\"
+    out \"out/python/\";
+    baseline v3_10
   };
 
   target java {
-    out \"out/java/\"
+    out \"out/java/\";
+    baseline v21
   };
 
   target rust {
-    out \"out/rust/\"
+    out \"out/rust/\";
+    baseline v1_85
   }
 }
 ";
@@ -616,7 +621,7 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
         format!("{PACKAGE_FILE_KIO_PREFIX}\n{}", bridge_glob_block(["prog"]))
     };
     if prog.control_probe.is_some() {
-        package_file = package_file.replace("  target rust {", "  target go {\n    out \"out/go/\"\n  };\n\n  target swift {\n    out \"out/swift/\"\n  };\n\n  target haskell {\n    out \"out/haskell/\"\n  };\n\n  target rust {");
+        package_file = package_file.replace("  target rust {", "  target go {\n    out \"out/go/\";\n    baseline v1_26\n  };\n\n  target swift {\n    out \"out/swift/\";\n    baseline v6_0\n  };\n\n  target haskell {\n    out \"out/haskell/\";\n    baseline ghc9_10\n  };\n\n  target rust {");
         package_file = package_file.replace("  testapi\n", "  testapi;\n  testapi/io\n");
         if prog
             .control_probe
@@ -834,23 +839,28 @@ build {
   cache "out/.kio-cache/";
 
   target (js, "js") {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   };
 
   target ts {
-    out "out/ts/"
+    out "out/ts/";
+    baseline v5_0
   };
 
   target python {
-    out "out/python/"
+    out "out/python/";
+    baseline v3_10
   };
 
   target java {
-    out "out/java/"
+    out "out/java/";
+    baseline v21
   };
 
   target rust {
-    out "out/rust/"
+    out "out/rust/";
+    baseline v1_85
   }
 }
 "#

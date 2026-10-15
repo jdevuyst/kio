@@ -303,6 +303,20 @@ checks. Never describe an inspected test or planned run as passing evidence.
 
 ## 8. Backend consistency
 
+For generation baselines, check the logical backend/baseline identities and the
+shared named-environment mapping without duplicating exact provisioning pins.
+Inspect the sampler's actual backend, baseline and distinct applicable
+environment choices and replay log: additional baselines must not overweight a
+backend, and ordinary samples still execute one native configuration per case.
+Selector-subject cases retain their source; fixture rewriting cannot repair an
+invalid selector or replace a fixed-baseline regression. Verify separate bounded
+minimum-line/current-tested, retained-output, and unchanged-host evidence.
+Check that relocated baseline inputs retain file-link contents and non-file-link
+resolution, leave source targets untouched, and do not traverse directory links.
+QuickJS runner execution is not Node endpoint evidence, and a TypeScript checker
+selection counts only where that checker actually runs. Historical patch
+witnesses establish those patches, not every earlier patch in the promised line.
+
 Kio commits to identical semantics across configured backends: a case that builds for `target js` and `target rust` must run with identical observable behavior under both. The audit catches places this commitment isn't being honored:
 
 - **Cases whose backend build or runner path declares only one backend.** A golden is cross-implementation language/diagnostic/runtime evidence; backend-specific generated-file inspection or native host compilation is never a reason for a single-backend golden and must move to `test-data/emissions/<backend>/`. Apply this check to cases that load an artifact, run a backend adapter, or otherwise make a backend claim. A compiler/front-end/CLI case is inherently implementation-level rather than backend evidence when it uses no target at all, or uses one representative routing target only to reach a shared compiler phase or debug probe and neither consumes the generated artifact nor asserts backend behavior; a Kio'-phase case may likewise be inherently tied to that explicit phase target. Verify that classification from the actual script and assertions instead of multiplying the identical compiler command across backend rows. For the remaining `00_success/` goldens whose build block omits a backend, classify each as (a) impossible-and-three-site-cited (admissible for an already-shipping backend), (b) misplaced generated-host evidence (move to emissions), or (c) emitter bug (add the backend once fixed). A `run.sh` comment alone is not a caveat, and a caveated new backend does not pass normal `add-backend` acceptance.

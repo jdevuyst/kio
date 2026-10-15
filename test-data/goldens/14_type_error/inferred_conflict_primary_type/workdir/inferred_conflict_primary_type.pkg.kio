@@ -2,7 +2,8 @@ package inferred_conflict_primary_type;
 
 build {
   target js {
-    out "out/js"
+    out "out/js";
+    baseline es2020
   }
 }
 

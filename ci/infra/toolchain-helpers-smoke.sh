@@ -38,4 +38,9 @@ chmod +x "$work/caller-cargo/bin/cargo-mutants"
 sh "$owner" toolchain-general-install rust --environment optional -- $(sh "$owner" report-mise-tools)
 CARGO_HOME="$work/caller-cargo" PATH="$work/caller-cargo/bin:$PATH" \
   sh "$owner" toolchain-exec rust --environment optional --reports -- cargo mutants --version
+sh "$owner" toolchain-exec python --environment python3_10 --helpers pipx:mypy -- mypy --version
+sh "$owner" toolchain-env python --environment python3_10 >"$work/python.sh"
+PYTHONHOME="$work/missing-python" sh -c '. "$1"; [ -z "${PYTHONHOME:-}" ]; python3 -c "import json; print(42)"' sh "$work/python.sh"
+GITHUB_ENV="$work/github-env" sh "$owner" toolchain-github-env python --environment python3_10
+grep -qx 'PYTHONHOME=' "$work/github-env"
 printf 'toolchain helpers smoke: minimal npm/tree-sitter, incomplete/escaped restore rejection and exact optional report precedence passed\n'

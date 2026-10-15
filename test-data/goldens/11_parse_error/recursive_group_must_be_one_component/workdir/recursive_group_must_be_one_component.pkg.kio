@@ -2,7 +2,8 @@ package recursive_group_must_be_one_component;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

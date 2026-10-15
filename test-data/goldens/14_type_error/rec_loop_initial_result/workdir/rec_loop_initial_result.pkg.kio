@@ -2,6 +2,7 @@ package rec_loop_initial_result;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }

@@ -2,7 +2,8 @@ package label_binding_origin_collision;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

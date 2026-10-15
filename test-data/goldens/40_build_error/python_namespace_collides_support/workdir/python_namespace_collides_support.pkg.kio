@@ -5,6 +5,7 @@ build {
 
   target python {
     out "out/python/";
+    baseline v3_10;
     namespace "kio_static"
   }
 }

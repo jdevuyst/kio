@@ -186,6 +186,14 @@ and architecture; it is not a package build-target name. See
 [installation (online)](https://github.com/jdevuyst/kio/blob/main/INSTALL.md) and each
 [backend contract](specs/backends/).
 
+**Generation baseline.** A named backend contract for the generated code's
+language/runtime requirements and host API, selected by a target's `baseline`
+field. For example, Rust's `v1_85` baseline includes edition 2024 and the
+Rust 1.85 minimum; it does not select an exact installed compiler. Concrete
+baselines stay selected across Kio upgrades, while `latest` follows the table
+in that Kio build. Formatting materializes omitted or Unit selections into
+concrete names. See [baseline selection](specs/package.md#per-target-keys).
+
 ## Tools and compatibility
 
 **Check, build, test.** `kio check` checks source; `kio build` transpiles a

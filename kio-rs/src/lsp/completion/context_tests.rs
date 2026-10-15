@@ -320,15 +320,15 @@ fn named_target_completion_follows_backend_not_name() {
     for (marked, expected) in [
         (
             "package app; build { target (rust, \"web\") { | } }",
-            vec!["namespace", "out", "thread_safety"],
+            vec!["baseline", "namespace", "out", "thread_safety"],
         ),
         (
             "package app; build { target (js, \"rust\") { | } }",
-            vec!["namespace", "out"],
+            vec!["baseline", "namespace", "out"],
         ),
         (
             "package app; build { target (rust, \"native\") { out \"out\"; | } }",
-            vec!["namespace", "thread_safety"],
+            vec!["baseline", "namespace", "thread_safety"],
         ),
     ] {
         let (_, result) = complete_marked(".pkg", marked);

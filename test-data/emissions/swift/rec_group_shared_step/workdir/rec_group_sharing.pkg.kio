@@ -2,7 +2,8 @@ package rec_group_sharing;
 
 build {
   target swift {
-    out "out/swift/"
+    out "out/swift/";
+    baseline v6_0
   }
 }
 

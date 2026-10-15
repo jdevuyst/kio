@@ -8,6 +8,7 @@ scratch=$(mktemp -d "${TMPDIR:?}/emissions.js-opaque-substitution.XXXXXX")
 trap 'rm -rf "$scratch"' 0 HUP INT TERM
 cp -R workdir "$scratch/workdir"
 cp -R host "$scratch/host"
+cp "$scratch/host/package.json" "$scratch/package.json"
 
 (
   cd "$scratch/workdir"

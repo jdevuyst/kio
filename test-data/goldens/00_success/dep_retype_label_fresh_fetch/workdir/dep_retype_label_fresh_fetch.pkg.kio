@@ -2,6 +2,7 @@ package dep_retype_label_fresh_fetch;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }

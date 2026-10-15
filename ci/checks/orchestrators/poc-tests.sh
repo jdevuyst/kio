@@ -365,4 +365,5 @@ while IFS= read -r arg; do
 done <"$PASSTHROUGH_FILE"
 
 printf '\n========== run-tests (poc) ==========\n'
-sh ci/run-tests.sh "$@"
+KIO_DEBUG_SAMPLE_IMPL_SCOPE=checks/orchestrators/poc-tests \
+  sh ci/run-tests.sh --baseline-environments "$@"

@@ -394,10 +394,14 @@ fn lsp_protocol_named_target_completion_uses_the_header_backend() {
         ),
         (
             "package app; build { target (rust, \"web\") { | } }",
-            vec!["namespace", "out", "thread_safety"],
+            vec!["baseline", "namespace", "out", "thread_safety"],
         ),
         (
             "package app; build { target (js, \"rust\") { | } }",
+            vec!["baseline", "namespace", "out"],
+        ),
+        (
+            "package app; build { target js { baseline latest; | } }",
             vec!["namespace", "out"],
         ),
         ("package app; build { target (js, |", vec![]),

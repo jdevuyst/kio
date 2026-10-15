@@ -3,6 +3,7 @@ package source_parameter_grouping;
 build {
   target haskell {
     out "out/haskell/";
+    baseline ghc9_10;
     namespace "SourceParameters"
   }
 }

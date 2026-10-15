@@ -245,7 +245,8 @@ func __kioProduct(_ slots: [Any], _ witnesses: [any __KioTypeWitness]) -> Any {
     var witness = witnesses[witnesses.count - 1]
     if slots.count > 1 {
         for index in stride(from: slots.count - 2, through: 0, by: -1) {
-            witness = __kioProductType(witnesses[index], witness)
+            let first = witnesses[index]
+            witness = __kioProductType(first, witness)
             value = __kioChecked(witness, as: (any __KioProductWitness).self)
                 .construct(slots[index], value)
         }
@@ -260,7 +261,8 @@ func __kioInject(_ payload: Any, _ variant: Int, _ witnesses: [any __KioTypeWitn
     var witness = witnesses[witnesses.count - 1]
     if witnesses.count > 1 {
         for index in stride(from: witnesses.count - 2, through: 0, by: -1) {
-            witness = __kioSumType(witnesses[index], witness)
+            let first = witnesses[index]
+            witness = __kioSumType(first, witness)
             if index <= variant {
                 value = __kioChecked(witness, as: (any __KioSumWitness).self)
                     .inject(index == variant ? 0 : 1, value)

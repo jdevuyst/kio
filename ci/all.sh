@@ -59,6 +59,8 @@ LIVE=1
 # five whole. A per-corpus override wins over both.
 CASES_MODE=
 CASE_SEED=
+IMPL_SEED=
+IMPL_SEED_SET=0
 IMPL_VERIFICATION_SCOPES=
 SCOPED_CASE_POLICIES=
 TAB=$(printf '\t')
@@ -67,7 +69,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help)
       cat <<EOF
-Usage: sh $0 SAMPLE_IMPL|FULL_IMPL_MATRIX|<name>... [--sample-cases|--all-cases] [--impl-verification=<scope>] [--case-coverage=<scope>:<all|sample|N|named-set>] [--case-seed=<S>] [--gen-count=<N>] [--gen-seed=<N>] [--jobs=<N>] [--compiler-jobs=<N>] [--keep-logs[=<DIR>]] [--no-live]
+Usage: sh $0 SAMPLE_IMPL|FULL_IMPL_MATRIX|<name>... [--impl-seed=<S>] [--sample-cases|--all-cases] [--impl-verification=<scope>] [--case-coverage=<scope>:<all|sample|N|named-set>] [--case-seed=<S>] [--gen-count=<N>] [--gen-seed=<N>] [--jobs=<N>] [--compiler-jobs=<N>] [--keep-logs[=<DIR>]] [--no-live]
 
 Run every CI check in parallel; print task starts, completions, and —
 as each task fails — that task's failure diagnostics live (the same
@@ -117,6 +119,8 @@ Case coverage (optional; each corpus has its own default):
                      GitHub Actions run context when present, else UTC
                      epoch seconds. The effective seed is printed by each
                      sampling orchestrator.
+  --impl-seed=<S>    Replay SAMPLE_IMPL backend, baseline, and environment
+                     choices with a canonical unsigned 32-bit seed.
 
   Case narrowing scopes the build+run tier only: a narrowed-out case still runs
   every \`# ROUTING: case-binary\` check its corpus wires, so that corpus's
@@ -193,6 +197,12 @@ EOF
       shift
       [ $# -gt 0 ] || { printf 'error: --case-seed requires a value\n' >&2; exit 2; }
       CASE_SEED=$1
+      ;;
+    --impl-seed=*) IMPL_SEED=${1#--impl-seed=}; IMPL_SEED_SET=1 ;;
+    --impl-seed)
+      shift
+      [ $# -gt 0 ] || { printf 'error: --impl-seed requires a value\n' >&2; exit 2; }
+      IMPL_SEED=$1; IMPL_SEED_SET=1
       ;;
     --gen-count=*)
       GEN_COUNT=${1#--gen-count=}
@@ -295,6 +305,7 @@ validate_debug_sample_impl_seed() {
 debug_sample_impl_seed_set=0
 debug_sample_impl_seed=
 if [ "${KIO_DEBUG_SAMPLE_IMPL_SEED+x}" = x ]; then
+  [ "$IMPL_SEED_SET" -eq 0 ] || { printf 'error: --impl-seed and KIO_DEBUG_SAMPLE_IMPL_SEED are mutually exclusive\n' >&2; exit 2; }
   validate_debug_sample_impl_seed "$KIO_DEBUG_SAMPLE_IMPL_SEED" || {
     printf 'error: KIO_DEBUG_SAMPLE_IMPL_SEED must be canonical decimal in 0..4294967295\n' >&2
     exit 2
@@ -307,6 +318,17 @@ if [ "${KIO_DEBUG_SAMPLE_IMPL_SEED+x}" = x ]; then
   debug_sample_impl_seed=$KIO_DEBUG_SAMPLE_IMPL_SEED
 fi
 unset KIO_DEBUG_SAMPLE_IMPL_SEED KIO_DEBUG_SAMPLE_IMPL_SCOPE
+if [ "$IMPL_SEED_SET" -eq 1 ]; then
+  validate_debug_sample_impl_seed "$IMPL_SEED" || { printf 'error: --impl-seed must be canonical decimal in 0..4294967295\n' >&2; exit 2; }
+  [ "$IMPLS_MODE" = sample ] || { printf 'error: --impl-seed requires SAMPLE_IMPL coverage\n' >&2; exit 2; }
+fi
+if [ "$IMPLS_MODE" = sample ] && [ "$debug_sample_impl_seed_set" -eq 0 ]; then
+  if [ "$IMPL_SEED_SET" -eq 0 ]; then
+    IMPL_SEED=$(od -An -N4 -tu4 /dev/urandom 2>/dev/null | tr -d ' \n')
+    : "${IMPL_SEED:=$$}"
+  fi
+  printf 'sample-impl: seed = %s; reproduce with SAMPLE_IMPL --impl-seed=%s\n' "$IMPL_SEED" "$IMPL_SEED"
+fi
 
 coverage_policy_validate_registry "$SCRIPT_DIR/checks/orchestrators"
 
@@ -847,6 +869,9 @@ while IFS= read -r script; do
             done <"$COVERAGE_VERIFICATION_SCOPES"
             ;;
         esac
+        if [ "$IMPLS_MODE" = sample ] && [ "$debug_sample_impl_seed_set" -eq 0 ]; then
+          set -- "$@" -- "--impl-seed=$IMPL_SEED"
+        fi
         ;;
       *) ;;
     esac

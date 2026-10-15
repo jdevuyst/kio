@@ -160,7 +160,14 @@ documents. A shipping backend is presumed to implement the full Kio contract
 and carries no independent backend version or maturity tier. Its required Host
 API stability field governs compatibility only: `evolving` does not authorize
 implementation drift or a break absent explicit approval, while `stable`
-prohibits compatibility breaks. Run
+prohibits compatibility breaks within a retained concrete generation baseline.
+Check the separately specified floating-selection rule: `latest`, and omitted
+or Unit selections before formatter materialization, may advance to a different
+baseline. This exception never authorizes breaking a concrete baseline. Verify
+fixed-catalog selection, resolved cache identity, formatter pinning and
+JS/TypeScript runtime-baseline agreement against the shared baseline contract.
+Distinguish documented floors from exact installed or tested tool versions;
+newer-tool success and missing historical tools do not change those floors. Run
 `ci/checks/repo-lint/backend-api-stability.sh` for exact field/value/mirror,
 default, rollout boundary, rename/removal, and transition-record checks.
 Spec-omits-impl-has is a finding when the omitted behavior is host-observable

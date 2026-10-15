@@ -52,8 +52,9 @@
 #   - test-data/emissions/*/*/host/Cargo.toml
 #   - test-data/emissions/*/*/host/package.json
 #   - test-data/emissions/*/*/host/go.mod
-# These describe host programs compiled only by their emissions fixtures;
-# they are not independently released subprojects.
+#   - ci/infra/backend-compatibility/retained/0.2.2/artifacts/rust/Cargo.toml
+# These are non-publishable host fixtures or frozen generated artifacts,
+# not independently released subprojects.
 #
 # Independent pinned-version set — the `dist` release-tool version (its
 # own version, unrelated to the repo version, so it is NOT in the mirror

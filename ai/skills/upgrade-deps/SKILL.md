@@ -65,6 +65,10 @@ Mise's manager pin does not cover delegated child compilers: discover those
 requests and their metadata/checksum owners separately, including GHCup/GHC and
 Rustup bootstrap. Reinstall/verify affected environments through the shared
 owner, retaining side-by-side selection and configuration/default nonmutation.
+The [compatibility refresh](../refresh-target-language-compatibility/SKILL.md)
+maintains minimum/current-tested endpoint evidence; that distinct task does not
+relax this skill's reason-driven upgrade policy or authorize raising a generation
+baseline's public floor.
 
 Out of scope: Kio's *own* repo-wide version (the mirror list in `ci/checks/repo-lint/version-check.sh`) — not a dependency, and `audit-versioning`'s domain. Leave it alone.
 

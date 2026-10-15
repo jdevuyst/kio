@@ -1,0 +1,19 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+fn describe(value: . | .) -> String {
+  __either__(
+  , .
+  , .
+  , String
+  , value
+  , .(_: .) -> String { "left\n"(String) }
+  , .(_: .) -> String { "right\n"(String) }
+  )
+}
+
+pub fn main() { print(describe(__left__(., ., ()))); print(describe(__right__(., ., ()))) }

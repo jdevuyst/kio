@@ -5,41 +5,49 @@ build {
 
   target js {
     out "out/js/";
+    baseline es2020;
     namespace ()
   };
 
   target ts {
     out "out/ts/";
+    baseline v5_0;
     namespace ()
   };
 
   target go {
     out "out/go/";
+    baseline v1_26;
     namespace ()
   };
 
   target python {
     out "out/python/";
+    baseline v3_10;
     namespace ()
   };
 
   target java {
     out "out/java/";
+    baseline v21;
     namespace ()
   };
 
   target swift {
     out "out/swift/";
+    baseline v6_0;
     namespace ()
   };
 
   target haskell {
     out "out/haskell/";
+    baseline ghc9_10;
     namespace ()
   };
 
   target rust {
     out "out/rust/";
+    baseline v1_85;
     namespace ();
     thread_safety ()
   }

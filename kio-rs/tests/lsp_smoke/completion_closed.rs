@@ -62,6 +62,20 @@ fn configuration_fields_publish_shared_value_descriptions() {
         let mut expected = vec![("out", Some("String"))];
         if target != "kio-prime" {
             expected.push(("namespace", Some("() | String")));
+            expected.push((
+                "baseline",
+                Some(match target {
+                    "js" => "() | latest | es2020",
+                    "ts" => "() | latest | v5_0",
+                    "python" => "() | latest | v3_10",
+                    "rust" => "() | latest | v1_85",
+                    "go" => "() | latest | v1_26",
+                    "java" => "() | latest | v21",
+                    "swift" => "() | latest | v6_0",
+                    "haskell" => "() | latest | ghc9_10",
+                    _ => unreachable!(),
+                }),
+            ));
         }
         if target == "rust" {
             expected.push(("thread_safety", Some("() | send | sync | send_sync")));
@@ -91,7 +105,7 @@ fn configuration_fields_publish_shared_value_descriptions() {
             assert_eq!(item["kind"], 14, "{source}: {item}");
             assert_eq!(item["detail"].as_str(), detail, "{source}: {item}");
             let default = match label {
-                "cache" | "namespace" | "thread_safety" | "path" => Some("()"),
+                "cache" | "namespace" | "baseline" | "thread_safety" | "path" => Some("()"),
                 "md_out" => Some("\"out/docs-md/\""),
                 "html" => Some("\"out/docs/\""),
                 _ => None,
@@ -125,6 +139,11 @@ fn configuration_field_hover_tracks_owner_overlay_and_parse_validity() {
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     let cases = [
+        (
+            "package app; build { target js { out \"out\"; baseline ((latest)) } }",
+            "baseline",
+            Some("() | latest | es2020"),
+        ),
         (
             "package app; build { target js { out \"out\"; namespace ((())) } }",
             "namespace",
@@ -253,6 +272,10 @@ fn configuration_value_choices_insert_defaults_and_named_modes() {
         (".pkg", "package app; build { docs { md \"docs\"; html ((|)) } }".to_owned(), vec!["\"out/docs/\"", "()"], "() | String"),
         (".pkg", "package app; build { target rust { out \"out\"; thread_safety | } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
         (".pkg", "package app; build { target rust { out \"out\"; thread_safety ((|)) } }".to_owned(), vec!["()", "send", "send_sync", "sync"], "() | send | sync | send_sync"),
+        (".pkg", "package app; build { target js { out \"out\"; baseline ((|)) } }".to_owned(), vec!["()", "es2020", "latest"], "() | latest | es2020"),
+        (".pkg", "package app; build { target ts { out \"out\"; baseline | } }".to_owned(), vec!["()", "latest", "v5_0"], "() | latest | v5_0"),
+        (".pkg", "package app; build { target rust { out \"out\"; baseline | } }".to_owned(), vec!["()", "latest", "v1_85"], "() | latest | v1_85"),
+        (".pkg", "package app; build { target kio-prime { out \"out\"; baseline | } }".to_owned(), vec![], ""),
         (".dep", "dependency app; source { git \"https://example.invalid/dep\"; ref \"main\"; path | }".to_owned(), vec!["()"], "() | String"),
         (".lock", "lock app; resolved { git \"https://example.invalid/dep\"; ref \"main\"; commit \"abc\"; sig \"digest\"; path | }".to_owned(), vec!["()"], "() | String"),
         (".pkg", "package app; build { target js { out | } }".to_owned(), vec![], "String"),
@@ -772,6 +795,7 @@ fn closed_cases() -> Vec<ClosedCase> {
                 " \"app\"; } }"
             };
             keys.push(("namespace", namespace));
+            keys.push(("baseline", " () } }"));
         }
         if target == "rust" {
             keys.push(("thread_safety", " send; } }"));

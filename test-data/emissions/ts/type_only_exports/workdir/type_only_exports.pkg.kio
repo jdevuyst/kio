@@ -2,7 +2,8 @@ package type_only_exports;
 
 build {
   target ts {
-    out "out/ts/"
+    out "out/ts/";
+    baseline v5_0
   }
 }
 

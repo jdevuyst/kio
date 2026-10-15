@@ -36,6 +36,9 @@ emitter code carries the mutual cite
 
 ## Language version
 
+The generation baseline is `v21`; see
+[baseline selection](../package.md#per-target-keys).
+
 Emitted code targets **Java 21+** (sealed interfaces, records, pattern
 switches). The generated source uses only the Java standard library.
 

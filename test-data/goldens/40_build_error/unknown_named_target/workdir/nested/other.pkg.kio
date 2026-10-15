@@ -2,7 +2,8 @@ package other;
 
 build {
   target (js, "worker") {
-    out "out/worker/"
+    out "out/worker/";
+    baseline es2020
   }
 }
 

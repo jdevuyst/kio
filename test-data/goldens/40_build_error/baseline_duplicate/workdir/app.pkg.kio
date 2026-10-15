@@ -1,0 +1,51 @@
+package app;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020;
+    baseline latest
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline v5_0;
+    baseline latest
+  };
+
+  target python {
+    out "out/python/";
+    baseline v3_10;
+    baseline latest
+  };
+
+  target rust {
+    out "out/rust/";
+    baseline v1_85;
+    baseline latest
+  };
+
+  target go {
+    out "out/go/";
+    baseline v1_26;
+    baseline latest
+  };
+
+  target java {
+    out "out/java/";
+    baseline v21;
+    baseline latest
+  };
+
+  target swift {
+    out "out/swift/";
+    baseline v6_0;
+    baseline latest
+  };
+
+  target haskell {
+    out "out/haskell/";
+    baseline ghc9_10;
+    baseline latest
+  }
+}

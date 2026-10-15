@@ -375,10 +375,18 @@ domain of
 [`upgrade-deps`](../skills/upgrade-deps/SKILL.md).
 
 This admission rule does not automatically re-baseline an existing frozen
-floor or claim that a separate historical floor-toolchain lane already exists.
-Audits still report a direct contradiction between an emitted feature and the
-declared floor, but they do not invent a new legacy lane or floor change without
-the authority that would make that work in scope.
+floor. Generation baselines live in the shared build-target catalog and retain
+their documented floors independently of installed development tools. Resolve
+the selected baseline before artifact caching; include it in every affected
+emission profile. TypeScript's declared baseline also selects its JavaScript
+runtime baseline, so equivalent JS/TS selections preserve shared runtime bytes.
+Use the compatibility environment mapping and bounded witnesses in
+[`TESTING.md`](../../TESTING.md), and the independently invocable
+[`refresh-target-language-compatibility`](../skills/refresh-target-language-compatibility/SKILL.md)
+workflow. Current-tool success is not floor proof, a later patch witness does not
+prove all earlier patches, and an unavailable historical tool never silently
+changes the contract. Audits report direct emitted-feature/floor contradictions
+and missing evidence separately.
 
 Release choice and facade fidelity have different semantic scopes. Release
 selection is universal backend governance; concrete version syntax and

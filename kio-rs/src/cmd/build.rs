@@ -361,6 +361,7 @@ pub(super) struct PlannedOutput {
     package_root: PathBuf,
     target: String,
     backend: String,
+    baseline: Option<&'static str>,
     output_dir: PathBuf,
     /// Only the two typed-sidecar backends use this internal inventory.
     namespace: Option<String>,
@@ -798,7 +799,13 @@ fn dispatch_target(
         .root_package
         .as_ref()
         .expect("kio build passes skip_ok = false, so the root is always typechecked");
-    match BuildTarget::from_id(&target.backend) {
+    let backend = BuildTarget::from_id(&target.backend);
+    if let Some(backend) = backend {
+        backend
+            .resolve_baseline(target)
+            .map_err(BackendError::Build)?;
+    }
+    match backend {
         Some(BuildTarget::Js) => {
             js_backend(cwd, target, workspace, routed, emit_cache, artifact_cache)
         }
@@ -861,12 +868,12 @@ fn js_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `js` backend \
-                     (recognized: `out`, `namespace`)"
+                     (recognized: `out`, `namespace`, `baseline`)"
                 )));
             }
         }
@@ -943,6 +950,7 @@ fn js_backend(
         recovered_routed,
         &ns,
         Some(emit_cache),
+        javascript_runtime_baseline(target),
     )
     .map_err(|e| {
         BackendError::Build(format!(
@@ -1013,12 +1021,12 @@ fn ts_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `ts` backend \
-                     (recognized: `out`, `namespace`)"
+                     (recognized: `out`, `namespace`, `baseline`)"
                 )));
             }
         }
@@ -1097,6 +1105,7 @@ fn ts_backend(
         recovered_routed,
         &ns,
         Some(emit_cache),
+        javascript_runtime_baseline(target),
     )
     .map_err(|e| {
         BackendError::Build(format!(
@@ -1178,12 +1187,12 @@ fn go_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `go` backend \
-                     (recognized: `out`, `namespace`)"
+                     (recognized: `out`, `namespace`, `baseline`)"
                 )));
             }
         }
@@ -1315,12 +1324,12 @@ fn python_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `python` backend \
-                     (recognized: `out`, `namespace`)"
+                     (recognized: `out`, `namespace`, `baseline`)"
                 )));
             }
         }
@@ -1459,12 +1468,12 @@ fn java_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `java` backend \
-                     (recognized: `out`, `namespace`)"
+                     (recognized: `out`, `namespace`, `baseline`)"
                 )));
             }
         }
@@ -1608,12 +1617,12 @@ fn swift_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `swift` backend \
-                     (recognized: `out`, `namespace`)"
+                     (recognized: `out`, `namespace`, `baseline`)"
                 )));
             }
         }
@@ -1754,12 +1763,12 @@ fn haskell_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             _ => {
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `haskell` backend \
-                     (recognized: `out`, `namespace`)"
+                     (recognized: `out`, `namespace`, `baseline`)"
                 )));
             }
         }
@@ -1961,7 +1970,7 @@ fn artifact_key_for_workspace(
 ) -> crate::cache::artifact::ArtifactCacheKey {
     #[cfg(test)]
     cache_work_counters::record_artifact_key();
-    let target_profile = format!("{target:?}");
+    let target_profile = artifact_target_profile(target);
     let mut input = String::new();
     input.push_str("root\n");
     if let Some(root) = &workspace.root_package {
@@ -1982,7 +1991,7 @@ fn artifact_key_for_package(
 ) -> crate::cache::artifact::ArtifactCacheKey {
     #[cfg(test)]
     cache_work_counters::record_artifact_key();
-    let target_profile = format!("{target:?}");
+    let target_profile = artifact_target_profile(target);
     let mut input = String::new();
     append_package_fingerprint(&mut input, package, sig_content);
     crate::cache::artifact::ArtifactCacheKey::new(
@@ -1990,6 +1999,24 @@ fn artifact_key_for_package(
         ArtifactTargetProfileFingerprint::from_bytes(target_profile.as_bytes()),
         ArtifactInputFingerprint::from_parts(&[input.as_bytes()]),
     )
+}
+
+fn javascript_runtime_baseline(target: &TargetBlock) -> &'static str {
+    let backend =
+        BuildTarget::from_id(&target.backend).expect("backend dispatch validates the backend");
+    let baseline = backend
+        .resolve_baseline(target)
+        .expect("backend dispatch validates the baseline")
+        .expect("host backends have a generation baseline");
+    backend.javascript_runtime_baseline(baseline)
+}
+
+fn artifact_target_profile(target: &TargetBlock) -> String {
+    let baseline = BuildTarget::from_id(&target.backend)
+        .expect("backend dispatch validates the backend")
+        .resolve_baseline(target)
+        .expect("backend dispatch validates the baseline before cache lookup");
+    format!("{target:?};resolved-baseline={baseline:?}")
 }
 
 fn artifact_key_for_workspace_if_enabled(
@@ -2370,7 +2397,7 @@ fn rust_backend(
                 }
                 out_dir = Some(entry.string_value());
             }
-            Some("namespace") => {}
+            Some("namespace" | "baseline") => {}
             None if entry.key == "crate_name" => {
                 return Err(BackendError::Build(
                     "unknown key `crate_name` for the `rust` backend — renamed to \
@@ -2391,7 +2418,7 @@ fn rust_backend(
                 let other = &entry.key;
                 return Err(BackendError::Build(format!(
                     "unknown key `{other}` for the `rust` backend \
-                     (recognized: `out`, `namespace`, `thread_safety`)"
+                     (recognized: `out`, `namespace`, `baseline`, `thread_safety`)"
                 )));
             }
         }
@@ -3680,6 +3707,30 @@ v(1) {
         assert_eq!(counts.prime_emit_serializations, 1);
         assert_eq!(counts.prime_emit_keys, 1);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn artifact_profiles_include_resolved_baselines() {
+        let build = crate::pass::parser::parse_build_block_body(
+            r#"
+            target js { out "out/js" };
+            target js { out "out/js"; baseline () };
+            target js { out "out/js"; baseline latest };
+            target js { out "out/js"; baseline es2020 };
+            target ts { out "out/ts"; baseline v5_0 };
+            target kio-prime { out "out/prime" }
+            "#,
+        )
+        .unwrap();
+        for target in &build.targets[..4] {
+            assert!(artifact_target_profile(target).contains("resolved-baseline=Some(\"es2020\")"));
+            assert_eq!(javascript_runtime_baseline(target), "es2020");
+        }
+        assert!(
+            artifact_target_profile(&build.targets[4]).contains("resolved-baseline=Some(\"v5_0\")")
+        );
+        assert_eq!(javascript_runtime_baseline(&build.targets[4]), "es2020");
+        assert!(artifact_target_profile(&build.targets[5]).contains("resolved-baseline=None"));
     }
 
     #[test]

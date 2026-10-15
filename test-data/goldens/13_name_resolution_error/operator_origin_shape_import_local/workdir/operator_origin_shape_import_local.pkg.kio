@@ -2,7 +2,8 @@ package operator_origin_shape_import_local;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

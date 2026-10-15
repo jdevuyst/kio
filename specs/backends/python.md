@@ -17,6 +17,9 @@ emits a Python module. This page describes the surface the host calls.
 
 ## Language version
 
+The generation baseline is `v3_10`; see
+[baseline selection](../package.md#per-target-keys).
+
 Emitted code targets **Python 3.10+**. The gating surface is ordinary modern
 Python module loading plus standard-library `json`, `types`, and
 `importlib` support; no third-party package is required.

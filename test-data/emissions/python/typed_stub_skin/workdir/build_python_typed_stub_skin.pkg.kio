@@ -4,7 +4,8 @@ build {
   cache "out/.kio-cache/";
 
   target python {
-    out "out/python/"
+    out "out/python/";
+    baseline v3_10
   }
 }
 

@@ -2,7 +2,8 @@ package property_key;
 
 build {
   target ts {
-    out "out/ts/"
+    out "out/ts/";
+    baseline v5_0
   }
 }
 

@@ -5,6 +5,7 @@ build {
 
   target java {
     out "out/java/";
+    baseline v21;
     namespace "shapes"
   }
 }

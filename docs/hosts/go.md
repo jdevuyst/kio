@@ -27,6 +27,12 @@ one declares `go 1.26`; this is ordinary stable Go and requires neither a
 
 ## The build target
 
+The concrete generation baseline is `v1_26`. Write `baseline v1_26`
+to keep that compatibility contract across compiler upgrades, or `baseline latest`
+to follow the compiler's newest baseline. Omission and `baseline ()` also follow
+the newest baseline until `kio fmt` pins them to its concrete name. See
+[baseline selection](../../specs/package.md#per-target-keys) for the shared rules.
+
 A package emits to Go by declaring a `go` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
@@ -36,7 +42,8 @@ build {
   cache "out/.kio-cache/";
 
   target go {
-    out "out/go/"
+    out "out/go/";
+    baseline v1_26
   }
 }
 
@@ -467,7 +474,8 @@ build {
   cache "out/.kio-cache/";
 
   target go {
-    out "out/go/"
+    out "out/go/";
+    baseline v1_26
   }
 }
 

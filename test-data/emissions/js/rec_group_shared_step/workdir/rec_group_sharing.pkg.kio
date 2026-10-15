@@ -2,7 +2,8 @@ package rec_group_sharing;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

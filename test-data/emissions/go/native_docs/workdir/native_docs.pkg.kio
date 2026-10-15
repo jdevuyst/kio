@@ -4,7 +4,8 @@ build {
   cache "out/cache";
 
   target go {
-    out "out/go"
+    out "out/go";
+    baseline v1_26
   }
 }
 

@@ -25,7 +25,7 @@ fi
 # Write explicit Unit into each target and rename the package. Unit keeps the
 # same dynamic selection as omission, and formatting must retain it.
 sed 's/package before;/package after;/' before.pkg.kio |
-  awk '/    out / { sub(/"$/, "\";"); print; print "    namespace ()"; next } { print }' > after.pkg.kio
+  awk '/    out / { sub(/"$/, "\";"); print; print "    namespace ();"; next } { print }' > after.pkg.kio
 rm before.pkg.kio
 "$KIO_BIN" fmt after.pkg.kio >/dev/null
 test "$(grep -c 'namespace ()' after.pkg.kio)" -eq 8

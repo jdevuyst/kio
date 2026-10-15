@@ -2,7 +2,8 @@ package carrier_controls;
 
 build {
   target swift {
-    out "out/swift/"
+    out "out/swift/";
+    baseline v6_0
   }
 }
 

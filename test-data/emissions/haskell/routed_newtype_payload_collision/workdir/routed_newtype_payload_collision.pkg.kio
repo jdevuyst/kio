@@ -5,6 +5,7 @@ build {
 
   target haskell {
     out "out/haskell/";
+    baseline ghc9_10;
     namespace "BuildHaskellRoutedNewtypePayloadCollision"
   }
 }

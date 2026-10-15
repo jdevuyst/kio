@@ -2,7 +2,8 @@ package app;
 
 build {
   target (js, "web") {
-    out "out/web/"
+    out "out/web/";
+    baseline es2020
   }
 }
 

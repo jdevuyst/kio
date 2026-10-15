@@ -11,6 +11,9 @@ emits JavaScript. This page describes the surface the host must call against.
 
 ## Language version
 
+The generation baseline is `es2020`; see
+[baseline selection](../package.md#per-target-keys).
+
 Emitted code targets **ECMAScript 2020**, packaged as an ES module. The two
 gating features are **module syntax** (`export function …`) and `BigInt`
 literal syntax (`42n`, emitted for any ≥64-bit integer literal in source).

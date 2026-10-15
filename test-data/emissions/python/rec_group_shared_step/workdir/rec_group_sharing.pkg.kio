@@ -2,7 +2,8 @@ package rec_group_sharing;
 
 build {
   target python {
-    out "out/python/"
+    out "out/python/";
+    baseline v3_10
   }
 }
 

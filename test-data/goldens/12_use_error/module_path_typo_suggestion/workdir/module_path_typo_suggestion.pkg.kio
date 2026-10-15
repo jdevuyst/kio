@@ -2,6 +2,7 @@ package module_path_typo_suggestion;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }

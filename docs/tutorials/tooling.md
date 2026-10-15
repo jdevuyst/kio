@@ -62,7 +62,8 @@ build {
   cache "out/.kio-cache/";
 
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

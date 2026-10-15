@@ -293,6 +293,14 @@ assert_args() {
   for aa_arg in "$@"; do
     printf '%s\n' "$aa_arg" >>"$aa_expected"
   done
+  case "$aa_file:${1:-}" in
+    "$LAST_ARG_DIR/"*:--impls=SAMPLE_IMPL)
+      aa_impl_seed=$(sed -n 's/^sample-impl: seed = \([0-9]*\);.*/\1/p' "$ra_log")
+      if [ -n "$aa_impl_seed" ]; then
+        printf '%s\n' -- "--impl-seed=$aa_impl_seed" >>"$aa_expected"
+      fi
+      ;;
+  esac
   if [ ! -f "$aa_file" ] || ! diff -u "$aa_expected" "$aa_file"; then
     printf 'ci-all-case-forwarding-selftest: wrong forwarded argv in %s\n' \
       "$aa_file" >&2
@@ -785,6 +793,20 @@ for owner in golden emissions generative poc castle contrib; do
 done
 
 # The debug replay seed is validated once by ci/all.sh and reaches only every
+run_all public-impl-seed "$fixture/bin/gnu-time" 20 30.0 \
+  SAMPLE_IMPL --impl-seed=17 --case-seed=fixed --jobs=1 --compiler-jobs=1 --no-live
+grep -Fq 'sample-impl: seed = 17;' "$ra_log" || {
+  printf 'ci-all-case-forwarding-selftest: explicit implementation seed was not retained\n' >&2
+  exit 1
+}
+for owner in golden emissions generative poc castle contrib; do
+  if [ "$owner" = generative ]; then
+    assert_args "$LAST_ARG_DIR/$owner-tests.args" --impls=SAMPLE_IMPL
+  else
+    assert_args "$LAST_ARG_DIR/$owner-tests.args" --impls=SAMPLE_IMPL --case-seed=fixed
+  fi
+done
+
 # SAMPLE_IMPL corpus task with an exact task scope. Selection-domain behavior
 # is covered by run-tests-predispatch-selftest; this fixture proves forwarding.
 KIO_TEST_ALL_DEBUG_SAMPLE_IMPL_SEED=4294967295 \

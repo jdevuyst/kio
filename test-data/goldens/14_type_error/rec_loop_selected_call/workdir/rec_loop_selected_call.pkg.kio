@@ -2,6 +2,7 @@ package rec_loop_selected_call;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }

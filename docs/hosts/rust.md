@@ -22,6 +22,12 @@ edition independently.
 
 ## The build target
 
+The concrete generation baseline is `v1_85`. Write `baseline v1_85`
+to keep that compatibility contract across compiler upgrades, or `baseline latest`
+to follow the compiler's newest baseline. Omission and `baseline ()` also follow
+the newest baseline until `kio fmt` pins them to its concrete name. See
+[baseline selection](../../specs/package.md#per-target-keys) for the shared rules.
+
 A package emits to Rust by declaring a `rust` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
@@ -32,6 +38,7 @@ build {
 
   target rust {
     out "out/rust/";
+    baseline v1_85;
     namespace "greeter"
   }
 }
@@ -454,6 +461,7 @@ build {
 
   target rust {
     out "out/rust/";
+    baseline v1_85;
     namespace "greeter"
   }
 }

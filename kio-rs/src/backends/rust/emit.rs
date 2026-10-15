@@ -8045,7 +8045,7 @@ impl<'a> BodyEmitter<'a> {
             self.locals.pop();
             let body = body?;
             rendered_arms.push(format!(
-                "{i} => {{ let {ident}: ::std::rc::Rc<dyn ::std::any::Any> = __payload.clone(); let _ = &{ident}; {body} }}"
+                "{i} => {{ let {ident}: ::std::rc::Rc<dyn ::std::any::Any> = __payload.clone(); {body} }}"
             ));
         }
         rendered_arms

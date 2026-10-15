@@ -237,6 +237,9 @@ pub(super) fn describe_outputs(
                 package_root: inputs.root.clone(),
                 target: target.name().to_owned(),
                 backend: target.backend.clone(),
+                baseline: BuildTarget::from_id(&target.backend)
+                    .ok_or_else(|| format!("unknown backend `{}`", target.backend))?
+                    .resolve_baseline(target)?,
                 output_dir,
                 namespace,
             });

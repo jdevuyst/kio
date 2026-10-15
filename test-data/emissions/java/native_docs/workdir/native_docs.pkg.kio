@@ -4,7 +4,8 @@ build {
   cache "out/cache";
 
   target java {
-    out "out/java"
+    out "out/java";
+    baseline v21
   }
 }
 

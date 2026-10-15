@@ -296,18 +296,21 @@
 #                          pool is the set of --impl-def= entries on
 #                          the command line; pass a single --impl-def=
 #                          to scope to one backend (or, from the
-#                          wrappers, use --impls=<name>). Trades
-#                          backend-divergence coverage for ~½ the wall
-#                          time; use targeted full-matrix or explicit
+#                          wrappers, use --impls=<name>). Use
+#                          targeted full-matrix or explicit
 #                          impl runs when backend divergence matters.
 #                          A case applicable to only one configured
-#                          impl runs on that impl (sampling
-#                          becomes a no-op for it). See TESTING.md
+#                          impl retains that backend; baseline/environment
+#                          sampling still applies when enabled. See TESTING.md
 #                          § Local iteration for the full interaction.
 #                          Performance comparisons may set the internal
 #                          KIO_DEBUG_SAMPLE_IMPL_SEED documented in
-#                          ai/topics/local-performance.md; ordinary runs
-#                          remain randomly sampled.
+#                          ai/topics/local-performance.md. Ordinary replay
+#                          uses --impl-seed=<S>.
+#   --baseline-environments expand applicable generation baselines and select
+#                          exact provisioning environments; see --help.
+#   --impl-seed=<S>        replay implementation/baseline/environment choices.
+#   --toolchain-environment=<ID> select a bounded witness's exact environment.
 #   --sample-cases=<N>|all how many CASES per top-level bucket run their
 #                          impls. `all` (the default) runs every case.
 #                          With a count, the lowest-ranked N cases per
@@ -512,13 +515,26 @@ Flags:
                          opt in. Marker coverage is enforced by
                          ci/checks/repo-lint/dyn-load-prime-coverage.sh.
   --impls=SAMPLE_IMPL    for each case, run exactly one applicable
-                         impl, picked at random per run. Trades full
-                         backend coverage for half the wall time; add
+                         impl, picked at random per run. Add
                          targeted full-matrix or explicit impl runs
                          when backend divergence matters. The
                          candidate pool is the --impl-def= set you pass;
                          the wrappers expose --impls=<name> to narrow
                          it. See TESTING.md § Local iteration.
+  --baseline-environments
+                         expand ordinary fixture rows over applicable concrete
+                         generation baselines. SAMPLE_IMPL chooses one baseline
+                         and one distinct execution environment; full coverage
+                         uses each baseline at its current-tested endpoint.
+                         Custom/error/FIXED_BASELINE fixtures preserve source.
+  --impl-seed=<S>        replay SAMPLE_IMPL backend, baseline, and environment
+                         choices (canonical decimal 0..4294967295). Separate
+                         from case sampling; mutually exclusive with the
+                         internal KIO_DEBUG_SAMPLE_IMPL_SEED probe.
+  --toolchain-environment=<ID>
+                         explicitly select one provisioning environment for a
+                         bounded compatibility witness. Requires
+                         --baseline-environments; never installs tools.
   --sample-cases=<N>|all how many CASES per top-level bucket run their
                          impls (build + run + impl-routed checks). \`all\`
                          is the default. Sampled-out cases still run their
@@ -1299,6 +1315,30 @@ run_case_binary_checks() {
   return $((1 - rcbc_all_ok))
 }
 
+rebase_baseline_copy_links() (
+  rbcl_source=$(CDPATH='' cd -- "$1" && pwd -P) || return 1
+  rbcl_destination=$(CDPATH='' cd -- "$2" && pwd -P) || return 1
+  cd "$rbcl_source" || return 1
+  find . -path './workdir/out' -prune -o \
+    -type l -exec sh -c '
+      source_root=$1
+      destination_root=$2
+      shift 2
+      for relative_link do
+        case "$relative_link" in ./*) ;; *) exit 1 ;; esac
+        source_link=$source_root/${relative_link#./}
+        copy_link=$destination_root/${relative_link#./}
+        [ -L "$copy_link" ] || exit 1
+        rm -f "$copy_link" || exit 1
+        if [ -f "$source_link" ]; then
+          cp -L "$source_link" "$copy_link" || exit 1
+        else
+          ln -s "$source_link" "$copy_link" || exit 1
+        fi
+      done
+    ' sh "$rbcl_source" "$rbcl_destination" {} +
+)
+
 # run_one_case impl_name impl_kio impl_runner impl_target impl_prime_kio impl_runner_cache_kind case_dir name
 #              scratch update_flag show_output_flag results_file checks_file package_name clear_binary
 # Runs one case, diffs against goldens, prints the pass/FAIL line (and
@@ -1334,6 +1374,9 @@ run_one_case() {
   rc_checks_file=${13:-}
   rc_package_name=${14:-}
   rc_clear_binary=${15}
+  rc_baseline=${16:-}
+  rc_environment=${17:-}
+  rc_rewrite_baseline=${18:-0}
   [ "$rc_package_name" != "*" ] || rc_package_name=
 
   # Preserve the debug observer's set-vs-unset state for checks, custom
@@ -1372,6 +1415,11 @@ run_one_case() {
   # the per-(case, binary) Kio-semantic cache that the outer loop
   # clears.
   rc_runner_build_cache_dir="$CACHE_BASE/$rc_impl_target"
+  if [ -n "$rc_baseline" ]; then
+    rc_runner_build_cache_dir="$rc_runner_build_cache_dir/$rc_baseline/$rc_environment/${KIO_TOOLCHAIN_IDENTITY:-locked}"
+    printf 'baseline-execution: %s backend=%s baseline=%s environment=%s identity=%s\n' \
+      "$rc_name" "$rc_impl_target" "$rc_baseline" "$rc_environment" "${KIO_TOOLCHAIN_IDENTITY:-locked}"
+  fi
 
   rc_ok=1
 
@@ -1435,6 +1483,18 @@ run_one_case() {
   [ "$rc_impl_runner" = SKIP ] && rc_skip_runner=1
   rc_test_only=0
   [ "$rc_run_mode" = test-only ] && rc_test_only=1
+  if [ -n "$rc_baseline" ]; then
+    if [ "$rc_skip_runner" = 1 ] || [ "$rc_test_only" = 1 ]; then
+      printf 'baseline-runtime: compile-only; no host runtime execution\n'
+    elif [ "$rc_run_mode" = custom ]; then
+      printf 'baseline-runtime: custom host script; no ordinary runner runtime claim\n'
+    else
+      case "$rc_impl_target" in
+        js) printf 'baseline-runtime: Cargo-locked QuickJS (Node is not the ordinary runner runtime)\n' ;;
+        ts) printf 'baseline-runtime: Cargo-locked QuickJS; selected TypeScript checker environment=%s\n' "$rc_environment" ;;
+      esac
+    fi
+  fi
 
   # A KNOWN_FAILING case pins a tracked bug: it is *expected* to fail
   # (build, run, or output). The per-case checks (fmt / prime-marker /
@@ -1445,7 +1505,41 @@ run_one_case() {
   rc_known_failing=0
   [ -f "$rc_case_dir/KNOWN_FAILING" ] && rc_known_failing=1
 
-  # Per-(case, impl) checks use the source case directory. Checks (e.g.
+  rc_execution_dir=$rc_case_dir
+  if [ "$rc_rewrite_baseline" = 1 ]; then
+    rc_execution_dir=$rc_scratch/case
+    rc_manifest_ok=1
+    if ! mkdir -p "$rc_execution_dir" ||
+       ! cp -RP "$rc_case_dir/." "$rc_execution_dir" ||
+       ! rebase_baseline_copy_links "$rc_case_dir" "$rc_execution_dir"; then
+      rc_manifest_ok=0
+    else
+      # Source fetch and case-binary checks already ran. Do not refetch from
+      # relocated path dependencies or rewrite their materialized manifests.
+      rm -rf "$rc_execution_dir/workdir/out"
+      for rc_manifest in "$rc_execution_dir"/workdir/*.pkg.kio; do
+        [ -f "$rc_manifest" ] || continue
+        if ! "$rc_impl_kio" debug baseline-package "$rc_manifest" "$rc_impl_target" \
+            "$rc_baseline" >"$rc_scratch/baseline.pkg.kio" 2>"$rc_scratch/baseline.log"; then
+          rc_manifest_ok=0
+          break
+        fi
+        if [ -s "$rc_scratch/baseline.pkg.kio" ]; then
+          cp "$rc_scratch/baseline.pkg.kio" "$rc_manifest" || rc_manifest_ok=0
+        fi
+      done
+    fi
+    if [ "$rc_manifest_ok" != 1 ]; then
+      printf '  [%s/%s] cannot prepare baseline fixture\n' "$rc_impl_name" "$rc_name"
+      [ ! -f "$rc_scratch/baseline.log" ] || sed 's/^/    /' "$rc_scratch/baseline.log"
+      printf 'FAIL [%s] %s\n' "$rc_impl_name" "$rc_name"
+      printf '%s\t%s\t%s\n' "$rc_impl_name" FAIL "$rc_name" >>"$rc_results_file"
+      return 0
+    fi
+  fi
+
+  # Per-(case, impl) checks use the execution copy when a baseline is selected.
+  # Source checks (e.g.
   # fmt-canonical, prime-marker) carry a `# ROUTING: case-binary`
   # marker and run earlier in the unit; the checks reaching this
   # codepath are the impl-routed ones (kio-prime-roundtrip,
@@ -1465,7 +1559,7 @@ run_one_case() {
       rc_check_name=$(basename "$rc_check" .sh)
       rc_check_log="$rc_scratch/check_${rc_check_idx}.log"
       (
-        cd "$rc_case_dir" || exit 1
+        cd "$rc_execution_dir" || exit 1
         PATH="$rc_kio_proxy_dir/bin:$COMPILER_PROXY_DIR:$PATH" \
           KIO_BIN="$rc_proxy_kio" KIO_RUNNER="$rc_effective_runner" \
           KIO_TEST_RUNNER_CACHE_KIND="$rc_runner_cache_kind" \
@@ -1542,7 +1636,6 @@ run_one_case() {
     fi
   fi
 
-  rc_execution_dir=$rc_case_dir
   if [ "$rc_run_mode" = custom ] && [ -e "$rc_case_dir/SKIP_DEP_MATERIALIZED" ]; then
     # Copy all inputs, including untracked/ignored files, after source checks.
     # Preserve links and sibling directories rather than flattening dependency
@@ -1940,13 +2033,26 @@ run_one_unit() {
     rou_itarget=$(printf '%s' "$rou_tuple" | awk -F'|' '{print $3}')
     rou_iprime=$(printf '%s' "$rou_tuple" | awk -F'|' '{print $4}')
     rou_icache_kind=$(printf '%s' "$rou_tuple" | awk -F'|' '{print $5}')
+    rou_ibaseline=$(printf '%s' "$rou_tuple" | awk -F'|' '{print $6}')
+    rou_ienvironment=$(printf '%s' "$rou_tuple" | awk -F'|' '{print $7}')
+    rou_irewrite=$(printf '%s' "$rou_tuple" | awk -F'|' '{print $8}')
+    rou_ifragment=$(printf '%s' "$rou_tuple" | awk -F'|' '{print $9}')
     rou_impl_scratch="$rou_scratch/impl_$rou_impl_idx"
     mkdir -p "$rou_impl_scratch"
+    (
+    if [ -n "$rou_ifragment" ]; then
+      # shellcheck disable=SC1090
+      . "$rou_ifragment" || exit 2
+      COMPILER_PROXY_DIR=$rou_impl_scratch/native-compiler-proxy
+      setup_native_compiler_proxy "$COMPILER_PROXY_DIR" "$RUN_TESTS_CI_DIR" || exit 2
+    fi
     run_one_case \
       "$rou_iname" "$rou_binary_kio" "$rou_irunner" "$rou_itarget" "$rou_iprime" "$rou_icache_kind" \
       "$rou_case_dir" "$rou_name" "$rou_impl_scratch" \
       "$UPDATE_FLAG" "$SHOW_OUTPUT_FLAG" \
-      "$RESULTS_FILE" "$IMPL_CHECKS_FILE" "$rou_package_name" "$rou_clear_binary"
+      "$RESULTS_FILE" "$IMPL_CHECKS_FILE" "$rou_package_name" "$rou_clear_binary" \
+      "$rou_ibaseline" "$rou_ienvironment" "$rou_irewrite"
+    )
   done
 
   return 0
@@ -2055,6 +2161,10 @@ fi
 PRIME_ONLY=0
 DYN_LOAD_PRIME_ONLY=0
 SAMPLE_IMPL=0
+BASELINE_ENVIRONMENTS=0
+TOOLCHAIN_ENVIRONMENT=
+IMPL_SEED=
+IMPL_SEED_SET=0
 SAMPLE_CASES=
 SAMPLE_CASES_SET=0
 CASE_SEED=
@@ -2116,10 +2226,10 @@ run_tests_help_requested() {
     case "$1" in
       -h|--help) return 0 ;;
       --) return 1 ;;
-      -u|--update-expected|--show-output|--prime-only|--dyn-load-prime-only|--keep-cache) ;;
+      -u|--update-expected|--show-output|--prime-only|--dyn-load-prime-only|--keep-cache|--baseline-environments) ;;
       --impls=SAMPLE_IMPL|--impls=FULL_IMPL_MATRIX) ;;
-      --cases-dir=*|--cache-base=*|--impl-def=*|--jobs=*|--compiler-jobs=*|--sample-cases=*|--impl-case-set-file=*|--custom-typed-cache-cohort=*|--case-seed=*|--exclude=*|--check=*) ;;
-      --impls|--cases-dir|--cache-base|--impl-def|--jobs|--compiler-jobs|--sample-cases|--impl-case-set-file|--custom-typed-cache-cohort|--case-seed|--exclude|--check)
+      --cases-dir=*|--cache-base=*|--impl-def=*|--jobs=*|--compiler-jobs=*|--sample-cases=*|--impl-case-set-file=*|--custom-typed-cache-cohort=*|--case-seed=*|--impl-seed=*|--toolchain-environment=*|--exclude=*|--check=*) ;;
+      --impls|--cases-dir|--cache-base|--impl-def|--jobs|--compiler-jobs|--sample-cases|--impl-case-set-file|--custom-typed-cache-cohort|--case-seed|--impl-seed|--exclude|--check)
         shift
         [ "$#" -gt 0 ] || return 1
         ;;
@@ -2266,6 +2376,18 @@ while [ $# -gt 0 ]; do
     --show-output)        SHOW_OUTPUT=1 ;;
     --prime-only)         PRIME_ONLY=1 ;;
     --dyn-load-prime-only) DYN_LOAD_PRIME_ONLY=1 ;;
+    --baseline-environments) BASELINE_ENVIRONMENTS=1 ;;
+    --toolchain-environment=*)
+      TOOLCHAIN_ENVIRONMENT=${1#--toolchain-environment=}
+      case "$TOOLCHAIN_ENVIRONMENT" in ''|*[!a-zA-Z0-9_-]*) printf 'error: invalid --toolchain-environment ID\n' >&2; exit 2 ;; esac
+      ;;
+    --impl-seed=*) IMPL_SEED=${1#--impl-seed=}; IMPL_SEED_SET=1 ;;
+    --impl-seed)
+      shift
+      [ $# -gt 0 ] || { printf 'error: --impl-seed requires a value\n' >&2; exit 2; }
+      IMPL_SEED=$1
+      IMPL_SEED_SET=1
+      ;;
     --impls=SAMPLE_IMPL)  SAMPLE_IMPL=1 ;;
     --impls=FULL_IMPL_MATRIX) SAMPLE_IMPL=0 ;;
     --impls=*)
@@ -2441,6 +2563,7 @@ validate_debug_sample_impl_seed() {
 }
 
 if [ "${KIO_DEBUG_SAMPLE_IMPL_SEED+x}" = x ]; then
+  [ "$IMPL_SEED_SET" -eq 0 ] || { printf 'error: --impl-seed and KIO_DEBUG_SAMPLE_IMPL_SEED are mutually exclusive\n' >&2; exit 2; }
   validate_debug_sample_impl_seed "$KIO_DEBUG_SAMPLE_IMPL_SEED" || {
     printf 'error: KIO_DEBUG_SAMPLE_IMPL_SEED must be canonical decimal in 0..4294967295\n' >&2
     exit 2
@@ -2449,6 +2572,18 @@ if [ "${KIO_DEBUG_SAMPLE_IMPL_SEED+x}" = x ]; then
     printf 'error: KIO_DEBUG_SAMPLE_IMPL_SEED requires --impls=SAMPLE_IMPL\n' >&2
     exit 2
   }
+fi
+
+if [ "$IMPL_SEED_SET" -eq 1 ]; then
+  validate_debug_sample_impl_seed "$IMPL_SEED" || {
+    printf 'error: --impl-seed must be canonical decimal in 0..4294967295\n' >&2
+    exit 2
+  }
+  [ "$SAMPLE_IMPL" -eq 1 ] || { printf 'error: --impl-seed requires --impls=SAMPLE_IMPL\n' >&2; exit 2; }
+fi
+if [ -n "$TOOLCHAIN_ENVIRONMENT" ] && [ "$BASELINE_ENVIRONMENTS" -ne 1 ]; then
+  printf 'error: --toolchain-environment requires --baseline-environments\n' >&2
+  exit 2
 fi
 
 case "$JOBS" in
@@ -3363,8 +3498,16 @@ LC_ALL=C awk -F"$TAB" \
 # regardless; sampling is a no-op for them.
 sample_impl_file="$TMPDIR_RUN/sample_impl.tsv"
 : >"$sample_impl_file"
+sample_draw_seed=${KIO_DEBUG_SAMPLE_IMPL_SEED:-$IMPL_SEED}
+if [ "$SAMPLE_IMPL" = 1 ] && { [ "$BASELINE_ENVIRONMENTS" = 1 ] || [ "$IMPL_SEED_SET" = 1 ]; }; then
+  if [ -z "$sample_draw_seed" ]; then
+    sample_draw_seed=$(od -An -N4 -tu4 /dev/urandom 2>/dev/null | tr -d ' \n')
+    : "${sample_draw_seed:=$$}"
+  fi
+  printf 'sample-impl: seed = %s; reproduce with --impls=SAMPLE_IMPL --impl-seed=%s\n' "$sample_draw_seed" "$sample_draw_seed"
+fi
 if [ "$SAMPLE_IMPL" = 1 ]; then
-  if [ "${KIO_DEBUG_SAMPLE_IMPL_SEED+x}" = x ]; then
+  if [ -n "$sample_draw_seed" ]; then
     printf 'impls=SAMPLE_IMPL mode: deterministically picking one applicable impl per case\n'
   else
     printf 'impls=SAMPLE_IMPL mode: picking one applicable impl per case at random\n'
@@ -3388,7 +3531,7 @@ if [ "$SAMPLE_IMPL" = 1 ]; then
     exit 2
   }
 
-  if [ "${KIO_DEBUG_SAMPLE_IMPL_SEED+x}" = x ]; then
+  if [ -n "$sample_draw_seed" ]; then
     sample_impl_phase=regular
     [ "$PRIME_ONLY" -eq 0 ] || sample_impl_phase=direct-prime
     [ "$DYN_LOAD_PRIME_ONLY" -eq 0 ] || sample_impl_phase=dyn-load-prime
@@ -3411,7 +3554,7 @@ if [ "$SAMPLE_IMPL" = 1 ]; then
         ;;
     esac
 
-    KIO_DEBUG_SAMPLE_IMPL_SEED_VALUE=$KIO_DEBUG_SAMPLE_IMPL_SEED LC_ALL=C \
+    KIO_DEBUG_SAMPLE_IMPL_SEED_VALUE=$sample_draw_seed LC_ALL=C \
       awk -F'\t' -v cases_dir="$CASES_DIR" \
         -v sample_scope="$sample_impl_scope" \
         -v sample_phase="$sample_impl_phase" \
@@ -3488,14 +3631,92 @@ else
     }
 fi
 
+if [ "$BASELINE_ENVIRONMENTS" = 1 ]; then
+  baseline_current_only=0
+  case "${KIO_DEBUG_SAMPLE_IMPL_SCOPE:-}:$CASES_DIR" in
+    checks/orchestrators/contrib-tests:*|*:*/contrib) baseline_current_only=1 ;;
+  esac
+  baseline_policy_file="$TMPDIR_RUN/baseline-policies.tsv"
+  : >"$baseline_policy_file"
+  awk -F "$TAB" '$4 == "exact" { print $1 }' "$case_targets_file" >"$TMPDIR_RUN/baseline-exact-cases"
+  while IFS="$TAB" read -r baseline_case baseline_mode; do
+    baseline_policy=preserve
+    if [ "$baseline_mode" != run.sh ] && [ ! -e "$baseline_case/FIXED_BASELINE" ] &&
+       [ ! -e "$baseline_case/KNOWN_FAILING" ] &&
+       [ "$(tr -d '[:space:]' <"$baseline_case/expected.exit")" = 0 ] &&
+       grep -Fxq "$baseline_case" "$TMPDIR_RUN/baseline-exact-cases"; then
+      baseline_policy=parametric
+      [ "$baseline_current_only" -eq 0 ] || baseline_policy=current-only
+    fi
+    printf '%s\t%s\n' "$baseline_case" "$baseline_policy" >>"$baseline_policy_file"
+  done <"$case_modes_file"
+  baseline_rows_file="$TMPDIR_RUN/applicability-baselines.tsv"
+  baseline_mode=full
+  [ "$SAMPLE_IMPL" = 0 ] || baseline_mode=sample
+  sh "$RUN_TESTS_CI_DIR/infra/baseline-environments.sh" expand \
+    "$selected_applicability_rows_file" "$baseline_policy_file" "$baseline_mode" \
+    "${sample_draw_seed:-0}" "${sample_impl_scope:-direct}/${sample_impl_phase:-regular}" \
+    "$CASES_DIR" "$baseline_rows_file" || exit 2
+  if [ -n "$TOOLCHAIN_ENVIRONMENT" ]; then
+    awk -F "$TAB" -v OFS="$TAB" -v environment="$TOOLCHAIN_ENVIRONMENT" \
+        -v current_only="$baseline_current_only" '
+      {
+        if ($12 != "none") {
+          if (current_only && $12 != environment) exit 2
+          $12 = environment
+        }
+        print
+      }
+    ' "$baseline_rows_file" >"$baseline_rows_file.selected" || {
+      printf 'error: contribution cases require their current-tested environments\n' >&2
+      exit 2
+    }
+    mv "$baseline_rows_file.selected" "$baseline_rows_file"
+  fi
+
+  # Resolve each selected tool environment once. Workers source these private
+  # immutable snapshots before capturing any native compiler executable.
+  baseline_environments_dir="$TMPDIR_RUN/baseline-environments"
+  mkdir "$baseline_environments_dir"
+  awk -F "$TAB" -v sampled="$sampled_names_file" -v cases_dir="$CASES_DIR" \
+      -v narrowing="$SAMPLE_CASES$IMPL_CASE_SET_FILE" '
+    FILENAME == sampled { selected[$0] = 1; next }
+    $12 != "none" && (narrowing == "" || substr($3, length(cases_dir) + 2) in selected) {
+      print $7 "\t" $12
+    }
+  ' "$sampled_names_file" "$baseline_rows_file" | \
+    LC_ALL=C sort -u >"$baseline_environments_dir/selected.tsv"
+  while IFS="$TAB" read -r baseline_backend baseline_environment; do
+    [ -n "$baseline_backend" ] || continue
+    baseline_fragment="$baseline_environments_dir/$baseline_backend.$baseline_environment.sh"
+    if ! sh "$RUN_TESTS_CI_DIR/impl-toolchain.sh" toolchain-env "$baseline_backend" \
+        --environment "$baseline_environment" >"$baseline_fragment"; then
+      printf 'error: selected baseline tool environment is unavailable: %s/%s\n' \
+        "$baseline_backend" "$baseline_environment" >&2
+      exit 2
+    fi
+    chmod 0444 "$baseline_fragment"
+    sh "$RUN_TESTS_CI_DIR/impl-toolchain.sh" toolchain-plan "$baseline_backend" \
+      --environment "$baseline_environment" || exit 2
+  done <"$baseline_environments_dir/selected.tsv"
+  awk -F "$TAB" -v OFS="$TAB" -v fragments="$baseline_environments_dir" '
+    { print $0, ($12 == "none" ? "" : fragments "/" $7 "." $12 ".sh") }
+  ' "$baseline_rows_file" >"$selected_applicability_rows_file"
+  awk -F "$TAB" -v cases_dir="$CASES_DIR" '
+    { printf "baseline-impl-map:\t%s\t%s\t%s\t%s\t%s\n", \
+        substr($3, length(cases_dir) + 2), $4, $7, $11, $12 }
+  ' "$selected_applicability_rows_file"
+fi
+
 # Build the (case, binary) worklist.
 #
 # Each row in $UNITS_FILE has the shape
 #   <unit_key>\t<case_dir>\t<binary_kio>\t<impls_blob>\t<package-name-or-*>
 # where <unit_key> = <safe_case>__<safe_binary> and <impls_blob> is a
 # `;`-joined list of
-# `<impl_name>|<runner>|<target>|<prime-kio>|<runner-cache-kind>` tuples. The
-# worker uses unit_key to look the row up; tabs and spaces are
+# `<impl_name>|<runner>|<target>|<prime-kio>|<runner-cache-kind>` tuples,
+# followed by the optional baseline, environment, rewrite, and fragment fields.
+# The worker uses unit_key to look the row up; tabs and spaces are
 # avoided inside the impls blob so xargs / shell quoting can't
 # reshape the payload.
 #
@@ -3530,8 +3751,8 @@ awk -F"$TAB" \
   {
     name = substr($3, length(cases_dir) + 2)
     sampled_out = sampling && !(name in sampled)
-    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n",
-      $1, $3, $5, $2, $4, $6, $7, $8, $9, $10, sampled_out
+    printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+      $1, $3, $5, $2, $4, $6, $7, $8, $9, $10, sampled_out, $11, $12, $13, $14
   }
 ' "$sampled_names_file" "$selected_applicability_rows_file" \
   >"$unit_parts_unsorted_file" || {
@@ -3570,7 +3791,7 @@ awk -F"$TAB" -v cases_dir="$CASES_DIR" '
       blob = ""
     }
     if (!sampled_out) {
-      tuple = $5 "|" $6 "|" $7 "|" $8 "|" $9
+      tuple = $5 "|" $6 "|" $7 "|" $8 "|" $9 "|" $12 "|" $13 "|" $14 "|" $15
       blob = blob (blob == "" ? "" : ";") tuple
     }
   }
@@ -3676,7 +3897,7 @@ while IFS=$TAB read -r impl_name _ _ _ _ _; do
       n = split($4, tuples, ";")
       for (j = 1; j <= n; j++) {
         split(tuples[j], rec, "|")
-        if (rec[1] == i) { print; next }
+        if (rec[1] == i) print
       }
     }
   ' "$units_file" | wc -l | tr -d ' ')

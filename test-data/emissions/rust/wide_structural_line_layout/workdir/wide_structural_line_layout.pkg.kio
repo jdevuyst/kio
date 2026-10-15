@@ -2,7 +2,8 @@ package wide_structural_line_layout;
 
 build {
   target rust {
-    out "out/rust/"
+    out "out/rust/";
+    baseline v1_85
   }
 }
 

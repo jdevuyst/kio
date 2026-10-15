@@ -66,7 +66,9 @@ results="$scratch/results"
 : >"$results"
 
 # NUL-delimited index paths preserve every filename accepted by Git.
-git ls-files -z -- '*.kio' ':(exclude)test-data/' >"$paths"
+# Retained release inputs are byte-hashed provenance, not current examples.
+git ls-files -z -- '*.kio' ':(exclude)test-data/' \
+  ':(exclude)ci/infra/backend-compatibility/retained/' >"$paths"
 if [ ! -s "$paths" ]; then
   printf 'fmt-canonical-tree: found no tracked *.kio outside test-data/\n' >&2
   exit 2

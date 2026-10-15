@@ -2,7 +2,8 @@ package test_equiv_structural_recur_bottom_fault;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

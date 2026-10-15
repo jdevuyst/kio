@@ -54,6 +54,13 @@ The fixed runner is the default public-interface oracle. Only backend-specific g
 
 ## Golden test case layout (`test-data/goldens/`)
 
+`FIXED_BASELINE` preserves a standard fixture's written baseline selectors when
+those selectors are its subject. Ordinary successful standard fixtures use the
+baseline-parametric execution copies described in
+[`TESTING.md`](../TESTING.md#local-iteration); custom/error fixtures already
+preserve their source. The marker does not change backend eligibility, case
+sampling, source checks, or expected results.
+
 Cases are grouped under `test-data/goldens/<NN_category>/` directories where `NN` is the expected exit code and `category` matches a row in [`specs/exit-codes.md`](../specs/exit-codes.md). Filters match against the relative path. The one carve-out is the `90_runtime_exit` tier: its prefix is a tier label, not an asserted compiler category, because it holds cases that build and run and then assert the **program's own** runtime exit code ([`specs/exit-codes.md`](../specs/exit-codes.md) § Runtime exit codes). Cases there carry per-case `expected.exit` values — a program that builds cleanly and then exits `1` or `90` both belong — so `NN` there does not constrain a case's `expected.exit`.
 
 Each case is a directory containing:

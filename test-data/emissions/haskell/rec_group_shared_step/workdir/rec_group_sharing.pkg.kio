@@ -2,7 +2,8 @@ package rec_group_sharing;
 
 build {
   target haskell {
-    out "out/haskell/"
+    out "out/haskell/";
+    baseline ghc9_10
   }
 }
 

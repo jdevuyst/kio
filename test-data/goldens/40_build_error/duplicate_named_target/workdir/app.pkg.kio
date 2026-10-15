@@ -2,10 +2,12 @@ package app;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   };
 
   target (rust, "js") {
-    out "out/native/"
+    out "out/native/";
+    baseline v1_85
   }
 }

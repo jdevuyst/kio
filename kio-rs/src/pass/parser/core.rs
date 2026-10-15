@@ -2465,7 +2465,7 @@ impl<'a> Parser<'a> {
     /// - a string literal;
     /// - a number literal (integer or float);
     /// - a boolean literal;
-    /// - a bare word — a value-level identifier.
+    /// - a bare word — a value-level identifier or a field's closed choice.
     ///
     /// Per [`grammar.md` § Package files](../../../../specs/grammar.md#package-files).
     /// The caller validates which of these kinds the specific field
@@ -2509,7 +2509,9 @@ impl<'a> Parser<'a> {
             }
             Some(TokenKind::Ident(_)) => {
                 let (word, span) = self.expect_ident()?;
-                Self::validate_value_name(&word, span)?;
+                if !field.is_some_and(|field| field.named_choices.contains(&word.as_str())) {
+                    Self::validate_value_name(&word, span)?;
+                }
                 Ok((BlockFieldValue::Word(word), span))
             }
             _ => Err(self.err_here(

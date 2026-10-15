@@ -124,7 +124,9 @@ jobs:
         shell: bash
         run: |
           languages=$(sh ci/impl-toolchain.sh supported-languages | tr '\n' ',')
-          printf 'key=toolchains-%s\n' "$(sh ci/impl-toolchain.sh toolchain-key "$languages")" >>"$GITHUB_OUTPUT"
+          printf 'key=toolchains-%s-%s\n' "$(sh ci/impl-toolchain.sh toolchain-key "$languages")" "$COMPATIBILITY_POOL" >>"$GITHUB_OUTPUT"
+        env:
+          COMPATIBILITY_POOL: ${{ hashFiles('ci/infra/baseline-environments.tsv', 'ci/infra/baseline-environments.sh', 'ci/install-target-language-toolchains.sh') }}
 
       - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         id: mise-cache
@@ -177,6 +179,10 @@ jobs:
           printf 'tool_impls=%s\n' "$tool_impls" >>"$GITHUB_OUTPUT"
           printf 'selected impls: %s\n' "$impls"
           printf 'tooling impls: %s\n' "$tool_impls"
+
+      - name: Prepare sampled compatibility test environments
+        shell: bash
+        run: sh ci/install-target-language-toolchains.sh --supported-set --for-tests
 
       - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5.1.0
         if: steps.mise-cache.outputs.cache-hit != 'true'

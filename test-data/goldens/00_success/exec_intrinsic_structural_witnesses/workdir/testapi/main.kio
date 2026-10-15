@@ -1,0 +1,39 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(String);
+import testapi/io(print);
+
+fn product[A][B][C](a: A, b: B, c: C) -> A & B & C { __pair__(A, B & C, a, __pair__(B, C, b, c)) }
+
+fn middle[A][B][C](value: B) -> A | B | C { __right__(A, B | C, __left__(B, C, value)) }
+
+fn describe(value: String | . | String) -> String {
+  __either__(
+  , String
+  , . | String
+  , String
+  , value
+  , .(value: String) -> String { value }
+  , .(rest: . | String) -> String {
+      __either__(
+      , .
+      , String
+      , String
+      , rest
+      , .(_: .) -> String { "middle\n"(String) }
+      , .(value: String) -> String { value }
+      )
+    }
+  )
+}
+
+pub fn main() {
+  let triple = product(String, ., String, "first\n"(String), (), "last\n"(String));
+  print(__fst__(String, . & String, triple));
+  print(__snd__(., String, __snd__(String, . & String, triple)));
+  print(describe(__left__(String, . | String, "left\n"(String))));
+  print(describe(middle(String, ., String, ())));
+  print(describe(__right__(String, . | String, __right__(., String, "right\n"(String)))))
+}

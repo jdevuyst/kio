@@ -54,7 +54,10 @@ sh ci/install-target-language-toolchains.sh swift haskell
 
 The second command illustrates explicitly requested extras, not a standing
 instruction to install them. For a full Linux environment use
-`sh ci/install-target-language-toolchains.sh --supported-set` after core setup.
+`sh ci/install-target-language-toolchains.sh --supported-set --for-tests` after
+core setup. `--for-tests` explicitly prepares the shared minimum/current-tested
+sampling pool; ordinary language/set installation remains development-only.
+Use `--for-tests --plan` to inspect it without installing target-language tools.
 Linux system libraries route through mise bootstrap and may need administrative
 privileges.
 On macOS, core setup's Python helper dependency is best-effort and warns before
@@ -70,7 +73,9 @@ sharing a store. Preserve account defaults, shell profiles, `HOME`, Cargo
 configuration/credentials, and configured compiler caches.
 
 For a named exact environment, pass the same `--environment ID` to installation
-and execution; `toolchain-environments` lists IDs.
+and execution; `toolchain-environments` lists IDs. Generation baselines and
+minimum/current-tested endpoint mapping have a separate owner; consume that
+mapping rather than copying versions into setup instructions.
 
 Optional Cargo-backed report/audit tools remain opt-in:
 

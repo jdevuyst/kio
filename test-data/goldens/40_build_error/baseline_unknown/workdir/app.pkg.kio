@@ -1,0 +1,43 @@
+package app;
+
+build {
+  target js {
+    out "out/js/";
+    baseline unknown
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline unknown
+  };
+
+  target python {
+    out "out/python/";
+    baseline unknown
+  };
+
+  target rust {
+    out "out/rust/";
+    baseline unknown
+  };
+
+  target go {
+    out "out/go/";
+    baseline unknown
+  };
+
+  target java {
+    out "out/java/";
+    baseline unknown
+  };
+
+  target swift {
+    out "out/swift/";
+    baseline unknown
+  };
+
+  target haskell {
+    out "out/haskell/";
+    baseline unknown
+  }
+}

@@ -2,7 +2,8 @@ package rec_group_sharing;
 
 build {
   target java {
-    out "out/java/"
+    out "out/java/";
+    baseline v21
   }
 }
 

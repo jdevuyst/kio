@@ -5,5 +5,7 @@ build {
     md "input"
   };
 
-  target js {}
+  target js {
+    baseline es2020
+  }
 }

@@ -361,4 +361,5 @@ KIO_PRIME_CHECK_BIN="$REPO_ROOT/ci/infra/kio-prime-check-rs/target/debug/kio-pri
 export KIO_PRIME_CHECK_BIN
 
 cd "$REPO_ROOT"
-sh ci/run-tests.sh "$@"
+KIO_DEBUG_SAMPLE_IMPL_SCOPE=checks/orchestrators/generative-tests \
+  sh ci/run-tests.sh --baseline-environments "$@"

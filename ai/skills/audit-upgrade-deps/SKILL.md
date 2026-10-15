@@ -47,7 +47,9 @@ A handler with no surviving manifest is a **dangling finding** — the ecosystem
 
 - The files it points at exist: `ci/checks/repo-lint/version-check.sh`, `mise.toml`, `mise.optional.toml`, `mise.lock`, `mise.optional.lock`, [`ai/topics/local-tools.md`](../../topics/local-tools.md).
 - Exact-environment overlays have their native lock files, and bootstrap/child
-  manifest references resolve.
+  manifest references resolve. The compatibility-maintenance skill owns endpoint
+  refresh evidence; it must not become a second editable copy of provisioning pins
+  or silently broaden `upgrade-deps`'s reason-driven policy.
 - The tools it invokes are spelled correctly: `mise`, `npm` (with `npm audit`), `cargo` (with `cargo update`), and `cargo audit` — the last pinned as `cargo:cargo-audit` in `mise.optional.toml` and installed on demand through `ci/impl-toolchain.sh install-report-tools`, not assumed as a standing core binary.
 - The out-of-scope carve-out still holds: `upgrade-deps` must not touch `version-check.sh`'s mirror list — that is `audit-versioning`'s domain.
 

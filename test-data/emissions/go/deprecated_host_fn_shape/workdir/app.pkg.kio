@@ -2,7 +2,8 @@ package app;
 
 build {
   target go {
-    out "out/go/"
+    out "out/go/";
+    baseline v1_26
   }
 }
 

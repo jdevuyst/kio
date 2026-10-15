@@ -574,4 +574,5 @@ while IFS= read -r filter; do
 done <"$PASSTHROUGH_FILE"
 
 printf '\n========== run-tests (contrib) ==========\n'
-sh ci/run-tests.sh "$@"
+KIO_DEBUG_SAMPLE_IMPL_SCOPE=checks/orchestrators/contrib-tests \
+  sh ci/run-tests.sh --baseline-environments "$@"

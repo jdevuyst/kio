@@ -37,6 +37,8 @@ Subcommands:
                  Kio' artifact round-trip check.
   build-output-plan <target>
                  Print selected target configuration as JSON without building.
+  baseline-package <file> <backend> <baseline>
+                 Prepare a copied baseline-parametric test manifest.
   tokens <file>   Print the file's source tokenization as a
                   JSON array of { start, end, kind } records,
                   classified against the canonical token-kind
@@ -61,6 +63,8 @@ Subcommands:
                  Kio' artifact round-trip check.
   build-output-plan <target>
                  Print selected target configuration as JSON without building.
+  baseline-package <file> <backend> <baseline>
+                 Prepare a copied baseline-parametric test manifest.
   tokens <file>   Print the file's source tokenization as a
                   JSON array of { start, end, kind } records,
                   classified against the canonical token-kind
@@ -91,6 +95,9 @@ pub fn run(args: &[String]) -> ExitCode {
     if args.first().is_some_and(|sub| sub == "build-output-plan") {
         return run_build_output_plan(&args[1..]);
     }
+    if args.first().is_some_and(|sub| sub == "baseline-package") {
+        return run_baseline_package(&args[1..]);
+    }
     let help = crate::documentation_help(HELP);
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!("{help}");
@@ -112,6 +119,89 @@ pub fn run(args: &[String]) -> ExitCode {
             ExitCode::Usage
         }
     }
+}
+
+fn run_baseline_package(args: &[String]) -> ExitCode {
+    let [path, backend, baseline] = args else {
+        eprintln!("Usage: kio debug baseline-package <file> <backend> <baseline>");
+        return ExitCode::Usage;
+    };
+    let source = match fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("error: cannot read {path}: {error}");
+            return ExitCode::Internal;
+        }
+    };
+    let stem = std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(crate::file_kind::package_stem);
+    match prepare_baseline_package(&source, stem, backend, baseline) {
+        Ok(Some(rendered)) => {
+            print!("{rendered}");
+            ExitCode::Success
+        }
+        Ok(None) => ExitCode::Success,
+        Err(message) => {
+            eprintln!("error: {path}: {message}");
+            ExitCode::Build
+        }
+    }
+}
+
+fn prepare_baseline_package(
+    source: &str,
+    stem: Option<&str>,
+    backend: &str,
+    baseline: &str,
+) -> Result<Option<String>, String> {
+    let backend = crate::build_target::BuildTarget::from_id(backend)
+        .ok_or_else(|| format!("unknown backend `{backend}`"))?;
+    let field = backend
+        .field("baseline")
+        .ok_or_else(|| format!("the `{}` backend has no baseline", backend.id()))?;
+    if baseline == "latest" || !field.named_choices.contains(&baseline) {
+        return Err(format!(
+            "expected a concrete `{}` baseline, got `{baseline}`",
+            backend.id()
+        ));
+    }
+    let mut package = parse_package_file(source, stem).map_err(|error| {
+        let (span, message) = error.diag();
+        let (line, col) = line_col(source, span.start);
+        format!("{line}:{col}: {message}")
+    })?;
+    let Some(build) = package.build.as_mut() else {
+        return Ok(None);
+    };
+    let mut found = false;
+    for target in build
+        .targets
+        .iter_mut()
+        .filter(|target| target.backend == backend.id())
+    {
+        // A test copy may select another admitted baseline, but must not repair
+        // invalid source or erase the diagnostic it was intended to observe.
+        backend.resolve_baseline(target)?;
+        found = true;
+        let value = crate::ast::BlockFieldValue::Word(baseline.to_owned());
+        if let Some(entry) = target
+            .entries
+            .iter_mut()
+            .find(|entry| entry.key == "baseline")
+        {
+            entry.value = value;
+        } else {
+            target.entries.push(TargetEntry {
+                key: "baseline".to_owned(),
+                value,
+                span: target.span,
+                leading_trivia: Vec::new(),
+            });
+        }
+    }
+    Ok(found.then(|| crate::pretty::pretty_package_file_preserving_baselines(&package)))
 }
 
 fn run_build_output_plan(args: &[String]) -> ExitCode {
@@ -347,6 +437,84 @@ mod tests {
     #[test]
     fn empty_argv_returns_usage() {
         assert_eq!(run(&[]), ExitCode::Usage);
+    }
+
+    #[test]
+    fn baseline_package_uses_the_package_ast_and_validates_before_rewriting() {
+        let source = r#"package app;
+build {
+  target (ts, "first") { out "out/first"; baseline ((latest)) };
+  target (ts, "second") { out "out/second"; baseline () };
+  target rust { out "out/rust"; baseline latest; thread_safety sync };
+  target python { out "out/python" };
+  target go { out "out/go"; baseline () };
+  target swift { out "out/swift"; baseline v6_0 }
+}"#;
+        let rendered = prepare_baseline_package(source, Some("app"), "ts", "v5_0")
+            .unwrap()
+            .unwrap();
+        let package = parse_package_file(&rendered, Some("app")).unwrap();
+        let targets = package.build.unwrap().targets;
+        for target in &targets[..2] {
+            assert_eq!(target.backend, "ts");
+            assert_eq!(
+                target
+                    .entries
+                    .iter()
+                    .find(|entry| entry.key == "baseline")
+                    .unwrap()
+                    .value,
+                crate::ast::BlockFieldValue::Word("v5_0".to_owned())
+            );
+        }
+        assert_eq!(targets[0].name(), "first");
+        assert_eq!(targets[1].name(), "second");
+        assert_eq!(
+            targets[2]
+                .entries
+                .iter()
+                .find(|entry| entry.key == "baseline")
+                .unwrap()
+                .value,
+            crate::ast::BlockFieldValue::Word("latest".to_owned())
+        );
+        assert!(rendered.contains("thread_safety sync"));
+        assert!(
+            targets[3]
+                .entries
+                .iter()
+                .all(|entry| entry.key != "baseline")
+        );
+        assert_eq!(
+            targets[4]
+                .entries
+                .iter()
+                .find(|entry| entry.key == "baseline")
+                .unwrap()
+                .value,
+            crate::ast::BlockFieldValue::Unit
+        );
+        assert_eq!(
+            targets[5]
+                .entries
+                .iter()
+                .find(|entry| entry.key == "baseline")
+                .unwrap()
+                .value,
+            crate::ast::BlockFieldValue::Word("v6_0".to_owned())
+        );
+        assert!(
+            prepare_baseline_package(source, Some("app"), "js", "es2020")
+                .unwrap()
+                .is_none()
+        );
+        for baseline in ["latest", "unknown", "v6_0"] {
+            assert!(prepare_baseline_package(source, Some("app"), "ts", baseline).is_err());
+        }
+        for invalid in ["baseline unknown", "baseline (); baseline latest"] {
+            let source = format!("package app; build {{ target ts {{ out \"out\"; {invalid} }} }}");
+            assert!(prepare_baseline_package(&source, Some("app"), "ts", "v5_0").is_err());
+        }
     }
 
     #[test]

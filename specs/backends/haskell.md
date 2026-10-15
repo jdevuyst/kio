@@ -42,6 +42,9 @@ rendering is a non-goal — the host boundary is monadic.
 
 ## Language version
 
+The generation baseline is `ghc9_10`; see
+[baseline selection](../package.md#per-target-keys).
+
 Emitted code targets **GHC 9.10+** with the `text` package for generated string
 values. The gating features are ordinary GHC source extensions supported by
 that floor. Generated modules enable the extensions they use with `LANGUAGE`

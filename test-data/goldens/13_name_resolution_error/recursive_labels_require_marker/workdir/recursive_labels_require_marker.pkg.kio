@@ -2,7 +2,8 @@ package recursive_labels_require_marker;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

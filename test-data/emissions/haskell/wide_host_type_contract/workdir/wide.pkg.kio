@@ -4,7 +4,8 @@ build {
   cache "out/.kio-cache/";
 
   target haskell {
-    out "out/haskell/"
+    out "out/haskell/";
+    baseline ghc9_10
   }
 }
 

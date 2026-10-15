@@ -27,6 +27,7 @@ For a local setup without the dev container, run
 `mise.optional.lock` own exact tool requests and resolved downloads.
 Additional exact environments use `mise.<environment>.toml` and their
 matching lock files. `development` selects the root configuration.
+These exact environments are distinct from a generated-code baseline.
 
 Swift uses native mise archive selection, not a checked-in per-archive digest.
 Linux setup supplies system GnuPG and requires upstream signature verification
@@ -191,6 +192,18 @@ Set selection installs the ordinary development environment, not every retained
 exact version. Selecting a smaller set does not satisfy a check that requires
 all eight languages.
 
+Repository test sampling also selects compatibility endpoints. Prepare those
+explicitly with `--for-tests`; it reads the shared test-environment mapping:
+
+```sh
+sh ci/install-target-language-toolchains.sh --supported-set --for-tests --plan
+sh ci/install-target-language-toolchains.sh --supported-set --for-tests
+```
+
+The modifier also works with `--portability-set` or explicit languages. It
+prepares the requested test pool; ordinary language/set installation retains
+its development-only scope.
+
 Setup reuses verified installations and checks the selected executable origins
 and versions. Missing or mismatched tools fail; ambient account tools are not
 a substitute. On Linux, the shared owner installs needed distro libraries with
@@ -244,6 +257,38 @@ Replace `ENVIRONMENT` with a listed ID. Separate processes can select different
 installed environments concurrently; installing another environment does not
 change a running command's selection.
 
+## Generation baselines and test endpoints
+
+A generation baseline selects the generated code's compatibility contract;
+an exact environment selects installed tools. To prepare Python's `v3_10`
+baseline test endpoints:
+
+```sh
+sh ci/install-target-language-toolchains.sh python --baseline v3_10
+sh ci/install-target-language-toolchains.sh python --baseline v3_10 --endpoint minimum
+sh ci/install-target-language-toolchains.sh python --baseline v3_10 --endpoint both
+```
+
+A baseline request defaults to `current-tested`. `minimum` selects the reviewed
+exact minimum-line test environment; testing that patch does not prove every
+earlier admitted patch. `both` prepares the two endpoint environments side by
+side, deduplicating identical selections. Each process still selects one:
+
+```sh
+sh ci/impl-toolchain.sh toolchain-exec python --environment python3_10 -- python3 --version
+sh ci/impl-toolchain.sh toolchain-exec python --environment development -- python3 --version
+```
+
+The shared `ci/infra/baseline-environments.tsv` mapping references environment
+IDs; native mise configuration/locks and delegated manifests own exact versions.
+Ordinary language/set setup installs the development environment without every
+retained endpoint. A baseline request applies to one explicit language.
+
+Tool selection and execution evidence are separate: the ordinary JavaScript
+and TypeScript runners embed QuickJS, so installing another Node.js version
+does not change their runtime. Native Node host-interface witnesses test that
+runtime; a TypeScript checker pass supplies a different kind of evidence.
+
 ## Python for the Python backend runner
 
 The Python backend's test runner imports emitted packages with the local
@@ -275,7 +320,7 @@ Run a smoke build and the baseline local gate:
 
 ```sh
 sh ci/impl-toolchain.sh toolchain-exec rust --core -- sh ci/cargo.sh build --manifest-path kio-rs/Cargo.toml
-sh ci/install-target-language-toolchains.sh --supported-set
+sh ci/install-target-language-toolchains.sh --supported-set --for-tests
 sh ci/impl-toolchain.sh toolchain-exec js,ts,python,rust,go,java,swift,haskell --core -- sh ci/all.sh SAMPLE_IMPL
 ```
 
@@ -286,8 +331,8 @@ checks instead. `SAMPLE_IMPL` runs one applicable implementation per case;
 restricts the run. See [`TESTING.md`](TESTING.md) § Local iteration for
 the selector semantics.
 
-For focused backend validation, prepare the selected languages and use the
-bounded checks described in TESTING.md. A partial implementation
+For focused backend validation, prepare the selected languages with `--for-tests`
+and use the bounded checks described in TESTING.md. A partial implementation
 list does not remove the broader gate's other tool requirements.
 
 For repeated Rust-heavy builds you can optionally wire in the

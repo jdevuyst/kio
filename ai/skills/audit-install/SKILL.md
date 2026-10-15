@@ -124,8 +124,10 @@ resolution. Explicit native SDK/image prerequisites do not authorize arbitrary
 ambient compiler fallback. System libraries route through mise bootstrap with
 manager-qualified specs and visible privilege requirements.
 
-Full Linux sampling setup installs every configured backend, not only whichever
-tools happen to be on PATH. A smaller native job does not imply the complete
+Full Linux sampling setup installs every configured backend and explicitly
+prepares its selected compatibility environments with `--for-tests`, not only
+whichever tools happen to be on PATH. Ordinary language/set setup stays confined
+to the development environment. A smaller native job does not imply the complete
 POSIX integration suite is supported. Test coverage must not contract silently
 because provisioning failed.
 
@@ -145,6 +147,11 @@ operations. Detection and optional automation are allowed additions; a missing
 or contradictory core step is a finding. Build commands in tracked workspaces
 use `ci/cargo.sh`; public instructions for installed users or emitted projects
 use ordinary Cargo. Compare cwd, subcommand, and arguments across that boundary.
+
+Baseline examples resolve through the shared baseline/endpoint mapping to exact
+environment IDs, with pins retained by provisioning. Both endpoints install
+side by side and execute with separate process selections. Plain language/set
+setup does not implicitly install every retained baseline/endpoint.
 
 ## 6. Distributed source installs and offline manual
 

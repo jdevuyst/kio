@@ -1,0 +1,5 @@
+[settings.node]
+compile = false
+
+[tools]
+node = "14.21.3"

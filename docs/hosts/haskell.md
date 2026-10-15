@@ -28,6 +28,12 @@ below where you use them.
 
 ## The build target
 
+The concrete generation baseline is `ghc9_10`. Write `baseline ghc9_10`
+to keep that compatibility contract across compiler upgrades, or `baseline latest`
+to follow the compiler's newest baseline. Omission and `baseline ()` also follow
+the newest baseline until `kio fmt` pins them to its concrete name. See
+[baseline selection](../../specs/package.md#per-target-keys) for the shared rules.
+
 A package emits to Haskell by declaring a `haskell` target in
 `<pkg>.pkg.kio`:
 
@@ -38,7 +44,8 @@ build {
   cache "out/.kio-cache/";
 
   target haskell {
-    out "out/haskell/"
+    out "out/haskell/";
+    baseline ghc9_10
   }
 }
 
@@ -403,7 +410,8 @@ build {
   cache "out/.kio-cache/";
 
   target haskell {
-    out "out/haskell/"
+    out "out/haskell/";
+    baseline ghc9_10
   }
 }
 

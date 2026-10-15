@@ -738,11 +738,13 @@ build {
   cache "out/.kio-cache/";
 
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   };
 
   target rust {
-    out "out/rust/"
+    out "out/rust/";
+    baseline v1_85
   }
 }
 
@@ -756,7 +758,14 @@ For the full key list, see
 [`specs/package.md` § Build target files](../../specs/package.md#build-target-files).
 
 `kio fmt` preserves written settings without adding omitted optional fields
-or blocks. `()` means that no value is selected.
+or blocks, except for a host target's generation `baseline`. For example,
+`baseline es2020` fixes the JavaScript compatibility contract; `baseline latest`
+follows the newest baseline known to the compiler. Omission and `baseline ()`
+also follow that newest baseline until formatting writes its concrete name.
+An explicit `latest` remains floating after formatting, and a concrete baseline
+never advances automatically. For other optional settings, `()` means that no
+value is selected. The [baseline table](../../specs/package.md#per-target-keys)
+lists each backend's choices.
 
 Values can use grouping parentheses: `out (("out/js/"))` is the same path
 as `out "out/js/"`. The formatter removes the extra parentheses. These
@@ -772,11 +781,13 @@ package app;
 build {
   target (js, "web") {
     out "out/web/";
+    baseline es2020;
     namespace "web_app"
   };
 
   target (js, "worker") {
     out "out/worker/";
+    baseline es2020;
     namespace "worker_app"
   }
 }

@@ -1,0 +1,9 @@
+# backend baseline minimum current-tested ordinary-execution
+js es2020 node14 development locked-quickjs
+ts v5_0 typescript5_0 development checker-and-locked-quickjs
+python v3_10 python3_10 development interpreter
+rust v1_85 rust1_85 development compiler
+go v1_26 go1_26 development compiler
+java v21 development development compiler-and-runtime
+swift v6_0 swift6_0 development compiler
+haskell ghc9_10 development development compiler

@@ -2,7 +2,8 @@ package mutual_type_cycle_requires_group;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

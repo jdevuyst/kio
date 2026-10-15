@@ -25,6 +25,8 @@
 #   - test-data/emissions/*/*/host/Cargo.toml and package.json —
 #     non-publishable host-fixture descriptors, not subproject manifests or
 #     repo metadata mirrors.
+#   - ci/infra/backend-compatibility/retained/0.2.2/artifacts/rust/Cargo.toml —
+#     frozen generated release output, not a repository subproject.
 #   - tools/textmate-kio/kio.tmLanguage.json — a grammar data file, not
 #     a manifest: it carries the mirrored "version" field but the
 #     tmLanguage format has no license slot, so the repo LICENSE files
@@ -116,6 +118,7 @@ git ls-files 'Cargo.toml' '*/Cargo.toml' 'package.json' '*/package.json' | while
   case "$f" in
     kio-rs/fuzz/Cargo.toml) ;;
     test-data/emissions/*/*/host/Cargo.toml|test-data/emissions/*/*/host/package.json) ;;
+    ci/infra/backend-compatibility/retained/0.2.2/artifacts/rust/Cargo.toml) ;;
     kio-rs/Cargo.toml|kio-rs/dist/Cargo.toml|kio-repl-wasm/Cargo.toml) ;;
     ci/infra/kio-gen-rs/Cargo.toml|ci/infra/kio-ci-scheduler-rs/Cargo.toml|ci/infra/kio-prime-check-rs/Cargo.toml|ci/infra/kio-test-runner-rs/Cargo.toml) ;;
     website/package.json|tools/tree-sitter-kio/package.json|tools/vscode-kio/package.json|ci/infra/highlight-agreement-js/package.json) ;;

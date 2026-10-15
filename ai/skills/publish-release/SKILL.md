@@ -68,6 +68,15 @@ unknown failures and missing platform evidence must be resolved before release.
 The existing package, container, website and immutable-publication gates remain
 required.
 
+Independently run
+[`refresh-target-language-compatibility`](../refresh-target-language-compatibility/SKILL.md)
+before freezing the candidate. Review upstream target-language releases and
+validate retained generation baselines against the selected pinned compatibility
+endpoints. This review may update a compatibility environment without changing
+the development toolchain. Reconcile minimum-line, retained-output, and
+unchanged-host evidence; surface missing evidence or required contract decisions
+before publication rather than silently raising a floor or dropping a baseline.
+
 Use the version supplied by the user; ask if none was supplied. Check it against
 published versions and the release's compatibility changes, and confirm with the
 user if it is unexpected or already occupied. Do not choose a different version

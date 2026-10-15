@@ -57,7 +57,8 @@ bugs. Improvements that preserve compatibility are permitted at either value.
 
 Compatibility is evaluated when Kio and the backend are upgraded while the Kio
 package source, package and target configuration, and documented host contract
-remain unchanged. A `stable` backend lets conforming host source and integration
+remain unchanged, with the same concrete generation baseline selected. A
+`stable` backend lets conforming host source and integration
 continue to compile after regeneration and preserves the documented API
 behavior. The protected surface includes target and configuration keys, public
 output and loading entry points, namespaces and handles, exposed names and
@@ -84,6 +85,31 @@ starts as `evolving` like every other new backend.
 
 [Kio′](../prime.md) is a compiler phase target, not a host-language backend,
 and has no Host API stability value.
+
+## Generation baselines
+
+A host backend's `baseline` setting selects a supported generation contract:
+its language/runtime requirements, required language modes and libraries, and
+public host API. Each baseline implements the complete Kio contract. A concrete
+baseline retains its compatibility guarantees when Kio or the development
+toolchain is upgraded; increasing its floor or breaking its host API follows
+the Host API stability policy above. A baseline is not an exact installed tool
+version, generated-file checksum, private implementation layout, or binary ABI.
+
+The floating selection `latest` follows the fixed supported-baseline table in
+the selected Kio build. It can advance to a generation with different host
+requirements or API, including for a backend marked `stable`; host code may
+need adaptation when that selection advances. Omission and Unit float in the
+same way until formatting materializes a concrete name. A concrete selection
+does not advance automatically. The spellings and formatting rule are in
+[package.md § Per-target keys](../package.md#per-target-keys).
+
+Exact tools used to test a baseline are evidence for those environments. They
+do not rename the baseline, raise its minimum requirement, or set a maximum
+supported version where the backend contract admits newer versions. Fresh
+output on an older toolchain, retained output on a newer toolchain, and
+unchanged host source after regeneration establish different compatibility
+properties.
 
 ## Language families
 

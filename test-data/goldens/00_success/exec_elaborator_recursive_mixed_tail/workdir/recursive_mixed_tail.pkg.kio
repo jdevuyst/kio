@@ -2,35 +2,43 @@ package recursive_mixed_tail;
 
 build {
   target js {
-    out "out/js"
+    out "out/js";
+    baseline es2020
   };
 
   target ts {
-    out "out/ts"
+    out "out/ts";
+    baseline v5_0
   };
 
   target python {
-    out "out/python"
+    out "out/python";
+    baseline v3_10
   };
 
   target java {
-    out "out/java"
+    out "out/java";
+    baseline v21
   };
 
   target rust {
-    out "out/rust"
+    out "out/rust";
+    baseline v1_85
   };
 
   target go {
-    out "out/go"
+    out "out/go";
+    baseline v1_26
   };
 
   target swift {
-    out "out/swift"
+    out "out/swift";
+    baseline v6_0
   };
 
   target haskell {
-    out "out/haskell"
+    out "out/haskell";
+    baseline ghc9_10
   };
 
   target kio-prime {

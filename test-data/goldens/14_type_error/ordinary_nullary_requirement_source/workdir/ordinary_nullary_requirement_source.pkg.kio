@@ -2,7 +2,8 @@ package ordinary_nullary_requirement_source;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

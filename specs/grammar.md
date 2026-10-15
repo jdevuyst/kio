@@ -689,7 +689,7 @@ Notes:
 - The `CacheDecl` is **optional** and may appear at most once, anywhere among the build entries. Omission and `cache ()` both disable caching; formatting preserves either spelling (see [`style.md`](style.md)). A `ConfigString` cache value names a filesystem path (relative to the package root, or absolute). Any other value kind is a parse error.
 - The `DocsDecl` is **optional**, declared at most once, anywhere among the build entries. Its keys are unordered: `md` is required; `support` is repeatable; `md_out` and `html` are optional and may each appear at most once. Every `DocsKey` accepts a `ConfigString` filesystem path; the optional fields also accept `ConfigUnit`, selecting the same output path as omission. See [`package.md` § Build target files](package.md#build-target-files).
 - A `BackendId` is a **bare identifier** naming a backend (`rust`, `js`, `kio-prime`, …). The hyphen-folding lets a kebab-cased backend id like `kio-prime` spell as a single id; each `-` and the following `IDENT` must be flush. In a bare header, the backend spelling is also the target name. A paired header supplies a distinct string name: `target (js, "web")`. The pair is backend first and is not an expression. Target names must be unique within the block, including collisions between bare and paired headers; duplicates are a build error (exit code `40`). Different names may select the same backend. Unknown backends are build errors, not parse errors.
-- Host-target `namespace` accepts `ConfigString` or `ConfigUnit`; the latter selects the same package-derived namespace as omission. Rust's `thread_safety` accepts the bare choices `send`, `sync`, `send_sync`, or `ConfigUnit`, with transparent grouping around a choice. Strings are rejected for `thread_safety`. All other target-key values are `ConfigString`. Unknown keys and unknown named choices are build errors.
+- Host-target `namespace` accepts `ConfigString` or `ConfigUnit`; the latter selects the same package-derived namespace as omission. Host-target `baseline` accepts a backend's concrete named choices, `latest`, or `ConfigUnit`, as specified in [package.md § Per-target keys](package.md#per-target-keys). Rust's `thread_safety` accepts the bare choices `send`, `sync`, `send_sync`, or `ConfigUnit`, with transparent grouping around a choice. Strings are rejected for `baseline` and `thread_safety`. All other target-key values are `ConfigString`. Unknown keys and unknown well-formed named choices are build errors; an unrecognized malformed word is a parse error.
 
 The build block's field-value grammar:
 
@@ -700,7 +700,7 @@ ConfigUnit        ::= '(' ')' | '(' ConfigUnit ')'
 NUM_LIT           ::= INT_LIT | FLOAT_LIT
 ```
 
-A field value is the unit literal `()`, a string literal, a number literal, or a bare word — booleans arrive as the bare words `true` / `false`, which lex as `IDENT`. Each field validates which of these kinds it accepts.
+A field value is the unit literal `()`, a string literal, a number literal, or a bare word — booleans arrive as the bare words `true` / `false`, which lex as `IDENT`. Each field validates which of these kinds it accepts. A field's recognized closed choices, such as `baseline v5_0` for TypeScript, are configuration words rather than ordinary value names; other bare words follow the value-name grammar. This does not admit those configuration spellings as declarations or references.
 Repeated grouping is transparent and does not expand a field's accepted value
 kinds. Commas, calls, and operators are not part of this scalar grammar.
 

@@ -28,17 +28,16 @@ class Pair(TypedDict):
     right: int
 
 
-class Left(TypedDict, Generic[A]):
-    tag: Literal["left"]
-    value: A
+if TYPE_CHECKING:
+    class Left(TypedDict, Generic[A]):
+        tag: Literal["left"]
+        value: A
 
+    class Right(TypedDict, Generic[B]):
+        tag: Literal["right"]
+        value: B
 
-class Right(TypedDict, Generic[B]):
-    tag: Literal["right"]
-    value: B
-
-
-Sum: TypeAlias = Left[A] | Right[B]
+    Sum: TypeAlias = Left[A] | Right[B]
 
 
 class ApiHost:

@@ -145,7 +145,8 @@ fn package_source(package_name: &str) -> String {
             "build {{\n",
             "  cache \"out/.kio-cache/\";\n\n",
             "  target js {{\n",
-            "    out \"out/js/\"\n",
+            "    out \"out/js/\";\n",
+            "    baseline {}\n",
             "  }}\n",
             "}}\n\n",
             "bridge {{\n",
@@ -153,6 +154,9 @@ fn package_source(package_name: &str) -> String {
             "}}\n",
         ),
         package_name,
+        crate::build_target::BuildTarget::Js
+            .latest_baseline()
+            .expect("the JS backend has a generation baseline"),
     )
 }
 
@@ -171,7 +175,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn init_package_source_preserves_omitted_settings() {
+    fn init_package_source_is_canonical_and_preserves_ordinary_omitted_settings() {
         for name in ["hello", "_a", "constructor"] {
             let source = package_source(name);
             let package = crate::pass::parser::parse_package_file(&source, Some(name)).unwrap();

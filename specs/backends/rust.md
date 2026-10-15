@@ -22,6 +22,9 @@ page describes the surface a Rust host calls against.
 
 ## Language version
 
+The generation baseline is `v1_85`; see
+[baseline selection](../package.md#per-target-keys).
+
 Emitted code targets **Rust 2024 edition** (Rust 1.85+). Kio's bottom type uses
 the stable `std::convert::Infallible` facade.
 

@@ -69,7 +69,13 @@ pub fn pretty_module(m: &Module) -> String {
 }
 
 pub fn pretty_package_file(e: &PackageFile) -> String {
-    render(&doc_package_file(e), WIDTH)
+    render(&doc_package_file(e, true), WIDTH)
+}
+
+/// Internal fixture preparation preserves selectors unrelated to its chosen target.
+#[cfg(feature = "cli")]
+pub(crate) fn pretty_package_file_preserving_baselines(e: &PackageFile) -> String {
+    render(&doc_package_file(e, false), WIDTH)
 }
 
 pub fn pretty_dependency_file(dep: &DependencyFile) -> String {
@@ -3731,14 +3737,14 @@ fn chunk_string_value(value: &str, target: usize) -> Vec<String> {
 // Package files
 // =========================================================================
 
-fn doc_package_file(e: &PackageFile) -> Doc {
+fn doc_package_file(e: &PackageFile, materialize_baselines: bool) -> Doc {
     let mut parts: Vec<Doc> = Vec::new();
     parts.push(doc_item_leading_trivia(e.meta.leading_trivia.as_slice()));
     parts.push(text(format!("package {};", e.name)));
     parts.push(hardline());
     if let Some(build) = &e.build {
         parts.push(hardline());
-        parts.push(doc_build_block(build));
+        parts.push(doc_build_block(build, materialize_baselines));
         parts.push(hardline());
     }
     if let Some(bridge) = &e.bridge {
@@ -4128,7 +4134,7 @@ fn doc_host_fn_def_param(p: &HostFnParam) -> Doc {
 /// Render the `build { ... }` block: the `build` header, then the
 /// body (optional `cache`, optional `docs`, then each `target`
 /// block) at +2 indent, closing `}` back at the outer column.
-fn doc_build_block(b: &BuildBlock) -> Doc {
+fn doc_build_block(b: &BuildBlock, materialize_baselines: bool) -> Doc {
     let mut body: Vec<Doc> = Vec::new();
     if let Some(cache) = &b.cache {
         body.push(doc_cache_decl(cache));
@@ -4137,7 +4143,7 @@ fn doc_build_block(b: &BuildBlock) -> Doc {
         body.push(doc_docs_block(docs));
     }
     for t in &b.targets {
-        body.push(doc_target_block(t));
+        body.push(doc_target_block(t, materialize_baselines));
     }
     doc_braced_block(
         concat(doc_item_leading_trivia(&b.leading_trivia), text("build")),
@@ -4202,7 +4208,7 @@ fn doc_cache_decl(c: &BuildBlockCache) -> Doc {
     }
 }
 
-fn doc_target_block(t: &TargetBlock) -> Doc {
+fn doc_target_block(t: &TargetBlock, materialize_baselines: bool) -> Doc {
     let mut fields: Vec<ConfigEntry<'_>> = t
         .entries
         .iter()
@@ -4214,6 +4220,22 @@ fn doc_target_block(t: &TargetBlock) -> Doc {
             )
         })
         .collect();
+    if materialize_baselines
+        && let Some(baseline) = crate::build_target::BuildTarget::from_id(&t.backend)
+            .and_then(|backend| backend.latest_baseline())
+    {
+        if let Some((_, value, _)) = fields.iter_mut().find(|(key, _, _)| *key == "baseline") {
+            if matches!(value, crate::ast::BlockFieldValue::Unit) {
+                *value = crate::ast::BlockFieldValue::Word(baseline.to_owned());
+            }
+        } else {
+            fields.push((
+                "baseline",
+                crate::ast::BlockFieldValue::Word(baseline.to_owned()),
+                &[],
+            ));
+        }
+    }
     fields.sort_by(|a, b| (a.0 != "out", a.0).cmp(&(b.0 != "out", b.0)));
     let entries: Vec<Doc> = fields.into_iter().map(doc_config_entry).collect();
     doc_braced_block(
@@ -8165,7 +8187,7 @@ pub fn main() -> . { print("Hello, world!") }"#,
                      md_out // md_out value\n\"out/md/\";\n\
                      html // html value\n\"out/html/\"\n\
                    }};\n\
-                   target rust {{ out // target value\n\"out/rust/\"; namespace \"pkg\"; thread_safety () }}\n\
+                   target rust {{ out // target value\n\"out/rust/\"; baseline v1_85; namespace \"pkg\"; thread_safety () }}\n\
                  }}\n\
                  bridge // bridge opener\n{{ main }}"
             );
@@ -8406,7 +8428,8 @@ pub fn main() -> . { print("Hello, world!") }"#,
         }
         let parsed = crate::pass::parser::parse_package_file(&output, Some("pkg")).unwrap();
         let targets = parsed.build.unwrap().targets;
-        assert_eq!(targets[1].entries.len(), 1);
+        assert_eq!(targets[0].entries.len(), 2);
+        assert_eq!(targets[1].entries.len(), 2);
         assert_eq!(targets[2].entries.len(), 1);
         assert!(!package_roundtrip("").contains("build"));
         assert!(!build_roundtrip("target js { out \"js\" }").contains("docs"));
@@ -8480,7 +8503,7 @@ pub fn main() -> . { print("Hello, world!") }"#,
         use crate::pass::parser::parse_build_block_body;
         let b1 = parse_build_block_body(src)
             .unwrap_or_else(|e| panic!("parse failed for {src:?}: {e:?}"));
-        let pp1 = render(&doc_build_block(&b1), WIDTH);
+        let pp1 = render(&doc_build_block(&b1, true), WIDTH);
         // The rendered form carries the `build { ... }` braces; the
         // body parser wants the inner body, so re-parse via the
         // package-file parser to confirm the rendered block is
@@ -8491,7 +8514,7 @@ pub fn main() -> . { print("Hello, world!") }"#,
         let b2 = e2
             .build
             .expect("rendered package file carries the build block");
-        let pp2 = render(&doc_build_block(&b2), WIDTH);
+        let pp2 = render(&doc_build_block(&b2, true), WIDTH);
         assert_eq!(pp1, pp2, "build pretty-print not idempotent for:\n{src}");
         pp1
     }
@@ -8540,6 +8563,57 @@ pub fn main() -> . { print("Hello, world!") }"#,
             out_at < namespace_at && namespace_at < thread_safety_at,
             "got:\n{pp}"
         );
+    }
+
+    #[test]
+    fn build_baselines_materialize_only_implicit_selection() {
+        for backend in crate::build_target::BuildTarget::ALL.iter().copied() {
+            let Some(baseline) = backend.latest_baseline() else {
+                continue;
+            };
+            let expected = format!(
+                "build {{\n  target ({}, \"named\") {{\n    out \"out\";\n    baseline {baseline}\n  }}\n}}",
+                backend.id()
+            );
+            for setting in [
+                String::new(),
+                "baseline ()".to_owned(),
+                format!("baseline (({baseline}))"),
+            ] {
+                let source = format!(
+                    "target ({}, \"named\") {{ out \"out\"; {setting} }}",
+                    backend.id()
+                );
+                assert_eq!(build_roundtrip(&source), expected);
+            }
+            let floating = build_roundtrip(&format!(
+                "target {} {{ out \"out\"; baseline ((latest)) }}",
+                backend.id()
+            ));
+            assert!(floating.contains("baseline latest"), "{floating}");
+            assert!(
+                !floating.contains(&format!("baseline {baseline}")),
+                "{floating}"
+            );
+        }
+        let sparse = build_roundtrip("target rust { out \"out\" }");
+        assert!(
+            !sparse.contains("namespace") && !sparse.contains("thread_safety"),
+            "{sparse}"
+        );
+        let prime = build_roundtrip("target kio-prime { out \"out\" }");
+        assert!(!prime.contains("baseline"), "{prime}");
+    }
+
+    #[test]
+    fn build_baseline_materialization_preserves_grouping_comments() {
+        let source =
+            "target js { out \"out\"; // choice\n baseline ( // outer\n( // unit\n) // close\n) }";
+        let printed = build_roundtrip(source);
+        for comment in ["// choice", "// outer", "// unit", "// close"] {
+            assert_eq!(printed.matches(comment).count(), 1, "{printed}");
+        }
+        assert!(printed.contains("baseline es2020"), "{printed}");
     }
 
     #[test]

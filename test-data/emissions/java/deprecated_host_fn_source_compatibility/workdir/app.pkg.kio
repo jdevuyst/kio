@@ -2,7 +2,8 @@ package app;
 
 build {
   target java {
-    out "out/java/"
+    out "out/java/";
+    baseline v21
   }
 }
 

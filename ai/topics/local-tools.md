@@ -33,7 +33,8 @@ Three audiences consume the same image:
 
 Tool-version changes update their native mise configuration/locks or delegated
 manager manifest under `tools/toolchains/`, never copied workflow constants.
-Dependency upgrades follow [`upgrade-deps`](../skills/upgrade-deps/SKILL.md).
+Dependency upgrades follow [`upgrade-deps`](../skills/upgrade-deps/SKILL.md);
+compatibility endpoint refreshes follow their separate maintenance owner.
 
 ## Website browser tasks
 
@@ -131,6 +132,9 @@ eight languages; macOS supports JS/TS/Rust/Swift; Windows supports Rust. Request
 outside the native supported sets warn before setup that it is best-effort,
 including macOS core setup's Python helper dependency.
 Do not infer full-suite platform support from a native compiler/portability job.
+Compatibility-sampling jobs explicitly add `--for-tests` to prepare the shared compatibility
+sampling pool for their selected languages/set. Plain setup remains confined
+to development environments; `--for-tests --plan` inspects additional requirements.
 
 General runtimes, package managers, linters, formatters, and helper CLIs start
 from tracked mise configuration. Target-language toolchains use mise directly
@@ -169,7 +173,7 @@ versions and `sh ci/impl-toolchain.sh install-report-tools` installs them on
 demand. They stay out of ordinary core setup.
 
 Python is shared by core checks and Python-backend execution. Its exact mise
-pin differs from its documented runtime floor. Select it through the
+pin differs from its public generation-baseline floor. Select it through the
 project execution owner (`python3` on Linux/macOS; `python` on Windows).
 
 When a tool needs GitHub release metadata, use its locked route where possible.

@@ -40,9 +40,11 @@ only the implementation assignment. Every arm must also use the same explicit
 retain and compare the printed selected-case blocks and the `kio-gen:`
 seed/count/Prime-mode record to prove the executed workload matches. The
 variable is an internal performance-replay probe, not ordinary coverage
-policy: it is rejected outside `SAMPLE_IMPL`, and omitting it preserves the
-normal random selection and output. It does not justify a numeric scheduler
-override.
+policy: it is rejected outside `SAMPLE_IMPL` and is mutually exclusive with the
+ordinary `--impl-seed` replay flag. Compare `baseline-impl-map:` rows and tool
+identity records as well as backend maps: matched backends alone do not prove
+the same baseline and endpoint executed. It does not justify a numeric
+scheduler override.
 
 When `sccache` is the compiler wrapper, read those per-task CPU rows with one caveat: the measurement counts only a task's own process-tree CPU, and `sccache` hands each compile to a long-lived shared daemon outside that tree. A compile-bound task — one that builds many crates, such as the golden suite's emitted-Rust cases — then reports high wall time with near-zero CPU, which is indistinguishable in the rows from a task waiting on a lock, I/O, or memory. Check whether the task is actually compiling before reading its low CPU as contention; the daemon's compile cost is real, only attributed elsewhere. Without `sccache`, `rustc` runs inside the task tree and that CPU is counted normally. The shared daemon also means per-task compile CPU cannot be cleanly attributed under a concurrent fan-out — only in a fully serial run.
 
@@ -145,6 +147,15 @@ TS/Python namespace, or `null` for other backends). Rows are plans, not proof of
 emission. The checks validate private scratch ownership before clearing selected
 outputs and require every applicable namespace's artifacts after a successful
 build; unrelated copied outputs cannot satisfy those obligations.
+
+`kio debug baseline-package <file> <backend> <concrete-baseline>` parses and
+validates one manifest and prints its baseline-parametric execution copy. It
+writes no source file, changes only matching backend targets, and emits no bytes
+when there is no matching target. The harness classifies ordinary fixtures
+before calling it; selector subjects retain their written source.
+`debug build-output-plan` rows also report the resolved `baseline` (null for
+Kio'), so instrumentation can distinguish the selected generation contract from
+the tools installed to consume it.
 
 `KIO_DEBUG_TIMING=<list>` enables timing output for comma-, space-, or semicolon-separated categories. Accepted category tokens are `frontend`, `build`, `lsp`, `eval`, `derive`, and `all` (also `1`, `true`, or `yes`). Category-specific aliases exist when a single boolean switch is easier to pass through a tool: `KIO_DEBUG_FRONTEND_TIMING=1`, `KIO_DEBUG_BUILD_TIMING=1`, `KIO_DEBUG_LSP_TIMING=1`, `KIO_DEBUG_EVAL_TIMING=1`, and `KIO_DEBUG_DERIVE_MEMO=1`.
 

@@ -175,4 +175,4 @@ jobs:
         shell: bash
         env:
           CASE: ${{ steps.case.outputs.name }}
-        run: sh ci/checks/orchestrators/contrib-tests.sh --impls=FULL_IMPL_MATRIX -- "^${CASE}$"
+        run: sh ci/checks/orchestrators/contrib-tests.sh --impls=FULL_IMPL_MATRIX -- --toolchain-environment=development "^${CASE}$"

@@ -3,6 +3,7 @@ package nominal_generic_carrier;
 build {
   target haskell {
     out "out/haskell/";
+    baseline ghc9_10;
     namespace "NominalGenericCarrier"
   }
 }

@@ -5,6 +5,7 @@ build {
 
   target go {
     out "out/go/";
+    baseline v1_26;
     namespace "shell_alpha"
   }
 }

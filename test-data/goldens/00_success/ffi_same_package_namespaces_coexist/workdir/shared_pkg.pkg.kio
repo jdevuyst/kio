@@ -5,81 +5,97 @@ build {
 
   target (js, "js-a") {
     out "out/js-a/";
+    baseline es2020;
     namespace "shared_a"
   };
 
   target (js, "js-b") {
     out "out/js-b/";
+    baseline es2020;
     namespace "shared_b"
   };
 
   target (ts, "ts-a") {
     out "out/ts-a/";
+    baseline v5_0;
     namespace "shared_a"
   };
 
   target (ts, "ts-b") {
     out "out/ts-b/";
+    baseline v5_0;
     namespace "shared_b"
   };
 
   target (python, "python-a") {
     out "out/python-a/";
+    baseline v3_10;
     namespace "shared_a"
   };
 
   target (python, "python-b") {
     out "out/python-b/";
+    baseline v3_10;
     namespace "shared_b"
   };
 
   target (java, "java-a") {
     out "out/java-a/";
+    baseline v21;
     namespace "shared_a"
   };
 
   target (java, "java-b") {
     out "out/java-b/";
+    baseline v21;
     namespace "shared_b"
   };
 
   target (rust, "rust-a") {
     out "out/rust-a/";
+    baseline v1_85;
     namespace "shared_a"
   };
 
   target (rust, "rust-b") {
     out "out/rust-b/";
+    baseline v1_85;
     namespace "shared_b"
   };
 
   target (go, "go-a") {
     out "out/go-a/";
+    baseline v1_26;
     namespace "shared_a"
   };
 
   target (go, "go-b") {
     out "out/go-b/";
+    baseline v1_26;
     namespace "shared_b"
   };
 
   target (swift, "swift-a") {
     out "out/swift-a/";
+    baseline v6_0;
     namespace "SharedA"
   };
 
   target (swift, "swift-b") {
     out "out/swift-b/";
+    baseline v6_0;
     namespace "SharedB"
   };
 
   target (haskell, "haskell-a") {
     out "out/haskell-a/";
+    baseline ghc9_10;
     namespace "Data.Text"
   };
 
   target (haskell, "haskell-b") {
     out "out/haskell-b/";
+    baseline ghc9_10;
     namespace "Data.Text.Runtime"
   }
 }

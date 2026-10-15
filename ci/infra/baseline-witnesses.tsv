@@ -1,0 +1,9 @@
+# backend concrete-baseline existing-HOST_INTERFACE-case driver-requirement
+js es2020 opaque_structural_substitution es2020
+ts v5_0 rich_typed_host es2022-driver
+python v3_10 opaque_structural_substitution baseline
+rust v1_85 host_trait_surface baseline
+go v1_26 source_grouped_boundaries baseline
+java v21 retained_nominal_holders baseline
+swift v6_0 exact_host_bindings baseline
+haskell ghc9_10 generic_public_abi baseline

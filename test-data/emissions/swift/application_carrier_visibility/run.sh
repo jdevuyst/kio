@@ -47,6 +47,13 @@ reject_client() {
     printf 'application_carrier_visibility: %s unexpectedly compiled\n' "$client" >&2
     exit 1
   fi
+  # The positive driver compiles the same opaque value with host One. Swift
+  # 6.0 diagnoses the wrong-host assignment as an inference error instead.
+  if [ "$client" = host_rebrand ] &&
+      grep -Eq '(^|/)host_rebrand\.swift:7:[0-9]+: error: type of expression is ambiguous without a type annotation$' "$log" &&
+      grep -Fq '7 | let wrong: KioNewtype_api__Opaque<Two, Int, String> = value' "$log"; then
+    return
+  fi
   if ! grep -Fq "$diagnostic" "$log"; then
     printf 'application_carrier_visibility: %s failed for an unrelated reason\n' "$client" >&2
     cat "$log" >&2

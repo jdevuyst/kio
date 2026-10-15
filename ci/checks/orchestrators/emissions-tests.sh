@@ -218,4 +218,5 @@ while IFS= read -r emta_filter; do
 done <"$PASSTHROUGH_FILE"
 
 printf '\n========== run-tests (emissions) ==========\n'
-sh ci/run-tests.sh "$@"
+KIO_DEBUG_SAMPLE_IMPL_SCOPE=checks/orchestrators/emissions-tests \
+  sh ci/run-tests.sh --baseline-environments "$@"

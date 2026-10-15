@@ -18,6 +18,12 @@ The TypeScript backend is the **typed-skin companion of the JavaScript backend**
 
 ## The build target
 
+The concrete generation baseline is `v5_0`. Write `baseline v5_0`
+to keep that compatibility contract across compiler upgrades, or `baseline latest`
+to follow the compiler's newest baseline. Omission and `baseline ()` also follow
+the newest baseline until `kio fmt` pins them to its concrete name. See
+[baseline selection](../../specs/package.md#per-target-keys) for the shared rules.
+
 A package emits to TypeScript by declaring a `ts` target in `<pkg>.pkg.kio`:
 
 ```kio {variant=package}
@@ -27,7 +33,8 @@ build {
   cache "out/.kio-cache/";
 
   target ts {
-    out "out/ts/"
+    out "out/ts/";
+    baseline v5_0
   }
 }
 
@@ -302,7 +309,8 @@ build {
   cache "out/.kio-cache/";
 
   target ts {
-    out "out/ts/"
+    out "out/ts/";
+    baseline v5_0
   }
 }
 

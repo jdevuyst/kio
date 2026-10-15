@@ -2,7 +2,8 @@ package app;
 
 build {
   target rust {
-    out "out/rust/"
+    out "out/rust/";
+    baseline v1_85
   }
 }
 

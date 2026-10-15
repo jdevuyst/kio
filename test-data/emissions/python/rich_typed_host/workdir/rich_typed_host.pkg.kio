@@ -2,7 +2,8 @@ package rich_typed_host;
 
 build {
   target python {
-    out "out/python/"
+    out "out/python/";
+    baseline v3_10
   }
 }
 

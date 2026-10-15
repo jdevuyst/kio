@@ -4,7 +4,8 @@ build {
   cache "out/.kio-cache/";
 
   target swift {
-    out "out/swift/"
+    out "out/swift/";
+    baseline v6_0
   };
 
   target kio-prime {

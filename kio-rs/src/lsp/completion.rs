@@ -1941,7 +1941,7 @@ fn use_site() -> . { () }
         let source = "package pkg;\n\nbuild {\n  target rust {\n    \n  }\n}\n";
         let items = complete_at_uri(&uri, source, 4, 4);
         let lbls = labels(&items);
-        for label in ["out", "namespace", "thread_safety"] {
+        for label in ["out", "namespace", "baseline", "thread_safety"] {
             assert!(
                 lbls.contains(&label),
                 "package target block should complete `{label}`; got {lbls:?}"

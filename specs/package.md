@@ -716,7 +716,7 @@ placement of the different entry kinds.
 directories and defaulting to `out/docs-md/` and `out/docs/` respectively.
 `md_out ()` and `html ()` select those same defaults. The formatter preserves
 omission and explicit settings, including strings equal to these defaults;
-it does not add or remove optional fields.
+it does not add or remove optional docs fields.
 
 Each target block names one backend and has one target name. A bare header
 such as `target js { ... }` uses `js` for both. A paired header separates them:
@@ -766,6 +766,39 @@ category.
 
 ### Per-target keys
 
+- **`baseline`** *(every host backend)* — selects a generation baseline: the
+  host-language/runtime requirements and public host API described by the
+  backend contract. It is a bare named choice, not a toolchain download version
+  or a reference to a Kio declaration. The supported concrete choices are:
+
+  | Backend | Baseline |
+  | --- | --- |
+  | `js` | `es2020` |
+  | `ts` | `v5_0` |
+  | `python` | `v3_10` |
+  | `rust` | `v1_85` |
+  | `go` | `v1_26` |
+  | `java` | `v21` |
+  | `swift` | `v6_0` |
+  | `haskell` | `ghc9_10` |
+
+  Every host backend also accepts `latest`. Omission, `baseline ()`, and
+  `baseline latest` select the newest supported baseline in this Kio build's
+  fixed table. Installed tools, network state, and module declarations do not
+  participate in selection. Formatting writes the selected concrete name for
+  omission and Unit; an explicit `latest` stays floating, and a concrete name
+  stays unchanged. Grouping such as `baseline ((v1_85))` is transparent;
+  quoted strings are rejected. Unknown well-formed names and duplicate settings
+  are build errors; an unrecognized malformed word is a parse error. Recognized
+  choices are configuration words, not ordinary value identifiers. The
+  `kio-prime` target has no baseline setting.
+
+  Floating selection can advance to a generation with a different host API
+  after upgrading Kio, requiring host integration changes. This applies to
+  unformatted manifests that omit the field, including manifests written
+  before the field was introduced. Format the manifest or write a concrete
+  baseline to retain its selection. See the shared
+  [generation-baseline contract](backends/README.md#generation-baselines).
 - **`namespace`** *(every host backend)* — overrides the per-package
   namespace the emitted artifact's top-level names live under: the
   crate name (and the root the branded facade names derive from) on

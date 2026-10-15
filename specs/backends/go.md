@@ -33,6 +33,9 @@ an opaque host container
 
 ## Language version
 
+The generation baseline is `v1_26`; see
+[baseline selection](../package.md#per-target-keys).
+
 Emitted code and consuming host modules target **Go 1.26+**. The selected
 stable line provides:
 

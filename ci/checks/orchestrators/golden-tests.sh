@@ -691,7 +691,8 @@ run_tests() {
   done <"$PASSTHROUGH_FILE"
 
   printf '\n========== run-tests (%s) ==========\n' "$rt_mode"
-  sh ci/run-tests.sh "$@"
+  KIO_DEBUG_SAMPLE_IMPL_SCOPE=checks/orchestrators/golden-tests \
+    sh ci/run-tests.sh --baseline-environments "$@"
 }
 
 TMPDIR_RT_ARGS="$TMP_ROOT/run-tests.args"

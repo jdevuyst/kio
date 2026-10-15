@@ -2,7 +2,8 @@ package carrier_privacy;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   }
 }
 

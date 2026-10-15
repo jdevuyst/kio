@@ -17,6 +17,7 @@ const scripts = starts.map(start => {
   return new AsyncFunction('github', 'context', 'core', lines.slice(0, end).map(line => line.slice(12)).join('\n'));
 });
 assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+assert.match(workflow, /contrib-tests\.sh --impls=FULL_IMPL_MATRIX -- --toolchain-environment=development/);
 const head = 'a'.repeat(40), base = 'b'.repeat(40);
 const confined = [{ filename: 'test-data/contrib/alice-42/workdir/main.kio', status: 'modified' }];
 async function check(fixture) {

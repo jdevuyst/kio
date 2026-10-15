@@ -362,6 +362,15 @@ artifact and complete host-fence set with those exact stable settings. Floor
 freezing, later compatibility changes, and reason-driven toolchain updates
 follow the canonical emit rule rather than being redefined here.
 
+Choose a concrete generation baseline deliberately, independently of the exact
+development compiler pin. Map its minimum/current-tested endpoints to named
+provisioning environments by ID, leaving exact versions in their native mise
+or delegated manifests. Distinguish a checker/compiler setting from the runtime
+actually executing an artifact. Record evidence for current output on the floor,
+retained prior output on newer tools, and unchanged host source after regeneration;
+regeneration alone cannot stand in for retained output. The maintenance entry
+point is [refresh-target-language-compatibility](../refresh-target-language-compatibility/SKILL.md).
+
 If the host needs a **new family row**, that is a
 [`specs/backends/README.md`](../../../specs/backends/README.md) edit (the
 conformance audits read the table at run time, so adding a family is a
@@ -1018,7 +1027,7 @@ The non-emitter deliverables, each with a sweep:
   execution. Prove side-by-side selection, reuse, and account-default/configuration
   preservation. Prefer maintained binary routes; source builds need an explicit
   reason and visible cost. Do not substitute the public floor for exact pins.
-  The exact resolution runs the corpus; the admission floor toolchain or a mode that
+  The exact resolution runs the corpus; the minimum endpoint or a mode that
   truthfully enforces the floor compiles emitted artifacts and all host fences
   with the documented stable source pragmas, manifest/edition declarations and
   language settings. Include those settings and selected exact environment in

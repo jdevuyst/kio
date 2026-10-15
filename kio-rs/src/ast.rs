@@ -4501,9 +4501,9 @@ pub fn host_fn_group_refs<'a, P: Phase>(
 
 /// The value in a `build` block's directive-style field. A field value
 /// is the unit literal `()` (the no-value default), a string literal, a
-/// number literal, a boolean literal, or a bare word (a value-level
-/// identifier). Each field then validates which of these kinds it
-/// accepts; formatting preserves omitted and explicitly written settings. See
+/// number literal, a boolean literal, or a bare configuration word. Each field
+/// validates its accepted kinds and closed choices. Formatting preserves
+/// optional settings except for materializing implicit generation baselines. See
 /// [`grammar.md` § Package files](../../specs/grammar.md#package-files)
 /// and [`style.md`](../../specs/style.md) for the contract.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -4517,7 +4517,7 @@ pub enum BlockFieldValue {
     Num(String),
     /// A boolean literal.
     Bool(bool),
-    /// A bare word — a value-level identifier (`[a-z_][a-z0-9_]*`).
+    /// A value-level identifier or a recognized closed configuration choice.
     Word(String),
 }
 

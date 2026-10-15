@@ -4,7 +4,8 @@ build {
   cache "out/.kio-cache/";
 
   target rust {
-    out "out/rust/"
+    out "out/rust/";
+    baseline v1_85
   }
 }
 

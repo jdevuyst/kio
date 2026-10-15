@@ -190,8 +190,8 @@ The same parity discipline applies to the **verification passes** wired through 
 
 The golden, emission, and generative harnesses run every selected case against every applicable impl when asked for `--impls=FULL_IMPL_MATRIX` (an emission case itself names exactly one backend target). Golden and emission case coverage is independent; add `--all-cases` to run all filtered cases, including the golden harness's sampled dynamic-Prime pass. Generated batches run every filtered case and accept no `--all-cases` option. This section documents selector syntax, not the per-change gate policy.
 
-- **`--impls=SAMPLE_IMPL`** — for each case, pick **one** of its applicable impls at random per run. Each case selected by the independent case policy still runs (assuming it has at least one applicable impl), so the pass count stays the same; what changes is that backend divergence isn't exercised within a single run.
-- **`--impls=FULL_IMPL_MATRIX`** — run every applicable impl for each case. This is the exhaustive matrix and is intentionally expensive.
+- **`--impls=SAMPLE_IMPL`** — for each selected case, choose an applicable backend, then an applicable concrete generation baseline, then one distinct pinned execution environment, with equal choice at each stage. The case executes once. Identical minimum/current endpoint IDs collapse to one alternative. Case and verification-phase sampling retain their own policies.
+- **`--impls=FULL_IMPL_MATRIX`** — run every applicable backend/baseline at its current-tested endpoint. Historical tool versions do not multiply the corpus matrix; bounded compatibility witnesses exercise those endpoints separately.
 - **`--impls=<impl>[,<impl>...]`** — restrict the candidate pool the harness even considers. Cases whose `build { ... }` block doesn't declare any of the surviving targets are skipped entirely.
 - **Positional case-name filters after `--`** — POSIX EREs matched against case names, forwarded to `ci/run-tests.sh` (e.g. `sh ci/checks/orchestrators/golden-tests.sh --impls=kio@go -- '^00_success/my_case$'`). The golden, emissions, generative, POC, castle, and contrib orchestrators all accept them; a filter passed without the `--` separator is rejected with a hint naming the convention.
 
@@ -208,7 +208,44 @@ The matrix orchestrators accept one implementation selector per run: `--impls=FU
 Notes:
 
 - The `kio-prime@js` verifier bucket (`--prime-only` invocation in `golden-tests.sh`) runs an isolated `--no-default-features --features prime,cli,parallel` compiler, rather than the default-feature `kio-prime` binary; this keeps its dependency-command path genuinely surface-less. That bucket and the `dyn-load-prime@kio-prime` differential bucket (`--dyn-load-prime-only`) are always single-impl, so `--impls=SAMPLE_IMPL` never trims them. IS_KIO_PRIME-marked cases still get their Kio' grammar gate, on every invocation; DYN_LOAD_PRIME-marked cases run their interpreter differential when selected by the independent case policy.
-- Failure reproduction under `--impls=SAMPLE_IMPL`: every pass/FAIL line names which impl was picked (the `[<impl>]` tag). Re-run the failing case with `--impls=<that-impl>` to reproduce deterministically.
+- Failure reproduction under `--impls=SAMPLE_IMPL`: retain the printed implementation seed and `baseline-impl-map:` rows. Replay a corpus with `--impls=SAMPLE_IMPL -- --impl-seed=<S>` and the same case/generator seeds and coverage. `ci/all.sh SAMPLE_IMPL --impl-seed=<S>` supplies one seed across its corpus tasks. An explicit backend selects that backend's current-tested endpoint, so it alone does not replay a sampled older endpoint.
+
+The corpus orchestrators pass the explicit harness option
+`--baseline-environments`. Its ID-only mapping lives in
+[`ci/infra/baseline-environments.tsv`](ci/infra/baseline-environments.tsv);
+provisioning configuration owns exact tool versions. Install the requested
+sampling pool before testing; missing tools fail setup, and workers never
+download tools or narrow to an installed subset.
+
+Ordinary successful `run.args` and `run.test-only` fixtures with one regular
+top-level manifest participate through a private case copy. Source dependency
+fetch and case-binary checks run first on the original. The compiler's parser
+sets the selected backend's concrete baseline in the copy; implementation
+checks and execution consume that same copy without fetching relocated path
+dependencies. Original source, expected-output updates, and source checks keep
+their canonical owners. Runner caches separate baseline/environment identities.
+Custom scripts, error cases, bug reproducers, and `FIXED_BASELINE` fixtures
+preserve their written selectors and report `source-preserved`, which makes no
+claim that a selector resolved successfully. Use `FIXED_BASELINE` when a standard
+fixture tests concrete, floating, Unit, omitted, or invalid baseline syntax.
+Contributed fixtures use current-tested environments.
+
+The ordinary JS and TS runners execute Cargo-locked QuickJS. Selecting Node
+does not exercise their runtime; TS sampling varies the actual `tsc` checker.
+Existing independent Node hosts provide bounded native Node evidence. Run
+`sh ci/infra/check-baseline-compatibility.sh <language> <baseline> --plan` to
+inspect the minimum/current fixed-host witnesses, then omit `--plan` to run
+them. TypeScript's rich host driver targets ES2022 independently of the emitted
+ES2020 runtime. These checks cover regenerated output and unchanged fixed host
+source; retained prior output requires its own provenance-backed witness.
+The frozen [published 0.2.2 fixture](ci/infra/backend-compatibility/retained/0.2.2/PROVENANCE.md)
+is consumed without regeneration by
+`sh ci/infra/check-retained-output.sh <language> <baseline> <immutable-runner>`.
+Its hash check protects both archived inputs and output; its existing fixed
+protocol checks runtime results, with current TS/Python declaration checking.
+For JS/TS a small independent public host also imports the untouched old runtime
+on the selected current Node, separately from the ordinary QuickJS runner.
+This small witness does not prove every generated shape or native platform.
 
 `ci/checks/orchestrators/generative-tests.sh` accepts the same `--impls=` selector with identical semantics. It also accepts `--count=<N>` to scope the generated batch and `--seed=<N>` to pin the generator for reproduction.
 

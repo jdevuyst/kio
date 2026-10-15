@@ -2,11 +2,13 @@ package op_conflicts_with_use_op_import;
 
 build {
   target js {
-    out "out/js/"
+    out "out/js/";
+    baseline es2020
   };
 
   target ts {
-    out "out/ts/"
+    out "out/ts/";
+    baseline v5_0
   }
 }
 

@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Formatting preserves omitted and explicit optional settings and removes
-# ordinary grouping without evaluating configuration expressions.
+# Formatting preserves ordinary optional settings, pins implicit baselines,
+# and removes grouping without evaluating configuration expressions.
 # The routing target is incidental: this case observes only the compiler CLI.
 "$KIO_BIN" test >/dev/null
 work=$(mktemp -d)

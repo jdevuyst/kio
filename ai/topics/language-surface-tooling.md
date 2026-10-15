@@ -26,7 +26,10 @@ share accepted scalar forms, finite choices and omission defaults with parsing
 and tooling. Derive key/value completion and field descriptions from those
 definitions, not duplicated per-field menus or invented compiler `Type` values.
 Keep syntactic presence distinct from effective defaults: formatting preserves
-written optional fields and does not insert omitted ones. Test key retraction,
+written optional fields and does not insert omitted ones, except that a host
+target's omitted or Unit `baseline` materializes the concrete latest baseline
+from the fixed compiler catalog. Explicit `latest` stays floating and concrete
+selectors stay fixed. Test that exception, comment preservation, key retraction,
 grouped values, and insertion of suggested values in their actual owner context;
 required fields and conditional source alternatives retain their constraints.
 

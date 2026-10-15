@@ -140,7 +140,8 @@ words. One leading underscore and any trailing underscores are allowed;
 4. Create `<package-name>.pkg.kio` and `main.kio`.
 
 The generated package file declares a JS build target under
-`out/js/`, a package cache under `out/.kio-cache/`, and a
+`out/js/` with the compiler's latest concrete generation baseline,
+a package cache under `out/.kio-cache/`, and a
 `bridge { main }` block selecting the root module. The generated
 `main.kio` module declares a `String` host type with `role(str)`,
 a `print(p0: String)` host fn, and a `pub fn main` that prints

@@ -31,6 +31,9 @@ exhaustive `switch`, for every sum on the typed host surface.
 
 ## Language version
 
+The generation baseline is `v6_0`; see
+[baseline selection](../package.md#per-target-keys).
+
 Emitted code targets **Swift 6.0+**.
 
 All other constructs are standard Swift: `struct`s, `enum`s with associated

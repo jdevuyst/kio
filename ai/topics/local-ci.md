@@ -15,11 +15,22 @@ generous hang safeguards and separately justified blowup-regression bounds.
 
 ## End-to-end sweeps
 
-`sh ci/all.sh SAMPLE_IMPL` runs the same check categories as the Linux GitHub gate, with each matrix case using one applicable implementation. Each check is also invocable individually as `sh ci/checks/<bucket>/<name>.sh` (see [`ai/topics/repo-layout.md`](repo-layout.md) for the `ci/` bucket structure).
+`sh ci/all.sh SAMPLE_IMPL` runs the same check categories as the Linux GitHub gate. Each selected matrix case chooses an applicable backend, a concrete generation baseline, and one distinct execution endpoint, then runs once. Prepare the pool explicitly with `sh ci/install-target-language-toolchains.sh --supported-set --for-tests`; ordinary language/set setup installs development tools. Each check is also invocable individually as `sh ci/checks/<bucket>/<name>.sh` (see [`ai/topics/repo-layout.md`](repo-layout.md) for the `ci/` bucket structure).
 
 `ci/all.sh` is intentionally discovery-based over the standard check buckets, not a hand-maintained scheduler list. Keep that shape when changing broad-gate reporting or scheduling: adding a new orchestrator, repo-lint check, or hygiene check in the bucket layout should make the broad gate pick it up without another edit. Leaf work is admitted by `ci/schedule.sh`: corpus `(case, binary)` units consume work slots, while top-level Cargo and other compiler-producing commands use the independent compiler resource. Early-error visibility belongs in compact progress/failure events, not in a bespoke scheduler list or full live log streaming: `ci/run-tests.sh` emits live `FAIL [...]` markers for completed failing parallel units, while `ci/all.sh` keeps final task logs buffered and deterministic.
 
 `sh ci/all.sh FULL_IMPL_MATRIX` runs the full implementation matrix and is much heavier. When backend-divergence coverage matters, a focused golden run with `--impls=FULL_IMPL_MATRIX` is usually narrower than a repository-wide `ci/all.sh FULL_IMPL_MATRIX`.
+
+Full coverage adds applicable concrete baselines at their current-tested
+environments, not the historical tool cross-product. The shared
+[mapping](../../ci/infra/baseline-environments.tsv) contains IDs only;
+provisioning owns exact pins. SAMPLE_IMPL chooses equally at each level,
+deduplicates equal endpoint IDs, and never substitutes an installed subset.
+JS runtime evidence remains Cargo-locked QuickJS. TS draws select the actual
+`tsc` checker; its ordinary runtime also remains QuickJS. Native Node
+minimum/current evidence uses bounded existing independent hosts.
+See [`TESTING.md`](../../TESTING.md#local-iteration) for fixture applicability
+and the explicit bounded compatibility command.
 
 GitHub CI uses two layers. Linux runs directly on the hosted Ubuntu runner, with mise installing the complete eight-backend tool pool from the shared root pins. Scheduled and default manual runs use `ci/all.sh SAMPLE_IMPL --sample-cases --impl-verification=dyn-load-prime --case-coverage=dyn-load-prime:10`: one applicable regular implementation per selected case, plus the separately selected direct-Prime and dynamic-Prime verifier rows. Case sampling is independent of implementation sampling. The dynamic differential's eligible cases all belong to `00_success`, so its existing seeded per-bucket cap of 10 selects 10 cases total; the eligibility lint rejects markers outside that bucket. `workflow_dispatch` exposes independent `implementation_coverage=full` and `case_coverage=full` opt-ins. Full implementation coverage changes the per-case multiplicity; full case coverage removes case narrowing, including the dynamic differential's 10-case cap. Neither changes local command defaults. Locally regular goldens, direct Prime, POC, and emissions default to all cases, while dynamic Prime samples 50 per bucket; see § Scoping a test pass.
 
@@ -49,6 +60,9 @@ under `tools/toolchains/`; see
 The container and native jobs consume `ci/impl-toolchain.sh` and its human
 installer facade. Linux installs core development helpers plus all eight target
 languages; native macOS/Windows jobs select the supported portability sets.
+Linux compatibility-sampling jobs use the explicit installer modifier `--for-tests` to prepare
+their shared compatibility-environment pool; ordinary set selection installs
+only development environments.
 The shared GitHub export operation carries each selected environment into later
 steps; it also applies the same selection to the current command where needed.
 Linux requests `--core` to verify/activate general helpers; native target-only
@@ -665,7 +679,8 @@ Each layer below scopes by a different dimension. Pick the narrowest knob that s
 - **Orchestrator-level scoping** — `sh ci/checks/orchestrators/golden-tests.sh` (and siblings: `emissions-tests.sh`, `generative-tests.sh`, `poc-tests.sh`, `castle-tests.sh`) accept `--impls=FULL_IMPL_MATRIX|SAMPLE_IMPL|<impl>[,<impl>...]`. See [`TESTING.md`](../../TESTING.md) § Local iteration for the full interaction table.
   - `--impls=kio@js` — restrict to the JS impl. Skips Rust-backend work entirely.
   - `--impls=kio@rust` — restrict to the Rust impl.
-  - `--impls=SAMPLE_IMPL` — for each case, pick one applicable impl at random per run. Roughly halves wall time at the cost of full backend-divergence coverage in a single run.
+  - `--impls=SAMPLE_IMPL` — for each case, choose one applicable backend/baseline/environment configuration. A single run does not cover every backend or endpoint.
+  - `-- --impl-seed=<S>` — replay that corpus's backend, baseline, and actual environment choices using its printed unsigned 32-bit seed. Keep case/generator seeds and coverage unchanged.
 - **Case-level filtering** — `sh ci/run-tests.sh` takes positional filter arguments matched against case names (relative path under `--cases-dir`). Useful when iterating on a specific golden:
 
   From the repository root, set `KIO_BIN`, `KIO_PRIME_BIN`, and `KIO_RUNNER` to existing executable paths for the full compiler, reduced Kio' compiler, and JS runner. The direct harness requires `--cache-base`; this example uses the shared golden runner-artifact cache described in [`local-tools.md`](local-tools.md) § Compiler cache:
@@ -698,6 +713,7 @@ Each layer below scopes by a different dimension. Pick the narrowest knob that s
   - `sh ci/all.sh SAMPLE_IMPL` — forwards `--impls=SAMPLE_IMPL` to every orchestrator that supports it (`golden-tests`, `emissions-tests`, `generative-tests`, `poc-tests`, `castle-tests`). Each case runs on one of its applicable impls, picked at random per run; an emission case has only its bucket's backend target.
   - `sh ci/all.sh FULL_IMPL_MATRIX` — runs the full implementation matrix.
   - `sh ci/all.sh kio@js` or `sh ci/all.sh kio@js kio@rust` — forwards the selected impl list as `--impls=<list>` to the orchestrators that support it. A comma-separated list is also accepted.
+  - `sh ci/all.sh SAMPLE_IMPL --impl-seed=<S>` — replay one implementation seed across all corpus tasks, independently of `--case-seed`.
 - **Scope case coverage — a different axis from impl coverage** — how many *cases* of each corpus build and run, independent of how many *impls* each runs on. The two compose. `TESTING.md` § Case coverage is the full reference; the operational points:
   - Case narrowing scopes the **build+run tier only**. A case narrowed out by sampling, a numeric cap, or a named set still runs every `# ROUTING: case-binary` check (`fmt-canonical`, `dep-canonical`, `prime-marker`, `warm-recheck-stable`), so formatting drift, materialized-dependency-tree drift, and the `IS_KIO_PRIME` biconditional stay gated on the whole filtered corpus on every pass. Build/run coverage of cases is traded away, not the implementation selector. Preserve exact runtime coverage for affected behavior on every applicable backend; choose broader dynamic coverage using the risk-based rule in § Local gate coverage, not merely because codegen changed.
   - Defaults with no flag: regular goldens/direct Prime **all**, dynamic Prime **sampled** (50), emissions **all**, POC **all**, castles **sampled** (10), contrib **sampled** (10). This is the everyday local gate.
@@ -716,6 +732,30 @@ Each layer below scopes by a different dimension. Pick the narrowest knob that s
 - Spec changes that affect multiple buckets (e.g., a new exit-code category, a grammar change that ripples through goldens + generative + prime-marker checks).
 
 ### Flags vs. environment
+
+The six language corpus orchestrators explicitly enable the harness option
+`--baseline-environments`. Direct harness/mock consumers retain their declared
+rows. The harness resolves one verified immutable export fragment per selected
+language/environment before dispatch; workers source it before capturing native
+compiler paths. Repository binaries are prepared with the development toolchain;
+endpoint selection applies to tools consuming generated output.
+
+Source dependency fetch and case-binary checks retain canonical source owners.
+Ordinary exact success fixtures execute a parser-rewritten private copy, and
+implementation checks consume that same copy without fetching relocated path
+dependencies. Copies materialize regular-file links into owned files; other
+links retain their original resolution without traversing directory links.
+Error/custom/`FIXED_BASELINE` subjects preserve source and are
+logged `source-preserved`. Contrib uses current endpoints.
+`--toolchain-environment=<ID>` is an explicit direct-harness override for bounded
+compatibility witnesses; it requires `--baseline-environments` and never installs
+tools. Neither option changes case eligibility or narrowing.
+
+`--impl-seed=<S>` is ordinary implementation replay. It accepts canonical decimal
+0..4294967295, requires SAMPLE_IMPL, and is mutually exclusive with the internal
+performance probe `KIO_DEBUG_SAMPLE_IMPL_SEED`. Logs retain the backend choice,
+baseline/environment mapping, selected tool plan, and provisioning identity.
+Case and generator seeds remain separate axes.
 
 User-facing CI behavior should be explicit command-line state: implementation coverage uses `SAMPLE_IMPL` / `FULL_IMPL_MATRIX` / explicit impl names, case coverage uses `--sample-cases` / `--all-cases` / repeatable `--case-coverage=<scope>:<policy>` root-or-leaf overrides / `--case-seed=`, generated-case count and seed use `--gen-count=` / `--count=` and `--gen-seed=` / `--seed=`, scheduler overrides use `--jobs=<N>` and `--compiler-jobs=<N>`, and log retention uses `--keep-logs` or `--keep-logs=<DIR>`.
 
