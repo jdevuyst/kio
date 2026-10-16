@@ -179,7 +179,8 @@ toolchain_controlled_environment() {
   export MISE_CEILING_PATHS="$TC_SNAPSHOT" MISE_IDIOMATIC_VERSION_FILE=0
   export MISE_AUTO_ENV=0 MISE_NO_CONFIG=0 MISE_NO_ENV=1 MISE_NO_HOOKS=1
   export MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 MISE_SELF_UPDATE_AVAILABLE=0
-  export MISE_TRUSTED_CONFIG_PATHS="$TC_SNAPSHOT" MISE_COLOR=0
+  # Reshim also reads retained snapshots in this owned configuration store.
+  export MISE_TRUSTED_CONFIG_PATHS="$TC_ROOT/config" MISE_COLOR=0
   export MISE_ENABLE_TOOLS
   MISE_ENABLE_TOOLS=$(printf '%s\n' "$TC_TOOLS" | tr ' ' ',')
   # An explicit selected overlay avoids native environment discovery after cd.

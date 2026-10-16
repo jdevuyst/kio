@@ -50,6 +50,9 @@ A handler with no surviving manifest is a **dangling finding** — the ecosystem
   manifest references resolve. The compatibility-maintenance skill owns endpoint
   refresh evidence; it must not become a second editable copy of provisioning pins
   or silently broaden `upgrade-deps`'s reason-driven policy.
+- Historical compatibility endpoints remain distinct from ordinary development
+  and release pins: verify that security/EOL maintenance neither silently
+  replaces the tested old version nor ignores its execution exposure.
 - The tools it invokes are spelled correctly: `mise`, `npm` (with `npm audit`), `cargo` (with `cargo update`), and `cargo audit` — the last pinned as `cargo:cargo-audit` in `mise.optional.toml` and installed on demand through `ci/impl-toolchain.sh install-report-tools`, not assumed as a standing core binary.
 - The out-of-scope carve-out still holds: `upgrade-deps` must not touch `version-check.sh`'s mirror list — that is `audit-versioning`'s domain.
 

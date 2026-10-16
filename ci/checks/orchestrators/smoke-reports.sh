@@ -11,8 +11,8 @@
 # Each smoke exercises the specific machinery its harness depends on and
 # that a plain build does not cover — not just "is the tool installed":
 #
-#   cargo-fuzz       — `cargo +nightly fuzz list`. Confirms cargo-fuzz
-#                      installed, nightly toolchain present, and
+#   cargo-fuzz       — `cargo fuzz list` in the pinned fuzz environment.
+#                      Confirms cargo-fuzz and nightly are installed, and
 #                      kio-rs/fuzz/Cargo.toml lists its targets. (Building
 #                      the targets is a full ASAN recompile — too heavy
 #                      for a smoke; audit-reports builds and runs them.)
@@ -102,13 +102,19 @@ smoke_fuzz() {
     printf 'smoke-fuzz: cargo-fuzz not installed; skipping\n'
     return 0
   fi
-  if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
-    printf 'smoke-fuzz: nightly toolchain not installed; skipping\n'
+  _fuzz_plan=$(sh "$REPO_ROOT/ci/impl-toolchain.sh" toolchain-plan rust --environment fuzz)
+  _fuzz_store=$(printf '%s\n' "$_fuzz_plan" | sed -n 's/^store: //p')
+  _fuzz_version=$(printf '%s\n' "$_fuzz_plan" | sed -n 's/^rust@//p')
+  _fuzz_installed=$(RUSTUP_HOME="$_fuzz_store/rustup" rustup toolchain list) || return $?
+  if ! printf '%s\n' "$_fuzz_installed" | awk -v version="$_fuzz_version" \
+      'index($1, version "-") == 1 { found = 1 } END { exit !found }'; then
+    printf 'smoke-fuzz: pinned fuzz toolchain %s not installed; skipping\n' "$_fuzz_version"
     return 0
   fi
   cd "$REPO_ROOT/kio-rs"
   printf 'smoke-fuzz: listing fuzz targets\n'
-  sh "$REPO_ROOT/ci/cargo.sh" +nightly fuzz list
+  sh "$REPO_ROOT/ci/impl-toolchain.sh" toolchain-exec rust --environment fuzz --helpers cargo:cargo-fuzz -- \
+    sh "$REPO_ROOT/ci/cargo.sh" fuzz list
   cd - >/dev/null
 }
 

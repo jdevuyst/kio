@@ -26,9 +26,13 @@ checkout root:
 ```sh
 repo_mise=$(sh ci/impl-toolchain.sh toolchain-bootstrap)
 "$repo_mise" trust mise.toml
-MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 "$repo_mise" outdated
-MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 "$repo_mise" -E optional outdated
+MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 "$repo_mise" outdated --bump --local
+MISE_AUTO_INSTALL=0 MISE_EXEC_AUTO_INSTALL=0 "$repo_mise" -E optional outdated --bump --local
 ```
+
+Repeat discovery for the other tracked environments. `--bump` compares beyond
+exact configured requests; `--local` excludes unrelated account configuration.
+Discovery does not authorize a bump or raising a compatibility floor.
 
 Use that same pinned executable for `lock` or `-E ENVIRONMENT lock` after
 editing tracked configuration. These operations intentionally use the original
@@ -70,6 +74,14 @@ maintains minimum/current-tested endpoint evidence; that distinct task does not
 relax this skill's reason-driven upgrade policy or authorize raising a generation
 baseline's public floor.
 
+Historical compatibility-test endpoints are deliberate test subjects, not
+development-tool recommendations. Do not apply security or EOL upgrades to
+them automatically: replacing an old endpoint loses evidence for that version.
+Still assess exposure and follow the compatibility refresh skill's bounded-use
+rules; if safe execution is unavailable, report the evidence gap rather than
+silently updating or skipping the endpoint. Ordinary development and release
+tools remain subject to the upgrade policy below.
+
 Out of scope: Kio's *own* repo-wide version (the mirror list in `ci/checks/repo-lint/version-check.sh`) — not a dependency, and `audit-versioning`'s domain. Leave it alone.
 
 ## Upgrade needs a reason
@@ -78,13 +90,13 @@ Out of scope: Kio's *own* repo-wide version (the mirror list in `ci/checks/repo-
 
 - **Security** *(patch axis)* — an advisory against the pinned version (`cargo audit` / RUSTSEC, `npm audit` / GHSA, GitHub advisories for actions and toolchains; GitHub's Dependabot *alerts* are the passive backstop between runs). Take it *on sight* — at whatever granularity the fix ships (usually a patch / minor) and across a major if that's where it lives. A security advisory is always a reason, so the no-routine-patch rule below never suppresses it.
 - **End-of-life / unmaintained** *(major-line axis)* — the pinned *line* no longer gets fixes. `endoflife.date` tracks major lines (node 20, go 1.22, ghc 9.10), so it catches a dead line, never patch lag within a live one — that's Security's axis. Determine it as a cascade: `endoflife.date` (covers node / go / rust / ghc) → if the toolchain isn't there (only Swift today), its release-policy page → if there's *genuinely* no signal and no LTS, track a current release rather than an unverifiable old pin ("no data" is usually *us not checking*, so verify before falling back). For libraries, crates.io / npm yank + deprecation flags.
-- **Deprecation going fatal** — a feature you depend on is being removed. actionlint / zizmor already flag this for workflows; build warnings flag it for toolchains.
+- **Deprecation going fatal** — a feature you depend on is being removed. Check upstream runtime and retirement notices as well as actionlint / zizmor and build warnings. Inspect pinned actions' runtime metadata, including nested actions in composites; passing workflow linters does not establish runtime support.
 
 When a reason *does* force a move, prefer the **LTS** line where the toolchain has one — node's even-numbered series, GHC's LTS — for its long support window and fewer future forced bumps; toolchains without LTS (go, rust, swift) take the latest *stable* release.
 
 Explicitly **don't**: routinely bump a patch/minor of an otherwise-fine maintained dep, or chase a new *major* while your current line is still maintained — *unless* a reason (almost always Security) calls for it.
 
-Discover candidates with `mise outdated`, `mise -E optional outdated`, `npm outdated`, and `sh <repo-root>/ci/cargo.sh update --dry-run` from each Cargo workspace, plus the advisory / EOL sources above — then filter to the ones with a reason. Security and unmaintained advisories come from `npm audit` (built into npm) and Cargo's `cargo audit`, invoked from the relevant workspace as `sh <repo-root>/ci/cargo.sh audit`. `cargo audit` isn't part of cargo and isn't a standing core toolchain tool; it is pinned as `cargo:cargo-audit` in `mise.optional.toml` and installed on demand with the optional Cargo-backed tools ([`local-tools.md`](../../topics/local-tools.md) § Toolchain provisioning policy): `sh ci/impl-toolchain.sh install-report-tools`. It runs *only* here, never as a CI gate — a security advisory is external, time-varying state, so gating `ci/all.sh` on it would redden unrelated PRs the day an advisory drops.
+Discover candidates with the mise commands above, `npm outdated`, and `sh <repo-root>/ci/cargo.sh update --dry-run` from each Cargo workspace, plus the advisory / EOL sources above — then filter to the ones with a reason. Security and unmaintained advisories come from `npm audit` (built into npm) and Cargo's `cargo audit`, invoked from the relevant workspace as `sh <repo-root>/ci/cargo.sh audit`. `cargo audit` isn't part of cargo and isn't a standing core toolchain tool; it is pinned as `cargo:cargo-audit` in `mise.optional.toml` and installed on demand with the optional Cargo-backed tools ([`local-tools.md`](../../topics/local-tools.md) § Toolchain provisioning policy): `sh ci/impl-toolchain.sh install-report-tools`. It runs *only* here, never as a CI gate — a security advisory is external, time-varying state, so gating `ci/all.sh` on it would redden unrelated PRs the day an advisory drops.
 
 **"No reason" is a checked conclusion, not a default.** It means *no reason detected after running every detector you have* (the audits, `endoflife.date` / the release-policy page, the deprecation linters) — never a proof of safety. "`npm audit` clean" is "no *published* advisory," not "secure"; `endoflife.date` silence is "maintained" *or* "not tracked." A detector that's missing or inconclusive (no EOL data, an unqueryable advisory source, a transitive dep's unknown maintenance) is an **unknown** — it routes to the blind-spot fallback or gets flagged, it does *not* count as clear. So the per-candidate check is mandatory, and the report names which detectors ran — a "stayed put" must mean "checked and clear," not "didn't look."
 
