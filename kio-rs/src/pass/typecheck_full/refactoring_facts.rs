@@ -1,5 +1,6 @@
-//! Conservative authentication for source refactorings. Hover keeps its
-//! last-write-wins view; an inconsistent observation cannot authorize an edit.
+//! Conservative authentication for source refactorings and signature metadata.
+//! Hover keeps its last-write-wins view; inconsistent observations cannot
+//! authorize an edit or select a declaration's parameter labels.
 
 use super::{PositionIndex, ResolvedBinder, Type, TypeBinderScope};
 use crate::span::Span;
@@ -166,6 +167,23 @@ impl PositionIndex {
             _ => None,
         }
     }
+
+    pub(crate) fn signature_callee_binder(
+        &self,
+        module: &str,
+        path: Span,
+        terminal: Span,
+    ) -> Option<&ResolvedBinder> {
+        let facts = self.refactoring.as_ref()?;
+        let terminal = (module.to_owned(), terminal);
+        if !facts.complete
+            || facts.conflicts.contains(&(module.to_owned(), path))
+            || facts.conflicts.contains(&terminal)
+        {
+            return None;
+        }
+        self.binders.get(&terminal)
+    }
 }
 
 fn same_binder(left: &ResolvedBinder, right: &ResolvedBinder) -> bool {
@@ -205,6 +223,51 @@ mod tests {
     fn unit() -> Type {
         Type::Unit {
             meta: Meta::new(SITE),
+        }
+    }
+
+    #[test]
+    fn signature_identical_packet_copies_cannot_select_conflicting_declarations() {
+        use super::super::{CallLayerPresentation, CallPresentationFact};
+        for host in [false, true] {
+            let mut index = PositionIndex::for_refactoring();
+            let binder = |module: &str| {
+                if host {
+                    ResolvedBinder::HostEnvFn {
+                        module_path: module.into(),
+                        name: "f".into(),
+                    }
+                } else {
+                    ResolvedBinder::Fn {
+                        module_path: module.into(),
+                        name: "f".into(),
+                    }
+                }
+            };
+            let fact = CallPresentationFact::Layer(CallLayerPresentation {
+                has_value_layer: true,
+                consumed: true,
+                implicit_unit: true,
+            });
+            for module in ["first", "first", "second"] {
+                let mut shard = PositionIndex::for_refactoring();
+                shard.record_binder("x", SITE, binder(module));
+                shard.record_call_presentation(
+                    "x",
+                    crate::ast::ExpressionSite {
+                        id: crate::ast::ExpressionOccurrence::fresh().key(),
+                        span: CALL,
+                    },
+                    0,
+                    fact,
+                );
+                index.merge(shard);
+                assert!(index.call_presentation("x", CALL).is_some());
+                assert_eq!(
+                    index.signature_callee_binder("x", SITE, SITE).is_some(),
+                    module == "first"
+                );
+            }
         }
     }
 

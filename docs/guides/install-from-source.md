@@ -96,6 +96,6 @@ Formatting is served by `kio lsp`, so this requires a resolvable `kio` binary (s
 
 - [`INSTALL.md`](../../INSTALL.md) — the pinned toolchain and local setup paths.
 - [`CONTRIBUTING.md`](../../CONTRIBUTING.md) — the contribution workflow.
-- [`tools/vscode-kio/README.md`](../../tools/vscode-kio/README.md) — the extension's feature layers, build steps, and language-server configuration.
+- [`tools/vscode-kio/README.md`](../../tools/vscode-kio/README.md) — the extension's features, requirements, and editor settings.
 - [Shell completions for `kio`](shell-completions.md) — generating and installing a completion script for your shell.
 - [`specs/cli.md`](../../specs/cli.md) — the CLI reference, including `kio lsp` and `kio fmt`.

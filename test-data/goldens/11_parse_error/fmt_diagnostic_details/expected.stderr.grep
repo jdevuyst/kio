@@ -1,0 +1,2 @@
+help:.*unit type
+suggestion:.*replace with `[[:space:]]*\.[[:space:]]*`

@@ -6,8 +6,8 @@
 //! n-ary nodes, and the resolution-lowering pass classifies every
 //! call site into one of the `Expr::Low*` variants on the `Routed`
 //! phase. Per-backend lowerings consume `Module<Routed>` and dispatch
-//! over the pre-classified variants. Both the JS and Rust backends
-//! consume `Module<Routed>` directly.
+//! over the pre-classified variants. All host backends consume
+//! `Module<Routed>` directly; the Kio' backend emits `Module<Prime>`.
 //!
 //! What's **per-backend** is twofold:
 //!

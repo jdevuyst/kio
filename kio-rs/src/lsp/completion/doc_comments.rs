@@ -555,6 +555,7 @@ fn embedded(
         CompletionSources {
             local: None,
             catalog: sources.catalog,
+            declarations: sources.declarations,
             state: sources.state,
         },
     ) {

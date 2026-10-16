@@ -18,6 +18,65 @@ fn complete_marked(kind: &str, marked: &str) -> (String, CompletionList) {
 }
 
 #[test]
+fn parser_context_file_identity_precedes_comment_and_binder_suppression() {
+    for (kind, header, marked) in [
+        (
+            ".pkg",
+            "package app;",
+            "build { target js { baseline |latest } }",
+        ),
+        (
+            ".dep",
+            "dependency app;",
+            "source { |path \"app.pkg.kio\"; }",
+        ),
+        (
+            ".lock",
+            "lock app;",
+            "resolved { |git \"url\"; ref \"main\"; commit \"sha\"; sig \"digest\"; }",
+        ),
+        (
+            ".sig",
+            "signature app v(1);",
+            "|v(1) { nonbreaking { add { module main { pub type A = .; } } } }",
+        ),
+        ("", "module app;", "|fn run() { () }"),
+    ] {
+        for marked in [
+            format!("{header} {marked}"),
+            format!("{header} {}", marked.split('}').next().unwrap()),
+            format!("{header} // co|mment"),
+            format!("{header} /// do|cumentation"),
+            header.replacen("app", "ap|p", 1),
+        ] {
+            let cursor = marked.find('|').unwrap();
+            let source = marked.replacen('|', "", 1);
+            let position = LineIndex::new(&source).to_position(cursor as u32);
+            let position = Position::new(position.line, position.character);
+            for (uri, matches) in [
+                (test_file_uri(format!("/app{kind}.kio")), true),
+                (test_file_uri(format!("/other{kind}.kio")), false),
+                (format!("untitled:other{kind}.kio").parse().unwrap(), true),
+            ] {
+                assert_eq!(
+                    handle_completion(&uri, &position, Some(&source), None).is_some(),
+                    matches,
+                    "{uri:?}: {marked}"
+                );
+            }
+        }
+        let prefix = header.trim_end_matches(';');
+        let result = handle_completion(
+            &test_file_uri(format!("/other{kind}.kio")),
+            &Position::new(0, prefix.len() as u32),
+            Some(prefix),
+            None,
+        );
+        assert!(result.is_some(), "unestablished header: {prefix}");
+    }
+}
+
+#[test]
 fn parser_context_recursive_label_payload_recovery_keeps_type_scope() {
     for (marked, expected, excluded) in [
         (

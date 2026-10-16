@@ -140,6 +140,38 @@ mod facade_consumer_tests {
         ))
     }
 
+    #[test]
+    #[should_panic(
+        expected = "check_literal_annotation established an exact role-typed host annotation"
+    )]
+    fn routed_invariant_non_host_literal_panics() {
+        let package = package("module api; pub fn unit() -> . { () }");
+        let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
+        let facades = GoFacadeCatalog::prepare(&prepared).unwrap();
+        let roles = HostRoleTable::new();
+        let selective_imports = SelectiveImports::new();
+        let qualified_imports = QualifiedImports::new();
+        let mut emitter = BodyEmitter::new(
+            &package,
+            &roles,
+            "api",
+            &selective_imports,
+            &qualified_imports,
+            &facades,
+        );
+        let meta = crate::ast::Meta::new(crate::span::Span::new(0, 0));
+        let _ = emitter.emit_into(
+            &Expr::IntLit {
+                occurrence: (),
+                digits: "1".into(),
+                annotation: Type::Unit { meta: meta.clone() },
+                meta,
+            },
+            GoDestination::Return,
+            &mut GoBlock::default(),
+        );
+    }
+
     fn replayed_interface(source: &str) -> crate::sig::ReplayedInterface {
         let signature =
             parse_signature_file(source, None).expect("parse retained Go facade test signature");
@@ -3931,13 +3963,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 digits, annotation, ..
             } => destination.write(
                 out,
-                format!("any({})", self.emit_int_lit(digits, Some(annotation))?),
+                format!("any({})", self.emit_int_lit(digits, annotation)?),
             ),
             Expr::FloatLit {
                 digits, annotation, ..
             } => destination.write(
                 out,
-                format!("any({})", self.emit_float_lit(digits, Some(annotation))?),
+                format!("any({})", self.emit_float_lit(digits, annotation)?),
             ),
             Expr::BoolLit { value, .. } => destination.write(out, format!("any({value})")),
             Expr::Let {
@@ -5153,36 +5185,24 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     }
 
     /// Render an integer literal at its annotated role's Go type. The
-    /// role comes from the literal's annotation; an unannotated literal
-    /// (rare at Routed) defaults to `int32` (the canonical `Int` role).
-    fn emit_int_lit(
-        &self,
-        digits: &str,
-        annotation: Option<&Type<Routed>>,
-    ) -> Result<String, EmitError> {
+    /// role comes from the checked annotation required by Routed.
+    fn emit_int_lit(&self, digits: &str, annotation: &Type<Routed>) -> Result<String, EmitError> {
         let role = self.literal_role(annotation)?;
         Ok(go_typed_int(role_to_go_type(role), digits))
     }
 
     /// Render a float literal at its annotated role's Go type.
-    fn emit_float_lit(
-        &self,
-        digits: &str,
-        annotation: Option<&Type<Routed>>,
-    ) -> Result<String, EmitError> {
+    fn emit_float_lit(&self, digits: &str, annotation: &Type<Routed>) -> Result<String, EmitError> {
         let role = self.literal_role(annotation)?;
         Ok(format!("{}({digits})", role_to_go_type(role)))
     }
 
     /// The role a literal's annotation resolves to. The annotation is a
     /// `Type::Path` to a role-typed host type.
-    fn literal_role(&self, annotation: Option<&Type<Routed>>) -> Result<Role, EmitError> {
-        match annotation.and_then(|ty| self.atom_role_of(ty)) {
-            Some(role) => Ok(role),
-            None => Err(EmitError::unsupported(
-                "Go emitter: numeric literal without a role annotation",
-            )),
-        }
+    fn literal_role(&self, annotation: &Type<Routed>) -> Result<Role, EmitError> {
+        Ok(self.atom_role_of(annotation).expect(
+            "Go emitter: check_literal_annotation established an exact role-typed host annotation",
+        ))
     }
 }
 

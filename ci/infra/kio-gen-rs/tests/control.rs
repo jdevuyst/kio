@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use kio_gen::{
     control::{
         self, Block, ControlProbe, Descriptor, Payload, Receiver, RecursionMode, RecursionProbe,
-        Sequence, Step, TypeProbe, Value,
+        RowProbe, Sequence, Step, TypeProbe, Value,
     },
     emit, generate, mutate, program_seed, shrink,
 };
@@ -475,6 +475,7 @@ fn existential_oracle_preserves_the_selected_sequence_value() {
                     last: "last\n".into(),
                 },
                 recursion: None,
+                rows: None,
             };
             assert_eq!(control::expected_stdout(&probe), "selected\nselected\n");
             let files = kio_gen::control_render::files(&probe);
@@ -496,4 +497,119 @@ fn existential_oracle_preserves_the_selected_sequence_value() {
             }
         }
     }
+}
+
+#[test]
+fn invoked_row_probes_cover_updates_bindings_and_preserved_fields() {
+    let mut seen = HashMap::<String, u64>::new();
+    let mut payloads = std::collections::HashSet::new();
+    for i in 0..256 {
+        let seed = program_seed(0x00F1_E1D5, i);
+        let p = generate::program_from_seed(seed);
+        let Some(ControlProbe::Surface {
+            rows: Some(rows), ..
+        }) = &p.control_probe
+        else {
+            continue;
+        };
+        let files = emit::render_package_files(&p);
+        let source = &files
+            .iter()
+            .find(|(path, _)| path == "workdir/kio_gen_rows.kio")
+            .unwrap()
+            .1;
+        let driver = &files
+            .iter()
+            .find(|(path, _)| path == "workdir/kio_gen_control.kio")
+            .unwrap()
+            .1;
+        assert!(driver.contains("import kio_gen_rows as row_probe;"));
+        assert!(driver.contains(" row_probe.run();"));
+        assert_eq!(
+            emit::program_protocol(&p),
+            if p.control_probe.as_ref().unwrap().has_recursion() {
+                emit::GENERATED_RECURSION_MAIN_PROTOCOL
+            } else {
+                emit::GENERATED_CONTROL_MAIN_PROTOCOL
+            }
+        );
+        assert!(source.contains("let row = source().!{"));
+        assert!(source.contains(" = binding_source(row);"));
+        seen.entry(format!("updates:{}", rows.updates.len()))
+            .or_insert(seed);
+        seen.entry(format!("bindings:{}", rows.bindings.len()))
+            .or_insert(seed);
+        seen.entry(format!("order:{:?}", rows.order))
+            .or_insert(seed);
+        for original in &rows.original {
+            payloads.insert(original.clone());
+        }
+        for (index, alias) in &rows.bindings {
+            let updated = rows.updates.iter().any(|(field, _)| field == index);
+            seen.entry(format!("binding:{alias}:{updated}"))
+                .or_insert(seed);
+        }
+        let expected = control::row_stdout(rows);
+        assert!(control::expected_stdout(p.control_probe.as_ref().unwrap()).ends_with(&expected));
+        for (index, payload) in &rows.updates {
+            assert_ne!(payload, &rows.original[*index]);
+            assert!(source.contains(&format!("row-update-{index}\\n")));
+            assert!(expected.contains(payload));
+        }
+    }
+    for count in 0..=3 {
+        assert!(seen.contains_key(&format!("updates:{count}")), "{seen:?}");
+    }
+    for count in 1..=3 {
+        assert!(seen.contains_key(&format!("bindings:{count}")), "{seen:?}");
+    }
+    for alias in [false, true] {
+        for updated in [false, true] {
+            assert!(
+                seen.contains_key(&format!("binding:{alias}:{updated}")),
+                "{seen:?}"
+            );
+        }
+    }
+    for order in [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ] {
+        assert!(seen.contains_key(&format!("order:{order:?}")), "{seen:?}");
+    }
+    assert!(payloads.len() > 32, "row payloads must vary across seeds");
+    eprintln!("row probe witnesses: {seen:?}");
+}
+
+#[test]
+fn row_oracle_distinguishes_lost_updates_and_wrong_bindings() {
+    let probe = RowProbe {
+        order: [2, 0, 1],
+        original: [
+            "old-first\n".into(),
+            "kept-middle\n".into(),
+            "old-last\n".into(),
+        ],
+        updates: vec![(2, "new-last\n".into()), (0, "new-first\n".into())],
+        bindings: vec![(2, true), (1, false), (0, true)],
+    };
+    let expected = "row-source\nrow-update-2\nrow-update-0\nnew-first\nkept-middle\nnew-last\nrow-bind\nnew-last\nkept-middle\nnew-first\n";
+    assert_eq!(control::row_stdout(&probe), expected);
+    let mut lost = probe.clone();
+    lost.updates.clear();
+    assert_ne!(control::row_stdout(&lost), expected);
+    let mut swapped = probe.clone();
+    swapped.updates[0].1 = "new-first\n".into();
+    swapped.updates[1].1 = "new-last\n".into();
+    assert_ne!(control::row_stdout(&swapped), expected);
+    let mut wrong_binding = probe.clone();
+    wrong_binding.bindings[0].0 = 0;
+    assert_ne!(control::row_stdout(&wrong_binding), expected);
+    let mut missing_binding = probe.clone();
+    missing_binding.bindings.remove(0);
+    assert_ne!(control::row_stdout(&missing_binding), expected);
 }

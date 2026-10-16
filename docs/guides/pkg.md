@@ -757,6 +757,11 @@ bridge {
 For the full key list, see
 [`specs/package.md` § Build target files](../../specs/package.md#build-target-files).
 
+From the package directory, `kio cache path` prints the configured cache location,
+`kio cache clear` clears its semantic caches, and `kio cache gc` removes stale
+entries. If the package file is malformed, each command reports the source error
+and exits with code 11 without changing the cache.
+
 `kio fmt` preserves written settings without adding omitted optional fields
 or blocks, except for a host target's generation `baseline`. For example,
 `baseline es2020` fixes the JavaScript compatibility contract; `baseline latest`

@@ -653,10 +653,8 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
             other => Err(format!("unknown poly helper: {other}")),
         },
         Term::TypeMember { .. } => {
-            // The generator no longer emits TypeMember — kio-rs
-            // doesn't yet support cross-module dotted-path access, so
-            // every constructor / projector goes through a generated
-            // wrapper function reached via Term::App + Term::Var.
+            // Catalog members enter the typing environment as wrapper functions
+            // reached through Term::App and Term::Var.
             unreachable!("TypeMember not produced by the current generator")
         }
         Term::LabelConstruct {

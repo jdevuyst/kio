@@ -172,8 +172,8 @@ functions stay correct even when their type parameters coincide: a getter and
 setter of *distinct* types are still distinguishable by `one_prod!`, and a
 left-vs-right arm of a sum is still distinguishable by position even when both
 arms have the same type. The full per-form contract for the spine palette —
-the right-spine slot multiset each form matches, and why each form is sound,
-total, and information-preserving — is documented in the elaborator-POC case
+the right-spine slot multiset each form matches, why each form is sound and
+total, and what information it preserves or discards — is documented in the elaborator-POC case
 study [`docs/poc/elab.md`](elab.md), which exercises every spine form against
 `equiv` laws; this case study uses the forms in the optics setting rather
 than re-deriving their per-form semantics.

@@ -15,9 +15,9 @@ The CLI is `kio-gen --output <dir> [--seed N] [--count N] [--no-shrink] [--prime
 
 ## Design
 
-Independent of `kio-rs` by construction. The generator builds typed terms in its own AST and renders them to Kio source text — it does *not* import the kio-rs AST. That independence is what makes it credible as a cross-implementation oracle: when kio-rs and a future second impl disagree on a generated program, neither side can blame a shared input.
+Independent of `kio-rs` by construction. The generator builds typed terms in its own AST and renders them to Kio source text — it does *not* import the kio-rs AST. That independence is what makes it credible as a cross-implementation oracle: when implementations disagree on a generated program, neither side can blame a shared input.
 
-Naming follows the `-rs` convention from [`kio-rs/`](../../../kio-rs/): this is the Rust-written generator, leaving room for a future Kio-written replacement.
+Naming follows the `-rs` convention from [`kio-rs/`](../../../kio-rs/): this is the Rust-written generator.
 
 ## Output format
 
@@ -143,6 +143,11 @@ cells; fixed support declarations supply their explicitly described helpers:
 - Tuple literals `(a, b, ...)`.
 - `if`/`else` conditionals.
 - Label declarations (`labels`) and label-value sugar `{label = e}`.
+- Field updates and row lets use a seeded three-field record probe: source
+  field order, replacement subsets and values, selected bindings and aliases
+  vary independently. The oracle checks receiver evaluation, replacement
+  order, updated and untouched payloads, and named binding results through
+  the existing control protocol.
 - `match!` with `.(p: T) { ... }` clauses.
 - The 17 surface elaborator forms — emitted as identity coercions
   (the generator picks the surface form; the Kio' fallback

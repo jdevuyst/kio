@@ -430,8 +430,6 @@ mod tests {
 
     #[test]
     fn item_section_for_newtype_carries_doc() {
-        // A `///` on a `newtype` now flows into the doc-site model
-        // (previously hardcoded `doc: None`).
         let module = crate::pass::parser::parse(
             "module pkg/main;\n/// Wraps a unit.\n\
              pub newtype Wrapped : . { constructor mk_w; projector un_w; };\n",

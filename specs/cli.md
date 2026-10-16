@@ -850,7 +850,8 @@ Clears the contents of the cache directory declared by the package's `build { ca
 
 - `0` — the cache was cleared, was already empty, or the build block declares no cache (or there is no build block).
 - `2` — CLI usage error (positional arguments, unknown flag, or no `<name>.pkg.kio` at the current directory — `kio cache clear` must be run from a package root).
-- `1` — internal error: the package file couldn't be parsed, or a filesystem operation against the cache directory failed (e.g., permission denied).
+- `11` — malformed package file; report the parser's source diagnostic without changing the cache.
+- `1` — internal error: the package file couldn't be read, or a filesystem operation against the cache directory failed (e.g., permission denied).
 
 ### `kio cache path`
 
@@ -869,6 +870,7 @@ Prints the absolute path of the package's cache directory to stdout. The path is
 - `0` — the path was printed.
 - `40` — no `<name>.pkg.kio` at the package root, or the build block declares `cache ();` / there is no build block.
 - `2` — CLI usage error (positional arguments, unknown flag).
+- `11` — malformed package file; report the parser's source diagnostic.
 - `1` — internal error: the package file couldn't be read.
 
 ### `kio cache gc`
@@ -888,7 +890,8 @@ Garbage-collects stale Kio-semantic entries in the cache directory declared by t
 
 - `0` — garbage collection completed, the cache was already clean, or the build block declares no cache (or there is no build block).
 - `2` — CLI usage error (positional arguments, unknown flag, or no `<name>.pkg.kio` at the current directory — `kio cache gc` must be run from a package root).
-- `1` — internal error: the package file couldn't be parsed, or a filesystem operation against the cache directory failed (e.g., permission denied).
+- `11` — malformed package file; report the parser's source diagnostic without changing the cache.
+- `1` — internal error: the package file couldn't be read, or a filesystem operation against the cache directory failed (e.g., permission denied).
 
 ## `kio dep <subcommand>`
 

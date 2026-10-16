@@ -211,6 +211,15 @@ fn run_inner() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .and_then(|completion| completion.completion_item.as_ref())
         .and_then(|item| item.snippet_support)
         .unwrap_or(false);
+    state.signature_label_offsets = init_params
+        .capabilities
+        .text_document
+        .as_ref()
+        .and_then(|document| document.signature_help.as_ref())
+        .and_then(|help| help.signature_information.as_ref())
+        .and_then(|signature| signature.parameter_information.as_ref())
+        .and_then(|parameter| parameter.label_offset_support)
+        .unwrap_or(false);
     let (mut scheduler, result_rx) = Scheduler::spawn();
 
     main_loop(
@@ -657,7 +666,7 @@ fn dispatch_request_inner(
             schedule_foreground_analysis_if_stale(state, scheduler, workspace_root, uri, false);
             let syntax = request_syntax_module(state, uri);
             let analysis = uri_to_canonical(uri)
-                .and_then(|canonical| state.current_full_analysis_for_file(&canonical, uri));
+                .and_then(|canonical| state.completion_analysis_for_file(&canonical, uri));
             let block_signature = completion::handle_block_signature_request(
                 uri,
                 &params.text_document_position_params.position,
@@ -672,6 +681,7 @@ fn dispatch_request_inner(
                         &source,
                         &module,
                         analysis,
+                        state.signature_label_offsets,
                     )
                 }
                 RequestSyntaxModule::NonModule { .. }
@@ -1611,6 +1621,7 @@ fn publish_worker_result(
         snapshot,
         overlay_versions,
         package_root,
+        declarations,
         outcome,
     } = result;
 
@@ -1630,6 +1641,10 @@ fn publish_worker_result(
             );
         }
         return Ok(());
+    }
+
+    if matches!(outcome, WorkerOutcome::Full(_)) {
+        state.store_declarations(&package_root, declarations);
     }
 
     // Group new diagnostics by URI. `publishDiagnostics` replaces a
@@ -2168,10 +2183,21 @@ mod tests {
         assert!(!stale.is_incomplete);
         assert!(stale.items.iter().any(|item| item.label == "value"));
         assert!(
-            stale.items.iter().all(|item| item.detail.is_none()),
+            stale
+                .items
+                .iter()
+                .find(|item| item.label == "value")
+                .unwrap()
+                .detail
+                .is_none(),
             "{stale:?}"
         );
-        assert!(stale.items.iter().all(|item| item.documentation.is_none()));
+        let current_import = stale
+            .items
+            .iter()
+            .find(|item| item.label == "expand!")
+            .unwrap();
+        assert!(format!("{:?}", current_import.documentation).contains("Current expansion."));
         state.store_analysis(
             &root,
             Snapshot::new(
@@ -2280,11 +2306,17 @@ mod tests {
             );
             state.open(provider_uri.clone(), provider.clone(), version);
             let stale = request(&mut state, &consumer_uri).expect("valid consumer context");
-            assert!(stale.is_incomplete);
-            assert!(
-                stale.items.is_empty(),
-                "a stale provider must not insert a grammar"
-            );
+            if event == 0 {
+                assert!(stale.is_incomplete);
+                assert!(
+                    stale.items.is_empty(),
+                    "the provider identity is not discovered yet"
+                );
+            } else {
+                assert!(!stale.is_incomplete);
+                assert!(stale.items.iter().any(|item| item.label == "op _ - _"));
+                assert!(!stale.items.iter().any(|item| item.label == "op _ + _"));
+            }
 
             let mut files = BTreeMap::from([
                 (
@@ -2519,8 +2551,14 @@ mod tests {
                 "closed provider cannot inherit its unsaved overlay version"
             );
             let pending = request(&mut state);
-            assert!(pending.is_incomplete);
-            assert!(pending.items.is_empty());
+            if present_on_disk {
+                assert!(!pending.is_incomplete);
+                assert!(pending.items.iter().any(|item| item.label == "op _ - _"));
+                assert!(!pending.items.iter().any(|item| item.label == "op _ + _"));
+            } else {
+                assert!(pending.is_incomplete);
+                assert!(pending.items.is_empty());
+            }
             let refreshed = results
                 .recv_timeout(Duration::from_secs(10))
                 .expect("DidClose schedules a full disk-backed refresh");
@@ -2998,6 +3036,7 @@ mod tests {
             &mut state,
             WorkerResult {
                 overlay_versions: snapshot.versions().clone(),
+                declarations: None,
                 snapshot,
                 package_root,
                 outcome: WorkerOutcome::Focused {
@@ -3048,6 +3087,7 @@ mod tests {
                     BTreeMap::from([(uri.clone(), 1)]),
                 ),
                 overlay_versions: BTreeMap::from([(uri.clone(), 1)]),
+                declarations: None,
                 package_root,
                 outcome: WorkerOutcome::Full(Err(AnalysisFailure {
                     errors: vec![LocatedError {
@@ -3085,6 +3125,7 @@ mod tests {
         let source = "module dependency;\n";
         state.open(uri.clone(), source.to_owned(), 4);
         let result = |root: &Path, snapshot: Snapshot, error: bool| WorkerResult {
+            declarations: None,
             overlay_versions: snapshot.versions().clone(),
             snapshot,
             package_root: root.to_path_buf(),
@@ -3136,6 +3177,7 @@ mod tests {
             &mut state,
             WorkerResult {
                 overlay_versions: focused.versions().clone(),
+                declarations: None,
                 snapshot: focused,
                 package_root: second.clone(),
                 outcome: WorkerOutcome::Focused {
@@ -3259,6 +3301,7 @@ mod tests {
             WorkerResult {
                 snapshot,
                 overlay_versions,
+                declarations: None,
                 package_root,
                 outcome: WorkerOutcome::Full(Err(AnalysisFailure {
                     errors: vec![LocatedError {
@@ -3309,6 +3352,7 @@ mod tests {
         state.mark_scheduled(&package_root, snapshot_id);
         let result = WorkerResult {
             snapshot: Snapshot::new(snapshot_id, versions.clone()),
+            declarations: None,
             overlay_versions: versions,
             package_root,
             outcome: WorkerOutcome::Full(Err(AnalysisFailure {
@@ -3385,6 +3429,7 @@ mod tests {
 
         let result = WorkerResult {
             snapshot: Snapshot::new(snapshot_id, BTreeMap::from([(caller_uri.clone(), 7)])),
+            declarations: None,
             overlay_versions: BTreeMap::from([(caller_uri.clone(), 7)]),
             package_root,
             outcome: WorkerOutcome::Full(Err(AnalysisFailure {
@@ -3484,6 +3529,7 @@ mod tests {
         state.mark_scheduled(&package_root, snapshot_id);
         let result = WorkerResult {
             snapshot: Snapshot::new(snapshot_id, BTreeMap::from([(caller_uri.clone(), 11)])),
+            declarations: None,
             overlay_versions: BTreeMap::from([(caller_uri.clone(), 11)]),
             package_root,
             outcome: WorkerOutcome::Full(Err(AnalysisFailure {
@@ -3532,6 +3578,7 @@ mod tests {
         let versions = BTreeMap::from([(uri.clone(), 1)]);
 
         let full = WorkerResult {
+            declarations: None,
             snapshot: Snapshot::new(ids.next(), versions.clone()),
             overlay_versions: versions.clone(),
             package_root: package_root.clone(),
@@ -3557,6 +3604,7 @@ mod tests {
         assert_eq!(notification.method, PublishDiagnostics::METHOD);
 
         let focused = WorkerResult {
+            declarations: None,
             snapshot: Snapshot::new(ids.next(), versions.clone()),
             overlay_versions: versions,
             package_root,
@@ -3582,6 +3630,50 @@ mod tests {
                 .recv_timeout(Duration::from_millis(100))
                 .is_err(),
             "focused failures must not replace full published diagnostics"
+        );
+    }
+
+    #[test]
+    fn declaration_catalog_survives_body_errors_but_not_obsolete_results() {
+        use crate::lsp::snapshot::{Snapshot, SnapshotIdGen};
+        let (server, _client) = Connection::memory();
+        let mut state = ServerState::new();
+        let ids = SnapshotIdGen::new();
+        let root = workspace_path("catalog-publication");
+        let file = root.join("provider.kio");
+        let old = ids.next();
+        let current = ids.next();
+        state.mark_scheduled(&root, current);
+        let result = |id, name: &str| WorkerResult {
+            snapshot: Snapshot::new(id, BTreeMap::new()),
+            overlay_versions: BTreeMap::new(),
+            package_root: root.clone(),
+            declarations: Some(BTreeMap::from([(file.clone(), name.to_owned())])),
+            outcome: WorkerOutcome::Full(Err(AnalysisFailure::from_error(
+                crate::pass::resolve::LocatedError {
+                    file_path: file.clone(),
+                    error: crate::error::Error::type_(crate::span::Span::new(0, 0), "body error"),
+                },
+                std::collections::HashMap::new(),
+            ))),
+        };
+        publish_worker_result(&server, &mut state, result(current, "current")).unwrap();
+        publish_worker_result(&server, &mut state, result(old, "obsolete")).unwrap();
+        assert_eq!(
+            state
+                .declarations_for_file(Some(&file), Some(&root))
+                .unwrap()
+                .get(&file)
+                .map(String::as_str),
+            Some("current"),
+        );
+        let mut invalid_discovery = result(ids.next(), "invalid");
+        invalid_discovery.declarations = None;
+        publish_worker_result(&server, &mut state, invalid_discovery).unwrap();
+        assert!(
+            state
+                .declarations_for_file(Some(&file), Some(&root))
+                .is_none()
         );
     }
 

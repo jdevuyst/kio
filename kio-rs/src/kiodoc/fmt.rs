@@ -149,25 +149,35 @@ fn format_accumulating_module_snippet(
     current: &Snippet,
     members: &[Snippet],
 ) -> Result<String, String> {
+    let aggregate = accumulated_body(members, Some(current));
+    format_marked_assembled_body(document, current, &aggregate, Some(members))
+}
+
+fn accumulated_body(members: &[Snippet], current: Option<&Snippet>) -> String {
     let mut aggregate = String::new();
     for (index, member) in members.iter().enumerate() {
         if index > 0 && !aggregate.ends_with('\n') {
             aggregate.push('\n');
         }
         let body = validate::validation_body(member);
-        if same_snippet(member, current) {
+        if current.is_some_and(|current| same_snippet(member, current)) {
             aggregate.push_str(&marked_body(&body));
         } else {
             aggregate.push_str(&body);
         }
     }
-    format_marked_assembled_body(document, current, &aggregate)
+    aggregate
 }
 
 fn format_direct(kind: KioFileKind, body: &str, snippet: &Snippet) -> Result<String, String> {
     source_fmt::format_source_as_kind(kind, body)
         .map(canonical_fence_body)
-        .map_err(|err| format_parse_error(snippet, &err))
+        .map_err(|err| {
+            let path = kind
+                .inferred_path(&["snippet".to_owned()])
+                .expect("every Kio file kind accepts one synthetic name");
+            format_parse_error(snippet, &path, body, &err)
+        })
 }
 
 fn format_via_assembled_marker(
@@ -176,13 +186,14 @@ fn format_via_assembled_marker(
     validation_body: &str,
 ) -> Result<String, String> {
     let marked = marked_body(validation_body);
-    format_marked_assembled_body(document, snippet, &marked)
+    format_marked_assembled_body(document, snippet, &marked, None)
 }
 
 fn format_marked_assembled_body(
     document: &Document,
     snippet: &Snippet,
     marked_body: &str,
+    accum_members: Option<&[Snippet]>,
 ) -> Result<String, String> {
     let assembled = validate::assemble_with_snippet_body(document, snippet, marked_body)
         .map_err(|message| format!("snippet at line {}: {message}", snippet.open_line))?;
@@ -195,8 +206,9 @@ fn format_marked_assembled_body(
                 snippet.open_line, file.path
             )
         })?;
-        let formatted = source_fmt::format_source_as_kind(kind, &file.body)
-            .map_err(|err| format_parse_error(snippet, &err))?;
+        let formatted = source_fmt::format_source_as_kind(kind, &file.body).map_err(|_| {
+            format_assembled_parse_error(document, snippet, accum_members, &file.path, kind)
+        })?;
         if !formatted.contains(BEGIN_MARKER) && !formatted.contains(END_MARKER) {
             continue;
         }
@@ -431,12 +443,39 @@ fn starts_with_package_section(source: &str) -> bool {
         || source.starts_with("bridge{")
 }
 
-fn format_parse_error(snippet: &Snippet, err: &Error) -> String {
-    let (_span, message) = err.diag();
+fn format_assembled_parse_error(
+    document: &Document,
+    snippet: &Snippet,
+    accum_members: Option<&[Snippet]>,
+    path: &str,
+    kind: KioFileKind,
+) -> String {
+    // Reparse only the failing file without extraction markers: its diagnostic
+    // spans and replacements must describe the virtual source authors can see.
+    let body = accum_members.map_or_else(
+        || validate::validation_body(snippet),
+        |members| accumulated_body(members, None),
+    );
+    if let Ok(assembled) = validate::assemble_with_snippet_body(document, snippet, &body)
+        && let Some(file) = assembled.files.iter().find(|file| file.path == path)
+        && let Err(err) = source_fmt::format_source_as_kind(kind, &file.body)
+    {
+        return format_parse_error(snippet, path, &file.body, &err);
+    }
     format!(
-        "snippet at line {} cannot be formatted: {}",
-        snippet.open_line, message
+        "snippet at line {} is not formattable in place: temporary snippet \
+         boundaries change parsing of virtual Kio file `{path}`",
+        snippet.open_line
     )
+}
+
+fn format_parse_error(snippet: &Snippet, path: &str, source: &str, err: &Error) -> String {
+    let mut message = format!(
+        "snippet at line {} cannot be formatted:\n--- virtual Kio source ({path}) ---\n",
+        snippet.open_line
+    );
+    crate::cmd::check::render_error(std::path::Path::new(path), source, err, &mut message);
+    message.trim_end_matches('\n').to_owned()
 }
 
 #[cfg(test)]
@@ -539,6 +578,169 @@ fn show(value: Name)->String{value}
         let source = "```kio {ignore}\nfn bad(}\n```\n";
         let out = format_md(source).expect("format document");
         assert_eq!(out, source);
+    }
+
+    #[test]
+    fn parse_errors_retain_repairs_on_unmarked_virtual_source() {
+        for (name, source) in [
+            (
+                "direct",
+                "```kio {}\nmodule sample;\nfn value(x: ()) { x }\n```\n",
+            ),
+            (
+                "harness",
+                r#"<!--kio {harness=sample placeholder="__INSERT__"}
+module sample;
+__INSERT__
+-->
+```kio {@sample}
+fn value(x: ()) { x }
+```
+"#,
+            ),
+            (
+                "accumulate",
+                r#"<!--kio {harness=sample placeholder="__INSERT__" accumulate}
+module sample;
+__INSERT__
+-->
+```kio {@sample}
+fn ready( ) {()}
+```
+```kio {@sample}
+fn value(x: ()) { x }
+```
+"#,
+            ),
+            (
+                "file_backed",
+                r#"<!--kio {file}
+module broken;
+fn value(x: ()) { x }
+-->
+<!--kio {harness=sample file placeholder="__INSERT__"}
+module sample;
+__INSERT__
+-->
+```kio {@sample}
+fn ready( ) {()}
+```
+"#,
+            ),
+            (
+                "placeholder",
+                r#"```kio {placeholder={"INVALID":"()"}}
+module sample;
+fn value(x: INVALID) { x }
+```
+"#,
+            ),
+            (
+                "variant",
+                r#"```kio {variant=signature}
+signature sample v(1);
+v(1) {
+  nonbreaking {
+    add {
+      module api {
+        pub fn value(x: ())
+      }
+    }
+  }
+}
+```
+"#,
+            ),
+        ] {
+            let document = Document::build(Path::new("input.md"), source, parse::scan(source))
+                .expect("valid document directives");
+            let errors = format_document(source, &document)
+                .expect_err("an invalid virtual source prevents all edits");
+            assert_eq!(errors.len(), if name == "accumulate" { 2 } else { 1 });
+            for error in errors {
+                assert!(
+                    document
+                        .snippets()
+                        .any(|snippet| snippet.span == error.span)
+                );
+                let rendered = error.render(Path::new("input.md"), source);
+                assert!(rendered.starts_with("input.md:"), "{rendered}");
+                assert!(rendered.contains("--- virtual Kio source ("), "{rendered}");
+                assert!(rendered.contains("fn value(x: ())"), "{rendered}");
+                assert!(rendered.contains("^^"), "{rendered}");
+                assert!(
+                    rendered.contains("help: replace this unit value spelling"),
+                    "{rendered}"
+                );
+                assert!(
+                    rendered.contains("suggestion: replace with ` . `"),
+                    "{rendered}"
+                );
+                assert!(!rendered.contains(BEGIN_MARKER), "{rendered}");
+                assert!(!rendered.contains(END_MARKER), "{rendered}");
+                if name == "file_backed" {
+                    assert!(rendered.contains("broken.kio:2:"), "{rendered}");
+                }
+                if name == "variant" {
+                    assert!(rendered.contains("snippet.sig.kio:"), "{rendered}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn marker_induced_parse_errors_do_not_blame_valid_virtual_source() {
+        let source = r#"<!--kio {harness=sample placeholder="__INSERT__"}
+module sample;
+fn __INSERT__() { () }
+-->
+```kio {@sample}
+value
+```
+"#;
+        let document = Document::build(Path::new("input.md"), source, parse::scan(source))
+            .expect("valid document directives");
+        let snippet = document.snippets().next().expect("one snippet");
+        let body = validate::validation_body(snippet);
+        let assembled = validate::assemble_with_snippet_body(&document, snippet, &body)
+            .expect("unmarked assembly");
+        for file in &assembled.files {
+            source_fmt::format_source_as_kind(assembled_file_kind(file).unwrap(), &file.body)
+                .expect("unmarked virtual source parses");
+        }
+        let errors = format_document(source, &document).expect_err("markers change parsing");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].span, snippet.span);
+        let message = &errors[0].message;
+        assert!(
+            message.contains("temporary snippet boundaries change parsing"),
+            "{message}"
+        );
+        assert!(!message.contains("--- virtual Kio source"), "{message}");
+        assert!(!message.contains(BEGIN_MARKER), "{message}");
+        assert!(!message.contains(END_MARKER), "{message}");
+    }
+
+    #[test]
+    fn direct_parse_errors_identify_each_virtual_file_kind() {
+        for (variant, path) in [
+            ("package", "snippet.pkg.kio"),
+            ("signature", "snippet.sig.kio"),
+            ("dependency", "snippet.dep.kio"),
+            ("lock", "snippet.lock.kio"),
+        ] {
+            let source = format!("```kio {{variant={variant}}}\n?\n```\n");
+            let errors = format_md(&source).expect_err("invalid file-kind source");
+            assert_eq!(errors.len(), 1);
+            let message = &errors[0].message;
+            assert!(
+                message.contains(&format!("virtual Kio source ({path})")),
+                "{message}"
+            );
+            assert!(message.contains(&format!("{path}:1:1:")), "{message}");
+            assert!(message.contains("1 | ?"), "{message}");
+            assert!(message.contains('^'), "{message}");
+        }
     }
 
     #[test]

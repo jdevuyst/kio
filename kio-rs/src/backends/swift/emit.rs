@@ -1917,11 +1917,11 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
             Expr::StrLit {
                 value, annotation, ..
             } => {
-                let role = self.literal_role(Some(annotation))?;
+                let role = self.literal_role(annotation)?;
                 if role != Role::Str {
-                    return Err(EmitError::unsupported(
-                        "Swift emitter: string literal annotation is not role(str)",
-                    ));
+                    unreachable!(
+                        "Swift emitter: check_literal_annotation established role(str) for a string literal"
+                    );
                 }
                 let exact = self.exact_host_type_name(annotation)?;
                 Ok(format!("(({} as {exact}) as Any)", swift_string_lit(value)))
@@ -1930,22 +1930,22 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 digits, annotation, ..
             } => Ok(format!(
                 "({} as Any)",
-                self.emit_int_lit(digits, Some(annotation))?
+                self.emit_int_lit(digits, annotation)?
             )),
             Expr::FloatLit {
                 digits, annotation, ..
             } => Ok(format!(
                 "({} as Any)",
-                self.emit_float_lit(digits, Some(annotation))?
+                self.emit_float_lit(digits, annotation)?
             )),
             Expr::BoolLit {
                 value, annotation, ..
             } => {
-                let role = self.literal_role(Some(annotation))?;
+                let role = self.literal_role(annotation)?;
                 if role != Role::Bool {
-                    return Err(EmitError::unsupported(
-                        "Swift emitter: Boolean literal annotation is not role(bool)",
-                    ));
+                    unreachable!(
+                        "Swift emitter: check_literal_annotation established role(bool) for a Boolean literal"
+                    );
                 }
                 let exact = self.exact_host_type_name(annotation)?;
                 Ok(format!("(({value} as {exact}) as Any)"))
@@ -2614,17 +2614,13 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     /// Recover the condition's exact role(bool) host type from Routed
     /// annotations, then compare it with that type's Boolean literal.
     fn emit_bool(&mut self, e: &Expr<Routed>) -> Result<String, EmitError> {
-        let ty = self.expr_type(e).ok_or_else(|| {
-            EmitError::unsupported(
-                "Swift emitter: cannot reconstruct an enriched conditional's exact Boolean type \
-                 (compiler bug)",
-            )
-        })?;
+        let ty = self.expr_type(e).expect(
+            "Swift emitter: structural recovery preserves the checked conditional's exact Boolean type",
+        );
         if self.atom_role_of(&ty) != Some(Role::Bool) {
-            return Err(EmitError::unsupported(
-                "Swift emitter: enriched conditional does not carry a role(bool) condition \
-                 (compiler bug)",
-            ));
+            unreachable!(
+                "Swift emitter: structural recovery preserves the checked conditional's role(bool) condition"
+            );
         }
         let exact = self.exact_host_type_name(&ty)?;
         let value = self.emit_expr(e)?;
@@ -2784,9 +2780,9 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
 
     fn exact_host_type_name(&self, ty: &Type<Routed>) -> Result<String, EmitError> {
         let Some((module, name, _)) = self.shapes.exact_host_type_of(ty) else {
-            return Err(EmitError::unsupported(
-                "Swift emitter: literal/host slot does not name an exact nullary host type",
-            ));
+            unreachable!(
+                "Swift emitter: checked literal and conditional annotations name exact nullary host types"
+            );
         };
         Ok(format!("H.{}", host_type_member_name(&module, &name)))
     }
@@ -2798,39 +2794,22 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         }
     }
 
-    fn emit_int_lit(
-        &self,
-        digits: &str,
-        annotation: Option<&Type<Routed>>,
-    ) -> Result<String, EmitError> {
+    fn emit_int_lit(&self, digits: &str, annotation: &Type<Routed>) -> Result<String, EmitError> {
         let role = self.literal_role(annotation)?;
-        let annotation = annotation.ok_or_else(|| {
-            EmitError::unsupported("Swift emitter: integer literal without a host type")
-        })?;
         let exact = self.exact_host_type_name(annotation)?;
         Ok(self.exact_integer_literal(&exact, Some(role), digits))
     }
 
-    fn emit_float_lit(
-        &self,
-        digits: &str,
-        annotation: Option<&Type<Routed>>,
-    ) -> Result<String, EmitError> {
+    fn emit_float_lit(&self, digits: &str, annotation: &Type<Routed>) -> Result<String, EmitError> {
         let _role = self.literal_role(annotation)?;
-        let annotation = annotation.ok_or_else(|| {
-            EmitError::unsupported("Swift emitter: float literal without a host type")
-        })?;
         let exact = self.exact_host_type_name(annotation)?;
         Ok(format!("({digits} as {exact})"))
     }
 
-    fn literal_role(&self, annotation: Option<&Type<Routed>>) -> Result<Role, EmitError> {
-        match annotation.and_then(|ty| self.atom_role_of(ty)) {
-            Some(role) => Ok(role),
-            None => Err(EmitError::unsupported(
-                "Swift emitter: numeric literal without a role annotation",
-            )),
-        }
+    fn literal_role(&self, annotation: &Type<Routed>) -> Result<Role, EmitError> {
+        Ok(self.atom_role_of(annotation).expect(
+            "Swift emitter: check_literal_annotation established an exact role-typed host annotation",
+        ))
     }
 }
 
@@ -3213,6 +3192,128 @@ mod tests {
             .expect("check body resolution");
         let prime = check_package(&package).expect("typecheck");
         crate::pass::route::route_package(&structural_recovery::recover_package(&prime))
+    }
+
+    fn with_routed_invariant_emitter(test: impl FnOnce(&mut BodyEmitter<'_, '_>)) {
+        let package = single_api_package(
+            "module api; host type Flag role(bool); host type Text role(str); \
+             pub fn flag() -> Flag { .t }",
+        );
+        let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
+        let host_desc = host_descriptor::build_host_descriptor(&package);
+        let literals = super::super::skin::SwiftLiteralContext::new(
+            &package,
+            exact_nullary_host_type_table(&host_desc),
+        );
+        let shapes = super::super::skin::PreparedSwiftShapes::new(&prepared, "PkgHost", &package);
+        let selective_imports = SelectiveImports::new();
+        let qualified_imports = QualifiedImports::new();
+        let mut emitter = BodyEmitter::new(
+            "api",
+            &selective_imports,
+            &qualified_imports,
+            &prepared,
+            &shapes,
+            &literals,
+        );
+        let crate::ast::Item::FnDef(function) =
+            package.module("api").unwrap().module.items.last().unwrap()
+        else {
+            panic!("expected Boolean fixture function");
+        };
+        emitter
+            .emit_bool(&function.body)
+            .expect("checked Boolean condition emits");
+        test(&mut emitter);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "check_literal_annotation established role(str) for a string literal"
+    )]
+    fn routed_invariant_string_role_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let span = crate::span::Span::new(0, 0);
+            let _ = emitter.emit_expr(&Expr::StrLit {
+                occurrence: (),
+                value: "text".into(),
+                annotation: Type::synth_path(vec!["api".into(), "Flag".into()], Vec::new(), span),
+                meta: crate::ast::Meta::new(span),
+            });
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "check_literal_annotation established role(bool) for a Boolean literal"
+    )]
+    fn routed_invariant_boolean_role_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let span = crate::span::Span::new(0, 0);
+            let _ = emitter.emit_expr(&Expr::BoolLit {
+                occurrence: (),
+                value: true,
+                annotation: Type::synth_path(vec!["api".into(), "Text".into()], Vec::new(), span),
+                meta: crate::ast::Meta::new(span),
+            });
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "check_literal_annotation established an exact role-typed host annotation"
+    )]
+    fn routed_invariant_non_host_literal_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let meta = crate::ast::Meta::new(crate::span::Span::new(0, 0));
+            let _ = emitter.emit_expr(&Expr::IntLit {
+                occurrence: (),
+                digits: "1".into(),
+                annotation: Type::Unit { meta: meta.clone() },
+                meta,
+            });
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "checked literal and conditional annotations name exact nullary host types"
+    )]
+    fn routed_invariant_non_host_exact_type_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let _ = emitter.exact_host_type_name(&Type::Unit {
+                meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
+            });
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "structural recovery preserves the checked conditional's exact Boolean type"
+    )]
+    fn routed_invariant_untyped_condition_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let _ = emitter.emit_bool(&Expr::LowBoundRef {
+                occurrence: (),
+                name: "missing".into(),
+                meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
+                ext: (),
+            });
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "structural recovery preserves the checked conditional's role(bool) condition"
+    )]
+    fn routed_invariant_non_boolean_condition_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let _ = emitter.emit_bool(&Expr::Unit {
+                occurrence: (),
+                source_trivia: (),
+                meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
+            });
+        });
     }
 
     fn retained_carrier_signature() -> (u32, crate::sig::ReplayedInterface) {

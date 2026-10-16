@@ -157,6 +157,21 @@ pub fn schema_root(cache_root: &Path, kind: &str) -> PathBuf {
     cache_root.join(kind).join(CACHE_SCHEMA_VERSION)
 }
 
+#[cfg(test)]
+thread_local! {
+    static LOCK_CONTENTION_OBSERVER: std::cell::RefCell<Option<std::sync::mpsc::Sender<()>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Notify a test only after this thread's next cache lock observes an actual
+/// conflicting OS lock. Thread-local, one-shot state isolates parallel tests.
+#[cfg(test)]
+pub(super) fn observe_next_lock_contention(observer: std::sync::mpsc::Sender<()>) {
+    LOCK_CONTENTION_OBSERVER.with(|slot| {
+        assert!(slot.borrow_mut().replace(observer).is_none());
+    });
+}
+
 /// Acquire the exclusive per-key advisory lock and return an open
 /// file handle. The kernel releases the lock when the handle drops
 /// (including on process death). Callers hold the handle for the
@@ -174,6 +189,20 @@ pub fn acquire_lock(key_dir: &Path) -> Result<fs::File, CacheError> {
         .truncate(false)
         .open(&lock_path)
         .map_err(|e| io_err(&lock_path, e))?;
+    #[cfg(test)]
+    LOCK_CONTENTION_OBSERVER.with(|slot| {
+        if let Some(observer) = slot.borrow_mut().take() {
+            let error = file
+                .try_lock_exclusive()
+                .expect_err("expected lock contention");
+            assert_eq!(
+                error.raw_os_error(),
+                fs2::lock_contended_error().raw_os_error(),
+                "lock probe must report contention"
+            );
+            observer.send(()).expect("contention observer");
+        }
+    });
     file.lock_exclusive().map_err(|e| io_err(&lock_path, e))?;
     Ok(file)
 }

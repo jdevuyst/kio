@@ -137,6 +137,12 @@ enum PublicationCommand<T> {
         call_site: crate::ast::ExpressionSite,
         slot_index: usize,
     },
+    #[cfg(feature = "lsp")]
+    CallPresentation {
+        call_site: crate::ast::ExpressionSite,
+        slot_offset: usize,
+        fact: super::CallPresentationFact,
+    },
     CallResidualEta {
         call_site: crate::ast::ExpressionSite,
         residual: T,
@@ -266,6 +272,16 @@ impl<T> PublicationCommand<T> {
             } => PublicationCommand::CallResidualEta {
                 call_site,
                 residual: map(residual),
+            },
+            #[cfg(feature = "lsp")]
+            Self::CallPresentation {
+                call_site,
+                slot_offset,
+                fact,
+            } => PublicationCommand::CallPresentation {
+                call_site,
+                slot_offset,
+                fact,
             },
             Self::PositionType {
                 expr_span,
@@ -828,6 +844,20 @@ impl PublicationBuilder {
         self.push_command(PublicationCommand::CallResidualEta {
             call_site,
             residual: PublicationValue::goal_free(PublicationGoalInput::pending(residual)),
+        });
+    }
+
+    #[cfg(feature = "lsp")]
+    pub(crate) fn record_call_presentation(
+        &mut self,
+        call_site: crate::ast::ExpressionSite,
+        slot_offset: usize,
+        fact: super::CallPresentationFact,
+    ) {
+        self.push_command(PublicationCommand::CallPresentation {
+            call_site,
+            slot_offset,
+            fact,
         });
     }
 
@@ -1671,6 +1701,19 @@ impl ClosedPublicationDelta {
                     call_site.id,
                     residual.into_interned_type(),
                 ),
+                #[cfg(feature = "lsp")]
+                PublicationCommand::CallPresentation {
+                    call_site,
+                    slot_offset,
+                    fact,
+                } => {
+                    elaborations.position_index.record_call_presentation(
+                        module_path,
+                        call_site,
+                        slot_offset,
+                        fact,
+                    );
+                }
                 PublicationCommand::PositionType {
                     expr_span,
                     resolved,
@@ -1810,6 +1853,99 @@ mod tests {
     use crate::pass::typecheck_core::{GoalContextCapability, GoalOwnerKind, RigidScope};
 
     struct TestContext;
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn signature_call_facts_publish_only_with_the_atomic_root() {
+        use super::super::{CallLayerPresentation, CallPresentationFact};
+        for commit in [false, true] {
+            let mut store = GoalStore::new();
+            let owner = root_owner(&mut store, 0);
+            let delta = store.begin_delta(owner, span(0)).unwrap();
+            let mut builder = PublicationBuilder::new(&store, &delta);
+            let site = fresh_site(span(10));
+            builder.record_call_presentation(
+                site,
+                0,
+                CallPresentationFact::Layer(CallLayerPresentation {
+                    has_value_layer: true,
+                    consumed: true,
+                    implicit_unit: true,
+                }),
+            );
+            let mut elaborations = Elaborations::new();
+            let prepared = builder
+                .finish()
+                .prepare_root(&store, delta, Vec::new(), &TestContext)
+                .unwrap();
+            assert!(
+                elaborations
+                    .position_index
+                    .call_presentation("<test>", site.span)
+                    .is_none()
+            );
+            if commit {
+                prepared.commit_without_rec_order(&mut store, &mut elaborations);
+            } else {
+                drop(prepared);
+            }
+            assert_eq!(
+                elaborations
+                    .position_index
+                    .call_presentation("<test>", site.span)
+                    .is_some(),
+                commit
+            );
+        }
+        eprintln!(
+            "signature metadata sizes: fact={} command={}",
+            std::mem::size_of::<CallPresentationFact>(),
+            std::mem::size_of::<PublicationCommand<PublicationGoalInput>>()
+        );
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn failed_root_does_not_publish_signature_call_facts() {
+        use super::super::{CallLayerPresentation, CallPresentationFact};
+        use crate::pass::typecheck_core::{GoalOrigin, GoalSolutionPolicy};
+        let mut store = GoalStore::new();
+        let owner = root_owner(&mut store, 0);
+        store
+            .alloc_goal(
+                owner,
+                Kind::Star,
+                GoalSolutionPolicy::Monotype,
+                GoalOrigin::annotation(span(1)),
+            )
+            .unwrap();
+        let delta = store.begin_delta(owner, span(0)).unwrap();
+        let mut builder = PublicationBuilder::new(&store, &delta);
+        let site = fresh_site(span(10));
+        builder.record_call_presentation(
+            site,
+            0,
+            CallPresentationFact::Layer(CallLayerPresentation {
+                has_value_layer: true,
+                consumed: true,
+                implicit_unit: true,
+            }),
+        );
+        let mut elaborations = Elaborations::new();
+        assert!(
+            builder
+                .finish()
+                .close_root(
+                    &mut store,
+                    delta,
+                    Vec::new(),
+                    &TestContext,
+                    &mut elaborations
+                )
+                .is_err()
+        );
+        assert_eq!(elaborations.position_index.call_presentation_counts(), None);
+    }
 
     #[cfg(feature = "lsp")]
     #[test]

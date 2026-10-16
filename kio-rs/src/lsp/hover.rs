@@ -32,7 +32,6 @@ use crate::span::Span;
 /// Configuration keys have accepted-form descriptions without a typed snapshot.
 pub(crate) fn config_field_hover(uri: &Uri, position: &Position, source: &str) -> Option<Hover> {
     use crate::ast::KioFileKind;
-    use crate::pass::parser::ToolingSyntax;
 
     let crate::lsp::util::FileUriPath::Path(path) = crate::lsp::util::file_uri_path(uri) else {
         return None;
@@ -56,19 +55,7 @@ pub(crate) fn config_field_hover(uri: &Uri, position: &Position, source: &str) -
     if probe.lexical_error.is_some() || probe.parse_error.is_some() || probe.facts.recovered_group {
         return None;
     }
-    let coherent = match probe.syntax.as_ref()? {
-        ToolingSyntax::Package(file) => {
-            crate::file_kind::package_stem(filename) == Some(file.name.as_str())
-        }
-        ToolingSyntax::Dependency(file) => {
-            crate::file_kind::dep_stem(filename) == Some(file.name.as_str())
-        }
-        ToolingSyntax::Lock(file) => {
-            crate::file_kind::lock_stem(filename) == Some(file.name.as_str())
-        }
-        _ => false,
-    };
-    if !coherent {
+    if !probe.file_identity_matches(&path) {
         return None;
     }
     let span = probe.facts.cursor.as_ref()?.atom.replacement;

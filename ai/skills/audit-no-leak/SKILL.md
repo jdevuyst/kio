@@ -15,7 +15,8 @@ These are mostly small, mechanical greps. Worth their own skill because the rule
 The rule governs the **public artifacts** only. Restrict every grep to:
 
 - `specs/`, `evidence/`, `docs/` except `docs/blog/*.md`, `test-data/`, `kio-rs/`, `ci/`
-- `README.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `TESTING.md`, `KIO-FOR-AGENTS.md`
+- `README.md`, `ROADMAP.md`, `INSTALL.md`, `CONTRIBUTING.md`, `TESTING.md`, `KIO-FOR-AGENTS.md`, `TERMINOLOGY.md`
+- listing READMEs: `kio-rs/README.md`, `tools/vscode-kio/README.md`
 - commit messages (sweep the unpushed window, `git log @{u}..HEAD`, when reviewing a branch)
 
 **Classify the agent-guidance layer separately.** It may describe workflow mechanics, but it is not a blanket exemption for incidental local paths, host-specific values, or session state. Prefer portable wording in `AGENTS.md`, `ai/`, and `.gitignore`; concrete local configuration belongs in untracked local files.
@@ -97,6 +98,7 @@ Public reader-facing files must not point readers into the agent-guidance layer:
 ```sh
 git grep -nE '(^|[^A-Za-z0-9_-])AGENTS\.md|ai/topics/|ai/skills/' -- \
   README.md ROADMAP.md INSTALL.md CONTRIBUTING.md TESTING.md KIO-FOR-AGENTS.md \
+  TERMINOLOGY.md kio-rs/README.md tools/vscode-kio/README.md \
   ':(glob)specs/**/*.md' ':(glob)docs/**/*.md' \
   ':(glob)evidence/**/*.md' \
   ':(exclude,glob)docs/blog/*.md' \

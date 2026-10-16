@@ -183,12 +183,8 @@ pub enum Term {
     },
     /// Call a `newtype`'s `constructor` or `projector` member by
     /// dotted path: `I32_box.mk_i32_box(42i32)` or
-    /// `I32_box.un_i32_box(box)`. Nullary newtypes only today —
-    /// parametric / `rec` newtypes need their own follow-up. Not
-    /// produced by the current generator (kio-rs doesn't yet
-    /// support cross-module dotted-path access, so the generator
-    /// goes through generated wrapper functions); kept in the AST as
-    /// the right shape for a future commit.
+    /// `I32_box.un_i32_box(box)`. The generator's catalog uses typed
+    /// wrapper functions for construction and projection.
     TypeMember {
         type_name: String,
         member: String,

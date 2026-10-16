@@ -149,7 +149,7 @@ outside the declaring module, an exported constructor grants construction and
 an exported projector grants projection. Publishing the type alone grants
 neither operation.
 
-Parameterized newtypes take explicit type arguments in their member calls:
+Parameterized newtype members accept explicit type arguments; ordinary inference can also supply them:
 
 ```kio {@declarations}
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }

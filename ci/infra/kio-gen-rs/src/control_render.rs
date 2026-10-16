@@ -2,8 +2,8 @@
 
 use crate::ast::UfcsSpelling;
 use crate::control::{
-    Block, ControlProbe, Descriptor, Payload, Receiver, RecursionMode, RecursionProbe, Sequence,
-    Step, TypeProbe, Value,
+    Block, ControlProbe, Descriptor, Payload, Receiver, RecursionMode, RecursionProbe, RowProbe,
+    Sequence, Step, TypeProbe, Value,
 };
 
 fn quoted(s: &str) -> String {
@@ -106,6 +106,7 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         control,
         types,
         recursion,
+        rows,
     } = probe
     {
         let mut files = files(control);
@@ -129,12 +130,27 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         if recursion.is_some() {
             runtime.push_str(" io.print(recursion_probe.transform(selected));");
         }
+        if rows.is_some() {
+            runtime.push_str(" row_probe.run();");
+        }
         runtime.push_str(" () }\n");
         *runtime = runtime.replace(
             "import testapi(String);",
             "import testapi(String);\nimport kio_gen_types as type_probe;",
         );
         files.push(("workdir/kio_gen_types.kio".into(), type_probe(types)));
+        if let Some(probe) = rows {
+            let runtime = &mut files
+                .iter_mut()
+                .find(|(path, _)| path == "workdir/kio_gen_control.kio")
+                .unwrap()
+                .1;
+            *runtime = runtime.replace(
+                "import testapi(String);",
+                "import testapi(String);\nimport kio_gen_rows as row_probe;",
+            );
+            files.push(("workdir/kio_gen_rows.kio".into(), row_probe(probe)));
+        }
         if let Some(probe) = recursion {
             let runtime = &mut files
                 .iter_mut()
@@ -168,6 +184,7 @@ pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_
   });
   (result, fills)
 }
+
 "#,
     );
     let mut runtime = String::from(
@@ -260,6 +277,71 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
             "module testapi/io;\nimport testapi(String);\nhost fn print(s: String) -> .;\n".into(),
         ),
     ]
+}
+
+fn row_probe(probe: &RowProbe) -> String {
+    let labels = ["first", "middle", "last"];
+    let types = ["First", "Middle", "Last"];
+    let mut out = String::from(
+        "module kio_gen_rows;\nimport testapi(String);\nimport testapi/io as io;\nlabels { first: String, middle: String, last: String };\n",
+    );
+    out.push_str(&format!(
+        "type Row = {};\nfn source() -> Row {{ io.print(\"row-source\\n\"); {{ {} }} }}\n",
+        probe
+            .order
+            .iter()
+            .map(|&i| types[i])
+            .collect::<Vec<_>>()
+            .join(" & "),
+        probe
+            .order
+            .iter()
+            .map(|&i| format!("{} = {}", labels[i], quoted(&probe.original[i])))
+            .collect::<Vec<_>>()
+            .join(", "),
+    ));
+    out.push_str("fn replacement(event: String, payload: String) -> String { io.print(event); payload }\nfn binding_source[A](row: A) -> A { io.print(\"row-bind\\n\"); row }\npub fn run() {\n");
+    let updates = probe
+        .updates
+        .iter()
+        .map(|(i, payload)| {
+            format!(
+                "{} = replacement({}, {})",
+                labels[*i],
+                quoted(&format!("row-update-{i}\n")),
+                quoted(payload)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    out.push_str(&format!("let row = source().!{{{updates}}};\n"));
+    for label in labels {
+        out.push_str(&format!("io.print(row.?{{{label}}});\n"));
+    }
+    let bindings = probe
+        .bindings
+        .iter()
+        .enumerate()
+        .map(|(slot, (i, alias))| {
+            if *alias {
+                format!("{} as bound{slot}", labels[*i])
+            } else {
+                labels[*i].to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    out.push_str(&format!("let .({{{bindings}}}) = binding_source(row);\n"));
+    for (slot, (i, alias)) in probe.bindings.iter().enumerate() {
+        let bound = if *alias {
+            format!("bound{slot}")
+        } else {
+            labels[*i].to_owned()
+        };
+        out.push_str(&format!("io.print({bound});\n"));
+    }
+    out.push_str("() }\n");
+    out
 }
 
 fn type_probe(probe: &TypeProbe) -> String {

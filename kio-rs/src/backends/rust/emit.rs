@@ -3190,19 +3190,19 @@ impl BodyShapeRegistry {
     }
 
     fn host_assoc_name(&self, segments: &[PathSegment]) -> Result<String, EmitError> {
-        let (name, module) = segments.split_last().ok_or_else(|| {
-            EmitError::unsupported("Rust emitter: empty host-type path (compiler bug)")
-        })?;
+        let (name, module) = segments
+            .split_last()
+            .expect("Rust emitter: host_type_info established a nonempty exact host-type path");
         let module = module
             .iter()
             .map(|segment| segment.as_str())
             .collect::<Vec<_>>()
             .join("/");
         if module.is_empty() || self.host_type_info(segments).is_none() {
-            return Err(EmitError::unsupported(format!(
-                "Rust emitter: `{}` is not an exact host-type path (compiler bug)",
+            unreachable!(
+                "Rust emitter: host_type_info established `{}` as an exact host-type path",
                 name.as_str()
-            )));
+            );
         }
         Ok(mangle_host_name(&module, name.as_str()))
     }
@@ -3981,9 +3981,9 @@ impl BodyShapeRegistry {
                 *leaf_idx += 1;
                 Ok(format!("_T{i}"))
             }
-            _ => Err(EmitError::unsupported(
-                "Rust emitter: unsupported type as shape slot (compiler bug)",
-            )),
+            Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
+                match *ext {}
+            }
         }
     }
 
@@ -4296,9 +4296,9 @@ impl BodyShapeRegistry {
                     self.render_use(&substituted, ctx, tparams)
                 }
             }
-            _ => Err(EmitError::unsupported(
-                "Rust emitter: unsupported body-side type (compiler bug)",
-            )),
+            Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
+                match *ext {}
+            }
         }
     }
 
@@ -8075,20 +8075,16 @@ impl<'a> BodyEmitter<'a> {
     /// Render an expression in Boolean position without replacing the host's
     /// exact type with Rust `bool`.
     fn emit_bool(&mut self, e: &Expr<Routed>) -> Result<String, EmitError> {
-        let condition_ty = self.expr_type(e).ok_or_else(|| {
-            EmitError::unsupported(
-                "Rust emitter: cannot reconstruct an enriched conditional's exact Boolean type \
-                 (compiler bug)",
-            )
-        })?;
+        let condition_ty = self.expr_type(e).expect(
+            "Rust emitter: structural recovery preserves the checked conditional's exact Boolean type",
+        );
         let condition_ty = self
             .shapes
             .normalize_type_for_owned_tparams_in_current_scope(&condition_ty, &self.tparams);
         if self.atom_role_of(&condition_ty) != Some(Role::Bool) {
-            return Err(EmitError::unsupported(
-                "Rust emitter: enriched conditional does not carry a role(bool) condition \
-                 (compiler bug)",
-            ));
+            unreachable!(
+                "Rust emitter: structural recovery preserves the checked conditional's role(bool) condition"
+            );
         }
         let tparams: std::collections::HashSet<&str> =
             self.tparams.iter().map(String::as_str).collect();
@@ -11536,6 +11532,104 @@ mod tests {
 
     fn build_package(src: &str, package_file_src: Option<&str>) -> Package<Routed> {
         build_multi_module_package(&[src], package_file_src)
+    }
+
+    fn with_routed_invariant_emitter(test: impl FnOnce(&mut BodyEmitter<'_>)) {
+        let package = build_package(
+            "module main; host type Flag role(bool); pub fn flag() -> Flag { .t }",
+            Some("bridge { main; }"),
+        );
+        let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
+        let shapes = BodyShapeRegistry::new(
+            BTreeMap::from([(
+                ("main".into(), "Flag".into()),
+                HostTypeInfo {
+                    role: Some(Role::Bool),
+                },
+            )]),
+            BTreeMap::new(),
+            BTreeMap::new(),
+            "crate".into(),
+            "TestHost".into(),
+        );
+        let imports = std::collections::HashMap::new();
+        let mut emitter = BodyEmitter {
+            package: &package,
+            prepared: &prepared,
+            shapes: &shapes,
+            selective_imports: &imports,
+            qualified_imports: &imports,
+            self_ref: None,
+            tparams: Default::default(),
+            locals: Vec::new(),
+            local_types: Default::default(),
+            fresh: 0,
+        };
+        let crate::ast::Item::FnDef(function) =
+            package.module("main").unwrap().module.items.last().unwrap()
+        else {
+            panic!("expected Boolean fixture function");
+        };
+        emitter
+            .emit_bool(&function.body)
+            .expect("checked Boolean condition emits");
+        test(&mut emitter);
+    }
+
+    #[test]
+    #[should_panic(expected = "host_type_info established a nonempty exact host-type path")]
+    fn routed_invariant_empty_host_path_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let _ = emitter.shapes.host_assoc_name(&[]);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "host_type_info established `Flag` as an exact host-type path")]
+    fn routed_invariant_bare_host_path_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let path = [PathSegment::synth("Flag", crate::span::Span::new(0, 0))];
+            let _ = emitter.shapes.host_assoc_name(&path);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "host_type_info established `Missing` as an exact host-type path")]
+    fn routed_invariant_unknown_host_path_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let path = ["main", "Missing"]
+                .map(|name| PathSegment::synth(name, crate::span::Span::new(0, 0)));
+            let _ = emitter.shapes.host_assoc_name(&path);
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "structural recovery preserves the checked conditional's exact Boolean type"
+    )]
+    fn routed_invariant_untyped_condition_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let _ = emitter.emit_bool(&Expr::LowBoundRef {
+                occurrence: (),
+                name: "missing".into(),
+                meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
+                ext: (),
+            });
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "structural recovery preserves the checked conditional's role(bool) condition"
+    )]
+    fn routed_invariant_non_boolean_condition_panics() {
+        with_routed_invariant_emitter(|emitter| {
+            let _ = emitter.emit_bool(&Expr::Unit {
+                occurrence: (),
+                source_trivia: (),
+                meta: crate::ast::Meta::new(crate::span::Span::new(0, 0)),
+            });
+        });
     }
 
     /// Like [`build_package`] but for a package spanning several module

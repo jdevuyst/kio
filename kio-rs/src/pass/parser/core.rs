@@ -956,6 +956,8 @@ pub(crate) struct ScopePrefix {
 #[derive(Debug, Default)]
 pub(crate) struct ParserFacts {
     pub(crate) module_path: Option<ModulePath>,
+    /// A semicolon-complete non-module header survives an incomplete body.
+    pub(crate) file_header: Option<(crate::ast::KioFileKind, String)>,
     pub(crate) structural_forall: StructuralForallFacts,
     pub(crate) keywords: Vec<KeywordFact>,
     pub(crate) source_names: Vec<SourceNameFact>,
@@ -3955,6 +3957,9 @@ impl<'a> Parser<'a> {
         let header_end = self
             .expect_kind(TokenKind::Semicolon, "`;` after the package header")?
             .end;
+        if let Some(tooling) = &mut self.tooling {
+            tooling.facts.file_header = Some((crate::ast::KioFileKind::Package, name.clone()));
+        }
         Self::collect_line_comments(&mut header_comments, header_end, &mut header_leading);
 
         let mut build = None;
@@ -4069,6 +4074,9 @@ impl<'a> Parser<'a> {
         let header_end = self
             .expect_kind(TokenKind::Semicolon, "`;` after the signature header")?
             .end;
+        if let Some(tooling) = &mut self.tooling {
+            tooling.facts.file_header = Some((crate::ast::KioFileKind::Signature, pkg.clone()));
+        }
 
         let mut versions = Vec::new();
         let mut last_end = header_end;
@@ -4367,6 +4375,9 @@ impl<'a> Parser<'a> {
         let header_end = self
             .expect_kind(TokenKind::Semicolon, "`;` after the dependency header")?
             .end;
+        if let Some(tooling) = &mut self.tooling {
+            tooling.facts.file_header = Some((crate::ast::KioFileKind::Dependency, name.clone()));
+        }
         let mut source = None;
         let mut rehost = Vec::new();
         let mut retype = Vec::new();
@@ -4561,6 +4572,9 @@ impl<'a> Parser<'a> {
             ));
         }
         self.expect_kind(TokenKind::Semicolon, "`;` after the lock header")?;
+        if let Some(tooling) = &mut self.tooling {
+            tooling.facts.file_header = Some((crate::ast::KioFileKind::Lock, name.clone()));
+        }
 
         self.cursor_choices(CursorSlot::Grammar, &["resolved"]);
         if !self.peek_ident_named("resolved") {

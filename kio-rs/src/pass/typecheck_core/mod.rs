@@ -496,12 +496,12 @@ where
     const ALLOW_ELIDED_UNIVERSAL_CALL_TYPE_ARGS: bool;
 
     /// True when this phase accepts the multi-layer flat-call form
-    /// per `specs/language.md` § 4c — one application that spans
+    /// per `specs/language.md` § Type parameters — one application that spans
     /// multiple consecutive curry layers (e.g. `foo(T1, v1, T2,
     /// v2)` against `Forall([A], Function(A, Forall([B],
     /// Function(b, Unit))))`). Kio surface accepts it; Kio' rejects
-    /// it at type-check (the call-site dual of § 5's no-interleaving
-    /// rule). Consulted by [`apply_mono`].
+    /// it at type-check, requiring a separate written call for each function
+    /// layer. Consulted by [`apply_mono`].
     const ALLOW_MULTI_LAYER_FLAT_CALL: bool;
 
     /// Walk an expression, synthesize its type. The four

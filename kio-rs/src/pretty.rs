@@ -2342,21 +2342,36 @@ fn block_prefix_starts_bare(expr: &Expr) -> bool {
         | Expr::RecCall { .. }
         | Expr::UserElaborator { .. } => true,
         Expr::Call { callee, .. } => {
-            !call_callee_needs_parens(callee) && block_prefix_starts_bare(callee)
+            !call_callee_needs_parens(callee)
+                && !expr_boundary_has_comments(callee, true, true)
+                && block_prefix_starts_bare(callee)
         }
         Expr::Elaborator { call, .. } => {
             let receiver = match call {
                 ElaboratorCall::FieldAccess { receiver, .. }
                 | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
             };
-            !matches!(receiver.as_ref(), Expr::OpChain { .. }) && block_prefix_starts_bare(receiver)
+            !matches!(receiver.as_ref(), Expr::OpChain { .. })
+                && !expr_boundary_has_comments(receiver, true, true)
+                && block_prefix_starts_bare(receiver)
         }
         Expr::Ufcs {
             receiver, flavor, ..
         } => {
-            !flavor.callee_on_right()
-                || (!matches!(receiver.as_ref(), Expr::OpChain { .. })
-                    && block_prefix_starts_bare(receiver))
+            if !flavor.callee_on_right() {
+                return true;
+            }
+            let mut innermost = receiver.as_ref();
+            while let Expr::Ufcs {
+                receiver, flavor, ..
+            } = innermost
+                && flavor.callee_on_right()
+            {
+                innermost = receiver;
+            }
+            !matches!(innermost, Expr::OpChain { .. })
+                && !expr_boundary_has_comments(innermost, true, false)
+                && block_prefix_starts_bare(innermost)
         }
         Expr::OpChain {
             kind: crate::ast::OpChainKind::Normal { pattern, slots },
@@ -2365,6 +2380,11 @@ fn block_prefix_starts_bare(expr: &Expr) -> bool {
             !matches!(pattern.first(), Some(OpPart::Token { .. }))
                 && slots.first().is_some_and(|first| {
                     !op_chain_slot_needs_parens(first, &pattern[0], pattern)
+                        && !expr_boundary_has_comments(
+                            first,
+                            true,
+                            !matches!(pattern.get(1), Some(OpPart::Token { .. })),
+                        )
                         && block_prefix_starts_bare(first)
                 })
         }
@@ -2451,6 +2471,11 @@ fn doc_expr_for_call_callee(callee: &Expr) -> Doc {
     doc_expr_grouped_boundary(callee, call_callee_needs_parens(callee), true, true)
 }
 
+fn expr_boundary_has_comments(expr: &Expr, leading: bool, trailing: bool) -> bool {
+    (leading && has_comments(&expr.meta().leading_trivia))
+        || (trailing && has_comments(&expr.meta().trailing_trivia))
+}
+
 /// Retain the grouping boundary when a following suffix or semicolon would
 /// otherwise consume the expression's comments on the next parse.
 fn doc_expr_grouped_boundary(expr: &Expr, required: bool, leading: bool, trailing: bool) -> Doc {
@@ -2465,7 +2490,7 @@ fn doc_expr_grouped_boundary(expr: &Expr, required: bool, leading: bool, trailin
         &[]
     };
     let rendered = doc_expr_no_own_trivia(expr);
-    if has_comments(before) || has_comments(after) {
+    if expr_boundary_has_comments(expr, leading, trailing) {
         concat(
             text("("),
             nest(
@@ -2598,6 +2623,8 @@ fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut 
             OpPart::Token { content, .. } => pending_tokens.push(text(content.clone())),
             OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. } => {
                 let slot = &slots[slot_idx];
+                let followed_by_token =
+                    matches!(pattern.get(part_idx + 1), Some(OpPart::Token { .. }));
                 let same_pattern_child = match (part, slot) {
                     (
                         OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. },
@@ -2609,7 +2636,9 @@ fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut 
                                 },
                             ..
                         },
-                    ) if op_patterns_equal(pattern, child_pattern) => {
+                    ) if op_patterns_equal(pattern, child_pattern)
+                        && !expr_boundary_has_comments(slot, true, !followed_by_token) =>
+                    {
                         Some((child_pattern.as_slice(), child_slots.as_slice()))
                     }
                     _ => None,
@@ -2636,16 +2665,14 @@ fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut 
                         }
                     }
                 } else {
-                    let slot_doc = doc_op_chain_slot(slot, part, pattern);
+                    let slot_doc = doc_op_chain_slot(slot, part, pattern, !followed_by_token);
                     segments.push(doc_op_segment(
                         std::mem::take(&mut pending_tokens),
                         Some(slot_doc),
                     ));
                 }
                 let trailing = slot.meta().trailing_trivia.as_slice();
-                if matches!(pattern.get(part_idx + 1), Some(OpPart::Token { .. }))
-                    && has_comments(trailing)
-                {
+                if followed_by_token && has_comments(trailing) {
                     // A flattened recursive operand still owns its boundary
                     // comments after its last segment. The hardline also keeps
                     // the following operator out of the final line comment.
@@ -2715,12 +2742,14 @@ fn doc_op_chain_slot(
     slot: &Expr,
     slot_part: &crate::ast::OpPart,
     parent_pattern: &[crate::ast::OpPart],
+    trailing: bool,
 ) -> Doc {
-    if op_chain_slot_needs_parens(slot, slot_part, parent_pattern) {
-        concat_all([text("("), doc_expr(slot), text(")")])
-    } else {
-        doc_expr(slot)
-    }
+    doc_expr_grouped_boundary(
+        slot,
+        op_chain_slot_needs_parens(slot, slot_part, parent_pattern),
+        true,
+        trailing,
+    )
 }
 
 fn op_chain_slot_needs_parens(
@@ -7414,6 +7443,96 @@ elab demo : Box(
             output.contains("do!({field = value}) {"),
             "label-value receiver lost its disambiguating parentheses:\n{output}"
         );
+    }
+
+    #[test]
+    fn block_prefix_comments_keep_required_grouping() {
+        for prefix in [
+            "factory // boundary\n(())",
+            "(// boundary\nfactory)(())",
+            "factory(()) // boundary\n(())",
+            "record // boundary\n.?{field}",
+            "record // boundary\n.!{field = value}",
+            "factory // boundary\n(()).>select",
+            "(// boundary\nreceiver).>select",
+            "(// boundary\nreceiver).>select.>finish",
+            "(// boundary\nreceiver).>>select",
+            "(// boundary\nreceiver).>select.>>finish",
+            "factory // boundary\n(()) + value",
+        ] {
+            let source = format!(
+                "module x; op _ + _ {{ impl add; }}; \
+                 fn f() {{ choose! ({prefix}) {{ // body\n() }} }}"
+            );
+            let output = roundtrip(&source);
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&output),
+                "{source}"
+            );
+            let comments = output
+                .lines()
+                .filter_map(|line| line.find("//").map(|start| line[start..].trim()))
+                .collect::<Vec<_>>();
+            assert_eq!(comments, ["// boundary", "// body"], "{output}");
+        }
+        for prefix in [
+            "receiver // boundary\n.>select.>finish",
+            "receiver // boundary\n.>>select.>finish",
+            "select.<(receiver // boundary\n)",
+            "select.<<(receiver // boundary\n)",
+            "value + factory(// boundary\n())",
+        ] {
+            let source = format!(
+                "module x; op _ + _ {{ impl add; }}; \
+                 fn f() {{ choose! {prefix} {{ // body\n() }} }}"
+            );
+            let output = roundtrip(&source);
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&output),
+                "{source}"
+            );
+            assert!(output.contains("choose! "), "{output}");
+            let comments = output
+                .lines()
+                .filter_map(|line| line.find("//").map(|start| line[start..].trim()))
+                .collect::<Vec<_>>();
+            assert_eq!(comments, ["// boundary", "// body"], "{output}");
+        }
+    }
+
+    #[test]
+    fn operator_operand_comments_preserve_boundaries_and_structure() {
+        for expression in [
+            "left + (// first\nright // second\n)",
+            "(// first\nleft // second\n) + right",
+            "left :: (// first\nmiddle :: right // second\n)",
+            "(// first\nleft ++ middle // second\n) ++ right",
+            "left + (// first\nmiddle :: right // second\n)",
+            "(// first\nleft // second\n) %%",
+            "left ?? (// first\nmiddle ?? right // second\n)",
+            "left @@ (// first\nmiddle :: right // second\n)",
+            "choose! ((// first\nleft) + right) { // second\n() }",
+        ] {
+            let source = format!(
+                "module x; op _ + _ {{ impl add; }}; op _ :: __ {{ impl cons; }}; \
+                 op __ ++ _ {{ impl append; }}; op _ %% {{ impl finish; }}; \
+                 op _ ?? ___ {{ impl select; }}; op _ @@ (_) {{ impl pick; }}; \
+                 fn f() {{ {expression} }}"
+            );
+            let output = roundtrip(&source);
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&output),
+                "{source}"
+            );
+            let comments = output
+                .lines()
+                .filter_map(|line| line.find("//").map(|start| line[start..].trim()))
+                .collect::<Vec<_>>();
+            assert_eq!(comments, ["// first", "// second"], "{output}");
+        }
     }
 
     #[test]

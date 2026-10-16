@@ -119,13 +119,111 @@ fn current_provider_header_does_not_require_current_typed_facts() {
     let sources = CompletionSources {
         local: None,
         catalog: fixture.state.analysis_for_file(&fixture.provider_path),
+        declarations: fixture
+            .state
+            .declarations_for_file(Some(&fixture.provider_path), None),
         state: Some(&fixture.state),
     };
-    assert!(sources.provider("provider").is_none());
+    assert!(sources.provider("provider").is_some());
     assert_eq!(
         std::fs::read_to_string(&fixture.provider_path).unwrap(),
         PROVIDER
     );
+}
+
+#[test]
+fn provider_name_enumeration_authenticates_known_paths_without_catalog_rescans() {
+    let mut fixture = Fixture::new(false);
+    let mut catalog = BTreeMap::new();
+    let mut expected = Vec::new();
+    for index in 0..16 {
+        let name = format!("provider_n{index:02}");
+        let path = fixture.root.join(format!("{name}.kio"));
+        std::fs::write(&path, format!("module {name}; pub fn chosen() {{ () }}")).unwrap();
+        catalog.insert(path, name.clone());
+        expected.push(name);
+    }
+    fixture
+        .state
+        .store_declarations(&fixture.root, Some(catalog));
+    let sources = CompletionSources {
+        local: None,
+        catalog: None,
+        declarations: fixture
+            .state
+            .declarations_for_file(None, Some(&fixture.root)),
+        state: Some(&fixture.state),
+    };
+    COMPLETION_PROVIDER_READS.with(|reads| reads.borrow_mut().clear());
+    let (names, incomplete) = sources.provider_names().unwrap();
+    assert_eq!(names, expected);
+    assert!(!incomplete);
+    COMPLETION_PROVIDER_READS.with(|reads| assert!(reads.borrow().is_empty()));
+    assert!(sources.provider("provider_n00").is_some());
+    COMPLETION_PROVIDER_READS.with(|reads| assert_eq!(*reads.borrow(), ["provider_n00"]));
+}
+
+#[test]
+fn duplicate_provider_declarations_are_unavailable_before_visibility_filtering() {
+    for second_visibility in ["pub ", ""] {
+        let mut fixture = Fixture::new(false);
+        fixture.replace_provider(&format!(
+            "module provider; pub fn chosen() {{ () }} {second_visibility}fn chosen(value: .) {{ value }}"
+        ));
+        let sources = CompletionSources {
+            local: None,
+            catalog: None,
+            declarations: fixture
+                .state
+                .declarations_for_file(Some(&fixture.provider_path), None),
+            state: Some(&fixture.state),
+        };
+        assert!(sources.provider("provider").is_none());
+        for consumer in [
+            "module app; import provider(",
+            "module app; import provider as p; fn run() { p.",
+        ] {
+            fixture
+                .state
+                .open(fixture.consumer_uri.clone(), consumer.into(), 2);
+            let result = handle_completion_request(
+                &fixture.consumer_uri,
+                &Position::new(0, consumer.len() as u32),
+                Some(&fixture.root),
+                &fixture.state,
+                None,
+            )
+            .unwrap()
+            .list;
+            assert!(result.is_incomplete, "{consumer}");
+            assert!(result.items.is_empty(), "{consumer}");
+        }
+    }
+}
+
+#[test]
+fn provider_declaration_identity_keeps_label_and_ordinary_namespaces_distinct() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = std::fs::canonicalize(directory.path())
+        .unwrap()
+        .join("provider.kio");
+    for visibility in ["pub ", ""] {
+        let source = format!(
+            "module provider; pub labels {{ field: . }}; pub labels {{ other: . }}; {visibility}type {{field}} = {{other}};"
+        );
+        assert!(CompletionSources::parse_provider(&path, "provider", &source).is_none());
+    }
+    for declarations in [
+        "pub labels Original = { field: . }; pub labels Reused = { field: _ }; pub fn field() { () }",
+        "pub labels Field = { field: . };",
+        "pub labels { other: . }; pub type {field} = {other}; pub fn field() { () }",
+    ] {
+        let source = format!("module provider; {declarations}");
+        assert!(
+            CompletionSources::parse_provider(&path, "provider", &source).is_some(),
+            "{declarations}"
+        );
+    }
 }
 
 #[test]
@@ -189,11 +287,11 @@ fn provider_header_close_reopen_keeps_disk_freshness_boundary() {
     fixture.replace_provider(&PROVIDER.replace("fallback", "alternate"));
     assert_eq!(fixture.labels(), ["alternate"]);
     fixture.state.close(&fixture.provider_uri);
-    assert!(fixture.labels().is_empty());
+    assert_eq!(fixture.labels(), ["fallback"]);
     fixture.replace_provider(&PROVIDER.replace("fallback", "reopened"));
     assert_eq!(fixture.labels(), ["reopened"]);
     fixture.state.close(&fixture.provider_uri);
-    assert!(fixture.labels().is_empty());
+    assert_eq!(fixture.labels(), ["fallback"]);
 
     let mut fixture = Fixture::with_provider_state(false, false);
     assert_eq!(fixture.labels(), ["fallback"]);
@@ -202,7 +300,7 @@ fn provider_header_close_reopen_keeps_disk_freshness_boundary() {
         PROVIDER.replace("fallback", "disk_label"),
     )
     .unwrap();
-    assert!(fixture.labels().is_empty());
+    assert_eq!(fixture.labels(), ["disk_label"]);
     std::fs::remove_file(&fixture.provider_path).unwrap();
     assert!(fixture.labels().is_empty());
     fixture.replace_provider(&PROVIDER.replace("fallback", "unsaved"));

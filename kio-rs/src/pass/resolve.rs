@@ -7014,8 +7014,7 @@ impl<'m> Resolver<'m> {
     /// every name reachable at this point — the visible top-level decls,
     /// the imports, explicit recursive heads, and the active locals — so a typo on
     /// any of them earns the nearest-match suggestion (the highest-value
-    /// name-resolution diagnostic per `specs/diagnostics.md` and the
-    /// phase-10 rubric).
+    /// name-resolution diagnostic per `specs/diagnostics.md`).
     fn unbound_name_error(
         &self,
         name: &str,

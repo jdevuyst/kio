@@ -439,6 +439,7 @@ struct FocusedAnalysisState {
 #[derive(Debug, Default)]
 pub struct ServerState {
     pub(super) completion_snippets: bool,
+    pub(super) signature_label_offsets: bool,
     /// Overlay store: one entry per URI the editor has opened (and
     /// not yet closed). The entry's text overrides disk for analysis;
     /// the entry's version is reported back via
@@ -454,6 +455,10 @@ pub struct ServerState {
     /// never block on a fresh analysis (serve the stale snapshot
     /// instead, matching rust-analyzer's behavior).
     analyses: BTreeMap<PathBuf, StoredAnalysis>,
+    /// Latest accepted full discovery, independent of successful body typing.
+    /// Only path identities are retained; provider text is authenticated when
+    /// requested from the current overlay or disk.
+    declarations: BTreeMap<PathBuf, BTreeMap<PathBuf, String>>,
     /// Focused scheduling and stale-good state keyed by the open document's
     /// stable URI. Each entry binds the canonical file identity captured at
     /// scheduling time, the latest freshness watermark, and an optional typed
@@ -705,6 +710,8 @@ impl ServerState {
         analysis: LspAnalysis,
     ) {
         let snapshot_id = snapshot.id();
+        self.declarations
+            .insert(package_root.to_path_buf(), analysis.file_to_module.clone());
         let documents = &self.documents;
         for (uri, focused) in &mut self.focused_by_uri {
             if !analysis.file_to_module.contains_key(&focused.file_path)
@@ -758,6 +765,35 @@ impl ServerState {
     pub fn analysis_for_file(&self, file_path: &std::path::Path) -> Option<&LspAnalysis> {
         self.analysis_entry_for_file(file_path)
             .map(StoredAnalysis::analysis)
+    }
+
+    pub(crate) fn store_declarations(
+        &mut self,
+        package_root: &Path,
+        declarations: Option<BTreeMap<PathBuf, String>>,
+    ) {
+        match declarations {
+            Some(declarations) => {
+                self.declarations
+                    .insert(package_root.to_path_buf(), declarations);
+            }
+            None => {
+                self.declarations.remove(package_root);
+            }
+        }
+    }
+
+    pub(crate) fn declarations_for_file(
+        &self,
+        path: Option<&Path>,
+        workspace_root: Option<&Path>,
+    ) -> Option<&BTreeMap<PathBuf, String>> {
+        path.and_then(|path| {
+            self.declarations
+                .values()
+                .find(|catalog| catalog.contains_key(path))
+        })
+        .or_else(|| workspace_root.and_then(|root| self.declarations.get(root)))
     }
 
     /// Declaration-catalog lookup for a new or untitled consumer. Callers

@@ -53,7 +53,7 @@ use lsp_types::Uri;
 use crate::cmd::check::{
     AnalysisFailure, LspAnalysis, LspUserElaboratorMemos,
     analyze_module_at_with_overlay_lsp_cancellable_with_memos,
-    analyze_workspace_at_with_overlay_lsp_cancellable_with_memos,
+    analyze_workspace_at_with_overlay_lsp_with_declarations,
 };
 use crate::lsp::cancel::CancellationToken;
 use crate::lsp::snapshot::{Snapshot, SnapshotId, SnapshotIdGen};
@@ -126,6 +126,8 @@ pub struct WorkerResult {
     /// Package root the analysis ran against, so the main thread
     /// can resolve diagnostic paths to URIs.
     pub package_root: PathBuf,
+    /// Current lazy-header discovery, even when a subsequent body check fails.
+    pub declarations: Option<BTreeMap<PathBuf, String>>,
     /// Full-package or focused-module analysis result.
     pub outcome: WorkerOutcome,
 }
@@ -584,6 +586,7 @@ fn run_one_with_memos(
         emit_cancelled_timing(snapshot_id, priority, focus.is_some(), &package_root, start);
         return None;
     }
+    let mut declarations = None;
     let outcome = match (priority, focus) {
         (WorkPriority::Foreground, Some(focus)) => {
             let Some(outcome) = analyze_module_at_with_overlay_lsp_cancellable_with_memos(
@@ -603,11 +606,12 @@ fn run_one_with_memos(
             }
         }
         _ => {
-            let Some(outcome) = analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
+            let Some(outcome) = analyze_workspace_at_with_overlay_lsp_with_declarations(
                 &package_root,
                 &overlay,
                 &cancel_token,
                 user_elaborator_memos,
+                &mut declarations,
             ) else {
                 emit_cancelled_timing(snapshot_id, priority, false, &package_root, start);
                 return None;
@@ -633,6 +637,7 @@ fn run_one_with_memos(
         overlay_versions: snapshot.versions().clone(),
         snapshot,
         package_root,
+        declarations,
         outcome,
     })
 }

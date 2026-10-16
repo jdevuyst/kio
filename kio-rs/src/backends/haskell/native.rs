@@ -2581,12 +2581,12 @@ impl NativeExprEmitter<'_> {
     }
 
     fn require_condition_type(&self, cond: &Expr<Routed>) -> Result<(), EmitError> {
-        let ty = self.recon.value_type(cond).ok_or_else(|| {
-            EmitError::unsupported(format!(
-                "Haskell native body: conditional condition type reconstruction gap at {}",
+        let ty = self.recon.value_type(cond).unwrap_or_else(|| {
+            unreachable!(
+                "Haskell native body: structural recovery preserves the checked conditional's type at {}",
                 expr_kind(cond)
-            ))
-        })?;
+            )
+        });
         self.ctx.shapes.exact_host_syntax(
             &ty,
             Some(self.module_key),
@@ -5719,12 +5719,12 @@ impl ExactConstraintFacts<'_, '_> {
                 return Ok(());
             }
             Expr::EnrichedConditional { cond, .. } => {
-                let condition_ty = self.recon.value_type(cond).ok_or_else(|| {
-                    EmitError::unsupported(format!(
-                        "Haskell native body: conditional condition type reconstruction gap at {}",
+                let condition_ty = self.recon.value_type(cond).unwrap_or_else(|| {
+                    unreachable!(
+                        "Haskell exact-constraint analysis: structural recovery preserves the checked conditional's type at {}",
                         expr_kind(cond)
-                    ))
-                })?;
+                    )
+                });
                 self.record(&condition_ty, super::skin::ExactHostConstraint::Boolean)?;
             }
             _ => {}
@@ -6678,6 +6678,100 @@ fn expr_kind(expr: &Expr<Routed>) -> &'static str {
         Expr::EnrichedMatch { .. } => "EnrichedMatch",
         Expr::EnrichedConditional { .. } => "EnrichedConditional",
         _ => "<surface>",
+    }
+}
+
+#[cfg(test)]
+mod routed_invariant_tests {
+    use super::*;
+    use crate::ast::Meta;
+    use crate::backends::boundary_facade::PreparedBoundaryCallableSites;
+    use crate::span::Span;
+
+    fn with_context(test: impl FnOnce(&NativeCtx<'_>)) {
+        let package = Package::<Routed>::from_parts(BTreeMap::new(), None);
+        let names = super::super::emit::HaskellNames::derive("InvariantProbe");
+        let prepared = PreparedBoundaryCallableSites::collect_live(&package).unwrap();
+        let context = NativeCtx::build(&package, &names, &prepared).unwrap();
+        test(&context);
+    }
+
+    fn unbound_condition() -> Expr<Routed> {
+        Expr::LowBoundRef {
+            occurrence: (),
+            name: "missing".into(),
+            meta: Meta::new(Span::new(0, 0)),
+            ext: (),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "checked literal and conditional annotations name exact host types")]
+    fn routed_invariant_non_host_syntax_panics() {
+        with_context(|context| {
+            let _ = context.shapes.exact_host_syntax(
+                &Type::Unit {
+                    meta: Meta::new(Span::new(0, 0)),
+                },
+                Some("api"),
+                super::super::skin::ExactHostConstraint::Integral,
+            );
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Haskell native body: structural recovery preserves the checked conditional's type"
+    )]
+    fn routed_invariant_untyped_emitted_condition_panics() {
+        with_context(|context| {
+            let emitter = NativeExprEmitter {
+                ctx: context,
+                module_key: "api",
+                recon: TypeRecon::empty(context.package, &context.types.resolution, "api"),
+                type_params: Vec::new(),
+                locals: Vec::new(),
+                projection_aliases: BTreeMap::new(),
+                projection_fresh: 0,
+                fresh: 0,
+            };
+            let _ = emitter.require_condition_type(&unbound_condition());
+        });
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Haskell exact-constraint analysis: structural recovery preserves the checked conditional's type"
+    )]
+    fn routed_invariant_untyped_analyzed_condition_panics() {
+        with_context(|context| {
+            let mut recon = TypeRecon::empty(context.package, &context.types.resolution, "api");
+            let mut constraints = BTreeSet::new();
+            let mut called = BTreeSet::new();
+            let meta = Meta::new(Span::new(0, 0));
+            let unit = Expr::Unit {
+                occurrence: (),
+                source_trivia: (),
+                meta: meta.clone(),
+            };
+            let _ = ExactConstraintFacts {
+                module_key: "api",
+                package: context.package,
+                shapes: &context.shapes,
+                recon: &mut recon,
+                constraints: &mut constraints,
+                called: &mut called,
+            }
+            .collect(&Expr::EnrichedConditional {
+                occurrence: (),
+                cond: Box::new(unbound_condition()),
+                then_branch: Box::new(unit.clone()),
+                else_branch: Box::new(unit),
+                result_ty: Type::Unit { meta: meta.clone() },
+                meta,
+                ext: (),
+            });
+        });
     }
 }
 

@@ -157,7 +157,7 @@ impl Typer<Prime> for PrimeTyper {
     const ALLOW_ELIDED_UNIVERSAL_CALL_TYPE_ARGS: bool = false;
 
     // Kio' rejects the multi-layer flat-call form per
-    // `specs/language.md` § 4c. Each application consumes at most
+    // `specs/language.md` § Type parameters. Each application consumes at most
     // one `Function` layer (plus its preceding `Forall` binders);
     // the only spelling is the explicit curried form
     // `foo(T1, v1)(T2, v2)`. Prime declarations preserve that same
@@ -2369,9 +2369,8 @@ mod tests {
         );
     }
 
-    /// The call-site dual of `specs/language.md` § 5's no-
-    /// interleaving rule: Kio' rejects multi-layer flat calls at
-    /// type-check (per § 4c). `foo[A](v1: A)[B](v2: B) -> .`
+    /// Kio' rejects multi-layer flat calls at type-check, per
+    /// `specs/language.md` § Type parameters. `foo[A](v1: A)[B](v2: B) -> .`
     /// has type
     ///   `Forall([A], Function(A, Forall([B], Function(B, Unit))))`;
     /// the flat spelling `foo(A, A.mk_a(()), B, B.mk_b(()))` is

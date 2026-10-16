@@ -77,6 +77,12 @@ Two blocks do the work:
 - `build { ... }` names a compilation target (`js`, writing under `out/js/`) and a cache directory. This is what `kio build` reads.
 - `bridge { ... }` lists the modules whose public surface forms the package's **contract** with its host. Here it admits `main`, the one module we have.
 
+`baseline es2020` pins the generated JavaScript compatibility contract. If the
+field is omitted or written `baseline ()`, `kio fmt` writes the newest concrete
+baseline supported by that Kio version. `baseline latest` instead keeps following
+the compiler's newest supported baseline, even after formatting. See
+[Build blocks](../guides/pkg.md#build-blocks) for the build-file guide.
+
 ### The starting module
 
 `main.kio` is the package's **root module** — just a `module <name>;` file at the package root. The generated one declares a string type and a print capability it asks the host to supply, then exports a `main` that prints a greeting:

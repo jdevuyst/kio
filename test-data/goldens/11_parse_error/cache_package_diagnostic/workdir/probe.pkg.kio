@@ -1,0 +1,6 @@
+package probe;
+
+build {
+  cache "cache";
+  target js { out 17 }
+}

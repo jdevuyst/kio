@@ -27,7 +27,6 @@ use crate::path_display::DisplayPath;
 use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -525,39 +524,52 @@ fn schema_v1_segment_is_part_of_namespace_path() {
 
 #[test]
 fn concurrent_lock_serializes_within_process() {
-    // Spawn N threads, each acquiring the lock and bumping a shared
-    // counter under it. If `flock` is enforced the observed
-    // in-critical-section count is always 1.
-    use std::sync::Arc;
-    use std::sync::atomic::AtomicUsize;
+    use fs2::FileExt;
     use std::thread;
-    use std::time::Duration;
+
+    fn assert_locked(key_dir: &std::path::Path) {
+        let probe = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(key_dir.join(".lock"))
+            .unwrap();
+        let error = probe
+            .try_lock_exclusive()
+            .expect_err("writer must hold the lock");
+        assert_eq!(
+            error.raw_os_error(),
+            fs2::lock_contended_error().raw_os_error()
+        );
+    }
 
     let root = fresh_dir("concurrent-lock");
-    let key_dir = Arc::new(root.join("rlibs/abc"));
-    fs::create_dir_all(&*key_dir).unwrap();
+    let key_dir = root.join("rlibs/abc");
+    let owner = cache_io::acquire_lock(&key_dir).expect("first owner");
+    // Independently probe the OS state: bypassing the lock must fail even if
+    // every contender happens to run sequentially.
+    assert_locked(&key_dir);
 
-    let in_section = Arc::new(AtomicUsize::new(0));
-    let max_overlap = Arc::new(AtomicUsize::new(0));
-
+    let (contended_tx, contended_rx) = mpsc::channel();
     let mut handles = Vec::new();
     for _ in 0..4 {
-        let dir = Arc::clone(&key_dir);
-        let in_section = Arc::clone(&in_section);
-        let max_overlap = Arc::clone(&max_overlap);
+        let dir = key_dir.clone();
+        let contended_tx = contended_tx.clone();
         handles.push(thread::spawn(move || {
+            cache_io::observe_next_lock_contention(contended_tx);
             let lock = cache_io::acquire_lock(&dir).expect("acquire");
-            let now = in_section.fetch_add(1, Ordering::SeqCst) + 1;
-            max_overlap.fetch_max(now, Ordering::SeqCst);
-            thread::sleep(Duration::from_millis(20));
-            in_section.fetch_sub(1, Ordering::SeqCst);
+            assert_locked(&dir);
             drop(lock);
         }));
     }
+    drop(contended_tx);
+    let contention = (0..4)
+        .map(|_| contended_rx.recv_timeout(Duration::from_secs(30)))
+        .collect::<Result<Vec<_>, _>>();
+    drop(owner);
     for h in handles {
         h.join().expect("join");
     }
-    assert_eq!(max_overlap.load(Ordering::SeqCst), 1);
+    contention.expect("all contenders must reach the held lock");
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -677,51 +689,38 @@ fn same_key_waiter_holds_no_compiler_permit() {
     let cache = BuildCache::open(root.clone(), None, None, admission).expect("open");
     let producer_cache = cache.clone();
     let producer_request = stub_request("rlib", "rlibs", rlib_fields("p", &[("src/lib.rs", b"x")]));
-    let ready = root.join("compiler-ready");
-    let release = root.join("compiler-release");
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
 
     let producer = std::thread::spawn(move || {
         producer_cache
             .get_or_produce(&producer_request, |ctx| -> Result<(), String> {
-                let mut command = Command::new("sh");
-                command
-                    .arg("-c")
-                    .arg(": >\"$READY\"; while [ ! -e \"$RELEASE\" ]; do sleep 0.01; done")
-                    .env("READY", &ready)
-                    .env("RELEASE", &release);
-                let admitted = ctx
+                let _permit = ctx
                     .compiler_admission
-                    .acquire_for(&mut command)
+                    .acquire()
                     .map_err(|e| e.to_string())?;
-                let status = admitted.status().map_err(|e| e.to_string())?;
-                if !status.success() {
-                    return Err(format!("fixture compiler exited {status}"));
-                }
+                ready_tx.send(()).map_err(|e| e.to_string())?;
+                release_rx.recv().map_err(|e| e.to_string())?;
                 fs::write(ctx.out_dir.join("libgreeter.rlib"), b"!<arch>\n")
                     .map_err(|e| e.to_string())
             })
             .expect("producer");
     });
-    for _ in 0..500 {
-        if root.join("compiler-ready").exists() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    assert!(root.join("compiler-ready").exists());
+    ready_rx
+        .recv_timeout(Duration::from_secs(30))
+        .expect("producer holds compiler permit");
 
     let waiter_request = stub_request("rlib", "rlibs", rlib_fields("p", &[("src/lib.rs", b"x")]));
-    let (started_tx, started_rx) = mpsc::channel();
+    let (contended_tx, contended_rx) = mpsc::channel();
     let waiter = std::thread::spawn(move || {
-        started_tx.send(()).unwrap();
+        cache_io::observe_next_lock_contention(contended_tx);
         cache
             .get_or_produce(&waiter_request, |_ctx| -> Result<(), String> {
                 panic!("same-key waiter must observe the first producer's artifact")
             })
             .expect("waiter");
     });
-    started_rx.recv().unwrap();
-    std::thread::sleep(Duration::from_millis(150));
+    let contention = contended_rx.recv_timeout(Duration::from_secs(30));
     let claim_count = fs::read_dir(schedule.join("compiler/claims"))
         .unwrap()
         .filter_map(Result::ok)
@@ -732,14 +731,14 @@ fn same_key_waiter_holds_no_compiler_permit() {
                 .is_some_and(|extension| extension == "lease")
         })
         .count();
+    release_tx.send(()).unwrap();
+    producer.join().unwrap();
+    waiter.join().unwrap();
+    contention.expect("waiter must reach the contended cache lock before counting claims");
     assert_eq!(
         claim_count, 1,
         "same-key cache waiter must not claim compiler admission"
     );
-
-    fs::write(root.join("compiler-release"), b"").unwrap();
-    producer.join().unwrap();
-    waiter.join().unwrap();
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(schedule);
 }

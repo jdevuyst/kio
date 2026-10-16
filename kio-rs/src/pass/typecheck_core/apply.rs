@@ -1685,7 +1685,7 @@ fn try_synth_immediate_fn_call_prime<'m>(
 /// Apply a function type to positional call arguments. The callee
 /// may be monomorphic, polymorphic (`Forall(binders, Function(...))`),
 /// or a multi-layer curried function that needs flat-call iteration
-/// per `specs/language.md` § 4c. Per-layer value-slot counts are
+/// per `specs/language.md` § Type parameters. Per-layer value-slot counts are
 /// derived from the function domain's normalized product layout.
 ///
 /// `expected_ret` is the expected type at the call's position in this direct
@@ -2420,7 +2420,7 @@ where
     } else {
         None
     };
-    // Multi-layer flat-call iteration per `specs/language.md` § 4c:
+    // Multi-layer flat-call iteration per `specs/language.md` § Type parameters:
     // a single application may consume multiple consecutive curry
     // layers in Kio. We peel one layer's worth of args from the
     // head, apply, recurse on the result with the rest. The peel
@@ -2430,9 +2430,8 @@ where
     //
     // The peel-size check is conservative: when `args.len()`
     // already fits the first layer, the loop bails out immediately
-    // and the call dispatches through the existing single-layer
-    // path, so the pre-§4c behaviour is preserved for every call
-    // shape that worked before. Product-typed parameters count by
+    // and the call dispatches through the single-layer path.
+    // Product-typed parameters count by
     // their right spine here because tuple values and positional call
     // arguments build the same product shape within one layer. The
     // stored ABI arity is a lowering detail, not a source-call slot
@@ -2615,7 +2614,8 @@ where
 /// Try a multi-layer flat-call dispatch: peel one curry layer's
 /// args from the head, apply them, recurse on the substituted
 /// result with the rest. Returns `Ok(Some(application))` when the call
-/// dispatches under §4c multi-layer flat-call rules, `Ok(None)`
+/// dispatches under the multi-layer flat-call rules in
+/// `specs/language.md` § Type parameters, `Ok(None)`
 /// when this routine declines (so the caller falls back to the
 /// single-layer path), and `Err(...)` when a layer's dispatch
 /// itself errors. A trailing layer that needs the whole call's expected
@@ -3237,6 +3237,10 @@ struct GoalCallShape<'m> {
     /// forall-only layer uses a synthetic Unit parameter for the shared goal
     /// machinery but must not be mistaken for a Unit function application.
     has_value_layer: bool,
+    /// Preserve the selected public value layer when type-only application
+    /// leaves it residual. This is editor presentation, not a typing input.
+    #[cfg(feature = "lsp")]
+    presentation_has_value_layer: bool,
     type_args: Vec<CallArgRef<'m, crate::ast::Lowered>>,
     value_args: Vec<CallArgRef<'m, crate::ast::Lowered>>,
     explicit_prefix: usize,
@@ -3960,6 +3964,8 @@ fn preflight_goal_call<'m>(
                 result_requirement_source,
                 abi_arity,
                 has_value_layer: true,
+                #[cfg(feature = "lsp")]
+                presentation_has_value_layer: true,
                 type_args: type_args.to_vec(),
                 value_args: value_args.to_vec(),
                 explicit_prefix,
@@ -4188,6 +4194,8 @@ fn preflight_general_goal_call_layer<'m>(
         },
         abi_arity,
         has_value_layer,
+        #[cfg(feature = "lsp")]
+        presentation_has_value_layer: cursor.param.is_some(),
         type_args: type_args.to_vec(),
         value_args: Vec::new(),
         explicit_prefix,
@@ -4552,6 +4560,8 @@ fn plan_immediate_lambda_call<'m>(
         result_requirement_source: activated.result.requirement_source().cloned(),
         abi_arity: layer.parameter_range.len(),
         has_value_layer: true,
+        #[cfg(feature = "lsp")]
+        presentation_has_value_layer: true,
         type_args: type_args.to_vec(),
         value_args: Vec::new(),
         explicit_prefix: selected.explicit_prefix,
@@ -5733,6 +5743,32 @@ impl<'m> OpenGoalCall<'m> {
             self.owner, goal_owner,
             "goal-call metadata was staged through a different inference owner"
         );
+        #[cfg(feature = "lsp")]
+        if tcx.env.typecheck_scope.collects_refactoring_facts() {
+            use crate::pass::typecheck_full::{
+                CallArgumentRole, CallLayerPresentation, CallPresentationFact,
+            };
+            let implicit_unit = self.shape.has_implicit_unit_value();
+            publication.record_call_presentation(
+                self.call_site,
+                self.slot_offset,
+                CallPresentationFact::Layer(CallLayerPresentation {
+                    has_value_layer: self.shape.presentation_has_value_layer,
+                    consumed: implicit_unit || !self.shape.value_args.is_empty(),
+                    implicit_unit,
+                }),
+            );
+            for argument in &self.shape.type_args {
+                publication.record_call_presentation(
+                    self.call_site,
+                    self.slot_offset,
+                    CallPresentationFact::Argument {
+                        span: argument.span(),
+                        role: CallArgumentRole::Type,
+                    },
+                );
+            }
+        }
         let inferred_completion = self.shape.explicit_prefix < self.shape.binders.len();
         let limit = if inferred_completion {
             self.shape.binders.len()
@@ -9542,6 +9578,30 @@ impl<'m> OrdinaryValueCursor<'m> {
         let expected = selecting
             .call
             .select_value_width(source, width, fills_layer, tcx);
+        #[cfg(feature = "lsp")]
+        if tcx.env.typecheck_scope.collects_refactoring_facts() {
+            use crate::pass::typecheck_full::{
+                CallArgumentRole, CallPresentationFact, CallValueProjection,
+            };
+            let projection = if fills_layer {
+                CallValueProjection::Tail {
+                    first: selecting.selected_slots,
+                }
+            } else {
+                CallValueProjection::Range {
+                    first: selecting.selected_slots,
+                    width,
+                }
+            };
+            frontier.parts_mut().3.record_call_presentation(
+                selecting.call.call_site,
+                selecting.call.slot_offset,
+                CallPresentationFact::Argument {
+                    span: source.span(),
+                    role: CallArgumentRole::Value(projection),
+                },
+            );
+        }
         let selected_slots_after = if fills_layer {
             selecting.value_slots
         } else {
@@ -9900,6 +9960,8 @@ impl<'m> OrdinaryValueCursor<'m> {
             result_requirement_source: activated.result.requirement_source().cloned(),
             abi_arity: layer.parameter_range.len(),
             has_value_layer: true,
+            #[cfg(feature = "lsp")]
+            presentation_has_value_layer: true,
             type_args: type_args.to_vec(),
             value_args: Vec::new(),
             explicit_prefix: selected.explicit_prefix,
@@ -16703,6 +16765,28 @@ fn advance_path_unit_goal_call<'m>(
     let mut prepared_values = Vec::with_capacity(values.len());
     for (index, value) in values.into_iter().enumerate() {
         let expected = call.next_expected(index, tcx);
+        #[cfg(feature = "lsp")]
+        if tcx.env.typecheck_scope.collects_refactoring_facts() {
+            use crate::pass::typecheck_full::{
+                CallArgumentRole, CallPresentationFact, CallValueProjection,
+            };
+            let projection = if index + 1 == call.shape.value_args.len() {
+                CallValueProjection::Tail { first: index }
+            } else {
+                CallValueProjection::Range {
+                    first: index,
+                    width: 1,
+                }
+            };
+            frontier.parts_mut().3.record_call_presentation(
+                call.call_site,
+                call.slot_offset,
+                CallPresentationFact::Argument {
+                    span: value.source.span(),
+                    role: CallArgumentRole::Value(projection),
+                },
+            );
+        }
         let expected = prepare_expected_value_packet(frontier, expected, value.source.span(), tcx)?;
         prepared_values.push((value, expected));
     }
@@ -18738,7 +18822,7 @@ impl<'m> UnpreparedConnectedCallChain<'m> {
 ///
 /// `slot_offset` is the count of canonical argument slots already
 /// consumed by preceding layers of a multi-layer flat call
-/// (`specs/language.md` § 4c). The substitute pass walks one global
+/// (`specs/language.md` § Type parameters). The substitute pass walks one global
 /// slot index across the *whole* flat argument list, so every
 /// recorded resolution / value-at-type-slot marker must key off the
 /// call-global slot (`slot_offset + layer_local_index`), not the
@@ -23529,6 +23613,8 @@ mod tests {
             result_requirement_source: None,
             abi_arity: 0,
             has_value_layer: true,
+            #[cfg(feature = "lsp")]
+            presentation_has_value_layer: true,
             type_args: vec![CallArgRef::Type(&infer), CallArgRef::Type(&i32)],
             value_args: Vec::new(),
             explicit_prefix: 2,
@@ -23618,6 +23704,8 @@ mod tests {
                     result_requirement_source: None,
                     abi_arity: 0,
                     has_value_layer: true,
+                    #[cfg(feature = "lsp")]
+                    presentation_has_value_layer: true,
                     type_args,
                     value_args: Vec::new(),
                     explicit_prefix: 2,
@@ -23931,6 +24019,8 @@ mod tests {
                 result_requirement_source: None,
                 abi_arity: 1,
                 has_value_layer: true,
+                #[cfg(feature = "lsp")]
+                presentation_has_value_layer: true,
                 type_args: vec![
                     CallArgRef::Type(&canonical_argument),
                     CallArgRef::Type(&ambient_compound_argument),
@@ -25677,6 +25767,8 @@ mod tests {
                         result_requirement_source: None,
                         abi_arity: 0,
                         has_value_layer: true,
+                        #[cfg(feature = "lsp")]
+                        presentation_has_value_layer: true,
                         type_args: Vec::new(),
                         value_args: Vec::new(),
                         explicit_prefix: 0,
@@ -26078,6 +26170,8 @@ mod tests {
                                 result_requirement_source: None,
                                 abi_arity: 0,
                                 has_value_layer: true,
+                                #[cfg(feature = "lsp")]
+                                presentation_has_value_layer: true,
                                 type_args: Vec::new(),
                                 value_args: Vec::new(),
                                 explicit_prefix: 0,
@@ -26334,6 +26428,8 @@ mod tests {
                             result_requirement_source: None,
                             abi_arity: 0,
                             has_value_layer: true,
+                            #[cfg(feature = "lsp")]
+                            presentation_has_value_layer: true,
                             type_args: Vec::new(),
                             value_args: Vec::new(),
                             explicit_prefix: 0,

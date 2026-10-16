@@ -4,7 +4,7 @@ Subject-organized measurement and acceptance records for compiler, tooling and
 CI mechanisms. The agent instruction layer owns mechanism discovery; these
 subject records are not a mechanism inventory.
 
-These are inherited recorded results, not new measurements or revalidation.
+Historical records do not automatically revalidate the current implementation.
 Each record preserves its available workload, controls, source/test anchors,
 settings, results and claim limits. Some inherited summaries do not identify the
 measurement's source commit, exact toolchain, full invocation or raw-log
@@ -376,3 +376,41 @@ Initial opt0→opt1 discharge: on source
   execution win;
   this pair does not establish a whole-gate speedup or amortization across
   the broad corpus's warm cohorts.
+
+## LSP signature-help presentation cost
+
+The checker publishes already-selected grouping through existing atomic
+publication, without another typecheck. Editor-only, type-free records are
+bounded by checked occurrences, layers and arguments—not unique source calls.
+The `signature_call_facts_are_editor_only_and_bounded_by_source_calls`
+16/128-call controls retain exactly [1,N,N,N,2N] modules/calls/occurrences/
+layers/arguments and visit one selected occurrence; disabled collection retains
+no map. Failed-root, copied-source/merge and wide-Unicode-label controls cover
+publication and one-pass offset work. Inline fact/command sizes are 32/584
+bytes, not heap usage; disabled collection still has an optional inline field.
+Baseline enum size was not measured.
+
+Linux, Rust 1.99.0 dev binaries with package opt-level 2, and Node 24.21.0
+measured one 128-call package. Fresh-process order was before/after/after/
+before/before/after, then candidate legacy labels. Successful versioned
+diagnostics preceded eight warmups and 64 complete signatureHelp requests.
+Candidate responses asserted two parameters, active index 1 and the exact
+selected label. All seven sessions passed; each performed one successful
+analysis and 72 error-free requests, without query-triggered reanalysis.
+
+| Arm | Three request medians (ms) | Analysis median (ms) | Peak RSS range (KiB) |
+| --- | --- | --- | --- |
+| Before, offsets | 1.286 / 1.247 / 1.213 | 18.630 | 29,936–30,368 |
+| After, offsets | 1.409 / 1.438 / 1.343 | 18.389 | 28,148–28,448 |
+| After, legacy (one session) | 1.345 | 18.341 | 28,252 |
+
+Median-of-session request medians increased 0.161 ms (~12.9%): small added
+correctness cost, not latency neutrality. Analysis ranges overlap; lower
+process-peak RSS does not establish metadata-memory savings. OS caches were
+not reset. These samples establish no large-workspace, edit-churn,
+other-platform, allocation-rate or whole-compiler guarantee; tests use no
+timing thresholds.
+
+Compiler SHA-256: before
+`bd3d37a4093a769480cde7c9822891ce909544a68f6998b8344427b4b90f8c4c`;
+after `3b661df3c5ac3923860a0b5021d942d85bbfa6120eba911adcb8393124140adf`.

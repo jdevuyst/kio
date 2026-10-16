@@ -78,6 +78,7 @@ pub fn handle_completion(
         CompletionSources {
             local: analysis,
             catalog: analysis,
+            declarations: None,
             state: None,
         },
     )
@@ -134,6 +135,7 @@ pub(crate) fn handle_completion_request(
         CompletionSources {
             local,
             catalog,
+            declarations: state.declarations_for_file(path.as_deref(), workspace_root),
             state: Some(state),
         },
     )?;
@@ -154,6 +156,7 @@ pub(crate) fn handle_completion_request(
 struct CompletionSources<'a> {
     local: Option<&'a LspAnalysis>,
     catalog: Option<&'a LspAnalysis>,
+    declarations: Option<&'a std::collections::BTreeMap<std::path::PathBuf, String>>,
     state: Option<&'a crate::lsp::state::ServerState>,
 }
 
@@ -165,50 +168,56 @@ thread_local! {
 }
 
 impl<'a> CompletionSources<'a> {
-    fn provider(&self, name: &str) -> Option<(&'a str, Module<Surface>)> {
+    fn provider(&self, name: &str) -> Option<(std::borrow::Cow<'a, str>, Module<Surface>)> {
         let path = self.provider_path(name)?;
+        self.provider_at(path, name)
+    }
+
+    fn provider_at(
+        &self,
+        path: &std::path::Path,
+        name: &str,
+    ) -> Option<(std::borrow::Cow<'a, str>, Module<Surface>)> {
         let source = self.current_provider_source(path, name)?;
-        Some((source, Self::parse_provider(path, name, source)?))
+        let module = Self::parse_provider(path, name, &source)?;
+        if let Some(state) = self.state
+            && let Some(uri) = state
+                .open_documents()
+                .find(|uri| crate::lsp::util::uri_to_canonical(uri).as_deref() == Some(path))
+        {
+            let crate::lsp::util::FileUriPath::Path(original_path) =
+                crate::lsp::util::file_uri_path(uri)
+            else {
+                return None;
+            };
+            crate::package_collection::ModuleFileParserContext::from_module(
+                &original_path,
+                &module,
+            )
+            .ok()?;
+        }
+        Some((source, module))
     }
 
     fn provider_syntax(&self, name: &str) -> Option<Module<Surface>> {
-        let path = self.provider_path(name)?;
-        if let Some(state) = self.state {
-            let mut overlays = state
-                .open_documents()
-                .filter(|uri| crate::lsp::util::uri_to_canonical(uri).as_deref() == Some(path));
-            if let Some(uri) = overlays.next() {
-                // Two editor buffers for one file have no authoritative ordering.
-                if overlays.next().is_some() {
-                    return None;
-                }
-                let source = state.document(uri)?.text();
-                let module = Self::parse_provider(path, name, source)?;
-                let crate::lsp::util::FileUriPath::Path(original_path) =
-                    crate::lsp::util::file_uri_path(uri)
-                else {
-                    return None;
-                };
-                crate::package_collection::ModuleFileParserContext::from_module(
-                    &original_path,
-                    &module,
-                )
-                .ok()?;
-                return Some(module);
-            }
+        self.provider(name).map(|(_, module)| module)
+    }
+
+    fn provider_catalog(
+        &self,
+    ) -> Option<&'a std::collections::BTreeMap<std::path::PathBuf, String>> {
+        if self.state.is_some() {
+            self.declarations
+        } else {
+            self.catalog.map(|catalog| &catalog.file_to_module)
         }
-        let source = self.current_provider_source(path, name)?;
-        Self::parse_provider(path, name, source)
     }
 
     fn provider_path(&self, name: &str) -> Option<&'a std::path::Path> {
         #[cfg(test)]
         COMPLETION_PROVIDER_READS.with(|reads| reads.borrow_mut().push(name.to_owned()));
-        let catalog = self.catalog?;
-        let mut paths = catalog
-            .file_to_module
-            .iter()
-            .filter(|(_, module)| module.as_str() == name);
+        let catalog = self.provider_catalog()?;
+        let mut paths = catalog.iter().filter(|(_, module)| module.as_str() == name);
         let (path, _) = paths.next()?;
         if paths.next().is_some() {
             return None;
@@ -223,42 +232,79 @@ impl<'a> CompletionSources<'a> {
         }
         crate::package_collection::ModuleFileParserContext::from_module(path, &parsed.module)
             .ok()?;
+        // An invalid declaration namespace has no unique source owner for
+        // presentation metadata, even when one of the duplicates is private.
+        let entries = crate::doc_entry::documented_items_module(&parsed.module);
+        let mut names = std::collections::HashSet::new();
+        for entry in &entries {
+            use crate::doc_entry::DocEntry;
+            if !names.insert(entry.name().to_owned()) {
+                return None;
+            }
+            match entry {
+                DocEntry::Labels(labels, _, _) => {
+                    for label in labels
+                        .entries
+                        .iter()
+                        .filter(|label| !label.is_reuse_marker())
+                    {
+                        if !names.insert(format!("{{{}}}", label.name)) {
+                            return None;
+                        }
+                    }
+                }
+                DocEntry::LabelNominal { labels, entry, .. }
+                    if labels.type_alias_name.is_none()
+                        && !names.insert(format!("{{{}}}", entry.name)) =>
+                {
+                    return None;
+                }
+                _ => {}
+            }
+        }
         Some(parsed.module)
     }
 
-    fn current_provider_source(&self, path: &std::path::Path, name: &str) -> Option<&'a str> {
-        let catalog = self.catalog?;
-        let analysis = if let Some(state) = self.state {
-            let uri = crate::lsp::diagnostics::path_to_uri(path, path.parent()?)?;
-            let analysis = state.best_analysis_for_file(path, &uri)?;
-            let source = analysis.sources.get(path)?;
-            if let Some(document) = state.document(&uri) {
-                if document.text() != source {
+    fn current_provider_source(
+        &self,
+        path: &std::path::Path,
+        name: &str,
+    ) -> Option<std::borrow::Cow<'a, str>> {
+        if let Some(state) = self.state {
+            let mut overlays = state
+                .open_documents()
+                .filter(|uri| crate::lsp::util::uri_to_canonical(uri).as_deref() == Some(path));
+            if let Some(uri) = overlays.next() {
+                // Two editor buffers for one file have no authoritative ordering.
+                if overlays.next().is_some() {
                     return None;
                 }
-            } else if std::fs::read_to_string(path).ok().as_deref() != Some(source) {
-                return None;
+                return Some(std::borrow::Cow::Borrowed(state.document(uri)?.text()));
             }
-            analysis
-        } else {
-            catalog
-        };
+            return std::fs::read_to_string(path)
+                .ok()
+                .map(std::borrow::Cow::Owned);
+        }
+        let analysis = self.catalog?;
         if analysis.file_to_module.get(path).map(String::as_str) != Some(name) {
             return None;
         }
-        analysis.sources.get(path).map(String::as_str)
+        analysis
+            .sources
+            .get(path)
+            .map(|source| std::borrow::Cow::Borrowed(source.as_str()))
     }
 
     fn provider_names(&self) -> Option<(Vec<&'a str>, bool)> {
-        let catalog = self.catalog?;
+        let catalog = self.provider_catalog()?;
         let mut counts = std::collections::HashMap::new();
-        for name in catalog.file_to_module.values() {
+        for name in catalog.values() {
             *counts.entry(name.as_str()).or_insert(0usize) += 1;
         }
         let mut names = Vec::new();
         let mut incomplete = false;
-        for (path, name) in &catalog.file_to_module {
-            if counts[name.as_str()] == 1 && self.current_provider_source(path, name).is_some() {
+        for (path, name) in catalog {
+            if counts[name.as_str()] == 1 && self.provider_at(path, name).is_some() {
                 names.push(name.as_str());
             } else {
                 incomplete = true;
@@ -293,6 +339,11 @@ fn complete_source(
         KioFileKind::Module
     };
     let mut probe = probe_tooling(source, Some(kind), Some(byte_offset), None);
+    if let crate::lsp::util::FileUriPath::Path(path) = crate::lsp::util::file_uri_path(uri)
+        && !probe.file_identity_matches(&path)
+    {
+        return None;
+    }
     if let Some(suppression) = &probe.facts.suppression
         && source[suppression.span.start as usize..].starts_with("///")
     {
@@ -335,14 +386,6 @@ fn complete_source(
     };
     if probe.facts.suppression.is_some() {
         return Some(CompletionResult::syntax(result));
-    }
-    if let Some(path) = &probe.facts.module_path
-        && let crate::lsp::util::FileUriPath::Path(source_path) =
-            crate::lsp::util::file_uri_path(uri)
-        && crate::package_collection::ModuleFileParserContext::from_module_path(&source_path, path)
-            .is_err()
-    {
-        return None;
     }
     let Some(cursor) = &probe.facts.cursor else {
         return Some(CompletionResult::syntax(result));
@@ -424,7 +467,7 @@ fn complete_source(
                     detail: candidate.detail,
                     documentation: providers
                         .get(&candidate.owner)
-                        .map(|(source, _)| *source)
+                        .map(|(source, _)| source.as_ref())
                         .or_else(|| {
                             (candidate.owner == module.path.segments.join("/")).then_some(source)
                         })
@@ -583,7 +626,7 @@ fn import_list_candidates(
             label: label.clone(),
             kind: Some(kind),
             detail: Some(entry.signature()),
-            documentation: doc_comment_documentation(provider_source, entry.doc()),
+            documentation: doc_comment_documentation(&provider_source, entry.doc()),
             text_edit: Some(CompletionTextEdit::Edit(TextEdit {
                 range: lsp_types::Range::new(
                     Position::new(range.start.line, range.start.character),
@@ -911,7 +954,7 @@ impl<'a> CompletionMetadata<'a> {
                         }
                         _ => entry.ty(),
                     },
-                    documentation: doc_comment_documentation(provider_source, entry.doc()),
+                    documentation: doc_comment_documentation(&provider_source, entry.doc()),
                     ..Default::default()
                 };
                 if let DocEntry::Elaborator(declaration) = &entry {
@@ -1049,6 +1092,7 @@ mod tests {
             &CompletionSources {
                 local: analysis,
                 catalog: analysis,
+                declarations: None,
                 state: None,
             },
         ))

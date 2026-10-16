@@ -644,10 +644,11 @@ type parameters out of the term-level host ABI. In particular, the compact
 native `forall`s in a public host-record field are its host-facing scheme, not
 the representation of a first-class callable inside the package body.
 
-Haskell renders package bodies at native types. Reconstruction gaps and
-unhandled Routed nodes propagate as `EmitError` failures; they do not select
-another renderer. Private universal carriers and boundary conversions remain
-implementation support.
+Haskell renders package bodies at native types. Fallible reconstruction and
+representation operations propagate `EmitError` failures; they do not select
+another renderer. Violations of already-checked literal or conditional typing
+invariants panic as compiler bugs. Private universal carriers and boundary
+conversions remain implementation support.
 
 Haskell boundary aliases, patterns, selectors, exact host-type families and
 nominal heads use role-tagged readable paths. Shared

@@ -30,6 +30,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
         let sources = CompletionSources {
             local: Some(&analysis),
             catalog: Some(&analysis),
+            declarations: Some(&analysis.file_to_module),
             state: Some(&state),
         };
         let qualified = names(&module, "p.", None, &sources);
@@ -61,6 +62,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
         &CompletionSources {
             local: Some(&analysis),
             catalog: Some(&analysis),
+            declarations: Some(&analysis.file_to_module),
             state: Some(&state),
         },
     );
@@ -78,6 +80,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
         &CompletionSources {
             local: Some(&analysis),
             catalog: Some(&analysis),
+            declarations: Some(&analysis.file_to_module),
             state: Some(&state),
         },
     );

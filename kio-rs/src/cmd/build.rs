@@ -530,8 +530,8 @@ fn build_one_package(
     let root_label = build_timing::package_label(root_pkg.package());
 
     // The backend-agnostic recover → optimize → route → annotate prefix is
-    // shared across the JS and Rust backends and computed once (lazily, on
-    // the first backend that needs it). See `SharedRoutedPackage`. Each
+    // shared across host backends and computed once. See
+    // `SharedRoutedPackage`. Each
     // backend that recovers consumes this shared `Package<Routed>` instead
     // of recomputing the route + capability passes per target.
     let routed = SharedRoutedPackage::new(root_pkg, &enriched_cache, &root_label);
@@ -685,15 +685,14 @@ impl From<String> for BackendError {
 }
 
 /// The backend-agnostic recover → optimize → route → annotate prefix,
-/// computed **once** per build and shared by the JS and Rust backends.
+/// computed **once** per build and shared by all host backends.
 ///
-/// Both backends consume an identical `Package<Routed>` derived from the
+/// Host backends consume an identical `Package<Routed>` derived from the
 /// root `Package<Prime>`: `recover_and_optimize_package_cached` (enriched-
 /// cache-backed) → `route::route_package` → `annotate_escapes` →
 /// `annotate_lifetime`. Only the recover+optimize step is on-disk-cached;
-/// the route + capability passes are not, so before this hoist each
-/// target re-ran them — and because the per-target dispatch loop is
-/// rayon-parallel, that was duplicated *concurrent* CPU.
+/// the route + capability passes are not, so sharing the prefix also avoids
+/// repeating those passes for each target.
 ///
 /// Computing it here once realizes the enriched-cache module's contract
 /// that recovery is paid "once per module per package-edit, not once per
@@ -755,8 +754,7 @@ impl<'a> SharedRoutedPackage<'a> {
 
             // Resolution lowering: `Package<Enriched>` → `Package<Routed>`,
             // carrying pre-classified call / value-position routing on each
-            // node. JS (session 10) and Rust (session 11) both consume the
-            // Routed phase directly; no unlower round-trip.
+            // node. Host backends consume the Routed phase directly.
             let route_start = Instant::now();
             let routed = crate::pass::route::route_package(&recovered);
             // Capability annotation: each pass stamps one position-specific
@@ -937,11 +935,8 @@ fn js_backend(
         .unwrap_or_else(|| BuildTarget::Js.default_namespace(&pkg_name));
 
     // The recover → optimize → route → annotate prefix is backend-agnostic
-    // and computed once for the whole build (see `SharedRoutedPackage`); on
-    // the first backend that misses the artifact cache it runs, and every
-    // other recovering backend shares the same `Package<Routed>`. The JS
-    // backend consumes `Module<Routed>` directly (session 10 migrated
-    // `backends::js::emit` onto the Routed phase); no unlower round-trip is needed.
+    // and computed once for the whole build (see `SharedRoutedPackage`),
+    // so recovering backends share the same `Package<Routed>`.
     let recovered_routed = routed.get();
 
     // A package build emits one factory module for the local package.

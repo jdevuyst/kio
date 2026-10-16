@@ -510,18 +510,15 @@ fn atomic_write(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 fn eprint_parse_error(path: &Path, source: &str, err: &Error) {
-    let (span, message) = err.diag();
-    let (line, col) = line_col(source, span.start);
-    eprintln!("{}:{}:{}: {}", DisplayPath(&path), line, col, message);
-}
-
-fn line_col(source: &str, offset: u32) -> (usize, usize) {
-    let upto = (offset as usize).min(source.len());
-    let prefix = &source[..upto];
-    let line = prefix.matches('\n').count() + 1;
-    let line_start = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let col = source[line_start..upto].chars().count() + 1;
-    (line, col)
+    eprintln!(
+        "{}",
+        crate::diagnostic::render(
+            &DisplayPath(path).to_string(),
+            source,
+            err,
+            crate::diagnostic::ColorMode::for_stderr(),
+        )
+    );
 }
 
 #[cfg(test)]
@@ -577,32 +574,6 @@ mod tests {
         assert!(!has_kio_extension(Path::new("kio")));
         assert!(!has_kio_extension(Path::new("foo")));
         assert!(!has_kio_extension(Path::new("foo.kio.bak")));
-    }
-
-    /// `line_col` is 1-indexed and uses `\n` as the line separator.
-    /// First column is 1; first line is 1.
-    #[test]
-    fn line_col_origin_is_one_one() {
-        assert_eq!(line_col("hello", 0), (1, 1));
-        assert_eq!(line_col("hello", 4), (1, 5));
-    }
-
-    #[test]
-    fn line_col_counts_newlines() {
-        let src = "abc\ndef\nghi";
-        assert_eq!(line_col(src, 4), (2, 1)); // 'd'
-        assert_eq!(line_col(src, 7), (2, 4)); // newline after 'def' counted as col 4
-        assert_eq!(line_col(src, 8), (3, 1)); // 'g'
-    }
-
-    /// Offsets past the source length clamp to source.len() rather
-    /// than panicking — important because `Span::end` can sit at the
-    /// end of the source.
-    #[test]
-    fn line_col_clamps_overshoot_to_source_end() {
-        let src = "ab";
-        // Offset way past the end — clamped to len(src) = 2.
-        assert_eq!(line_col(src, 999), (1, 3));
     }
 
     /// `format_one` round-trips a regular module's source through

@@ -1,0 +1,4 @@
+module provider;
+
+/// Current declaration documentation.
+pub fn chosen() { missing }

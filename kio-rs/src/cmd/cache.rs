@@ -76,7 +76,8 @@ Options:
 
 Exit codes (per {base}/specs/exit-codes.md): 0 on success / no-op /
 disabled cache; 2 on CLI usage error (no package file, positional
-args, unknown flag); 1 on internal error (unreadable package file,
+args, unknown flag); 11 on a malformed package file;
+1 on internal error (unreadable package file,
 filesystem failure).
 
 See {base}/specs/cli.md#kio-cache-clear for full command behavior.";
@@ -105,7 +106,7 @@ Exit codes (per {base}/specs/exit-codes.md): 0 on success; 40 (build
 error) when no `<name>.pkg.kio` is at the package root, the
 package file has no `build { ... }` block, or the block declares
 `cache ()`; 2 on CLI usage error (positional args, unknown flag);
-1 on internal error.
+11 on a malformed package file; 1 on internal error.
 
 See {base}/specs/cli.md#kio-cache-path for full command behavior.";
 
@@ -131,7 +132,8 @@ Options:
 
 Exit codes (per {base}/specs/exit-codes.md): 0 on success / no-op /
 disabled cache; 2 on CLI usage error (no package file, positional
-args, unknown flag); 1 on internal error (unreadable package file,
+args, unknown flag); 11 on a malformed package file;
+1 on internal error (unreadable package file,
 filesystem failure).
 
 See {base}/specs/cli.md#kio-cache-gc for full command behavior.";
@@ -313,11 +315,6 @@ pub fn gc_at(package_root: &Path) -> ExitCode {
 /// out so tests can drive the command against a temp package without
 /// changing the process `cwd`.
 pub fn clear_at(package_root: &Path) -> ExitCode {
-    // Locate + parse the package file and read its build block. A
-    // missing package file, multiple package files, or a parse
-    // error surface at the usage tier here — `kio cache clear` doesn't
-    // run the build pipeline, so it doesn't surface the build-error
-    // category (40) the way `kio build` does.
     let (_build_path, build_block) = match load_build_block(package_root) {
         Ok(parts) => parts,
         Err(e) => return e.report_usage(package_root),
@@ -402,29 +399,24 @@ fn clear_cache_contents(cache_root: &Path) -> std::io::Result<usize> {
 // Package-file discovery + build-block extraction
 // =========================================================================
 
-/// Failure modes from locating + parsing the package file. Each caller
-/// maps these to the exit-code tier it wants via
-/// [`Self::report_build`] / [`Self::report_usage`].
+/// Discovery failures depend on the command; parser and I/O categories do not.
 enum LocateError {
     Missing,
     Multiple(Vec<PathBuf>),
     Io(std::io::Error),
     Read(PathBuf, std::io::Error),
-    Parse(PathBuf, String),
+    Parse(PathBuf, String, Box<crate::error::Error>),
 }
 
 impl LocateError {
     /// Print a diagnostic and return the exit code for callers that
-    /// treat a missing / unreadable / malformed package file as a
-    /// build-error-tier failure (`kio cache path`, matching
-    /// `kio build`).
+    /// treat missing or ambiguous package discovery as a build error.
     fn report_build(&self, package_root: &Path) -> ExitCode {
         self.report(package_root, ExitCode::Build, "`kio cache path` requires")
     }
 
     /// Print a diagnostic and return the exit code for callers that
-    /// treat the same conditions as a usage-tier failure
-    /// (`kio cache clear`).
+    /// treat missing or ambiguous package discovery as a usage error.
     fn report_usage(&self, package_root: &Path) -> ExitCode {
         self.report(package_root, ExitCode::Usage, "run `kio cache clear` from")
     }
@@ -456,9 +448,9 @@ impl LocateError {
                 eprintln!("error: cannot read {}: {e}", DisplayPath(path));
                 ExitCode::Internal
             }
-            LocateError::Parse(path, message) => {
-                eprintln!("error: cannot parse {}: {message}", DisplayPath(path));
-                missing_tier
+            LocateError::Parse(path, source, error) => {
+                super::check::eprint_error(path, source, error);
+                ExitCode::Parse
             }
         }
     }
@@ -497,10 +489,8 @@ fn load_build_block(package_root: &Path) -> Result<(PathBuf, Option<BuildBlock>)
         .and_then(crate::file_kind::package_stem)
         .map(|s| s.to_owned());
     let source = fs::read_to_string(&path).map_err(|e| LocateError::Read(path.clone(), e))?;
-    let package = parse_package_file(&source, stem.as_deref()).map_err(|err| {
-        let (_, message) = err.diag();
-        LocateError::Parse(path.clone(), message.to_string())
-    })?;
+    let package = parse_package_file(&source, stem.as_deref())
+        .map_err(|error| LocateError::Parse(path.clone(), source, Box::new(error)))?;
     Ok((path, package.build))
 }
 
@@ -637,6 +627,20 @@ mod tests {
         let root = TempTree(temp_dir());
         // No package file in the dir.
         assert_eq!(clear_at(&root.0), ExitCode::Usage);
+    }
+
+    #[test]
+    fn malformed_package_has_the_same_parse_category_for_every_operation() {
+        let root = TempTree(temp_dir());
+        write_pkg(&root.0, "  cache \"cache\"; target js { out 17 }\n");
+        let cache = root.0.join("cache");
+        fs::create_dir(&cache).unwrap();
+        fs::write(cache.join("keep"), "unchanged").unwrap();
+        for operation in [clear_at, path_at, gc_at] {
+            assert_eq!(operation(&root.0), ExitCode::Parse);
+            assert_eq!(fs::read_to_string(cache.join("keep")).unwrap(), "unchanged");
+            assert_eq!(fs::read_dir(&cache).unwrap().count(), 1);
+        }
     }
 
     /// `kio cache` with no child subcommand exits with the usage

@@ -148,6 +148,7 @@ pub(crate) fn handle_signature_request(
     let sources = CompletionSources {
         local: None,
         catalog,
+        declarations: state.declarations_for_file(Some(&path), workspace_root),
         state: Some(state),
     };
     let header = selected_header(&module, fact.head.as_str(), fact.head.span.start, &sources)?;

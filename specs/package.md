@@ -785,7 +785,7 @@ category.
   Every host backend also accepts `latest`. Omission, `baseline ()`, and
   `baseline latest` select the newest supported baseline in this Kio build's
   fixed table. Installed tools, network state, and module declarations do not
-  participate in selection. Formatting writes the selected concrete name for
+  participate in selection. `kio fmt` writes the selected concrete name for
   omission and Unit; an explicit `latest` stays floating, and a concrete name
   stays unchanged. Grouping such as `baseline ((v1_85))` is transparent;
   quoted strings are rejected. Unknown well-formed names and duplicate settings

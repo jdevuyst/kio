@@ -2196,6 +2196,25 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
     cancel_token: &crate::lsp::cancel::CancellationToken,
     user_elaborator_memos: &LspUserElaboratorMemos,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
+    analyze_workspace_at_with_overlay_lsp_with_declarations(
+        root,
+        overlay,
+        cancel_token,
+        user_elaborator_memos,
+        &mut None,
+    )
+}
+
+/// Retain the already-discovered declaration identities independently of a
+/// later body/typing failure. This adds no source walk or parser pass.
+#[cfg(all(feature = "surface", feature = "lsp"))]
+pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
+    root: &Path,
+    overlay: &package_collection::SourceOverlay,
+    cancel_token: &crate::lsp::cancel::CancellationToken,
+    user_elaborator_memos: &LspUserElaboratorMemos,
+    declarations: &mut Option<BTreeMap<PathBuf, String>>,
+) -> Option<Result<LspAnalysis, AnalysisFailure>> {
     use crate::ast::Lowered;
     use crate::pass::typecheck_full::check_normalized_package_collect_errors_with_scope;
 
@@ -2224,6 +2243,25 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
     if cancel_token.is_cancelled() {
         return None;
     }
+    *declarations = Some(
+        parsed_ws
+            .packages
+            .values()
+            .flat_map(|package| {
+                package.modules.iter().filter_map(|(path, module)| {
+                    let name = module_path_key(&module.path);
+                    // Discovery precedes Package::build's path validation.
+                    // A provider edge is usable only under its owning root.
+                    (package.root_dir.join(format!("{name}.kio")) == *path).then(|| {
+                        (
+                            std::fs::canonicalize(path).unwrap_or_else(|_| path.clone()),
+                            name,
+                        )
+                    })
+                })
+            })
+            .collect(),
+    );
     let package_fingerprints = lsp_user_elaborator_package_fingerprints(&parsed_ws);
 
     let mut sources: HashMap<PathBuf, String> = HashMap::new();
@@ -3748,6 +3786,43 @@ mod ufcs_authentication_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(feature = "surface", feature = "lsp"))]
+    #[test]
+    fn lsp_declaration_catalog_authenticates_paths_against_owning_package_root() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(directory.path()).unwrap();
+        std::fs::create_dir(root.join("nested")).unwrap();
+        std::fs::write(root.join("probe.pkg.kio"), "package probe;").unwrap();
+        std::fs::write(root.join("main.kio"), "module main;").unwrap();
+        let provider = root.join("nested/provider.kio");
+        for (declared, expected) in [
+            ("provider", None),
+            ("nested/provider", Some("nested/provider")),
+        ] {
+            std::fs::write(
+                &provider,
+                format!("module {declared}; pub fn chosen() {{ missing }}"),
+            )
+            .unwrap();
+            let mut declarations = None;
+            let result = analyze_workspace_at_with_overlay_lsp_with_declarations(
+                &root,
+                &package_collection::SourceOverlay::empty(),
+                &crate::lsp::cancel::CancellationToken::new(),
+                &LspUserElaboratorMemos::default(),
+                &mut declarations,
+            )
+            .unwrap();
+            assert!(result.is_err());
+            let catalog = declarations.unwrap();
+            assert_eq!(
+                catalog.get(&root.join("main.kio")).map(String::as_str),
+                Some("main")
+            );
+            assert_eq!(catalog.get(&provider).map(String::as_str), expected);
+        }
+    }
 
     fn key(name: &str) -> PackageKey {
         PackageKey {

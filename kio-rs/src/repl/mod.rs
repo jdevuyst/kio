@@ -669,8 +669,11 @@ fn initial_load(
     // skip the auto-load: it would just print the same error N times.
     if let Err(failure) = session.refresh() {
         return Err(InitialLoadError::PackageBroken(format!(
-            "the directory's modules do not type-check — open the REPL with no loads:\n  {}",
-            render_failure_for_banner(&failure)
+            "the directory's modules do not type-check — open the REPL with no loads:\n{}",
+            crate::repl_core::commands::render_failure(
+                &failure,
+                crate::diagnostic::ColorMode::for_stderr(),
+            )
         )));
     }
 
@@ -769,35 +772,6 @@ fn resolve_selector(session: &Session, selector: &str, available: &[String]) -> 
     None
 }
 
-/// Render the analysis failure as a single line for the startup
-/// banner. The same one-line shape `cmd_load` produces.
-fn render_failure_for_banner(failure: &crate::cmd::check::AnalysisFailure) -> String {
-    let located = failure.primary_error();
-    let (span, message) = located.error.diag();
-    if let Some(src) = failure.sources.get(&located.file_path) {
-        let (line, col) = line_col(src, span.start);
-        format!("{}:{line}:{col}: {message}", located.file_path.display())
-    } else {
-        format!("{}: {message}", located.file_path.display())
-    }
-}
-
-/// 1-based `(line, column)` of a byte offset within `source`.
-fn line_col(source: &str, offset: u32) -> (usize, usize) {
-    let off = (offset as usize).min(source.len());
-    let mut line = 1;
-    let mut col = 1;
-    for ch in source[..off].chars() {
-        if ch == '\n' {
-            line += 1;
-            col = 1;
-        } else {
-            col += 1;
-        }
-    }
-    (line, col)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -879,14 +853,6 @@ mod tests {
     #[test]
     fn history_path_none_without_any_env() {
         assert!(history_path_from(None, None).is_none());
-    }
-
-    #[test]
-    fn line_col_counts_lines_and_columns() {
-        let src = "ab\ncd\nef";
-        assert_eq!(line_col(src, 0), (1, 1));
-        assert_eq!(line_col(src, 3), (2, 1)); // start of line 2
-        assert_eq!(line_col(src, 7), (3, 2)); // 'f'
     }
 
     /// The two-line `<context>\nkio> ` shape the reedline `KioPrompt`

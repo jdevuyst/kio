@@ -1,0 +1,5 @@
+module testapi/provider;
+
+import testapi(String);
+
+pub fn identity(value: String) -> String { value }

@@ -292,7 +292,7 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
     const ALLOW_ELIDED_UNIVERSAL_CALL_TYPE_ARGS: bool = true;
 
     // Kio surface accepts the multi-layer flat-call form per
-    // `specs/language.md` § 4c — `foo(T1, v1, T2, v2)` against
+    // `specs/language.md` § Type parameters — `foo(T1, v1, T2, v2)` against
     // `Forall([A], Function(A, Forall([B], Function(B, Unit))))`
     // walks both curry layers in one application.
     const ALLOW_MULTI_LAYER_FLAT_CALL: bool = true;
@@ -1889,19 +1889,29 @@ fn reserve_module_nominal_type_names(module: &Module, reserved: &mut HashSet<Str
     }
 }
 
+fn generated_elaborator_scope_type_names(tcx: &TypeCtx<'_, '_>) -> HashSet<String> {
+    let mut reserved = tcx.in_scope_type_param_binders();
+    reserve_module_nominal_type_names(tcx.env.module, &mut reserved);
+    for usage in &tcx.env.module.imports {
+        if let ImportKind::Selective { items, .. } = &usage.kind {
+            reserved.extend(
+                items
+                    .iter()
+                    .filter_map(crate::ast::ImportItem::as_name)
+                    .filter(|name| crate::naming::is_type_name(name))
+                    .map(str::to_owned),
+            );
+        }
+    }
+    reserved
+}
+
 fn generated_elaborator_type_names(
     layout: &UserElaboratorSignatureLayout,
     typed: &TypedUserElaboratorCall,
     tcx: &TypeCtx<'_, '_>,
 ) -> HashSet<String> {
-    let mut reserved = tcx.in_scope_type_param_binders();
-    if let Some(package) = tcx.env.package {
-        for (_, entry) in package.modules() {
-            reserve_module_nominal_type_names(&entry.module, &mut reserved);
-        }
-    } else {
-        reserve_module_nominal_type_names(tcx.env.module, &mut reserved);
-    }
+    let mut reserved = generated_elaborator_scope_type_names(tcx);
 
     collect_free_type_vars(layout.result_ty.as_type(), &mut reserved);
     for layer in &layout.layers {
@@ -1936,14 +1946,7 @@ fn generated_elaborator_type_names_projected(
     observed_types: &[InternedType],
     tcx: &TypeCtx<'_, '_>,
 ) -> HashSet<String> {
-    let mut reserved = tcx.in_scope_type_param_binders();
-    if let Some(package) = tcx.env.package {
-        for (_, entry) in package.modules() {
-            reserve_module_nominal_type_names(&entry.module, &mut reserved);
-        }
-    } else {
-        reserve_module_nominal_type_names(tcx.env.module, &mut reserved);
-    }
+    let mut reserved = generated_elaborator_scope_type_names(tcx);
     collect_free_type_vars(layout.result_ty.as_type(), &mut reserved);
     for layer in &layout.layers {
         for param in &layer.type_params {
@@ -4639,6 +4642,65 @@ pub struct PositionIndex {
     value_at_type_slots: HashSet<(String, Span, usize)>,
     #[cfg(feature = "lsp")]
     refactoring: Option<Box<refactoring_facts::RefactoringFacts>>,
+    #[cfg(feature = "lsp")]
+    call_presentations: Option<Box<CallPresentations>>,
+}
+
+/// Source correspondence for an already selected public-type value packet.
+/// Declaration spelling is used only by the editor's subsequent display projection.
+#[cfg(feature = "lsp")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CallValueProjection {
+    Range { first: usize, width: usize },
+    Tail { first: usize },
+}
+
+#[cfg(feature = "lsp")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CallArgumentRole {
+    Type,
+    Value(CallValueProjection),
+}
+
+#[cfg(feature = "lsp")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CallLayerPresentation {
+    pub(crate) has_value_layer: bool,
+    pub(crate) consumed: bool,
+    pub(crate) implicit_unit: bool,
+}
+
+#[cfg(feature = "lsp")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CallPresentationFact {
+    Layer(CallLayerPresentation),
+    Argument { span: Span, role: CallArgumentRole },
+}
+
+#[cfg(feature = "lsp")]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct CallPresentationLayer {
+    pub(crate) layer: Option<CallLayerPresentation>,
+    pub(crate) arguments: std::collections::BTreeMap<(u32, u32), CallArgumentRole>,
+    ambiguous: bool,
+}
+
+#[cfg(feature = "lsp")]
+type CallPresentationLayers = std::collections::BTreeMap<usize, CallPresentationLayer>;
+#[cfg(feature = "lsp")]
+type CallPresentations = HashMap<
+    String,
+    HashMap<Span, HashMap<crate::ast::ExpressionOccurrenceId, CallPresentationLayers>>,
+>;
+
+#[cfg(all(test, feature = "lsp"))]
+thread_local! {
+    static SIGNATURE_CALL_OBSERVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(all(test, feature = "lsp"))]
+pub(crate) fn take_signature_call_observations() -> usize {
+    SIGNATURE_CALL_OBSERVATIONS.with(|count| count.replace(0))
 }
 
 #[derive(Debug, Clone)]
@@ -5068,6 +5130,90 @@ impl PositionIndex {
             .insert((module_path.to_owned(), call_span, slot_index));
     }
 
+    #[cfg(feature = "lsp")]
+    pub(crate) fn record_call_presentation(
+        &mut self,
+        module_path: &str,
+        call_site: crate::ast::ExpressionSite,
+        slot_offset: usize,
+        fact: CallPresentationFact,
+    ) {
+        let layer = self
+            .call_presentations
+            .get_or_insert_with(Default::default)
+            .entry(module_path.to_owned())
+            .or_default()
+            .entry(call_site.span)
+            .or_default()
+            .entry(call_site.id)
+            .or_default()
+            .entry(slot_offset)
+            .or_default();
+        match fact {
+            CallPresentationFact::Layer(value) => {
+                layer.ambiguous |= layer.layer.is_some_and(|previous| previous != value);
+                layer.layer = Some(value);
+            }
+            CallPresentationFact::Argument { span, role } => {
+                layer.ambiguous |= layer
+                    .arguments
+                    .insert((span.start, span.end), role)
+                    .is_some_and(|previous| previous != role);
+            }
+        }
+    }
+
+    /// A lookup visits only occurrences of this source call. Cloned source
+    /// must agree completely before an editor can present one argument plan.
+    #[cfg(feature = "lsp")]
+    pub(crate) fn call_presentation(
+        &self,
+        module_path: &str,
+        span: Span,
+    ) -> Option<&CallPresentationLayers> {
+        let occurrences = self
+            .call_presentations
+            .as_ref()?
+            .get(module_path)?
+            .get(&span)?;
+        let mut observations = occurrences.values();
+        let first = observations.next()?;
+        #[cfg(test)]
+        SIGNATURE_CALL_OBSERVATIONS.with(|count| count.set(count.get() + 1));
+        if first
+            .values()
+            .any(|layer| layer.ambiguous || layer.layer.is_none())
+            || observations.any(|other| {
+                #[cfg(test)]
+                SIGNATURE_CALL_OBSERVATIONS.with(|count| count.set(count.get() + 1));
+                other != first
+            })
+        {
+            return None;
+        }
+        Some(first)
+    }
+
+    #[cfg(all(test, feature = "lsp"))]
+    pub(crate) fn call_presentation_counts(&self) -> Option<[usize; 5]> {
+        let modules = self.call_presentations.as_ref()?;
+        let mut counts = [modules.len(), 0, 0, 0, 0];
+        for calls in modules.values() {
+            counts[1] += calls.len();
+            for occurrences in calls.values() {
+                counts[2] += occurrences.len();
+                for layers in occurrences.values() {
+                    counts[3] += layers.len();
+                    counts[4] += layers
+                        .values()
+                        .map(|layer| layer.arguments.len())
+                        .sum::<usize>();
+                }
+            }
+        }
+        Some(counts)
+    }
+
     pub fn is_value_at_type_slot(
         &self,
         module_path: &str,
@@ -5262,6 +5408,51 @@ impl PositionIndex {
     pub fn merge(&mut self, other: PositionIndex) {
         #[cfg(feature = "lsp")]
         self.merge_refactoring_coverage(other.refactoring);
+        #[cfg(feature = "lsp")]
+        if let Some(modules) = other.call_presentations {
+            for (module, calls) in *modules {
+                for (span, occurrences) in calls {
+                    for (id, layers) in occurrences {
+                        for (slot_offset, layer) in layers {
+                            let site = crate::ast::ExpressionSite { id, span };
+                            if let Some(value) = layer.layer {
+                                self.record_call_presentation(
+                                    &module,
+                                    site,
+                                    slot_offset,
+                                    CallPresentationFact::Layer(value),
+                                );
+                            }
+                            for ((start, end), role) in layer.arguments {
+                                self.record_call_presentation(
+                                    &module,
+                                    site,
+                                    slot_offset,
+                                    CallPresentationFact::Argument {
+                                        span: Span::new(start, end),
+                                        role,
+                                    },
+                                );
+                            }
+                            if layer.ambiguous {
+                                self.call_presentations
+                                    .as_mut()
+                                    .unwrap()
+                                    .get_mut(&module)
+                                    .unwrap()
+                                    .get_mut(&site.span)
+                                    .unwrap()
+                                    .get_mut(&id)
+                                    .unwrap()
+                                    .get_mut(&slot_offset)
+                                    .unwrap()
+                                    .ambiguous = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         for presentation in other.binder_presentations {
             if !self
                 .binder_presentations
@@ -10940,6 +11131,109 @@ mod tests {
             generated.name, "A_n3",
             "the generated binder must skip the grouped nominal `A_n2`"
         );
+    }
+
+    #[cfg(feature = "prime")]
+    #[test]
+    fn generated_elaborator_type_binders_use_only_the_callers_type_namespace() {
+        use crate::backends::kio_prime::emit_module;
+        use crate::pipeline::Pipeline;
+        use crate::prime::pipeline::PrimePipeline;
+
+        fn emit_and_recheck(sources: &[(&str, &str)]) -> String {
+            let package = lowered_package(sources);
+            let checked = check_package(&package).expect("typecheck residual elaborator");
+            let emitted = emit_module(checked.module("main").expect("caller module"));
+            let reparsed = checked
+                .modules()
+                .map(|(path, entry)| {
+                    let source = emit_module(entry);
+                    (
+                        PathBuf::from(format!("{path}.kio")),
+                        parse(&source).expect("reparse emitted Prime"),
+                    )
+                })
+                .collect();
+            let (modules, _) = PrimePipeline::lower_package(reparsed, None)
+                .expect("emitted residual is ordinary Prime syntax");
+            let fresh = Package::build(Path::new(""), modules, None)
+                .expect("assemble fresh residual package");
+            fresh.resolve_imports().expect("fresh imports resolve");
+            fresh
+                .check_binding_origins()
+                .expect("fresh bindings retain their origins");
+            fresh
+                .check_no_value_cycles()
+                .expect("fresh residual has no value cycle");
+            fresh
+                .check_in_body_resolution()
+                .expect("fresh residual bodies resolve");
+            PrimePipeline::typecheck(&fresh).expect("fresh residual typechecks");
+            emitted
+        }
+
+        for (implementation, declaration) in [
+            (
+                "pure fn phantom_impl( \
+                   _ct: __Comptime__, _source: __Type__, value: __Checked_term__, \
+                   _a: __Type__, _b: __Type__ \
+                 ) -> __Checked_term__ { value }",
+                "impl phantom_impl",
+            ),
+            (
+                "pure fn phantom_impl( \
+                   _ct: __Comptime__, fills: __Fill_ctx__, \
+                   _source: __Type__, value: __Checked_term__, \
+                   _a: __Type__, _b: __Type__ \
+                 ) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) }",
+                "impl(fills) phantom_impl",
+            ),
+        ] {
+            let elaborator = format!(
+                "module elab; import __comptime__; {implementation} \
+                 pub elab phantom : [Source] Source -> [A] [B] A {{ {declaration}; }};"
+            );
+            let main = "module main; import elab(phantom); \
+                pub fn residual() -> [B] . { phantom!((), .) }";
+            let baseline = emit_and_recheck(&[
+                ("elab.kio", &elaborator),
+                ("main.kio", main),
+                ("unrelated.kio", "module unrelated;"),
+            ]);
+            assert!(baseline.contains(".[B_n2]"), "{baseline}");
+            let grown = emit_and_recheck(&[
+                ("elab.kio", &elaborator),
+                ("main.kio", main),
+                ("unrelated.kio", "module unrelated; type B_n2 = .;"),
+            ]);
+            assert_eq!(
+                baseline, grown,
+                "an unimported provider declaration cannot renumber a caller's residual binder"
+            );
+
+            for caller in [
+                "module main; import elab(phantom); type B_n2 = .; \
+                 pub fn residual() -> [B] . { phantom!((), .) }",
+                "module main; import elab(phantom); import provider(B_n2); \
+                 pub fn residual() -> [B] . { phantom!((), .) }",
+                "module main; import elab(phantom); \
+                 pub fn residual[B_n2]() -> [B] . { phantom!((), .) }",
+                "module main; import elab(phantom); rec { \
+                   type B_n2 = Wrap; \
+                   newtype Wrap : B_n2 { constructor mk; projector un; }; \
+                 } pub fn residual() -> [B] . { phantom!((), .) }",
+            ] {
+                let emitted = emit_and_recheck(&[
+                    ("elab.kio", &elaborator),
+                    ("main.kio", caller),
+                    ("provider.kio", "module provider; pub type B_n2 = .;"),
+                ]);
+                assert!(
+                    emitted.contains(".[B_n3]"),
+                    "a visible type binding must remain reserved: {emitted}"
+                );
+            }
+        }
     }
 
     fn lowered_package(sources: &[(&str, &str)]) -> Package {
@@ -20502,6 +20796,54 @@ fn generic_last() -> . {
             idx.type_count() >= 1,
             "expected at least one type entry in v1"
         );
+    }
+
+    #[cfg(feature = "lsp")]
+    #[test]
+    fn signature_source_copies_coalesce_only_when_complete_plans_agree() {
+        let mut index = PositionIndex::new();
+        let site = crate::ast::ExpressionSite {
+            id: crate::ast::ExpressionOccurrence::fresh().key(),
+            span: Span::new(10, 20),
+        };
+        let fact = CallPresentationFact::Layer(CallLayerPresentation {
+            has_value_layer: true,
+            consumed: true,
+            implicit_unit: false,
+        });
+        let arg = CallPresentationFact::Argument {
+            span: Span::new(15, 17),
+            role: CallArgumentRole::Value(CallValueProjection::Tail { first: 0 }),
+        };
+        for _ in 0..3 {
+            index.record_call_presentation("x", site, 0, fact);
+            index.record_call_presentation("x", site, 0, arg);
+        }
+        assert_eq!(index.call_presentation_counts(), Some([1, 1, 1, 1, 1]));
+        let copy = crate::ast::ExpressionSite {
+            id: crate::ast::ExpressionOccurrence::fresh().key(),
+            ..site
+        };
+        let mut shard = PositionIndex::new();
+        shard.record_call_presentation("x", copy, 0, fact);
+        shard.record_call_presentation("x", copy, 0, arg);
+        index.merge(shard);
+        assert_eq!(index.call_presentation_counts(), Some([1, 1, 2, 2, 2]));
+        assert!(index.call_presentation("x", site.span).is_some());
+        index.record_call_presentation(
+            "x",
+            copy,
+            0,
+            CallPresentationFact::Argument {
+                span: Span::new(15, 17),
+                role: CallArgumentRole::Type,
+            },
+        );
+        assert!(index.call_presentation("x", site.span).is_none());
+        let mut merged = PositionIndex::new();
+        merged.merge(index);
+        assert!(merged.call_presentation("x", site.span).is_none());
+        assert_eq!(merged.call_presentation_counts(), Some([1, 1, 2, 2, 2]));
     }
 
     /// The merge contract: two non-overlapping shards merge into a

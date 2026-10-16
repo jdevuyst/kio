@@ -770,8 +770,15 @@ fn cmd_load(session: &mut Session, arg: &str, palette: Palette) -> String {
     // needs. A type error aborts the load with the session unchanged.
     if let Err(failure) = session.refresh() {
         return format!(
-            "load aborted — the package does not type-check:\n  {}",
-            render_failure(&failure)
+            "load aborted — the package does not type-check:\n{}",
+            render_failure(
+                &failure,
+                if palette == Palette::Plain {
+                    crate::diagnostic::ColorMode::Never
+                } else {
+                    crate::diagnostic::ColorMode::Always
+                },
+            )
         );
     }
 
@@ -3521,24 +3528,23 @@ fn unresolved(session: &Session, name: &str) -> String {
     }
 }
 
-/// Render an [`crate::cmd::check::AnalysisFailure`] as a one-line
-/// diagnostic for the `:load` abort message.
-fn render_failure(failure: &crate::cmd::check::AnalysisFailure) -> String {
+/// Render the primary load failure with its exact captured related sources.
+pub(crate) fn render_failure(
+    failure: &crate::cmd::check::AnalysisFailure,
+    color: crate::diagnostic::ColorMode,
+) -> String {
     let located = failure.primary_error();
-    let (span, message) = located.error.diag();
-    // Find the offending file's source for line/col.
-    if let Some(src) = failure.sources.get(&located.file_path) {
-        let (line, col) = line_col(src, span.start);
-        format!(
-            "{}:{}:{}: {}",
-            located.file_path.display(),
-            line,
-            col,
-            message
-        )
-    } else {
-        format!("{}: {}", located.file_path.display(), message)
-    }
+    crate::diagnostic::render_with_sources(
+        &located.file_path,
+        failure
+            .sources
+            .get(&located.file_path)
+            .map_or("", String::as_str),
+        &failure.sources,
+        None,
+        &located.error,
+        color,
+    )
 }
 
 /// Every spelling for a canonical command — the canonical name plus each

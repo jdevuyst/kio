@@ -1,0 +1,17 @@
+module main;
+
+import other as other;
+import provider as provider;
+import provider(choose);
+
+pub fn bare() { choose((), ()) }
+
+pub fn qualified() { provider.choose((), ()) }
+
+pub fn distinct() { other.choose((), ()) }
+
+pub fn host() { provider.supply((), ()) }
+
+pub fn typed() { provider.choose(., (), ()) }
+
+pub fn local(f: . -> .) { f(()) }

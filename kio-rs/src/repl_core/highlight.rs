@@ -92,8 +92,7 @@ impl Palette {
     /// Detect the right palette for the current process.
     ///
     /// - [`Palette::Plain`] when `stdout` is not a terminal, when
-    ///   `$NO_COLOR` is set to a non-empty value (the `NO_COLOR`
-    ///   convention), or when `$TERM` is `dumb`.
+    ///   `$NO_COLOR` is set, or when `$TERM` is `dumb`.
     /// - [`Palette::TrueColor`] on a colour TTY whose `$COLORTERM`
     ///   advertises 24-bit colour (`truecolor` or `24bit`).
     /// - [`Palette::Ansi`] on any other colour TTY.
@@ -105,7 +104,7 @@ impl Palette {
     pub fn detect() -> Self {
         Self::classify_env(
             stdout_is_terminal(),
-            std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()),
+            std::env::var_os("NO_COLOR").as_deref(),
             std::env::var("TERM").map(|t| t == "dumb").unwrap_or(false),
             terminal_advertises_truecolor(),
         )
@@ -114,10 +113,15 @@ impl Palette {
     /// The pure palette decision behind [`Palette::detect`], factored
     /// out so it can be tested without a real TTY or mutating process
     /// environment. `is_terminal` is stdout's TTY-ness, `no_color` the
-    /// `$NO_COLOR` convention, `dumb` whether `$TERM` is `dumb`, and
+    /// `$NO_COLOR` value, `dumb` whether `$TERM` is `dumb`, and
     /// `truecolor` whether `$COLORTERM` advertised 24-bit colour.
-    fn classify_env(is_terminal: bool, no_color: bool, dumb: bool, truecolor: bool) -> Self {
-        if no_color || dumb || !is_terminal {
+    fn classify_env(
+        is_terminal: bool,
+        no_color: Option<&std::ffi::OsStr>,
+        dumb: bool,
+        truecolor: bool,
+    ) -> Self {
+        if no_color.is_some() || dumb || !is_terminal {
             return Palette::Plain;
         }
         if truecolor {
@@ -947,7 +951,7 @@ mod tests {
         // `classify_env` because the test harness's stdout is not a
         // TTY, so `detect()` itself always returns Plain.)
         assert_eq!(
-            Palette::classify_env(true, false, false, true),
+            Palette::classify_env(true, None, false, true),
             Palette::TrueColor
         );
     }
@@ -956,7 +960,7 @@ mod tests {
     fn palette_detect_falls_back_to_ansi_without_colorterm() {
         // Colour TTY, no truecolor advertisement → Ansi.
         assert_eq!(
-            Palette::classify_env(true, false, false, false),
+            Palette::classify_env(true, None, false, false),
             Palette::Ansi
         );
     }
@@ -964,17 +968,19 @@ mod tests {
     #[test]
     fn palette_detect_plain_when_no_color_set() {
         // `$NO_COLOR` forces Plain even on a truecolor TTY.
-        assert_eq!(
-            Palette::classify_env(true, true, false, true),
-            Palette::Plain
-        );
+        for value in ["", "1"] {
+            assert_eq!(
+                Palette::classify_env(true, Some(std::ffi::OsStr::new(value)), false, true),
+                Palette::Plain
+            );
+        }
         // Non-TTY and dumb terminal are Plain too.
         assert_eq!(
-            Palette::classify_env(false, false, false, true),
+            Palette::classify_env(false, None, false, true),
             Palette::Plain
         );
         assert_eq!(
-            Palette::classify_env(true, false, true, true),
+            Palette::classify_env(true, None, true, true),
             Palette::Plain
         );
     }

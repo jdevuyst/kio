@@ -2187,7 +2187,7 @@ impl LabelElabVisitor<'_> {
     /// effective table. The candidate pool is every label name the table
     /// knows — local declarations plus selectively- and qualified-curly-
     /// imported labels — so a typo on any earns the nearest-match
-    /// suggestion (the phase-10 rubric for name-resolution diagnostics).
+    /// suggestion.
     fn label_not_in_scope(&self, label: &str, label_span: Span) -> Error {
         let mut error = Error::name_res(label_span, format!("label `{label}` is not in scope"))
             .requiring_current_fixes();

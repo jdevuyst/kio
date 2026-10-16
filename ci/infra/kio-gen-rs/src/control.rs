@@ -1,6 +1,7 @@
 //! Finite runtime witnesses, independently modelled before source rendering.
 
 use rand::Rng;
+use rand::seq::SliceRandom;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Receiver {
@@ -67,6 +68,7 @@ pub enum ControlProbe {
         control: Box<ControlProbe>,
         types: TypeProbe,
         recursion: Option<RecursionProbe>,
+        rows: Option<RowProbe>,
     },
     Sequence(Sequence),
     Blocks {
@@ -116,6 +118,38 @@ pub struct RecursionProbe {
     pub mode: RecursionMode,
     pub mutual: bool,
     pub depth: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RowProbe {
+    pub order: [usize; 3],
+    pub original: [String; 3],
+    pub updates: Vec<(usize, String)>,
+    pub bindings: Vec<(usize, bool)>,
+}
+
+fn sample_row<R: Rng>(rng: &mut R) -> RowProbe {
+    let mut order = [0, 1, 2];
+    order.shuffle(rng);
+    let original = std::array::from_fn(|i| format!("row-original-{i}-{}\n", rng.gen_range(0..32)));
+    let mut update_order = [0, 1, 2];
+    update_order.shuffle(rng);
+    let updates = update_order[..rng.gen_range(0..=3)]
+        .iter()
+        .map(|&i| (i, format!("row-updated-{i}-{}\n", rng.gen_range(0..32))))
+        .collect();
+    let mut binding_order = [0, 1, 2];
+    binding_order.shuffle(rng);
+    let bindings = binding_order[..rng.gen_range(1..=3)]
+        .iter()
+        .map(|&i| (i, rng.gen_bool(0.5)))
+        .collect();
+    RowProbe {
+        order,
+        original,
+        updates,
+        bindings,
+    }
 }
 
 impl TypeProbe {
@@ -235,6 +269,7 @@ pub fn sample<R: Rng>(rng: &mut R) -> ControlProbe {
         control: Box::new(control),
         types,
         recursion,
+        rows: Some(sample_row(rng)),
     }
 }
 
@@ -309,6 +344,7 @@ pub fn expected_stdout(probe: &ControlProbe) -> String {
             control,
             types,
             recursion,
+            rows,
         } => {
             out.push_str(&expected_stdout(control));
             let value = match control.as_ref() {
@@ -319,6 +355,9 @@ pub fn expected_stdout(probe: &ControlProbe) -> String {
             out.push_str(&value);
             if let Some(recursion) = recursion {
                 out.push_str(&recursion_stdout(recursion, &value));
+            }
+            if let Some(rows) = rows {
+                out.push_str(&row_stdout(rows));
             }
         }
         ControlProbe::Sequence(sequence) => {
@@ -346,6 +385,23 @@ pub fn expected_stdout(probe: &ControlProbe) -> String {
                 out.push_str("consumer\nthunk\nnested-first\nthunk\nnested-second\n");
             }
         }
+    }
+    out
+}
+
+pub fn row_stdout(probe: &RowProbe) -> String {
+    let mut fields = probe.original.clone();
+    let mut out = String::from("row-source\n");
+    for (index, replacement) in &probe.updates {
+        out.push_str(&format!("row-update-{index}\n"));
+        fields[*index] = replacement.clone();
+    }
+    for payload in &fields {
+        out.push_str(payload);
+    }
+    out.push_str("row-bind\n");
+    for (index, _) in &probe.bindings {
+        out.push_str(&fields[*index]);
     }
     out
 }

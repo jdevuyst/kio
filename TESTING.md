@@ -285,7 +285,7 @@ What case narrowing does and does not scope is the part to internalize. A corpus
 
 One case never narrows out: a **`KNOWN_FAILING`** bug reproducer. Its gate is that it *starts failing* to fail — a reproducer whose bug got fixed fails the run so the marker gets cleaned up — and that gate lives in the impl tier, while a `KNOWN_FAILING` case's case-binary checks are skipped by contract (it is expected not to build cleanly). A narrowed-out one would therefore run nothing at all, so sampling, numeric caps, and named sets all pin it into the impl tier.
 
-The count is **per top-level bucket**, not per corpus. `test-data/goldens/` concentrates its cost in `00_success`; its error tiers are separate buckets. `test-data/emissions/` uses one top-level bucket per backend, so a cap of `1` selects one case for every available backend rather than one case for the whole corpus. A flat corpus (castles, POC, contrib) is entirely unbucketed. A cap of `0` is rejected: a green run that built and ran nothing is the opt-out `AGENTS.md` forbids.
+The count is **per top-level bucket**, not per corpus. `test-data/goldens/` concentrates its cost in `00_success`; its error tiers are separate buckets. `test-data/emissions/` uses one top-level bucket per backend, so a cap of `1` selects one case for every available backend rather than one case for the whole corpus. A flat corpus (castles, POC, contrib) is entirely unbucketed. A cap of `0` is rejected: a green run that built and ran nothing provides no coverage.
 
 Each corpus orchestrator accepts `--all-cases`, `--sample-cases` (its own default cap), `--case-count=<N>`, and `--case-seed=<S>`, and each carries its own default:
 

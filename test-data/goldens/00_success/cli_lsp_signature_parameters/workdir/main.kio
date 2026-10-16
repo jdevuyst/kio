@@ -1,0 +1,99 @@
+module main;
+
+import provider as p;
+
+fn choose[A](left: A, right: A) -> A { right }
+
+pub fn run() { choose((), ()) }
+
+type Twice[A] = A & A;
+
+type Pair = Twice(.);
+
+type Higher[*F] = F(.) & F(.);
+
+newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
+
+fn pair(packet: . & .) { () }
+
+fn packed(left: ., right: .) { () }
+
+fn tail(left: ., rest: . & .) { () }
+
+fn nested(first: . & ., last: .) { () }
+
+fn staged(packet: . & .)(next: .) { next }
+
+fn staged_types[A](first: A)[B](second: B) -> B { second }
+
+fn generic[A](packet: A) -> A { packet }
+
+fn aliased(packet: Pair) { () }
+
+fn higher[*F](packet: Higher(F)) { () }
+
+fn returned() -> . -> . {
+  .(value: .) { value }
+}
+
+fn implicit(value: .) { value }
+
+fn empty() { () }
+
+fn type_only[A] { () }
+
+fn after(value: .) -> [A] . {
+  .[A] { value }
+}
+
+fn residual[A][B](value: A) -> A { value }
+
+fn repeated(value: .)(value: .) { value }
+
+host fn supply(left: ., right: .);
+
+pub fn split_product() { pair((), ()) }
+
+pub fn whole_packet() { packed(((), ())) }
+
+pub fn split_tail() { tail((), (), ()) }
+
+pub fn packed_tail() { tail((), ((), ())) }
+
+pub fn nested_left() { nested(((), ()), ()) }
+
+pub fn multiple_stages() { staged((), (), ()) }
+
+pub fn later_type() { staged_types((), ., ()) }
+
+pub fn explicit_product() -> . & . { generic(. & ., (), ()) }
+
+pub fn inferred_product() -> . & . { generic(((), ())) }
+
+pub fn alias_product() { aliased((), ()) }
+
+pub fn higher_product() { higher(Box, Box.mk_box(()), Box.mk_box(())) }
+
+pub fn returned_stage() { returned((), ()) }
+
+pub fn implicit_unit() { implicit() }
+
+pub fn explicit_unit() { implicit(()) }
+
+pub fn empty_unit() { empty() }
+
+pub fn only_type() { type_only(.) }
+
+pub fn trailing_type() { after((), .) }
+
+pub fn residual_type() -> [B] . -> . { residual(.) }
+
+pub fn same_labels() { repeated((), ()) }
+
+pub fn host_call() { supply((), ()) }
+
+pub fn local_call() { let local = choose; local((), ()) }
+
+pub fn placeholder() { choose(_, (), ()) }
+
+pub fn remote_call() { p.remote((), ()) }

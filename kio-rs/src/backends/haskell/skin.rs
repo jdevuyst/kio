@@ -766,19 +766,19 @@ impl<'p> HaskellShapes<'p> {
         constraint: ExactHostConstraint,
     ) -> Result<ExactHostSyntax, EmitError> {
         if self.host_types.resolve(ty, module).is_none() {
-            return Err(EmitError::unsupported(format!(
-                "Haskell emitter: exact host type unavailable for annotated syntax `{}`",
+            unreachable!(
+                "Haskell emitter: checked literal and conditional annotations name exact host types: `{}`",
                 canonical_type_string(ty)
-            )));
+            );
         }
         let rendered = self
             .exact_host_haskell_type_in(ty, module)?
-            .ok_or_else(|| {
-                EmitError::unsupported(format!(
-                    "Haskell emitter: annotated syntax type `{}` does not resolve to an exact host declaration",
+            .unwrap_or_else(|| {
+                unreachable!(
+                    "Haskell emitter: exact host resolution established an annotated syntax declaration for `{}`",
                     canonical_type_string(ty)
-                ))
-            })?;
+                )
+            });
         let constraint = match constraint {
             ExactHostConstraint::Integral => format!("Num ({rendered})"),
             ExactHostConstraint::Fractional => format!("Fractional ({rendered})"),

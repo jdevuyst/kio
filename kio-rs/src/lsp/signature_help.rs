@@ -2,11 +2,14 @@
 //!
 //! V1 supports direct path callees whose path segment resolved to a
 //! top-level Kio function or host function in the latest typed
-//! snapshot. Signature help reads resolved binder facts only; it does
-//! not participate in name resolution and cannot affect open-world
-//! compilation.
+//! snapshot. Signature help consumes committed semantic facts and renders
+//! declaration spelling; it does not participate in name resolution and
+//! cannot affect open-world compilation.
 
-use lsp_types::{SignatureHelp, SignatureInformation, TextDocumentPositionParams};
+use lsp_types::{
+    ParameterInformation, ParameterLabel, SignatureHelp, SignatureInformation,
+    TextDocumentPositionParams,
+};
 
 use crate::ast::{
     CallArg, ElaboratorCall, Expr, HostFnParam, Item, Module, OpChainKind, SignatureGroupRef,
@@ -15,7 +18,7 @@ use crate::ast::{
 use crate::cmd::check::LspAnalysis;
 use crate::lsp::positions::{LineIndex, LspPosition};
 use crate::pass::typecheck_core::write_type;
-use crate::pass::typecheck_full::ResolvedBinder;
+use crate::pass::typecheck_full::{CallArgumentRole, CallValueProjection, ResolvedBinder};
 use crate::span::Span;
 
 pub fn handle_signature_help(
@@ -23,6 +26,7 @@ pub fn handle_signature_help(
     source: &str,
     module: &Module<Surface>,
     analysis: Option<&LspAnalysis>,
+    label_offsets: bool,
 ) -> Option<SignatureHelp> {
     let analysis = analysis?;
     let uri = &params.text_document.uri;
@@ -37,33 +41,66 @@ pub fn handle_signature_help(
     let Expr::Path { segments, .. } = call.callee else {
         return None;
     };
-    let [segment] = segments.as_slice() else {
-        return None;
-    };
-    let callable = resolved_callable(analysis, module_path, segment.span)?;
-    let ty = analysis
+    // The leaf's recorded binder carries the selected declaration's owner;
+    // a qualified path must not look up its spelling in the consumer module.
+    let segment = segments.last()?;
+    let callable = resolved_callable(analysis, module_path, call.callee.span(), segment.span)?;
+    let rendered = declaration_signature_label(analysis, &callable)?;
+    let label_offsets = label_offsets.then(|| rendered.label_offsets());
+    let layers = analysis
         .position_index
-        .type_at(module_path, call.callee.span())
-        .or_else(|| analysis.position_index.type_at(module_path, segment.span))?;
-    let label = declaration_signature_label(analysis, &callable).unwrap_or_else(|| {
-        let mut rendered = String::new();
-        write_type(ty, &mut rendered);
-        format!("{}: {rendered}", callable.name())
-    });
-    let active_value_arg = active_value_arg(call.args, offset, |slot_index| {
-        analysis
-            .position_index
-            .is_value_at_type_slot(module_path, call.span, slot_index)
-    });
+        .call_presentation(module_path, call.span)?;
+    let mut parameters = Vec::new();
+    let mut sources = Vec::new();
+    let mut stage = 0;
+    for (ordinal, layer) in layers.values().enumerate() {
+        let selected = layer.layer?;
+        // A context-inferred returned forall has no written application of
+        // its residual value layer. It contributes no phantom parameter.
+        if ordinal > 0 && layer.arguments.is_empty() && !selected.implicit_unit {
+            continue;
+        }
+        let mut has_written_value = false;
+        let first_value = parameters.len() as u32;
+        for ((start, end), role) in &layer.arguments {
+            let parameter = match role {
+                CallArgumentRole::Type => selected.has_value_layer.then_some(first_value),
+                CallArgumentRole::Value(projection) => {
+                    has_written_value = true;
+                    let parameter = parameters.len() as u32;
+                    let region = rendered.value_region(stage, *projection);
+                    parameters.push(rendered.parameter(region, label_offsets.as_ref()));
+                    Some(parameter)
+                }
+            };
+            sources.push((Span::new(*start, *end), parameter));
+        }
+        if !has_written_value && selected.has_value_layer {
+            let region =
+                rendered.value_region(stage, CallValueProjection::Range { first: 0, width: 1 });
+            parameters.push(rendered.parameter(region, label_offsets.as_ref()));
+            if layer.arguments.is_empty() {
+                sources.push((Span::new(call.span.end, call.span.end), Some(first_value)));
+            }
+        }
+        stage += usize::from(selected.consumed);
+    }
+    let active_parameter = active_parameter(&sources, offset);
+    // LSP clients default an omitted active parameter to zero. A written
+    // type-only scalar stage has no value to highlight, including after an
+    // earlier consumed value layer, so expose no parameter in that context.
+    if active_parameter.is_none() {
+        parameters.clear();
+    }
     Some(SignatureHelp {
         signatures: vec![SignatureInformation {
-            label,
+            label: rendered.label,
             documentation: None,
-            parameters: None,
-            active_parameter: Some(active_value_arg),
+            parameters: Some(parameters),
+            active_parameter,
         }],
         active_signature: Some(0),
-        active_parameter: Some(active_value_arg),
+        active_parameter,
     })
 }
 
@@ -73,48 +110,32 @@ enum CallableResolution {
     HostEnvFn { module_path: String, name: String },
 }
 
-impl CallableResolution {
-    fn name(&self) -> &str {
-        match self {
-            CallableResolution::Fn { name, .. } | CallableResolution::HostEnvFn { name, .. } => {
-                name
-            }
-        }
-    }
-}
-
 fn resolved_callable(
     analysis: &LspAnalysis,
     module_path: &str,
+    path: Span,
     span: Span,
 ) -> Option<CallableResolution> {
-    analysis
+    match analysis
         .position_index
-        .binders_iter()
-        .find_map(|((mp, s), binder)| {
-            if mp != module_path || *s != span {
-                return None;
-            }
-            match binder {
-                ResolvedBinder::Fn { module_path, name } => Some(CallableResolution::Fn {
-                    module_path: module_path.clone(),
-                    name: name.clone(),
-                }),
-                ResolvedBinder::HostEnvFn { module_path, name } => {
-                    Some(CallableResolution::HostEnvFn {
-                        module_path: module_path.clone(),
-                        name: name.clone(),
-                    })
-                }
-                _ => None,
-            }
-        })
+        .signature_callee_binder(module_path, path, span)?
+    {
+        ResolvedBinder::Fn { module_path, name } => Some(CallableResolution::Fn {
+            module_path: module_path.clone(),
+            name: name.clone(),
+        }),
+        ResolvedBinder::HostEnvFn { module_path, name } => Some(CallableResolution::HostEnvFn {
+            module_path: module_path.clone(),
+            name: name.clone(),
+        }),
+        _ => None,
+    }
 }
 
 fn declaration_signature_label(
     analysis: &LspAnalysis,
     callable: &CallableResolution,
-) -> Option<String> {
+) -> Option<RenderedSignature> {
     let (decl_module_path, name) = match callable {
         CallableResolution::Fn { module_path, name }
         | CallableResolution::HostEnvFn { module_path, name } => (module_path, name),
@@ -141,8 +162,99 @@ fn declaration_signature_label(
     None
 }
 
-fn fn_signature_label(def: &crate::ast::FnDef<crate::ast::Lowered>) -> String {
+struct RenderedValueGroup {
+    parameters: Vec<std::ops::Range<usize>>,
+    empty: std::ops::Range<usize>,
+}
+
+struct RenderedSignature {
+    label: String,
+    values: Vec<RenderedValueGroup>,
+    result: std::ops::Range<usize>,
+}
+
+impl RenderedSignature {
+    fn label_offsets(&self) -> std::collections::HashMap<usize, u32> {
+        let mut offsets = std::collections::HashMap::new();
+        let mut chars = self.label.chars();
+        let (mut byte, mut utf16) = (0, 0);
+        let regions = self
+            .values
+            .iter()
+            .flat_map(|group| {
+                if group.parameters.is_empty() {
+                    std::slice::from_ref(&group.empty)
+                } else {
+                    group.parameters.as_slice()
+                }
+            })
+            .chain(std::iter::once(&self.result));
+        // Rendered declaration regions are in source order. Scan the label
+        // once, retaining only the endpoints later projections can select.
+        for region in regions {
+            for endpoint in [region.start, region.end] {
+                while byte < endpoint {
+                    let ch = chars.next().expect("rendered region is inside its label");
+                    byte += ch.len_utf8();
+                    utf16 += ch.len_utf16() as u32;
+                    #[cfg(test)]
+                    LABEL_OFFSET_CHARACTERS.with(|count| count.set(count.get() + 1));
+                }
+                offsets.insert(endpoint, utf16);
+            }
+        }
+        offsets
+    }
+
+    fn value_region(
+        &self,
+        stage: usize,
+        projection: CallValueProjection,
+    ) -> std::ops::Range<usize> {
+        let Some(group) = self.values.get(stage) else {
+            return self.result.clone();
+        };
+        let Some(last) = group.parameters.len().checked_sub(1) else {
+            return group.empty.clone();
+        };
+        // The declaration group displays a right-fold product. Only its last
+        // binder can occupy several selected outer-spine components. This
+        // projection runs after public-type selection and never feeds typing.
+        let (first, end) = match projection {
+            CallValueProjection::Range { first, width } => (
+                first.min(last),
+                first.saturating_add(width.saturating_sub(1)).min(last),
+            ),
+            CallValueProjection::Tail { first } => (first.min(last), last),
+        };
+        group.parameters[first].start..group.parameters[end].end
+    }
+
+    fn parameter(
+        &self,
+        region: std::ops::Range<usize>,
+        offsets: Option<&std::collections::HashMap<usize, u32>>,
+    ) -> ParameterInformation {
+        let label = if let Some(offsets) = offsets {
+            ParameterLabel::LabelOffsets([offsets[&region.start], offsets[&region.end]])
+        } else {
+            ParameterLabel::Simple(self.label[region].to_owned())
+        };
+        ParameterInformation {
+            label,
+            documentation: None,
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static LABEL_OFFSET_CHARACTERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn fn_signature_label(def: &crate::ast::FnDef<crate::ast::Lowered>) -> RenderedSignature {
     let mut out = format!("fn {}", def.name);
+    let mut values = Vec::new();
     for group in def.sig.canonical_groups() {
         match group {
             SignatureGroupRef::Type(params) => {
@@ -154,6 +266,8 @@ fn fn_signature_label(def: &crate::ast::FnDef<crate::ast::Lowered>) -> String {
                 }
             }
             SignatureGroupRef::Value(params) => {
+                let start = out.len();
+                let mut parameters = Vec::new();
                 out.push('(');
                 let mut first = true;
                 for param in params {
@@ -164,6 +278,7 @@ fn fn_signature_label(def: &crate::ast::FnDef<crate::ast::Lowered>) -> String {
                         out.push_str(", ");
                     }
                     first = false;
+                    let parameter_start = out.len();
                     out.push_str(&param.name);
                     out.push_str(": ");
                     if let Some(ty) = &param.ty {
@@ -171,18 +286,30 @@ fn fn_signature_label(def: &crate::ast::FnDef<crate::ast::Lowered>) -> String {
                     } else {
                         out.push('.');
                     }
+                    parameters.push(parameter_start..out.len());
                 }
                 out.push(')');
+                values.push(RenderedValueGroup {
+                    parameters,
+                    empty: start..out.len(),
+                });
             }
         }
     }
     out.push_str(" -> ");
+    let result_start = out.len();
     write_type(&def.ret, &mut out);
-    out
+    let result = result_start..out.len();
+    RenderedSignature {
+        label: out,
+        values,
+        result,
+    }
 }
 
-fn host_signature_label(host: &crate::ast::HostFn<crate::ast::Lowered>) -> String {
+fn host_signature_label(host: &crate::ast::HostFn<crate::ast::Lowered>) -> RenderedSignature {
     let mut out = format!("host fn {}", host.name);
+    let mut values = Vec::new();
     for group in crate::ast::host_fn_group_refs(&host.params, &host.param_groups) {
         match group {
             crate::ast::HostFnGroupRef::Type(params) => {
@@ -194,6 +321,8 @@ fn host_signature_label(host: &crate::ast::HostFn<crate::ast::Lowered>) -> Strin
                 }
             }
             crate::ast::HostFnGroupRef::Value(params) => {
+                let start = out.len();
+                let mut parameters = Vec::new();
                 out.push('(');
                 let mut first = true;
                 for param in params {
@@ -204,17 +333,29 @@ fn host_signature_label(host: &crate::ast::HostFn<crate::ast::Lowered>) -> Strin
                         out.push_str(", ");
                     }
                     first = false;
+                    let parameter_start = out.len();
                     out.push_str(param.name.as_deref().unwrap_or("_"));
                     out.push_str(": ");
                     write_type(&param.ty, &mut out);
+                    parameters.push(parameter_start..out.len());
                 }
                 out.push(')');
+                values.push(RenderedValueGroup {
+                    parameters,
+                    empty: start..out.len(),
+                });
             }
         }
     }
     out.push_str(" -> ");
+    let result_start = out.len();
     write_type(&host.ret, &mut out);
-    out
+    let result = result_start..out.len();
+    RenderedSignature {
+        label: out,
+        values,
+        result,
+    }
 }
 
 fn type_binder_text(param: &TypeParam) -> String {
@@ -225,7 +366,6 @@ fn type_binder_text(param: &TypeParam) -> String {
 #[derive(Debug, Clone, Copy)]
 struct CallSite<'a> {
     callee: &'a Expr<Surface>,
-    args: &'a [CallArg<Surface>],
     span: Span,
 }
 
@@ -288,7 +428,7 @@ fn visit_expr<'a>(expr: &'a Expr<Surface>, offset: u32, best: &mut Option<CallSi
         } => {
             visit_expr(callee, offset, best);
             visit_call_args(args, offset, best);
-            record_call(callee, args, meta.span, offset, best);
+            record_call(callee, meta.span, offset, best);
         }
         Expr::RecCall { args, .. } => visit_call_args(args, offset, best),
         Expr::FnExpr { body, .. } => visit_expr(body, offset, best),
@@ -397,7 +537,6 @@ fn visit_op_chain<'a>(
 
 fn record_call<'a>(
     callee: &'a Expr<Surface>,
-    args: &'a [CallArg<Surface>],
     span: Span,
     offset: u32,
     best: &mut Option<CallSite<'a>>,
@@ -405,29 +544,18 @@ fn record_call<'a>(
     if !contains(span, offset) {
         return;
     }
-    let candidate = CallSite { callee, args, span };
+    let candidate = CallSite { callee, span };
     if best.is_none_or(|current| span_len(candidate.span) < span_len(current.span)) {
         *best = Some(candidate);
     }
 }
 
-fn active_value_arg(
-    args: &[CallArg<Surface>],
-    offset: u32,
-    is_value_at_type_slot: impl Fn(usize) -> bool,
-) -> u32 {
-    let mut index = 0u32;
-    for (slot_index, arg) in args.iter().enumerate() {
-        if is_value_at_type_slot(slot_index) {
-            continue;
-        }
-        match arg {
-            CallArg::Type(_) => {}
-            CallArg::Value(value) if offset > value.span().end => index += 1,
-            CallArg::Value(_) => break,
-        }
-    }
-    index
+fn active_parameter(sources: &[(Span, Option<u32>)], offset: u32) -> Option<u32> {
+    sources
+        .iter()
+        .find(|(span, _)| offset <= span.end)
+        .or_else(|| sources.last())?
+        .1
 }
 
 fn contains(span: Span, offset: u32) -> bool {
@@ -456,16 +584,197 @@ mod tests {
     }
 
     #[test]
-    fn active_value_argument_ignores_type_arguments() {
-        let source = "module pkg/main;\n\nfn run() -> . { foo(Int, (), ()) }\n";
-        let parsed = parse_lazy(source).unwrap().force_all().unwrap();
-        let offset = source.rfind("()").unwrap() as u32;
-        let call = nearest_call(&parsed, offset).unwrap();
-        let mut index = crate::pass::typecheck_full::PositionIndex::new();
-        index.record_value_at_type_slot("pkg/main", call.span, 0);
-        let active = active_value_arg(call.args, offset, |slot_index| {
-            index.is_value_at_type_slot("pkg/main", call.span, slot_index)
-        });
-        assert_eq!(active, 1);
+    fn active_parameter_uses_selected_source_spans_and_stays_in_bounds() {
+        let sources = [(Span::new(10, 12), Some(0)), (Span::new(20, 22), Some(1))];
+        assert_eq!(active_parameter(&sources, 5), Some(0));
+        assert_eq!(active_parameter(&sources, 11), Some(0));
+        assert_eq!(active_parameter(&sources, 15), Some(1));
+        assert_eq!(active_parameter(&sources, 25), Some(1));
+        assert_eq!(active_parameter(&[], 5), None);
+        let trailing_type = [(Span::new(10, 12), Some(0)), (Span::new(20, 22), None)];
+        assert_eq!(active_parameter(&trailing_type, 11), Some(0));
+        assert_eq!(active_parameter(&trailing_type, 21), None);
+        assert_eq!(active_parameter(&trailing_type, 25), None);
+    }
+
+    #[test]
+    fn selected_spine_projection_preserves_packing_and_offset_capability() {
+        let label = "fn f(a: ., tail: . & .) -> . -> .".to_owned();
+        let a = label.find("a: .").unwrap();
+        let tail = label.find("tail: . & .").unwrap();
+        let result = label.find(". -> .").unwrap();
+        let rendered = RenderedSignature {
+            result: result..label.len(),
+            label,
+            values: vec![RenderedValueGroup {
+                parameters: vec![a..a + 4, tail..tail + 11],
+                empty: 4..22,
+            }],
+        };
+        let head = |first| CallValueProjection::Range { first, width: 1 };
+        assert_eq!(
+            rendered.value_region(0, head(1)),
+            rendered.value_region(0, head(2))
+        );
+        let packed = rendered.value_region(0, CallValueProjection::Tail { first: 0 });
+        assert_eq!(&rendered.label[packed.clone()], "a: ., tail: . & .");
+        assert!(matches!(
+            rendered.parameter(packed.clone(), None).label,
+            ParameterLabel::Simple(_)
+        ));
+        assert!(matches!(
+            rendered
+                .parameter(packed, Some(&rendered.label_offsets()))
+                .label,
+            ParameterLabel::LabelOffsets(_)
+        ));
+        assert_eq!(&rendered.label[rendered.value_region(1, head(0))], ". -> .");
+    }
+
+    #[test]
+    fn signature_call_facts_are_editor_only_and_bounded_by_source_calls() {
+        use crate::cmd::check::{
+            LspUserElaboratorMemos, analyze_workspace_at_with_overlay_lsp_cancellable_with_memos,
+        };
+        use crate::package_collection::SourceOverlay;
+        use std::collections::BTreeMap;
+        use std::time::Instant;
+        for call_count in [16, 128] {
+            let root = std::env::current_dir()
+                .unwrap()
+                .join("signature-facts-fixture");
+            let mut source = String::from("module main; fn pair(value: . & .) { () }\n");
+            for index in 0..call_count {
+                source.push_str(&format!("pub fn run_n{index}() {{ pair((), ()) }}\n"));
+            }
+            let overlay = SourceOverlay::complete(
+                root.clone(),
+                BTreeMap::from([
+                    (
+                        root.join("probe.pkg.kio"),
+                        "package probe; bridge { main; }".into(),
+                    ),
+                    (root.join("main.kio"), source.clone()),
+                ]),
+            );
+            let call_start = source.find("pair((), ())").unwrap() as u32;
+            let span = Span::new(call_start, call_start + "pair((), ())".len() as u32);
+            for editor in [false, true] {
+                let memos = if editor {
+                    LspUserElaboratorMemos::for_editor()
+                } else {
+                    LspUserElaboratorMemos::default()
+                };
+                let start = Instant::now();
+                let analysis = analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
+                    &root,
+                    &overlay,
+                    &crate::lsp::cancel::CancellationToken::new(),
+                    &memos,
+                )
+                .unwrap()
+                .unwrap();
+                let elapsed = start.elapsed();
+                assert_eq!(
+                    analysis.position_index.call_presentation_counts(),
+                    editor.then_some([1, call_count, call_count, call_count, 2 * call_count])
+                );
+                crate::pass::typecheck_full::take_signature_call_observations();
+                let layers = analysis.position_index.call_presentation("main", span);
+                assert_eq!(
+                    crate::pass::typecheck_full::take_signature_call_observations(),
+                    usize::from(editor)
+                );
+                assert_eq!(layers.is_some(), editor);
+                if let Some(layers) = layers {
+                    assert_eq!(layers.len(), 1);
+                    assert_eq!(layers.values().next().unwrap().arguments.len(), 2);
+                }
+                let start = Instant::now();
+                for _ in 0..10_000 {
+                    std::hint::black_box(analysis.position_index.call_presentation("main", span));
+                }
+                eprintln!(
+                    "signature aggregate editor-facts={editor}: {call_count}-call analysis={elapsed:?}; 10000 indexed queries={:?}",
+                    start.elapsed()
+                );
+                if editor {
+                    let module = parse_lazy(&source).unwrap().force_all().unwrap();
+                    let position = LineIndex::new(&source).to_position(span.end - 2);
+                    let params = TextDocumentPositionParams {
+                        text_document: lsp_types::TextDocumentIdentifier {
+                            uri: crate::lsp::util::test_file_uri(root.join("main.kio")),
+                        },
+                        position: lsp_types::Position::new(position.line, position.character),
+                    };
+                    for offsets in [false, true] {
+                        let start = Instant::now();
+                        for _ in 0..64 {
+                            let help = handle_signature_help(
+                                &params,
+                                &source,
+                                &module,
+                                Some(&analysis),
+                                offsets,
+                            )
+                            .unwrap();
+                            assert_eq!(help.signatures[0].parameters.as_ref().unwrap().len(), 2);
+                            std::hint::black_box(help);
+                        }
+                        eprintln!(
+                            "signature {call_count}-call document: 64 complete handlers offsets={offsets}: {:?}",
+                            start.elapsed()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn signature_offsets_scan_a_wide_unicode_label_once() {
+        for count in [16, 128] {
+            let mut label = "fn wide(".to_owned();
+            let mut parameters = Vec::new();
+            for index in 0..count {
+                if index > 0 {
+                    label.push_str(", ");
+                }
+                let start = label.len();
+                label.push_str(&format!("value_n{index}: 𝒜"));
+                parameters.push(start..label.len());
+            }
+            label.push_str(") -> 𝒜");
+            let result = label.len() - "𝒜".len()..label.len();
+            let rendered = RenderedSignature {
+                label,
+                values: vec![RenderedValueGroup {
+                    parameters,
+                    empty: 7..9,
+                }],
+                result,
+            };
+            LABEL_OFFSET_CHARACTERS.with(|work| work.set(0));
+            let offsets = rendered.label_offsets();
+            for region in &rendered.values[0].parameters {
+                let ParameterLabel::LabelOffsets(actual) =
+                    rendered.parameter(region.clone(), Some(&offsets)).label
+                else {
+                    panic!("offset-capable client received a string label");
+                };
+                assert_eq!(
+                    actual,
+                    [
+                        rendered.label[..region.start].encode_utf16().count() as u32,
+                        rendered.label[..region.end].encode_utf16().count() as u32
+                    ]
+                );
+            }
+            assert_eq!(
+                LABEL_OFFSET_CHARACTERS.with(|work| work.get()),
+                rendered.label.chars().count()
+            );
+            assert_eq!(offsets.len(), 2 * (count + 1));
+        }
     }
 }

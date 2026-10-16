@@ -120,6 +120,36 @@ pub(crate) struct ToolingProbe<'a> {
     pub(crate) syntax: Option<ToolingSyntax>,
 }
 
+#[cfg(all(feature = "cli", any(test, feature = "lsp")))]
+impl ToolingProbe<'_> {
+    /// Check established header identity without requiring a complete body.
+    pub(crate) fn file_identity_matches(&self, path: &std::path::Path) -> bool {
+        if let Some(module_path) = &self.facts.module_path {
+            return crate::package_collection::ModuleFileParserContext::from_module_path(
+                path,
+                module_path,
+            )
+            .is_ok();
+        }
+        let Some((kind, name)) = &self.facts.file_header else {
+            return true;
+        };
+        let Some(filename) = path.file_name().and_then(std::ffi::OsStr::to_str) else {
+            return false;
+        };
+        let stem = match kind {
+            crate::ast::KioFileKind::Package => crate::file_kind::package_stem(filename),
+            crate::ast::KioFileKind::Signature => crate::file_kind::sig_stem(filename),
+            crate::ast::KioFileKind::Dependency => crate::file_kind::dep_stem(filename),
+            crate::ast::KioFileKind::Lock => crate::file_kind::lock_stem(filename),
+            crate::ast::KioFileKind::Module => {
+                unreachable!("module headers retain their structured module path")
+            }
+        };
+        stem == Some(name.as_str())
+    }
+}
+
 #[cfg(any(test, feature = "lsp"))]
 pub(crate) fn probe_tooling<'a>(
     source: &'a str,
@@ -1623,6 +1653,54 @@ mod tests {
             assert_eq!(
                 probe.facts.suppression.expect(source).kind,
                 core::CursorSuppressionKind::Binder
+            );
+        }
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn tooling_file_identity_retains_completed_headers_with_incomplete_bodies() {
+        use crate::ast::KioFileKind;
+        for (kind, extension, header, body) in [
+            (KioFileKind::Package, "pkg", "package app;", "build {"),
+            (
+                KioFileKind::Dependency,
+                "dep",
+                "dependency app;",
+                "source {",
+            ),
+            (KioFileKind::Lock, "lock", "lock app;", "resolved {"),
+            (
+                KioFileKind::Signature,
+                "sig",
+                "signature app v(1);",
+                "v(1) {",
+            ),
+        ] {
+            let root = std::env::current_dir().unwrap();
+            let matching = root.join(format!("app.{extension}.kio"));
+            let mismatched = root.join(format!("other.{extension}.kio"));
+            for suffix in ["", body, "@"] {
+                let source = format!("{header} {suffix}");
+                let probe = probe_tooling(&source, Some(kind), None, None);
+                assert_eq!(probe.facts.file_header, Some((kind, "app".to_owned())));
+                assert!(probe.file_identity_matches(&matching), "{source}");
+                assert!(!probe.file_identity_matches(&mismatched), "{source}");
+                assert!(
+                    !probe.file_identity_matches(&root.join("app.kio")),
+                    "{source}"
+                );
+                let other_extension = if extension == "pkg" { "dep" } else { "pkg" };
+                assert!(
+                    !probe.file_identity_matches(&root.join(format!("app.{other_extension}.kio")))
+                );
+            }
+            let prefix = header.trim_end_matches(';');
+            let probe = probe_tooling(prefix, Some(kind), None, None);
+            assert!(probe.facts.file_header.is_none(), "{prefix}");
+            assert!(
+                probe.file_identity_matches(&mismatched),
+                "unestablished header: {prefix}"
             );
         }
     }

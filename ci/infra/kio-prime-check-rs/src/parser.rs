@@ -2,7 +2,7 @@
 //! `specs/prime.md` § Grammar.
 //!
 //! Returns `Ok(())` if the source is syntactically Kio'. Any
-//! deviation — surface sugar (`if`/`else`, `do`, `labels`,
+//! deviation — surface sugar (trailing blocks, `labels`,
 //! any `<name>!(…)` elaborator-form syntax, n-ary tuple literals at
 //! the value level), type-expression naming-rule violations, or any
 //! other parse failure — is reported as `ParseError`.
@@ -187,48 +187,6 @@ impl Parser {
         }
         self.ident_named_at(1, "pub")
             && (self.ident_named_at(2, "type") || self.ident_named_at(2, "fn"))
-    }
-
-    fn token_is_statement_boundary(tok: Option<&TokenKind>) -> bool {
-        matches!(
-            tok,
-            None | Some(TokenKind::Comma)
-                | Some(TokenKind::RParen)
-                | Some(TokenKind::RBrace)
-                | Some(TokenKind::Semicolon)
-        )
-    }
-
-    fn peek_after_paren_group_at(&self, open_offset: usize) -> Option<&TokenKind> {
-        if !matches!(self.peek_kind_at(open_offset), Some(TokenKind::LParen)) {
-            return None;
-        }
-        let mut depth: i32 = 0;
-        let mut offset = open_offset;
-        loop {
-            match self.peek_kind_at(offset) {
-                Some(TokenKind::LParen) => depth += 1,
-                Some(TokenKind::RParen) => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return self.peek_kind_at(offset + 1);
-                    }
-                }
-                Some(_) => {}
-                None => return None,
-            }
-            offset += 1;
-        }
-    }
-
-    fn if_or_do_construct_starts_here(&self, keyword: &str) -> bool {
-        if !self.ident_named(keyword) {
-            return false;
-        }
-        if matches!(self.peek_kind_at(1), Some(TokenKind::LParen)) {
-            return matches!(self.peek_after_paren_group_at(1), Some(TokenKind::LBrace));
-        }
-        !Self::token_is_statement_boundary(self.peek_kind_at(1))
     }
 
     fn let_statement_starts_here(&self) -> bool {
@@ -1722,14 +1680,6 @@ impl Parser {
     /// has recognized a full let-statement shape; otherwise it is a
     /// value identifier like any other contextual word.
     fn expr(&mut self) -> Result<(), ParseError> {
-        // Surface-form rejection (better error message than the generic
-        // "expected expression").
-        if self.ident_named("if") && self.if_or_do_construct_starts_here("if") {
-            return self.err("`if`/`else` is surface sugar — not in Kio'");
-        }
-        if self.ident_named("do") && self.if_or_do_construct_starts_here("do") {
-            return self.err("`do` block is surface sugar — not in Kio'");
-        }
         self.expr_postfix()
     }
 
@@ -2793,22 +2743,58 @@ mod tests {
     }
 
     #[test]
-    fn rejects_if_else() {
-        let m = err("module m; fn f() -> . { if x { y } else { z } }");
-        assert!(m.contains("`if`"), "msg = {m}");
+    fn contextual_module_aliases_remain_ordinary_paths() {
+        for alias in [
+            "module",
+            "import",
+            "as",
+            "pub",
+            "pure",
+            "type",
+            "fn",
+            "rec",
+            "newtype",
+            "let",
+            "constructor",
+            "projector",
+            "host",
+            "if",
+            "do",
+            "else",
+            "match",
+            "scope",
+            "ordinary",
+        ] {
+            for expression in [
+                format!("{alias}.value"),
+                format!("{alias}.value()"),
+                format!("({alias}.value)()"),
+                format!("apply({alias}.value)"),
+                format!("{alias}.Box.make(())"),
+            ] {
+                ok(&format!(
+                    "module m; import provider as {alias}; fn run() {{ {expression} }}"
+                ));
+            }
+        }
     }
 
     #[test]
-    fn rejects_do_block() {
-        // The `do` keyword in expression position trips the
-        // surface-form rejection in `expr`. The body content is
-        // irrelevant — the rejection fires at the `do` lookup
-        // before we descend into the brace block. We use a body
-        // that uses only Kio' grammar (no `<-`, which Kio''s
-        // lexer doesn't recognize) so the error reaches `do`
-        // rather than failing earlier in the lexer.
-        let m = err("module m; fn f() -> . { do bind { () } }");
-        assert!(m.contains("`do`"), "msg = {m}");
+    fn contextual_names_do_not_admit_control_or_bang_syntax() {
+        for expression in [
+            "if x { y } else { z }",
+            "do bind { () }",
+            "if() { () }",
+            "do() { () }",
+            "if! .t(Bool) { () } else { () }",
+            "do! bind { () }",
+            "if.value!()",
+            "do.value() { () }",
+            "if.",
+            "do..value()",
+        ] {
+            err(&format!("module m; fn run() {{ {expression} }}"));
+        }
     }
 
     #[test]
