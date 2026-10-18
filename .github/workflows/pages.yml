@@ -31,6 +31,7 @@ jobs:
           persist-credentials: false
 
       - name: Build website
+        shell: bash
         run: |
           cd website
           npm ci --no-fund --no-audit

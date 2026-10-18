@@ -48,17 +48,37 @@ RUSTC_VERSION=$(rustc_version) || {
   exit 2
 }
 
+executable_file_path() (
+  efp_path=$1
+  if is_windows_shell; then
+    case "$efp_path" in
+      [A-Za-z]:[\\/]*|\\\\*|*\\*)
+        efp_path=$(cygpath -u "$efp_path") || exit 1
+        ;;
+    esac
+    # MSYS stat/exec accept implicit .exe suffixes; native Git opens the exact
+    # filename when hashing, so retain the real executable in identity records.
+    case "$efp_path" in
+      *.[eE][xX][eE]) ;;
+      *) if [ -f "$efp_path.exe" ]; then efp_path=$efp_path.exe; fi ;;
+    esac
+  fi
+  [ -f "$efp_path" ] || exit 1
+  printf '%s\n' "$efp_path"
+)
+
 resolve_build_command() (
   cd "$SCRIPT_DIR" || exit 1
   rbc_command=$(command -v "$1" 2>/dev/null) || exit 1
   case "$rbc_command" in
-    /*|[A-Za-z]:[\\/]*) printf '%s\n' "$rbc_command" ;;
+    /*|[A-Za-z]:[\\/]*) ;;
     *)
       rbc_dir=$(CDPATH='' cd -- "${rbc_command%/*}" 2>/dev/null && pwd -P) ||
         exit 1
-      printf '%s/%s\n' "${rbc_dir%/}" "${rbc_command##*/}"
+      rbc_command=${rbc_dir%/}/${rbc_command##*/}
       ;;
   esac
+  executable_file_path "$rbc_command"
 )
 
 CARGO_BIN=$(resolve_build_command cargo) || {
@@ -82,7 +102,8 @@ cargo_identity_record() {
       cd "$SCRIPT_DIR" || exit 1
       "$cir_rustup" which cargo 2>/dev/null || true
     )
-    if [ -n "$cir_rustup_cargo" ] && [ -f "$cir_rustup_cargo" ]; then
+    if [ -n "$cir_rustup_cargo" ] &&
+       cir_rustup_cargo=$(executable_file_path "$cir_rustup_cargo"); then
       cir_identity=$cir_rustup_cargo
     fi
   fi
@@ -205,7 +226,7 @@ resolve_wrapper_path() (
       ;;
   esac
   rwp_dir=$(CDPATH='' cd -- "$rwp_dir" 2>/dev/null && pwd -P) || exit 1
-  printf '%s/%s\n' "${rwp_dir%/}" "$rwp_name"
+  executable_file_path "${rwp_dir%/}/$rwp_name"
 )
 
 wrapper_identity_record() {

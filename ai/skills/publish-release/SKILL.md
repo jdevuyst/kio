@@ -52,6 +52,12 @@ and fatal-deprecation reasons; a newer version alone is insufficient. Complete
 justified upgrades and their validation, or report the skill's stop condition.
 Distinguish checked conclusions from detector failures and unknowns.
 
+Follow `upgrade-deps`'s [unavailable upstream fix policy](../upgrade-deps/SKILL.md#no-compatible-upstream-fix-is-available):
+report and record the affected release payloads and unresolved risk, then
+continue without an additional exception approval when no compatible upstream
+fix is available. This does not waive available upgrades or any source,
+credential, artifact, acceptance or publication-order gate.
+
 Before freezing the candidate, manually dispatch `Prepare release before
 publication` on its exact source with dispatch authority. Its fresh-installer
 mode uses empty manager, download and install state: Linux exercises all supported

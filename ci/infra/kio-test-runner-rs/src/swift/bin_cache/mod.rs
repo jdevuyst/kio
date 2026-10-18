@@ -136,11 +136,15 @@ pub enum CacheError {
     /// The shared scheduler could not admit the swiftc command.
     Admission(crate::compiler_admission::Error),
     /// `swiftc` exited non-zero (a compile error in the emitted package
-    /// or the driver). Carries the captured stderr so the caller can
-    /// surface the toolchain's own diagnostics.
-    SwiftcFailed { stderr: String },
+    /// or the driver), including its status and captured output.
+    SwiftcFailed {
+        diagnostic: String,
+    },
+    MissingDriver,
     /// `swiftc` or its configured observer could not be spawned.
-    SwiftcSpawn { source: std::io::Error },
+    SwiftcSpawn {
+        source: std::io::Error,
+    },
 }
 
 impl From<crate::build_cache::CacheError> for CacheError {
@@ -154,7 +158,8 @@ impl std::fmt::Display for CacheError {
         match self {
             CacheError::Io(e) => write!(f, "{e}"),
             CacheError::Admission(e) => write!(f, "{e}"),
-            CacheError::SwiftcFailed { stderr } => write!(f, "`swiftc` failed:\n{stderr}"),
+            CacheError::SwiftcFailed { diagnostic } => write!(f, "`swiftc` failed: {diagnostic}"),
+            CacheError::MissingDriver => write!(f, "swift build tree has no `main.swift` driver"),
             CacheError::SwiftcSpawn { source } => write!(f, "could not spawn swiftc: {source}"),
         }
     }
@@ -368,9 +373,7 @@ fn do_swiftc_build(
         }
     }
     pkg_names.sort();
-    let driver_name = driver_name.ok_or_else(|| CacheError::SwiftcFailed {
-        stderr: "swift build tree has no `main.swift` driver".to_owned(),
-    })?;
+    let driver_name = driver_name.ok_or(CacheError::MissingDriver)?;
 
     let ns = &tree.module_name;
     let bin_path = out_dir.join(BIN_NAME);
@@ -461,7 +464,7 @@ fn run_swiftc(mut cmd: Command, compiler_admission: &CompilerAdmission) -> Resul
         .map_err(|e| CacheError::SwiftcSpawn { source: e })?;
     if !out.status.success() {
         return Err(CacheError::SwiftcFailed {
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            diagnostic: crate::compiler_failure::describe(&out),
         });
     }
     Ok(())
@@ -502,7 +505,7 @@ pub fn swiftc_identity() -> Result<String, CacheError> {
         .map_err(|e| CacheError::SwiftcSpawn { source: e })?;
     if !out.status.success() {
         return Err(CacheError::SwiftcFailed {
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            diagnostic: crate::compiler_failure::describe(&out),
         });
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())

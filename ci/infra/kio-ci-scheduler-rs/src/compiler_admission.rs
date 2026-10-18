@@ -1193,14 +1193,36 @@ mod tests {
 
     #[test]
     fn feedback_target_one_stops_new_admission() {
-        let input = claims([
-            claim(1, 8, ClaimKind::Adaptive, ClaimState::Active),
-            claim(2, 8, ClaimKind::Adaptive, ClaimState::Pending),
-        ]);
-        assert_eq!(
-            super::admission_evaluation_at_capacity(&input, 2, Some(1)).decision,
-            AdmissionDecision::Wait
-        );
+        for active in 0..=2 {
+            let head = active + 1;
+            let input = ClaimSnapshot::from_claims(
+                (1..=active)
+                    .map(|ticket| claim(ticket, 8, ClaimKind::Adaptive, ClaimState::Active))
+                    .chain([
+                        claim(head, 8, ClaimKind::Adaptive, ClaimState::Pending),
+                        claim(head + 1, 8, ClaimKind::Adaptive, ClaimState::Pending),
+                    ])
+                    .collect(),
+            );
+            let evaluation = super::admission_evaluation_at_capacity(&input, head, Some(1));
+            assert_eq!(evaluation.effective_limit, Some(1));
+            assert_eq!(
+                evaluation.decision,
+                if active == 0 {
+                    AdmissionDecision::Admit
+                } else {
+                    AdmissionDecision::Wait
+                }
+            );
+            assert_eq!(
+                super::admission_evaluation_at_capacity(&input, head, Some(4)).decision,
+                AdmissionDecision::Admit
+            );
+            assert_eq!(
+                super::admission_evaluation_at_capacity(&input, head + 1, Some(1)).blockers,
+                DecisionBlockers::one(DecisionBlocker::NotFifoHead)
+            );
+        }
     }
 
     #[test]

@@ -139,4 +139,42 @@ if PATH="$bin" KIO_TEST_UNAME=Linux KIO_TEST_MISE_LOG="$scratch/browser-mise.log
 fi
 assert_equal "$(PATH="$bin" sh "$fixture/ci/impl-toolchain.sh" core-mise-tools | grep -cx http:kio-firefox)" 1 'same managed browser in the shared core tool list'
 
-printf 'impl-toolchain-selftest: pass (host selection; five browser package mappings; macOS/Windows no-op; unsupported route fails)\n'
+witness_bin=$scratch/witness-bin
+witness_work=$scratch/witness-work
+owned_pyright=$scratch/store/mise/data/installs/npm-pyright/fixture
+mkdir -p "$witness_bin" "$witness_work" "$owned_pyright/node_modules/.bin" "$owned_pyright/bin"
+printf '%s\n' '#!/bin/sh' 'exit 0' >"$witness_bin/python3"
+cp "$witness_bin/python3" "$witness_bin/python"
+cat >"$witness_bin/mise" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$KIO_TEST_SELECTED_PYRIGHT"
+EOF
+cat >"$owned_pyright/node_modules/.bin/pyright" <<'EOF'
+#!/bin/sh
+: >"$KIO_TEST_PYRIGHT_RAN"
+EOF
+cp "$owned_pyright/node_modules/.bin/pyright" "$owned_pyright/bin/pyright"
+cp "$owned_pyright/node_modules/.bin/pyright" "$witness_bin/pyright"
+chmod +x "$witness_bin/python3" "$witness_bin/python" "$witness_bin/mise" "$witness_bin/pyright" \
+  "$owned_pyright/node_modules/.bin/pyright" "$owned_pyright/bin/pyright"
+for layout in node_modules/.bin bin; do
+  PATH="$owned_pyright/$layout:$witness_bin:$PATH" \
+    KIO_TOOLCHAINS_ROOT="$scratch/store" \
+    KIO_TEST_SELECTED_PYRIGHT="$owned_pyright/$layout/pyright" \
+    KIO_TEST_PYRIGHT_RAN="$scratch/pyright-${layout##*/}-ran" \
+    sh "$REPO_ROOT/ci/infra/toolchain-install-smoke.sh" --witness python "$witness_work"
+  [ -e "$scratch/pyright-${layout##*/}-ran" ]
+done
+for selected in "$owned_pyright/node_modules/.bin/pyright" "$witness_bin/pyright"; do
+  if PATH="$witness_bin:$PATH" KIO_TOOLCHAINS_ROOT="$scratch/store" \
+    KIO_TEST_SELECTED_PYRIGHT="$selected" KIO_TEST_PYRIGHT_RAN="$scratch/ambient-pyright-ran" \
+    sh "$REPO_ROOT/ci/infra/toolchain-install-smoke.sh" --witness python "$witness_work" \
+    >"$scratch/pyright-error.log" 2>&1; then
+    printf 'installer witness: ambient Pyright unexpectedly accepted\n' >&2
+    exit 1
+  fi
+  grep -q 'error:.*Pyright' "$scratch/pyright-error.log"
+done
+[ ! -e "$scratch/ambient-pyright-ran" ]
+
+printf 'impl-toolchain-selftest: pass (host selection; browser package mappings; installer Pyright ownership)\n'

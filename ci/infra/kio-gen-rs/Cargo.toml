@@ -1,6 +1,6 @@
 [package]
 name = "kio-gen"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 description = "Typed differential test generator for Kio. Private test artifact."
 license = "MIT OR Apache-2.0"

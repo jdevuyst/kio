@@ -113,7 +113,34 @@ If keeping the tree green needs more than a mechanical fix — a real migration 
 
 ## Deciding deferrals — the skill decides, it doesn't ask
 
-A real advisory with a plausible exploit path in shipped or runtime code is *taken*, never deferred. But many findings have **no practical impact and only a disproportionate fix** — re-surfacing those for the user every run is busywork. Decide these yourself; don't ask.
+### No compatible upstream fix is available
+
+When an advisory affects a dependency but no upstream-supported compatible fix
+has been released, retain the pin, bring the finding to the user's attention,
+and continue the already-authorized work, including release publication. Do not
+wait for an unavailable update or require a separate exception approval. Examples
+include Firefox fixes not yet available in the browser build supported by
+Playwright, and announced Node.js security patches that have not been released.
+
+Verify upstream availability rather than assuming it. Report the affected
+version, known severity and remaining uncertainty, why the fix is unavailable,
+and where the dependency is used or distributed, including devcontainers.
+Record that disposition with the dependency/release evidence; it is not a clean
+security result or a claim that the vulnerability cannot be exploited. Recheck
+availability when finalizing release readiness and at the next dependency review.
+
+This rule does not cover an available fix that is merely inconvenient or needs
+a migration, nor a failed or inconclusive detector. Use the normal upgrade and
+stop rules for those cases. Do not force an unsupported browser/runtime pairing
+to manufacture a nominal upgrade.
+
+### Available fixes and disproportionate deferrals
+
+An available fix for a real advisory with a plausible exploit path in shipped
+or runtime code is *taken*, subject to the migration stop rule above. But many
+findings have **no practical impact and only a disproportionate fix** —
+re-surfacing those for the user every run is busywork. Decide these yourself;
+don't ask.
 
 **Defer** — silently, on your own judgment — only when **all three** hold:
 
@@ -121,9 +148,12 @@ A real advisory with a plausible exploit path in shipped or runtime code is *tak
 2. The code is never compiled into a shipped artifact — target-conditional, or a dev/test-only dependency.
 3. The only available fix is disproportionate — a major bump of an *unrelated* dependency, or a breaking change needing full re-validation, for no real security gain.
 
-Otherwise: a cheap fix → **take it**; a genuine judgment call → **escalate to the user**. Never silently defer a real vulnerability with a plausible vector in runtime code.
+Otherwise: a cheap fix → **take it**; a genuine judgment call → **escalate to the user**. The unavailable-fix rule above is report-and-proceed, not a silent deferral. Never silently defer a real vulnerability with a plausible vector in runtime code.
 
-Re-apply this each run — nothing is persisted. A deferred advisory simply isn't surfaced (the criteria re-decide it); anything that *fails* the test — a new advisory or a changed situation — surfaces normally.
+Re-apply the disproportionate-deferral criteria each run; do not grandfather an
+earlier decision. Only findings meeting all three criteria above stay out of
+the report. Unavailable-fix findings remain reported and recorded as specified
+above; new advisories or changed circumstances are assessed normally.
 
 ## Report
 

@@ -56,6 +56,21 @@ A handler with no surviving manifest is a **dangling finding** — the ecosystem
 - The tools it invokes are spelled correctly: `mise`, `npm` (with `npm audit`), `cargo` (with `cargo update`), and `cargo audit` — the last pinned as `cargo:cargo-audit` in `mise.optional.toml` and installed on demand through `ci/impl-toolchain.sh install-report-tools`, not assumed as a standing core binary.
 - The out-of-scope carve-out still holds: `upgrade-deps` must not touch `version-check.sh`'s mirror list — that is `audit-versioning`'s domain.
 
+## 4. Advisory disposition and release coherence
+
+Check the [unavailable upstream fix policy](../upgrade-deps/SKILL.md#no-compatible-upstream-fix-is-available)
+and its release-skill routing together. Confirm that unavailable compatible fixes
+are reported with affected versions, upstream availability evidence, distribution
+scope and unresolved risk, then allow already-authorized work without a separate
+exception approval. Playwright's supported Firefox build lagging a security fix
+and announced-but-unreleased Node.js patches are representative cases. They must
+not become silent clean results or blanket exemptions for those dependencies.
+
+Verify that availability is rechecked for release readiness and subsequent
+dependency reviews. An available fix requiring migration and an inconclusive
+detector still follow their normal stop/report rules; unsupported pairings do
+not count as compatible fixes. Existing release acceptance gates remain intact.
+
 ## How to report
 
 Group findings into:
@@ -63,6 +78,9 @@ Group findings into:
 1. **Orphan ecosystems** — manifest kinds present in the repo with no `upgrade-deps` handler.
 2. **Dangling handlers** — handled ecosystems with no surviving manifest.
 3. **Broken references** — a source or tool named in `upgrade-deps` that no longer resolves.
+4. **Disposition drift** — advisory handling or release guidance contradicts the
+   upgrade policy, omits required disclosure/evidence, or misclassifies an
+   available fix as unavailable.
 
 For each finding, cite the manifest path or the `upgrade-deps` line.
 

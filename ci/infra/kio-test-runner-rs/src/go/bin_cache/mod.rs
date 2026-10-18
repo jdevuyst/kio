@@ -115,9 +115,8 @@ pub enum CacheError {
     /// The shared scheduler could not admit the `go build` command.
     Admission(crate::compiler_admission::Error),
     /// `go build` exited non-zero (a compile error in the emitted
-    /// package or the driver). Carries the captured stderr so the
-    /// caller can surface the toolchain's own diagnostics.
-    GoBuildFailed { stderr: String },
+    /// package or the driver), including its status and captured output.
+    GoBuildFailed { diagnostic: String },
     /// `go` or its configured observer could not be spawned.
     GoSpawn { source: std::io::Error },
 }
@@ -133,7 +132,9 @@ impl std::fmt::Display for CacheError {
         match self {
             CacheError::Io(e) => write!(f, "{e}"),
             CacheError::Admission(e) => write!(f, "{e}"),
-            CacheError::GoBuildFailed { stderr } => write!(f, "`go build` failed:\n{stderr}"),
+            CacheError::GoBuildFailed { diagnostic } => {
+                write!(f, "`go build` failed: {diagnostic}")
+            }
             CacheError::GoSpawn { source } => write!(f, "could not spawn go: {source}"),
         }
     }
@@ -354,7 +355,7 @@ fn do_go_build(
         .map_err(|e| CacheError::GoSpawn { source: e })?;
     if !out.status.success() {
         return Err(CacheError::GoBuildFailed {
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            diagnostic: crate::compiler_failure::describe(&out),
         });
     }
     Ok(())
@@ -401,7 +402,7 @@ pub fn go_identity(cache_root: &Path) -> Result<String, CacheError> {
         .map_err(|e| CacheError::GoSpawn { source: e })?;
     if !out.status.success() {
         return Err(CacheError::GoBuildFailed {
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            diagnostic: crate::compiler_failure::describe(&out),
         });
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())

@@ -69,7 +69,7 @@ impl Feedback {
         }
         // Distinct watermarks avoid oscillation at a single memory threshold.
         if sample.pressure || sample.available <= sample.memory / 10 {
-            next.target = next.target.div_ceil(2);
+            next.target = 1;
             next.adjusted_ms = now;
         } else if backlog
             && sample.available >= sample.memory / 5
@@ -278,7 +278,7 @@ mod tests {
             ..sample(7)
         };
         state = state.advance(7000, pressured, 8, true);
-        assert_eq!(state.target, 2);
+        assert_eq!(state.target, 1);
         state = state.advance(
             8000,
             Sample {
@@ -289,6 +289,55 @@ mod tests {
             true,
         );
         assert_eq!(state.target, 1);
+    }
+
+    #[test]
+    fn pressure_resets_high_target_and_preserves_shared_recovery_cadence() {
+        for (label, pressure, available) in [("pressure", true, 80), ("low-memory", false, 10)] {
+            let root = root(label);
+            let path = root.join("feedback");
+            Feedback {
+                target: 8,
+                ..Feedback::initial(14_000, sample(14))
+            }
+            .write(&path)
+            .unwrap();
+
+            assert_eq!(
+                target_with(&path, 8, false, true, Some(15_000), || Some(Sample {
+                    pressure,
+                    available,
+                    ..sample(15)
+                })),
+                1,
+                "{label} must stop additional admission even when the prior target was high"
+            );
+            assert_eq!(
+                target_with(&path, 8, false, true, Some(15_001), || panic!(
+                    "successive heads share the pressure sample"
+                )),
+                1
+            );
+            for (second, available, expected) in [
+                (16, 80, 1),
+                (17, 15, 1),
+                (18, 80, 2),
+                (19, 80, 2),
+                (20, 80, 3),
+            ] {
+                assert_eq!(
+                    target_with(&path, 8, false, true, Some(second * 1000), || Some(
+                        Sample {
+                            available,
+                            ..sample(second)
+                        }
+                    )),
+                    expected,
+                    "{label} recovery at second {second}"
+                );
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

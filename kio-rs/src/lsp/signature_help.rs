@@ -640,9 +640,12 @@ mod tests {
         use std::collections::BTreeMap;
         use std::time::Instant;
         for call_count in [16, 128] {
-            let root = std::env::current_dir()
-                .unwrap()
-                .join("signature-facts-fixture");
+            // A lexical parent segment exercises URI/overlay identity on every platform.
+            let root = crate::lsp::util::test_file_path(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join("signature-facts-fixture"),
+            );
             let mut source = String::from("module main; fn pair(value: . & .) { () }\n");
             for index in 0..call_count {
                 source.push_str(&format!("pub fn run_n{index}() {{ pair((), ()) }}\n"));
@@ -707,6 +710,17 @@ mod tests {
                         },
                         position: lsp_types::Position::new(position.line, position.character),
                     };
+                    let request_path =
+                        crate::lsp::util::uri_to_canonical(&params.text_document.uri)
+                            .expect("fixture request must have a canonical file identity");
+                    assert_eq!(
+                        analysis
+                            .file_to_module
+                            .get(&request_path)
+                            .map(String::as_str),
+                        Some("main"),
+                        "fixture overlay must use the canonical request identity: {request_path:?}"
+                    );
                     for offsets in [false, true] {
                         let start = Instant::now();
                         for _ in 0..64 {
@@ -717,7 +731,9 @@ mod tests {
                                 Some(&analysis),
                                 offsets,
                             )
-                            .unwrap();
+                            .expect(
+                                "editor call facts must produce signature help for pair((), ())",
+                            );
                             assert_eq!(help.signatures[0].parameters.as_ref().unwrap().len(), 2);
                             std::hint::black_box(help);
                         }

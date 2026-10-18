@@ -29,6 +29,85 @@ fn ghc_build_uses_the_shared_outer_observer_shape() {
     assert_eq!(command.get_args().collect::<Vec<_>>(), ["ghc"]);
 }
 
+#[cfg(unix)]
+#[test]
+fn failed_native_compile_keeps_process_evidence_and_never_publishes() {
+    use crate::build_cache::CompilerAdapter;
+    use crate::compiler_admission::CompilerAdmission;
+    use crate::compiler_observer::CompilerObserver;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    for (termination, expected_status, has_output) in [
+        (
+            "printf 'compiler output'; printf 'compiler error' >&2; exit 23",
+            "exit status: 23",
+            true,
+        ),
+        ("kill -KILL $$", "signal: 9", false),
+        ("exit 137", "exit status: 137", false),
+        ("kill -TERM $$", "signal: 15", false),
+    ] {
+        let fixture = tempfile::TempDir::new().unwrap();
+        let observer_path = fixture.path().join("fake-compiler");
+        fs::write(
+            &observer_path,
+            format!(
+                "#!/bin/sh\nprintf x >> \"$0.calls\"\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = -o ]; then printf partial > \"$2\"; break; fi\n  shift\ndone\n{termination}\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&observer_path, fs::Permissions::from_mode(0o755)).unwrap();
+        let observer = CompilerObserver::for_test(&observer_path);
+        let tree = super::HaskellBuildTree {
+            ghc_identity: "fake compiler".into(),
+            files: vec![(PathBuf::from("Main.hs"), b"module Main where".to_vec())],
+            main_module: "Main.hs".into(),
+            profile: OptProfile::Unoptimized,
+        };
+        let cache_root = fixture.path().join("cache");
+        let cache = super::HaskellCache::open(
+            cache_root.clone(),
+            None,
+            observer.clone(),
+            None,
+            CompilerAdmission::disabled(),
+        )
+        .unwrap();
+        let request = super::BinArtifact {
+            tree: &tree,
+            compiler_observer: &observer,
+        }
+        .request();
+        let namespace = crate::build_cache::io::namespace_dir(
+            &cache_root,
+            &request.kind,
+            &request.subroot_rel,
+            &request.namespace,
+        )
+        .unwrap();
+        for invocation in 1..=2 {
+            let error = cache.get_or_compile_bin(&tree).unwrap_err().to_string();
+            assert!(error.contains(expected_status), "{termination}: {error}");
+            if has_output {
+                assert!(error.contains("stdout:\ncompiler output"), "{error}");
+                assert!(error.contains("stderr:\ncompiler error"), "{error}");
+            }
+            assert!(!error.contains("OOM"), "{error}");
+            assert!(!error.contains("cancel"), "{error}");
+            assert!(!namespace.artifacts.join(request.key()).join("bin").exists());
+            assert_eq!(fs::read_dir(&namespace.tmp).unwrap().count(), 0);
+            assert_eq!(
+                fs::read(observer_path.with_file_name("fake-compiler.calls"))
+                    .unwrap()
+                    .len(),
+                invocation,
+                "one compiler invocation per cache request"
+            );
+        }
+    }
+}
+
 fn bin_key(input: &BinInput) -> String {
     crate::build_cache::hash_fields(None, &key::bin_fields(input))
 }

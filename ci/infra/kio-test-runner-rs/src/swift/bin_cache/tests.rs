@@ -28,6 +28,29 @@ fn swiftc_build_uses_the_shared_outer_observer_shape() {
     assert_eq!(command.get_args().collect::<Vec<_>>(), ["swiftc"]);
 }
 
+#[test]
+fn missing_driver_is_distinct_from_a_compiler_process_failure() {
+    let fixture = tempfile::TempDir::new().unwrap();
+    let tree = super::SwiftBuildTree {
+        swiftc_identity: "fake compiler".into(),
+        files: vec![],
+        module_name: "Fixture".into(),
+        profile: OptProfile::Unoptimized,
+    };
+    let error = super::do_swiftc_build(
+        &tree,
+        fixture.path(),
+        &crate::compiler_observer::CompilerObserver::for_test("must-not-execute"),
+        &crate::compiler_admission::CompilerAdmission::disabled(),
+    )
+    .unwrap_err();
+    assert!(matches!(error, super::CacheError::MissingDriver));
+    assert_eq!(
+        error.to_string(),
+        "swift build tree has no `main.swift` driver"
+    );
+}
+
 fn bin_key(input: &BinInput) -> String {
     crate::build_cache::hash_fields(None, &key::bin_fields(input))
 }

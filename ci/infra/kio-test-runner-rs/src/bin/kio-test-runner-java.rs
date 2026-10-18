@@ -35,6 +35,8 @@ use kio_ci_scheduler as compiler_admission;
 mod artifact_identity;
 #[path = "../shared/canonical.rs"]
 mod canonical;
+#[path = "../shared/compiler_failure.rs"]
+mod compiler_failure;
 #[path = "../shared/compiler_observer.rs"]
 mod compiler_observer;
 #[path = "../shared/host_api.rs"]
@@ -396,10 +398,9 @@ fn compile_and_run_driver(
         .map_err(|e| format!("spawning {}: {e}", javac_command()))?;
     if !compile.status.success() {
         return Err(format!(
-            "javac failed in {}:\nstdout:\n{}\nstderr:\n{}",
+            "javac failed in {}: {}",
             build_dir.display(),
-            String::from_utf8_lossy(&compile.stdout),
-            String::from_utf8_lossy(&compile.stderr)
+            compiler_failure::describe(&compile)
         ));
     }
     let mut child = Command::new(java_command())

@@ -62,6 +62,8 @@ mod artifact_identity;
 mod build_cache;
 #[path = "../shared/canonical.rs"]
 mod canonical;
+#[path = "../shared/compiler_failure.rs"]
+mod compiler_failure;
 #[path = "../shared/compiler_observer.rs"]
 mod compiler_observer;
 use kio_ci_scheduler as compiler_admission;

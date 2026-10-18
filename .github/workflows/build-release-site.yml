@@ -17,6 +17,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Build and smoke-test website
+        shell: bash
         working-directory: website
         run: |
           npm ci --no-fund --no-audit

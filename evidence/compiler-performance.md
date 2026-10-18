@@ -205,6 +205,26 @@ Source: `ci/infra/kio-ci-scheduler-rs/`, reached through `ci/schedule.sh`.
 
 Keyed bootstrap reuse and inherited readiness-hook reuse retain their separate discharges: cold Linux prepare measured 2.19 seconds / 208,052 KiB versus about 0.31 seconds for warm resolve, and canonical inherited re-entry invokes zero readiness children rather than one. Those measurements give no credit to feedback.
 
+Pressure backoff resets the adaptive target to one instead of halving it: a
+high target can otherwise still admit another producer while pressure is
+observed. Deterministic policy and admission tests cover that distinction,
+one-producer progress, and paced healthy recovery. This is admission control,
+not a bound on the memory growth of already-running producers.
+
+A counterbalanced `A1/B1/B2/A2` comparison screened normal-path overhead using
+`exec_host_loop_map`, `exec_host_loop_fold`, `exec_recursive_type_groups`,
+`exec_dict_fold_list_interop`, `exec_qualified_poly_call`, and
+`ffi_export_poly_roundtrip` on Rust, Go, Java, Swift and Haskell. Each arm used
+the same compiler and target-language tools, default admission, a fresh runner
+artifact cache, and matching scheduler and native-runner binaries for its policy.
+Configured compiler caches were preserved; native runners used no compiler
+wrapper. All 120 case/backend rows passed. Every arm admitted the same 42 native
+compiler commands and 50 Kio commands. Wall times were 51.21/50.24/50.89/49.94
+seconds: baseline mean 50.575 seconds, repaired mean 50.565 seconds, with no
+meaningful difference in this workload. Before/after Linux memory-pressure
+snapshots reported zero `avg10`; these snapshots and admission traces do not
+establish the cost of sustained pressure or whole-broad-gate equivalence.
+
 ## Standalone Cargo compiler-only admission
 
 Source: `ci/cargo.sh`.

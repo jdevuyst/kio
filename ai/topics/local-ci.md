@@ -273,9 +273,9 @@ Cross-target compilation is compile evidence only; it cannot prove those kernel 
 and is not credited as native evidence.
 
 Adaptive compiler admission starts conservatively, grows with queued demand
-and observed aggregate headroom, and reduces new admission under memory
-pressure. Clients honor the minimum live CPU ceiling, feedback target, and
-explicit fixed capacity. A numeric
+and observed aggregate headroom, and stops additional admission under observed
+memory pressure while a compiler lease remains active. Clients honor the
+minimum live CPU ceiling, feedback target, and explicit fixed capacity. A numeric
 `--compiler-jobs=<N>` remains an operator-selected fixed override. Feedback is
 best effort, not a per-command memory reservation or an OOM guarantee. The
 scheduler neither classifies compiler names nor suspends or terminates holders

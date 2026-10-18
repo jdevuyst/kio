@@ -68,6 +68,8 @@ mod artifact_identity;
 mod build_cache;
 #[path = "../shared/canonical.rs"]
 mod canonical;
+#[path = "../shared/compiler_failure.rs"]
+mod compiler_failure;
 #[path = "../shared/compiler_observer.rs"]
 mod compiler_observer;
 use kio_ci_scheduler as compiler_admission;
@@ -140,9 +142,9 @@ fn run_coexist(
             .map_err(|e| format!("spawning swiftc: {e}"))?;
         if !out.status.success() {
             return Err(format!(
-                "swiftc {} failed:\n{}",
+                "swiftc {} failed: {}",
                 args.join(" "),
-                String::from_utf8_lossy(&out.stderr)
+                compiler_failure::describe(&out)
             ));
         }
         Ok(())

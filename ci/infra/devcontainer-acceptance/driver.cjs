@@ -146,6 +146,15 @@ function hooks(file, updateOnly) {
   assert.ok(log.includes('refresh-kio: cargo build --bin kio'), 'compiler refresh hook missing');
 }
 
+function terminalCompiler(directory, login = false, options = {}) {
+  // Image startup discovers checkout binaries only in interactive workspace shells.
+  const output = command('/bin/bash', [login ? '-lic' : '-ic', 'printf "\\036"; command -v kio'],
+    { cwd: directory, ...options });
+  const parts = output.split('\x1e');
+  assert.equal(parts.length, 2, 'interactive terminal must reach the compiler probe after startup');
+  return parts[1].trim();
+}
+
 function tools(commit) {
   nonroot(process.getuid());
   assert.equal(command('id', ['-un']), 'vscode');
@@ -163,8 +172,9 @@ function tools(commit) {
   for (const ws of workspaces) fs.accessSync(`${workspace}/${ws}/target`, fs.constants.W_OK);
   fs.accessSync(process.env.CARGO_HOME, fs.constants.W_OK);
   const evidence = { uid: process.getuid(), versions, compiler: { path: process.env.KIO_BIN, version, sha256: hash(fs.readFileSync(process.env.KIO_BIN)) },
-    terminalKio: command('sh', ['-c', 'command -v kio']), commit };
+    terminalKio: terminalCompiler(workspace), loginTerminalKio: terminalCompiler(workspace, true), commit };
   assert.equal(evidence.terminalKio, process.env.KIO_BIN, 'clean-checkout terminal and editor compiler must resolve to the lifecycle binary');
+  assert.equal(evidence.loginTerminalKio, process.env.KIO_BIN, 'login terminal and editor compiler must resolve to the lifecycle binary');
   const file = `${control}/tools-${commit}.json`;
   write(file, evidence);
   console.log(JSON.stringify(evidence));
@@ -509,6 +519,33 @@ async function selftest(compiler) {
   const image = `ghcr.io/jdevuyst/kio-devcontainer@sha256:${'b'.repeat(64)}`;
   const scratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'kio-acceptance-selftest-'));
   try {
+    if (process.platform === 'linux') {
+      const checkout = path.join(scratch, 'terminal-checkout');
+      const home = path.join(scratch, 'terminal-home');
+      const compiler = path.join(checkout, 'kio-rs/target/debug/kio');
+      fs.mkdirSync(path.dirname(compiler), { recursive: true });
+      fs.mkdirSync(home);
+      fs.writeFileSync(compiler, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      command('git', ['init', '--quiet', checkout]);
+      fs.writeFileSync(path.join(home, '.bashrc'),
+        'printf "fixture terminal startup\\n"\n. "$KIO_TEST_ACTIVATION"\n[ "$KIO_TOOLCHAIN_IDENTITY" = fixture-selection ] || exit 98\n');
+      fs.writeFileSync(path.join(home, '.bash_profile'), '. "$HOME/.bashrc"\n');
+      const options = { env: { ...process.env, HOME: home, PATH: '/usr/bin:/bin',
+        KIO_TOOLCHAIN_IDENTITY: 'fixture-selection',
+        KIO_TEST_ACTIVATION: path.resolve(__dirname, '../../../.devcontainer/activate.sh') } };
+      assert.throws(() => command('sh', ['-c', 'command -v kio'], { cwd: checkout, ...options }),
+        error => error.status === 127, 'noninteractive execution does not activate checkout binaries');
+      for (const login of [false, true]) {
+        assert.equal(terminalCompiler(checkout, login, options), compiler,
+          `real interactive terminal must activate the checkout (login=${login})`);
+      }
+      fs.unlinkSync(compiler);
+      assert.throws(() => terminalCompiler(checkout, false, options), error => error.status === 1,
+        'interactive terminal must fail when its lifecycle compiler is absent');
+      fs.writeFileSync(path.join(home, '.bashrc'), 'exit 0\n');
+      assert.throws(() => terminalCompiler(checkout, false, options), /must reach the compiler probe/);
+      console.log('acceptance terminals: login/non-login startup, explicit selection, absent compiler and early shell exit checked');
+    }
     const file = path.join(scratch, 'image.json');
     write(file, [{ RepoDigests: [image], Os: 'linux', Architecture: process.arch === 'x64' ? 'amd64' : process.arch,
       Config: { Labels: { 'org.opencontainers.image.revision': revision } } }]);

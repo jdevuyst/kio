@@ -157,11 +157,14 @@ honor the minimum live adaptive CPU ceiling, shared target, and explicit fixed
 capacity; fixed-only activity bypasses feedback. Idle queues reset learning.
 
 The target starts at one. Comparable native CPU/memory samples, queued demand,
-and spare capacity permit paced additive growth; low available memory or an
-available pressure signal reduces subsequent admissions. Missing, stale,
-malformed, or unwritable state and unavailable comparable observations fall
-back to one. Samples, including unavailable results, are throttled; idle
-commands do not invoke native probes. The CPU ceiling comes from
+and spare capacity permit paced additive growth. Low available memory or an
+available pressure signal resets the target to one, stopping additional
+admission while a compiler lease remains active. Healthy observations resume
+paced growth under the headroom and timing conditions, including while earlier
+commands remain active. Missing, stale, malformed, or unwritable state and
+unavailable comparable observations fall back to one. Samples, including
+unavailable results, are throttled; idle commands do not invoke native probes.
+The CPU ceiling comes from
 `std::thread::available_parallelism`. Whole-host utilization cannot establish
 spare capacity inside a smaller reported CPU domain, so a scope mismatch uses
 the fallback rather than extrapolating.

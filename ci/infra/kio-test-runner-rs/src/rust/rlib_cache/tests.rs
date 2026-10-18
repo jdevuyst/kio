@@ -58,6 +58,34 @@ fn rustc_command_nests_observer_outside_cache_wrapper() {
 
 #[cfg(unix)]
 #[test]
+fn silent_rustc_signal_failure_keeps_its_native_status() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = tempfile::TempDir::new().unwrap();
+    let compiler = fixture.path().join("fake-compiler");
+    fs::write(&compiler, b"#!/bin/sh\nkill -KILL $$\n").unwrap();
+    fs::set_permissions(&compiler, fs::Permissions::from_mode(0o755)).unwrap();
+    let cache = super::RlibCache::open(
+        fixture.path().join("cache"),
+        None,
+        CompilerObserver::for_test(&compiler),
+        None,
+        CompilerAdmission::disabled(),
+    )
+    .unwrap();
+    let crate_root = fixture.path().join("crate");
+    fs::create_dir_all(crate_root.join("src")).unwrap();
+    fs::write(crate_root.join("src/lib.rs"), "pub fn answer() {}\n").unwrap();
+    let error = cache
+        .get_or_compile_rlib(&input("signal_fixture", &[]), &crate_root)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("signal: 9"), "{error}");
+    assert!(!error.contains("exit -1"), "{error}");
+}
+
+#[cfg(unix)]
+#[test]
 fn observer_fires_for_a_cache_miss_not_a_hit_and_is_not_keyed() {
     use std::os::unix::fs::PermissionsExt;
 

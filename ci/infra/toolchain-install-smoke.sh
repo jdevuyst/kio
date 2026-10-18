@@ -20,7 +20,17 @@ if [ "${1:-}" = --witness ]; then
       python)
         case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) python=python ;; *) python=python3 ;; esac
         "$python" -c 'answer = 20 + 22; assert answer == 42; print(answer)'
-        case "$(command -v pyright)" in "$KIO_TOOLCHAINS_ROOT/mise/data/installs/npm-pyright/"*/bin/pyright*) ;; *) exit 1 ;; esac
+        pyright_path=$(command -v pyright)
+        selected_pyright=$(mise which pyright)
+        if [ "$pyright_path" != "$selected_pyright" ]; then
+          printf 'error: active Pyright %s differs from selected executable %s\n' \
+            "$pyright_path" "$selected_pyright" >&2
+          exit 1
+        fi
+        case "$pyright_path" in
+          "$KIO_TOOLCHAINS_ROOT/mise/data/installs/npm-pyright/"*) ;;
+          *) printf 'error: Pyright is outside its owned installation: %s\n' "$pyright_path" >&2; exit 1 ;;
+        esac
         printf '%s\n' 'answer: int = 20 + 22' >witness.py
         pyright --pythonpath "$(command -v "$python")" witness.py
         mise which pyright ;;

@@ -35,11 +35,15 @@ jobs:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          export TMPDIR="$RUNNER_TEMP/kio-fresh-tmp"
-          mkdir -p "$TMPDIR" "$RUNNER_TEMP/installer-receipt"
+          installer_temp="$RUNNER_TEMP"
+          if [ "$RUNNER_OS" = Windows ]; then
+            installer_temp=$(cygpath -u "$installer_temp")
+          fi
+          export TMPDIR="$installer_temp/kio-fresh-tmp"
+          mkdir -p "$TMPDIR" "$installer_temp/installer-receipt"
           export KIO_TOOLCHAINS_ROOT
-          KIO_TOOLCHAINS_ROOT=$(mktemp -d "$RUNNER_TEMP/kio-fresh-tools.XXXXXX")
-          sh ci/infra/toolchain-fresh-install.sh "$RUNNER_TEMP/installer-receipt" 2>&1 | tee "$RUNNER_TEMP/installer-receipt/install.log"
+          KIO_TOOLCHAINS_ROOT=$(mktemp -d "$installer_temp/kio-fresh-tools.XXXXXX")
+          sh ci/infra/toolchain-fresh-install.sh "$installer_temp/installer-receipt" 2>&1 | tee "$installer_temp/installer-receipt/install.log"
       - name: Preserve installer evidence, including failures
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7

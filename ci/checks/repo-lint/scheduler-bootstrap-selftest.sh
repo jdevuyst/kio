@@ -45,6 +45,18 @@ if [ -n "${KIO_TEST_GIT_COMMON_DIR:-}" ]; then
     exit 0
   fi
 fi
+if [ -n "${KIO_TEST_WINDOWS_EXE_DIR:-}" ]; then
+  for argument in "$@"; do
+    case "$argument" in
+      "$KIO_TEST_WINDOWS_EXE_DIR"/*)
+        if [ -f "$argument.exe" ]; then
+          printf 'fatal: could not open implicit .exe path: %s\n' "$argument" >&2
+          exit 128
+        fi
+        ;;
+    esac
+  done
+fi
 exec "$KIO_TEST_REAL_GIT" "$@"
 EOF
 chmod +x "$scratch/bin/git"
@@ -55,8 +67,11 @@ set -eu
 [ "$#" -eq 2 ]
 case "$1" in
   -u)
-    [ "$2" = "$KIO_TEST_GIT_COMMON_DIR" ]
-    printf '%s\n' "$KIO_TEST_GIT_COMMON_SHELL_DIR"
+    case "$2" in
+      "$KIO_TEST_GIT_COMMON_DIR") printf '%s\n' "$KIO_TEST_GIT_COMMON_SHELL_DIR" ;;
+      'C:/selected-cargo') printf '%s\n' "$KIO_TEST_WINDOWS_EXE_DIR/selected-cargo" ;;
+      *) exit 97 ;;
+    esac
     ;;
   -au)
     case "$2" in
@@ -684,6 +699,67 @@ fi
   printf 'scheduler-bootstrap-selftest: rejected private Cargo mode reached Cargo\n' >&2
   exit 1
 }
+
+# MSYS can execute and stat an extensionless alias while native Git requires
+# the actual .exe filename. The Git fixture rejects that alias independently.
+windows_tools=$scratch/windows-tools
+mkdir -p "$windows_tools"
+cp "$scratch/bin/cargo" "$windows_tools/cargo"
+cp "$windows_tools/cargo" "$windows_tools/cargo.exe"
+windows_prepare() (
+  OS=Windows_NT MSYSTEM=MINGW64 \
+    KIO_TEST_GIT_COMMON_DIR='C:/linked/common.git' \
+    KIO_TEST_GIT_COMMON_SHELL_DIR="$windows_common_shell" \
+    KIO_TEST_RUSTC_HOST=x86_64-pc-windows-msvc \
+    KIO_TEST_WINDOWS_EXE_DIR="$windows_tools" \
+    KIO_TEST_PATH_PREFIX="$windows_tools" prepare
+)
+windows_cargo_bin=$(windows_prepare)
+printf '%s\n' '# real executable changed' >>"$windows_tools/cargo.exe"
+windows_cargo_changed=$(windows_prepare)
+[ "$windows_cargo_bin" != "$windows_cargo_changed" ] || {
+  printf 'scheduler-bootstrap-selftest: Windows Cargo .exe bytes were not keyed\n' >&2
+  exit 1
+}
+
+cp "$windows_tools/cargo.exe" "$windows_tools/selected-cargo.exe"
+cat >"$windows_tools/rustup.exe" <<'EOF'
+#!/bin/sh
+if [ "${1:-}" = which ]; then printf '%s\n' C:/selected-cargo; exit; fi
+exec "$KIO_TEST_WINDOWS_EXE_DIR/selected-cargo.exe" "$@"
+EOF
+chmod +x "$windows_tools/rustup.exe"
+cp "$windows_tools/rustup.exe" "$windows_tools/cargo.exe"
+cp "$windows_tools/cargo.exe" "$windows_tools/cargo"
+cp "$windows_tools/rustup.exe" "$windows_tools/rustup"
+cp "$windows_tools/selected-cargo.exe" "$windows_tools/selected-cargo"
+windows_rustup_bin=$(windows_prepare)
+printf '%s\n' '# selected executable changed' >>"$windows_tools/selected-cargo.exe"
+windows_rustup_changed=$(windows_prepare)
+[ "$windows_rustup_bin" != "$windows_rustup_changed" ] || {
+  printf 'scheduler-bootstrap-selftest: Windows Rustup-selected Cargo .exe bytes were not keyed\n' >&2
+  exit 1
+}
+
+cp "$wrapper_one" "$windows_tools/wrapper"
+cp "$wrapper_one" "$windows_tools/wrapper.exe"
+for wrapper_setting in RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER \
+  CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER; do
+  case "$wrapper_setting" in
+    RUSTC_WORKSPACE_WRAPPER) wrapper_value=wrapper ;;
+    *) wrapper_value=$windows_tools/wrapper ;;
+  esac
+  export "$wrapper_setting=$wrapper_value"
+  windows_wrapper_bin=$(windows_prepare)
+  printf '%s\n' '# wrapper executable changed' >>"$windows_tools/wrapper.exe"
+  windows_wrapper_changed=$(windows_prepare)
+  unset "$wrapper_setting"
+  [ "$windows_wrapper_bin" != "$windows_wrapper_changed" ] || {
+    printf 'scheduler-bootstrap-selftest: Windows %s .exe bytes were not keyed\n' \
+      "$wrapper_setting" >&2
+    exit 1
+  }
+done
 
 set +e
 KIO_TEST_CARGO_SIGNAL=TERM \

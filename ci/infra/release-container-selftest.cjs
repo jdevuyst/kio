@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const {execFileSync} = require('node:child_process');
 const {inputs, authenticate, latestPolicy, currentLatest, tagManifest} = require('./release-container.cjs');
 const root = path.resolve(__dirname, '../..');
 const read = name => fs.readFileSync(path.join(root, '.github/workflows', name + '.yml'), 'utf8');
@@ -37,6 +38,36 @@ const prepare = jobs(read('prepare-release'));
 const container = jobs(read('devcontainer-candidate'));
 const acceptance = jobs(read('accept-container'));
 checkGraph(prepare, container, acceptance);
+// The image activates its owned tools through BASH_ENV, not ambient PATH.
+for (const name of ['build-release-site', 'pages']) {
+  const build = jobs(read(name)).build.text;
+  for (const step of build.split(/^      - /m).filter(step => /^        run:/m.test(step)))
+    assert.match(step, /^        shell: bash$/m, `${name}: image commands must activate the Bash environment`);
+}
+// Execute the actual installer step with side-effect-free command doubles.
+// Windows runner paths arrive as native paths; all shell paths must be normalized.
+const installer = prepare['fresh-installers'].text.match(/        run: \|\n([\s\S]*?)(?=^      - )/m)[1]
+  .replace(/^          /gm, '');
+for (const platform of ['Linux', 'macOS', 'Windows']) {
+  const prefix = `
+set -eu
+cygpath() { [ "$1" = -u ] && [ "$2" = "$RUNNER_TEMP" ]; printf '%s\\n' '/runner temp'; }
+mkdir() { [ "$1" = -p ] && [ "$2" = '/runner temp/kio-fresh-tmp' ] && [ "$3" = '/runner temp/installer-receipt' ]; }
+mktemp() { [ "$1" = -d ] && [ "$2" = '/runner temp/kio-fresh-tools.XXXXXX' ]; printf '%s\\n' '/runner temp/kio-fresh-tools.fixture'; }
+sh() {
+  [ "$1" = ci/infra/toolchain-fresh-install.sh ] &&
+  [ "$2" = '/runner temp/installer-receipt' ] &&
+  [ "$TMPDIR" = '/runner temp/kio-fresh-tmp' ] &&
+  [ "$KIO_TOOLCHAINS_ROOT" = '/runner temp/kio-fresh-tools.fixture' ]
+}
+tee() { [ "$1" = '/runner temp/installer-receipt/install.log' ]; }
+`;
+  execFileSync('bash', ['--noprofile', '--norc', '-c', prefix + installer], {
+    env: {...process.env, BASH_ENV: '', RUNNER_OS: platform,
+      RUNNER_TEMP: platform === 'Windows' ? 'D:\\a\\_temp' : '/runner temp'},
+    stdio: 'pipe',
+  });
+}
 for (const failed of ['package', 'container', 'crate', 'website'])
   assert.notEqual(simulate(prepare, [failed]).ready, 'success');
 assert.equal(simulate(acceptance, ['accept']).promote, 'skipped');

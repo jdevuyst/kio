@@ -11,7 +11,7 @@
 
 Website: **[jdevuyst.github.io/kio](https://jdevuyst.github.io/kio/)**
 
-Current version: 0.2.2 (pre-1.0; expect breaking changes.)
+Current version: 0.2.3 (pre-1.0; expect breaking changes.)
 
 ## In a Nutshell
 

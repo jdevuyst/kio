@@ -84,9 +84,8 @@ pub enum CacheError {
     /// The shared scheduler could not admit the GHC command.
     Admission(crate::compiler_admission::Error),
     /// `ghc --make` exited non-zero (a compile error in the emitted
-    /// package or the driver). Carries the captured stderr so the
-    /// caller can surface the toolchain's own diagnostics.
-    GhcFailed { stderr: String },
+    /// package or the driver), including its status and captured output.
+    GhcFailed { diagnostic: String },
     /// `ghc` or its configured observer could not be spawned.
     GhcSpawn { source: std::io::Error },
 }
@@ -102,7 +101,7 @@ impl std::fmt::Display for CacheError {
         match self {
             CacheError::Io(e) => write!(f, "{e}"),
             CacheError::Admission(e) => write!(f, "{e}"),
-            CacheError::GhcFailed { stderr } => write!(f, "`ghc --make` failed:\n{stderr}"),
+            CacheError::GhcFailed { diagnostic } => write!(f, "`ghc --make` failed: {diagnostic}"),
             CacheError::GhcSpawn { source } => write!(f, "could not spawn ghc: {source}"),
         }
     }
@@ -290,7 +289,7 @@ fn do_ghc_build(
         .map_err(|e| CacheError::GhcSpawn { source: e })?;
     if !out.status.success() {
         return Err(CacheError::GhcFailed {
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            diagnostic: crate::compiler_failure::describe(&out),
         });
     }
     Ok(())
@@ -335,7 +334,7 @@ pub fn ghc_identity() -> Result<String, CacheError> {
         .map_err(|e| CacheError::GhcSpawn { source: e })?;
     if !version.status.success() {
         return Err(CacheError::GhcFailed {
-            stderr: String::from_utf8_lossy(&version.stderr).into_owned(),
+            diagnostic: crate::compiler_failure::describe(&version),
         });
     }
     let version = String::from_utf8_lossy(&version.stdout).trim().to_owned();
@@ -346,7 +345,7 @@ pub fn ghc_identity() -> Result<String, CacheError> {
         .map_err(|e| CacheError::GhcSpawn { source: e })?;
     if !info.status.success() {
         return Err(CacheError::GhcFailed {
-            stderr: String::from_utf8_lossy(&info.stderr).into_owned(),
+            diagnostic: crate::compiler_failure::describe(&info),
         });
     }
     let info = String::from_utf8_lossy(&info.stdout);

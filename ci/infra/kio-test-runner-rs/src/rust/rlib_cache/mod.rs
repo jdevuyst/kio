@@ -65,10 +65,8 @@ pub enum CacheError {
     Io(crate::build_cache::CacheError),
     /// The shared scheduler could not admit the rustc command.
     Admission(crate::compiler_admission::Error),
-    /// rustc invocation failed (compile error in the emitted crate or
-    /// the driver). Not a cache failure — propagated up so the caller
-    /// surfaces rustc's own stderr.
-    RustcFailed { status: std::process::ExitStatus },
+    /// rustc invocation failed, including its status and any captured output.
+    RustcFailed { diagnostic: String },
     /// rustc or a configured outer wrapper/observer could not be spawned
     /// (binary not on PATH, etc.).
     RustcSpawn {
@@ -88,8 +86,8 @@ impl std::fmt::Display for CacheError {
         match self {
             CacheError::Io(e) => write!(f, "{e}"),
             CacheError::Admission(e) => write!(f, "{e}"),
-            CacheError::RustcFailed { status } => {
-                write!(f, "rustc failed (exit {})", status.code().unwrap_or(-1))
+            CacheError::RustcFailed { diagnostic } => {
+                write!(f, "rustc failed: {diagnostic}")
             }
             CacheError::RustcSpawn { program, source } => {
                 write!(f, "could not spawn {program}: {source}")
@@ -330,7 +328,9 @@ fn do_rustc_rlib(
         .status()
         .map_err(|e| CacheError::RustcSpawn { program, source: e })?;
     if !status.success() {
-        return Err(CacheError::RustcFailed { status });
+        return Err(CacheError::RustcFailed {
+            diagnostic: status.to_string(),
+        });
     }
     Ok(())
 }
@@ -377,7 +377,9 @@ fn do_rustc_bin(
         .status()
         .map_err(|e| CacheError::RustcSpawn { program, source: e })?;
     if !status.success() {
-        return Err(CacheError::RustcFailed { status });
+        return Err(CacheError::RustcFailed {
+            diagnostic: status.to_string(),
+        });
     }
     Ok(())
 }
@@ -396,7 +398,9 @@ pub fn rustc_identity(rustc_path: &Path) -> Result<String, CacheError> {
             source: e,
         })?;
     if !out.status.success() {
-        return Err(CacheError::RustcFailed { status: out.status });
+        return Err(CacheError::RustcFailed {
+            diagnostic: crate::compiler_failure::describe(&out),
+        });
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     let mut version_line = String::new();
@@ -430,7 +434,9 @@ pub fn default_target_triple(rustc_path: &Path) -> Result<String, CacheError> {
             source: e,
         })?;
     if !out.status.success() {
-        return Err(CacheError::RustcFailed { status: out.status });
+        return Err(CacheError::RustcFailed {
+            diagnostic: crate::compiler_failure::describe(&out),
+        });
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     for line in stdout.lines() {
@@ -438,7 +444,9 @@ pub fn default_target_triple(rustc_path: &Path) -> Result<String, CacheError> {
             return Ok(rest.trim().to_string());
         }
     }
-    Err(CacheError::RustcFailed { status: out.status })
+    Err(CacheError::RustcFailed {
+        diagnostic: crate::compiler_failure::describe(&out),
+    })
 }
 
 /// Re-exported framing entry point for callers that need a key without
