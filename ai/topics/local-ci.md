@@ -320,8 +320,9 @@ script invokes Kio through `KIO_BIN` or a bare proxy name; it preserves the pref
 host tools by bare command name. An absolute or previously captured real-tool
 path bypasses compiler admission. Cargo, rustc, javac, javadoc, swiftc, GHC, and
 Haddock enter the compiler resource through `ci/schedule.sh`, except the exact information-only
-`rustc --version --verbose` query, which stays direct. Other rustc argument
-vectors retain admission. Go admits
+queries `rustc --version --verbose`, `ghc --numeric-version`, `ghc --info`, and
+`swiftc --version`, which stay direct. Other argument vectors for those tools
+retain admission. Go admits
 `build`/`install`/`run`/`test`/`vet`, `list` with `-export` or `-compiled`, and
 `tool asm`/`cgo`/`compile`/`dist`/`link`; known non-compiling Go commands pass
 through, while an unknown top-level subcommand, `go tool` command, or option is

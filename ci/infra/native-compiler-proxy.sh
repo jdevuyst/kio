@@ -19,6 +19,11 @@ admit=1
 if [ "$tool" = rustc ] && [ "$#" = 2 ] &&
    [ "$1" = --version ] && [ "$2" = --verbose ]; then
   admit=0
+elif [ "$tool" = ghc ] && [ "$#" = 1 ] &&
+     { [ "$1" = --numeric-version ] || [ "$1" = --info ]; }; then
+  admit=0
+elif [ "$tool" = swiftc ] && [ "$#" = 1 ] && [ "$1" = --version ]; then
+  admit=0
 elif [ "$tool" = go ]; then
   subcommand=
   tool_command=

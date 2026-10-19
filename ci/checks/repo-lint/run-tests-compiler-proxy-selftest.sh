@@ -199,11 +199,29 @@ EOF
 cat >"$scratch/native-tool" <<'EOF'
 #!/bin/sh
 set -eu
+if [ "$#" = 1 ]; then
+  case "${0##*/}:$1" in
+    ghc:--numeric-version|ghc:--info|swiftc:--version)
+      query_root=$KIO_TEST_NATIVE_MARKERS/${0##*/}-$1
+      printf '%s\n' "$#" "$@" >"$query_root.argv"
+      IFS= read -r query_stdin
+      [ "$query_stdin" = 'query stdin' ] || exit 114
+      case ",${KIO_CI_SCHEDULE_HELD:-}," in
+        *,compiler,*) exit 115 ;;
+      esac
+      : >"$query_root.direct"
+      printf 'query stdout\n'
+      printf 'query stderr\n' >&2
+      exit "${KIO_TEST_NATIVE_QUERY_STATUS:-0}"
+      ;;
+  esac
+fi
 case ",${KIO_CI_SCHEDULE_HELD:-}," in
   *,compiler,*) ;;
   *) exit 101 ;;
 esac
 : >"$KIO_TEST_NATIVE_MARKERS/${0##*/}"
+printf '%s\n' "$#" "$@" >>"$KIO_TEST_NATIVE_MARKERS/${0##*/}.admitted-argv"
 EOF
 
 for tool in javac javadoc swiftc ghc haddock; do
@@ -213,6 +231,24 @@ done
 cat >"$scratch/cases/bucket/native/run.sh" <<'EOF'
 #!/bin/sh
 set -eu
+  for query in ghc:--numeric-version ghc:--info swiftc:--version; do
+    query_tool=${query%%:*}
+    query_arg=${query#*:}
+    query_root=$KIO_TEST_NATIVE_MARKERS/$query_tool-$query_arg
+    printf 'query stdin\n' | "$query_tool" "$query_arg" \
+      >"$query_root.stdout" 2>"$query_root.stderr"
+    cmp "$KIO_TEST_NATIVE_MARKERS/expected.stdout" "$query_root.stdout"
+    cmp "$KIO_TEST_NATIVE_MARKERS/expected.stderr" "$query_root.stderr"
+    if printf 'query stdin\n' | KIO_TEST_NATIVE_QUERY_STATUS=23 "$query_tool" "$query_arg" \
+        >"$query_root.nonzero.stdout" 2>"$query_root.nonzero.stderr"; then
+      exit 116
+    else
+      query_status=$?
+    fi
+    [ "$query_status" = 23 ] || exit 117
+    cmp "$KIO_TEST_NATIVE_MARKERS/expected.stdout" "$query_root.nonzero.stdout"
+    cmp "$KIO_TEST_NATIVE_MARKERS/expected.stderr" "$query_root.nonzero.stderr"
+  done
   printf 'query stdin\n' | rustc --version --verbose \
     >"$KIO_TEST_RUSTC_QUERY_ROOT/direct.stdout" \
     2>"$KIO_TEST_RUSTC_QUERY_ROOT/direct.stderr"
@@ -251,7 +287,18 @@ set -eu
   javac Fixture.java
 javadoc Fixture.java
 swiftc Fixture.swift
+swiftc
+swiftc --version Fixture.swift
+swiftc Fixture.swift --version
+swiftc --future-query
 ghc Fixture.hs
+ghc
+ghc --numeric-version Fixture.hs
+ghc Fixture.hs --numeric-version
+ghc --info Fixture.hs
+ghc Fixture.hs --info
+ghc --numeric-version --info
+ghc --future-query
 haddock Fixture.hs
 EOF
 
@@ -286,6 +333,11 @@ printf '%s\n' 2 --version --verbose >"$scratch/expected.query-argv"
 printf '%s\n' 1 --version 1 fixture.rs 1 --future-query \
   3 --version --verbose fixture.rs 2 --verbose --version \
   >"$scratch/expected.admitted-argv"
+printf '%s\n' 1 Fixture.swift 0 2 --version Fixture.swift \
+  2 Fixture.swift --version 1 --future-query >"$scratch/expected.swiftc-argv"
+printf '%s\n' 1 Fixture.hs 0 2 --numeric-version Fixture.hs \
+  2 Fixture.hs --numeric-version 2 --info Fixture.hs 2 Fixture.hs --info \
+  2 --numeric-version --info 1 --future-query >"$scratch/expected.ghc-argv"
 
 wait_for_file() {
   wff_file=$1
@@ -378,6 +430,9 @@ if [ -e "$scratch/kio-tokens-admitted" ] ||
   exit 1
 fi
 if [ ! -e "$scratch/query-direct" ] ||
+   [ ! -e "$scratch/ghc---numeric-version.direct" ] ||
+   [ ! -e "$scratch/ghc---info.direct" ] ||
+   [ ! -e "$scratch/swiftc---version.direct" ] ||
    [ ! -e "$scratch/kio-roundtrip-direct" ] ||
    [ ! -e "$scratch/go-env-direct" ] || [ ! -e "$scratch/go-tool-direct" ]; then
   printf 'run-tests-compiler-proxy-selftest: direct command was admitted or did not run\n' >&2
@@ -398,6 +453,14 @@ pids=
 
 cmp "$scratch/expected.query-argv" "$scratch/query-argv"
 cmp "$scratch/expected.admitted-argv" "$scratch/admitted-argv"
+cmp "$scratch/expected.swiftc-argv" "$scratch/swiftc.admitted-argv"
+cmp "$scratch/expected.ghc-argv" "$scratch/ghc.admitted-argv"
+for query in ghc:--numeric-version ghc:--info swiftc:--version; do
+  query_tool=${query%%:*}
+  query_arg=${query#*:}
+  printf '%s\n' 1 "$query_arg" >"$scratch/expected.native-query-argv"
+  cmp "$scratch/expected.native-query-argv" "$scratch/$query_tool-$query_arg.argv"
+done
 cmp "$scratch/expected.stdout" "$scratch/inherited.stdout"
 cmp "$scratch/expected.stderr" "$scratch/inherited.stderr"
 test -e "$scratch/query-inherited"
