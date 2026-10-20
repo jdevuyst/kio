@@ -1,0 +1,17 @@
+[package]
+name = "kio-perf-rust-driver"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+bench = { path = "../../workload/out/rust" }
+
+[profile.release]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[workspace]

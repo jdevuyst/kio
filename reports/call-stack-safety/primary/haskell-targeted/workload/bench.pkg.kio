@@ -1,0 +1,10 @@
+package bench;
+
+build {
+  target haskell {
+    out "out/haskell/";
+    baseline ghc9_10
+  }
+}
+
+bridge { bench }

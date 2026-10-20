@@ -1,0 +1,30 @@
+{
+  "schema": "kio-trusted-runtime-cell-v1",
+  "state": "incomplete-do-not-execute",
+  "cell": "pending-depth8-rust-opt2-pilot",
+  "kind": "primary",
+  "backend": "rust",
+  "profile": "native-opt-level-2",
+  "input": {"mode": "pending", "depth": 8, "repeat": 1, "seed": 41, "warmup": 0, "purpose": "time"},
+  "schedule_seed": 20261015,
+  "blocks": 5,
+  "timeout_seconds": 60,
+  "max_output_bytes": 1048576,
+  "expected_exit": 0,
+  "stderr_policy": "empty",
+  "env": {
+    "TMPDIR": "<TMPDIR>",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "stdin": {"path": null, "sha256": null},
+  "protocol_receipt_sha256": null,
+  "review_receipt_sha256": null,
+  "arms": [
+    {"id": "B", "source_commit": "eefe9f09133f9eac5ea044603ee10362b5da5f25", "source_tree": "884fb3bf20e7d599010a6d78a4fe14f82048379f", "compiler_sha256": null, "build_receipt_sha256": null, "toolchain_receipt_sha256": null, "driver_source_inventory_sha256": null, "workload_source_inventory_sha256": null, "argv": null, "cwd": null, "files": []},
+    {"id": "T", "source_commit": "3f2e24d6bcb6f6b1ddd7bced0951af13679f5540", "source_tree": "54cc57d7989af03e6e34a18c1b206a658b64e311", "compiler_sha256": null, "build_receipt_sha256": null, "toolchain_receipt_sha256": null, "driver_source_inventory_sha256": null, "workload_source_inventory_sha256": null, "argv": null, "cwd": null, "files": []},
+    {"id": "C", "source_commit": "b4f85de2f47ad270bc9f69bfc834f7a1f73a0645", "source_tree": "31db707cab69c27e4cd8967b53b524187852ce69", "compiler_sha256": null, "build_receipt_sha256": null, "toolchain_receipt_sha256": null, "driver_source_inventory_sha256": null, "workload_source_inventory_sha256": null, "argv": null, "cwd": null, "files": []},
+    {"id": "S", "source_commit": "b2854823d438e4c2ad1fe23aa8ee73bde56439b1", "source_tree": "dc2f8cdba73e07e9cb63488d409a60a6677bf426", "compiler_sha256": null, "build_receipt_sha256": null, "toolchain_receipt_sha256": null, "driver_source_inventory_sha256": null, "workload_source_inventory_sha256": null, "argv": null, "cwd": null, "files": []},
+    {"id": "P", "source_commit": "80f185963adf3aaffe5b14e1748c2d6431d5a97c", "source_tree": "0d90a637f8d09e18a0b9f29580117c370f45cf94", "compiler_sha256": null, "build_receipt_sha256": null, "toolchain_receipt_sha256": null, "driver_source_inventory_sha256": null, "workload_source_inventory_sha256": null, "argv": null, "cwd": null, "files": []}
+  ]
+}

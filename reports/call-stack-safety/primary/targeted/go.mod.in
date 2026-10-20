@@ -1,0 +1,3 @@
+module kio-bench
+
+go 1.26

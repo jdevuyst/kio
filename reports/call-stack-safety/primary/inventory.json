@@ -1,0 +1,48 @@
+{
+  "schema": "kio-call-stack-source-archive-v1",
+  "state": "archived-sources-no-fresh-performance-run",
+  "arms": [
+    {
+      "id": "B",
+      "commit": "eefe9f09133f9eac5ea044603ee10362b5da5f25"
+    },
+    {
+      "id": "T",
+      "commit": "3f2e24d6bcb6f6b1ddd7bced0951af13679f5540"
+    },
+    {
+      "id": "C",
+      "commit": "b4f85de2f47ad270bc9f69bfc834f7a1f73a0645"
+    },
+    {
+      "id": "S",
+      "commit": "b2854823d438e4c2ad1fe23aa8ee73bde56439b1"
+    },
+    {
+      "id": "P",
+      "commit": "80f185963adf3aaffe5b14e1748c2d6431d5a97c"
+    }
+  ],
+  "existing_subjects": [
+    {
+      "id": "order-book",
+      "path": "test-data/castles/order_book_matcher",
+      "source_commit": "eefe9f09133f9eac5ea044603ee10362b5da5f25",
+      "backends": [
+        "js",
+        "python",
+        "rust"
+      ],
+      "oracle": "expected.stdout"
+    },
+    {
+      "id": "elab",
+      "path": "test-data/poc/elab",
+      "source_commit": "eefe9f09133f9eac5ea044603ee10362b5da5f25",
+      "backends": [
+        "compiler"
+      ],
+      "oracle": "existing POC runner"
+    }
+  ]
+}

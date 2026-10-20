@@ -1,0 +1,37 @@
+module bench;
+
+host type I32 role(i32);
+
+host fn step(value: I32, label: I32) -> I32;
+
+pub fn direct(value: I32) -> I32 { step(value, 0) }
+
+pub newtype Chain : I32 -> I32 { constructor make; projector read }
+
+pub fn seed() -> Chain {
+  .(value) { step(value, 0) }.>Chain.make
+}
+
+pub fn tail(previous: Chain, label: I32) -> Chain {
+  .(value) { Chain.read(previous)(step(value, label)) }.>Chain.make
+}
+
+pub fn pending(previous: Chain, label: I32) -> Chain {
+  .(value) { let result = Chain.read(previous)(value); step(result, label) }.>Chain.make
+}
+
+pub fn invoke(chain: Chain, value: I32) -> I32 { Chain.read(chain)(value) }
+
+pub fn callback_seed() -> I32 -> I32 {
+  .(value) { step(value, 0) }
+}
+
+pub fn callback_tail(previous: I32 -> I32, label: I32) -> I32 -> I32 {
+  .(value) { previous(step(value, label)) }
+}
+
+pub fn callback_pending(previous: I32 -> I32, label: I32) -> I32 -> I32 {
+  .(value) { let result = previous(value); step(result, label) }
+}
+
+pub fn call_native(callback: I32 -> I32, value: I32) -> I32 { callback(value) }

@@ -1,0 +1,891 @@
+{
+  "schema": "kio-call-stack-archived-presets-v1",
+  "arms": [
+    {
+      "id": "B",
+      "commit": "eefe9f09133f9eac5ea044603ee10362b5da5f25"
+    },
+    {
+      "id": "T",
+      "commit": "3f2e24d6bcb6f6b1ddd7bced0951af13679f5540"
+    },
+    {
+      "id": "C",
+      "commit": "b4f85de2f47ad270bc9f69bfc834f7a1f73a0645"
+    },
+    {
+      "id": "S",
+      "commit": "b2854823d438e4c2ad1fe23aa8ee73bde56439b1"
+    },
+    {
+      "id": "P",
+      "commit": "80f185963adf3aaffe5b14e1748c2d6431d5a97c"
+    }
+  ],
+  "baseline_release": "0.2.3",
+  "runtime": {
+    "samples_final_window": 1225,
+    "unique_samples_with_pilot": 1375,
+    "timeout_seconds": 60,
+    "max_output_bytes": 1048576,
+    "dispatch_seconds": 2700,
+    "disk_floor_bytes": 10737418240,
+    "workload_input_seed": 41,
+    "cells": [
+      {
+        "cell": "python-native-0-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "python",
+        "profile": "pinned-python-3.12.15-default",
+        "input": {
+          "depth": 0,
+          "mode": "native",
+          "purpose": "time",
+          "repeat": 100000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "python-callback-tail-0-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "python",
+        "profile": "pinned-python-3.12.15-default",
+        "input": {
+          "depth": 0,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 50000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "python-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "python",
+        "profile": "pinned-python-3.12.15-default",
+        "input": {
+          "depth": 8,
+          "mode": "tail",
+          "purpose": "time",
+          "repeat": 5000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "python-callback-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "python",
+        "profile": "pinned-python-3.12.15-default",
+        "input": {
+          "depth": 8,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 5000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "python-callback-pending-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "python",
+        "profile": "pinned-python-3.12.15-default",
+        "input": {
+          "depth": 8,
+          "mode": "callback-pending",
+          "purpose": "time",
+          "repeat": 5000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "quickjs-native-0-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "quickjs",
+        "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime",
+        "input": {
+          "depth": 0,
+          "mode": "native",
+          "purpose": "time",
+          "repeat": 500000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "quickjs-callback-tail-0-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "quickjs",
+        "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime",
+        "input": {
+          "depth": 0,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 500000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "quickjs-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "quickjs",
+        "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime",
+        "input": {
+          "depth": 8,
+          "mode": "tail",
+          "purpose": "time",
+          "repeat": 40000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "quickjs-callback-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "quickjs",
+        "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime",
+        "input": {
+          "depth": 8,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 60000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "quickjs-callback-pending-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "quickjs",
+        "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime",
+        "input": {
+          "depth": 8,
+          "mode": "callback-pending",
+          "purpose": "time",
+          "repeat": 70000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "rust-native-0-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "rust",
+        "profile": "native-release-opt-level-2",
+        "input": {
+          "depth": 0,
+          "mode": "native",
+          "purpose": "time",
+          "repeat": 1000000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "rust-callback-tail-0-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "rust",
+        "profile": "native-release-opt-level-2",
+        "input": {
+          "depth": 0,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 1000000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "rust-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "rust",
+        "profile": "native-release-opt-level-2",
+        "input": {
+          "depth": 8,
+          "mode": "tail",
+          "purpose": "time",
+          "repeat": 800000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "rust-callback-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "rust",
+        "profile": "native-release-opt-level-2",
+        "input": {
+          "depth": 8,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 800000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "rust-callback-pending-8-finalized-v1",
+        "kind": "new",
+        "samples": 50,
+        "backend": "rust",
+        "profile": "native-release-opt-level-2",
+        "input": {
+          "depth": 8,
+          "mode": "callback-pending",
+          "purpose": "time",
+          "repeat": 800000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 10,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "go-callback-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "go",
+        "profile": "go-default-optimized",
+        "input": {
+          "depth": 8,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 200000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "go-callback-extract-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "go",
+        "profile": "go-default-optimized",
+        "input": {
+          "depth": 8,
+          "mode": "callback-extract",
+          "purpose": "time",
+          "repeat": 200000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "go-pending-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "go",
+        "profile": "go-default-optimized",
+        "input": {
+          "depth": 8,
+          "mode": "pending",
+          "purpose": "time",
+          "repeat": 300000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "java-direct-0-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "java",
+        "profile": "java-default-jvm-fixed-procedure",
+        "input": {
+          "depth": 0,
+          "mode": "direct",
+          "purpose": "time",
+          "repeat": 20000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "java-pending-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "java",
+        "profile": "java-default-jvm-fixed-procedure",
+        "input": {
+          "depth": 8,
+          "mode": "pending",
+          "purpose": "time",
+          "repeat": 10000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "java-pending-warm-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "java",
+        "profile": "java-default-jvm-fixed-procedure",
+        "input": {
+          "depth": 8,
+          "mode": "pending",
+          "purpose": "time",
+          "repeat": 10000,
+          "seed": 41,
+          "warmup": 10000
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "java-callback-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "java",
+        "profile": "java-default-jvm-fixed-procedure",
+        "input": {
+          "depth": 8,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 2000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "swift-callback-tail-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "swift",
+        "profile": "swift-O-independent-modules",
+        "input": {
+          "depth": 8,
+          "mode": "callback-tail",
+          "purpose": "time",
+          "repeat": 50000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "swift-callback-extract-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "swift",
+        "profile": "swift-O-independent-modules",
+        "input": {
+          "depth": 8,
+          "mode": "callback-extract",
+          "purpose": "time",
+          "repeat": 50000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "swift-callback-pending-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "swift",
+        "profile": "swift-O-independent-modules",
+        "input": {
+          "depth": 8,
+          "mode": "callback-pending",
+          "purpose": "time",
+          "repeat": 50000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "haskell-callback-pending-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "haskell",
+        "profile": "haskell-O2-default-RTS",
+        "input": {
+          "depth": 8,
+          "mode": "callback-pending",
+          "purpose": "time",
+          "repeat": 50000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "haskell-io-bind-native-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "haskell",
+        "profile": "haskell-O2-default-RTS",
+        "input": {
+          "depth": 8,
+          "mode": "io-bind-native",
+          "purpose": "time",
+          "repeat": 1000000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "haskell-io-bind-public-8-finalized-v1",
+        "kind": "new",
+        "samples": 25,
+        "backend": "haskell",
+        "profile": "haskell-O2-default-RTS",
+        "input": {
+          "depth": 8,
+          "mode": "io-bind-public",
+          "purpose": "time",
+          "repeat": 500000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 20261015
+      },
+      {
+        "cell": "python-direct-depth0-pilot-finalized-v1-blocks6to10",
+        "kind": "continuation",
+        "samples": 25,
+        "backend": "python",
+        "profile": "pinned-python-3.12.15-default",
+        "input": {
+          "depth": 0,
+          "mode": "direct",
+          "purpose": "time",
+          "repeat": 50000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 57
+      },
+      {
+        "cell": "python-pending-depth8-pilot-finalized-v1-blocks6to10",
+        "kind": "continuation",
+        "samples": 25,
+        "backend": "python",
+        "profile": "pinned-python-3.12.15-default",
+        "input": {
+          "depth": 8,
+          "mode": "pending",
+          "purpose": "time",
+          "repeat": 5000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 57
+      },
+      {
+        "cell": "quickjs-direct-depth0-pilot-finalized-v1-blocks6to10",
+        "kind": "continuation",
+        "samples": 25,
+        "backend": "quickjs",
+        "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime",
+        "input": {
+          "depth": 0,
+          "mode": "direct",
+          "purpose": "time",
+          "repeat": 500000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 57
+      },
+      {
+        "cell": "quickjs-pending-depth8-pilot-finalized-v1-blocks6to10",
+        "kind": "continuation",
+        "samples": 25,
+        "backend": "quickjs",
+        "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime",
+        "input": {
+          "depth": 8,
+          "mode": "pending",
+          "purpose": "time",
+          "repeat": 20000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 57
+      },
+      {
+        "cell": "rust-direct-depth0-pilot-finalized-v1-blocks6to10",
+        "kind": "continuation",
+        "samples": 25,
+        "backend": "rust",
+        "profile": "native-release-opt-level-2",
+        "input": {
+          "depth": 0,
+          "mode": "direct",
+          "purpose": "time",
+          "repeat": 1000000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 57
+      },
+      {
+        "cell": "rust-pending-depth8-pilot-finalized-v1-blocks6to10",
+        "kind": "continuation",
+        "samples": 25,
+        "backend": "rust",
+        "profile": "native-release-opt-level-2",
+        "input": {
+          "depth": 8,
+          "mode": "pending",
+          "purpose": "time",
+          "repeat": 800000,
+          "seed": 41,
+          "warmup": 0
+        },
+        "blocks": 5,
+        "schedule_seed": 57
+      }
+    ],
+    "pilot": {
+      "blocks": 5,
+      "schedule_seed": 20261015,
+      "continuation_schedule_seed": 57,
+      "combined_blocks": 10,
+      "cells": [
+        {
+          "cell": "python-direct-depth0",
+          "input": {
+            "depth": 0,
+            "mode": "direct",
+            "purpose": "time",
+            "repeat": 50000,
+            "seed": 41,
+            "warmup": 0
+          },
+          "profile": "pinned-python-3.12.15-default"
+        },
+        {
+          "cell": "python-pending-depth8",
+          "input": {
+            "depth": 8,
+            "mode": "pending",
+            "purpose": "time",
+            "repeat": 5000,
+            "seed": 41,
+            "warmup": 0
+          },
+          "profile": "pinned-python-3.12.15-default"
+        },
+        {
+          "cell": "quickjs-direct-depth0",
+          "input": {
+            "depth": 0,
+            "mode": "direct",
+            "purpose": "time",
+            "repeat": 500000,
+            "seed": 41,
+            "warmup": 0
+          },
+          "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime"
+        },
+        {
+          "cell": "quickjs-pending-depth8",
+          "input": {
+            "depth": 8,
+            "mode": "pending",
+            "purpose": "time",
+            "repeat": 20000,
+            "seed": 41,
+            "warmup": 0
+          },
+          "profile": "rquickjs-0.11.0-launcher-release-opt3-default-runtime"
+        },
+        {
+          "cell": "rust-direct-depth0",
+          "input": {
+            "depth": 0,
+            "mode": "direct",
+            "purpose": "time",
+            "repeat": 1000000,
+            "seed": 41,
+            "warmup": 0
+          },
+          "profile": "native-release-opt-level-2"
+        },
+        {
+          "cell": "rust-pending-depth8",
+          "input": {
+            "depth": 8,
+            "mode": "pending",
+            "purpose": "time",
+            "repeat": 800000,
+            "seed": 41,
+            "warmup": 0
+          },
+          "profile": "native-release-opt-level-2"
+        }
+      ]
+    }
+  },
+  "depth": {
+    "depths": [
+      0,
+      1,
+      8,
+      64,
+      256,
+      1024,
+      4096,
+      10000
+    ],
+    "repeat": 1,
+    "warmup": 0,
+    "seed": 41,
+    "diagnostic_ladder": {
+      "all_arms": ["B", "T", "C", "S", "P"],
+      "backend_modes": {
+        "python": ["tail", "pending", "callback-tail", "callback-pending"],
+        "quickjs": ["tail", "pending", "callback-tail", "callback-pending"],
+        "rust": ["tail", "pending", "callback-tail", "callback-pending"],
+        "go": ["pending"],
+        "java": ["pending"],
+        "swift": ["callback-pending"],
+        "haskell": ["callback-pending"]
+      },
+      "depths": [
+        64,
+        256,
+        1024
+      ],
+      "max_requests": 240,
+      "envelope_seconds": 1200,
+      "admission_cutoff_seconds": 1135
+    },
+    "completed_extension": {
+      "surviving_keys": 56,
+      "survivor_rule": "Only backend/arm/mode keys that passed 1024 without any first failure in the initial ladder.",
+      "survivor_depths": [4096, 10000],
+      "additional_keys": {"backend": "swift", "mode": "callback-tail", "arms": ["B", "T", "C", "S", "P"], "depths": [1024, 4096, 10000]},
+      "maximum_requests": 127,
+      "excluded_previously_failed_keys": 24,
+      "policy": "Known failed keys are rejected, no failed probe is retried, and the first failure suppresses deeper probes for that same key.",
+      "envelope_seconds": 1200,
+      "timeout_seconds": 60,
+      "max_output_bytes": 1048576
+    },
+    "policy": "Suppress deeper probes for an arm/backend/mode after its first failure; a highest successful tested depth is not an exact limit."
+  },
+  "compiler": {
+    "source_origins": {
+      "bench": "unchanged reviewed primary/workload",
+      "released_B": "eefe9f09133f9eac5ea044603ee10362b5da5f25",
+      "paths": [
+        "test-data/poc/elab/workdir",
+        "test-data/castles/order_book_matcher/workdir"
+      ]
+    },
+    "subjects": [
+      {
+        "id": "bench",
+        "package": "bench",
+        "cwd": "bench/workload",
+        "timeout": 60
+      },
+      {
+        "id": "elab-demo",
+        "package": "elab_demo",
+        "cwd": "test-data/poc/elab/workdir/demo",
+        "timeout": 180
+      },
+      {
+        "id": "order-book",
+        "package": "order_book_matcher",
+        "cwd": "test-data/castles/order_book_matcher/workdir",
+        "timeout": 180
+      }
+    ],
+    "orders": [
+      [
+        "B",
+        "T",
+        "C",
+        "S",
+        "P"
+      ],
+      [
+        "T",
+        "C",
+        "S",
+        "P",
+        "B"
+      ],
+      [
+        "C",
+        "S",
+        "P",
+        "B",
+        "T"
+      ]
+    ],
+    "commands": [
+      "ARM_KIO --no-cache check",
+      "ARM_KIO --no-cache build --package PACKAGE js",
+      "ARM_KIO --no-cache build --package PACKAGE python",
+      "ARM_KIO --no-cache build --package PACKAGE rust"
+    ],
+    "samples": 180,
+    "dispatch_seconds": 1800,
+    "growth_budget_bytes": 2147483648,
+    "disk_floor_bytes": 10737418240,
+    "max_output_bytes": 67108864,
+    "source_policy": "Fresh identical released-baseline source seed per command; Kio semantic caches disabled; filesystem/native/compiler caches not cold."
+  },
+  "application": {
+    "samples": 275,
+    "cells": [
+      {
+        "cell": "order_book_matcher-js-process",
+        "kind": "corpus-process",
+        "samples": 50
+      },
+      {
+        "cell": "order_book_matcher-python-process",
+        "kind": "corpus-process",
+        "samples": 50
+      },
+      {
+        "cell": "order_book_matcher-rust-process",
+        "kind": "corpus-process",
+        "samples": 50
+      },
+      {
+        "cell": "exec_general_tail_call_chain-rust-process",
+        "kind": "corpus-process",
+        "samples": 25
+      },
+      {
+        "cell": "exec_pending_type_stage_chain-rust-process",
+        "kind": "corpus-process",
+        "samples": 25
+      },
+      {
+        "cell": "exec_monadic_distinct_bind_types-rust-process",
+        "kind": "corpus-process",
+        "samples": 25
+      },
+      {
+        "cell": "order-book-rust-repeated-entry",
+        "kind": "repeated-entry",
+        "samples": 50
+      }
+    ],
+    "dispatch_seconds": 1200,
+    "order_book_source_commit": "eefe9f09133f9eac5ea044603ee10362b5da5f25",
+    "controls": [
+      {
+        "subject": "exec_general_tail_call_chain",
+        "source_commit": "80f185963adf3aaffe5b14e1748c2d6431d5a97c"
+      },
+      {
+        "subject": "exec_pending_type_stage_chain",
+        "source_commit": "80f185963adf3aaffe5b14e1748c2d6431d5a97c"
+      },
+      {
+        "subject": "exec_monadic_distinct_bind_types",
+        "source_commit": "eefe9f09133f9eac5ea044603ee10362b5da5f25"
+      }
+    ],
+    "repeated": {
+      "repeat": 1000,
+      "warmup": 0,
+      "expected_bytes_per_entry": 2509,
+      "oracle_sha256": "d8881702601729da0bcc656c46fa600383f067fc0f5ff28b0495c51eff4f4d56"
+    }
+  },
+  "profiles": {
+    "python": "Python 3.12.15; default recursion policy",
+    "quickjs": "rquickjs =0.11.0; isolated launcher Cargo release opt-level 3; default Runtime limits",
+    "rust": "Guest and scalar/repeated-entry driver opt-level 2",
+    "go": "Ordinary compiler defaults; baseline/staged build tags select callback transport",
+    "java": "Fresh and fixed 10000-call warmup are separate cells",
+    "swift": "-O; two separately compiled package modules; C/S/P share compatible KioRuntime",
+    "haskell": "-O2; default RTS; IO-bind controls are host IO operations",
+    "typescript": "Strict declaration consumer plus exact emitted JavaScript byte comparison; no second runtime campaign",
+    "application_process": "Default-dev public JS/Python runners; Rust application binaries opt-level 2; incompatible with isolated QuickJS release invocation pooling"
+  },
+  "toolchain_source": {
+    "revision": "80f185963adf3aaffe5b14e1748c2d6431d5a97c",
+    "files": [
+      "mise.toml",
+      "mise.lock",
+      "tools/toolchains/ghcup.toml",
+      "tools/toolchains/rustup.toml"
+    ],
+    "limit": "Repository provisioning pins identify intended tools; a fresh campaign must record actual executable versions and hashes separately."
+  }
+}

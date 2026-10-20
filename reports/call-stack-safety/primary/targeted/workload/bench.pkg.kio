@@ -1,0 +1,27 @@
+package bench;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline v5_0
+  };
+
+  target go {
+    out "out/go/";
+    baseline v1_26
+  };
+
+  target java {
+    out "out/java/";
+    baseline v21
+  }
+}
+
+bridge {
+  bench
+}

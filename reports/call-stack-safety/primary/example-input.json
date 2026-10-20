@@ -1,0 +1,9 @@
+{
+  "arm": "B",
+  "mode": "pending",
+  "depth": 8,
+  "repeat": 1,
+  "seed": 41,
+  "warmup": 0,
+  "purpose": "witness"
+}

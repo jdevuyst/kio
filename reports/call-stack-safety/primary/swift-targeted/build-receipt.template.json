@@ -1,0 +1,39 @@
+{
+  "schema": "kio-swift-targeted-build-receipt-v1",
+  "state": "incomplete-source-only",
+  "arm": null,
+  "source_commit": null,
+  "source_tree": null,
+  "driver_source_inventory_sha256": null,
+  "kio_compiler_sha256": null,
+  "kio_build_receipt_sha256": null,
+  "swiftc_path": null,
+  "swiftc_sha256": null,
+  "swiftc_version_receipt_sha256": null,
+  "profile": null,
+  "profile_flags": {"development": ["-Onone"], "optimized": ["-O"]},
+  "support_required_by_arm": {"B": false, "T": false, "C": true, "S": true, "P": true},
+  "adapter_by_arm": {"B": "host/baseline.swift", "T": "host/baseline.swift", "C": "host/staged.swift", "S": "host/staged.swift", "P": "host/staged.swift"},
+  "generation": {
+    "first": {"argv": null, "cwd": null, "source_inventory_sha256": null, "generated_files": null, "status": null},
+    "second": {"argv": null, "cwd": null, "source_inventory_sha256": null, "generated_files": null, "status": null}
+  },
+  "shared_support": {
+    "required": null,
+    "not_applicable_reason": null,
+    "first_source_sha256": null,
+    "second_source_sha256": null,
+    "byte_identical": null,
+    "selected_source_path": null
+  },
+  "native_steps": {
+    "support": {"state": "unresolved", "argv": null, "cwd": null, "env_allowlist": null, "input_files": null, "output_files": null, "exit": null, "process_receipt_sha256": null},
+    "package_a": {"state": "unresolved", "argv": null, "cwd": null, "env_allowlist": null, "input_files": null, "output_files": null, "exit": null, "process_receipt_sha256": null},
+    "package_b": {"state": "unresolved", "argv": null, "cwd": null, "env_allowlist": null, "input_files": null, "output_files": null, "exit": null, "process_receipt_sha256": null},
+    "host_link": {"state": "unresolved", "argv": null, "cwd": null, "env_allowlist": null, "input_files": null, "output_files": null, "exit": null, "process_receipt_sha256": null}
+  },
+  "runtime_executable": {"path": null, "sha256": null},
+  "runtime_dependencies": null,
+  "untimed_witness_receipt_sha256": null,
+  "independent_review_receipt_sha256": null
+}

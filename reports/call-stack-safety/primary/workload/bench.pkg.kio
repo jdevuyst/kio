@@ -1,0 +1,22 @@
+package bench;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  };
+
+  target python {
+    out "out/python/";
+    baseline v3_10
+  };
+
+  target rust {
+    out "out/rust/";
+    baseline v1_85
+  }
+}
+
+bridge {
+  bench
+}

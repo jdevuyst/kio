@@ -1,0 +1,35 @@
+{
+  "schema": "kio-haskell-targeted-build-receipt-v1",
+  "state": "incomplete-source-only",
+  "arm": null,
+  "source_commit": null,
+  "source_tree": null,
+  "driver_source_inventory_sha256": null,
+  "kio_compiler_sha256": null,
+  "kio_build_receipt_sha256": null,
+  "ghc_path": null,
+  "ghc_sha256": null,
+  "ghc_version_receipt_sha256": null,
+  "ghc_package_unit_inventory_sha256": null,
+  "profile": null,
+  "profile_flags": {"development": ["-O0"], "optimized": ["-O2"]},
+  "generation": {"argv": null, "cwd": null, "source_inventory_sha256": null, "generated_files": null, "status": null},
+  "native_compile_and_link": {
+    "argv": null, "cwd": null, "env_allowlist": null,
+    "input_files": null, "output_files": null, "exit": null,
+    "process_receipt_sha256": null
+  },
+  "support_layout": "one generated module; private support cost included in package compile",
+  "rts_policy": {
+    "stack_policy": "unmodified-defaults-required",
+    "allowed_extra_rts_argv": [],
+    "ghcrts_absent_or_empty_verified": null,
+    "build_has_no_rts_overrides_verified": null,
+    "launch_has_no_rts_overrides_verified": null,
+    "actual_default_limits_receipt_sha256": null
+  },
+  "runtime_executable": {"path": null, "sha256": null},
+  "runtime_dependencies": null,
+  "untimed_witness_receipt_sha256": null,
+  "independent_review_receipt_sha256": null
+}
