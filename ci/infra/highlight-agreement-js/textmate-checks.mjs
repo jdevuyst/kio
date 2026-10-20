@@ -75,6 +75,35 @@ fixture("same-line declaration owners", "module source; import helper as h; host
   ["import helper", "import", keyword], ["op _", "op", keyword], ["impl add", "impl", keyword],
   ["{ owned }", "owned", keyword], ["owned:", "owned", identifier], ["(owned)", "owned", identifier],
 ]);
+for (const sourceName of ["as", "op", "varop"]) {
+  for (const localName of ["as", "op", "varop"]) {
+    fixture(`selective alias same-line contextual names ${sourceName} ${localName}`,
+      `module source; import m(${sourceName} as ${localName});`, [
+        [`(${sourceName} as`, sourceName, identifier],
+        [`as ${localName});`, "as", keyword],
+        [`${localName});`, localName, identifier],
+      ]);
+    fixture(`selective alias contextual names ${sourceName} ${localName}`,
+      `module source; import m(${sourceName} // selector\n as // separator\n ${localName});`, [
+        [`(${sourceName} // selector`, sourceName, sourceName === "as" ? identifier : null],
+        ["as // separator", "as", keyword],
+        [`${localName});`, localName, identifier],
+      ]);
+  }
+}
+fixture("selective contextual names without aliases", "module source; import m(as, op, varop);", [
+  ["(as,", "as", identifier], ["op,", "op", identifier], ["varop);", "varop", identifier],
+]);
+fixture("selective ambiguous fixed tag continues into pattern", "module source; import m(op // selector\n _ + _ as _ ++ _);", [
+  ["(op // selector", "op", null], ["as _ ++", "as", keyword],
+]);
+fixture("selective ambiguous variadic tag continues into pattern", "module source; import m(varop // selector\n [* *] as [% %]);", [
+  ["(varop // selector", "varop", null], ["as [%", "as", keyword],
+]);
+fixture("selective operator aliases across trivia", "module source; import m(op (_ + _) // fixed\n as (_ ++ _), varop [* *] // variadic\n as [% %]);", [
+  ["op (_", "op", keyword], ["as (_", "as", keyword],
+  ["varop [*", "varop", keyword], ["as [%", "as", keyword],
+]);
 fixture("same-line signature import", "signature app v(1); v(1) { with { module imports { import helper as h }; module empty {} }; breaking { remove { api.old } } }", [
   ["import helper", "import", keyword], ["helper as", "helper", "entity.name.module.kio"],
 ]);

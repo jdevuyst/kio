@@ -380,9 +380,14 @@ These features live only in `language.md`; each one either desugars to Kio' or r
 ## Grammar
 
 **Imports.** Kio' uses the same module-first imports as Kio:
-`import module/path(Name, value);`, `import module/path as alias;`, and the
+`import module/path(Name, value);`, `import module/path(Name as Local, value as local);`,
+`import module/path as alias;`, and the
 builtin block `import __intrinsics__;`. Selective lists are parenthesized and
-nonempty, with ordinary identifiers only. In canonical formatting, the opener
+nonempty, with ordinary same-class named selections and optional local aliases.
+Aliases preserve the selected declaration's exact identity, public type, kind,
+purity and direct host-type role; they do not introduce wrapper functions or
+transparent type declarations. Distinct local aliases are permitted, but
+repeated local introductions remain errors. In canonical formatting, the opener
 follows the module path on the introducing line. Braced label selectors, tagged
 operator grammars, and
 `import __comptime__;` are surface-only and are rejected by the Kio' grammar.

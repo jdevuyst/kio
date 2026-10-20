@@ -28,6 +28,7 @@
 (elaborator_captures_clause (keyword_declaration) @keyword.declaration)
 (elaborator_impl_clause (keyword_declaration) @keyword.declaration)
 (import_decl (keyword_declaration) @keyword.declaration)
+(import_operator_item (keyword_declaration) @keyword.declaration)
 (role_annotation (keyword_declaration) @keyword.declaration)
 (incomplete_role_annotation (keyword_declaration) @keyword.declaration)
 (owned_block (keyword_declaration) @keyword.declaration)

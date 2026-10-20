@@ -60,6 +60,7 @@ pub mod folding;
 pub mod formatting;
 pub mod highlight;
 pub mod hover;
+pub(crate) mod import_aliases;
 pub mod inlay_hints;
 pub(crate) mod label_reuse;
 pub mod positions;
@@ -1904,6 +1905,7 @@ mod tests {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
             file_to_module: BTreeMap::from([(file_path.to_path_buf(), module_path.to_owned())]),
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),

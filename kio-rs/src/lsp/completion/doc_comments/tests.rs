@@ -21,6 +21,7 @@ fn current_provider_headers_authenticate_candidates_and_metadata() {
             "module provider; pub fn stale() {}".to_owned(),
         )]),
         label_reuse_indexes: Default::default(),
+        import_aliases: Default::default(),
         generated_label_nominals: Default::default(),
         root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),
         warnings: Vec::new(),

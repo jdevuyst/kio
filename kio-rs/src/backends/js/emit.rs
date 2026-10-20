@@ -1594,7 +1594,7 @@ struct TopLevel<'m> {
     /// this map to decide whether the surface name should resolve
     /// against the local IIFE (no entry) or against a sibling
     /// module's namespace (an entry exists).
-    cross_module_imports: HashMap<&'m str, String>,
+    cross_module_imports: HashMap<&'m str, (String, &'m str)>,
     /// Qualified-import alias → module-namespace identifier (e.g.,
     /// `("h", "PKG_HELPER")`). Populated from same-package
     /// `import pkg/helper as h;` statements and read by
@@ -1608,7 +1608,7 @@ struct TopLevel<'m> {
     /// decide whether the surface newtype name resolves to a local
     /// const (no entry) or to a `<NS>.<NT>` sibling-module qualifier
     /// (an entry exists).
-    cross_module_newtypes: HashMap<&'m str, String>,
+    cross_module_newtypes: HashMap<&'m str, (String, &'m str)>,
     /// The package the emitter is operating on. Package-boundary conversion
     /// uses `prepared`; this reference remains for expression lowering and
     /// the standalone-module conversion helpers exercised without a public
@@ -1638,9 +1638,9 @@ fn build_top_level<'m>(
     package: Option<&'m crate::pass::resolve::Package<Routed>>,
     prepared: Option<&'m PreparedBoundaryCallableSites>,
 ) -> TopLevel<'m> {
-    let mut cross_module_imports: HashMap<&'m str, String> = HashMap::new();
+    let mut cross_module_imports: HashMap<&'m str, (String, &'m str)> = HashMap::new();
     let mut qualified_imports: HashMap<&'m str, String> = HashMap::new();
-    let mut cross_module_newtypes: HashMap<&'m str, String> = HashMap::new();
+    let mut cross_module_newtypes: HashMap<&'m str, (String, &'m str)> = HashMap::new();
     let mut local_newtypes: HashMap<&'m str, &'m Newtype> = HashMap::new();
     let mut local_runtime_bindings: HashSet<&'m str> = HashSet::new();
     for item in &module.items {
@@ -1663,8 +1663,12 @@ fn build_top_level<'m>(
             // can distinguish at call sites.
             ImportKind::Selective { items, from } => {
                 let ns = module_namespace(from);
-                for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
-                    cross_module_imports.insert(name, ns.clone());
+                for item in items {
+                    let Some(name) = item.as_name() else {
+                        continue;
+                    };
+                    let local = item.as_local_name().expect("named import has a local name");
+                    cross_module_imports.insert(local, (ns.clone(), name));
                     if let Some(pkg) = package {
                         let from_path = from
                             .segments
@@ -1685,7 +1689,7 @@ fn build_top_level<'m>(
                                 );
                             }
                             if imports_newtype {
-                                cross_module_newtypes.insert(name, ns.clone());
+                                cross_module_newtypes.insert(local, (ns.clone(), name));
                             }
                         }
                     }
@@ -2876,10 +2880,10 @@ fn emit_host_fn_value_ref(
 /// emits the local-IIFE-scoped identifier (mangled for reserved-
 /// word collision).
 fn emit_module_fn_value_ref(mangled: &str, top: &TopLevel, out: &mut String) {
-    if let Some(ns) = top.cross_module_imports.get(mangled) {
+    if let Some((ns, source)) = top.cross_module_imports.get(mangled) {
         out.push_str(ns);
         out.push('.');
-        out.push_str(&mangle_js_ident(mangled));
+        out.push_str(&mangle_js_ident(source));
         return;
     }
     out.push_str(&mangle_js_ident(mangled));
@@ -2974,11 +2978,14 @@ fn emit_newtype_member(
     locals: &mut JsLocalScope,
     out: &mut String,
 ) -> Result<(), EmitError> {
-    if let Some(ns) = top.cross_module_newtypes.get(newtype) {
+    let source = if let Some((ns, source)) = top.cross_module_newtypes.get(newtype) {
         out.push_str(ns);
         out.push('.');
-    }
-    out.push_str(newtype);
+        *source
+    } else {
+        newtype
+    };
+    out.push_str(source);
     out.push('.');
     out.push_str(member);
     for _ in type_args {

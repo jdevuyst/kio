@@ -782,9 +782,18 @@ fn collect_newtype_import_scopes(
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
                 .join("/");
-            for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
-                if newtype_by_key.contains_key(&newtype_key(&from_path, name)) {
-                    scope.insert(name.to_owned(), from_path.clone());
+            for item in items {
+                let Some(name) = item.as_name() else {
+                    continue;
+                };
+                let key = newtype_key(&from_path, name);
+                if newtype_by_key.contains_key(&key) {
+                    scope.insert(
+                        item.as_local_name()
+                            .expect("named import has a local name")
+                            .to_owned(),
+                        key,
+                    );
                 }
             }
         }
@@ -1610,8 +1619,8 @@ fn build_selective_imports(
 ) -> std::collections::HashMap<String, String> {
     crate::backends::selective_module_fn_import_owners(importer, package)
         .into_iter()
-        .map(|(name, owner)| {
-            let mangled = mangle_module_fn(&owner, &name);
+        .map(|(name, (owner, source))| {
+            let mangled = mangle_module_fn(&owner, &source);
             (name, mangled)
         })
         .collect()
@@ -3629,15 +3638,13 @@ impl BodyShapeRegistry {
         if self.newtype_by_key.contains_key(&own) {
             return Some(own);
         }
-        if let Some(from_module) = self
+        if let Some(imported) = self
             .newtype_import_scopes
             .get(module_path)
             .and_then(|s| s.get(name))
+            && self.newtype_by_key.contains_key(imported)
         {
-            let imported = newtype_key(from_module, name);
-            if self.newtype_by_key.contains_key(&imported) {
-                return Some(imported);
-            }
+            return Some(imported.clone());
         }
         self.unique_newtype_key_by_name.get(name).cloned()
     }

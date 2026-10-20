@@ -330,6 +330,7 @@ mod tests {
             position_index: index,
             file_to_module,
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(

@@ -3773,8 +3773,8 @@ fn build_selective_imports(
 ) -> SelectiveImports {
     crate::backends::selective_module_fn_import_owners(importer, package)
         .into_iter()
-        .map(|(name, owner)| {
-            let method = module_fn_method_name(&owner, &name);
+        .map(|(name, (owner, source))| {
+            let method = module_fn_method_name(&owner, &source);
             (name, method)
         })
         .collect()

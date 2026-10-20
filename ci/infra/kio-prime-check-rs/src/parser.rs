@@ -822,6 +822,7 @@ impl Parser {
                     );
                 }
                 if (self.ident_named("op") || self.ident_named("varop"))
+                    && !matches!(self.peek_kind_at(1), Some(TokenKind::Ident(name)) if name == "as")
                     && !matches!(
                         self.peek_kind_at(1),
                         Some(TokenKind::Comma | TokenKind::RParen)
@@ -831,6 +832,14 @@ impl Parser {
                 }
                 let (name, span) = self.expect_ident_with_span("imported identifier")?;
                 Self::validate_value_or_type_name(&name, span)?;
+                if self.eat_ident_named("as") {
+                    let (alias, span) = self.expect_ident_with_span("alias after `as`")?;
+                    if Self::is_type_name(&name) {
+                        Self::validate_type_name(&alias, span)?;
+                    } else {
+                        Self::validate_value_name(&alias, span)?;
+                    }
+                }
                 let saw_comma = self.skip_commas();
                 if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
                     break;
@@ -3122,6 +3131,23 @@ mod tests {
         ok(
             "module good; import __intrinsics__; type T = __Type__; fn f(x: ., y: .) -> . { __pair__(., ., x, y) }",
         );
+    }
+
+    #[test]
+    fn named_import_aliases_are_shared_core_syntax() {
+        ok(
+            "module m; import provider(Foo as Bar, foo as bar, foo as other, same as same, op as operation, varop as variadic); fn run() -> . { () }",
+        );
+        for selection in [
+            "Foo as bar",
+            "foo as Bar",
+            "foo as __bad__",
+            "op _ + _ as _ - _",
+            "varop [* *] as [% %]",
+            "{field} as renamed",
+        ] {
+            assert!(!err(&format!("module m; import provider({selection});")).is_empty());
+        }
     }
 
     #[test]

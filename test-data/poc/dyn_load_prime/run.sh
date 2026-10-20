@@ -250,7 +250,7 @@ for required in \
   'validate_type_spelling_names(module_typenames(module),owner,empty)' \
   'validate_type_spelling_members(module_members(module),owner,with_names)' \
   'validate_type_spelling_imports(,module_imports(module),owner,index,with_members)' \
-  'if!exact_type_index_has_type_binding(index,provider,name){' \
+  'if!exact_type_index_has_type_binding(index,provider,import_source(one)){' \
   'validate_type_spelling_occurrence(seen,owner,name)' \
   'validate_type_spelling_occurrence(seen,owner,member_name(member))' \
   'typeValidated_type_spellings=Exact_key_catalog(Bool);' \

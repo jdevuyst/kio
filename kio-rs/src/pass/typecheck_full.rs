@@ -217,11 +217,9 @@ pub(crate) fn resolved_binder_for_position<'m>(
             .get(alias)
             .map(|module| module_key(module))
     };
-    let nominal_owner = |visible_name: &str| {
+    let nominal_identity = |visible_name: &str| {
         let segment = PathSegment::new(visible_name.to_owned(), Span::new(0, 0));
-        tcx.env
-            .nominal_ref_identity(std::slice::from_ref(&segment))
-            .map(|(owner, _)| owner)
+        tcx.env.nominal_ref_identity(std::slice::from_ref(&segment))
     };
     match kind {
         Kind::Local => ResolvedBinder::Local {
@@ -243,7 +241,12 @@ pub(crate) fn resolved_binder_for_position<'m>(
                 .get(name)
                 .map(|module| module_key(module))
                 .unwrap_or(module_path),
-            name: name.to_owned(),
+            name: tcx
+                .env
+                .cross_module_fn_defs
+                .get(name)
+                .map_or(name, |definition| definition.name.as_str())
+                .to_owned(),
         },
         Kind::HostEnvFn => ResolvedBinder::HostEnvFn {
             module_path: parent
@@ -255,7 +258,15 @@ pub(crate) fn resolved_binder_for_position<'m>(
                         .map(|module| module_key(module))
                 })
                 .unwrap_or(module_path),
-            name: name.to_owned(),
+            name: if parent.is_none() {
+                tcx.env
+                    .env_fn_defs
+                    .get(name)
+                    .map_or(name, |definition| definition.name.as_str())
+            } else {
+                name
+            }
+            .to_owned(),
         },
         Kind::Intrinsic => ResolvedBinder::Intrinsic {
             name: name.to_owned(),
@@ -264,18 +275,26 @@ pub(crate) fn resolved_binder_for_position<'m>(
             module_path: parent.and_then(qualified_owner).unwrap_or(module_path),
             name: name.to_owned(),
         },
-        Kind::CrossModuleNewtype => ResolvedBinder::Newtype {
-            module_path: nominal_owner(name).unwrap_or(module_path),
-            name: name.to_owned(),
-        },
-        Kind::NewtypeMember => ResolvedBinder::NewtypeMember {
-            module_path: qualifier
+        Kind::CrossModuleNewtype => {
+            let (module_path, source) =
+                nominal_identity(name).unwrap_or((module_path, name.to_owned()));
+            ResolvedBinder::Newtype {
+                module_path,
+                name: source,
+            }
+        }
+        Kind::NewtypeMember => {
+            let (owner, source) = qualifier
                 .and_then(qualified_owner)
-                .or_else(|| parent.and_then(nominal_owner))
-                .unwrap_or(module_path),
-            newtype: parent.unwrap_or("").to_owned(),
-            member: name.to_owned(),
-        },
+                .map(|owner| (owner, parent.unwrap_or("").to_owned()))
+                .or_else(|| parent.and_then(nominal_identity))
+                .unwrap_or((module_path, parent.unwrap_or("").to_owned()));
+            ResolvedBinder::NewtypeMember {
+                module_path: owner,
+                newtype: source,
+                member: name.to_owned(),
+            }
+        }
         Kind::QualifiedImport => ResolvedBinder::QualifiedImport {
             alias: name.to_owned(),
         },
@@ -1897,7 +1916,7 @@ fn generated_elaborator_scope_type_names(tcx: &TypeCtx<'_, '_>) -> HashSet<Strin
             reserved.extend(
                 items
                     .iter()
-                    .filter_map(crate::ast::ImportItem::as_name)
+                    .filter_map(crate::ast::ImportItem::as_local_name)
                     .filter(|name| crate::naming::is_type_name(name))
                     .map(str::to_owned),
             );
@@ -8358,7 +8377,7 @@ pub(crate) fn prepare_user_elaborator_action<'m>(
     Ok(PreparedUserElaboratorAction {
         node_id: elaboration_node_id(original)
             .expect("a user-elaborator expression carries an elaboration node"),
-        name: name.to_owned(),
+        name: elaborator.name.clone(),
         elaborator,
         elaborator_module,
         call_ty,
@@ -8431,9 +8450,10 @@ fn eval_fn_identity_for_path(
                 });
             }
             let owner = env.cross_module_fn_def_modules.get(name.as_str())?;
+            let definition = env.cross_module_fn_defs.get(name.as_str())?;
             Some(EvalFnIdentity {
                 module_path: module_path_string(owner),
-                name: name.name.clone(),
+                name: definition.name.clone(),
             })
         }
         [alias, name] if !bound.contains(alias.as_str()) => {
@@ -9711,6 +9731,7 @@ fn user_elaborator_template_to_elaboration(
                 .elaborations
                 .record_generated_imports(replay.module_path, &generated_imports);
             let mut serialization_type_binders = checked.serialization_type_binders();
+            serialization_type_binders.extend(ambient_type_names.iter().cloned());
             if let Some(residual_eta) = residual_eta {
                 serialization_type_binders.extend(
                     residual_eta
@@ -9730,6 +9751,7 @@ fn user_elaborator_template_to_elaboration(
                 }
                 pre_prime_values.push(substitute::substitute_expr_for_replayed_elaboration(
                     value,
+                    ambient_type_names,
                     replay.elaborations,
                     replay.module_path,
                     replay.package,
@@ -17732,7 +17754,8 @@ fn generic_last() -> . {
         values: &[Expr],
         arg: crate::ast::Type<UncheckedPrime>,
         capture_imports: &[UserElaboratorTemplateGeneratedImport],
-    ) {
+        ambient_type_names: &HashSet<String>,
+    ) -> UserElaboratorReplayResult {
         let span = test_span();
         let unit = crate::ast::Type::<UncheckedPrime>::Unit {
             meta: Meta::new(span),
@@ -17764,14 +17787,48 @@ fn generic_last() -> . {
                 values,
                 value_adapter: None,
                 residual_eta: None,
-                ambient_type_names: &HashSet::new(),
+                ambient_type_names,
                 capture_imports,
                 quoted: None,
             },
             span,
             &mut replay,
         )
-        .expect("template replay");
+        .expect("template replay")
+    }
+
+    #[test]
+    fn replayed_template_types_preserve_ambient_type_binders() {
+        for (selection, binder) in [("String as A", "A"), ("String", "String")] {
+            let module = lowered_module(&format!(
+                "module caller; import provider as host; import provider({selection});"
+            ));
+            let span = test_span();
+            let mut elaborations = Elaborations::new();
+            let replayed = replay_template_with_type_argument(
+                &module,
+                &mut elaborations,
+                &[],
+                crate::ast::Type::<UncheckedPrime>::synth_path(
+                    vec!["provider".to_owned(), "String".to_owned()],
+                    Vec::new(),
+                    span,
+                ),
+                &[],
+                &HashSet::from([binder.to_owned()]),
+            );
+            let crate::ast::Expr::Call { args, .. } = replayed.expression else {
+                panic!("replayed type application")
+            };
+            assert_eq!(
+                args,
+                vec![crate::ast::CallArg::Type(crate::ast::Type::synth_path(
+                    vec!["host".to_owned(), "String".to_owned()],
+                    Vec::new(),
+                    span,
+                ))]
+            );
+        }
     }
 
     #[test]
@@ -17803,6 +17860,7 @@ fn generic_last() -> . {
                     meta: Meta::new(test_span()),
                 },
                 &imports,
+                &HashSet::new(),
             );
             assert_eq!(
                 PrimeTypeRequalifier::initialization_count_for_test() - before,
@@ -17873,6 +17931,7 @@ fn generic_last() -> . {
                 span,
             ),
             &[],
+            &HashSet::new(),
         );
 
         let imports = elaborations.prime_requalification_imports_for("caller");
@@ -17905,6 +17964,7 @@ fn generic_last() -> . {
                 module_path: "captured/types".to_owned(),
                 alias: "_q0".to_owned(),
             }],
+            &HashSet::new(),
         );
 
         assert!(

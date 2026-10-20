@@ -1,0 +1,5 @@
+module origin;
+
+fn hidden() { () }
+
+pub fn local() { () }

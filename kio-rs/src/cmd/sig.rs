@@ -1198,11 +1198,12 @@ fn resolve_sig_context_head(
     if tail.is_empty() {
         for usage in imports {
             if let ImportKind::Selective { items, from } = &usage.kind
-                && items
+                && let Some(source) = items
                     .iter()
-                    .any(|item| matches!(item, ImportItem::Name { name, .. } if name == first))
+                    .find(|item| item.as_local_name() == Some(first.as_str()))
+                    .and_then(ImportItem::as_name)
             {
-                return Some((module_path_str(from), first.clone()));
+                return Some((module_path_str(from), source.to_owned()));
             }
         }
         return Some((module.to_owned(), first.clone()));

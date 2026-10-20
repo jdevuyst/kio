@@ -93,7 +93,8 @@ DOC_LINE          ::= '///' &(WS | EOL | EOF) <to end of line>
 Import            ::= ImportEntry ';'
 ImportEntry       ::= ImportIntrinsics | ImportSelective | ImportQualified
 ImportIntrinsics  ::= 'import' '__intrinsics__'
-ImportSelective   ::= 'import' ModulePath '(' IDENT (',' IDENT)* ')'
+ImportSelective   ::= 'import' ModulePath '(' NamedImport (',' NamedImport)* ')'
+NamedImport       ::= IDENT ('as' IDENT)?     (* destination preserves the source identifier class *)
 ImportQualified   ::= 'import' ModulePath 'as' IDENT (* alias is a value name *)
 
 Item              ::= DocBlock? ((FnDef | Newtype | RecursiveNewtype | TypeRecGroup) ';'? | TypeAlias | HostType | HostFn)
@@ -428,10 +429,10 @@ its pattern or delimiter pair. Classification follows from the importing text.
 
 ```ebnf
 ImportSelective  ::= 'import' ModulePath '(' ImportItem (',' ImportItem)* ')'
-ImportItem       ::= IDENT | LabelImport | OperatorImport
+ImportItem       ::= NamedImport | LabelImport | OperatorImport
 LabelImport      ::= '{' IDENT '}'                    (* lowercase label name *)
-OperatorImport   ::= 'op' OpPattern
-                   | 'varop' VaropHead
+OperatorImport   ::= 'op' OpPattern ('as' OpPattern)?
+                   | 'varop' VaropHead ('as' VaropHead)?
 ```
 
 The selection list is nonempty, even when it contains leading or trailing
@@ -454,6 +455,15 @@ quotation where required; variadic heads use two unquoted mirrored runs.
 Fixed-pattern lenient groups are retained in the import and its formatted form.
 The formatter never merges distinct complete grammars into one public spelling.
 
+An optional `as` supplies the complete local grammar, without repeating the
+`op` or `varop` tag. A fixed alias preserves every token/slot position, slot
+kind, effective slot leniency, and token-run boundary. Its token substitution
+is consistent and injective: repeated source tokens receive one destination
+token, and distinct source tokens stay distinct. A variadic alias supplies an
+admitted mirrored OPEN/CLOSE pair and preserves the selected declaration's
+folding behavior. Ordinary reserved-syntax and conflict rules apply to the
+destination. Neither alias installs the source spelling implicitly.
+
 The written grammar is sufficient to parse and format the consumer without
 reading its provider. Semantic resolution subsequently checks the exact named
 provider's export and requires equality of the complete grammar. Callable paths,
@@ -464,8 +474,8 @@ key does not replace this complete import identity (see
 
 `LabelImport` braces are namespace syntax, not a label value. Its `IDENT` obeys
 the lowercase label-name rule. Label and operator selectors are consumed before
-Kio'; its `ImportSelective` production continues to admit ordinary identifiers
-only.
+Kio'; its `ImportSelective` production admits only `NamedImport`, including
+its optional same-class destination. Braced label selections have no `as` form.
 
 Kio surface also adds a builtin block import for the complete compile-time
 reflection/helper surface. It has no qualified or selective form and is not

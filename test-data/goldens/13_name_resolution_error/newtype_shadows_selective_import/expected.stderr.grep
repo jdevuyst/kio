@@ -1,2 +1,2 @@
 binding `Wrap` has more than one source
-`Wrap` is imported from `other` here
+`Wrap` imports `Wrap` from `other` here

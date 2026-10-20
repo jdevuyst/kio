@@ -1446,9 +1446,18 @@ fn insert_consumer_grammars(scope: &mut OpRegistry, import_clause: &Import) -> R
         return Ok(());
     };
     for item in items {
-        let ImportItem::OperatorPattern { grammar, span, .. } = item else {
+        let ImportItem::OperatorPattern {
+            grammar,
+            span,
+            alias,
+            ..
+        } = item
+        else {
             continue;
         };
+        let (grammar, span) = alias
+            .as_ref()
+            .map_or((grammar, *span), |alias| (&alias.local, alias.span));
         if !scope.seen_keys.insert(grammar.dispatch_key()) {
             continue;
         }
@@ -1458,7 +1467,7 @@ fn insert_consumer_grammars(scope: &mut OpRegistry, import_clause: &Import) -> R
             }
             crate::ast::OperatorGrammar::Variadic { .. } => Ok(()),
         };
-        result.map_err(|message| Error::parse(*span, message))?;
+        result.map_err(|message| Error::parse(span, message))?;
     }
     Ok(())
 }
@@ -6091,10 +6100,21 @@ impl<'a> Parser<'a> {
                     let selection_start = self.peek_span().start;
                     let selection_depth = self.cursor.depth();
                     let selection_kind = self.import_selection_kind();
-                    let tag_end = (self.peek_ident_named("op") || self.peek_ident_named("varop"))
-                        .then(|| self.peek_span().end);
-                    let parsed = self.parse_import_item();
-                    self.import_cursor(&from, &items, selection_kind, selection_start, tag_end);
+                    // The tag atom is still a completion prefix when parsed as a name;
+                    // a following `as` fixes its selection to the ordinary namespace.
+                    let tag_end = ((self.peek_ident_named("op") || self.peek_ident_named("varop"))
+                        && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as"))
+                    .then(|| self.peek_span().end);
+                    let mut source_end = None;
+                    let parsed = self.parse_import_item(true, &mut source_end);
+                    self.import_cursor(
+                        &from,
+                        &items,
+                        selection_kind,
+                        selection_start,
+                        tag_end,
+                        source_end,
+                    );
                     let mut item = match parsed {
                         Ok(item) => Some(item),
                         Err(error) if self.recover_import_errors.is_some() => {
@@ -6150,6 +6170,7 @@ impl<'a> Parser<'a> {
                     ImportSelectionKind::Any,
                     self.peek_span().start,
                     None,
+                    None,
                 );
                 if items.is_empty() && self.recover_import_errors.is_none() {
                     return Err(self.err_here("expected at least one imported item"));
@@ -6183,7 +6204,11 @@ impl<'a> Parser<'a> {
 
     /// Selection tags distinguish ordinary names, label namespaces and complete
     /// operator grammars without consulting the provider.
-    fn parse_import_item(&mut self) -> Result<ImportItem, Error> {
+    fn parse_import_item(
+        &mut self,
+        allow_alias: bool,
+        source_end: &mut Option<u32>,
+    ) -> Result<ImportItem, Error> {
         let selection = self.import_selection_kind();
         if selection == ImportSelectionKind::Label {
             self.expect_kind(TokenKind::LBrace, "`{`")?;
@@ -6208,18 +6233,78 @@ impl<'a> Parser<'a> {
                 self.expect_ident_named("op")?;
                 crate::ast::OperatorGrammar::fixed(&self.parse_op_pattern(true)?)
             };
-            let span = Span::new(start, self.peek_span().start);
+            let span = Span::new(start, self.syntax_end);
+            if allow_alias {
+                self.cursor_choices(CursorSlot::Grammar, &["as"]);
+            }
+            let alias = if allow_alias && self.peek_ident_named("as") {
+                *source_end = Some(span.end);
+                self.expect_ident_named("as")?;
+                let alias_start = self.peek_span().start;
+                self.suppress_current_cursor(CursorSuppressionKind::Binder);
+                let local = match &grammar {
+                    crate::ast::OperatorGrammar::Fixed(_) => {
+                        crate::ast::OperatorGrammar::fixed(&self.parse_op_pattern(true)?)
+                    }
+                    crate::ast::OperatorGrammar::Variadic { .. } => {
+                        let (open, close) = self.parse_variadic_delimiters()?;
+                        crate::ast::OperatorGrammar::Variadic { open, close }
+                    }
+                };
+                let alias_span = Span::new(alias_start, self.syntax_end);
+                if let Some(tooling) = self.tooling.as_mut()
+                    && tooling.cursor.is_some_and(|cursor| {
+                        alias_span.start <= cursor && cursor <= alias_span.end
+                    })
+                {
+                    tooling.facts.cursor = None;
+                    tooling.facts.suppression = Some(CursorSuppression {
+                        span: alias_span,
+                        kind: CursorSuppressionKind::Binder,
+                    });
+                }
+                grammar
+                    .validate_rename(&local)
+                    .map_err(|message| self.err(alias_span, message))?;
+                Some(crate::ast::ImportAlias {
+                    local,
+                    span: alias_span,
+                })
+            } else {
+                None
+            };
             return Ok(ImportItem::OperatorPattern {
                 grammar,
                 span,
+                alias,
                 leading_trivia: Vec::new(),
             });
         }
         let (name, span) = self.expect_ident()?;
         Self::validate_value_or_type_name(&name, span)?;
+        if allow_alias {
+            self.cursor_choices(CursorSlot::Grammar, &["as"]);
+        }
+        let alias = if allow_alias && self.peek_ident_named("as") {
+            *source_end = Some(span.end);
+            self.expect_ident_named("as")?;
+            let (local, alias_span) = self.expect_binder()?;
+            if crate::naming::is_type_name(&name) {
+                Self::validate_type_name(&local, alias_span)?;
+            } else {
+                Self::validate_value_name(&local, alias_span)?;
+            }
+            Some(crate::ast::ImportAlias {
+                local,
+                span: alias_span,
+            })
+        } else {
+            None
+        };
         Ok(ImportItem::Name {
             name,
             span,
+            alias,
             leading_trivia: Vec::new(),
         })
     }
@@ -6230,13 +6315,15 @@ impl<'a> Parser<'a> {
         } else if !matches!(
             self.peek_at(1),
             None | Some(TokenKind::Comma | TokenKind::RParen)
-        ) && self.peek_ident_named("op")
+        ) && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as")
+            && self.peek_ident_named("op")
         {
             ImportSelectionKind::FixedOperator
         } else if !matches!(
             self.peek_at(1),
             None | Some(TokenKind::Comma | TokenKind::RParen)
-        ) && self.peek_ident_named("varop")
+        ) && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as")
+            && self.peek_ident_named("varop")
         {
             ImportSelectionKind::VariadicOperator
         } else if matches!(self.peek(), Some(TokenKind::Ident(_))) {
@@ -6253,6 +6340,7 @@ impl<'a> Parser<'a> {
         kind: ImportSelectionKind,
         start: u32,
         tag_end: Option<u32>,
+        source_end: Option<u32>,
     ) {
         let Some(tooling) = &self.tooling else {
             return;
@@ -6282,7 +6370,7 @@ impl<'a> Parser<'a> {
         let end = if kind == ImportSelectionKind::Any {
             self.tooling_cursor_end(tooling.cursor_limit)
         } else {
-            tooling.last_end.max(failed_token_end).max(start)
+            source_end.unwrap_or(tooling.last_end.max(failed_token_end).max(start))
         };
         if cursor > end || tooling.facts.suppression.is_some() {
             return;
@@ -7922,6 +8010,10 @@ impl<'a> Parser<'a> {
 
     fn parse_variadic_head(&mut self) -> Result<(Vec<String>, Vec<String>), Error> {
         self.expect_ident_named("varop")?;
+        self.parse_variadic_delimiters()
+    }
+
+    fn parse_variadic_delimiters(&mut self) -> Result<(Vec<String>, Vec<String>), Error> {
         let Some(TokenKind::SymbolRun(open)) = self.peek() else {
             return Err(self.err_here("expected a varop OPEN delimiter such as `[[` or `[*`"));
         };
@@ -14811,7 +14903,7 @@ pub(crate) fn parse_operator_grammar(source: &str) -> Result<crate::ast::Operato
     let tokens = crate::pass::lexer::lex(source)?;
     let skeleton = crate::pass::tree_skeleton::build(tokens);
     let mut parser = Parser::new(&skeleton, source.len());
-    let item = parser.parse_import_item()?;
+    let item = parser.parse_import_item(false, &mut None)?;
     parser.expect_eof()?;
     match item {
         ImportItem::OperatorPattern { grammar, .. } => Ok(grammar),
@@ -14850,7 +14942,7 @@ pub(crate) fn parse_declaration_query(
     if wrapped {
         parser.expect_kind(TokenKind::LParen, "`(` before the operator selector")?;
     }
-    let selector = parser.parse_import_item()?;
+    let selector = parser.parse_import_item(false, &mut None)?;
     if provider.is_some() {
         match (wrapped, &selector) {
             (false, ImportItem::OperatorPattern { .. }) => {

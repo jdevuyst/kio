@@ -52,21 +52,25 @@ where
     let mut newtype_type_heads = BTreeMap::new();
     for (owner, type_name) in &scan.referenced_newtypes {
         let forbidden = scan.forbidden_for_owner(owner);
-        let can_use_unqualified = !forbidden.contains(type_name)
-            && (owner == &current_module
-                || module.imports.iter().any(|import_| {
-                    matches!(
-                        &import_.kind,
-                        ImportKind::Selective { items, from }
-                            if module_import_path(from) == *owner
-                                && items
-                                    .iter()
-                                    .filter_map(crate::ast::ImportItem::as_name)
-                                    .any(|name| name == *type_name)
-                    )
-                }));
-        let head = if can_use_unqualified {
-            type_name.clone()
+        let local = if owner == &current_module {
+            (!forbidden.contains(type_name)).then_some(type_name.as_str())
+        } else {
+            module.imports.iter().find_map(|import_| {
+                let ImportKind::Selective { items, from } = &import_.kind else {
+                    return None;
+                };
+                if module_import_path(from) != *owner {
+                    return None;
+                }
+                items
+                    .iter()
+                    .filter(|item| item.as_name() == Some(type_name.as_str()))
+                    .filter_map(crate::ast::ImportItem::as_local_name)
+                    .find(|name| !forbidden.contains(*name))
+            })
+        };
+        let head = if let Some(local) = local {
+            local.to_owned()
         } else {
             format!(
                 "{}.{}",

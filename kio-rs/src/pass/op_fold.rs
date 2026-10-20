@@ -471,19 +471,19 @@ fn resolve_bare_impl_path(
         let ImportKind::Selective { items, from } = &u.kind else {
             continue;
         };
-        if !items
+        let Some(source) = items
             .iter()
-            .filter_map(ImportItem::as_name)
-            .any(|imported| imported == name)
-        {
+            .find(|item| item.as_local_name() == Some(name))
+            .and_then(ImportItem::as_name)
+        else {
             continue;
-        }
+        };
         let from_path = module_path_str(from);
         if from_path == module_path_str(&context.module.path) {
             continue;
         }
-        if let Some(target) = context.package.fn_target(&from_path, name) {
-            return Some(resolved_fn_target(&target.vis, from, name));
+        if let Some(target) = context.package.fn_target(&from_path, source) {
+            return Some(resolved_fn_target(&target.vis, from, source));
         }
     }
     None
@@ -530,19 +530,19 @@ fn resolve_newtype_member_head(
         let ImportKind::Selective { items, from } = &u.kind else {
             continue;
         };
-        if !items
+        let Some(source) = items
             .iter()
-            .filter_map(ImportItem::as_name)
-            .any(|imported| imported == type_name)
-        {
+            .find(|item| item.as_local_name() == Some(type_name))
+            .and_then(ImportItem::as_name)
+        else {
             continue;
-        }
+        };
         let from_path = module_path_str(from);
         if from_path == module_path_str(&context.module.path) {
             continue;
         }
-        if let Some(target) = context.package.newtype_target(&from_path, type_name) {
-            return resolved_newtype_target(target, from, type_name, member);
+        if let Some(target) = context.package.newtype_target(&from_path, source) {
+            return resolved_newtype_target(target, from, source, member);
         }
     }
     None
@@ -1530,7 +1530,13 @@ fn build_module_scope(
             continue;
         };
         for item in items {
-            let ImportItem::OperatorPattern { grammar, span, .. } = item else {
+            let ImportItem::OperatorPattern {
+                grammar,
+                span,
+                alias,
+                ..
+            } = item
+            else {
                 continue;
             };
             // The explicit provider and dispatch key select at most one
@@ -1567,9 +1573,12 @@ fn build_module_scope(
                     provided_grammar.render()
                 )));
             }
+            let (local, local_span) = alias
+                .as_ref()
+                .map_or((grammar, *span), |alias| (&alias.local, alias.span));
             match &matched.body {
                 ResolvedPubOpRecordBody::VariadicOperator {
-                    open: source_open,
+                    open: _,
                     spec: source_spec,
                     base_target,
                     step_target,
@@ -1605,9 +1614,13 @@ fn build_module_scope(
                             *span,
                         );
                     }
-                    scope.insert_imported_variadic(source_open.clone(), routed_spec, *span)?;
+                    let crate::ast::OperatorGrammar::Variadic { open, close } = local else {
+                        unreachable!("operator aliases preserve their grammar category");
+                    };
+                    routed_spec.close = close.clone();
+                    scope.insert_imported_variadic(open.clone(), routed_spec, local_span)?;
                 }
-                ResolvedPubOpRecordBody::Normal { pattern, target } => {
+                ResolvedPubOpRecordBody::Normal { target, .. } => {
                     let function = routed_callable_path(
                         target,
                         &mut aliases,
@@ -1615,7 +1628,10 @@ fn build_module_scope(
                         &mut builtin_imports,
                         *span,
                     );
-                    scope.insert_imported_normal(pattern, function, *span)?;
+                    let crate::ast::OperatorGrammar::Fixed(pattern) = local else {
+                        unreachable!("operator aliases preserve their grammar category");
+                    };
+                    scope.insert_imported_normal(pattern, function, local_span)?;
                 }
             }
         }
@@ -1774,7 +1790,7 @@ fn module_binding_names(module: &Module<Surface>) -> BTreeSet<String> {
                 names.extend(
                     items
                         .iter()
-                        .filter_map(ImportItem::as_name)
+                        .filter_map(ImportItem::as_local_name)
                         .map(str::to_owned),
                 );
             }

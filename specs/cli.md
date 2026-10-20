@@ -491,6 +491,18 @@ Block-call completion uses the current selected declaration header. A snippet-ca
 
 A wrong continuation label can offer a token-local replacement which is fully rechecked before publication. A missing trailing block can instead offer “Add missing trailing block scaffolds.” This explicitly maybe-incorrect action inserts labelled empty bodies for the user to fill; it does not claim to repair type errors or invent a sequence result. Its exact compiler-produced edit is regenerated against the current source and providers, and its resulting syntax is checked. Ordinary eager fixes retain their full semantic recheck.
 
+Named selective aliases carry independent local refactoring identities.
+References and highlights on an explicit alias follow its destination token and
+uses, not the provider declaration or other aliases. The source selector belongs
+to the provider binding instead. Alias rename changes the destination and its
+uses while preserving the source selector; where provider rename is supported,
+it changes source selectors and unaliased uses while preserving explicit local spellings. This
+also applies to `name as name`. Local aliases of host declarations are
+renameable without renaming the host declaration. Names retain their identifier
+class, and a rename that would capture a lexical binding is refused. Module
+alias rename remains excluded. Source-local alias facts must match the current
+analyzed source snapshot.
+
 ### Request methods
 
 In recursive-group fixes, a **strongly connected component (SCC)** is a set
@@ -498,7 +510,7 @@ of declarations in which every member depends transitively on every other
 member. This dependency relation determines whether a group is genuinely mutual.
 
 - `textDocument/hover` — returns Markdown content for the token under the cursor, plus a range highlighting that token or expression. Declaration hovers show the declaration signature and its rendered `///` Kiodoc prose. A recursive type-group member shows its complete written `rec { ... }` context with only that member's prose; the group's `rec` keyword shows the complete declaration and its separate outer prose. Recursive-label nominal targets retain their owning labels declaration and recursive context. These source views follow [Kiodoc's group-aware rendering](kiodoc.md#what-signature-renders). User-defined elaborator declarations in the current file, `__intrinsics__`, and `__comptime__` names show their builtin documentation. Expression hovers fall back to the synthesized type as a fenced code block `` ```kio … ``` ``. Returns `null` when no hoverable declaration, builtin, or typeable expression is under the cursor or the URI-backed parser context is unavailable.
-- `textDocument/definition` — returns a `Location` pointing to the declaration site of the binding under the cursor. Top-level functions, newtypes, host functions, locals, and type parameters resolve to the file and span that declares the item. Intrinsics and import aliases have no source-file jump target in this response and return `null`.
+- `textDocument/definition` — returns a `Location` pointing to the declaration site of the binding under the cursor. Top-level functions, newtypes, host functions, locals, and type parameters resolve to the file and span that declares the item. Explicit selective alias source selectors, destinations and uses follow the original provider declaration, including literal and elaborator declarations. Intrinsics and module import aliases have no source-file jump target in this response and return `null`.
 - `textDocument/references` — returns the list of all use-sites for the binding under the cursor, across the entire package. The response list is sorted by file URI then by position. `includeDeclaration` is honored: when `false`, the binding's semantic declaration span is excluded regardless of whether the request cursor is on that declaration or on a use; the queried use remains in the result. Returns `null` when no resolvable binding is under the cursor, `[]` when a binding is found but no reference spans were recorded.
 - `textDocument/documentHighlight` — returns the occurrences of the binding under the cursor within the current file only, as a `DocumentHighlight[]` sorted by position with `kind: Text` on every entry (the analysis does not distinguish read from write sites). This is the single-file restriction of `references`: it never crosses file boundaries, so it answers from a stored snapshot without waiting for full-package analysis. Returns `null` when no resolvable binding is under the cursor.
 - `textDocument/documentSymbol` — returns a flat `DocumentSymbol[]` list in source order. Ordinary top-level items contribute one entry; a recursive function or type group contributes one ordinary entry per member in member order. A type group is never one opaque symbol that hides its members. Each entry carries `name`, `kind` (see SymbolKind mapping below), `range` (the full item or recursive-member span), `selectionRange` (the name identifier's span), and no children. The response reads declaration headers directly from the overlay without requiring valid function bodies or a successful typecheck. Returns `null` when the source is not available or the declaration/header surface itself does not parse.
@@ -796,7 +808,10 @@ each provider when several match; a qualified selector fixes one provider.
 Operator identity is its provider and complete tagged grammar, not its callable
 implementation. `:refs` includes the selected operator's declaration, selective
 imports, and applications in loaded modules; an identical grammar supplied by
-another module is distinct. Completion and terminal hints insert the
+another module is distinct. A selective alias query selects the original
+declaration, so `:refs` includes uses through all its local aliases. Unlike a
+cursor-based LSP alias query, it is a declaration query, not a local-binding
+query. Completion and terminal hints insert the
 same canonical selectors, including aliases and required outer parentheses,
 and replace the complete started selector, not only its last whitespace-delimited
 word. Bare operator suggestions come from the current scope (`:which` also

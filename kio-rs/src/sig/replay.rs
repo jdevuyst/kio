@@ -35,9 +35,9 @@ use super::{ContractEntry, ContractSide, ContractSnapshot, QualifiedName};
 #[cfg(test)]
 use super::{ContractKind, PublicNewtypeSurface};
 use crate::ast::{
-    HostFn, HostFnParam, HostType, Import, ImportItem, ImportKind, ModulePath, Newtype, Prime,
-    SigChangeSet, SigItem, SigItemRef, SigModuleSection, SigVersion, SignatureFile, Surface, Type,
-    TypeAlias, TypeRecMember,
+    HostFn, HostFnParam, HostType, Import, ImportKind, ModulePath, Newtype, Prime, SigChangeSet,
+    SigItem, SigItemRef, SigModuleSection, SigVersion, SignatureFile, Surface, Type, TypeAlias,
+    TypeRecMember,
 };
 use crate::error::Error;
 use crate::span::Span;
@@ -1476,14 +1476,13 @@ fn qualify_type_head(
 
 fn selective_import_path(imports: &[Import], name: &str) -> Option<Vec<String>> {
     imports.iter().find_map(|u| match &u.kind {
-        ImportKind::Selective { items, from }
-            if items
+        ImportKind::Selective { items, from } => {
+            let source = items
                 .iter()
-                .filter_map(ImportItem::as_name)
-                .any(|item| item == name) =>
-        {
+                .find(|item| item.as_local_name() == Some(name))?
+                .as_name()?;
             let mut out: Vec<String> = from.segments.iter().map(|s| s.name.clone()).collect();
-            out.push(name.to_owned());
+            out.push(source.to_owned());
             Some(out)
         }
         _ => None,

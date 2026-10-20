@@ -135,8 +135,9 @@ fn rewrite_module_qualified_type_paths(module: &mut Module<Surface>) {
 /// name→module bindings the emitted module already carries, plus the
 /// `import`s the rewrite injects for previously-unbound qualified pairs.
 struct Requalifier {
-    /// Bare name → its slash-joined module key, from `import M(Leaf);`.
-    selective_leaf_module: std::collections::HashMap<String, String>,
+    /// Provider module and source leaf → the locally bound spellings.
+    selective_local_names:
+        std::collections::HashMap<String, std::collections::HashMap<String, BTreeSet<String>>>,
     /// Slash-joined module key → its qualified-import aliases.
     module_aliases: std::collections::HashMap<String, BTreeSet<String>>,
     /// The alias identifiers an `import M as A;` binds. A multi-segment type
@@ -151,6 +152,7 @@ struct Requalifier {
     injected_selective: HashSet<String>,
     alias_counter: u32,
     occupied_names: HashSet<String>,
+    bound_names: Vec<String>,
     /// Slash-joined key of the module being emitted. A qualified path
     /// whose module prefix equals this is a same-module reflection leak
     /// (a locally declared head the reduction-side qualifier rooted at
@@ -163,7 +165,10 @@ struct Requalifier {
 
 impl Requalifier {
     fn new(module: &Module<Surface>, current_module: String, span: Span) -> Self {
-        let mut selective_leaf_module = std::collections::HashMap::new();
+        let mut selective_local_names: std::collections::HashMap<
+            String,
+            std::collections::HashMap<String, BTreeSet<String>>,
+        > = std::collections::HashMap::new();
         let mut module_aliases: std::collections::HashMap<String, BTreeSet<String>> =
             std::collections::HashMap::new();
         let mut alias_names = HashSet::new();
@@ -190,11 +195,18 @@ impl Requalifier {
             match &u.kind {
                 ImportKind::Selective { items, from } => {
                     let key = module_path_key(from);
-                    for name in items.iter().filter_map(ImportItem::as_name) {
-                        occupied_names.insert(name.to_owned());
-                        selective_leaf_module
-                            .entry(name.to_owned())
-                            .or_insert_with(|| key.clone());
+                    for item in items {
+                        let Some(source) = item.as_name() else {
+                            continue;
+                        };
+                        let local = item.as_local_name().expect("named import has a local name");
+                        occupied_names.insert(local.to_owned());
+                        selective_local_names
+                            .entry(key.clone())
+                            .or_default()
+                            .entry(source.to_owned())
+                            .or_default()
+                            .insert(local.to_owned());
                     }
                 }
                 ImportKind::Qualified { path, alias } => {
@@ -222,19 +234,21 @@ impl Requalifier {
             }
         }
         Self {
-            selective_leaf_module,
+            selective_local_names,
             module_aliases,
             alias_names,
             to_inject: Vec::new(),
             injected_selective: HashSet::new(),
             alias_counter: 0,
             occupied_names,
+            bound_names: Vec::new(),
             current_module,
             span,
         }
     }
 
     fn item(&mut self, item: &mut Item<Surface>) {
+        let depth = self.bound_names.len();
         match item {
             Item::FnDef(d) => {
                 self.signature(&mut d.sig);
@@ -246,13 +260,26 @@ impl Requalifier {
                     self.signature(&mut d.sig);
                     self.ty(&mut d.ret);
                     self.expr(&mut d.body);
+                    self.bound_names.truncate(depth);
                 }
             }
             Item::TypeRecGroup(group) => {
                 for member in &mut group.members {
                     match member {
-                        crate::ast::TypeRecMember::TypeAlias(alias) => self.ty(&mut alias.body),
+                        crate::ast::TypeRecMember::TypeAlias(alias) => {
+                            for param in &alias.type_params {
+                                self.bind(&param.name);
+                            }
+                            self.ty(&mut alias.body);
+                        }
                         crate::ast::TypeRecMember::Newtype(newtype) => {
+                            for param in newtype
+                                .type_params
+                                .iter()
+                                .chain(&newtype.existential_params)
+                            {
+                                self.bind(&param.name);
+                            }
                             self.ty(&mut newtype.payload)
                         }
                         crate::ast::TypeRecMember::Labels(labels, _) => {
@@ -268,15 +295,27 @@ impl Requalifier {
                             }
                         }
                     }
+                    self.bound_names.truncate(depth);
                 }
             }
-            Item::Newtype(d) => self.ty(&mut d.payload),
-            Item::TypeAlias(a) => self.ty(&mut a.body),
+            Item::Newtype(d) => {
+                for param in d.type_params.iter().chain(&d.existential_params) {
+                    self.bind(&param.name);
+                }
+                self.ty(&mut d.payload);
+            }
+            Item::TypeAlias(a) => {
+                for param in &a.type_params {
+                    self.bind(&param.name);
+                }
+                self.ty(&mut a.body);
+            }
             Item::HostType(_) => {}
             Item::HostFn(h) => {
                 for p in &mut h.params {
-                    if let crate::ast::HostFnParam::Value(v) = p {
-                        self.ty(&mut v.ty);
+                    match p {
+                        crate::ast::HostFnParam::Value(v) => self.ty(&mut v.ty),
+                        crate::ast::HostFnParam::Type(param) => self.bind(&param.name),
                     }
                 }
                 self.ty(&mut h.ret);
@@ -291,14 +330,24 @@ impl Requalifier {
             | Item::Op(..)
             | Item::VariadicOperator(..) => {}
         }
+        self.bound_names.truncate(depth);
+    }
+
+    fn bind(&mut self, name: &str) {
+        self.occupied_names.insert(name.to_owned());
+        self.bound_names.push(name.to_owned());
     }
 
     fn signature(&mut self, sig: &mut Signature<Surface>) {
         for p in &mut sig.params {
-            if let SignatureParam::Value(v) = p
-                && let Some(ty) = &mut v.ty
-            {
-                self.ty(ty);
+            match p {
+                SignatureParam::Type(param) => self.bind(&param.name),
+                SignatureParam::Value(value) => {
+                    if let Some(ty) = &mut value.ty {
+                        self.ty(ty);
+                    }
+                    self.bind(&value.name);
+                }
             }
         }
     }
@@ -317,13 +366,30 @@ impl Requalifier {
             Expr::FnExpr {
                 sig, ret_ty, body, ..
             } => {
+                let depth = self.bound_names.len();
                 self.signature(sig);
                 if let Some(t) = ret_ty {
                     self.ty(t);
                 }
                 self.expr(body);
+                self.bound_names.truncate(depth);
             }
-            Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
+            Expr::Let {
+                name,
+                ty,
+                value,
+                body,
+                ..
+            } => {
+                if let Some(ty) = ty {
+                    self.ty(ty);
+                }
+                self.expr(value);
+                self.bind(name);
+                self.expr(body);
+                self.bound_names.pop();
+            }
+            Expr::Seq { value, body, .. } => {
                 self.expr(value);
                 self.expr(body);
             }
@@ -384,7 +450,11 @@ impl Requalifier {
                 self.ty(left);
                 self.ty(right);
             }
-            Type::Forall { body, .. } => self.ty(body),
+            Type::Forall { param, body, .. } => {
+                self.bind(&param.name);
+                self.ty(body);
+                self.bound_names.pop();
+            }
             Type::Unit { .. }
             | Type::Bottom { .. }
             | Type::Infer { .. }
@@ -407,19 +477,20 @@ impl Requalifier {
         if module_key == self.current_module {
             return vec![leaf.to_owned()];
         }
-        // Bare `leaf` already binds to this exact module → render bare.
-        if self
-            .selective_leaf_module
-            .get(leaf)
-            .is_some_and(|m| m == module_key)
+        // A selective import already binds this exact declaration.
+        if let Some(local) = self
+            .selective_local_names
+            .get(module_key)
+            .and_then(|leaves| leaves.get(leaf))
+            .and_then(|names| names.iter().find(|name| !self.bound_names.contains(name)))
         {
-            return vec![leaf.to_owned()];
+            return vec![local.clone()];
         }
         // A qualified alias already names this module → render `alias.leaf`.
         if let Some(alias) = self
             .module_aliases
             .get(module_key)
-            .and_then(|aliases| aliases.iter().next())
+            .and_then(|aliases| aliases.iter().find(|name| !self.bound_names.contains(name)))
         {
             return vec![alias.clone(), leaf.to_owned()];
         }
@@ -438,6 +509,7 @@ impl Requalifier {
                             leading_trivia: Vec::new(),
                             name: leaf.to_owned(),
                             span: self.span,
+                            alias: None,
                         }],
                         from: module_path_from_key(module_key, self.span),
                     },
@@ -445,8 +517,12 @@ impl Requalifier {
                     leading_trivia: Vec::new(),
                 });
             }
-            self.selective_leaf_module
-                .insert(leaf.to_owned(), module_key.to_owned());
+            self.selective_local_names
+                .entry(module_key.to_owned())
+                .or_default()
+                .entry(leaf.to_owned())
+                .or_default()
+                .insert(leaf.to_owned());
             self.occupied_names.insert(leaf.to_owned());
             return vec![leaf.to_owned()];
         }

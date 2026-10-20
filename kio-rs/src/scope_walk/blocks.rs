@@ -72,22 +72,25 @@ pub(crate) fn selected_block_header(
         let ImportKind::Selective { from, items } = &import.kind else {
             continue;
         };
-        if !items
+        let Some(source) = items
             .iter()
-            .any(|item| matches!(item, ImportItem::Name { name: imported, .. } if imported == name))
-        {
+            .find(|item| item.as_local_name() == Some(name))
+            .and_then(ImportItem::as_name)
+        else {
             continue;
-        }
+        };
         let provider = provider(&from.segments.join("/"))?;
         for item in &provider.items {
             if let Item::Elaborator(declaration, _) = item
-                && declaration.name == name
+                && declaration.name == source
                 && crate::pass::resolve::is_visible(&declaration.vis, &module.path)
             {
                 if selected.is_some() {
                     return None;
                 }
-                selected = Some(BlockHeader::from(declaration));
+                let mut header = BlockHeader::from(declaration);
+                header.name = name.to_owned();
+                selected = Some(header);
             }
         }
     }

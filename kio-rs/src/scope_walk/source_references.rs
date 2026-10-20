@@ -52,9 +52,13 @@ pub fn source_binding(module: &Module, reference: &SourceReference) -> Option<So
         };
         return match origin? {
             CandidateOrigin::Declaration(_) => Some(local(name)),
-            CandidateOrigin::Import { provider, span } => Some(SourceBinding {
+            CandidateOrigin::Import {
+                provider,
+                source,
+                span,
+            } => Some(SourceBinding {
                 module: provider,
-                name: name.clone(),
+                name: source,
                 import_span: Some(span),
             }),
             _ => None,
@@ -80,12 +84,12 @@ pub fn source_binding(module: &Module, reference: &SourceReference) -> Option<So
         items.iter().find_map(|item| {
             let selected = match reference.kind {
                 SourceNameKind::Label => item.as_label(),
-                SourceNameKind::Elaborator => item.as_name_with_span(),
+                SourceNameKind::Elaborator => item.as_local_name_with_span(),
                 SourceNameKind::Value | SourceNameKind::Type | SourceNameKind::Equiv => None,
             }?;
             (selected.0 == name).then(|| SourceBinding {
                 module: from.segments.join("/"),
-                name: name.clone(),
+                name: item.as_name().unwrap_or(name).to_owned(),
                 import_span: Some(selected.1),
             })
         })
@@ -218,9 +222,10 @@ impl<'a> SourceBindingIndex<'a> {
             }
             if let ImportKind::Selective { from, items } = &import.kind {
                 for selected in items {
-                    for (slot, name) in
-                        [(2, selected.as_label()), (3, selected.as_name_with_span())]
-                    {
+                    for (slot, name) in [
+                        (2, selected.as_label()),
+                        (3, selected.as_local_name_with_span()),
+                    ] {
                         if let Some((name, span)) = name {
                             IndexSink {
                                 origins: &mut index.imports[slot],
@@ -232,6 +237,7 @@ impl<'a> SourceBindingIndex<'a> {
                                 CandidateKind::Function,
                                 CandidateOrigin::Import {
                                     provider: from.segments.join("/"),
+                                    source: selected.as_name().unwrap_or(name).to_owned(),
                                     span,
                                 },
                             );
@@ -371,6 +377,7 @@ mod tests {
         };
         let import = CandidateOrigin::Import {
             provider: "provider".into(),
+            source: items[0].as_name().unwrap().to_owned(),
             span: items[0].as_name_with_span().unwrap().1,
         };
         assert_eq!(origins[0], import);
@@ -484,7 +491,7 @@ mod tests {
                 CandidateOrigin::Declaration(_) => {
                     assert_eq!((old.module.as_str(), old.import_span), ("main", None))
                 }
-                CandidateOrigin::Import { provider, span } => {
+                CandidateOrigin::Import { provider, span, .. } => {
                     assert_eq!((old.module, old.import_span), (provider, Some(span)))
                 }
                 CandidateOrigin::QualifiedImport(span) => assert_eq!(old.import_span, Some(span)),
@@ -539,6 +546,7 @@ mod tests {
             index.origin(&references[0]),
             Some(CandidateOrigin::Import {
                 provider: "provider".into(),
+                source: items[0].as_name().unwrap().to_owned(),
                 span: items[0].as_name_with_span().unwrap().1,
             })
         );
@@ -636,6 +644,7 @@ mod tests {
             };
             let expected_origin = CandidateOrigin::Import {
                 provider: "provider".to_owned(),
+                source: items[0].as_name().unwrap().to_owned(),
                 span: items[0].as_name_with_span().unwrap().1,
             };
             eprintln!(

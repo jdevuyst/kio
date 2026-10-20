@@ -2674,6 +2674,7 @@ pub enum ImportItem {
     Name {
         name: String,
         span: Span,
+        alias: Option<ImportAlias<String>>,
         leading_trivia: Vec<crate::pass::lexer::Trivia>,
     },
     /// `{foo}` — a label-syntax import. The label elaborator consumes this
@@ -2690,8 +2691,15 @@ pub enum ImportItem {
     OperatorPattern {
         grammar: OperatorGrammar,
         span: Span,
+        alias: Option<ImportAlias<OperatorGrammar>>,
         leading_trivia: Vec<crate::pass::lexer::Trivia>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ImportAlias<T> {
+    pub local: T,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2745,6 +2753,74 @@ impl OperatorGrammar {
                 leading_run: open.clone(),
             },
         }
+    }
+
+    pub fn validate_rename(&self, local: &Self) -> Result<(), &'static str> {
+        let (Self::Fixed(source), Self::Fixed(destination)) = (self, local) else {
+            return if matches!(
+                (self, local),
+                (Self::Variadic { .. }, Self::Variadic { .. })
+            ) {
+                Ok(())
+            } else {
+                Err("an operator alias must preserve the fixed or variadic grammar kind")
+            };
+        };
+        if source.len() != destination.len() {
+            return Err("an operator alias must preserve every token and operand position");
+        }
+        let mut tokens = std::collections::BTreeMap::new();
+        let mut reverse_tokens = std::collections::BTreeMap::new();
+        for (source, destination) in source.iter().zip(destination) {
+            match (source, destination) {
+                (
+                    OpPart::Token {
+                        content: source, ..
+                    },
+                    OpPart::Token {
+                        content: destination,
+                        ..
+                    },
+                ) => {
+                    if tokens
+                        .insert(source, destination)
+                        .is_some_and(|previous| previous != destination)
+                        || reverse_tokens
+                            .insert(destination, source)
+                            .is_some_and(|previous| previous != source)
+                    {
+                        return Err(
+                            "an operator alias must rename repeated tokens consistently and keep distinct tokens distinct",
+                        );
+                    }
+                }
+                (
+                    OpPart::SlotPlain {
+                        lenient: source, ..
+                    },
+                    OpPart::SlotPlain {
+                        lenient: destination,
+                        ..
+                    },
+                )
+                | (
+                    OpPart::SlotRecursive {
+                        lenient: source, ..
+                    },
+                    OpPart::SlotRecursive {
+                        lenient: destination,
+                        ..
+                    },
+                ) if source == destination => {}
+                (OpPart::SlotGreedy { .. }, OpPart::SlotGreedy { .. }) => {}
+                _ => {
+                    return Err(
+                        "an operator alias must preserve operand kinds, leniency and token positions",
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn render(&self) -> String {
@@ -2851,7 +2927,7 @@ impl ImportItem {
         }
     }
 
-    /// The name string when this item selects the ordinary value/type
+    /// The source name when this item selects the ordinary value/type
     /// namespace. Label and operator imports deliberately return `None`.
     pub fn as_name(&self) -> Option<&str> {
         match self {
@@ -2865,6 +2941,21 @@ impl ImportItem {
     pub fn as_name_with_span(&self) -> Option<(&str, Span)> {
         match self {
             ImportItem::Name { name, span, .. } => Some((name.as_str(), *span)),
+            ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => None,
+        }
+    }
+
+    pub fn as_local_name(&self) -> Option<&str> {
+        self.as_local_name_with_span().map(|(name, _)| name)
+    }
+
+    pub fn as_local_name_with_span(&self) -> Option<(&str, Span)> {
+        match self {
+            ImportItem::Name {
+                name, span, alias, ..
+            } => Some(alias.as_ref().map_or((name.as_str(), *span), |alias| {
+                (alias.local.as_str(), alias.span)
+            })),
             ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => None,
         }
     }

@@ -624,12 +624,21 @@ pub fn substitute_expr_for_eval(
 /// arguments continue through `walk_expr` unchanged.
 pub(super) fn substitute_expr_for_replayed_elaboration(
     expr: &Expr<Lowered>,
+    ambient_type_names: &std::collections::HashSet<String>,
     elabs: &mut Elaborations,
     module_path: &str,
     package: Option<&Package<Lowered>>,
     module: &Module<Lowered>,
 ) -> Expr<PrePrime> {
-    substitute_expr_with_completed_source_bindings(expr, None, elabs, module_path, package, module)
+    substitute_expr_with_completed_source_bindings(
+        expr,
+        None,
+        ambient_type_names,
+        elabs,
+        module_path,
+        package,
+        module,
+    )
 }
 
 /// Replay the retained checked source after its children have completed. The
@@ -638,6 +647,7 @@ pub(super) fn substitute_expr_for_replayed_elaboration(
 pub(super) fn substitute_expr_with_completed_source_bindings(
     expr: &Expr<Lowered>,
     source_bindings: Option<&std::collections::HashMap<crate::ast::ExpressionOccurrenceId, String>>,
+    ambient_type_names: &std::collections::HashSet<String>,
     elabs: &mut Elaborations,
     module_path: &str,
     package: Option<&Package<Lowered>>,
@@ -650,7 +660,7 @@ pub(super) fn substitute_expr_with_completed_source_bindings(
             module: Some(module),
             package,
             prime_type_requalifier: PrimeRequalifier::Deferred,
-            type_binders: Vec::new(),
+            type_binders: ambient_type_names.iter().cloned().collect(),
             prime_requalifier_seeded: false,
             source_bindings,
             comptime_lowering_mode: ComptimeLoweringMode::EvalPreserve,
@@ -2932,8 +2942,14 @@ mod tests {
         let mut elabs = Elaborations::new();
         let before =
             crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test();
-        let result =
-            substitute_expr_for_replayed_elaboration(&expr, &mut elabs, "owner", None, module);
+        let result = substitute_expr_for_replayed_elaboration(
+            &expr,
+            &std::collections::HashSet::new(),
+            &mut elabs,
+            "owner",
+            None,
+            module,
+        );
         assert_eq!(
             result,
             Expr::<PrePrime>::Unit {
@@ -2950,6 +2966,83 @@ mod tests {
             0,
             "an input without canonical recorded types has no requalifier work"
         );
+    }
+
+    #[test]
+    fn replayed_input_preserves_ambient_type_binders() {
+        for (selection, binder) in [("String as A", "A"), ("String", "String")] {
+            let parsed = parse(&format!(
+                "module owner; import provider as host; import provider({selection});"
+            ))
+            .expect("parse selective import");
+            let provider = parse("module provider; pub host type String;")
+                .expect("parse imported nominal owner");
+            let (modules, _) = FullPipeline::lower_package(
+                vec![
+                    (module_file_path("owner"), parsed),
+                    (module_file_path("provider"), provider),
+                ],
+                None,
+            )
+            .expect("lower caller and provider");
+            let module = &modules
+                .iter()
+                .find(|(_, module)| module_path_key(&module.path) == "owner")
+                .expect("owner module")
+                .1;
+            let span = Span::new(0, 0);
+            let call = Expr::synth_call(
+                Expr::Path {
+                    occurrence: Default::default(),
+                    segments: vec![PathSegment::new("callee", span)],
+                    meta: Meta::new(span),
+                    ext: (),
+                },
+                vec![
+                    CallArg::Type(Type::Infer {
+                        meta: Meta::new(span),
+                        ext: (),
+                    }),
+                    CallArg::Type(Type::synth_path(vec![binder.to_owned()], Vec::new(), span)),
+                ],
+                span,
+            )
+            .with_fresh_occurrence();
+            let mut elabs = Elaborations::new();
+            elabs.record_type_resolution(
+                "owner",
+                call.site().id,
+                0,
+                crate::pass::typecheck_core::InternedType::fresh_canonical(Type::synth_path(
+                    vec!["provider".to_owned(), "String".to_owned()],
+                    Vec::new(),
+                    span,
+                )),
+            );
+            for (ambient, expected) in [
+                (
+                    std::collections::HashSet::from([binder.to_owned()]),
+                    vec!["host".to_owned(), "String".to_owned()],
+                ),
+                (std::collections::HashSet::new(), vec![binder.to_owned()]),
+            ] {
+                let replayed = substitute_expr_for_replayed_elaboration(
+                    &call, &ambient, &mut elabs, "owner", None, module,
+                );
+                let Expr::Call { args, .. } = replayed else {
+                    panic!("replayed call")
+                };
+                assert_eq!(
+                    args[0],
+                    CallArg::Type(Type::synth_path(expected, Vec::new(), span))
+                );
+                assert_eq!(
+                    args[1],
+                    CallArg::Type(Type::synth_path(vec![binder.to_owned()], Vec::new(), span,)),
+                    "explicit source spelling retains its lexical binder"
+                );
+            }
+        }
     }
 
     #[test]
@@ -3055,8 +3148,14 @@ mod tests {
         for input in [&shadowed, &shadowed, &call] {
             let before =
                 crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test();
-            let actual =
-                substitute_expr_for_replayed_elaboration(input, &mut lazy, "owner", None, module);
+            let actual = substitute_expr_for_replayed_elaboration(
+                input,
+                &std::collections::HashSet::new(),
+                &mut lazy,
+                "owner",
+                None,
+                module,
+            );
             assert_eq!(
                 crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test()
                     - before,

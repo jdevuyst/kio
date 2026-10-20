@@ -4498,7 +4498,10 @@ fn build_module_newtype_index(
                 let Some(target) = package.module(&module_import_path(from)) else {
                     continue;
                 };
-                for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                for item in items {
+                    let Some(name) = item.as_name() else {
+                        continue;
+                    };
                     let Some(declaration) = find_module_nominal_declaration(&target.module, name)
                     else {
                         continue;
@@ -4513,7 +4516,7 @@ fn build_module_newtype_index(
                         module,
                         &target.module,
                         declaration,
-                        name,
+                        item.as_local_name().expect("named import has a local name"),
                     );
                 }
             }
@@ -5967,10 +5970,13 @@ fn build_module_fn_index<'m>(
                 let Some(target) = package.module(&module_import_path(from)) else {
                     continue;
                 };
-                for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                for item in items {
+                    let Some(name) = item.as_name() else {
+                        continue;
+                    };
                     if let Some(def) = find_module_fn(&target.module, name) {
                         index.selective.insert(
-                            name,
+                            item.as_local_name().expect("named import has a local name"),
                             EvalFnRef {
                                 def,
                                 owner: &target.module,

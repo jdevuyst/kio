@@ -540,12 +540,16 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
             }
             crate::ast::ImportKind::Selective { items, .. } => {
                 for item in items {
-                    if let Some(name) = item.as_name() {
+                    if let Some(name) = item.as_local_name() {
                         scope.imported.push(name.to_owned());
                     } else if let Some((name, _)) = item.as_label() {
                         scope.imported.push(name.to_owned());
                         scope.imported.push(format!("{{{name}}}"));
-                    } else if let crate::ast::ImportItem::OperatorPattern { grammar, .. } = item {
+                    } else if let crate::ast::ImportItem::OperatorPattern {
+                        grammar, alias, ..
+                    } = item
+                    {
+                        let grammar = alias.as_ref().map_or(grammar, |alias| &alias.local);
                         scope.imported.push(grammar.render());
                         if let crate::ast::OperatorGrammar::Fixed(pattern) = grammar
                             && let Some(name) = operator_pattern_token_name(pattern)

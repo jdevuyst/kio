@@ -265,8 +265,8 @@ fn rec_module_names(
         }
         if let ImportKind::Selective { items, .. } = &import_.kind {
             for item in items {
-                if let crate::ast::ImportItem::Name { name, .. } = item {
-                    names.insert(name.clone());
+                if let Some(name) = item.as_local_name() {
+                    names.insert(name.to_owned());
                 }
             }
         }
@@ -372,7 +372,12 @@ pub fn desugar_module_with_imports(
                 return true;
             };
             if let Some(lit) = table.get(name) {
-                state.literal_aliases.insert(name.to_owned(), lit.clone());
+                state.literal_aliases.insert(
+                    item.as_local_name()
+                        .expect("named import has a local name")
+                        .to_owned(),
+                    lit.clone(),
+                );
                 false
             } else {
                 true

@@ -2537,6 +2537,10 @@
           "named": true
         },
         {
+          "type": "keyword_declaration",
+          "named": true
+        },
+        {
           "type": "keyword_op",
           "named": true
         },

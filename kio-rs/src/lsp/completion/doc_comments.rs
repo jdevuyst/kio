@@ -117,6 +117,7 @@ pub(super) fn complete(
     CompletionResult::syntax(result)
 }
 
+#[derive(Clone)]
 struct Candidate<'a> {
     item: CompletionItem,
     entry: DocEntry<'a>,
@@ -360,17 +361,32 @@ fn names(
             if let Some(prefix) = &prefix {
                 add(candidate, prefix, Some(&owner));
             } else if let ImportKind::Selective { items, .. } = &import.kind {
-                let imported = items
+                for item in items
                     .iter()
-                    .any(|item| imported_candidate(item, &candidate));
-                if imported {
+                    .filter(|item| imported_candidate(item, &candidate))
+                {
+                    let mut candidate = candidate.clone();
+                    match item {
+                        crate::ast::ImportItem::Name {
+                            alias: Some(alias), ..
+                        } => {
+                            candidate.item.label = alias.local.clone();
+                        }
+                        crate::ast::ImportItem::OperatorPattern {
+                            alias: Some(alias), ..
+                        } => {
+                            candidate.item.label = alias.local.render();
+                        }
+                        _ => {}
+                    }
                     if candidate.item.kind == Some(CompletionItemKind::FIELD)
-                        && items.iter().any(|item| matches!(item,
-                            crate::ast::ImportItem::Label { name, .. } if name == &candidate.item.label))
+                        && matches!(item, crate::ast::ImportItem::Label { name, .. } if name == &candidate.item.label)
                     {
                         let mut braced = Candidate {
-                            item: candidate.item.clone(), entry: candidate.entry.clone(),
-                            visibility: candidate.visibility.clone(), value: false,
+                            item: candidate.item.clone(),
+                            entry: candidate.entry.clone(),
+                            visibility: candidate.visibility.clone(),
+                            value: false,
                         };
                         braced.item.label = format!("{{{}}}", braced.item.label);
                         add(braced, "", Some(&owner));

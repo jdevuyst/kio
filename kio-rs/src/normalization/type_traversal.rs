@@ -448,6 +448,7 @@ mod tests {
                         items: vec![ImportItem::Name {
                             name: "S".to_owned(),
                             span,
+                            alias: None,
                             leading_trivia: Vec::new(),
                         }],
                     },

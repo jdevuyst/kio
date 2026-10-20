@@ -556,9 +556,15 @@ fn resolution_modules(
                 if candidate_modules.contains(&provider) {
                     by_module.entry(provider.clone()).or_default();
                 }
-                for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                for item in items {
+                    let Some(name) = item.as_name() else {
+                        continue;
+                    };
                     stub_names.insert(QualifiedName::new(&provider, name));
-                    stub_names.insert(QualifiedName::new(&origin, name));
+                    stub_names.insert(QualifiedName::new(
+                        &origin,
+                        item.as_local_name().expect("named import has a local name"),
+                    ));
                 }
             }
             crate::ast::ImportKind::Qualified { path, alias } => {

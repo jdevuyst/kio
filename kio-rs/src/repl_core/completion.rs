@@ -829,13 +829,14 @@ impl NameSet {
             let bindings: Vec<_> = bindings
                 .into_iter()
                 .filter_map(|mut candidate| {
-                    if let crate::scope_walk::CandidateOrigin::Import { provider, .. } =
-                        &candidate.origin
+                    if let crate::scope_walk::CandidateOrigin::Import {
+                        provider, source, ..
+                    } = &candidate.origin
                     {
                         let provider = &session.module(provider)?.module;
                         let mut entries = crate::doc_entry::documented_items_module(provider)
                             .into_iter()
-                            .filter(|entry| entry.name() == candidate.label);
+                            .filter(|entry| entry.name() == source);
                         let entry = entries.next()?;
                         if entries.next().is_some()
                             || !crate::pass::resolve::is_visible(entry.visibility(), &module.path)

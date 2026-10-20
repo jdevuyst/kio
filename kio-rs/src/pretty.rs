@@ -558,9 +558,23 @@ fn doc_import_entry(u: &Import) -> Doc {
 
 fn import_item_display(item: &crate::ast::ImportItem) -> String {
     match item {
-        ImportItem::Name { name, .. } => name.clone(),
+        ImportItem::Name { name, alias, .. } => alias.as_ref().map_or_else(
+            || name.clone(),
+            |alias| format!("{name} as {}", alias.local),
+        ),
         ImportItem::Label { name, .. } => format!("{{{name}}}"),
-        ImportItem::OperatorPattern { grammar, .. } => grammar.render(),
+        ImportItem::OperatorPattern { grammar, alias, .. } => {
+            let mut rendered = grammar.render();
+            if let Some(alias) = alias {
+                let local = alias.local.render();
+                let (_, spelling) = local
+                    .split_once(' ')
+                    .expect("operator rendering has a namespace tag");
+                rendered.push_str(" as ");
+                rendered.push_str(spelling);
+            }
+            rendered
+        }
     }
 }
 
@@ -4579,6 +4593,27 @@ mod tests {
             pretty_module(&crate::pass::parser::parse(&rendered).unwrap()),
             rendered
         );
+    }
+
+    #[test]
+    fn selective_alias_formatting_keeps_explicit_identity_and_comments() {
+        let source = "module c; import p(foo // source\n as // separator\n foo, Bar as Baz, op _ + __ as _ ++ __, varop [* *] as [% %]);";
+        let parsed = crate::pass::parser::parse(source).expect("alias source");
+        let formatted = pretty_module(&parsed);
+        assert!(formatted.contains("foo as foo"), "{formatted}");
+        assert!(formatted.contains("Bar as Baz"), "{formatted}");
+        assert!(formatted.contains("op _ + __ as _ ++ __"), "{formatted}");
+        assert!(formatted.contains("varop [* *] as [% %]"), "{formatted}");
+        for comment in ["// source", "// separator"] {
+            assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
+        }
+        let reparsed = crate::pass::parser::parse(&formatted).expect("formatted aliases");
+        assert_eq!(pretty_module(&reparsed), formatted);
+        let crate::ast::ImportKind::Selective { items, .. } = &reparsed.imports[0].kind else {
+            panic!("selective")
+        };
+        assert!(items.iter().any(|item| matches!(item,
+            ImportItem::Name { name, alias: Some(alias), .. } if name == "foo" && alias.local == "foo")));
     }
 
     #[test]

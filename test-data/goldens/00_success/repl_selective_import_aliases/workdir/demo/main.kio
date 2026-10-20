@@ -1,0 +1,5 @@
+module demo/main;
+
+import demo/ops(choose as first, choose as second, op _ + _ as _ ++ _, varop [* *] as [% %]);
+
+pub fn run() { first((), ()); second((), ()); () ++ (); [% () %] }

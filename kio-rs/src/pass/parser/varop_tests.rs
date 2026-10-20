@@ -401,6 +401,7 @@ fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
         "module app/main; import syntax(\n  , ",
         "module app/main; import syntax(\n , // Leading trivia\n , ",
         "module app/main; import syntax(op",
+        "module app/main; import syntax(varop",
         "module app/main; import syntax(op (_ ? ___), op",
     ] {
         let probe = probe_tooling(
@@ -437,6 +438,138 @@ fn import_comma_gaps_and_tag_atoms_keep_selection_context() {
         &source[context.atom.replacement.start as usize..context.atom.replacement.end as usize],
         "op _ + _"
     );
+    for name in ["op", "varop"] {
+        for suffix in [");", ", other);"] {
+            let prefix = "module app/main; import syntax(";
+            let source = format!("{prefix}{name}{suffix}");
+            let module = parse(&source).expect("ordinary contextual-name selection");
+            let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
+                panic!("selective import");
+            };
+            assert_eq!(items[0].as_name(), Some(name));
+            let probe = probe_tooling(
+                &source,
+                Some(crate::ast::KioFileKind::Module),
+                Some((prefix.len() + name.len()) as u32),
+                None,
+            );
+            let context = probe.facts.cursor.expect("selection atom");
+            assert_eq!(
+                context.import.unwrap().kind,
+                super::ImportSelectionKind::Any
+            );
+            assert_eq!(
+                &source[context.atom.replacement.start as usize
+                    ..context.atom.replacement.end as usize],
+                name
+            );
+        }
+    }
+}
+
+#[test]
+fn import_alias_contextual_names_keep_source_and_destination_roles() {
+    for original in ["op", "varop", "as"] {
+        for local in ["op", "varop", "as"] {
+            for separator in [" as ", " // Source\n as // Destination\n "] {
+                let prefix = "module app/main; import syntax(";
+                let source = format!("{prefix}{original}{separator}{local});");
+                parse(&source).expect("ordinary contextual-name alias");
+                let source_end = prefix.len() + original.len();
+                let probe = probe_tooling(
+                    &source,
+                    Some(crate::ast::KioFileKind::Module),
+                    Some(source_end as u32),
+                    None,
+                );
+                let context = probe.facts.cursor.expect("source selection");
+                assert_eq!(context.slot, super::CursorSlot::ImportSelection);
+                assert_eq!(
+                    context.import.unwrap().kind,
+                    super::ImportSelectionKind::Name,
+                    "{source}"
+                );
+                assert_eq!(
+                    &source[context.atom.replacement.start as usize
+                        ..context.atom.replacement.end as usize],
+                    original
+                );
+                let local_end = source_end + separator.len() + local.len();
+                let probe = probe_tooling(
+                    &source,
+                    Some(crate::ast::KioFileKind::Module),
+                    Some(local_end as u32),
+                    None,
+                );
+                assert!(probe.facts.cursor.is_none(), "{source}");
+                assert_eq!(
+                    probe.facts.suppression.expect("local alias binder").kind,
+                    super::core::CursorSuppressionKind::Binder,
+                    "{source}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn incomplete_import_aliases_keep_the_source_replacement_boundary() {
+    for (selection, kind, invalid_destination) in [
+        ("foo", super::ImportSelectionKind::Name, "Upper"),
+        ("op", super::ImportSelectionKind::Name, "Upper"),
+        ("varop", super::ImportSelectionKind::Name, "Upper"),
+        ("as", super::ImportSelectionKind::Name, "Upper"),
+        ("Thing", super::ImportSelectionKind::Name, "lower"),
+        (
+            "op _ + _",
+            super::ImportSelectionKind::FixedOperator,
+            "_ ++ __",
+        ),
+        (
+            "varop [* *]",
+            super::ImportSelectionKind::VariadicOperator,
+            "[% *]",
+        ),
+    ] {
+        for suffix in [
+            " as".to_owned(),
+            " as ".to_owned(),
+            format!(" // Source\n as // Destination\n {invalid_destination});"),
+        ] {
+            let prefix = "module app/main; import syntax(";
+            let source = format!("{prefix}{selection}{suffix}");
+            assert!(parse(&source).is_err(), "{source}");
+            let source_end = prefix.len() + selection.len();
+            let probe = probe_tooling(
+                &source,
+                Some(crate::ast::KioFileKind::Module),
+                Some(source_end as u32),
+                None,
+            );
+            let context = probe.facts.cursor.expect("completed source selector");
+            assert_eq!(context.import.unwrap().kind, kind, "{source}");
+            assert_eq!(
+                &source[context.atom.replacement.start as usize
+                    ..context.atom.replacement.end as usize],
+                selection,
+                "{source}"
+            );
+            if suffix == " as " {
+                let probe = probe_tooling(
+                    &source,
+                    Some(crate::ast::KioFileKind::Module),
+                    Some(source.len() as u32),
+                    None,
+                );
+                assert!(probe.facts.cursor.is_none(), "{source}");
+                assert_eq!(
+                    probe.facts.suppression.expect("missing alias binder").kind,
+                    super::core::CursorSuppressionKind::Binder,
+                    "{source}"
+                );
+            }
+        }
+    }
 }
 
 #[test]

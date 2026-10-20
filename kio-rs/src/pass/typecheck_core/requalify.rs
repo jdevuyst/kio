@@ -25,7 +25,7 @@ pub(crate) struct PrimeLocalTypeAlias {
 #[derive(Debug)]
 pub(crate) struct PrimeTypeRequalifier {
     current_module: String,
-    selective_leaf_module: HashMap<String, String>,
+    selective_local_names: HashMap<String, HashMap<String, BTreeSet<String>>>,
     module_aliases: HashMap<String, BTreeSet<String>>,
     used_names: HashSet<String>,
     local_nominal_params: HashMap<String, Vec<TypeParam>>,
@@ -56,7 +56,8 @@ impl PrimeTypeRequalifier {
     {
         #[cfg(all(test, feature = "surface"))]
         INITIALIZATIONS.set(INITIALIZATIONS.get() + 1);
-        let mut selective_leaf_module = HashMap::new();
+        let mut selective_local_names: HashMap<String, HashMap<String, BTreeSet<String>>> =
+            HashMap::new();
         let mut module_aliases: HashMap<String, BTreeSet<String>> = HashMap::new();
         let mut used_names = HashSet::new();
         let mut local_nominal_params = HashMap::new();
@@ -64,11 +65,18 @@ impl PrimeTypeRequalifier {
             match &import_.kind {
                 ImportKind::Selective { items, from } => {
                     let module = module_path_key(from);
-                    for name in items.iter().filter_map(ImportItem::as_name) {
-                        selective_leaf_module
-                            .entry(name.to_owned())
-                            .or_insert_with(|| module.clone());
-                        used_names.insert(name.to_owned());
+                    for item in items {
+                        let Some(source) = item.as_name() else {
+                            continue;
+                        };
+                        let local = item.as_local_name().expect("named import has a local name");
+                        selective_local_names
+                            .entry(module.clone())
+                            .or_default()
+                            .entry(source.to_owned())
+                            .or_default()
+                            .insert(local.to_owned());
+                        used_names.insert(local.to_owned());
                     }
                 }
                 ImportKind::Qualified { path, alias } => {
@@ -115,7 +123,7 @@ impl PrimeTypeRequalifier {
         }
         Self {
             current_module: module_path_key(&module.path),
-            selective_leaf_module,
+            selective_local_names,
             module_aliases,
             used_names,
             local_nominal_params,
@@ -312,13 +320,13 @@ impl PrimeTypeRequalifier {
             });
             return vec![alias];
         }
-        if self
-            .selective_leaf_module
-            .get(leaf)
-            .is_some_and(|selected| selected == module)
-            && !bound.contains(leaf)
+        if let Some(local) = self
+            .selective_local_names
+            .get(module)
+            .and_then(|leaves| leaves.get(leaf))
+            .and_then(|names| names.iter().find(|name| !bound.contains(*name)))
         {
-            return vec![leaf.to_owned()];
+            return vec![local.clone()];
         }
         if let Some(alias) = self
             .module_aliases
@@ -521,20 +529,23 @@ where
                     }
                     #[cfg(feature = "surface")]
                     if matches!(qualified_alias_policy, QualifiedAliasPolicy::Shortest) {
-                        if !is_bound
-                            && module.imports.iter().any(|import_| {
-                                matches!(
-                                    &import_.kind,
-                                    ImportKind::Selective { items, from }
-                                        if module_path_key(from) == owner
-                                            && items
-                                                .iter()
-                                                .filter_map(ImportItem::as_name)
-                                                .any(|name| name == leaf)
-                                )
-                            })
-                        {
-                            return Some(vec![PathSegment::new(leaf, meta.span)]);
+                        if let Some(local) = module.imports.iter().find_map(|import_| {
+                            let ImportKind::Selective { items, from } = &import_.kind else {
+                                return None;
+                            };
+                            if module_path_key(from) != owner {
+                                return None;
+                            }
+                            items
+                                .iter()
+                                .filter(|item| item.as_name() == Some(leaf.as_str()))
+                                .filter_map(ImportItem::as_local_name)
+                                .find(|local| {
+                                    !nested.iter().any(|name| name == local)
+                                        && !bound.contains_contract_binder(local)
+                                })
+                        }) {
+                            return Some(vec![PathSegment::new(local.to_owned(), meta.span)]);
                         }
                         let mut shortest: Option<&str> = None;
                         for import_ in &module.imports {
@@ -561,14 +572,22 @@ where
                     for import_ in &module.imports {
                         match &import_.kind {
                             ImportKind::Selective { items, from }
-                                if module_path_key(from) == owner
-                                    && items
-                                        .iter()
-                                        .filter_map(ImportItem::as_name)
-                                        .any(|name| name == leaf)
-                                    && !is_bound =>
+                                if module_path_key(from) == owner =>
                             {
-                                return Some(vec![PathSegment::new(leaf, meta.span)]);
+                                if let Some(local) = items
+                                    .iter()
+                                    .filter(|item| item.as_name() == Some(leaf.as_str()))
+                                    .filter_map(ImportItem::as_local_name)
+                                    .find(|local| {
+                                        !nested.iter().any(|name| name == local)
+                                            && !bound.contains_contract_binder(local)
+                                    })
+                                {
+                                    return Some(vec![PathSegment::new(
+                                        local.to_owned(),
+                                        meta.span,
+                                    )]);
+                                }
                             }
                             ImportKind::Qualified { path, alias }
                                 if module_path_key(path) == owner

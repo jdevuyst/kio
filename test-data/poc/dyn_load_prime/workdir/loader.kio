@@ -478,22 +478,40 @@ fn decls_find(ds: Decls, name: String) -> . | Decl {
 // name, the names it imports and the module each comes from, and its
 // declarations.
 //
-// `Imports` is the import map: a cons-list of `(local-name, source-module)`
-// entries, one per name in each selective `import m(…);` header — there
-// the local name and the source declaration's name coincide. The declaration
+// `Imports` is the import map: a cons-list of
+// `(local-name, original-name, source-module)` entries, one per name in each
+// selective `import m(…);` header. The declaration
 // satisfies that entry only when its visibility admits the importing module:
 // plain `pub`, or a matching `pub(path)`. The emit's other import form, the
 // module alias `import m as a;`, is recorded separately (`Aliases` below); it
 // provides `a.name` spellings subject to the same visibility gate rather than
 // importing names one by one.
-/// An import entry: a name and the module it is imported from.
-pub labels { import: String & String };
+/// A selective import's local spelling, original declaration name, and provider module.
+pub labels { import: String & String & String };
 
 /// Builds an import entry (local name, source module).
-pub fn mk_import(name: String, from_module: String) -> Import { {import = (name, from_module)} }
+pub fn mk_import(name: String, from_module: String) -> Import {
+  {import = (name, name, from_module)}
+}
 
-/// One-step destructor on an import entry.
-pub fn un_import(i: Import) -> String & String { Import.get(i) }
+/// Construct a selective import with an explicit local spelling and source name.
+pub fn mk_import_as(local: String, original: String, from_module: String) -> Import {
+  {import = (local, original, from_module)}
+}
+
+/// Return an import's local spelling and provider module.
+pub fn un_import(i: Import) -> String & String {
+  match! Import.get(i) {
+    .(local: String, _original: String, provider: String) { (local, provider) }
+  }
+}
+
+/// Return the declaration name selected in the provider module.
+pub fn import_source(i: Import) -> String {
+  match! Import.get(i) {
+    .(_local: String, original: String, _provider: String) { original }
+  }
+}
 
 /// A cons-list of import entries.
 pub labels { imports: List(Import) };
@@ -2060,31 +2078,35 @@ fn alias_spellings(
   )
 }
 
-fn hostfn_imported_as(imports: Imports, name: String, owner: String) -> Bool {
+fn import_spellings(imports: Imports, name: String, owner: String) -> Pnl {
   loop(
-  , .(remaining: Imports) {
-      match! un_imports(remaining) {
-        (
-        , .(import: Import, rest: Imports) {
-            match! un_import(import) {
-              .(candidate: String, provider: String) {
-                if! string_eq(candidate, name) {
-                  if! string_eq(provider, owner) {
-                    widen_sum!(.t(Bool), Imports | Bool)
-                  } else {
-                    widen_sum!(rest, Imports | Bool)
+  , .(state: Imports & Pnl) {
+      match! state {
+        .(remaining: Imports, names: Pnl) {
+          match! un_imports(remaining) {
+            (
+            , .(import: Import, rest: Imports) {
+                match! un_import(import) {
+                  .(local: String, provider: String) {
+                    if! string_eq(import_source(import), name) {
+                      if! string_eq(provider, owner) {
+                        widen_sum!((rest, pnl_cons(local, names)), (Imports & Pnl) | Pnl)
+                      } else {
+                        widen_sum!((rest, names), (Imports & Pnl) | Pnl)
+                      }
+                    } else {
+                      widen_sum!((rest, names), (Imports & Pnl) | Pnl)
+                    }
                   }
-                } else {
-                  widen_sum!(rest, Imports | Bool)
                 }
               }
-            }
+            , .(_empty: .) { widen_sum!(names, (Imports & Pnl) | Pnl) }
+            )
           }
-        , .(_empty: .) { widen_sum!(.f(Bool), Imports | Bool) }
-        )
+        }
       }
     }
-  , imports
+  , (imports, pnl_nil())
   )
 }
 
@@ -2137,10 +2159,8 @@ fn hostfn_spellings(
       } else {
         pnl_nil()
       }
-    } else if! hostfn_imported_as(imports, name, owner) {
-      pnl_one(name)
     } else {
-      pnl_nil()
+      import_spellings(imports, name, owner)
     };
   alias_spellings(aliases, owner, name, .t(Bool), bare)
 }
@@ -2641,31 +2661,6 @@ fn and_both(a: Bool, b: Bool) -> Bool {
   if! a { b } else { .f(Bool) }
 }
 
-// Whether `imports` maps `name` to source module `from_module`.
-fn imports_has(imports: Imports, name: String, from_module: String) -> Bool {
-  loop(
-  , .(rem: Imports) {
-      match! un_imports(rem) {
-        (
-        , .(i: Import, rest: Imports) {
-            match! un_import(i) {
-              .(n: String, m: String) {
-                if! and_both(string_eq(n, name), string_eq(m, from_module)) {
-                  widen_sum!(.t(Bool), Imports | Bool)
-                } else {
-                  widen_sum!(rest, Imports | Bool)
-                }
-              }
-            }
-          }
-        , .(_e: .) { widen_sum!(.f(Bool), Imports | Bool) }
-        )
-      }
-    }
-  , imports
-  )
-}
-
 // =====================================================================
 // Topological module order (Kahn's algorithm)
 // =====================================================================
@@ -3110,14 +3105,18 @@ fn ntab_for_module(x: Module, ms: Modules) -> Ntab {
               , .(i: Import, rest: Imports) {
                   match! un_import(i) {
                     .(n: String, from_module: String) {
+                      let original = import_source(i);
                       match! find_module(ms, from_module) {
                         (
                         , .(src: Module) {
-                            match! ntab_lookup(n, module_newtypes(src)) {
+                            match! ntab_lookup(original, module_newtypes(src)) {
                               (
                               , .(entry: Nt_entry) {
                                   widen_sum!(
-                                  , (rest, ntab_add_visible(src, module_name(x), n, n, entry, acc))
+                                  , (
+                                    , rest
+                                    , ntab_add_visible(src, module_name(x), original, n, entry, acc)
+                                    )
                                   , (Imports & Ntab) | Ntab
                                   )
                                 }
@@ -3265,11 +3264,7 @@ fn gdecl_spellings(g: Gdecl, x: String, x_imports: Imports, x_aliases: Aliases) 
     pnl_one(name)
   } else {
     let importable = decl_importable(gdecl_decl(g), owner_g, x);
-    let base = if! importable {
-      if! imports_has(x_imports, name, owner_g) { pnl_one(name) } else { pnl_nil() }
-    } else {
-      pnl_nil()
-    };
+    let base = if! importable { import_spellings(x_imports, name, owner_g) } else { pnl_nil() };
     alias_spellings(x_aliases, owner_g, name, importable, base)
   }
 }
@@ -8834,7 +8829,7 @@ fn imported_type_candidates(imports: Imports, name: String, initial: Type_origin
                   .(imported: String, provider: String) {
                     if! string_eq(imported, name) {
                       widen_sum!(
-                      , (rest, type_origins_cons(type_origin(provider, name), found))
+                      , (rest, type_origins_cons(type_origin(provider, import_source(one)), found))
                       , (Imports & Type_origins) | Type_origins
                       )
                     } else {
@@ -11820,8 +11815,9 @@ fn collect_imported_direct_bool(context: Type_context, initial: Host_types) -> H
             , .(import: Import, rest: Imports) {
                 match! un_import(import) {
                   .(name: String, provider: String) {
-                    if! import_names_direct_host_type(context, provider, name) {
-                      match! direct_host_type_at(context, provider, name) {
+                    let original = import_source(import);
+                    if! import_names_direct_host_type(context, provider, original) {
+                      match! direct_host_type_at(context, provider, original) {
                         (
                         , .(descriptor: Host_type) {
                             widen_sum!(
@@ -11928,7 +11924,7 @@ fn collect_imported_alias_bool(context: Type_context, initial: Host_types) -> Ho
                     match! find_module(type_context_modules(context), provider_name) {
                       (
                       , .(provider: Module) {
-                          match! tyaliases_find(module_tyaliases(provider), name) {
+                          match! tyaliases_find(module_tyaliases(provider), import_source(import)) {
                             (
                             , .(_alias: Alias_decl) {
                                 match! alias_bool_descriptor(name, env) {
@@ -12250,21 +12246,29 @@ fn validate_module_imports(module: Module, modules: Modules) -> Imports_validati
                 match! find_module(modules, provider_name) {
                   (
                   , .(provider: Module) {
-                      match! import_target_visibility(provider, name) {
+                      match! import_target_visibility(provider, import_source(import)) {
                         (
                         , .(visibility: Visibility) {
                             if! visibility_allows(visibility, provider_name, module_name(module)) {
                               widen_sum!(rest, Imports | Imports_validation)
                             } else {
                               widen_sum!(
-                              , import_visibility_diag(module_name(module), name, provider_name)
+                              , import_visibility_diag(
+                                , module_name(module)
+                                , import_source(import)
+                                , provider_name
+                                )
                               , Imports | Imports_validation
                               )
                             }
                           }
                         , .(_missing: .) {
                             widen_sum!(
-                            , missing_import_item_diag(module_name(module), name, provider_name)
+                            , missing_import_item_diag(
+                              , module_name(module)
+                              , import_source(import)
+                              , provider_name
+                              )
                             , Imports | Imports_validation
                             )
                           }
@@ -12531,7 +12535,7 @@ fn add_imported_value_origins(
             , .(one: Import, rest: Imports) {
                 match! un_import(one) {
                   .(name: String, provider: String) {
-                    match! exact_key_catalog_find(index, provider, name) {
+                    match! exact_key_catalog_find(index, provider, import_source(one)) {
                       (
                       , .(_present: Bool) {
                           match! record_value_binding_origin(origins, consumer, name) {
@@ -15114,8 +15118,8 @@ fn ntab_add_selective_identity_aliases(
                       (
                       , .(owner: Module) {
                           match! tyaliases_find(
-                          , exact_type_index_aliases(index, provider, name)
-                          , name
+                          , exact_type_index_aliases(index, provider, import_source(one))
+                          , import_source(one)
                           ) {
                             (
                             , .(alias: Alias_decl) {
@@ -15361,7 +15365,7 @@ fn validate_type_spelling_imports(
             , .(one: Import, rest: Imports) {
                 match! un_import(one) {
                   .(name: String, provider: String) {
-                    if! exact_type_index_has_type_binding(index, provider, name) {
+                    if! exact_type_index_has_type_binding(index, provider, import_source(one)) {
                       match! validate_type_spelling_occurrence(seen, owner, name) {
                         (
                         , .(next: Validated_type_spellings) {

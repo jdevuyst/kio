@@ -647,6 +647,19 @@ mod tests {
     }
 
     #[test]
+    fn signature_import_aliases_keep_source_and_local_spellings() {
+        let source = "signature app v(1); v(1) { with { module provider { host type T; } }; breaking { add { module api { import provider(T as Alias, T as Other); pub fn keep(value: Alias) -> Other; } } } }";
+        let parsed = crate::pass::parser::parse_signature_file(source, None).unwrap();
+        let rendered = emit_signature_file(&parsed);
+        assert!(
+            rendered.contains("import provider(T as Alias, T as Other)"),
+            "{rendered}"
+        );
+        let reparsed = crate::pass::parser::parse_signature_file(&rendered, None).unwrap();
+        assert_eq!(rendered, emit_signature_file(&reparsed));
+    }
+
+    #[test]
     fn signature_semicolons_join_sorted_sections_imports_and_declarations() {
         let source = "signature demo v(1);
             v(1) { ;

@@ -316,17 +316,28 @@ impl ReconProfile for RoutedBodyTypes<'_> {
         _sig: &Signature<Routed>,
         span: Span,
     ) -> Option<Type<Routed>> {
-        let target = self.module.imports.iter().find_map(|import| match &import.kind {
-            crate::ast::ImportKind::Selective { items, from } if items.iter().any(|item| matches!(item, crate::ast::ImportItem::Name { name: imported, .. } if imported == name)) => Some(from),
-            _ => None,
-        }).unwrap_or(&self.module.path);
+        let (target, source) = self
+            .module
+            .imports
+            .iter()
+            .find_map(|import| match &import.kind {
+                crate::ast::ImportKind::Selective { items, from } => {
+                    let source = items
+                        .iter()
+                        .find(|item| item.as_local_name() == Some(name))?
+                        .as_name()?;
+                    Some((from, source))
+                }
+                _ => None,
+            })
+            .unwrap_or((&self.module.path, name));
         let key = target
             .segments
             .iter()
             .map(|part| part.name.as_str())
             .collect::<Vec<_>>()
             .join("/");
-        module_function_scheme(self.package, &key, name, span)
+        module_function_scheme(self.package, &key, source, span)
     }
     fn reconstruct_other(
         &self,

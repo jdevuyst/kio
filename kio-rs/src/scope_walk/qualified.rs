@@ -104,22 +104,19 @@ fn qualified_root(
                 .imports
                 .iter()
                 .filter_map(|import| match &import.kind {
-                    ImportKind::Selective { from, items }
-                        if items
+                    ImportKind::Selective { from, items } => {
+                        let source = items
                             .iter()
-                            .any(|item| item.as_name() == Some(name.as_str())) =>
-                    {
-                        Some(from.segments.join("/"))
+                            .find(|item| item.as_local_name() == Some(name.as_str()))?
+                            .as_name()?;
+                        Some((from.segments.join("/"), source.to_owned()))
                     }
                     _ => None,
                 });
-            let owner = paths
+            let (owner, source) = paths
                 .next()
-                .unwrap_or_else(|| current.path.segments.join("/"));
-            paths
-                .next()
-                .is_none()
-                .then(|| (owner, Some(name.name.clone())))
+                .unwrap_or_else(|| (current.path.segments.join("/"), name.name.clone()));
+            paths.next().is_none().then_some((owner, Some(source)))
         }
         [alias, name] => Some((qualified(alias.as_str())?, Some(name.name.clone()))),
         _ => None,

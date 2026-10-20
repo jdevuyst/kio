@@ -2377,7 +2377,7 @@ fn cmd_scope(session: &Session, verbose: bool, palette: Palette) -> String {
         if let ImportKind::Selective { items, from } = &u.kind {
             let from_str = module_path_key(from);
             for it in items {
-                if let Some(name) = it.as_name() {
+                if let Some(name) = it.as_local_name() {
                     selective_by_source
                         .entry(from_str.clone())
                         .or_default()
@@ -2648,9 +2648,6 @@ fn cmd_refs(session: &Session, name: &str) -> String {
             if start > end {
                 continue;
             }
-            if &source[start..end] != label_name.unwrap_or(short) {
-                continue;
-            }
             if let (Some(index), Some(target)) = (index, target) {
                 let same_identity = index.binders_iter().any(|((module, span), binder)| {
                     module == &m.path
@@ -2661,12 +2658,15 @@ fn cmd_refs(session: &Session, name: &str) -> String {
                 let selected_import = m.module.imports.iter().any(|import| {
                     matches!(&import.kind, ImportKind::Selective { from, items }
                         if module_path_key(from) == found.module_path
-                        && items.iter().any(|item| selector_name(item) == short
-                            && import_item_span(item).start <= tok.span.start && tok.span.end <= import_item_span(item).end))
+                        && items.iter().any(|item| selector_name(item) == found.short_name
+                            && (import_item_span(item).start <= tok.span.start && tok.span.end <= import_item_span(item).end
+                                || item.as_local_name_with_span().is_some_and(|(_, span)| span == tok.span))))
                 });
                 if !same_identity && !selected_import {
                     continue;
                 }
+            } else if &source[start..end] != label_name.unwrap_or(short) {
+                continue;
             }
             let (line, col) = line_col(source, tok.span.start);
             let surface = surface_module_path(&m.path);
@@ -2698,7 +2698,7 @@ fn cmd_source_refs(
                 Item::Equiv(_, _) => SourceNameKind::Equiv,
                 _ => unreachable!("source references select an erased declaration or label"),
             },
-            short.as_str(),
+            found.short_name.as_str(),
         ),
     };
     let mut hits = Vec::new();
@@ -2709,7 +2709,6 @@ fn cmd_source_refs(
         let mut offsets = Vec::new();
         for reference in source_references(source, &module.module).unwrap_or_default() {
             if reference.kind == kind
-                && reference.path.rsplit('.').next() == Some(leaf)
                 && crate::scope_walk::source_binding(&module.module, &reference).is_some_and(
                     |binding| binding.module == found.module_path && binding.name == leaf,
                 )
@@ -2721,7 +2720,16 @@ fn cmd_source_refs(
             if let ImportKind::Selective { from, items } = &import.kind
                 && module_path_key(from) == found.module_path
             {
-                for item in items.iter().filter(|item| selector_name(item) == short) {
+                for item in items
+                    .iter()
+                    .filter(|item| selector_name(item) == found.short_name)
+                {
+                    if let ImportItem::Name {
+                        alias: Some(alias), ..
+                    } = item
+                    {
+                        offsets.push(alias.span.start);
+                    }
                     let span = import_item_span(item);
                     if let Some(token) = dump_with_module(source, &module.module)
                         .unwrap_or_default()
@@ -2769,31 +2777,40 @@ fn cmd_operator_refs(
 ) -> String {
     let mut hits = Vec::new();
     if let Some(found) = found {
+        let source_grammar = crate::pass::parser::parse_operator_grammar(&found.short_name)
+            .expect("resolved operator has a complete source grammar");
         for m in session.modules_in_load_order() {
             let Some(source) = session.source_of(&m.file_path) else {
                 continue;
             };
             let mut offsets = Vec::new();
-            let mut in_scope = m.path == found.module_path;
-            if in_scope {
+            let mut local_grammars = Vec::new();
+            if m.path == found.module_path {
                 offsets.push(found.item.span().start);
+                local_grammars.push(&source_grammar);
             }
             for import in &m.module.imports {
                 if let ImportKind::Selective { from, items } = &import.kind
                     && module_path_key(from) == found.module_path
                 {
                     for item in items {
-                        if matches!(item, ImportItem::OperatorPattern { grammar: imported, .. } if imported == grammar)
+                        if let ImportItem::OperatorPattern {
+                            grammar: imported,
+                            alias,
+                            ..
+                        } = item
+                            && imported == &source_grammar
                         {
-                            in_scope = true;
+                            local_grammars
+                                .push(alias.as_ref().map_or(imported, |alias| &alias.local));
                             offsets.push(import_item_span(item).start);
                         }
                     }
                 }
             }
-            if in_scope {
+            for local in local_grammars {
                 offsets.extend(
-                    super::operator_refs::uses(&m.module, source, grammar)
+                    super::operator_refs::uses(&m.module, source, local)
                         .into_iter()
                         .map(|span| span.start),
                 );
@@ -3148,12 +3165,25 @@ fn resolve_declaration(session: &Session, query: &str) -> Option<Resolved> {
         found.display_name = found.short_name.clone();
         return Some(found);
     }
-    let name = selector_name(&selector);
     for import in &session.module(current)?.module.imports {
         if let ImportKind::Selective { items, from } = &import.kind
-            && items.iter().any(|item| selector_name(item) == name)
+            && let Some(source) = items.iter().find(|item| match (item, &selector) {
+                (ImportItem::Name { .. }, ImportItem::Name { name, .. }) => {
+                    item.as_local_name() == Some(name.as_str())
+                }
+                (
+                    ImportItem::OperatorPattern { grammar, alias, .. },
+                    ImportItem::OperatorPattern {
+                        grammar: selected, ..
+                    },
+                ) => alias.as_ref().map_or(grammar, |alias| &alias.local) == selected,
+                (ImportItem::Label { name, .. }, ImportItem::Label { name: selected, .. }) => {
+                    name == selected
+                }
+                _ => false,
+            })
         {
-            return declaration_in(session, &module_path_key(from), &selector);
+            return declaration_in(session, &module_path_key(from), source);
         }
     }
     None
@@ -3219,25 +3249,26 @@ fn resolve_name(session: &Session, name: &str) -> Option<Resolved> {
     for u in &cur_entry.module.imports {
         if let ImportKind::Selective { items, from } = &u.kind {
             let label_name = name.strip_prefix('{').and_then(|s| s.strip_suffix('}'));
-            let imported = items.iter().any(|it| {
-                it.as_name() == Some(name)
+            let imported = items.iter().find(|it| {
+                it.as_local_name() == Some(name)
                     || label_name.is_some_and(|label| {
                         it.as_label().is_some_and(|(imported, _)| imported == label)
                     })
             });
-            if imported {
+            if let Some(imported) = imported {
+                let source = imported.as_name().unwrap_or(name);
                 let from_path = module_path_key(from);
                 if let Some(src_entry) = session.module(&from_path)
                     && let Some(item) = src_entry
                         .module
                         .items
                         .iter()
-                        .find(|it| surface_item_declares(it, name))
+                        .find(|it| surface_item_declares(it, source))
                 {
                     return Some(Resolved {
-                        display_name: format!("{}.{name}", surface_module_path(&from_path)),
+                        display_name: format!("{}.{source}", surface_module_path(&from_path)),
                         module_path: from_path.clone(),
-                        short_name: name.to_owned(),
+                        short_name: source.to_owned(),
                         module: src_entry.module.clone(),
                         item: item.clone(),
                         file_path: src_entry.file_path.clone(),
@@ -3326,18 +3357,18 @@ fn resolve_operator(session: &Session, spelling: &str) -> Option<Resolved> {
     let target = grammar.render();
     let current = session.current()?;
     let current_entry = session.module(current)?;
-    let find = |entry: &crate::repl_core::session::LoadedModule| {
+    let find = |entry: &crate::repl_core::session::LoadedModule, target: &str| {
         entry
             .module
             .items
             .iter()
             .find(|item| {
                 matches!(item, Item::Op(_, _) | Item::VariadicOperator(_, _))
-                    && crate::doc_entry::doc_entry_for_name(item, &target).is_some()
+                    && crate::doc_entry::doc_entry_for_name(item, target).is_some()
             })
             .cloned()
     };
-    if let Some(item) = find(current_entry) {
+    if let Some(item) = find(current_entry, &target) {
         return Some(resolved_operator(
             current,
             &current_entry.module,
@@ -3350,18 +3381,28 @@ fn resolve_operator(session: &Session, spelling: &str) -> Option<Resolved> {
         let ImportKind::Selective { items, from } = &import.kind else {
             continue;
         };
-        if !items.iter().any(|item| matches!(item,
-            crate::ast::ImportItem::OperatorPattern { grammar: selected, .. } if selected == &grammar
-        )) { continue; }
+        let Some(source_grammar) = items.iter().find_map(|item| match item {
+            crate::ast::ImportItem::OperatorPattern {
+                grammar: selected,
+                alias,
+                ..
+            } if alias.as_ref().map_or(selected, |alias| &alias.local) == &grammar => {
+                Some(selected)
+            }
+            _ => None,
+        }) else {
+            continue;
+        };
+        let source = source_grammar.render();
         let provider_path = module_path_key(from);
         let provider = session.module(&provider_path)?;
-        if let Some(item) = find(provider) {
+        if let Some(item) = find(provider, &source) {
             return Some(resolved_operator(
                 &provider_path,
                 &provider.module,
                 &item,
                 provider,
-                &target,
+                &source,
             ));
         }
     }
@@ -5780,6 +5821,32 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         std::fs::write(&main, files[2].1).unwrap();
         session.refresh().unwrap();
         assert_eq!(cmd_refs(&session, "truth"), original);
+    }
+
+    #[test]
+    fn declaration_refs_follow_all_selective_aliases_but_not_other_providers() {
+        let root = PathBuf::from("/kio-repl-tests/selective-aliases");
+        let files = [
+            (root.join("provider.kio"), "module provider; pub fn foo() { () }".to_owned()),
+            (root.join("other.kio"), "module other; pub fn foo() { () }".to_owned()),
+            (root.join("main.kio"), "module main; import provider(foo as first, foo as foo); import other(foo as unrelated); fn run() { first(); foo() } fn other_use() { unrelated() }".to_owned()),
+        ].into_iter().collect();
+        let mut session = Session::new_in_memory(root, files);
+        let loaded = Command::Load("main".to_owned()).run(&mut session, Palette::plain());
+        assert!(
+            loaded.output.starts_with("loaded main"),
+            "{}",
+            loaded.output
+        );
+        for query in ["first", "foo", "provider.foo"] {
+            let refs = cmd_refs(&session, query);
+            assert_eq!(refs.matches("in fn run").count(), 2, "{query}: {refs}");
+            assert!(refs.contains("provider:"), "{query}: {refs}");
+            assert!(
+                !refs.contains("other_use") && !refs.contains("other:"),
+                "{query}: {refs}"
+            );
+        }
     }
 
     #[test]

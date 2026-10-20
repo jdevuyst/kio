@@ -493,19 +493,27 @@ module.exports = grammar({
           repeat(choice(
             $.import_operator_item,
             $.import_label_item,
-            alias($._identifier_like, $.identifier),
+            $._import_named_item,
             $.separator_comma,
           )),
           $.bracket_rparen,
         ),
       ),
 
+    _import_named_item: ($) => prec.right(1, seq(
+      alias($._identifier_like, $.identifier),
+      optional(seq(alias($.keyword_as, $.keyword_declaration), alias($._identifier_like, $.identifier))),
+    )),
+
     import_operator_item: ($) =>
       prec.dynamic(20,
-        choice(
-          seq($.keyword_op, repeat1($._import_pattern_token)),
-          seq($.keyword_varop, choice($.variadic_head, alias($._malformed_varop_head_open, $.variadic_open))),
-        ),
+        // Attach `as` to the complete pattern before ending this import item.
+        prec.right(choice(
+          seq($.keyword_op, repeat1($._import_pattern_token),
+            optional(seq(alias($.keyword_as, $.keyword_declaration), repeat1($._import_pattern_token)))),
+          seq($.keyword_varop, choice($.variadic_head, alias($._malformed_varop_head_open, $.variadic_open)),
+            optional(seq(alias($.keyword_as, $.keyword_declaration), $.variadic_head))),
+        )),
       ),
 
     _import_pattern_token: ($) =>

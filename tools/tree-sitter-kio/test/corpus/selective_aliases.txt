@@ -1,0 +1,89 @@
+================================================================================
+named and full-grammar selective aliases
+================================================================================
+import source(Item as Local, item as local, op as operation, varop as variadic, op _ + _ as _ ++ _, varop [* *] as [% %]);
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_decl
+    (keyword_import)
+    (module_path (entity_name_module))
+    (bracket_lparen)
+    (identifier)
+    (keyword_declaration)
+    (identifier)
+    (separator_comma)
+    (identifier)
+    (keyword_declaration)
+    (identifier)
+    (separator_comma)
+    (identifier)
+    (keyword_declaration)
+    (identifier)
+    (separator_comma)
+    (identifier)
+    (keyword_declaration)
+    (identifier)
+    (separator_comma)
+    (import_operator_item
+      (keyword_op)
+      (slot)
+      (operator_run)
+      (slot)
+      (keyword_declaration)
+      (slot)
+      (operator_run)
+      (slot))
+    (separator_comma)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (variadic_open)
+        (variadic_head_gap (head_whitespace))
+        (variadic_star_close))
+      (keyword_declaration)
+      (variadic_head
+        (variadic_open)
+        (variadic_head_gap (head_whitespace))
+        (variadic_close)))
+    (bracket_rparen)
+    (separator_semicolon)))
+
+================================================================================
+operator aliases own whole grouped patterns and boundary comments
+================================================================================
+import source(
+  op _ ( ~ __ ~ )
+    // local spelling
+    as _ ( ~~ __ ~~ ),
+  value
+);
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_decl
+    (keyword_import)
+    (module_path (entity_name_module))
+    (bracket_lparen)
+    (import_operator_item
+      (keyword_op)
+      (slot)
+      (import_pattern_group
+        (bracket_lparen)
+        (operator_run)
+        (slot)
+        (operator_run)
+        (bracket_rparen))
+      (comment_line)
+      (keyword_declaration)
+      (slot)
+      (import_pattern_group
+        (bracket_lparen)
+        (operator_run)
+        (slot)
+        (operator_run)
+        (bracket_rparen)))
+    (separator_comma)
+    (identifier)
+    (bracket_rparen)
+    (separator_semicolon)))

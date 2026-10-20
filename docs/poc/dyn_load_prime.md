@@ -145,6 +145,16 @@ redundant following semicolon. Canonical emitted Kio' omits those edge tokens,
 as specified in the [grammar](../../specs/grammar.md) and [style
 contract](../../specs/style.md#semicolon-clause-blocks).
 
+The public `Import` record stores `(local-name, original-name, provider-module)`.
+`mk_import(name, provider)` constructs an unrenamed selection;
+`mk_import_as(local, original, provider)` constructs a renamed one.
+`un_import(entry)` returns `(local-name, provider-module)`, and
+`import_source(entry)` reads the original declaration name. Raw `Import.get`
+and the `{import = ...}` constructor expose the three fields. The loader uses
+the local name for scope and duplicate checks and the original name for exact
+provider lookup and visibility validation. Distinct local aliases are allowed;
+repeated local introductions are errors.
+
 ## The trust model
 
 Loading **trusts the image's function bodies**, exactly as build-time

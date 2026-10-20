@@ -77,10 +77,9 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::ast::{
-    CallArg, Enriched, EnrichedArm, Expr, FnDef, Import, ImportItem, ImportKind, Item, Meta,
-    Module, PackageFile, Param, PathSegment, Routed, Signature, SignatureGroupKind,
-    SignatureGroupRef, SignatureParam, Type, convert_meta, convert_newtype, convert_type,
-    convert_type_alias,
+    CallArg, Enriched, EnrichedArm, Expr, FnDef, Import, ImportKind, Item, Meta, Module,
+    PackageFile, Param, PathSegment, Routed, Signature, SignatureGroupKind, SignatureGroupRef,
+    SignatureParam, Type, convert_meta, convert_newtype, convert_type, convert_type_alias,
 };
 use crate::pass::resolve::{ModuleEntry, Package, PackageFileEntry};
 
@@ -210,17 +209,19 @@ struct LoweringCtx {
     /// qualified head's qualifier is a real module path.
     modules: std::collections::HashSet<String>,
     /// Per-module-path → (bare newtype leaf in that module's scope →
-    /// the slash-path of the module that declares that newtype). Holds
+    /// the declaring module slash-path and original declaration name). Holds
     /// the module's own newtype declarations plus every newtype it
     /// brings in with `import N(…, X, …);`. Used to pin a noncanonical
     /// bare referenced newtype path in its explicit defining scope,
     /// independent of the eventual consumer (`specs/language.md`
     /// § Open-world design).
-    newtype_home: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
-    /// Per-module spelling scope, the exact declaring module of every
+    newtype_home:
+        std::collections::HashMap<String, std::collections::HashMap<String, (String, String)>>,
+    /// Per-module spelling scope, the exact declaring module and source name of every
     /// bare host-type leaf in scope. Routed types use this to replace a
     /// scope-relative leaf with its stable `(module, name)` path.
-    host_type_home: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    host_type_home:
+        std::collections::HashMap<String, std::collections::HashMap<String, (String, String)>>,
 }
 
 /// A host fn's signature plus its declared return type. The lower
@@ -585,7 +586,7 @@ impl LoweringCtx {
     /// module's declarations. Feeds qualification of noncanonical bare
     /// referenced newtype paths in an explicit spelling scope.
     fn collect_newtype_home_from_module(&mut self, module_path: &str, module: &Module<Enriched>) {
-        let mut scope: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut scope = std::collections::HashMap::new();
         for u in &module.imports {
             if let ImportKind::Selective { items, from } = &u.kind {
                 let from_path = module_path_to_string(from);
@@ -594,9 +595,17 @@ impl LoweringCtx {
                     .get(&from_path)
                     .map(|m| (from_path.clone(), m));
                 if let Some((from_path, per_mod)) = declares {
-                    for name in items.iter().filter_map(ImportItem::as_name) {
+                    for item in items {
+                        let Some(name) = item.as_name() else {
+                            continue;
+                        };
                         if per_mod.contains_key(name) {
-                            scope.insert(name.to_owned(), from_path.clone());
+                            scope.insert(
+                                item.as_local_name()
+                                    .expect("named import has a local name")
+                                    .to_owned(),
+                                (from_path.clone(), name.to_owned()),
+                            );
                         }
                     }
                 }
@@ -604,7 +613,7 @@ impl LoweringCtx {
         }
         if let Some(per_mod) = self.newtypes_by_module.get(module_path) {
             for name in per_mod.keys() {
-                scope.insert(name.clone(), module_path.to_owned());
+                scope.insert(name.clone(), (module_path.to_owned(), name.clone()));
             }
         }
         if !scope.is_empty() {
@@ -618,9 +627,17 @@ impl LoweringCtx {
             if let ImportKind::Selective { items, from } = &u.kind {
                 let from_path = module_path_to_string(from);
                 if let Some(declared) = self.host_types_by_module.get(&from_path) {
-                    for name in items.iter().filter_map(ImportItem::as_name) {
+                    for item in items {
+                        let Some(name) = item.as_name() else {
+                            continue;
+                        };
                         if declared.contains(name) {
-                            scope.insert(name.to_owned(), from_path.clone());
+                            scope.insert(
+                                item.as_local_name()
+                                    .expect("named import has a local name")
+                                    .to_owned(),
+                                (from_path.clone(), name.to_owned()),
+                            );
                         }
                     }
                 }
@@ -628,7 +645,7 @@ impl LoweringCtx {
         }
         if let Some(declared) = self.host_types_by_module.get(module_path) {
             for name in declared {
-                scope.insert(name.clone(), module_path.to_owned());
+                scope.insert(name.clone(), (module_path.to_owned(), name.clone()));
             }
         }
         if !scope.is_empty() {
@@ -806,9 +823,17 @@ impl LoweringCtx {
         if let ImportKind::Selective { items, from } = &u.kind {
             let from_path = module_path_to_string(from);
             if let Some(per_mod) = self.aliases_by_module.get(&from_path) {
-                for name in items.iter().filter_map(ImportItem::as_name) {
+                for item in items {
+                    let Some(name) = item.as_name() else {
+                        continue;
+                    };
                     if let Some(info) = per_mod.get(name) {
-                        aliases.insert(name.to_owned(), info.clone());
+                        aliases.insert(
+                            item.as_local_name()
+                                .expect("named import has a local name")
+                                .to_owned(),
+                            info.clone(),
+                        );
                     }
                 }
             }
@@ -854,7 +879,7 @@ enum ResolvedImportKind {
     /// lowerings may consult it to derive their backend-specific
     /// module-namespace identifier (e.g. JS's
     /// uppercase-dots-to-underscores form).
-    CrossModule(String),
+    CrossModule { path: String, source: String },
 }
 
 /// Resolved kind of a qualified-import alias.
@@ -928,10 +953,17 @@ impl ModuleCtx {
         match &u.kind {
             ImportKind::Selective { items, from } => {
                 let from_path = module_path_to_string(from);
-                for name in items.iter().filter_map(ImportItem::as_name) {
+                for item in items {
+                    let Some(name) = item.as_name() else {
+                        continue;
+                    };
+                    let local = item.as_local_name().expect("named import has a local name");
                     self.selective.insert(
-                        name.to_owned(),
-                        ResolvedImportKind::CrossModule(from_path.clone()),
+                        local.to_owned(),
+                        ResolvedImportKind::CrossModule {
+                            path: from_path.clone(),
+                            source: name.to_owned(),
+                        },
                     );
                     // Cross-module newtype: if the source module
                     // declares a newtype with this name, bring it into
@@ -940,7 +972,8 @@ impl ModuleCtx {
                     if let Some(per_mod) = ctx.newtypes_by_module.get(&from_path)
                         && let Some(info) = per_mod.get(name)
                     {
-                        self.newtypes_in_scope.insert(name.to_owned(), info.clone());
+                        self.newtypes_in_scope
+                            .insert(local.to_owned(), info.clone());
                     }
                 }
             }
@@ -1704,17 +1737,20 @@ impl<'a> Lowerer<'a> {
             // Resolved selective import from the module's `import` set.
             if let Some(kind) = self.module_ctx.selective.get(name) {
                 match kind {
-                    ResolvedImportKind::CrossModule(mod_path) => {
+                    ResolvedImportKind::CrossModule {
+                        path: mod_path,
+                        source,
+                    } => {
                         // A selective import may resolve to a `host fn` in
                         // the source module — host items are ordinary public
                         // declarations brought into scope by `import m(foo);`.
                         // Reference those as a host-fn value (the
                         // module-fn-value path below would mis-route them).
-                        if let Some(hsig) = self.ctx.host_fn_for_import(mod_path, name) {
+                        if let Some(hsig) = self.ctx.host_fn_for_import(mod_path, source) {
                             let env = self.declaring_unfold_env(&hsig.module_path);
                             return Expr::LowHostFnValueRef {
                                 occurrence: Default::default(),
-                                name: name.clone(),
+                                name: source.clone(),
                                 module_path: hsig.module_path.clone(),
                                 sig: canonicalize_entry_signature(&hsig.sig, meta.span, &env),
                                 ret_ty: unfold_signature_ret(&hsig.sig, &hsig.ret, &env),
@@ -1730,7 +1766,7 @@ impl<'a> Lowerer<'a> {
                             .ctx
                             .module_fns_by_module
                             .get(mod_path)
-                            .and_then(|fns| fns.get(name));
+                            .and_then(|fns| fns.get(source));
                         let sig = entry
                             .map(|module_fn| &module_fn.sig)
                             .cloned()
@@ -2604,16 +2640,19 @@ impl<'a> Lowerer<'a> {
                 // Resolved selective import from the module's `import` set.
                 if let Some(kind) = self.module_ctx.selective.get(name) {
                     return match kind.clone() {
-                        ResolvedImportKind::CrossModule(mod_path) => {
+                        ResolvedImportKind::CrossModule {
+                            path: mod_path,
+                            source,
+                        } => {
                             // A selective import may resolve to a `host fn`
                             // in the source module — host items are ordinary
                             // public declarations brought into scope by
                             // `import m(foo);`. Classify those as host calls
                             // (the module-fn path below would mis-route them
                             // through the module-call slot walk).
-                            if let Some(hsig) = self.ctx.host_fn_for_import(&mod_path, name) {
+                            if let Some(hsig) = self.ctx.host_fn_for_import(&mod_path, &source) {
                                 return self.low_host_call(
-                                    name.clone(),
+                                    source.clone(),
                                     hsig,
                                     &type_args,
                                     value_args,
@@ -2627,7 +2666,7 @@ impl<'a> Lowerer<'a> {
                                 .ctx
                                 .module_fns_by_module
                                 .get(&mod_path)
-                                .and_then(|m| m.get(name))
+                                .and_then(|m| m.get(&source))
                                 .cloned();
                             let sig = entry
                                 .as_ref()
@@ -4710,12 +4749,15 @@ impl<'a> Lowerer<'a> {
                 }
                 if let Some(kind) = self.module_ctx.selective.get(name) {
                     match kind {
-                        ResolvedImportKind::CrossModule(mod_path) => {
+                        ResolvedImportKind::CrossModule {
+                            path: mod_path,
+                            source,
+                        } => {
                             return self
                                 .ctx
                                 .module_fns_by_module
                                 .get(mod_path)
-                                .and_then(|m| m.get(name))
+                                .and_then(|m| m.get(source))
                                 .map(|entry| self.module_fn_value_type(entry, span));
                         }
                     }
@@ -4744,14 +4786,16 @@ impl<'a> Lowerer<'a> {
     }
 
     fn module_fn_for_value_ref(&self, name: &str) -> Option<&ModuleFnSig> {
-        if let Some(ResolvedImportKind::CrossModule(module_path)) =
-            self.module_ctx.selective.get(name)
+        if let Some(ResolvedImportKind::CrossModule {
+            path: module_path,
+            source,
+        }) = self.module_ctx.selective.get(name)
         {
             return self
                 .ctx
                 .module_fns_by_module
                 .get(module_path)
-                .and_then(|module| module.get(name));
+                .and_then(|module| module.get(source));
         }
         self.module_ctx.local_fns.get(name)
     }
@@ -6604,8 +6648,8 @@ fn signature_has_untyped_value_param(sig: &Signature<Enriched>) -> bool {
 /// referenced types in their defining scope.
 #[derive(Clone)]
 struct UnfoldEnv<'a> {
-    newtype_home: &'a HashMap<String, HashMap<String, String>>,
-    host_type_home: &'a HashMap<String, HashMap<String, String>>,
+    newtype_home: &'a HashMap<String, HashMap<String, (String, String)>>,
+    host_type_home: &'a HashMap<String, HashMap<String, (String, String)>>,
     /// Lexically bound type variables at the type's use site. They
     /// shadow same-leaf module declarations.
     type_vars: BTreeSet<String>,
@@ -6629,12 +6673,18 @@ impl<'a> UnfoldEnv<'a> {
     /// If bare leaf `name` resolves to a newtype in `home`'s scope (its
     /// own declaration or one it imports), the slash-path of the module
     /// that declares that newtype.
-    fn newtype_decl_module(&self, home: &str, name: &str) -> Option<&str> {
-        self.newtype_home.get(home)?.get(name).map(String::as_str)
+    fn newtype_declaration(&self, home: &str, name: &str) -> Option<(&str, &str)> {
+        self.newtype_home
+            .get(home)?
+            .get(name)
+            .map(|(module, source)| (module.as_str(), source.as_str()))
     }
 
-    fn host_type_decl_module(&self, home: &str, name: &str) -> Option<&str> {
-        self.host_type_home.get(home)?.get(name).map(String::as_str)
+    fn host_type_declaration(&self, home: &str, name: &str) -> Option<(&str, &str)> {
+        self.host_type_home
+            .get(home)?
+            .get(name)
+            .map(|(module, source)| (module.as_str(), source.as_str()))
     }
 }
 
@@ -6687,11 +6737,11 @@ fn unfold_type_alias_type_at_state(
             if !is_canonical
                 && let [single] = segments.as_slice()
                 && !type_vars.contains(single.name.as_str())
-                && let Some(decl_module) =
-                    env.newtype_decl_module(spelling_scope, single.name.as_str())
+                && let Some((decl_module, source)) =
+                    env.newtype_declaration(spelling_scope, single.name.as_str())
             {
                 return Type::Path {
-                    segments: qualified_nominal_segments(decl_module, &single.name, single.span),
+                    segments: qualified_nominal_segments(decl_module, source, single.span),
                     args,
                     meta,
                 };
@@ -6699,11 +6749,11 @@ fn unfold_type_alias_type_at_state(
             if !is_canonical
                 && let [single] = segments.as_slice()
                 && !type_vars.contains(single.name.as_str())
-                && let Some(decl_module) =
-                    env.host_type_decl_module(spelling_scope, single.name.as_str())
+                && let Some((decl_module, source)) =
+                    env.host_type_declaration(spelling_scope, single.name.as_str())
             {
                 return Type::Path {
-                    segments: qualified_nominal_segments(decl_module, &single.name, single.span),
+                    segments: qualified_nominal_segments(decl_module, source, single.span),
                     args,
                     meta,
                 };
@@ -10090,7 +10140,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let mut ctx = LoweringCtx::default();
         ctx.host_type_home.insert(
             module_path.to_owned(),
-            HashMap::from([("Shared".to_owned(), module_path.to_owned())]),
+            HashMap::from([(
+                "Shared".to_owned(),
+                (module_path.to_owned(), "Shared".to_owned()),
+            )]),
         );
         let lowerer = Lowerer {
             bound: std::cell::RefCell::new(vec![BoundLocal {
@@ -10203,7 +10256,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let mut ctx = LoweringCtx::default();
         ctx.host_type_home.insert(
             module_path.to_owned(),
-            HashMap::from([("Shared".to_owned(), module_path.to_owned())]),
+            HashMap::from([(
+                "Shared".to_owned(),
+                (module_path.to_owned(), "Shared".to_owned()),
+            )]),
         );
         let lowerer = Lowerer {
             bound: std::cell::RefCell::new(vec![
@@ -10968,7 +11024,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
         ]);
         let newtype_home = HashMap::from([(
             "list/core".to_owned(),
-            HashMap::from([("List".to_owned(), "list/core".to_owned())]),
+            HashMap::from([(
+                "List".to_owned(),
+                ("list/core".to_owned(), "List".to_owned()),
+            )]),
         )]);
         let host_type_home = HashMap::new();
         let modules = std::collections::HashSet::from([
@@ -11303,7 +11362,10 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let mut module_ctx = ModuleCtx::default();
         module_ctx.selective.insert(
             "id".to_owned(),
-            ResolvedImportKind::CrossModule(callee_path.to_owned()),
+            ResolvedImportKind::CrossModule {
+                path: callee_path.to_owned(),
+                source: "id".to_owned(),
+            },
         );
         let lowerer = Lowerer {
             bound: std::cell::RefCell::new(vec![BoundLocal {

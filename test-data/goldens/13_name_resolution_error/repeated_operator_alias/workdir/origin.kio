@@ -1,0 +1,5 @@
+module origin;
+
+pub fn id(value: .) { value }
+
+pub op + _ { impl id }

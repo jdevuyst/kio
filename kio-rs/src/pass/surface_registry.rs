@@ -832,7 +832,13 @@ fn named_origins(
                         .modules
                         .get(&source)
                         .expect("surface imports were validated before origin checking");
-                    for (name, span) in items.iter().filter_map(ImportItem::as_name_with_span) {
+                    for item in items {
+                        let Some(name) = item.as_name() else {
+                            continue;
+                        };
+                        let (local, span) = item
+                            .as_local_name_with_span()
+                            .expect("named import has a local name");
                         let Some(declarations) = target.named_exports.get(name) else {
                             continue;
                         };
@@ -857,7 +863,7 @@ fn named_origins(
                             register_named_origin(
                                 &mut visible,
                                 module_path,
-                                name,
+                                local,
                                 VisibleOrigin {
                                     origin: decl.origin.clone(),
                                     span,
@@ -1135,25 +1141,34 @@ fn validate_operator_origins_for_module(
             continue;
         };
         for item in items {
-            let ImportItem::OperatorPattern { grammar, span, .. } = item else {
+            let ImportItem::OperatorPattern {
+                grammar,
+                span,
+                alias,
+                ..
+            } = item
+            else {
                 continue;
             };
-            let dispatch_key = grammar.dispatch_key().render();
             let decl = target
                 .operator_exports
-                .get(&dispatch_key)
+                .get(&grammar.dispatch_key().render())
                 .expect("operator imports were validated before origin checking");
+            let (local, local_span) = alias
+                .as_ref()
+                .map_or((grammar, *span), |alias| (&alias.local, alias.span));
+            let dispatch_key = local.dispatch_key().render();
             register_operator_origin(
                 &mut visible,
                 module_path,
                 &dispatch_key,
-                grammar,
+                local,
                 VisibleOrigin {
                     origin: decl.origin.clone(),
-                    span: *span,
+                    span: local_span,
                     description: format!(
                         "operator `{}` is imported from `{source}` here",
-                        grammar.render()
+                        local.render()
                     ),
                     local: false,
                     kind: NamedKind::Ordinary,

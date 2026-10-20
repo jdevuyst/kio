@@ -496,10 +496,15 @@ fn complete_source(
         metadata.add_imports(path, &entries, &sources);
     }
     result.items.extend(entries.into_iter().filter_map(|entry| {
-        if let CandidateOrigin::Import { provider, .. } = &entry.origin
+        if let CandidateOrigin::Import {
+            provider, source, ..
+        } = &entry.origin
             && let Some(items) = metadata.imports.get(provider)
         {
-            return items.get(&entry.label).and_then(Option::as_ref).cloned();
+            return items
+                .get(source)
+                .and_then(Option::as_ref)
+                .map(|item| imported_completion(item, source, &entry.label));
         }
         Some(entry_to_lsp(entry, Some(source), module, Some(&metadata)))
     }));
@@ -610,9 +615,15 @@ fn import_list_candidates(
         .selected
         .iter()
         .map(|item| match item {
-            crate::ast::ImportItem::Name { name, .. } => name.clone(),
+            crate::ast::ImportItem::Name { .. } => item
+                .as_local_name()
+                .expect("named import has a local name")
+                .to_owned(),
             crate::ast::ImportItem::Label { name, .. } => format!("{{{name}}}"),
-            crate::ast::ImportItem::OperatorPattern { grammar, .. } => grammar.render(),
+            crate::ast::ImportItem::OperatorPattern { grammar, alias, .. } => alias
+                .as_ref()
+                .map_or(grammar, |alias| &alias.local)
+                .render(),
         })
         .collect();
     let range = LineIndex::new(source).to_range(cursor.atom.replacement);
@@ -714,19 +725,34 @@ fn to_lsp_kind(kind: EntryKind) -> CompletionItemKind {
 /// Convert an intermediate `CompletionEntry` into an LSP
 /// `CompletionItem`.  Looks up the type in the position index and
 /// formats it as `detail`.
+fn imported_completion(item: &CompletionItem, source: &str, local: &str) -> CompletionItem {
+    let mut item = item.clone();
+    if let Some(suffix) = item.label.strip_prefix(source) {
+        item.label = format!("{local}{suffix}");
+    }
+    if let Some(text) = &item.insert_text
+        && let Some(suffix) = text.strip_prefix(source)
+    {
+        item.insert_text = Some(format!("{local}{suffix}"));
+    }
+    item
+}
+
 fn entry_to_lsp(
     entry: CompletionEntry,
     source: Option<&str>,
     module: Option<&Module<Surface>>,
     metadata: Option<&CompletionMetadata<'_>>,
 ) -> CompletionItem {
-    if let CandidateOrigin::Import { provider, .. } = &entry.origin
+    if let CandidateOrigin::Import {
+        provider, source, ..
+    } = &entry.origin
         && let Some(imported) = metadata
             .and_then(|metadata| metadata.imports.get(provider))
-            .and_then(|items| items.get(&entry.label))
+            .and_then(|items| items.get(source))
             .and_then(Option::as_ref)
     {
-        return imported.clone();
+        return imported_completion(imported, source, &entry.label);
     }
     let mut detail = metadata.and_then(|metadata| metadata.type_detail(&entry));
     let mut documentation = module
@@ -1300,6 +1326,7 @@ mod tests {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
             file_to_module: std::collections::BTreeMap::from([(path, "syntax".to_owned())]),
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(

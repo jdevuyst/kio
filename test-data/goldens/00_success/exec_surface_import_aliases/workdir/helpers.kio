@@ -1,0 +1,5 @@
+module helpers;
+
+import __comptime__;
+
+pub pure fn pass(_ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ { value }

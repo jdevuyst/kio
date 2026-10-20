@@ -4523,6 +4523,72 @@ fn ok() -> . { () }
     }
 
     #[test]
+    fn selective_aliases_keep_source_and_destination_separate() {
+        let module = p(
+            "module x; import provider(foo as bar, Foo as Bar, op as operation, varop as variadic, same as same);",
+        );
+        let items = selective_items(&module.imports[0]);
+        for (item, source, local) in [
+            (&items[0], "foo", "bar"),
+            (&items[1], "Foo", "Bar"),
+            (&items[2], "op", "operation"),
+            (&items[3], "varop", "variadic"),
+            (&items[4], "same", "same"),
+        ] {
+            assert_eq!(item.as_name(), Some(source));
+            assert_eq!(item.as_local_name(), Some(local));
+            assert_ne!(
+                item.as_name_with_span().unwrap().1,
+                item.as_local_name_with_span().unwrap().1
+            );
+        }
+        for selection in [
+            "foo as Bar",
+            "Foo as bar",
+            "{foo} as bar",
+            "foo as __reserved__",
+        ] {
+            assert!(!p_err(&format!("module x; import provider({selection});")).is_empty());
+        }
+    }
+
+    #[test]
+    fn operator_aliases_preserve_the_complete_grammar_shape() {
+        for selection in [
+            "op _ + __ as _ ++ __",
+            "op _ ? (_ : _) as _ ?? (_ :: _)",
+            "op _ + + _ as _ - - _",
+            "varop [* *] as [% %]",
+        ] {
+            let module = p(&format!("module x; import provider({selection});"));
+            let ImportItem::OperatorPattern {
+                grammar,
+                alias: Some(alias),
+                ..
+            } = &selective_items(&module.imports[0])[0]
+            else {
+                panic!("operator alias");
+            };
+            assert!(grammar.validate_rename(&alias.local).is_ok());
+        }
+        for selection in [
+            "op _ + __ as _ + _",
+            "op _ + __ as _ + ___",
+            "op _ ? (_ : _) as _ ?? _ :: _",
+            "op _ + + _ as _ - + _",
+            "op _ + - _ as _ ? ? _",
+            "op _ + + _ as _ ++ _",
+            "varop [* *] as [% *]",
+            "op _ + _ as op _ - _",
+        ] {
+            assert!(
+                !p_err(&format!("module x; import provider({selection});")).is_empty(),
+                "{selection}"
+            );
+        }
+    }
+
+    #[test]
     fn import_selective_namespaces_are_structurally_distinct() {
         let m = p("module x; import pkg/mod(item, Item, {item});");
         let items = selective_items(&m.imports[0]);

@@ -152,7 +152,7 @@ pub mod swift;
 pub mod ts;
 pub(crate) mod value_plan;
 
-/// Map each selectively imported module function to its declaring module.
+/// Map each selectively imported local function name to its source declaration.
 ///
 /// Name resolution has already validated the import, but emitters still need
 /// this table to turn a bare `LowModuleCall` back into the target backend
@@ -161,7 +161,7 @@ pub(crate) mod value_plan;
 pub(crate) fn selective_module_fn_import_owners(
     importer: &crate::ast::Module<crate::ast::Routed>,
     package: &crate::pass::resolve::Package<crate::ast::Routed>,
-) -> std::collections::BTreeMap<String, String> {
+) -> std::collections::BTreeMap<String, (String, String)> {
     let mut owners = std::collections::BTreeMap::new();
     for import_decl in &importer.imports {
         let (items, from) = match &import_decl.kind {
@@ -196,7 +196,12 @@ pub(crate) fn selective_module_fn_import_owners(
                 continue;
             };
             if crate::pass::resolve::is_visible(&definition.vis, &importer.path) {
-                owners.insert(name.to_owned(), owner.clone());
+                owners.insert(
+                    item.as_local_name()
+                        .expect("named import has a local name")
+                        .to_owned(),
+                    (owner.clone(), name.to_owned()),
+                );
             }
         }
     }

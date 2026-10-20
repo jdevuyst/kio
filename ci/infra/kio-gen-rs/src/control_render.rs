@@ -126,7 +126,12 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
                 quoted(types.initial_value())
             ));
         }
-        runtime.push_str(" let selected = type_probe.transform(value); io.print(selected);");
+        let selective_alias = matches!(types, TypeProbe::HigherRank { .. });
+        runtime.push_str(if selective_alias {
+            " let selected = selected_transform(value); io.print(selected);"
+        } else {
+            " let selected = type_probe.transform(value); io.print(selected);"
+        });
         if recursion.is_some() {
             runtime.push_str(" io.print(recursion_probe.transform(selected));");
         }
@@ -136,7 +141,11 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         runtime.push_str(" () }\n");
         *runtime = runtime.replace(
             "import testapi(String);",
-            "import testapi(String);\nimport kio_gen_types as type_probe;",
+            if selective_alias {
+                "import testapi(String);\nimport kio_gen_types(transform as selected_transform);"
+            } else {
+                "import testapi(String);\nimport kio_gen_types as type_probe;"
+            },
         );
         files.push(("workdir/kio_gen_types.kio".into(), type_probe(types)));
         if let Some(probe) = rows {

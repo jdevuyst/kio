@@ -153,9 +153,15 @@ pub(crate) fn source_warnings(
                             import_item_syntax(&tokens, item)
                                 .expect("checked import owns its syntax"),
                             match item {
-                                ImportItem::Name { span, .. }
-                                | ImportItem::Label { span, .. }
-                                | ImportItem::OperatorPattern { span, .. } => *span,
+                                ImportItem::Name { .. } => {
+                                    item.as_local_name_with_span()
+                                        .expect("named import has a local name")
+                                        .1
+                                }
+                                ImportItem::Label { span, .. } => *span,
+                                ImportItem::OperatorPattern { span, alias, .. } => {
+                                    alias.as_ref().map_or(*span, |alias| alias.span)
+                                }
                             },
                         )
                     })
@@ -547,7 +553,10 @@ pub(crate) fn import_removal(
 
 fn import_item_syntax(tokens: &[Token], item: &ImportItem) -> Option<Span> {
     match item {
-        ImportItem::Name { span, .. } => Some(*span),
+        ImportItem::Name { span, alias, .. } => Some(Span::new(
+            span.start,
+            alias.as_ref().map_or(span.end, |alias| alias.span.end),
+        )),
         ImportItem::Label { span, .. } => {
             let name = tokens.partition_point(|token| token.span.start < span.start);
             let open = tokens.get(name.checked_sub(1)?)?;
@@ -557,8 +566,9 @@ fn import_item_syntax(tokens: &[Token], item: &ImportItem) -> Option<Span> {
             }
             Some(Span::new(open.span.start, close.span.end))
         }
-        ImportItem::OperatorPattern { span, .. } => {
-            let after = tokens.partition_point(|token| token.span.start < span.end);
+        ImportItem::OperatorPattern { span, alias, .. } => {
+            let end = alias.as_ref().map_or(span.end, |alias| alias.span.end);
+            let after = tokens.partition_point(|token| token.span.start < end);
             let last = tokens.get(after.checked_sub(1)?)?;
             Some(Span::new(span.start, last.span.end))
         }

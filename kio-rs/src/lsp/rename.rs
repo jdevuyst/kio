@@ -106,6 +106,15 @@ pub(crate) fn handle_prepare_rename_with_module(
     let byte_offset = line_index.position_to_offset(lsp_pos);
 
     let parsed;
+    if let Some((alias, span)) = analysis.import_aliases.at(module_path, byte_offset) {
+        if analysis.sources.get(&canonical).map(String::as_str) != Some(source) {
+            return None;
+        }
+        return Some(PrepareRenameResponse::RangeWithPlaceholder {
+            range: to_lsp_range(line_index.to_range(span)),
+            placeholder: alias.name.clone(),
+        });
+    }
     let module = if let Some(module) = current_module {
         Some(module)
     } else {
@@ -282,6 +291,69 @@ fn handle_rename_inner(
 
     let parsed_modules = parse_analysis_modules(analysis);
 
+    if let Some((alias, _)) = analysis.import_aliases.at(&module_path, byte_offset) {
+        if analysis.sources.get(&canonical).map(String::as_str) != Some(source) {
+            return Err("selective alias positions are not current".to_owned());
+        }
+        let local_binder = if crate::naming::is_type_name(&alias.name) {
+            ResolvedBinder::TypeParam {
+                name: alias.name.clone(),
+                decl_span: Some(alias.declaration),
+            }
+        } else {
+            ResolvedBinder::Local {
+                name: alias.name.clone(),
+                decl_span: Some(alias.declaration),
+            }
+        };
+        validate_new_name_for_binder(new_name, &local_binder)?;
+        let module = current_module
+            .or_else(|| parsed_modules.get(&canonical))
+            .ok_or_else(|| "source module not available".to_owned())?;
+        let resolved_scope = analysis
+            .root_package_lowered
+            .module(&module_path)
+            .map(|entry| &entry.scope);
+        let lexical_scope = crate::scope_walk::SourceBindingIndex::new(module);
+        for span in &alias.occurrences {
+            let prospective = crate::tokens::SourceReference {
+                path: new_name.to_owned(),
+                span: *span,
+                declaration: false,
+                kind: if crate::naming::is_type_name(&alias.name) {
+                    crate::tokens::SourceNameKind::Type
+                } else {
+                    crate::tokens::SourceNameKind::Value
+                },
+            };
+            if (new_name != alias.name && lexical_scope.origin(&prospective).is_some())
+                || name_conflicts_at_offset(
+                    module,
+                    resolved_scope,
+                    new_name,
+                    span.start,
+                    &local_binder,
+                )
+            {
+                return Err(format!(
+                    "rename to `{new_name}` would conflict with an existing binding"
+                ));
+            }
+        }
+        let edits = alias
+            .occurrences
+            .iter()
+            .map(|span| TextEdit {
+                range: to_lsp_range(line_index.to_range(*span)),
+                new_text: new_name.to_owned(),
+            })
+            .collect();
+        return Ok(Some(workspace_edit_from_changes(
+            HashMap::from([(uri.clone(), edits)]),
+            snapshot_versions,
+        )));
+    }
+
     if let Some(family) = current_module
         .or_else(|| parsed_modules.get(canonical.as_path()))
         .and_then(|module| placeholder_family_at(module, byte_offset))
@@ -361,7 +433,11 @@ fn handle_rename_inner(
                 .or_default()
                 .push(*entry_span);
         }
-        if !binder_matches_key_pub(entry_binder, entry_module_path, &key) {
+        if analysis
+            .import_aliases
+            .contains(entry_module_path, *entry_span)
+            || !binder_matches_key_pub(entry_binder, entry_module_path, &key)
+        {
             continue;
         }
         if let Some(file_path) = analysis
@@ -406,6 +482,19 @@ fn handle_rename_inner(
     // 4. Conflict check: for each reference site, verify the new name
     //    is not already in scope there (resolving to a different binder).
     for (file_path, span) in &locations {
+        if analysis
+            .file_to_module
+            .get(file_path)
+            .is_some_and(|module| {
+                analysis
+                    .import_aliases
+                    .is_aliased_source_selector(module, *span)
+            })
+        {
+            // This token selects a provider declaration, not a consumer binding.
+            // The provider declaration site supplies its namespace check.
+            continue;
+        }
         let file_source = match analysis.sources.get(file_path.as_path()) {
             Some(s) => s.as_str(),
             None => continue,
@@ -813,7 +902,7 @@ fn collect_module_scope(module: &Module<Surface>, byte_offset: u32, out: &mut Ve
         match &import_decl.kind {
             ImportKind::Selective { items, .. } => {
                 for item in items {
-                    if let Some(name) = item.as_name() {
+                    if let Some(name) = item.as_local_name() {
                         out.push(name.to_owned());
                     }
                 }
@@ -1386,6 +1475,147 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn selective_alias_tooling_keeps_local_and_provider_identities_in_full_and_focused_analysis() {
+        let root = test_file_path("/virtual/selective-alias-tooling");
+        let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub newtype Box : . { pub constructor mk; pub projector get } pub labels { foo: . }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub elab identity : [Source] Source -> Source { impl identity_impl }";
+        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve!(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count }";
+        let main_file = root.join("main.kio");
+        let provider_file = root.join("provider.kio");
+        let overlay = crate::package_collection::SourceOverlay::complete(
+            root.clone(),
+            BTreeMap::from([
+                (
+                    root.join("demo.pkg.kio"),
+                    "package demo; bridge { main; provider; }".to_owned(),
+                ),
+                (main_file.clone(), source.to_owned()),
+                (provider_file.clone(), provider.to_owned()),
+            ]),
+        );
+        let full = crate::cmd::check::analyze_workspace_at_with_overlay_lsp(&root, &overlay)
+            .expect("full aliases");
+        let focused =
+            crate::cmd::check::analyze_module_at_with_overlay_lsp(&root, &overlay, &main_file)
+                .expect("focused aliases");
+        let uri = path_to_uri(&main_file, &root).unwrap();
+        let provider_uri = path_to_uri(&provider_file, &root).unwrap();
+        for analysis in [&full, &focused] {
+            for (use_site, new_name, count) in [
+                ("local()", "renamed", 2),
+                ("foo()", "renamed", 2),
+                ("invoke()", "call", 2),
+                ("Parcel.get", "Package", 3),
+                ("preserve!", "retain", 2),
+            ] {
+                let position = position_of(source, use_site);
+                let references = crate::lsp::references::handle_references(
+                    &uri, &position, true, analysis, None, &root,
+                )
+                .unwrap();
+                assert_eq!(references.len(), count, "{use_site}");
+                assert!(references.iter().all(|location| location.uri == uri));
+                let edit = handle_rename(&uri, &position, new_name, analysis, None, &root)
+                    .unwrap()
+                    .unwrap();
+                let changes = edit.changes.unwrap();
+                assert_eq!(changes.len(), 1);
+                assert_eq!(changes[&uri].len(), count, "{use_site}");
+                let definition = crate::lsp::definition::handle_definition(
+                    &uri, &position, analysis, None, &root,
+                )
+                .unwrap();
+                let lsp_types::GotoDefinitionResponse::Scalar(location) = definition else {
+                    panic!("one provider definition")
+                };
+                assert_eq!(location.uri, provider_uri);
+            }
+            for (source_site, destination_site, use_site) in [
+                ("foo as foo", "foo, foo as local", "foo()"),
+                ("foo as local", "local,", "local()"),
+                ("external as invoke", "invoke,", "invoke()"),
+                ("Box as Parcel", "Parcel,", "Parcel.get"),
+                ("Int as Number", "Number,", "Number;"),
+                ("token as count", "count,", "count }"),
+                ("identity as preserve", "preserve)", "preserve!"),
+            ] {
+                let definitions: Vec<_> = [source_site, destination_site, use_site]
+                    .into_iter()
+                    .map(|site| {
+                        let definition = crate::lsp::definition::handle_definition(
+                            &uri,
+                            &position_of(source, site),
+                            analysis,
+                            None,
+                            &root,
+                        )
+                        .unwrap();
+                        let lsp_types::GotoDefinitionResponse::Scalar(location) = definition else {
+                            panic!("one provider definition for {site}")
+                        };
+                        assert_eq!(location.uri, provider_uri);
+                        location
+                    })
+                    .collect();
+                assert_eq!(definitions[0], definitions[1]);
+                assert_eq!(definitions[0], definitions[2]);
+                if source_site.starts_with("foo as ") {
+                    assert_eq!(
+                        definitions[0].range.start.character,
+                        (provider.find("fn foo").unwrap() + "fn ".len()) as u32
+                    );
+                }
+            }
+            assert!(
+                handle_rename(
+                    &uri,
+                    &position_of(source, "Number;"),
+                    "B",
+                    analysis,
+                    None,
+                    &root
+                )
+                .unwrap_err()
+                .contains("conflict")
+            );
+            let literal_position = position_of(source, "count }");
+            let definition = crate::lsp::definition::handle_definition(
+                &uri,
+                &literal_position,
+                analysis,
+                None,
+                &root,
+            )
+            .unwrap();
+            let lsp_types::GotoDefinitionResponse::Scalar(location) = definition else {
+                panic!("literal definition")
+            };
+            assert_eq!(location.uri, provider_uri);
+            assert_eq!(
+                location.range.start.character,
+                (provider.find("literal token").unwrap() + "literal ".len()) as u32
+            );
+        }
+        let edit = handle_rename(
+            &provider_uri,
+            &position_of(provider, "foo()"),
+            "bar",
+            &full,
+            None,
+            &root,
+        )
+        .expect("consumer bar does not collide with a provider selector")
+        .unwrap();
+        let changes = edit.changes.unwrap();
+        assert_eq!(changes[&provider_uri].len(), 1);
+        assert_eq!(changes[&uri].len(), 2);
+        assert!(
+            changes[&uri].iter().all(
+                |edit| edit.range.start.character < source.find("type Capture").unwrap() as u32
+            )
+        );
+    }
+
+    #[test]
     fn placeholder_family_rename_from_intro_or_reference_preserves_indices_and_controls() {
         let source = "module main; fn run() { .x. { (x2, x1, m.x1, .x. { x1 }, \
             .(x1) { x1 }, .() { let x1 = (); x1 }, .() { x1 }) } }";
@@ -1649,6 +1879,7 @@ mod tests {
             position_index: index,
             file_to_module,
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(
@@ -1681,6 +1912,7 @@ mod tests {
             position_index,
             file_to_module,
             label_reuse_indexes: HashMap::new(),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),

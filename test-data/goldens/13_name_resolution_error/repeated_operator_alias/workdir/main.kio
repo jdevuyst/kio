@@ -1,0 +1,4 @@
+module main;
+
+import origin(op + _ as ++ _);
+import origin(op + _ as ++ _);

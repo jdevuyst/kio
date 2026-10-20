@@ -1801,6 +1801,7 @@ struct TypeImportIndex {
 #[derive(Clone)]
 struct SelectiveTypePath {
     prefix: Arc<[crate::ast::PathSegment]>,
+    source: String,
     span: Span,
 }
 
@@ -1874,18 +1875,22 @@ impl TopLevelScope {
             match &usage.kind {
                 ImportKind::Selective { items, from } => {
                     let mut shared_prefix = None;
-                    for name in items
-                        .iter()
-                        .filter_map(crate::ast::ImportItem::as_name)
-                        .filter(|name| crate::naming::is_type_name(name))
-                    {
+                    for item in items {
+                        let Some(source) = item
+                            .as_name()
+                            .filter(|name| crate::naming::is_type_name(name))
+                        else {
+                            continue;
+                        };
+                        let local = item.as_local_name().expect("named import has a local name");
                         let prefix = shared_prefix.get_or_insert_with(|| {
                             Arc::<[crate::ast::PathSegment]>::from(from.segments.clone())
                         });
                         selective_type_paths
-                            .entry(name.to_owned())
+                            .entry(local.to_owned())
                             .or_insert_with(|| SelectiveTypePath {
                                 prefix: Arc::clone(prefix),
+                                source: source.to_owned(),
                                 span: usage.span,
                             });
                     }
@@ -1928,7 +1933,10 @@ impl TopLevelScope {
             work.indexed_import_prefix_segments_cloned += imported.prefix.len();
         });
         let mut path = imported.prefix.to_vec();
-        path.push(crate::ast::PathSegment::synth(name, imported.span));
+        path.push(crate::ast::PathSegment::synth(
+            &imported.source,
+            imported.span,
+        ));
         Some(path)
     }
 
@@ -1942,9 +1950,12 @@ impl TopLevelScope {
         Some(path.clone())
     }
 
-    fn selective_type_target(&self, name: &str) -> Option<(&[crate::ast::PathSegment], Span)> {
+    fn selective_type_target(
+        &self,
+        name: &str,
+    ) -> Option<(&[crate::ast::PathSegment], &str, Span)> {
         let imported = self.type_imports.as_ref()?.selective_type_paths.get(name)?;
-        Some((imported.prefix.as_ref(), imported.span))
+        Some((imported.prefix.as_ref(), &imported.source, imported.span))
     }
 
     fn qualified_type_target(&self, name: &str) -> Option<&[crate::ast::PathSegment]> {
@@ -2102,6 +2113,7 @@ impl<P: Phase> Copy for NominalSelection<'_, P> {}
 #[derive(Clone, Copy)]
 struct BorrowedSelectiveTypePath<'m> {
     prefix: &'m [crate::ast::PathSegment],
+    source: &'m str,
     span: Span,
 }
 
@@ -2325,13 +2337,17 @@ impl<'m, P: Phase> NominalProvider<'m, P> {
         for usage in &module.imports {
             match &usage.kind {
                 ImportKind::Selective { items, from } => {
-                    for name in items
-                        .iter()
-                        .filter_map(crate::ast::ImportItem::as_name)
-                        .filter(|name| crate::naming::is_type_name(name))
-                    {
-                        selective.entry(name).or_insert(BorrowedSelectiveTypePath {
+                    for item in items {
+                        let Some(source) = item
+                            .as_name()
+                            .filter(|name| crate::naming::is_type_name(name))
+                        else {
+                            continue;
+                        };
+                        let local = item.as_local_name().expect("named import has a local name");
+                        selective.entry(local).or_insert(BorrowedSelectiveTypePath {
                             prefix: &from.segments,
+                            source,
                             span: usage.span,
                         });
                     }
@@ -2399,7 +2415,7 @@ impl<'m, P: Phase> NominalProvider<'m, P> {
         &self,
         scope: NominalScope<'m, P>,
         name: &str,
-    ) -> Option<(&'m [crate::ast::PathSegment], Span)> {
+    ) -> Option<(&'m [crate::ast::PathSegment], &'m str, Span)> {
         match scope {
             NominalScope::Absent => None,
             NominalScope::CheckingRoot { module, .. } => {
@@ -2410,7 +2426,7 @@ impl<'m, P: Phase> NominalProvider<'m, P> {
                     .borrow()
                     .get(&key)
                     .and_then(|scope| scope.selective.get(name).copied())
-                    .map(|target| (target.prefix, target.span))
+                    .map(|target| (target.prefix, target.source, target.span))
             }
             NominalScope::PackageOwner(entry) => entry.scope.selective_type_target(name),
         }
@@ -2538,7 +2554,7 @@ impl<'m, P: Phase> NominalProvider<'m, P> {
                 });
         }
         if tail.is_empty() {
-            if let Some((path, _)) = self.selective_target(scope, head.as_str()) {
+            if let Some((path, source, _)) = self.selective_target(scope, head.as_str()) {
                 if scope.blocks_cross_owner() {
                     return NominalSelection::Opaque;
                 }
@@ -2547,7 +2563,7 @@ impl<'m, P: Phase> NominalProvider<'m, P> {
                     .map_or(NominalSelection::Missing, |entry| {
                         self.selected(
                             NominalScope::PackageOwner(entry),
-                            head.as_str(),
+                            source,
                             NominalRoute::Selective,
                         )
                     });
@@ -2648,7 +2664,7 @@ impl<'m, P: Phase> NominalProvider<'m, P> {
         }
         let written_target = if tail.is_empty() {
             self.selective_target(scope, head.as_str())
-                .map(|(path, _)| (path, head.clone()))
+                .map(|(path, source, span)| (path, crate::ast::PathSegment::synth(source, span)))
         } else if tail.len() == 1 {
             self.qualified_target(scope, head.as_str())
                 .map(|path| (path, tail[0].clone()))
@@ -2803,7 +2819,7 @@ pub(crate) fn for_each_resolved_newtype_member_head<'m, P: Phase>(
                 candidate_heads.extend(
                     items
                         .iter()
-                        .filter_map(crate::ast::ImportItem::as_name)
+                        .filter_map(crate::ast::ImportItem::as_local_name)
                         .map(|name| vec![name.to_owned()]),
                 );
             }
@@ -3614,14 +3630,13 @@ fn selective_import_type_path(
         #[cfg(test)]
         update_type_reexport_work(|work| work.import_edges_scanned += 1);
         match &u.kind {
-            ImportKind::Selective { items, from }
-                if items
+            ImportKind::Selective { items, from } => {
+                let source = items
                     .iter()
-                    .filter_map(crate::ast::ImportItem::as_name)
-                    .any(|item| item == name) =>
-            {
+                    .find(|item| item.as_local_name() == Some(name))?
+                    .as_name()?;
                 let mut out = from.segments.clone();
-                out.push(crate::ast::PathSegment::synth(name, u.span));
+                out.push(crate::ast::PathSegment::synth(source, u.span));
                 Some(out)
             }
             _ => None,
@@ -4853,18 +4868,21 @@ impl<P: ResolvePhase> Package<P> {
                 match &usage.kind {
                     ImportKind::Selective { items, from } => {
                         let source = module_path_str(from);
-                        for (name, span) in items
-                            .iter()
-                            .filter_map(crate::ast::ImportItem::as_name_with_span)
-                        {
+                        for item in items {
+                            let Some(name) = item.as_name() else {
+                                continue;
+                            };
+                            let (local, span) = item
+                                .as_local_name_with_span()
+                                .expect("named import has a local name");
                             register(
-                                name,
+                                local,
                                 BindingOrigin::Item {
                                     module: source.clone(),
                                     name: name.to_owned(),
                                 },
                                 span,
-                                format!("`{name}` is imported from `{source}` here"),
+                                format!("`{local}` imports `{name}` from `{source}` here"),
                             )?;
                         }
                     }
@@ -6427,7 +6445,10 @@ impl<'m> Resolver<'m> {
             match &u.kind {
                 ImportKind::Intrinsics => self.intrinsics_in_scope = true,
                 ImportKind::Selective { items, .. } => {
-                    for n in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                    for n in items
+                        .iter()
+                        .filter_map(crate::ast::ImportItem::as_local_name)
+                    {
                         self.imported.insert(n);
                         self.user_elaborators_in_scope.insert(n);
                     }

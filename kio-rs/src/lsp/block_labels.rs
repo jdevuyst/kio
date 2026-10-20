@@ -61,10 +61,12 @@ pub(crate) fn record_module(
             if is_cancelled() {
                 return None;
             }
-            let crate::ast::ImportItem::Name { name, span, .. } = item else {
+            let crate::ast::ImportItem::Name { span, alias, .. } = item else {
                 continue;
             };
-            let Some(fact) = declarations.get(name.as_str()) else {
+            let Some(fact) =
+                declarations.get(item.as_local_name().expect("named import has a local name"))
+            else {
                 continue;
             };
             let owner = file_to_module.get(&fact.file)?;
@@ -76,6 +78,16 @@ pub(crate) fn record_module(
                     name: fact.name.clone(),
                 },
             );
+            if let Some(alias) = alias {
+                index.record_binder(
+                    module_path,
+                    alias.span,
+                    ResolvedBinder::Fn {
+                        module_path: owner.clone(),
+                        name: fact.name.clone(),
+                    },
+                );
+            }
         }
     }
 

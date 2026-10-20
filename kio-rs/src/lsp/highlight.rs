@@ -48,6 +48,22 @@ pub fn handle_document_highlight(
     };
     let byte_offset = line_index.position_to_offset(lsp_pos);
 
+    if let Some((alias, _)) = analysis.import_aliases.at(module_path, byte_offset) {
+        if analysis.sources.get(&canonical).map(String::as_str) != Some(source) {
+            return None;
+        }
+        return Some(
+            alias
+                .occurrences
+                .iter()
+                .map(|span| DocumentHighlight {
+                    range: to_lsp_range(line_index.to_range(*span)),
+                    kind: Some(DocumentHighlightKind::TEXT),
+                })
+                .collect(),
+        );
+    }
+
     if let Some(binding) = syntax.index.and_then(|index| index.binding_at(byte_offset)) {
         let highlights = binding
             .occurrences
@@ -79,6 +95,12 @@ pub fn handle_document_highlight(
     let mut spans: Vec<Span> = Vec::new();
     for ((entry_module_path, entry_span), entry_binder) in analysis.position_index.binders_iter() {
         if entry_module_path != module_path {
+            continue;
+        }
+        if analysis
+            .import_aliases
+            .contains(entry_module_path, *entry_span)
+        {
             continue;
         }
         if binder_matches_key_pub(entry_binder, entry_module_path, &key) {
@@ -149,6 +171,7 @@ mod tests {
             position_index: index,
             file_to_module,
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(

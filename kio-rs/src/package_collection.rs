@@ -1352,11 +1352,12 @@ fn resolve_retyped_counterpart<'a>(
     all: &'a [(PathBuf, Module<Surface>)],
 ) -> Option<(DeclaredRetypeNominal<'a>, &'a Module<Surface>)> {
     let mut module = to_module;
+    let mut selected = name.to_owned();
     let mut seen: Vec<Vec<String>> = Vec::new();
     loop {
         if let Some(nominal) = declared_retype_nominals(module)
             .into_iter()
-            .find(|nominal| nominal.name() == name)
+            .find(|nominal| nominal.name() == selected)
         {
             return Some((nominal, module));
         }
@@ -1370,21 +1371,23 @@ fn resolve_retyped_counterpart<'a>(
             return None;
         }
         seen.push(key);
-        let origin = module
+        let (origin, source) = module
             .imports
             .iter()
             .find_map(|u| match &u.kind {
-                crate::ast::ImportKind::Selective { items, from }
-                    if items
+                crate::ast::ImportKind::Selective { items, from } => {
+                    let source = items
                         .iter()
-                        .filter_map(crate::ast::ImportItem::as_name)
-                        .any(|item| item == name) =>
-                {
-                    Some(from)
+                        .find(|item| item.as_local_name() == Some(selected.as_str()))?
+                        .as_name()?;
+                    Some((from, source.to_owned()))
                 }
                 _ => None,
             })
-            .or_else(|| identity_reexport_origin(module, name))?;
+            .or_else(|| {
+                identity_reexport_origin(module, &selected).map(|origin| (origin, selected.clone()))
+            })?;
+        selected = source;
         module = all
             .iter()
             .find(|(_p, m)| m.path.segments == origin.segments)
@@ -1685,7 +1688,7 @@ fn apply_rehost(module: &mut crate::ast::Module, targets: &[RehostTarget]) {
 /// rehosted dependency module happens to name.
 #[cfg(feature = "cli")]
 fn fresh_provider_alias(module: &crate::ast::Module, to: &crate::ast::ModulePath) -> String {
-    use crate::ast::{ImportItem, ImportKind, Item};
+    use crate::ast::{ImportKind, Item};
 
     let mut bound: std::collections::HashSet<&str> = std::collections::HashSet::new();
     for item in &module.items {
@@ -1746,8 +1749,8 @@ fn fresh_provider_alias(module: &crate::ast::Module, to: &crate::ast::ModulePath
         match &u.kind {
             ImportKind::Selective { items, .. } => {
                 for it in items {
-                    if let ImportItem::Name { name, .. } = it {
-                        bound.insert(name.as_str());
+                    if let Some(name) = it.as_local_name() {
+                        bound.insert(name);
                     }
                 }
             }
@@ -2682,6 +2685,7 @@ fn apply_retype(
                     leading_trivia: Vec::new(),
                     name: name.clone(),
                     span: module.path.span,
+                    alias: None,
                 })
                 .collect::<Vec<_>>();
             if !private_imports.is_empty() {

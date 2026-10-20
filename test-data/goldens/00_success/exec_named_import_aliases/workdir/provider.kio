@@ -1,0 +1,9 @@
+module provider;
+
+import testapi(String);
+
+pub type Plain = String;
+
+pub newtype Duo[A][B] : A & B { pub constructor mk; pub projector get }
+
+pub pure fn echo(value: String) -> String { value }

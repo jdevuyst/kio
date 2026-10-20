@@ -145,6 +145,17 @@ operator insertion includes its required outer parentheses; inner import-pattern
 parentheses are independent. Shared declaration rendering does not imply that
 Kiodoc directives or expression queries accept REPL selector syntax.
 
+Named selective aliases retain separate source-selector and local-binding
+identities. Completion and unused-import analysis follow the local destination;
+definition and declaration metadata follow the selected provider declaration.
+LSP local-alias references and rename exclude the source selector, while
+provider rename preserves explicit destinations, including `name as name`.
+REPL `:refs` remains declaration-oriented across all selected local spellings.
+Keep alias occurrence facts source-authenticated and editor-local; do not
+replace the semantic provider identity or overwrite its declaration site.
+Exercise shadowing in function bodies and type declarations, both full and
+focused analysis, and source-only declarations erased before typechecking.
+
 An authorized change to eligibility moves the affected providers and focused evidence together: exact positive/negative candidate sets, insertion into an otherwise-valid continuation, and edit-driven retraction. Cover document/provider edits, shadowing, incomplete intermediates, and close/reopen or session reload. Shared collector tests do not substitute for the distinct JSON-RPC, interactive terminal, and browser completion boundaries. Static audits inspect implementation and existing evidence; execution follows the scoped validation procedure below when requested or required by an authorized fix.
 
 ## Focused tooling validation

@@ -526,6 +526,8 @@ pub struct LspAnalysis {
     /// Keyed by `(module_path, Span)` — same semantics as
     /// [`crate::pass::typecheck_full::PositionIndex`].
     pub position_index: crate::pass::typecheck_full::PositionIndex,
+    /// Explicit selective aliases have source-local refactoring identities.
+    pub(crate) import_aliases: crate::lsp::import_aliases::AliasIndex,
     /// Canonical file path → slash module-path string.
     /// Built from the lowered workspace's `Package::modules()` entries;
     /// the LSP hover / definition / references handlers use this to
@@ -554,6 +556,64 @@ pub struct LspAnalysis {
     /// contract; the LSP publishes them as `DiagnosticSeverity::WARNING`
     /// after a successful full-package analysis.
     pub warnings: Vec<LspWarning>,
+}
+
+#[cfg(all(feature = "surface", feature = "lsp"))]
+fn lsp_import_aliases(
+    parsed: &package_collection::ParsedPackageCollection,
+    surface_modules: &BTreeMap<PackageKey, Vec<(PathBuf, Module<Surface>)>>,
+    sources: &HashMap<PathBuf, String>,
+    surface_tokens: &HashMap<PathBuf, Vec<crate::tokens::ClassifiedToken>>,
+    cancel_token: &crate::lsp::cancel::CancellationToken,
+) -> Option<crate::lsp::import_aliases::AliasIndex> {
+    let mut index = crate::lsp::import_aliases::AliasIndex::default();
+    let mut providers = HashSet::new();
+    for package in parsed.packages.values() {
+        for (path, module) in &package.modules {
+            if cancel_token.is_cancelled() {
+                return None;
+            }
+            if !surface_tokens.contains_key(path) {
+                continue;
+            }
+            for import in &module.imports {
+                if let crate::ast::ImportKind::Selective { from, items } = &import.kind
+                    && items.iter().any(|item| {
+                        matches!(item, crate::ast::ImportItem::Name { alias: Some(_), .. })
+                    })
+                {
+                    providers.insert(from.segments.join("/"));
+                }
+            }
+        }
+    }
+    if providers.is_empty() {
+        return Some(index);
+    }
+    for (package_key, package) in &parsed.packages {
+        let forced_by_file: HashMap<_, _> = surface_modules
+            .get(package_key)
+            .into_iter()
+            .flatten()
+            .map(|(path, module)| (path, module))
+            .collect();
+        for (path, cached_module) in &package.modules {
+            if cancel_token.is_cancelled() {
+                return None;
+            }
+            let Some(source) = sources.get(path) else {
+                continue;
+            };
+            let module = forced_by_file.get(path).copied().unwrap_or(cached_module);
+            if providers.contains(&cached_module.path.segments.join("/")) {
+                index.record_definitions(cached_module, source);
+            }
+            if surface_tokens.contains_key(path) {
+                index.record_module(module, source);
+            }
+        }
+    }
+    Some(index)
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
@@ -935,6 +995,7 @@ fn lsp_record_rec_group_positions(
 #[cfg(all(feature = "surface", feature = "lsp"))]
 fn lsp_retain_source_written_binders(
     surface_tokens: &HashMap<PathBuf, Vec<crate::tokens::ClassifiedToken>>,
+    import_aliases: &crate::lsp::import_aliases::AliasIndex,
     sources: &HashMap<PathBuf, String>,
     file_to_module: &BTreeMap<PathBuf, String>,
     position_index: &mut crate::pass::typecheck_full::PositionIndex,
@@ -1081,7 +1142,10 @@ fn lsp_retain_source_written_binders(
         Some(
             source
                 .get(span.start as usize..span.end as usize)
-                .is_some_and(|written| written == written_name),
+                .is_some_and(|written| {
+                    written == written_name
+                        || import_aliases.authenticates_binder(module_path, span, written, binder)
+                }),
         )
     });
     if !retained {
@@ -1426,7 +1490,10 @@ fn lsp_record_surface_declaration_positions(
                             if cancel_token.is_cancelled() {
                                 return None;
                             }
-                            let ImportItem::Name { name, span, .. } = item else {
+                            let ImportItem::Name {
+                                name, span, alias, ..
+                            } = item
+                            else {
                                 continue;
                             };
                             let binder = import_binder_cache
@@ -1437,7 +1504,10 @@ fn lsp_record_surface_declaration_positions(
                             let Some(binder) = binder.clone() else {
                                 continue;
                             };
-                            position_index.record_binder(module_path, *span, binder);
+                            position_index.record_binder(module_path, *span, binder.clone());
+                            if let Some(alias) = alias {
+                                position_index.record_binder(module_path, alias.span, binder);
+                            }
                         }
                     }
                     ImportKind::Intrinsics | ImportKind::Comptime => {}
@@ -2373,8 +2443,16 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
     let surface_tokens = lsp_surface_tokens(&parsed_ws, &surface_modules, None, cancel_token)?;
     let mut label_reuse_indexes =
         lsp_label_reuse_indexes(&parsed_ws, &surface_tokens, cancel_token)?;
+    let import_aliases = lsp_import_aliases(
+        &parsed_ws,
+        &surface_modules,
+        &sources,
+        &surface_tokens,
+        cancel_token,
+    )?;
     lsp_retain_source_written_binders(
         &surface_tokens,
+        &import_aliases,
         &sources,
         &file_to_module,
         &mut merged_index,
@@ -2443,6 +2521,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
 
     Some(Ok(LspAnalysis {
         position_index: merged_index,
+        import_aliases,
         file_to_module,
         sources,
         label_reuse_indexes,
@@ -2744,8 +2823,16 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
     )?;
     let mut label_reuse_indexes =
         lsp_label_reuse_indexes(&parsed_ws, &surface_tokens, cancel_token)?;
+    let import_aliases = lsp_import_aliases(
+        &parsed_ws,
+        &surface_modules,
+        &sources,
+        &surface_tokens,
+        cancel_token,
+    )?;
     lsp_retain_source_written_binders(
         &surface_tokens,
+        &import_aliases,
         &sources,
         &file_to_module,
         &mut position_index,
@@ -2805,6 +2892,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         .clone();
     Some(Ok(LspAnalysis {
         position_index,
+        import_aliases,
         file_to_module,
         sources,
         label_reuse_indexes,

@@ -23,7 +23,8 @@
 //!   semantic declaration-site map. Focused analysis retains only the remote
 //!   declaration identities it needs, without publishing provider occurrences.
 //! - **Intrinsic.** No source declaration; return `None`.
-//! - **Import aliases.** No source declaration jump target; return `None`.
+//! - **Selective aliases.** Follow the original provider declaration.
+//! - **Module aliases.** No source declaration jump target; return `None`.
 
 use lsp_types::{GotoDefinitionResponse, Location, Position, Range, Uri};
 
@@ -60,6 +61,19 @@ pub fn handle_definition(
     };
     let byte_offset = line_index.position_to_offset(lsp_pos);
 
+    let alias_definition = if let Some((alias, _)) = analysis
+        .import_aliases
+        .at(module_path, byte_offset)
+        .or_else(|| analysis.import_aliases.source_at(module_path, byte_offset))
+    {
+        if analysis.sources.get(&canonical).map(String::as_str) != Some(source) {
+            return None;
+        }
+        analysis.import_aliases.definition(alias)
+    } else {
+        None
+    };
+
     if let Some(binding) = syntax.index.and_then(|index| index.binding_at(byte_offset)) {
         let lsp_range = line_index.to_range(binding.declaration_span);
         let location = Location::new(
@@ -82,26 +96,33 @@ pub fn handle_definition(
     }
 
     // Find the innermost binder at the cursor.
-    let (_, binder) = smallest_containing_span(
+    let binder = smallest_containing_span(
         byte_offset,
         analysis
             .position_index
             .binders_iter()
             .filter(|((mp, _), _)| mp == module_path)
             .map(|((_, span), binder)| (*span, binder)),
-    )?;
+    )
+    .map(|(_, binder)| binder);
 
     if matches!(
         binder,
-        crate::pass::typecheck_full::ResolvedBinder::QualifiedImport { .. }
-            | crate::pass::typecheck_full::ResolvedBinder::QualifiedImportMember { .. }
+        Some(
+            crate::pass::typecheck_full::ResolvedBinder::QualifiedImport { .. }
+                | crate::pass::typecheck_full::ResolvedBinder::QualifiedImportMember { .. }
+        )
     ) {
         return None;
     }
 
-    let (declaration_module, declaration_span) = analysis
-        .position_index
-        .semantic_declaration_site(module_path, binder)?;
+    let (declaration_module, declaration_span) = binder
+        .and_then(|binder| {
+            analysis
+                .position_index
+                .semantic_declaration_site(module_path, binder)
+        })
+        .or(alias_definition)?;
     let declaration_file = analysis
         .file_to_module
         .iter()
@@ -151,6 +172,7 @@ mod tests {
             position_index: index,
             file_to_module,
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             // The LSP doesn't read these — supply empty placeholders.
@@ -294,6 +316,7 @@ mod tests {
             position_index: index,
             file_to_module,
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(

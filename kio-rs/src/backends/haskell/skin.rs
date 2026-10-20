@@ -195,7 +195,10 @@ impl HaskellHostTypes {
         for (path, entry) in package.modules() {
             let mut scope = BTreeMap::new();
             for binding in by_key.values().filter(|b| b.module_path == path) {
-                scope.insert(binding.source_name.clone(), binding.module_path.clone());
+                scope.insert(
+                    binding.source_name.clone(),
+                    host_type_key(&binding.module_path, &binding.source_name),
+                );
             }
             for import_decl in &entry.module.imports {
                 if let crate::ast::ImportKind::Selective { items, from } = &import_decl.kind {
@@ -205,11 +208,15 @@ impl HaskellHostTypes {
                         .map(|segment| segment.as_str())
                         .collect::<Vec<_>>()
                         .join("/");
-                    for leaf in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                    for item in items {
+                        let Some(leaf) = item.as_name() else {
+                            continue;
+                        };
+                        let local = item.as_local_name().expect("named import has a local name");
                         if by_key.contains_key(&host_type_key(&from_path, leaf))
-                            && !scope.contains_key(leaf)
+                            && !scope.contains_key(local)
                         {
-                            scope.insert(leaf.to_owned(), from_path.clone());
+                            scope.insert(local.to_owned(), host_type_key(&from_path, leaf));
                         }
                     }
                 }
@@ -235,11 +242,11 @@ impl HaskellHostTypes {
         let (leaf, prefix) = segments.split_last()?;
         let key = if prefix.is_empty() {
             let module = referring_module?;
-            let home = self
+            let key = self
                 .scopes
                 .get(module)
                 .and_then(|scope| scope.get(leaf.as_str()))?;
-            host_type_key(home, leaf.as_str())
+            key.clone()
         } else {
             let module = prefix
                 .iter()
@@ -1139,13 +1146,13 @@ pub(crate) fn newtype_qual_key(module_path: &str, name: &str) -> String {
     format!("{module_path}.{name}")
 }
 
-/// Per-module bare-leaf → declaring-module resolution scope (own
+/// Per-module bare-leaf → exact declaration resolution scope (own
 /// declarations + `import N(…);` imports), built once over the package.
 /// Qualified Routed paths already carry canonical module identities. Bare
 /// leaves resolve only through the referring-module scope.
 #[derive(Debug, Default)]
 pub(crate) struct NewtypeResolution {
-    /// referring-module → (bare leaf → declaring-module slash-path).
+    /// referring-module → (bare leaf → exact declaration key).
     scopes: BTreeMap<String, BTreeMap<String, String>>,
     /// Every exact `<module>.<name>` declaration key.
     exact_keys: BTreeSet<String>,
@@ -1169,7 +1176,7 @@ impl NewtypeResolution {
             for item in &entry.module.items {
                 crate::pass::resolve::for_each_item_declaration(item, |declaration| {
                     if let Some(newtype) = declaration.newtype() {
-                        scope.insert(newtype.name.clone(), path.to_owned());
+                        scope.insert(newtype.name.clone(), newtype_qual_key(path, &newtype.name));
                     }
                 });
             }
@@ -1181,11 +1188,15 @@ impl NewtypeResolution {
                         .map(|s| s.as_str())
                         .collect::<Vec<_>>()
                         .join("/");
-                    for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                    for item in items {
+                        let Some(name) = item.as_name() else {
+                            continue;
+                        };
+                        let local = item.as_local_name().expect("named import has a local name");
                         if exact_keys.contains(&newtype_qual_key(&from_path, name))
-                            && !scope.contains_key(name)
+                            && !scope.contains_key(local)
                         {
-                            scope.insert(name.to_owned(), from_path.clone());
+                            scope.insert(local.to_owned(), newtype_qual_key(&from_path, name));
                         }
                     }
                 }
@@ -1229,8 +1240,7 @@ impl NewtypeResolution {
     /// carry the leaf name directly, not a `Type::Path`).
     pub(crate) fn leaf_key(&self, leaf: &str, referring_module: Option<&str>) -> Option<String> {
         let module = referring_module?;
-        let home = self.scopes.get(module).and_then(|s| s.get(leaf))?;
-        Some(newtype_qual_key(home, leaf))
+        self.scopes.get(module).and_then(|s| s.get(leaf)).cloned()
     }
 }
 

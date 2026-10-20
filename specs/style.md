@@ -377,7 +377,8 @@ exactly one blank line:
 
 Within each block, statements sort lexicographically by ASCII codepoint on
 their full rendered string, without locale or case folding. Within a selective
-list, items sort by their full rendered spelling: ordinary names are bare,
+list, items sort by their full rendered spelling: ordinary selections retain
+their optional `as` alias,
 labels retain braces, and operator selections retain their complete tags and
 grammars. Empty blocks are skipped.
 
@@ -386,7 +387,10 @@ parenthesis immediately follows the module path on the introducing line; the
 flat form is `import module/path(First, second);`. A nonempty list breaks using
 the ordinary A1 rule: one item per line with its leading comma at the inherited
 base column, and its closer at the same column. The tag and full grammar form one operator selection; the two
-delimiters of a `varop` head stay together on that line.
+delimiters of a `varop` head stay together on that line. A renaming clause uses
+one space on each side of `as`; an operator destination omits the repeated
+`op` or `varop` tag. An explicit alias stays explicit, including `name as name`:
+it gives the local spelling an independent refactoring identity.
 
 ```kio
 import module/path(

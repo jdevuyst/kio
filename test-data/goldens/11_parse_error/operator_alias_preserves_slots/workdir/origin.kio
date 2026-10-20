@@ -1,0 +1,4 @@
+module origin;
+
+pub fn first(left: ., _right: .) -> . { left }
+pub op _ + __ { impl first }

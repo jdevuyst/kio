@@ -126,9 +126,14 @@ pub(super) fn public_type(
     result
 }
 
-fn ordinary(source: &Expr<Lowered>, replay: &mut UserElaboratorReplayEnv<'_>) -> RuntimeExpr {
+fn ordinary(
+    source: &Expr<Lowered>,
+    ambient: &HashSet<String>,
+    replay: &mut UserElaboratorReplayEnv<'_>,
+) -> RuntimeExpr {
     substitute::substitute_expr_for_replayed_elaboration(
         source,
+        ambient,
         replay.elaborations,
         replay.module_path,
         replay.package,
@@ -165,19 +170,20 @@ impl Completed<'_> {
                     span,
                 )
             }
-            None => bind(name, ordinary(self.source, replay), body, span),
+            None => bind(name, ordinary(self.source, ambient, replay), body, span),
         }
     }
 
     fn finish(
         self,
         continuation: RuntimeExpr,
+        ambient: &HashSet<String>,
         replay: &mut UserElaboratorReplayEnv<'_>,
     ) -> RuntimeExpr {
         let span = self.source.span();
         match self.computation {
             Some(computation) => call(computation, continuation, span),
-            None => call(continuation, ordinary(self.source, replay), span),
+            None => call(continuation, ordinary(self.source, ambient, replay), span),
         }
     }
 }
@@ -211,6 +217,7 @@ fn replay_children(
     let mut core = substitute::substitute_expr_with_completed_source_bindings(
         source,
         Some(&bindings),
+        ambient,
         replay.elaborations,
         replay.module_path,
         replay.package,
@@ -253,6 +260,7 @@ fn replay_children(
 
     struct Restore<'a, 's, 'e, 'r> {
         holes: &'a HashMap<String, Completed<'s>>,
+        ambient: &'a HashSet<String>,
         replay: &'e mut UserElaboratorReplayEnv<'r>,
         error: Option<Error>,
     }
@@ -268,7 +276,7 @@ fn replay_children(
                         "recursive value escapes in a function",
                     ));
                 } else {
-                    *expr = ordinary(child.source, self.replay);
+                    *expr = ordinary(child.source, self.ambient, self.replay);
                 }
                 return;
             }
@@ -335,6 +343,7 @@ fn replay_children(
                     mut expr @ Expr::FnExpr { .. } => {
                         let mut restore = Restore {
                             holes: &holes,
+                            ambient,
                             replay,
                             error: None,
                         };
@@ -404,7 +413,7 @@ pub(super) fn compose(
                 let computation = match node {
                     Expr::RecQuote { plan, .. } => match plan.as_ref() {
                         RecQuotePlan::Operand { computation, .. } => {
-                            Some(ordinary(computation, replay))
+                            Some(ordinary(computation, ambient, replay))
                         }
                         RecQuotePlan::Expansion { .. } => {
                             super::rec_quote::finish_expansion(node, replay)?;
@@ -517,21 +526,21 @@ pub(super) fn compose(
                 let k = local(name.clone(), span);
                 let body = match node {
                     Expr::Let { name, .. } => {
-                        let body = children.pop().unwrap().finish(k, replay);
+                        let body = children.pop().unwrap().finish(k, ambient, replay);
                         children
                             .pop()
                             .unwrap()
                             .resume(name.clone(), body, runtime, ambient, replay)
                     }
                     Expr::Seq { .. } => {
-                        let body = children.pop().unwrap().finish(k, replay);
+                        let body = children.pop().unwrap().finish(k, ambient, replay);
                         children
                             .pop()
                             .unwrap()
                             .resume(fresh_name(), body, runtime, ambient, replay)
                     }
                     Expr::RecOrder { plan, .. } => {
-                        let body = children.pop().unwrap().finish(k, replay);
+                        let body = children.pop().unwrap().finish(k, ambient, replay);
                         match children.pop() {
                             Some(value) => {
                                 value.resume(plan.name.clone(), body, runtime, ambient, replay)

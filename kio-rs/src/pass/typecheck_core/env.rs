@@ -684,7 +684,11 @@ impl<'m, P: crate::ast::Phase> ModuleEnv<'m, P> {
                 continue;
             };
             let target_path = module_path_key(&target.module, None);
-            for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+            for item in items {
+                let Some(name) = item.as_name() else {
+                    continue;
+                };
+                let local = item.as_local_name().expect("named import has a local name");
                 #[cfg(all(test, feature = "surface"))]
                 record_nominal_provider_item_visit();
                 let Some(declaration) = target
@@ -698,7 +702,7 @@ impl<'m, P: crate::ast::Phase> ModuleEnv<'m, P> {
                     && host.name == name
                     && let Some(role) = host.role
                 {
-                    candidates.push((role.role, name, (target_path.clone(), name.to_owned())));
+                    candidates.push((role.role, local, (target_path.clone(), name.to_owned())));
                 }
             }
         }
@@ -1095,7 +1099,11 @@ pub fn populate_cross_module_imports<'m, P>(
                 let Some(target) = package.module(&from_path) else {
                     continue;
                 };
-                for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                for item in items {
+                    let Some(name) = item.as_name() else {
+                        continue;
+                    };
+                    let local = item.as_local_name().expect("named import has a local name");
                     #[cfg(all(test, feature = "surface"))]
                     record_nominal_provider_item_visit();
                     if let Some(declaration) = target
@@ -1104,12 +1112,13 @@ pub fn populate_cross_module_imports<'m, P>(
                         .and_then(|id| crate::pass::resolve::declaration_by_id(&target.module, id))
                     {
                         if let Some(d) = declaration.fn_def().filter(|d| d.name == name) {
-                            env.cross_module_fn_defs.insert(name, d);
-                            env.cross_module_fn_def_modules.insert(name, &target.module);
+                            env.cross_module_fn_defs.insert(local, d);
+                            env.cross_module_fn_def_modules
+                                .insert(local, &target.module);
                         } else if let Some(a) = declaration.type_alias().filter(|a| a.name == name)
                         {
                             env.cross_module_type_aliases.insert(
-                                name,
+                                local,
                                 crate::pass::typecheck_core::AliasDef {
                                     type_params: &a.type_params,
                                     body: a.type_body(),
@@ -1123,9 +1132,9 @@ pub fn populate_cross_module_imports<'m, P>(
                                 .insert((from_path.clone(), name.to_owned()), &target.module);
                         } else if let Some(s) = declaration.elaborator().filter(|s| s.name == name)
                         {
-                            env.cross_module_user_elaborators.insert(name, s);
+                            env.cross_module_user_elaborators.insert(local, s);
                             env.cross_module_user_elaborator_modules
-                                .insert(name, &target.module);
+                                .insert(local, &target.module);
                         // Host items are ordinary public declarations, so a
                         // selective `import` brings them into scope like any
                         // other item. Their host-boundary provenance is
@@ -1133,13 +1142,14 @@ pub fn populate_cross_module_imports<'m, P>(
                         // so resolving the name here suffices. Mirrors the
                         // local items-loop handling above.
                         } else if let Some(h) = declaration.host_type().filter(|h| h.name == name) {
-                            env.env_type_names.insert(name);
+                            env.env_type_names.insert(local);
                             if let Some(role) = h.role {
-                                env.host_env_roles.push((role.role, name));
+                                env.host_env_roles.push((role.role, local));
                             }
                         } else if let Some(h) = declaration.host_fn().filter(|h| h.name == name) {
-                            env.env_fn_defs.insert(name, h);
-                            env.cross_module_env_fn_modules.insert(name, &target.module);
+                            env.env_fn_defs.insert(local, h);
+                            env.cross_module_env_fn_modules
+                                .insert(local, &target.module);
                         }
                     }
                 }

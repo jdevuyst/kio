@@ -41,7 +41,7 @@ import loader(Visibility, private_visibility, public_visibility, scoped_visibili
 import loader(aliases_cons, aliases_nil, mk_alias);
 import loader(decl_name, decls_cons, decls_nil, mk_decl, mk_diag);
 import loader(diag_bare_message, diag_pos);
-import loader(imports_cons, imports_nil, mk_import, mk_module, modules_cons, modules_nil);
+import loader(imports_cons, imports_nil, mk_import_as, mk_module, modules_cons, modules_nil);
 import loader(lr_diag, resolve_package, un_load_outcome);
 import loader(members_cons, members_nil, members_reverse);
 import loader(mk_diag_at);
@@ -1309,7 +1309,7 @@ labels { import_err: Diag };
 type Import_outcome = Import_scan | Import_err;
 
 /// Reversed imported names and the tokens after the closing parenthesis.
-labels { names_scan: Pnames & Toks };
+labels { names_scan: Imports & Toks };
 
 fn import_diag(ts: Toks, message: String) -> Diag {
   mk_diag_at(string_concat("dyn_load_prime: malformed image — "(String), message), head_pos(ts))
@@ -1453,92 +1453,158 @@ fn skip_import_commas(ts: Toks) -> Toks {
   ))
 }
 
-fn scan_import_names(ts: Toks) -> Names_scan | Diag {
+fn scan_import_item(ts: Toks, provider: String) -> (Import & Toks) | Diag {
+  match! head_word(ts) {
+    (
+    , .(original: String) {
+        if! import_item_name(original) {
+          let after = rest(ts);
+          if! head_word_is(after, "as"(String)) {
+            let destination = rest(after);
+            match! head_word(destination) {
+              (
+              , .(local: String) {
+                  if! import_item_name(local) {
+                    let same_class = if! import_value_name(original) {
+                      import_value_name(local)
+                    } else if! import_value_name(local) {
+                      .f(Bool)
+                    } else {
+                      .t(Bool)
+                    };
+                    if! same_class {
+                      widen_sum!(
+                      , (mk_import_as(local, original, provider), rest(destination))
+                      , (Import & Toks) | Diag
+                      )
+                    } else {
+                      widen_sum!(
+                      , import_diag(
+                        , destination
+                        , "import alias must keep its identifier class"(String)
+                        )
+                      , (Import & Toks) | Diag
+                      )
+                    }
+                  } else {
+                    widen_sum!(
+                    , import_diag(destination, "expected an ordinary import alias"(String))
+                    , (Import & Toks) | Diag
+                    )
+                  }
+                }
+              , .(_missing: .) {
+                  widen_sum!(
+                  , import_diag(destination, "expected an import alias after `as`"(String))
+                  , (Import & Toks) | Diag
+                  )
+                }
+              )
+            }
+          } else {
+            widen_sum!((mk_import_as(original, original, provider), after), (Import & Toks) | Diag)
+          }
+        } else {
+          widen_sum!(
+          , import_diag(ts, "expected an ordinary imported identifier"(String))
+          , (Import & Toks) | Diag
+          )
+        }
+      }
+    , .(_missing: .) {
+        widen_sum!(
+        , import_diag(ts, "expected an imported identifier"(String))
+        , (Import & Toks) | Diag
+        )
+      }
+    )
+  }
+}
+
+fn scan_import_names(ts: Toks, provider: String) -> Names_scan | Diag {
   loop(
-  , .(state: Toks & Pnames) {
+  , .(state: Toks & Imports) {
       match! state {
-        .(remaining: Toks, names: Pnames) {
+        .(remaining: Toks, names: Imports) {
           let cur = skip_import_commas(remaining);
           if! head_is(cur, c_rparen()) {
-            if! eq_i32(pnames_len(names), 0(I32)) {
-              widen_sum!(
-              , import_diag(cur, "expected at least one imported identifier"(String))
-              , (Toks & Pnames) | Names_scan | Diag
+            match! un_imports(names) {
+              (
+              , .(_entry: Import, _tail: Imports) {
+                  widen_sum!(
+                  , {names_scan = (names, rest(cur))}
+                  , (Toks & Imports) | Names_scan | Diag
+                  )
+                }
+              , .(_empty: .) {
+                  widen_sum!(
+                  , import_diag(cur, "expected at least one imported identifier"(String))
+                  , (Toks & Imports) | Names_scan | Diag
+                  )
+                }
               )
-            } else {
-              widen_sum!({names_scan = (names, rest(cur))}, (Toks & Pnames) | Names_scan | Diag)
             }
           } else if! head_is(cur, c_lbrace()) {
             widen_sum!(
             , import_diag(cur, "braced label imports are not in Kio'"(String))
-            , (Toks & Pnames) | Names_scan | Diag
+            , (Toks & Imports) | Names_scan | Diag
             )
-          } else match! head_word(cur) {
+          } else match! scan_import_item(cur, provider) {
             (
-            , .(name: String) {
-                let after = rest(cur);
-                if! import_item_name(name) {
-                  if! head_is(after, c_rparen()) {
-                    widen_sum!(
-                    , {names_scan = (pnames_cons(name, names), rest(after))}
-                    , (Toks & Pnames) | Names_scan | Diag
-                    )
-                  } else if! head_is(after, c_comma()) {
-                    widen_sum!(
-                    , (after, pnames_cons(name, names))
-                    , (Toks & Pnames) | Names_scan | Diag
-                    )
-                  } else if! string_eq(name, "op"(String)) {
-                    widen_sum!(
-                    , import_diag(cur, "operator imports are not in Kio'"(String))
-                    , (Toks & Pnames) | Names_scan | Diag
-                    )
+            , .(entry: Import, after: Toks) {
+                let operator_item =
+                  if! head_word_is(rest(cur), "as"(String)) {
+                    .f(Bool)
                   } else {
-                    widen_sum!(
-                    , import_diag(
-                      , after
-                      , "expected comma or closing parenthesis in import list"(String)
-                      )
-                    , (Toks & Pnames) | Names_scan | Diag
-                    )
-                  }
+                    head_word_is(cur, "op"(String))
+                  };
+                if! head_is(after, c_rparen()) {
+                  widen_sum!(
+                  , {names_scan = (imports_cons(entry, names), rest(after))}
+                  , (Toks & Imports) | Names_scan | Diag
+                  )
+                } else if! head_is(after, c_comma()) {
+                  widen_sum!(
+                  , (after, imports_cons(entry, names))
+                  , (Toks & Imports) | Names_scan | Diag
+                  )
+                } else if! operator_item {
+                  widen_sum!(
+                  , import_diag(cur, "operator imports are not in Kio'"(String))
+                  , (Toks & Imports) | Names_scan | Diag
+                  )
                 } else {
                   widen_sum!(
-                  , import_diag(cur, "expected an ordinary imported identifier"(String))
-                  , (Toks & Pnames) | Names_scan | Diag
+                  , import_diag(
+                    , after
+                    , "expected comma or closing parenthesis in import list"(String)
+                    )
+                  , (Toks & Imports) | Names_scan | Diag
                   )
                 }
               }
-            , .(_not_word: .) {
-                widen_sum!(
-                , import_diag(cur, "expected an imported identifier or closing parenthesis"(String))
-                , (Toks & Pnames) | Names_scan | Diag
-                )
-              }
+            , .(diag: Diag) { widen_sum!(diag, (Toks & Imports) | Names_scan | Diag) }
             )
           }
         }
       }
     }
-  , (ts, pnames_nil())
+  , (ts, imports_nil())
   )
 }
 
-// Build import entries (name, module), retaining their introduction order.
-fn imports_from_names(names: Pnames, from_module: String, acc: Imports) -> Imports {
+// Restore the selections' introduction order before adding them to the module.
+fn prepend_imports(names: Imports, acc: Imports) -> Imports {
   loop(
-  , .(st: Pnames & Imports) {
+  , .(st: Imports & Imports) {
       match! st {
-        .(rem: Pnames, out: Imports) {
-          match! un_pnames(rem) {
+        .(rem: Imports, out: Imports) {
+          match! un_imports(rem) {
             (
-            , .(name: String, rest_n: Pnames) {
-                widen_sum!(
-                , (rest_n, imports_cons(mk_import(name, from_module), out))
-                , (Pnames & Imports) | Imports
-                )
+            , .(entry: Import, rest_n: Imports) {
+                widen_sum!((rest_n, imports_cons(entry, out)), (Imports & Imports) | Imports)
               }
-            , .(_e: .) { widen_sum!(out, (Pnames & Imports) | Imports) }
+            , .(_e: .) { widen_sum!(out, (Imports & Imports) | Imports) }
             )
           }
         }
@@ -1594,15 +1660,15 @@ fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
               if! head_word_is(after_path, "as"(String)) {
                 scan_import_alias(rest(after_path), provider, imports, aliases)
               } else if! head_is(after_path, c_lparen()) {
-                match! scan_import_names(rest(after_path)) {
+                match! scan_import_names(rest(after_path), provider) {
                   (
                   , .(selected: Names_scan) {
                       match! Names_scan.get(selected) {
-                        .(names: Pnames, after: Toks) {
+                        .(names: Imports, after: Toks) {
                           if! head_is(after, c_semi()) {
                             widen_sum!(
                             , {import_scan = (
-                              , imports_from_names(names, provider, imports)
+                              , prepend_imports(names, imports)
                               , (aliases, rest(after))
                               )}
                             , Import_scan | Import_err

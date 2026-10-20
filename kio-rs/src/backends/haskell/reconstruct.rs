@@ -233,7 +233,10 @@ impl<'a> TypeRecon<'a> {
         let current = self.package.module(self.module)?;
         for import_decl in &current.module.imports {
             if let ImportKind::Selective { items, from } = &import_decl.kind
-                && items.iter().any(|item| item.as_name() == Some(name))
+                && let Some(source) = items
+                    .iter()
+                    .find(|item| item.as_local_name() == Some(name))
+                    .and_then(crate::ast::ImportItem::as_name)
             {
                 let module = from
                     .segments
@@ -241,7 +244,7 @@ impl<'a> TypeRecon<'a> {
                     .map(|segment| segment.as_str())
                     .collect::<Vec<_>>()
                     .join("/");
-                if let Some(ret) = self.fn_return_type_in(&module, name) {
+                if let Some(ret) = self.fn_return_type_in(&module, source) {
                     return Some(ret);
                 }
             }

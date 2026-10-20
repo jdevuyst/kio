@@ -19,7 +19,7 @@
 
 use super::{ContractSide, QualifiedName};
 use crate::ast::{
-    Import, ImportItem, ImportKind, Phase, Purity, SigItem, SigItemRef, SigModuleSection, Surface,
+    Import, ImportKind, Phase, Purity, SigItem, SigItemRef, SigModuleSection, Surface,
     TypeRecMember,
 };
 use crate::pass::resolve::{ExportContractPhase, Package};
@@ -242,12 +242,14 @@ pub(super) fn imports_needed_by(items: &[SigItem<Surface>], imports: Vec<Import>
     for item in items {
         collect_sig_item_type_refs(item, &mut referenced);
     }
-    imports.into_iter()
+    imports
+        .into_iter()
         .filter_map(|mut usage| match &mut usage.kind {
             ImportKind::Selective { items, .. } => {
-                items.retain(
-                    |item| matches!(item, ImportItem::Name { name, .. } if referenced.bare.contains(name)),
-                );
+                items.retain(|item| {
+                    item.as_local_name()
+                        .is_some_and(|name| referenced.bare.contains(name))
+                });
                 (!items.is_empty()).then_some(usage)
             }
             ImportKind::Qualified { alias, .. } => {

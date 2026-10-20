@@ -517,6 +517,14 @@ see ../language.md § Module system.)
 
 Order-sensitive visibility falls out of the `Γᵢ₋₁` premise: each declaration is checked under a context that contains *only* prior declarations.
 
+A named import `import P(s as d)` contributes the binding under local name `d`
+while selecting declaration `s` in explicit provider `P`. Omitting `as d` uses
+`s` as the local name. The binding retains the selected declaration's nominal
+identity, kind, public type, declaration class, and direct host-role status;
+renaming is not a transparent type alias or a function wrapper. `Introductions`
+counts the local name, so distinct destinations for one source are admitted
+and repeated destinations are rejected.
+
 For a function declaration, `declaration-class` records `pure-fn` exactly when the declaration carries `pure`, and `ordinary-fn` otherwise. It records the corresponding fixed classes for host functions, intrinsics, and newtype members. Type declarations extend `Γ` but not `Π`; types have no purity class.
 
 `Introductions` counts written occurrences, not distinct terminal identities. Repeated selective imports within or across clauses, repeated qualified aliases, and an import sharing a name with a local alias violate the premise even when they resolve to the same declaration. An ordinary alias's nominal identity and member namespace do not exempt its introduction. The fixed `__intrinsics__` block set is idempotent. Surface-only declaration registries and `__comptime__` imports have already been consumed at this Kio' boundary and are not members of `Introductions`. The premise consumes imports whose validity and cycles have been checked; this dependency does not establish diagnostic precedence when independent errors coexist.

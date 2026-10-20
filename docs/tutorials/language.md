@@ -158,6 +158,13 @@ The `module hello/main;` line says "this file is the module at path `hello/main`
 
 When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and newtype members: `m.Shape` names a type, `m.Stack(Item)` applies a type constructor, and `m.Stack.unpack` reaches a public newtype member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, labels, and imported library elaborators such as `match!` and the structural palette for normal product and sum code.
 
+To choose a local spelling, use a selective alias:
+`import hello(String as Text, print as write);`. The destination keeps the
+source's type-shaped or value-shaped identifier class. This selects the same
+declaration, with the same type and visibility; it does not create a wrapper or
+re-export it. Multiple distinct local aliases are allowed. Braced label
+selections do not take aliases.
+
 An operator is selected by its complete tagged grammar, for example
 `import arithmetic(op _ + __);` or `import list(varop [* *]);`.
 The import supplies the syntax needed to parse this module; semantic checking
@@ -168,7 +175,7 @@ underlying function alone does not import its operator. See the
 
 Selective imports have a nonempty parenthesized list even for one name. For a
 long list, keep `(` on the module-path line and put each selected item on its
-own line with a leading comma. Each ordinary name or module alias is introduced
+own line with a leading comma. Each local ordinary name or module alias is introduced
 once: repeating the same import is an error, even from the same provider. The
 two fixed builtin block imports are idempotent.
 

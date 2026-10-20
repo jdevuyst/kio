@@ -60,7 +60,11 @@ pub enum CandidateOrigin {
     /// The written declaration head or owning declaration range.
     Declaration(Span),
     /// An explicit selection from this exact provider.
-    Import { provider: String, span: Span },
+    Import {
+        provider: String,
+        source: String,
+        span: Span,
+    },
     /// A qualified module import, not an ordinary selected declaration.
     QualifiedImport(Span),
     /// A name admitted by a written builtin-module import.
@@ -257,7 +261,7 @@ fn imports_scope(
         match &import.kind {
             ImportKind::Selective { items, from } => {
                 for item in items {
-                    let Some((name, span)) = item.as_name_with_span() else {
+                    let Some((name, span)) = item.as_local_name_with_span() else {
                         continue;
                     };
                     if crate::naming::is_type_name(name) == (ns == Namespace::Type) {
@@ -270,6 +274,10 @@ fn imports_scope(
                                 CandidateKind::Function
                             },
                             CandidateOrigin::Import {
+                                source: item
+                                    .as_name()
+                                    .expect("named import has a source name")
+                                    .to_owned(),
                                 provider: from
                                     .segments
                                     .iter()

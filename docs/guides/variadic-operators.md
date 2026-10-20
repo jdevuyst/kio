@@ -155,6 +155,13 @@ implicit and do not appear in the pair. Importing a helper alone does not
 import the syntax. Write each import once; two variadic operators in the same
 scope cannot share an opener.
 
+Use `import list(varop [* *] as [% %]);` to choose a different delimiter pair.
+Both complete pairs are written, and the destination follows the same mirrored
+delimiter rules as a declaration. Only that local pair is installed; the fold,
+step, initializer, and finalizer still come from the selected source operator.
+Distinct local pairs for the same source operator are allowed, with the usual
+opener conflicts checked in the consumer.
+
 For a practical example, the [dictionary library](using-libraries.md#collection-and-value-libraries)
 exports both a pair-building `=>` and a `[% %]` variadic operator:
 

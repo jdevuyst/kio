@@ -1017,7 +1017,7 @@ fn module_binding_names(module: &Module<Desugared>) -> BTreeSet<String> {
                 names.extend(
                     items
                         .iter()
-                        .filter_map(ImportItem::as_name)
+                        .filter_map(ImportItem::as_local_name)
                         .map(str::to_owned),
                 );
             }

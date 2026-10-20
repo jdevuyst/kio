@@ -1666,7 +1666,7 @@ fn value_group_arities(sig: &crate::ast::Signature<Routed>) -> Vec<usize> {
     if arities.is_empty() { vec![0] } else { arities }
 }
 
-type SelectiveImports = BTreeMap<String, String>;
+type SelectiveImports = BTreeMap<String, (String, String)>;
 type QualifiedImports = BTreeMap<String, String>;
 
 fn build_qualified_imports(imports: &[crate::ast::Import]) -> QualifiedImports {
@@ -2037,12 +2037,12 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
                 meta,
                 ..
             } => {
-                let module = self
+                let (module, source) = self
                     .selective_imports
                     .get(mangled)
-                    .map(String::as_str)
-                    .unwrap_or(self.module_key);
-                self.emit_module_call(module, mangled, type_args, args, sig, meta.span)
+                    .map(|(module, source)| (module.as_str(), source.as_str()))
+                    .unwrap_or((self.module_key, mangled));
+                self.emit_module_call(module, source, type_args, args, sig, meta.span)
             }
             Expr::LowQualifiedModuleCall {
                 mangled,
@@ -2475,12 +2475,12 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         mangled: &str,
         _sig: &crate::ast::Signature<Routed>,
     ) -> Result<String, EmitError> {
-        let module = self
+        let (module, source) = self
             .selective_imports
             .get(mangled)
-            .map(String::as_str)
-            .unwrap_or(self.module_key);
-        let method = module_fn_method_name(module, mangled);
+            .map(|(module, source)| (module.as_str(), source.as_str()))
+            .unwrap_or((self.module_key, mangled));
+        let method = module_fn_method_name(module, source);
         Ok(format!("self.{method}()"))
     }
 

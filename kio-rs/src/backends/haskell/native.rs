@@ -5876,8 +5876,8 @@ impl EffectFacts<'_, '_> {
 fn resolve_called_fn(mangled: &str, module_key: &str, package: &Package<Routed>) -> String {
     if let Some(entry) = package.module(module_key) {
         let owners = crate::backends::selective_module_fn_import_owners(&entry.module, package);
-        if let Some(owner) = owners.get(mangled) {
-            return module_fn_mangled(owner, mangled);
+        if let Some((owner, source)) = owners.get(mangled) {
+            return module_fn_mangled(owner, source);
         }
     }
     module_fn_mangled(module_key, mangled)

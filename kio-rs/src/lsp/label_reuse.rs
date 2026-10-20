@@ -307,6 +307,7 @@ mod tests {
             position_index: crate::pass::typecheck_full::PositionIndex::new(),
             file_to_module: BTreeMap::new(),
             label_reuse_indexes: indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(BTreeMap::new(), None),

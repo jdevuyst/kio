@@ -1,0 +1,24 @@
+module testapi/main;
+
+import syntax(
+, identity as keep
+, identity as retain
+, op + _ as ++ _
+, op + _ as -- _
+, varop [* *] as [% %]
+, word as message
+, word as other
+);
+import testapi as host;
+import testapi(String as A);
+import testapi/io(print);
+
+fn shadow[A](_value: A) -> host.String { keep!("surface\n") }
+
+pub fn main() {
+  print(keep!(++ message));
+  print(retain!(-- other));
+  print([% message %]);
+  print(keep!(other));
+  print(shadow(., ()))
+}

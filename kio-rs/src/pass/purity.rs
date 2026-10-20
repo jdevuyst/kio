@@ -44,7 +44,10 @@ impl PureFunctions {
                     let Some(provider) = package.module(&from.segments.join("/")) else {
                         continue;
                     };
-                    for name in items.iter().filter_map(crate::ast::ImportItem::as_name) {
+                    for item in items {
+                        let Some(name) = item.as_name() else {
+                            continue;
+                        };
                         if provider
                             .scope
                             .lookup(name)
@@ -56,7 +59,11 @@ impl PureFunctions {
                         {
                             result
                                 .0
-                                .entry(name.to_owned())
+                                .entry(
+                                    item.as_local_name()
+                                        .expect("named import has a local name")
+                                        .to_owned(),
+                                )
                                 .or_default()
                                 .insert(String::new());
                         }

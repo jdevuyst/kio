@@ -254,6 +254,7 @@ pub(super) fn finish_expansion(
     let computation = super::rec_quote_source::compose(source, &runtime, &ambient, replay)?;
     let continuation = crate::pass::substitute::substitute_expr_for_replayed_elaboration(
         &continuation,
+        &ambient,
         replay.elaborations,
         replay.module_path,
         replay.package,
@@ -264,6 +265,7 @@ pub(super) fn finish_expansion(
         None => {
             let value = crate::pass::substitute::substitute_expr_for_replayed_elaboration(
                 source,
+                &ambient,
                 replay.elaborations,
                 replay.module_path,
                 replay.package,

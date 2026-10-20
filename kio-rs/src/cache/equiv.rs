@@ -621,20 +621,14 @@ fn resolve_fn_identity(
                 let ImportKind::Selective { items, from } = &u.kind else {
                     return None;
                 };
-                items
+                let source = items
                     .iter()
-                    .filter_map(crate::ast::ImportItem::as_name)
-                    .any(|imported| imported == name.name)
-                    .then(|| module_import_path(from))
-                    .and_then(|target_path| {
-                        package
-                            .module(&target_path)
-                            .map(|entry| (target_path, entry))
-                    })
-                    .and_then(|(target_path, entry)| {
-                        find_module_fn(&entry.module, &name.name)
-                            .map(|_| canonical_fn_identity(&target_path, &name.name))
-                    })
+                    .find(|item| item.as_local_name() == Some(name.name.as_str()))?
+                    .as_name()?;
+                let target_path = module_import_path(from);
+                let entry = package.module(&target_path)?;
+                find_module_fn(&entry.module, source)
+                    .map(|_| canonical_fn_identity(&target_path, source))
             })
         }
         [alias, name] => module.imports.iter().find_map(|u| {

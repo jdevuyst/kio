@@ -1102,21 +1102,40 @@ fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) 
             // references in expressions.
             for item in items {
                 match item {
-                    ast::ImportItem::Name { span, .. } => {
+                    ast::ImportItem::Name { span, alias, .. } => {
                         overrides.insert(span.start, TokenKind::Identifier);
+                        if let Some(alias) = alias {
+                            overrides.insert(alias.span.start, TokenKind::Identifier);
+                            if let Some(keyword) =
+                                find_ident_in_span(raw, Span::new(span.end, alias.span.start), "as")
+                            {
+                                overrides.insert(keyword.start, TokenKind::KeywordDeclaration);
+                            }
+                        }
                     }
                     ast::ImportItem::Label { name, span, .. } => {
                         if let Some(name_span) = find_ident_in_span(raw, *span, name) {
                             overrides.insert(name_span.start, TokenKind::EntityNameLabelReference);
                         }
                     }
-                    ast::ImportItem::OperatorPattern { grammar, span, .. } => {
+                    ast::ImportItem::OperatorPattern {
+                        grammar,
+                        span,
+                        alias,
+                        ..
+                    } => {
                         mark_operator_head(
                             raw,
                             *span,
                             matches!(grammar, ast::OperatorGrammar::Variadic { .. }),
                             overrides,
                         );
+                        if let Some(alias) = alias
+                            && let Some(keyword) =
+                                find_ident_in_span(raw, Span::new(span.end, alias.span.start), "as")
+                        {
+                            overrides.insert(keyword.start, TokenKind::KeywordDeclaration);
+                        }
                     }
                 }
             }

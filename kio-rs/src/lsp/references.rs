@@ -72,6 +72,29 @@ pub fn handle_references(
     };
     let byte_offset = line_index.position_to_offset(lsp_pos);
 
+    if let Some((alias, _)) = analysis.import_aliases.at(module_path, byte_offset) {
+        if analysis.sources.get(&canonical).map(String::as_str) != Some(source) {
+            return None;
+        }
+        return Some(
+            alias
+                .occurrences
+                .iter()
+                .filter(|span| include_declaration || **span != alias.declaration)
+                .map(|span| {
+                    let range = line_index.to_range(*span);
+                    Location::new(
+                        uri.clone(),
+                        Range {
+                            start: Position::new(range.start.line, range.start.character),
+                            end: Position::new(range.end.line, range.end.character),
+                        },
+                    )
+                })
+                .collect(),
+        );
+    }
+
     let label_binding = syntax.index.and_then(|index| index.binding_at(byte_offset));
     let typed_label_positions_are_current =
         typed_label_positions_are_current(canonical.as_path(), byte_offset, analysis, syntax);
@@ -153,6 +176,12 @@ pub fn handle_references(
     let mut locations: Vec<(PathBuf, Span)> = Vec::new();
 
     for ((entry_module_path, entry_span), entry_binder) in analysis.position_index.binders_iter() {
+        if analysis
+            .import_aliases
+            .contains(entry_module_path, *entry_span)
+        {
+            continue;
+        }
         if !binder_matches_key(entry_binder, entry_module_path, &key) {
             continue;
         }
@@ -524,6 +553,7 @@ mod tests {
             position_index: index,
             file_to_module,
             label_reuse_indexes: crate::lsp::label_reuse::indexes_from_sources(&sources),
+            import_aliases: Default::default(),
             sources,
             generated_label_nominals: Default::default(),
             root_package_lowered: crate::pass::resolve::Package::from_parts(

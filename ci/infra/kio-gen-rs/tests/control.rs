@@ -500,6 +500,34 @@ fn existential_oracle_preserves_the_selected_sequence_value() {
 }
 
 #[test]
+fn generated_control_calls_exercise_selective_and_qualified_imports() {
+    let mut selective = false;
+    let mut qualified = false;
+    for index in 0..256 {
+        let program = generate::program_from_seed(program_seed(0xA11A5, index));
+        let Some(ControlProbe::Surface { types, .. }) = &program.control_probe else {
+            continue;
+        };
+        let files = emit::render_package_files(&program);
+        let source = &files
+            .iter()
+            .find(|(path, _)| path == "workdir/kio_gen_control.kio")
+            .unwrap()
+            .1;
+        if matches!(types, TypeProbe::HigherRank { .. }) {
+            selective = true;
+            assert!(source.contains("import kio_gen_types(transform as selected_transform);"));
+            assert!(source.contains("selected_transform(value)"));
+        } else {
+            qualified = true;
+            assert!(source.contains("import kio_gen_types as type_probe;"));
+            assert!(source.contains("type_probe.transform(value)"));
+        }
+    }
+    assert!(selective && qualified);
+}
+
+#[test]
 fn invoked_row_probes_cover_updates_bindings_and_preserved_fields() {
     let mut seen = HashMap::<String, u64>::new();
     let mut payloads = std::collections::HashSet::new();

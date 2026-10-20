@@ -57,8 +57,8 @@ pub(crate) fn expression_operators(
         }
         if let ImportKind::Selective { items, .. } = &import.kind {
             grammars.extend(items.iter().filter_map(|item| {
-                if let crate::ast::ImportItem::OperatorPattern { grammar, .. } = item {
-                    Some(grammar.clone())
+                if let crate::ast::ImportItem::OperatorPattern { grammar, alias, .. } = item {
+                    Some(alias.as_ref().map_or(grammar, |alias| &alias.local).clone())
                 } else {
                     None
                 }

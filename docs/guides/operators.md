@@ -148,6 +148,16 @@ scope are rejected; in particular, slot changes do not let two operators
 reuse the same opening pattern. Prefix and non-prefix operators can share
 symbols, as with unary and binary `-`.
 
+An import can change only the operator's spelling:
+`import math(op _ + __ as _ ++ __);`. Write both complete grammars, with the
+namespace tag only before the source. Every slot, recursive-slot leniency,
+token-run boundary, and grouping stays the same. Token replacement must be
+consistent and injective: repeated source tokens have one destination spelling,
+and distinct source tokens remain distinct. The alias retains the provider's
+implementation and installs only the destination syntax. Distinct aliases of
+one source operator are allowed, subject to the ordinary scope conflicts; they
+remain distinct operator identities for chaining.
+
 The [variadic-operator guide](variadic-operators.md) covers collection literals.
 The [optics case study](../poc/optics.md) shows a larger operator vocabulary.
 See the [operator specification](../../specs/language.md#operators) for the

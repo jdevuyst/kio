@@ -4501,13 +4501,8 @@
                   "name": "import_label_item"
                 },
                 {
-                  "type": "ALIAS",
-                  "content": {
-                    "type": "SYMBOL",
-                    "name": "_identifier_like"
-                  },
-                  "named": true,
-                  "value": "identifier"
+                  "type": "SYMBOL",
+                  "name": "_import_named_item"
                 },
                 {
                   "type": "SYMBOL",
@@ -4523,56 +4518,164 @@
         ]
       }
     },
-    "import_operator_item": {
-      "type": "PREC_DYNAMIC",
-      "value": 20,
+    "_import_named_item": {
+      "type": "PREC_RIGHT",
+      "value": 1,
       "content": {
-        "type": "CHOICE",
+        "type": "SEQ",
         "members": [
           {
-            "type": "SEQ",
-            "members": [
-              {
-                "type": "SYMBOL",
-                "name": "keyword_op"
-              },
-              {
-                "type": "REPEAT1",
-                "content": {
-                  "type": "SYMBOL",
-                  "name": "_import_pattern_token"
-                }
-              }
-            ]
+            "type": "ALIAS",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_identifier_like"
+            },
+            "named": true,
+            "value": "identifier"
           },
           {
-            "type": "SEQ",
+            "type": "CHOICE",
             "members": [
               {
-                "type": "SYMBOL",
-                "name": "keyword_varop"
-              },
-              {
-                "type": "CHOICE",
+                "type": "SEQ",
                 "members": [
                   {
-                    "type": "SYMBOL",
-                    "name": "variadic_head"
+                    "type": "ALIAS",
+                    "content": {
+                      "type": "SYMBOL",
+                      "name": "keyword_as"
+                    },
+                    "named": true,
+                    "value": "keyword_declaration"
                   },
                   {
                     "type": "ALIAS",
                     "content": {
                       "type": "SYMBOL",
-                      "name": "_malformed_varop_head_open"
+                      "name": "_identifier_like"
                     },
                     "named": true,
-                    "value": "variadic_open"
+                    "value": "identifier"
                   }
                 ]
+              },
+              {
+                "type": "BLANK"
               }
             ]
           }
         ]
+      }
+    },
+    "import_operator_item": {
+      "type": "PREC_DYNAMIC",
+      "value": 20,
+      "content": {
+        "type": "PREC_RIGHT",
+        "value": 0,
+        "content": {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "keyword_op"
+                },
+                {
+                  "type": "REPEAT1",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "_import_pattern_token"
+                  }
+                },
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "SEQ",
+                      "members": [
+                        {
+                          "type": "ALIAS",
+                          "content": {
+                            "type": "SYMBOL",
+                            "name": "keyword_as"
+                          },
+                          "named": true,
+                          "value": "keyword_declaration"
+                        },
+                        {
+                          "type": "REPEAT1",
+                          "content": {
+                            "type": "SYMBOL",
+                            "name": "_import_pattern_token"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "SEQ",
+              "members": [
+                {
+                  "type": "SYMBOL",
+                  "name": "keyword_varop"
+                },
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "SYMBOL",
+                      "name": "variadic_head"
+                    },
+                    {
+                      "type": "ALIAS",
+                      "content": {
+                        "type": "SYMBOL",
+                        "name": "_malformed_varop_head_open"
+                      },
+                      "named": true,
+                      "value": "variadic_open"
+                    }
+                  ]
+                },
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "SEQ",
+                      "members": [
+                        {
+                          "type": "ALIAS",
+                          "content": {
+                            "type": "SYMBOL",
+                            "name": "keyword_as"
+                          },
+                          "named": true,
+                          "value": "keyword_declaration"
+                        },
+                        {
+                          "type": "SYMBOL",
+                          "name": "variadic_head"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
       }
     },
     "_import_pattern_token": {

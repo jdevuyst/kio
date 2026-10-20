@@ -6,8 +6,8 @@ use std::rc::Rc;
 use serde::Serialize;
 
 use crate::ast::{
-    Expr, ImportItem, ImportKind, Item, Kind, Module, Newtype, Routed, Signature,
-    SignatureGroupKind, SignatureParam, Type, TypeParam, Visibility,
+    Expr, ImportKind, Item, Kind, Module, Newtype, Routed, Signature, SignatureGroupKind,
+    SignatureParam, Type, TypeParam, Visibility,
 };
 use crate::pass::resolve::{Package, follow_type_reexport, qualify_routed_contract_type_in_module};
 
@@ -1826,15 +1826,15 @@ fn runtime_expr_expected(
             sig,
             ..
         } => {
-            let target_key =
-                selective_target(module, mangled).unwrap_or_else(|| module_key.to_owned());
+            let (target_key, source) = selective_target(module, mangled)
+                .unwrap_or_else(|| (module_key.to_owned(), mangled.clone()));
             let target_module = module_for_key(package, &target_key, module);
             let mut target_scope =
-                RuntimeTypeScope::sharing_plans(format!("fn:{target_key}:{mangled}"), &scope.plans);
+                RuntimeTypeScope::sharing_plans(format!("fn:{target_key}:{source}"), &scope.plans);
             let scheme = super::reconstruct::module_function_scheme(
                 package,
                 &target_key,
-                mangled,
+                &source,
                 expr.span(),
             )
             .expect("a routed module call retains its resolved declaration scheme");
@@ -1842,7 +1842,7 @@ fn runtime_expr_expected(
                 .then(|| target_scope.value_plan(package, target_module, &scheme))
                 .flatten();
             RuntimeExpr::LowModuleCall {
-                mangled: mangled.clone(),
+                mangled: source,
                 module_path: target_key,
                 type_args: type_args
                     .iter()
@@ -2068,10 +2068,14 @@ fn runtime_expr_expected(
                 value_plan,
             }
         }
-        Expr::LowModuleFnValueRef { mangled, .. } => RuntimeExpr::LowModuleFnValueRef {
-            mangled: mangled.clone(),
-            module_path: selective_target(module, mangled).unwrap_or_else(|| module_key.to_owned()),
-        },
+        Expr::LowModuleFnValueRef { mangled, .. } => {
+            let (module_path, source) = selective_target(module, mangled)
+                .unwrap_or_else(|| (module_key.to_owned(), mangled.clone()));
+            RuntimeExpr::LowModuleFnValueRef {
+                mangled: source,
+                module_path,
+            }
+        }
         Expr::Path { ext, .. } | Expr::Call { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
         Expr::RowLet { ext, .. } => match *ext {},
@@ -2109,14 +2113,14 @@ fn cps_continuation_runtime_shape(continuation_ty: &Type<Routed>) -> (usize, usi
     (type_stages, *abi_arity)
 }
 
-fn selective_target(module: &Module<Routed>, name: &str) -> Option<String> {
+fn selective_target(module: &Module<Routed>, name: &str) -> Option<(String, String)> {
     module.imports.iter().find_map(|use_| match &use_.kind {
-        ImportKind::Selective { items, from }
-            if items.iter().any(
-                |item| matches!(item, ImportItem::Name { name: imported, .. } if imported == name),
-            ) =>
-        {
-            Some(module_path_string(from))
+        ImportKind::Selective { items, from } => {
+            let source = items
+                .iter()
+                .find(|item| item.as_local_name() == Some(name))?
+                .as_name()?;
+            Some((module_path_string(from), source.to_owned()))
         }
         _ => None,
     })

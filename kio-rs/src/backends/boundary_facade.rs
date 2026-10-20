@@ -63,8 +63,8 @@ use std::fmt::{self, Write as _};
 use std::ops::Range;
 
 use crate::ast::{
-    FnTypeCapabilities, Import, ImportItem, ImportKind, Item, Kind, NewtypeHostSurface, Role,
-    Routed, SigItem, Signature, SignatureGroupRef, Surface, Type,
+    FnTypeCapabilities, Import, ImportKind, Item, Kind, NewtypeHostSurface, Role, Routed, SigItem,
+    Signature, SignatureGroupRef, Surface, Type,
 };
 use crate::pass::resolve::Package;
 use crate::sig::{
@@ -5998,18 +5998,17 @@ fn substitute_retained_type(
 
 fn retained_selective_import(imports: &[Import], name: &str) -> Option<Vec<String>> {
     imports.iter().find_map(|usage| match &usage.kind {
-        ImportKind::Selective { items, from }
-            if items
+        ImportKind::Selective { items, from } => {
+            let source = items
                 .iter()
-                .filter_map(ImportItem::as_name)
-                .any(|item| item == name) =>
-        {
+                .find(|item| item.as_local_name() == Some(name))?
+                .as_name()?;
             let mut out: Vec<String> = from
                 .segments
                 .iter()
                 .map(|segment| segment.name.clone())
                 .collect();
-            out.push(name.to_owned());
+            out.push(source.to_owned());
             Some(out)
         }
         _ => None,

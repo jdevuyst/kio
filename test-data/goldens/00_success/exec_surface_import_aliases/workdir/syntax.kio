@@ -1,0 +1,23 @@
+module syntax;
+
+import __comptime__;
+import helpers(pass as carry);
+import testapi(String);
+
+pub literal word = "surface\n";
+
+pure fn identity_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  carry(ct, value)
+}
+
+pub elab identity : [Source] Source -> Source { impl identity_impl }
+
+pub fn id(value: String) -> String { value }
+
+pub op + _ { impl id }
+
+pub fn empty() -> String { "" }
+
+pub fn take(value: String, _rest: String) -> String { value }
+
+pub varop [* *] { foldr take empty }

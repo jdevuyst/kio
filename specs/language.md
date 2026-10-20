@@ -1068,7 +1068,7 @@ Neither form carries a modifier. The selective list is always parenthesized
 and nonempty, including for one item. In canonical formatting, its opener
 immediately follows the module path on the introducing line; multiline lists
 follow the ordinary leading-comma
-layout. `as` is contextual in the qualified form. Within a selection, standalone
+layout. `as` is contextual in qualified imports and selective aliases. Within a selection, standalone
 `op` and `varop` are ordinary names. An `op` tag followed by a complete fixed
 pattern or a `varop` tag followed by its delimiter pair selects operator syntax. Builtin block imports use their
 separate fixed forms below.
@@ -1081,11 +1081,30 @@ import logger as lg;
 import utils/list_ops(fold);
 ```
 
-Deliberately absent: wildcard imports, hiding forms, exports, and per-name renaming on selective forms. Each ordinary post-lowering value, type, or module-alias name may be introduced once. Repeating a selective name within one clause or across clauses is a name-resolution error, even when both occurrences select the same declaration. Repeating a qualified alias is likewise an error even when both imports name the same module. An import also conflicts with a local declaration of the same name. This rule applies uniformly to functions, host items, `type`, `newtype`, and the ordinary bindings produced when `labels` and imported operators are lowered. The fixed compiler-block imports `import __intrinsics__;` and `import __comptime__;` are idempotent sets; repeating a block adds no introduction. Surface-only declaration registries such as `literal` and `op` are consumed before this environment exists and retain the resolution rules in their own sections.
+An ordinary selection may give its local spelling with `as`, for example
+`import runtime(panic as fail, Handle as Resource);`. The destination preserves
+the source identifier class: value names remain value names and type names
+remain type names. This applies to ordinary functions, host functions, host
+types, transparent types, newtypes, elaborators, and literal aliases. The import
+retains the original declaration's identity, public type and kind, purity,
+visibility, and declaration role. In particular, a renamed host type remains
+a direct host-type candidate for literal roles; a renamed newtype retains
+partial type application. An import alias is not a wrapper, transparent type
+declaration, or re-export. Braced label selections have no alias form.
+
+Distinct local aliases of one declaration are allowed, as are distinct module
+aliases of one module. Each local spelling is nevertheless introduced once:
+`import m(f as first, f as second);` is valid, while
+`import m(f as first, f as first);` and `import m(f as first, g as first);`
+conflict. The same rule applies across clauses and against local declarations,
+regardless of whether the selected declarations ultimately share a nominal
+identity or implementation callable.
+
+Deliberately absent: wildcard imports, hiding forms, and exports. Each ordinary post-lowering value, type, or module-alias name may be introduced once. Repeating a selective local name within one clause or across clauses is a name-resolution error, even when both occurrences select the same declaration. Repeating a qualified alias is likewise an error even when both imports name the same module. An import also conflicts with a local declaration of the same name. This rule applies uniformly to functions, host items, `type`, `newtype`, and the ordinary bindings produced when `labels` and imported operators are lowered. The fixed compiler-block imports `import __intrinsics__;` and `import __comptime__;` are idempotent sets; repeating a block adds no introduction. Surface-only declaration registries such as `literal` and `op` are consumed before this environment exists and retain the resolution rules in their own sections.
 
 An identity-only transparent alias is still a local introduction. Thus `import origin(T); import origin as source; pub type T = source.T;` is an error: the selective import and alias both introduce `T`. Omitting the selective import gives a valid re-export through the qualified provider. Alias chains and positional generic forwarding preserve their existing type identity and constructor/projector rules, but do not merge written introductions. Binding checks consume a validated `import` environment; this prerequisite does not establish diagnostic precedence when independent import and binding errors coexist.
 
-The origin set is determined only by declarations and imports written in the consumer module (including bindings produced directly from that module's `labels` and operator imports). A selective import's identity is the triple `(source module, syntactically selected namespace, spelling)`: `item`, `Item`, and `{item}` never infer or widen one another. The compiler never scans an imported module for additional, unwritten candidates. Adding a declaration to a provider in another namespace therefore cannot introduce a new origin or change the meaning of an existing consumer import; only editing the consumer's own declaration or `import` list can do so.
+The origin set is determined only by declarations and imports written in the consumer module (including bindings produced directly from that module's `labels` and operator imports). A selective import selects the triple `(source module, syntactically selected namespace, source spelling)` and separately introduces its local destination: `item`, `Item`, and `{item}` never infer or widen one another. The compiler never scans an imported module for additional, unwritten candidates. Adding a declaration to a provider in another namespace therefore cannot introduce a new origin or change the meaning of an existing consumer import; only editing the consumer's own declaration or `import` list can do so.
 
 **Compile-time helper import.** A module may import the compiler-provided reflection/helper surface with a single block import:
 
@@ -2900,10 +2919,22 @@ callable field reaches another module only through an ordinary selective import
 or explicit module alias, never by a slash-qualified implementation field.
 Visibility is checked on every directly named callable as described above.
 
-**Conflict rule across import layers.** Each explicit operator import may be
-written once, even when repetitions name the same provider and declaration.
+**Import aliases.** `import arithmetic(op _ + __ as _ ++ __);` selects the
+complete source grammar and installs only the complete destination grammar.
+Every token/slot position, slot kind, effective leniency and token-run boundary
+is preserved. Literal tokens may change by a consistent injective substitution:
+each repeated token keeps one replacement and distinct tokens stay distinct.
+`import collections(varop [[ ]] as [* *]);` similarly changes only the admitted
+mirrored delimiter pair, preserving fold direction, initializer, step and
+finalizer. Reserved syntax and structural prefix checks apply to the local
+grammar. An alias never changes the callable's type or argument order.
+Distinct destination grammars may select one source declaration; they remain
+distinct operators for chaining, even when their callables coincide.
+
+**Conflict rule across import layers.** Each explicit local operator grammar
+may be introduced once, even when repetitions name the same provider and declaration.
 Imports also conflict with other imports or local fixed/variadic declarations
-that occupy the same dispatch key. These are Name errors. There is no
+that occupy the same local dispatch key. These are Name errors. There is no
 same-provider exception. Validation consumes the written import environment
 and module-cycle graph; this prerequisite does not establish diagnostic
 precedence when independent errors coexist. Distinct dispatch keys still obey

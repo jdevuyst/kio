@@ -1253,8 +1253,13 @@
       ]
     },
     "import-varop-tag": {
-      "match": "\\bvarop\\b(?=[ \\t]+(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?[ \\t\\r\\n])",
-      "name": "keyword.declaration.kio"
+      "begin": "\\bvarop\\b(?=[ \\t]+(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?[ \\t\\r\\n])",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": "(?=[,)])",
+      "patterns": [
+        { "include": "#import-selection-alias" },
+        { "include": "#import-selection-tokens" }
+      ]
     },
     "varop-delimiter": {
       "match": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?:(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?|(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]*\\])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*)?)(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.]|[\\[\\]])",
@@ -1799,12 +1804,47 @@
       ]
     },
     "import-identifier": {
-      "match": "\\b(?:(?:op|varop)(?=\\s*[,)])|(?!op\\b|varop\\b)[A-Za-z_][A-Za-z0-9_]*)\\b",
-      "name": "variable.other.kio"
+      "begin": "\\b(?:(?:op|varop)(?=(?:\\s|//[^\\r\\n]*(?:\\r?\\n|$))*(?:as\\b|[,)]))|(?!op\\b|varop\\b)[A-Za-z_][A-Za-z0-9_]*)\\b",
+      "beginCaptures": { "0": { "name": "variable.other.kio" } },
+      "end": "(?=[,)])",
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#import-selection-alias" }
+      ]
+    },
+    "import-selection-alias": {
+      "begin": "\\bas\\b",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": "(?=[,)])",
+      "patterns": [
+        { "include": "#import-selection-tokens" }
+      ]
+    },
+    "import-selection-tokens": {
+      "patterns": [
+        { "include": "#string" },
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "include": "#import-pattern-group" },
+        { "include": "#slot" },
+        { "include": "#operator-arrow" },
+        { "include": "#operator-row-suffix" },
+        { "include": "#varop-delimiter" },
+        { "include": "#operator-builtin" },
+        { "include": "#operator-user" },
+        { "include": "#punctuation-separator" },
+        { "include": "#identifier" }
+      ]
     },
     "import-ambiguous-tag-name": {
-      "match": "\\b(?:op|varop)\\b",
-      "name": "meta.ambiguous-import-tag.kio"
+      "begin": "\\b(?:op|varop)\\b",
+      "beginCaptures": { "0": { "name": "meta.ambiguous-import-tag.kio" } },
+      "end": "(?=[,)])",
+      "patterns": [
+        { "include": "#import-selection-alias" },
+        { "include": "#import-selection-tokens" }
+      ]
     },
     "label-forward-decl": {
       "comment": "Refine a complete same-line braced type-forward declaration. Interstitial comments or incomplete and multiline heads retain ordinary neutral token coverage.",
@@ -1878,8 +1918,13 @@
       ]
     },
     "import-fixed-tag": {
-      "match": "\\bop\\b(?=\\s*(?!//)[_+\\-*/%^~?@#$\\\\'`<>=!&|:.(\"])",
-      "name": "keyword.declaration.kio"
+      "begin": "\\bop\\b(?=\\s*(?!//)[_+\\-*/%^~?@#$\\\\'`<>=!&|:.(\"])",
+      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "end": "(?=[,)])",
+      "patterns": [
+        { "include": "#import-selection-alias" },
+        { "include": "#import-selection-tokens" }
+      ]
     },
     "row-let": {
       "comment": "Keep contextual `as` recognition across multiline row-let entries; the entry state consumes the label before the alias state can classify the separator, including duplicate spellings and intervening comments.",
