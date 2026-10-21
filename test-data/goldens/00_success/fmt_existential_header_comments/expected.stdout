@@ -1,0 +1,30 @@
+module main;
+
+fn opened() {
+  // opening binder
+
+  // hidden name
+
+  // closing binder
+
+  // value binder
+  let .(<Hidden> payload) = rhs;
+  payload
+}
+
+fn blocked() {
+  scope! {
+    // first binder
+
+    // second binder
+
+    // tuple binder
+    let .(<Left> <Right> (
+    , left: Left
+    // tuple field
+    , right: Right
+    )) = // closing pattern
+    rhs;
+    left
+  }
+}

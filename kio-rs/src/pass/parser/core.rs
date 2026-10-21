@@ -12745,7 +12745,8 @@ impl<'a> Parser<'a> {
             && matches!(self.peek_at(1), Some(TokenKind::SymbolRun(run)) if run == "<")
         {
             self.advance();
-            let (types, name, span, pattern) = self.let_unpack_pattern(&mut value_leading)?;
+            let (types, name, span, pattern) =
+                self.let_unpack_pattern(&mut pending, &mut value_leading)?;
             Binder::Existential(types, name, span, pattern)
         } else {
             let (name, span, ty, pattern) = self.let_value_binder(&mut pending)?;
@@ -14097,12 +14098,16 @@ impl<'a> Parser<'a> {
     /// returns exactly this shape under the curried CPS scheme.
     fn let_unpack_pattern(
         &mut self,
+        leading_trivia: &mut Vec<Trivia>,
         closing_trivia: &mut Vec<Trivia>,
     ) -> Result<(Vec<TypeParam>, String, Span, Option<ParamPattern>), Error> {
+        let mut binder_cursor = self.cursor.clone();
         let mut binders: Vec<TypeParam> = Vec::new();
         while self.at_sym("<") {
             binders.push(self.angle_binder()?);
         }
+        Self::collect_line_comments(&mut binder_cursor, self.peek_span().start, leading_trivia);
+        Self::collect_comments_into(self.peek_leading_trivia(), leading_trivia);
         // Binder position admits the destructuring-pattern form
         // `let .(<U> (a: A, b: B)) = E;` — the continuation's value
         // parameter is just a pattern-bearing slot, which the
@@ -14140,11 +14145,11 @@ impl<'a> Parser<'a> {
         &mut self,
         block_start: u32,
         start: u32,
-        leading_trivia: Vec<Trivia>,
+        mut leading_trivia: Vec<Trivia>,
     ) -> Result<Expr, Error> {
         let mut value_leading_trivia = Vec::new();
         let (binders, binder_name, binder_span, binder_pattern) =
-            self.let_unpack_pattern(&mut value_leading_trivia)?;
+            self.let_unpack_pattern(&mut leading_trivia, &mut value_leading_trivia)?;
         append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());
         self.expect_sym("=", "`=`")?;
         append_relocated_trivia(&mut value_leading_trivia, self.peek_leading_trivia());

@@ -197,6 +197,39 @@ fn raw_generated_sources_conserve_sparse_seeded_comments() {
 }
 
 #[test]
+fn existential_let_headers_conserve_comments() {
+    for pattern in [
+        "<Hidden> packet",
+        "< Hidden > packet",
+        "<Left> <Right> (left: Left, right: Right)",
+        "<Left><Right> (left: Left, right: Right)",
+        "< Left > < Right > (left: Left, (right: Right, _: .))",
+        "<Hidden> _",
+    ] {
+        for neutral in [false, true] {
+            let binding = format!("let .({pattern}) = packed; ()");
+            let body = if neutral {
+                format!("scope! {{ {binding} }}")
+            } else {
+                binding
+            };
+            let source = format!("module m; fn f(packed: .) {{ {body} }}");
+            let start = source.find("let").unwrap();
+            let end = source.find("= packed").unwrap();
+            let gaps: Vec<_> = injectable_gaps(&source)
+                .into_iter()
+                .filter(|&gap| start < gap && gap <= end)
+                .collect();
+            for &gap in &gaps {
+                assert_conserved("m.kio", &inject(&source, &[gap]), &[1], true);
+            }
+            let expected: Vec<_> = (1..=gaps.len() as u64).collect();
+            assert_conserved("m.kio", &inject(&source, &gaps), &expected, true);
+        }
+    }
+}
+
+#[test]
 fn recursive_type_group_openers_conserve_comments() {
     for (filename, source) in [
         (
