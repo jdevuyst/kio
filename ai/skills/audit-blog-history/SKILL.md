@@ -8,8 +8,8 @@ allowed-tools: Read, Grep, Glob, Bash
 
 Anchor: [`ai/topics/docs.md`](../../topics/docs.md) § Blog posts — factual
 communication remains active unless it is time- or version-scoped or explicitly
-retracted, corrected, or superseded; substantial intra-post revisions require
-a visible dated content-edit notice.
+retracted, corrected, or superseded; meaningful published-post revisions require
+a dated, italic `Edit:` notice describing the change.
 
 This is a truth-maintenance audit, not an editorial review. Read every source
 post completely and in publication order, preserve the chronology, and report
@@ -35,10 +35,14 @@ text: use path history with rename tracking and compare successive post blobs,
 including working-tree changes. Establish published revisions from available
 publication evidence; do not assume every local checkpoint was published.
 Compare intervening edits rather than only the first and last text, which can
-hide a changed-and-restored claim. Apply the meaning-based revision policy in
-the anchor: unannounced corrections and small code/API updates must preserve
-meaning, and formatting-subject changes may be substantive. Report substantial
-silent revisions or notices missing their date or brief nature. A notice must
+hide a changed-and-restored claim. Apply the revision policy in the anchor:
+unannounced routine corrections must preserve meaning and the post's account
+of Kio. Check meaningful changes, including terminology updates and revisions
+for newer Kio versions, for the owner's dated, italic `Edit:` notice at the end
+of the post body, before any standard footer or disclosure. Small
+code/API updates preserving an example's purpose do not waive it; formatting
+changes can also be substantive when formatting is the post's subject.
+Report missing or inadequate notices. A notice must
 describe the actual change; it is not automatically a valid claim correction.
 
 Retain checkable claims from evidenced prior communication when building the
@@ -119,7 +123,7 @@ Report findings in chronological order within these categories:
 2. Unretracted inter-post contradictions.
 3. Invalid retractions or corrections.
 4. Verification gaps.
-5. Substantial silent intra-post revisions and inadequate edit notices.
+5. Meaningful silent intra-post revisions and inadequate edit notices.
 
 For each finding cite the post and line, quote the minimum necessary claim,
 state its ledger scope and status, cite the contradicting or missing evidence,

@@ -162,7 +162,7 @@ types `I32`, `String`, `Bool`, `F64`, and opaque `Scalar`, together with the
 functions declared in its `testapi/arith`, `fmt`, `io`, `iter`, `scalar`, and
 `text` modules. Supply those capabilities through your chosen backend's host
 interface; the [host guides](../README.md#host-integrations) explain that interface.
-The loader's committed list/elaborator dependencies already route their host
+The loader's committed list/elab dependencies already route their host
 requirements through its own adapters. A consumer using existing capability
 modules can instead apply ordinary [rehost clauses](pkg.md#rehosting-a-dependencys-host-items-with-rehost)
 for the matching declarations. The standard guest adapter in

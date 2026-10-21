@@ -292,7 +292,7 @@ function copyInstall(id: string) {
           <h3>Library-defined control</h3>
           <code>if! ok { yes() } else { no() }</code>
           <p>
-            Import elaborators like any other name. They generate typed code at compile time:
+            Import elaborator macros (elabs) like any other name. They generate typed code using type information:
             <code>reorder_prod!((a, b), B &amp; A)</code> reorders a product to match the requested
             type, and familiar control forms such as <code>if!</code> and <code>match!</code>
             are library-defined too.

@@ -53,10 +53,12 @@ does not establish that verification.
 
 For changes to an existing post, compare its prior published contents with the
 final revision and inspect intervening diffs where needed. Apply
-[`docs.md` § Blog posts](../../topics/docs.md#blog-posts): unannounced language
-and format corrections or small visible code/API updates must preserve meaning;
-formatting-subject edits can be substantive. Bigger substantive changes need a
-visible notice giving their date and brief nature. Check exact-text approval
+[`docs.md` § Blog posts](../../topics/docs.md#blog-posts): only routine
+spelling/grammar/formatting corrections preserving meaning and the post's account
+of Kio may remain unannounced. Check meaningful changes, including terminology
+updates and revisions for newer Kio versions, for the owner's dated, italic
+`Edit:` notice. Small code/API updates preserving an example's purpose do not
+waive it; formatting-subject edits can also be substantive. Check exact-text approval
 for post, harness and notice changes from the available authority record;
 neither a small diff nor an added notice grants editing authority. Report
 unavailable history or approval evidence explicitly. Route broader historical

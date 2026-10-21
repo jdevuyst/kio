@@ -20,7 +20,7 @@ case study links to them rather than restating them:
   multi-arity type constructors, instance dictionaries, and explicit
   conversions. Read it for the
   *why* behind any mechanism this case study merely *uses*.
-- [`docs/poc/elab.md`](elab.md) is the **elaborator-POC case study**, where
+- [`docs/poc/elab.md`](elab.md) is the **elab-POC case study**, where
   `derive!`'s resolution algorithm — including the recursive and polymorphic
   derivations a monad-transformer stack needs — is exercised against `equiv`
   laws. This page uses only the simplest `derive!` shape (a single-target
@@ -47,7 +47,7 @@ POC:
   real host supplies. The program uses three of them: `String`, `print`, and
   `string_concat`. A user replaces this scaffolding with their own host.
 - `elab/derive.kio` and `elab/elaborator_util.kio` — the imported `derive!`
-  elaborator and its shared compile-time utilities, brought in through the
+  elab and its shared compile-time utilities, brought in through the
   `elab` dependency (declared by `elab.dep.kio`, materialized under the
   `elab/` prefix) and imported with `import elab/derive(derive);`. These
   are the subject of the separate [`elab` POC](../guides/using-libraries.md);
@@ -72,7 +72,7 @@ The snippets in this case study thread together — each picks up where the
 previous one left off — and a hidden harness validates them as one growing
 program, the same way the POC's `testapi/main` module is one growing module.
 The harness supplies the host shape the POC's `testapi` modules declare
-(`String`, `print`, `string_concat`) and imports the `derive` and `do` elaborators the
+(`String`, `print`, `string_concat`) and imports the `derive` and `do` elabs the
 package bridges:
 
 <!--kio {harness=hkt placeholder="__INSERT_CODE_HERE__" accumulate}
@@ -327,7 +327,7 @@ distinctly; the `pipeline` call is identical between the two.
 ## Deriving an instance with `derive!`
 
 The last line shows that an instance need not be hand-written at all. The
-[`derive!`](../guides/using-libraries.md) elaborator — imported
+[`derive!`](../guides/using-libraries.md) elab — imported
 from the package's `derive` module — constructs a value of a requested target
 type from a tuple of candidate rules, finding the one way they fit. The
 harness imports it the way the POC does (in the POC the module path is
@@ -361,11 +361,11 @@ surface convenience — it writes the call you would otherwise write by hand
 and leaves no trace in Kio'.
 
 This single-target pick is the smallest case of `derive!`. The
-[elaborator case study](elab.md#derive--instance-deriving) also shows recursive
+[elab case study](elab.md#derive--instance-deriving) also shows recursive
 composition of wrapper rules and polymorphic rules whose type argument comes
 from the requested goal. Those examples explain how a derivation builds its
 dependencies before applying the outer rule. The precise resolution contract
-is in [`specs/language.md` § The `derive!` elaborator](../../specs/language.md#the-derive-elaborator).
+is in [`specs/language.md` § The `derive!` elab](../../specs/language.md#the-derive-elaborator).
 
 The derived instance is used exactly like a hand-written one — project it
 with `Functor.fmap`, apply the mapping function over a branded value, and
@@ -437,7 +437,7 @@ To reuse the HKT pieces in your own package:
    scaffolding.
 3. To use `derive!`, depend on the
    [`elab` POC](../guides/using-libraries.md), which carries the
-   `derive` elaborator, and import it with `import elab/derive(derive);`.
+   `derive` elab, and import it with `import elab/derive(derive);`.
    Declaring a dependency is documented once in
    [`pkg.md` § Dependency files](../guides/pkg.md#dependency-files).
 
@@ -454,14 +454,14 @@ generic operations.
 - [`higher-kinded-types.md`](../guides/higher-kinded-types.md)
   — the HKT language reference (kinds, application, polymorphic payloads,
   multi-arity, instance dictionaries, and explicit conversions).
-- [The elaborator POC](elab.md) — the case study where `derive!`'s resolution
+- [The elab POC](elab.md) — the case study where `derive!`'s resolution
   (including recursive and polymorphic derivations) is exercised per shape
   against `equiv` laws.
 - [`using-libraries.md`](../guides/using-libraries.md)
-  — the map of the `elab` POC modules, including the `derive` elaborator.
+  — the map of the `elab` POC modules, including the `derive` elab.
 - [The optics library case study](optics.md) — the companion POC built from
-  function pairs and spine elaborators.
-- [`specs/language.md` § The `derive!` elaborator](../../specs/language.md#the-derive-elaborator)
+  function pairs and spine elabs.
+- [`specs/language.md` § The `derive!` elab](../../specs/language.md#the-derive-elaborator)
   — the `derive!` surface contract.
 - [`test-data/poc/hkt/`](../../test-data/poc/hkt/) — the full worked package
   this case study reads through.

@@ -234,7 +234,7 @@ A newtype's kind is read from its declared parameter list, not annotated separat
 
 The full Kio surface language extends Kio' with additional tokens, additional contextual keywords, and additional productions on existing non-terminals (plus a few new top-level item shapes). Everything in [§ Kio' grammar](#kio-grammar) carries through unchanged; this section spells out what's *additive*. The `+=` notation below means "add these alternatives to the named production from the Kio' grammar"; `::=` introduces a new production.
 
-Each surface form's prose meaning (what it means, how it desugars) lives in [`language.md`](language.md); the productions here pin *what parses*. For the elaborator bang-call mechanism — how `IDENT '!'` resolves as a user-defined elaborator call — see [`language.md` § Elaborators are imported, not ambient](language.md#elaborators-are-imported-not-ambient); the reference coercion palettes' per-form semantics are documented as case studies in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/elab.md`](../docs/poc/elab.md).
+Each surface form's prose meaning (what it means, how it desugars) lives in [`language.md`](language.md); the productions here pin *what parses*. For the elab bang-call mechanism — how `IDENT '!'` resolves as a user-defined elab call — see [`language.md` § Elabs are imported, not ambient](language.md#elaborators-are-imported-not-ambient); the reference coercion palettes' per-form semantics are documented as case studies in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/elab.md`](../docs/poc/elab.md).
 
 ### Lexical structure (Kio surface)
 
@@ -249,13 +249,13 @@ The symbols `< > [ ] = ! : . / -> .? .! .> .>> .< .<<` appear in fixed structura
 
 In addition to Kio''s contextual keywords, Kio surface recognizes:
 
-- `trailing`, `product`, `thunk`, `sequence` — trailing-block descriptor entries in an elaborator declaration.
+- `trailing`, `product`, `thunk`, `sequence` — trailing-block descriptor entries in an elab declaration.
 - `rec` — the recursive-declaration marker. `rec newtype` and bare `rec { ... }` retain their Kio' meanings; `rec labels` and `rec(loop)` are surface additions.
 - `recur` — the surface recursive-call introducer, optionally followed by call annotations and then a group-local callee. Outside that grammatical position it is an ordinary identifier.
 - `labels`, `type`, `literal`, `elab`, `op`, `varop`, `equiv` — top-level item leads (after declaration modifiers where admitted). A singleton recursive declaration admits leading visibility (`pub rec labels`, `pub rec newtype`, or `pub rec(loop) fn`); either braced `rec` group carries no visibility, so visibility stays on each member.
-- `__comptime__` — reserved import target, recognized only inside `import __comptime__;` (see [§ Surface import-clause additions](#surface-import-clause-additions)). Never a regular module name. Surface-only — it supplies the compile-time reflection API used by elaborator implementations.
+- `__comptime__` — reserved import target, recognized only inside `import __comptime__;` (see [§ Surface import-clause additions](#surface-import-clause-additions)). Never a regular module name. Surface-only — it supplies the compile-time reflection API used by elab implementations.
 
-Plus the bang-call forms — token sequences (`IDENT` + `Bang`) rather than single keywords; the parser recognizes the conjunction when an identifier is immediately followed by `Bang`. Bang calls resolve as user-defined elaborator calls through ordinary scoped imports — there are no reserved elaborator keywords; any `IDENT '!'` whose name is in scope as an imported `elab` declaration is a bang-call. Each call is checked against the imported elaborator declaration's own call type. The reference distributions ship source-to-target coercion palettes plus `match!` (dispatch), `derive!` (instance deriving), and others, but these are user-defined Kio libraries, not grammar keywords; their per-form semantics are documented as case studies in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/elab.md`](../docs/poc/elab.md), and the call mechanism in [`language.md` § Elaborators are imported, not ambient](language.md#elaborators-are-imported-not-ambient).
+Plus the bang-call forms — token sequences (`IDENT` + `Bang`) rather than single keywords; the parser recognizes the conjunction when an identifier is immediately followed by `Bang`. Bang calls resolve as user-defined elab calls through ordinary scoped imports — there are no reserved elab keywords; any `IDENT '!'` whose name is in scope as an imported `elab` declaration is a bang-call. Each call is checked against the imported elab declaration's own call type. The reference distributions ship source-to-target coercion palettes plus `match!` (dispatch), `derive!` (instance deriving), and others, but these are user-defined Kio libraries, not grammar keywords; their per-form semantics are documented as case studies in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/elab.md`](../docs/poc/elab.md), and the call mechanism in [`language.md` § Elabs are imported, not ambient](language.md#elaborators-are-imported-not-ambient).
 
 ### Surface item additions
 
@@ -322,7 +322,7 @@ Equiv             ::= 'equiv' IDENT ValueSignature?
                     '{' ';'* Expr (';'+ Expr)+ ';'* '}'                       (* N >= 2 arms *)
 ```
 
-The fixed operator body has exactly one `impl` entry. The elaborator body has
+The fixed operator body has exactly one `impl` entry. The elab body has
 exactly one implementation entry, at most one captures entry, and zero or more
 trailing-block entries. Entries may be interleaved in any order; the relative
 order of trailing-block entries declares block order. The first descriptor is
@@ -373,14 +373,14 @@ same-module target does not bypass its source-order rule.
 The path in an `ElaboratorBody`'s implementation slot must resolve to a
 function whose type matches the ABI selected by that slot. Arbitrary
 expressions, including inline lambdas and calls, are not admitted. Every
-captured item must have visibility equal to or wider than the elaborator
+captured item must have visibility equal to or wider than the elab
 declaration because captures can survive in the generated runtime term. An
-implementation declared in the elaborator's defining module may remain
+implementation declared in the elab's defining module may remain
 private, and any implementation may call private helpers in its own module. A
 target declared elsewhere must be ordinarily importable into the defining
-module, but need not meet the elaborator's outward visibility. The
+module, but need not meet the elab's outward visibility. The
 implementation and every ordinary function it calls during compile-time
-execution must be declared `pure`. See [`language.md` § Elaborators are
+execution must be declared `pure`. See [`language.md` § Elabs are
 imported, not ambient](language.md#elaborators-are-imported-not-ambient).
 
 `ElaboratorItem` and both implementation modes are Kio-surface-only.
@@ -535,8 +535,8 @@ RecCallAnnotationList ::= '(' RecCallAnnotation (',' RecCallAnnotation)* ','? ')
 RecCallAnnotation ::= 'poly' | 'cont' | 'escape'
 CallArgList       ::= '(' (CallArg (',' CallArg)*)? ','? ')'
 NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
-                                                                             (* BangCall's IDENT is any in-scope user-defined elaborator name —
-                                                                                there are no reserved elaborator keywords; see the prose above *)
+                                                                             (* BangCall's IDENT is any in-scope user-defined elab name —
+                                                                                there are no reserved elab keywords; see the prose above *)
 
 DotPlaceholderIntro ::= '.' IDENT '.'                                        (* adjacent tokens; value-binding stem ending in an ASCII letter *)
 PlaceholderLambda ::= DotPlaceholderIntro Block                              (* source-local numbered references belong to this stem *)
@@ -544,9 +544,9 @@ PlaceholderLambda ::= DotPlaceholderIntro Block                              (* 
 
 Every block-call head is a single value-shaped identifier with an adjacent
 `!`; continuation labels are unmarked. The parser records neutral items
-without looking up the elaborator or its descriptors. `product`, `thunk`,
+without looking up the elab or its descriptors. `product`, `thunk`,
 and `sequence` interpretation and descriptor/content validation happen after
-the exact elaborator declaration is selected. Empty neutral blocks and
+the exact elab declaration is selected. Empty neutral blocks and
 leading, repeated, and trailing semicolons are syntactically admitted; the
 selected exposure determines their meaning or rejection.
 
@@ -588,7 +588,7 @@ ExprSuffix += DotSpliceSuffix | OperatorTail
 ExprPostfix += LeftCallSplice ExprSuffix*
 
 DotSpliceSuffix   ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
-DotSpliceCallee   ::= GroupedValuePath | IDENT '!'                          (* path; plain function or T.member; or bang-call elaborator *)
+DotSpliceCallee   ::= GroupedValuePath | IDENT '!'                          (* path; plain function or T.member; or bang-call elab *)
 LeftCallSplice    ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
 LeftSpliceCallee  ::= LeftSplicePathCallee
                    | IDENT '!' NonemptyCallArgList?

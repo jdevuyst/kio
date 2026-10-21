@@ -1,6 +1,6 @@
 # UFCS calls
 
-UFCS — Uniform Function Call Syntax — is a compact way to put one value into a function or elaborator call. It is useful when the value you are transforming reads better as the subject of the expression than as one nested argument in a prefix call.
+UFCS — Uniform Function Call Syntax — is a compact way to put one value into a function or elab call. It is useful when the value you are transforming reads better as the subject of the expression than as one nested argument in a prefix call.
 
 The four surface spellings are `.>`, `.>>`, `.<`, and `.<<`. This guide calls those the dot-splice spellings because each one splices a receiver into a value-argument slot.
 
@@ -172,10 +172,13 @@ fn grouped(a: String, b: String) -> String { wrap.<(a.>pair(b)) }
 
 `tight(a, b)` means `pair(wrap(a), b)`. `grouped(a, b)` means `wrap(pair(a, b))`.
 
-## Elaborator calls
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="elaborator-calls"></a>
 
-Elaborator bang-calls participate in the same rule. The typer uses the
-elaborator's resolved call type, keeps explicit type arguments in type slots,
+## Elab calls
+
+Elab bang-calls participate in the same rule. The typer uses the
+elab's resolved call type, keeps explicit type arguments in type slots,
 and inserts the receiver into the selected value slot.
 
 Bang calls also keep a bare receiver-only spelling in each direction:
@@ -188,9 +191,9 @@ fn drop_unit_right(p: String & .) -> String { p.>narrow_prod!(String) }
 fn drop_unit_left(p: String & .) -> String { narrow_prod!(String).<<p }
 ```
 
-Both functions build the same elaborator call: `narrow_prod!(p, String)`.
+Both functions build the same elab call: `narrow_prod!(p, String)`.
 
-An elaborator with declared trailing blocks uses a complete direct block call.
+An elab with declared trailing blocks uses a complete direct block call.
 For `match!`, write the scrutinee before the clause block:
 
 ```text
@@ -224,7 +227,7 @@ left-associated chain can change evaluation order or host-visible behavior.
 - Use `.<` when you have written a function call and want to append one value: `pair(left).<right`.
 - Use `.<<` when you have written a function call and want to prepend one value: `pair(right).<<left`, or `narrow_prod!(Target).<<value`.
 
-All four forms are surface syntax only. During typing, ordinary UFCS calls record normalized prefix calls, and elaborator UFCS calls record the same elaboration the equivalent prefix bang-call would produce.
+All four forms are surface syntax only. During typing, ordinary UFCS calls record normalized prefix calls, and elab UFCS calls record the same elaboration the equivalent prefix bang-call would produce.
 
 ## Converting a nested call in the editor
 
@@ -245,6 +248,6 @@ If both boundary arguments continue the same chain, select one branch instead.
 The action is withheld when it cannot establish the same resolved function and
 argument placement, when a comment between call delimiters has no clear new
 attachment, or while the document or its providers lack current typechecking
-results. Computed callees, explicit staged calls such as `f(a)(b)`, elaborator
+results. Computed callees, explicit staged calls such as `f(a)(b)`, elab
 calls, and existing UFCS calls are not chain links; they may remain unchanged
 inside a retained argument.

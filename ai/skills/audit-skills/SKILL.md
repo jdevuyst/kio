@@ -50,8 +50,9 @@ checks surfaced before sign-off. Static syntax checks cannot supply that evidenc
 The existing-post revision policy in `docs.md` § Blog posts is checked by
 `review-blog-post` and `review-commits` for proposed changes and by
 `audit-blog-history` for available intra-post history. Verify meaning-based
-classification (including formatting-subject changes), dated notices describing
-substantive edits, retained exact-text approval, and explicit history gaps;
+classification (including formatting-subject changes), the owner's dated italic
+end-of-body notices for meaningful changes (including terminology and newer-version
+updates), retained exact-text approval, and explicit history gaps;
 inter-post contradiction checks alone do not cover silent post revisions.
 `language-surface-tooling.md` § Consistent syntax across contexts is covered by
 `audit-spec-drift`'s grouping/context inventory and `audit-test-strategy`'s actual

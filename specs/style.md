@@ -22,7 +22,7 @@ A divergence between two conformant implementations on the same input is a spec 
 
 ## Block bodies (`{ … }`)
 
-Executable braced blocks use a **width-driven** layout: named and anonymous function bodies and every elaborator trailing block follow the same rule. A block stays inline only when its flat body contains no other executable braced block, the complete flat layout fits in the 100-column budget, and no comment or unconditional break prevents flattening. Braces for label construction, field selection, and other non-block lists do not count as executable blocks:
+Executable braced blocks use a **width-driven** layout: named and anonymous function bodies and every elab trailing block follow the same rule. A block stays inline only when its flat body contains no other executable braced block, the complete flat layout fits in the 100-column budget, and no comment or unconditional break prevents flattening. Braces for label construction, field selection, and other non-block lists do not count as executable blocks:
 
 ```kio
 fn id[A](x: A) -> A { x }
@@ -36,7 +36,7 @@ fn choose() {
 }
 ```
 
-**Block elaborator calls.** An ordered trailing-block chain chooses one outer arm layout. It is compact only when the complete chain fits, every arm is eligible for compact layout, and no comment or unconditional break prevents flattening. Otherwise every arm expands, including empty arms and otherwise-short arms. Expressions inside the arms make independent layout decisions. The rule applies structurally to every elaborator head and continuation label, without consulting declarations or exposure kinds. Thus a short `do! bind { run() }` is compact; an enclosing executable block expands around it. Empty blocks are compact `{}` or expanded braces on separate lines.
+**Block elab calls.** An ordered trailing-block chain chooses one outer arm layout. It is compact only when the complete chain fits, every arm is eligible for compact layout, and no comment or unconditional break prevents flattening. Otherwise every arm expands, including empty arms and otherwise-short arms. Expressions inside the arms make independent layout decisions. The rule applies structurally to every elab head and continuation label, without consulting declarations or exposure kinds. Thus a short `do! bind { run() }` is compact; an enclosing executable block expands around it. Empty blocks are compact `{}` or expanded braces on separate lines.
 
 ```kio
 if! ready {
@@ -46,7 +46,7 @@ if! ready {
 }
 ```
 
-**Final labelled-block elision.** When the final labelled block contains exactly one complete block elaborator call, its wrapper braces are omitted if doing so preserves all comments. This is structural, not a special rule for the names `if` or `else`:
+**Final labelled-block elision.** When the final labelled block contains exactly one complete block elab call, its wrapper braces are omitted if doing so preserves all comments. This is structural, not a special rule for the names `if` or `else`:
 
 ```kio
 if! a { x } else if! b { y } else { z }
@@ -58,7 +58,7 @@ The nested call owns all following labelled blocks and shares the enclosing chai
 
 Grouping also preserves the enclosing first-brace boundary through operator operands, including greedy slots: `outer! left + (inner! value { a() }) { b() }` cannot lose the inner expression boundary. The formatter may group the whole prefix instead when needed by its operator layout. An operator's explicit continuation token supplies its own boundary. Comments around explicit prefix parentheses remain within the prefix; they are not discarded to shorten the head.
 
-Comments between a closing brace and a continuation label stay at that block boundary. They do not change which call owns the label. Parsing and formatting require no elaborator-provider lookup.
+Comments between a closing brace and a continuation label stay at that block boundary. They do not change which call owns the label. Parsing and formatting require no elab-provider lookup.
 
 ## Spacing
 
@@ -293,9 +293,9 @@ An ordinary call of a UFCS result keeps its grouping: `(vault.>Vault.open)()`, `
 
 **Left-call splices** preserve their spelling. With no existing arguments, `f.<x` and `f.<<x` emit without an empty `()`; with existing arguments, `f(a).<x` and `f(a).<<x` keep the call on the left. If the inserted right-hand value is compound enough that dropping grouping would change the parse, `kio fmt` emits parentheses, for example `f.<(x.>g)`.
 
-**Elaborator-form preservation.** Blockless elaborator calls can use the standalone prefix form (`iso!(r, T)`, `fit!(r, T)`, `checked!(r, T)`) or a dot-splice form that builds the same argument list (`r.>iso!(T)`, `r.>>fit!`, `iso!(T).<<r`, `r.>checked!(T)`). `kio fmt` preserves that user-authored spelling; it does not rewrite between prefix and dot-splice forms. Right-callee forms with no written arguments remain argless (`r.>iso!`), and nonempty argument lists keep their parentheses (`r.>iso!(T)`). Block calls instead use the direct `name! … { … }` form and the canonical block-prefix rules above; they have no UFCS form.
+**Elab-form preservation.** Blockless elab calls can use the standalone prefix form (`iso!(r, T)`, `fit!(r, T)`, `checked!(r, T)`) or a dot-splice form that builds the same argument list (`r.>iso!(T)`, `r.>>fit!`, `iso!(T).<<r`, `r.>checked!(T)`). `kio fmt` preserves that user-authored spelling; it does not rewrite between prefix and dot-splice forms. Right-callee forms with no written arguments remain argless (`r.>iso!`), and nonempty argument lists keep their parentheses (`r.>iso!(T)`). Block calls instead use the direct `name! … { … }` form and the canonical block-prefix rules above; they have no UFCS form.
 
-**User-defined elaborator declarations.** An elaborator item writes the declared call type after a colon and the implementation in a body `impl` field:
+**User-defined elab declarations.** An elab item writes the declared call type after a colon and the implementation in a body `impl` field:
 
 ```kio
 pub elab checked : [Source] Source -> [Target] Target { impl checked_impl }
@@ -303,7 +303,7 @@ pub elab identity : [Source] Source -> [Target] Target { impl identity_impl }
 pub elab matching : [Source] Source -> [Target] Target { impl(fills) matching_impl }
 ```
 
-The call type is rendered by the ordinary type printer. Mixed value/type-binder function types keep the ordinary prefix-binder function-type spelling (`A -> [B] B -> A`); there is no separate elaborator-signature syntax.
+The call type is rendered by the ordinary type printer. Mixed value/type-binder function types keep the ordinary prefix-binder function-type spelling (`A -> [B] B -> A`); there is no separate elab-signature syntax.
 
 Declaration entries use semicolon separators. Canonical order is `captures`, then every `trailing` descriptor in its original relative order, then `impl`. The descriptor spells `trailing product`, `trailing thunk`, or `trailing sequence`, followed by its label when present. Other declaration entries may move around the descriptors in source, but the descriptors' relative order defines the call's block order and is never sorted.
 

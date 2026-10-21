@@ -812,7 +812,7 @@ contract surface at that commit:
   from the dependency's *signatures alone* — function bodies are never lowered
   or typechecked to compute it — so it digests identically in the full and
   standalone Kio' checking pipelines even when the dependency's bodies use
-  surface forms (block and blockless elaborator calls) that only the full
+  surface forms (block and blockless elab calls) that only the full
   front-end accepts. A
   surface-only declaration that would enter the contract only *after* surface
   elaboration — notably `labels`, which the full front-end lowers to newtypes —

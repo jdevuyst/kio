@@ -1,21 +1,24 @@
-# Case study: the elaborator library (`elab`)
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="case-study-the-elaborator-library-elab"></a>
+
+# Case study: the elab library (`elab`)
 
 This case study follows the
 [`elab` package](../../test-data/poc/elab/): a library of compile-time helpers
 for control flow, structural adaptation, and dispatch. The source quotations
 and `equiv` laws below come from the library and its runnable demo.
 
-The `elab` package is a **worked example of the elaborator mechanism itself**.
+The `elab` package is a **worked example of the elab mechanism itself**.
 Its modules are reusable library code; the demo is a worked application. The
 package defines, in plain Kio, the control,
-coercion, and dispatch elaborators used throughout the documentation —
+coercion, and dispatch elabs used throughout the documentation —
 `if!`, `scope!`, `do!`, the algebraic and spine source-to-target palettes,
 `match!`, `derive!`, and the
 reflected-type vocabulary they share. The demo exercises the coercion and
 dispatch forms end to end.
-Because the elaborators are ordinary imported `elab` declarations resolved
+Because the elabs are ordinary imported `elab` declarations resolved
 through scoped imports (see
-[`specs/language.md` § Elaborators are imported, not ambient](../../specs/language.md#elaborators-are-imported-not-ambient)),
+[`specs/language.md` § elabs are imported, not ambient](../../specs/language.md#elaborators-are-imported-not-ambient)),
 nothing here is a language primitive: the whole vocabulary is a library you
 can read, copy, and replace.
 
@@ -25,8 +28,8 @@ per-form rules:
 - [`elaborators.md`](../guides/elaborators.md) is the
   authoring reference — the compile-time `import __comptime__;` API (`__Type__`,
   `__Checked_term__`, the `__Comptime__` proof argument, and the marked-only
-  `__Fill_ctx__`) an elaborator implementation programs against.
-- [Building and testing elaborators](../guides/elaborator-authoring.md) works
+  `__Fill_ctx__`) an elab implementation programs against.
+- [Building and testing elabs](../guides/elaborator-authoring.md) works
   through complete small generators, their callers, and positive and negative
   checks without requiring this package's source.
 - [`using-libraries.md`](../guides/using-libraries.md) is
@@ -43,16 +46,16 @@ layout:
 - [`elab.pkg.kio`](../../test-data/poc/elab/workdir/elab.pkg.kio) — the
   package file: a `build { ... }` block targeting `js`, `ts`, `python`,
   `java`, `rust`, `go`, `swift`, and `haskell`, and a `bridge { ... }` block
-  exposing the root `testapi` host boundary plus every elaborator module.
+  exposing the root `testapi` host boundary plus every elab module.
 - [`demo/elab_demo.pkg.kio`](../../test-data/poc/elab/workdir/demo/elab_demo.pkg.kio)
   and [`demo/library.dep.kio`](../../test-data/poc/elab/workdir/demo/library.dep.kio)
-  — the nested runnable package. It imports the root elaborator package as
+  — the nested runnable package. It imports the root elab package as
   `library` and supplies the runner-facing host modules.
 - [`demo/elab/main.kio`](../../test-data/poc/elab/workdir/demo/elab/main.kio)
-  — the demonstrative entry module. It imports every elaborator, runs one
+  — the demonstrative entry module. It imports every elab, runs one
   smoke-test `_case` function per form, and carries the `equiv` laws that pin
   each form's rule. This page is organized around that module.
-- The elaborator modules, each a reusable library:
+- The elab modules, each a reusable library:
   [`control.kio`](../../test-data/poc/elab/workdir/control.kio)
   (`if!` and `scope!`),
   [`sequence.kio`](../../test-data/poc/elab/workdir/sequence.kio)
@@ -75,11 +78,11 @@ layout:
   standing in for `String`, `I32`, `Bool`, `print`, `string_concat`, and the
   integer/bool stringifiers. A user replaces these with their own host.
 
-The source-to-target coercion elaborators are all declared with the same call
+The source-to-target coercion elabs are all declared with the same call
 type — `[Source] Source -> [Target] Target`: a single value parameter (the
 source) and a target type-argument that follows the value, exactly
 the source-to-target shape the language mechanism specifies. Not every
-elaborator shares that shape — `match!`, `zip!` / `map!`, and `set!` / `get!`
+elab shares that shape — `match!`, `zip!` / `map!`, and `set!` / `get!`
 take a second value parameter, and `type_of!` takes a type argument and a
 Unit value. A block call supplies the final value slots through the declared
 blocks: `match! value { clauses }` projects its product block into the clause
@@ -95,9 +98,9 @@ arms with **opaque atoms** standing in for the value parameters and checks
 that they reduce to the same residual form; a law over a sum residualizes
 into a symbolic case-split (see
 [`specs/formal/equiv.md`](../../specs/formal/equiv.md)). Read each law as "the
-elaborator call on the first line elaborates to exactly the explicit
+elab call on the first line elaborates to exactly the explicit
 `__intrinsics__` term on the second." Those explicit core terms explain what
-the elaborator expands to, and some law inputs use core-shaped fixtures to pin
+the elab expands to, and some law inputs use core-shaped fixtures to pin
 a structural branch. They are not authoring examples for ordinary programs.
 When modeling domain data, use labels/newtypes, tuple syntax, `widen_sum!`,
 and `match!` at the source level.
@@ -106,7 +109,7 @@ and `match!` at the source level.
 
 The [`control`](../../test-data/poc/elab/workdir/control.kio) and
 [`sequence`](../../test-data/poc/elab/workdir/sequence.kio) modules use the same
-elaborator mechanism as the coercion palettes. Their block descriptors say
+elab mechanism as the coercion palettes. Their block descriptors say
 how the written body becomes an ordinary value argument:
 
 | Export | Block and behavior |
@@ -136,8 +139,8 @@ block does not infer a missing carrier argument of a receiver factory. The
 sequence contains ordinary local lets and bind continuations, and ends with an explicit
 `F(R)` expression for the same carrier. It never inserts an implicit `pure` call.
 
-Import these names from the module you need, as with any other elaborator.
-The [elaborator guide](../guides/elaborators.md) explains all three descriptor
+Import these names from the module you need, as with any other elab.
+The [elab guide](../guides/elaborators.md) explains all three descriptor
 kinds, including the `product` block used by `match!`; the
 [higher-kinded-types case study](hkt.md#abstract-brand-crossing-in-a-do-block-pipeline)
 shows `do!` over two concrete type constructors through one generic function.
@@ -167,7 +170,7 @@ Three slot rules hold for every form in both palettes: a `newtype` (including
 a `labels`-generated newtype) is a single opaque slot — the walk never enters
 its payload; a `Forall` is a single opaque slot compared by structural
 equality; and a `host type` is a single slot keyed on its declaration site.
-Crossing into or out of a label or host type is never an elaborator's job —
+Crossing into or out of a label or host type is never an elab's job —
 use the generated `mk` / `get` members or a host conversion.
 
 ## The spine palette
@@ -570,7 +573,7 @@ equiv atom_project_law[A][B](a: A, b: B) {
 
 ## `match!` — dispatch
 
-`match!` is the dispatch elaborator: its direct call `match! value { clauses }`
+`match!` is the dispatch elab: its direct call `match! value { clauses }`
 projects a `product` block into the clause value, then builds explicit
 structural dispatch over the scrutinee. A single product-valued entry may
 supply a preassembled clause tuple. Each clause is an expression
@@ -605,7 +608,7 @@ polymorphic clauses against compatible source branches, and records their
 result types with `__fill__`. It returns the generated dispatch term together
 with that fill context. These compile-time checks consider all clause results;
 the generated runtime dispatch calls only the first fitting handler for the
-active branch. [Defining elaborators](../guides/elaborators.md) explains the
+active branch. [Defining elabs](../guides/elaborators.md) explains the
 fill API for readers who want to follow or adapt the implementation.
 
 ```text
@@ -763,11 +766,11 @@ existing site. A "module handle"
 candidate is rejected for the same reason. The synthesized derivation is a
 nested call tree of ordinary `fn` applications — no `derive!` form survives,
 and no runtime machinery is added. The surface contract is in
-[`specs/language.md` § The `derive!` elaborator](../../specs/language.md#the-derive-elaborator).
+[`specs/language.md` § The `derive!` elab](../../specs/language.md#the-derive-elaborator).
 
 ## The rest of the vocabulary
 
-The package ships more imported elaborators, each `equiv`-pinned in `main` and
+The package ships more imported elabs, each `equiv`-pinned in `main` and
 mapped in [`using-libraries.md`](../guides/using-libraries.md):
 
 - **`lookup!` / `contains!`** ([`lookup.kio`](../../test-data/poc/elab/workdir/lookup.kio))
@@ -790,7 +793,7 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
   }
   ```
 
-- **Tuple elaborators** ([`tuple_elaborators.kio`](../../test-data/poc/elab/workdir/tuple_elaborators.kio))
+- **Tuple elabs** ([`tuple_elaborators.kio`](../../test-data/poc/elab/workdir/tuple_elaborators.kio))
   — `head!`, `tail!`, `last!`, `concat!`, `flatten!`, `group!`, `split!`,
   `zip!`, `map!`, `distinct!` over product spines. `head!` and `last!`
   select the first and last slots; `tail!` removes the first slot.
@@ -807,7 +810,7 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
   }
   ```
 
-- **Row elaborators** ([`row_elaborators.kio`](../../test-data/poc/elab/workdir/row_elaborators.kio))
+- **Row elabs** ([`row_elaborators.kio`](../../test-data/poc/elab/workdir/row_elaborators.kio))
   — `mk!` / `set!` / `get!` for constructing, upserting, and projecting label
   products (the machinery behind the optics row-update operator):
 
@@ -854,7 +857,7 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
   sums, and bottom. Products render as tuples and sums as `left(...)` or
   `right(...)`; opaque nominal values and function values are rejected.
 
-These five show the breadth of what an imported elaborator can express
+These five show the breadth of what an imported elab can express
 once it has the reflected-type API: structural search (`lookup!`), spine
 arithmetic (`tuple_*`), type-directed row manipulation (`row_*`), type
 reflection (`type_of!`), and code generation (`show!`) — all ordinary library
@@ -885,10 +888,13 @@ type reflection: ok
 (show, 42, true)
 ```
 
-## Adopting the elaborators
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="adopting-the-elaborators"></a>
 
-To use these elaborators in your own package, **depend on `elab`** rather than
-copying its modules — declare it as a dependency and import the elaborator
+## Adopting the elabs
+
+To use these elabs in your own package, **depend on `elab`** rather than
+copying its modules — declare it as a dependency and import the elab
 modules under the dependency's local name. The dependency mechanism (the
 `<local>.dep.kio` form, local-path vs. git sources, and the lock file) is
 documented once in
@@ -920,7 +926,7 @@ fetching and bridge that provider instead. [Rehosting](../guides/pkg.md#rehostin
 explains the required names and compatible types; [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow)
 explains committing the lock and materialized sources.
 
-Pick the elaborator modules your code calls — `control` for `if!` and `scope!`,
+Pick the elab modules your code calls — `control` for `if!` and `scope!`,
 `sequence` for `do!`, `spine_elaborators` for the spine palette,
 `algebraic_elaborators` for the algebraic one, `match` for `match!`,
 `derive` for `derive!`, and so on. The coercion and dispatch modules pull in
@@ -933,15 +939,15 @@ import elab/spine_elaborators(fit);
 import elab/match(match);
 ```
 
-Import each elaborator **without** the `!` — the call site supplies the bang.
+Import each elab **without** the `!` — the call site supplies the bang.
 The [`elaborators.md`](../guides/elaborators.md) guide covers
 the compile-time API if you want to *write* one rather than reuse these.
 
 ## See also
 
-- [Defining elaborators](../guides/elaborators.md) — the declaration ABI and
+- [Defining elabs](../guides/elaborators.md) — the declaration ABI and
   `import __comptime__;` reflected-type API.
-- [Building and testing elaborators](../guides/elaborator-authoring.md) —
+- [Building and testing elabs](../guides/elaborator-authoring.md) —
   complete generators, calls, and verification.
 - [Using libraries](../guides/using-libraries.md) — the
   module map of this same package.
@@ -949,7 +955,7 @@ the compile-time API if you want to *write* one rather than reuse these.
   `match!`, with its own `equiv` laws.
 - [Higher-kinded types](hkt.md) — uses `derive!` for a single-target instance
   pick.
-- [`specs/language.md` § Elaborators are imported, not ambient](../../specs/language.md#elaborators-are-imported-not-ambient)
+- [`specs/language.md` § elabs are imported, not ambient](../../specs/language.md#elaborators-are-imported-not-ambient)
   — the call mechanism every form here shares.
 - [`specs/formal/equiv.md`](../../specs/formal/equiv.md) — how the `equiv`
   laws above are discharged.

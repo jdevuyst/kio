@@ -1,6 +1,6 @@
 # Error handling
 
-Kio has no exceptions and no built-in `Result` type. Failure is modeled the same way every other "one of several shapes" is: with a structural sum. This guide covers the `!` bottom type, the `(T | !)` idiom, and how fallible steps compose through the elaborators.
+Kio has no exceptions and no built-in `Result` type. Failure is modeled the same way every other "one of several shapes" is: with a structural sum. This guide covers the `!` bottom type, the `(T | !)` idiom, and how fallible steps compose through the elabs.
 
 Assumed setup: a module whose host supplies `Int`, `String`, `Bool`, `print`, `int_to_string`, and arithmetic. Snippets are module bodies.
 
@@ -79,7 +79,7 @@ Exhaustiveness is enforced — you cannot forget the error arm.
 
 ## Composing fallible steps
 
-When several fallible steps chain, each one's error arm has to flow through. Elaborators do the plumbing.
+When several fallible steps chain, each one's error arm has to flow through. Elabs do the plumbing.
 
 `widen_sum!` extends a narrower error into a wider error sum, so a step that can only fail one way slots into a pipeline that can fail several:
 

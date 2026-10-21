@@ -5,7 +5,7 @@ A sum type `A | B` says a value is one of several shapes. Kio has no separate
 creates nominally distinct names for alternatives that carry domain meaning.
 
 Those two forms belong to the language. The convenient operations used below
-are library elaborators: `widen_sum!` constructs a chosen arm and `match!`
+are library elabs: `widen_sum!` constructs a chosen arm and `match!`
 builds exhaustive dispatch. They are not keywords or ambient builtins. A real
 module must depend on the library and import their names without the bang:
 
@@ -53,7 +53,7 @@ fn build_int_sum() -> String | Int { 42.>widen_sum! }
 ```
 
 `widen_sum!` injects the source value into a target sum that contains its type.
-It is an imported user elaborator, despite how closely its operation follows
+It is an imported user elab, despite how closely its operation follows
 the `|` structure. When the expected type is not obvious, write the target
 explicitly:
 
@@ -143,7 +143,7 @@ would be a second declaration, not a reuse.
 
 ## Matching a sum
 
-`match!` is also an imported user elaborator. Put the scrutinee before its
+`match!` is also an imported user elab. Put the scrutinee before its
 block and the clause lambdas inside it. The clause parameter type is the
 branch shape it handles:
 
@@ -161,7 +161,7 @@ type or a clause whose result is already known can supply that type; see
 [inferring a match result](typechecking.md#inferring-a-match-result) for a
 worked example and where to add an annotation.
 
-Clauses must cover the scrutinee. Leaving out the `Int` branch is an elaborator error:
+Clauses must cover the scrutinee. Leaving out the `Int` branch is an elab error:
 
 ```kio {@module check_exit_code=15}
 fn incomplete(v: String | Int) -> String {
@@ -261,7 +261,7 @@ determined before the body is checked and cannot mention the clause's local
 as `-> A`, or a complete expected function type. `match!` specializes an
 annotated result for each compatible source branch; those specialized results
 must still agree on one common result type. See
-[marked elaborator inputs](elaborators.md#marked-fills-implementations) for
+[marked elab inputs](elaborators.md#marked-fills-implementations) for
 the annotation and staging rules.
 
 ## Composable clause sets
@@ -316,4 +316,4 @@ uses this direct call shape rather than UFCS rearrangement.
   the same structural type system.
 - [UFCS calls](ufcs.md) covers `.>`, `.>>`, `.<`, and `.<<` in detail.
 - [Using libraries](using-libraries.md) covers the dependency workflow and
-  points to the advanced elaborator library's conditional cross-sum helpers.
+  points to the advanced elab library's conditional cross-sum helpers.

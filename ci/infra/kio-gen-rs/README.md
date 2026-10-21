@@ -28,7 +28,7 @@ Each generated case is a directory mirroring the case-directory shape `ci/run-te
   workdir/                     # directory where the case commands run
     prog.pkg.kio               # five targets; invoked control probes declare all eight
     prog.kio                   # module prog; generated host mirror + helpers + fn gen(...)
-    *.kio         # elaborator support files in surface-mode cases
+    *.kio         # elab support files in surface-mode cases
   run.args                     # exact generated core, surface, control, or recursion protocol
   run.sh                       # valid I32 results: capture execution, then kio test
   expected.stdout              # independently modelled control trace, otherwise empty
@@ -36,7 +36,7 @@ Each generated case is a directory mirroring the case-directory shape `ci/run-te
   expected.stderr.ignore       # marker — error-message wording is impl-specific
 ```
 
-`<NN_category>` matches a row in [`specs/exit-codes.md`](../../../specs/exit-codes.md) — `00_success`, `11_parse_error`, `12_import_error`, `13_name_resolution_error`, `14_type_error`, `15_elaborator_error`. Generated cases ship `expected.stderr.ignore` because the generator has no portable stderr oracle (kio-rs's wording is implementation-specific). A generated case ships `IS_KIO_PRIME` exactly when its program is Kio'-shaped end to end: a non-surface-mode program, and for mutants only a mutation that preserves the Kio' grammar. Surface-mode cases (elaborators, operators, other sugar) do not carry it. The `host` mirror declarations are ordinary Kio' items and do not disqualify a case.
+`<NN_category>` matches a row in [`specs/exit-codes.md`](../../../specs/exit-codes.md) — `00_success`, `11_parse_error`, `12_import_error`, `13_name_resolution_error`, `14_type_error`, `15_elaborator_error`. Generated cases ship `expected.stderr.ignore` because the generator has no portable stderr oracle (kio-rs's wording is implementation-specific). A generated case ships `IS_KIO_PRIME` exactly when its program is Kio'-shaped end to end: a non-surface-mode program, and for mutants only a mutation that preserves the Kio' grammar. Surface-mode cases (elabs, operators, other sugar) do not carry it. The `host` mirror declarations are ordinary Kio' items and do not disqualify a case.
 
 The batch directory also gets a `README.md` describing the seed, the generator version, the flag set, and an exit-code distribution summary.
 
@@ -149,10 +149,10 @@ cells; fixed support declarations supply their explicitly described helpers:
   order, updated and untouched payloads, and named binding results through
   the existing control protocol.
 - `match!` with `.(p: T) { ... }` clauses.
-- The 17 surface elaborator forms — emitted as identity coercions
+- The 17 surface elab forms — emitted as identity coercions
   (the generator picks the surface form; the Kio' fallback
   elaborates to the inner expression for all of them, since
-  identity is admitted by every elaborator). The emission policy is
+  identity is admitted by every elab). The emission policy is
   **primarily spine, low rate of algebraic** (per
   [`docs/guides/using-libraries.md`](../../../docs/guides/using-libraries.md)):
   within the wrap subset (~10% of expressions), the per-subset
@@ -222,8 +222,8 @@ cells; fixed support declarations supply their explicitly described helpers:
   Every generated implementation is a `pure fn`, matching the compile-time
   execution contract.
 
-Surface-mode packages import those elaborators from same-package
-root module files. The generator writes the POC elaborator support
+Surface-mode packages import those elabs from same-package
+root module files. The generator writes the POC elab support
 files into each generated case that can mention a bang-call surface form.
 
 ## Generator self-tests

@@ -27,7 +27,7 @@ one-based. A family means `particular + t1 * direction1 + ...`, with arbitrary
 rational parameters. All residual entries must be zero for a valid witness.
 
 The package uses the List library for persistent matrices and vectors and the
-elaborator library for ordinary conditionals and sum dispatch. A local adapter
+`elab` library for ordinary conditionals and sum dispatch. A local adapter
 rehosts list traversal onto the `testapi-compute-list-elab` runner contract;
 integer equality is ordinary Kio code composed from comparisons. Its modules
 separate input framing, rational arithmetic, matrix operations, reduction,

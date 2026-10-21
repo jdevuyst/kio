@@ -19,9 +19,9 @@ the host contract, for dynamic-language hosts.
 
 `kio repl` already evaluates expressions against a loaded package. REPL authoring extends this to incrementally enter, revise, and retract definitions in the session, with the session staying a valid module throughout.
 
-## Elaborator quoting
+## Elab quoting
 
-Giving elaborators a quoting facility for producing generated Kio glue from ordinary term syntax, reducing the amount of hand-built term construction in elaborator code.
+Giving elabs a quoting facility for producing generated Kio glue from ordinary term syntax, reducing the amount of hand-built term construction in elab code.
 
 ## Self-hosting
 

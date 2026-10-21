@@ -42,9 +42,9 @@ __INSERT_CODE_HERE__
 The examples use host types `I32`, `Bool`, and `String` with roles `i32`,
 `bool`, and `str`. The host comparisons `eq_i32` and `leq_i32` take two `I32`
 values and return `Bool`; `sub_i32` and `mul_i32` take two `I32` values and
-return `I32`. Import the conditional elaborator with
+return `I32`. Import the conditional elab with
 `import elab/control(if);` after following the
-[elaborator-library setup](using-libraries.md#the-elaborator-library) under
+[elab-library setup](using-libraries.md#the-elaborator-library) under
 the dependency name `elab`.
 
 For a single function, put `rec(loop)` directly before the `fn` keyword:

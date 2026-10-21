@@ -1,13 +1,19 @@
-# Elaborator implementation boundaries
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="elaborator-implementation-boundaries"></a>
 
-On-demand reference for the internal architecture of Kio-authored elaborators.
+# Elab implementation boundaries
+
+On-demand reference for the internal architecture of Kio-authored elabs.
 The public language contract lives in `specs/language.md` and
 `specs/formal/elaboration.md`; this page explains the implementation constraints
 that keep compile-time execution pure, open-world, and phase-local.
 
-## Elaborator evaluation is pure
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="elaborator-evaluation-is-pure"></a>
 
-An elaborator declaration has no configurable purity bit. Its implementation
+## Elab evaluation is pure
+
+An elab declaration has no configurable purity bit. Its implementation
 always runs in the compiler's pure primitive environment. A named
 implementation and every ordinary helper reachable from it are `pure fn`s.
 Captures are quoted runtime dependencies that the generated term may retain;
@@ -60,7 +66,7 @@ represent that request explicitly in the implementation's input or result;
 hiding producer advancement behind an ordinary pure observation would make
 dead-code elimination and reordering semantically observable.
 
-The elaborator API has no such request value. Every computed input must have a
+The elab API has no such request value. Every computed input must have a
 determined type before the implementation may observe it, including inputs
 with no retained producer work. Explicit product components are checked
 recursively; direct lambdas retain only the open final-result exception admitted
@@ -75,7 +81,7 @@ its result through the already-selected public argument equation. The same
 ordinary driver may export a closed result to an enclosing call while keeping
 the callback body pending. This is preparation before the immutable snapshot,
 not evaluator-driven work. Missing annotations, callback bodies and nested
-elaborator actions do not supply information in that header-only pass; the
+elab actions do not supply information in that header-only pass; the
 retained bodies must still check before atomic publication.
 
 Open-world follows from the same boundary. Evaluation and later adoption use
@@ -86,11 +92,11 @@ unrelated declaration cannot change an existing call.
 
 ## Phase and cache boundary
 
-Elaborator implementations, projected values, fill contexts, retained
+Elab implementations, projected values, fill contexts, retained
 producers, and evaluator control state are transient Lowered-phase machinery.
 They are consumed before persistent Prime. The substituted checked term is
 then validated from its own representation; downstream phases do not inherit
-authority from the elaborator that produced it.
+authority from the elab that produced it.
 
 Cache only validated prepared artifacts and completed pure results under their
 exact package-analysis identity. Never cache a partial evaluation, an
@@ -101,7 +107,7 @@ revalidated at its receiving boundary.
 
 ## Implementation checklist
 
-When changing elaborator evaluation, retained sources, reflection, fills, or
+When changing elab evaluation, retained sources, reflection, fills, or
 their caches, verify all of the following:
 
 - the evaluator receives immutable explicit inputs and no typer callback;

@@ -47,12 +47,15 @@ Arguments override the default:
 
 For an existing post, compare the proposed final contents with its prior
 published contents and inspect intermediate revisions where needed. Apply
-[`docs.md` § Blog posts](../../topics/docs.md#blog-posts): distinguish
-meaning-preserving language/format corrections and small code/API updates from
-substantive revisions. Formatting changes are substantive when formatting is
-the post's subject. Judge the claims and example's meaning, not changed-line
-counts. Substantive revisions need a visible notice with the edit date and
-brief nature; report a missing or misleading notice and propose exact text
+[`docs.md` § Blog posts](../../topics/docs.md#blog-posts): distinguish routine
+spelling/grammar/formatting corrections from meaningful changes. Check meaningful
+changes, including terminology updates and revisions for newer Kio versions,
+for the owner's dated, italic `Edit:` notice describing the change at the end
+of the post body, before any standard footer or disclosure. A small
+code/API update preserving an example's purpose still needs the notice when it
+updates the post for a newer version. Formatting changes are substantive when
+formatting is the post's subject; judge meaning, not changed-line counts.
+Report a missing or misleading notice and propose exact text
 without editing. Disclose unavailable publication/history evidence rather than
 assuming the current text proves what readers previously saw. Exact-text
 approval, authorial voice and the report-only boundary still apply.

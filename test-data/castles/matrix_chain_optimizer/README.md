@@ -26,7 +26,7 @@ by 189000 and keeping all table arithmetic within i32.
 `chain.kio` owns shapes and input validation, `optimizer.kio` owns the dynamic
 programming table and reconstruction, and `tree.kio` owns tree rendering,
 replay, and fold baselines. The main module assembles fixtures and reports
-their results. The package uses the shared elaborator library and the
+their results. The package uses the shared `elab` library and the
 `testapi-array` host protocol.
 
 What this adds to the corpus: interval dynamic programming whose output is a

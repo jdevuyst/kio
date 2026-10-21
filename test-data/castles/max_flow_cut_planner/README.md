@@ -34,4 +34,4 @@ decisions, predecessor reconstruction, independent graph traversal, and
 primal/dual flow-and-cut certificates. Modules separate network construction,
 search, augmentation, certificate checking, fixtures, and reporting. Imported
 `if!`, `match!`, and `widen_sum!` compose the control flow through the shared
-elaborator dependency; execution uses the exact `testapi-array` host protocol.
+`elab` dependency; execution uses the exact `testapi-array` host protocol.

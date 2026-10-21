@@ -25,7 +25,7 @@ The remaining lines check canonical root equality, terminal reduction,
 allocation-free recompilation, commuted apply-cache reuse, restriction-cache
 reuse, and the complete table's ordered, reduced and unique invariants.
 The package depends on the shared List owner for tables, caches and graph
-walks, and on the elaborator library for ordinary control and sum forms.
+walks, and on the `elab` library for ordinary control and sum forms.
 
 ## What this adds to the corpus
 

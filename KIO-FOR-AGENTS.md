@@ -35,10 +35,10 @@ or export the tree for browsing and searching with local tools. Run
   Check changes with `kio check`, format with `kio fmt`, and verify laws with
   `kio test` as appropriate to the project.
 - Prefer surface syntax in ordinary programs. Use the tutorials and guides
-  for tuples, labels, rows, branching, recursion, and imported elaborators;
+  for tuples, labels, rows, branching, recursion, and imported elabs;
   raw intrinsics belong in investigations of the explicit core.
 - Default to qualified imports (`import path/to/module as p;`) and calls
-  through the alias. Selective imports are useful for elaborators, operators,
+  through the alias. Selective imports are useful for elabs, operators,
   and names intentionally forming the module's local vocabulary. See
   [the language tutorial](docs/tutorials/language.md) and
   [UFCS spelling choices](docs/guides/ufcs.md#choosing-a-spelling).

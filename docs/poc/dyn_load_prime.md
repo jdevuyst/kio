@@ -62,7 +62,7 @@ loader split across focused modules:
 - Two package [dependencies](../guides/pkg.md#dependency-files),
   brought in the standard way any package reuses another: `elab.dep.kio`
   vendors the [`elab` POC](../guides/using-libraries.md) (the
-  `match!` / spine-elaborator machinery the loader's own sources use,
+  `match!` / spine-elab machinery the loader's own sources use,
   re-rooted under `elab/`), and `list.dep.kio` vendors the `list` POC
   (the generic list library the loader's internals are built on, under
   `list/`). Each dependency's host requirements are rehosted onto the

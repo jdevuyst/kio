@@ -93,7 +93,7 @@ turn one match into an ambiguity. The problem is the ambient search, not
 dictionary values or typeclass-like APIs themselves.
 
 Kio represents such evidence as ordinary values and passes it through ordinary
-function parameters. When the `derive!` library elaborator is convenient, it
+function parameters. When the `derive!` library elab is convenient, it
 examines exactly the literal tuple of rule functions supplied at that call
 site:
 
@@ -113,7 +113,7 @@ __SNIPPET__
 
 Here `Formatter(A)` packages a function from `A` to the host's `String` type.
 Its constructor stores that function; its projector retrieves it. The example
-uses the imported `derive!` elaborator; [Using libraries](using-libraries.md#the-elaborator-library)
+uses the imported `derive!` elab; [Using libraries](using-libraries.md#the-elaborator-library)
 shows how to add that library and import `elab/derive(derive)`.
 
 ```kio {@explicit_evidence}

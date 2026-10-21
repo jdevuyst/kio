@@ -2,7 +2,7 @@
 
 This document is the source of truth for Kio's **syntax and semantics**. It describes only what is settled. The canonical grammar productions live in [`grammar.md`](grammar.md) — this document narrates *what each form means and how it desugars*; that one pins *what parses*.
 
-Kio is layered. The small subset **Kio'** — described in [`prime.md`](prime.md) — carries the formal semantics and is the target for self-hosting; this document describes the full surface, which adds sugar and elaborator calls on top of Kio'. Elaborator calls are resolved through explicit imports. Compile-time reflection/helpers are imported only through the compiler-provided `import __comptime__;` block. Every feature here is either already in Kio' or expands into Kio' as noted inline.
+Kio is layered. The small subset **Kio'** — described in [`prime.md`](prime.md) — carries the formal semantics and is the target for self-hosting; this document describes the full surface, which adds sugar and elab calls on top of Kio'. Elab calls are resolved through explicit imports. Compile-time reflection/helpers are imported only through the compiler-provided `import __comptime__;` block. Every feature here is either already in Kio' or expands into Kio' as noted inline.
 
 ## Overview
 
@@ -13,7 +13,7 @@ Kio is an ultra-portable language. Kio' deliberately contains nothing host-speci
 - **Host-provided runtime capabilities.** Ordinary runtime code receives numeric, Boolean, string and I/O capabilities from host declarations; Kio has no ambient runtime or special runtime `String`. The core provides structural constructors (`->`, `forall`, `&`, `|`), Unit `.` and bottom `!`. Modules introduce or name types with `type`, `newtype`, `labels` and `host type`; the compiler-provided `__comptime__` vocabulary is a separate compile-time interface. Literal tokens in ordinary runtime source — integers (`42`), floats (`3.14`), booleans, and strings — are typed against the `role(...)`-marked host types in scope (see [Host declarations and the bridge block](#host-declarations-and-the-bridge-block)).
 - **No implicit recursive definitions.** Ordinary `fn` bindings may not refer to themselves, nor may two ordinary bindings mutually refer to each other. Surface Kio has one explicit term-level escape hatch: `rec(loop)` groups, which lower annotated recursive calls to an ordinary host-supplied `loop` function and do not introduce a Kio' fixpoint. Recursive data scope is separately explicit and capability-free: `rec newtype` / `rec labels` for a singleton and bare `rec { ... }` for one genuinely mutual type component. Every cyclic type path crosses a nominal newtype boundary; there is no alias-only fixed point. This keeps Kio' strongly normalizing while still letting hosted packages opt into general iteration through an explicit capability.
 - Surface syntax aims to feel close to **modern curly-brace languages**.
-- **Trait-like machinery is just label-generated types.** A "trait" is a label-generated type, or a product of label-generated types, whose labels are the method names. Callers reach the methods by explicit projection. Value-level glue between a source value and an expected type is synthesized by **imported elaborator bang-calls** — `name!(e)` forms resolved through ordinary scoped imports — not by any built-in coercion. Resolution is opt-in and name-driven: an elaborator only runs where its name is in scope and written with `!` at the call site. The reference source-to-target palettes (an algebraic palette and a spine palette of structural-coercion elaborators) are user-defined Kio libraries that live in the case studies, not language primitives; see [§ Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient). *(Every elaborator bang-call form is surface-only — none exist in [Kio'](prime.md).)*
+- **Trait-like machinery is just label-generated types.** A "trait" is a label-generated type, or a product of label-generated types, whose labels are the method names. Callers reach the methods by explicit projection. Value-level glue between a source value and an expected type is synthesized by **imported elab bang-calls** — `name!(e)` forms resolved through ordinary scoped imports — not by any built-in coercion. Resolution is opt-in and name-driven: an elab only runs where its name is in scope and written with `!` at the call site. The reference source-to-target palettes (an algebraic palette and a spine palette of structural-coercion elabs) are user-defined Kio libraries that live in the case studies, not language primitives; see [§ Elabs are imported, not ambient](#elaborators-are-imported-not-ambient). *(Every elab bang-call form is surface-only — none exist in [Kio'](prime.md).)*
 - **Open-world design.** Adding definitions to a module body never causes another module to fail to compile. (Scoped to module bodies — a package file's contract surface is governed by versioning, not open-world; see [Open-world design](#open-world-design).)
 
 ## Type system
@@ -28,7 +28,7 @@ application results using first-order equality constraints. An independently
 completed nested application contributes only its closed result. When a child
 still needs information from that finite relation, its unfinished typing edge
 is retained until the relevant parameter slot becomes usable. Source typing
-derivations and elaborator actions are never replayed; no backtracking or
+derivations and elab actions are never replayed; no backtracking or
 global worklist is involved. Every local unknown and retained edge is gone
 before the program reaches Kio'.
 
@@ -36,7 +36,7 @@ This most visibly lets an enclosing call provide a function type to a lambda,
 or a result type to a nested polymorphic call, after another sibling has pinned
 a shared type argument. A direct lambda callee can also fill whole missing
 parameters from that same node's value arguments. The source-to-target
-elaborator calls are the only direct user-written positions whose primary job
+elab calls are the only direct user-written positions whose primary job
 is source-to-target glue; `match!` may synthesize glue internally as part of
 dispatch.
 
@@ -60,7 +60,7 @@ after applying the currently known substitutions; another deferral replaces
 that progress snapshot. Advancing to a
 different schedule mode is not progress and never retries the equation. These
 bounded deferrals do not add a third typing mode: source premises are entered
-once, completed subexpressions are not rechecked, and elaborator actions are
+once, completed subexpressions are not rechecked, and elab actions are
 not rerun.
 
 The schedule preserves source order and semicolon boundaries. A lambda body
@@ -138,13 +138,13 @@ the same positional list and application rules: `r.>f(T, x)` supplies `T`,
 inserts `r` into a value slot, and checks the resulting ordinary call plan —
 see § UFCS.
 
-**Named callables share a uniform user-facing contract.** Top-level `fn`s, intrinsics (`__left__`, `__right__`, …, `__absurd__`, `__if_then_else__`), and elaborator names (such as `iso!`, `fit!`, `match!`, `derive!`, or a package-defined `checked!` after the corresponding import) are all looked up by name and expose a declared polytype. Elaborator names are called with bang syntax and run compile-time implementation code over reflected arguments; from the caller's perspective, explicit type arguments, `_` placeholders, value arguments, and surrounding expected types are solved against the elaborator's declared call type by the ordinary call-type rules. `__if_then_else__`'s scheme depends on the unique selected `role(bool)` host identity in the module's unqualified lexical scope; with zero or multiple identities, the name has no scheme and its use is a type error.
+**Named callables share a uniform user-facing contract.** Top-level `fn`s, intrinsics (`__left__`, `__right__`, …, `__absurd__`, `__if_then_else__`), and elab names (such as `iso!`, `fit!`, `match!`, `derive!`, or a package-defined `checked!` after the corresponding import) are all looked up by name and expose a declared polytype. Elab names are called with bang syntax and run compile-time implementation code over reflected arguments; from the caller's perspective, explicit type arguments, `_` placeholders, value arguments, and surrounding expected types are solved against the elab's declared call type by the ordinary call-type rules. `__if_then_else__`'s scheme depends on the unique selected `role(bool)` host identity in the module's unqualified lexical scope; with zero or multiple identities, the name has no scheme and its use is a type error.
 
-An elaborator implementation produces checked Kio' terms through its
+An elab implementation produces checked Kio' terms through its
 compile-time interface rather than making a runtime call. Those terms replace
 the bang call at the Lowered → Prime boundary.
 
-**Surface forms reduce to standard call shapes.** UFCS, tuple literals, and elaborator calls reduce to ordinary Kio' trees. `r.>f(T, x)` records the same call plan as `f(T, r, x)`; `(a, b)` becomes `__pair__(a, b)`. A block elaborator call projects its declared blocks into ordinary value arguments and invokes its resolved implementation. The reference library supplies `if!`, `match!`, `scope!`, and `do!`; these names have no compiler-owned control semantics. Elaborator bangs and dot-splices retain boundary-local elaborations until their Kio' terms or normalized calls are substituted at the Lowered → Prime boundary.
+**Surface forms reduce to standard call shapes.** UFCS, tuple literals, and elab calls reduce to ordinary Kio' trees. `r.>f(T, x)` records the same call plan as `f(T, r, x)`; `(a, b)` becomes `__pair__(a, b)`. A block elab call projects its declared blocks into ordinary value arguments and invokes its resolved implementation. The reference library supplies `if!`, `match!`, `scope!`, and `do!`; these names have no compiler-owned control semantics. Elab bangs and dot-splices retain boundary-local elaborations until their Kio' terms or normalized calls are substituted at the Lowered → Prime boundary.
 
 The decidability argument combines PJ-V-W-S with Kio's finite application
 boundary: source-bounded exact instantiation, shallow skolemization, explicit
@@ -164,51 +164,51 @@ So Kio's type system is effectively **System F with disjunction, conjunction, an
 
 **Anonymous structure and nominal names.** These product and sum types need no user-supplied type name, named constructors, or named fields. Nominal types can supply domain-specific field and alternative identities. A sum is tagged by position, not by a user-provided name or payload type; repeated payload types still form distinct branches.
 
-**Product types are finite cartesian products, represented as right-associated binary products.** Tuple values are elements of those products, not members of a separate nominal family indexed by arity; tuple notation is syntax for product introduction. Mathematics normally treats different parenthesizations of a finite product as canonically isomorphic rather than as one literal binary tree. Kio chooses a right-associated tree as its definitional surface and core representation. Parentheses group expressions and types unless comma/product structure gives them product meaning. The nullary product is `()`; a one-item parenthesized form is just grouping (`(x)` and `(x,)` are `x`, not a one-tuple); two or more comma items fold to the right. Thus `(a, b, c)` is by definition `(a, (b, c))`, inhabiting `A & (B & C)`. The left-nested product `((a, b), c)` inhabits `(A & B) & C`, which is a different structural type under ordinary equality and is bridged only by an explicit elaborator such as `flatten_prod!` / `fit!`.
+**Product types are finite cartesian products, represented as right-associated binary products.** Tuple values are elements of those products, not members of a separate nominal family indexed by arity; tuple notation is syntax for product introduction. Mathematics normally treats different parenthesizations of a finite product as canonically isomorphic rather than as one literal binary tree. Kio chooses a right-associated tree as its definitional surface and core representation. Parentheses group expressions and types unless comma/product structure gives them product meaning. The nullary product is `()`; a one-item parenthesized form is just grouping (`(x)` and `(x,)` are `x`, not a one-tuple); two or more comma items fold to the right. Thus `(a, b, c)` is by definition `(a, (b, c))`, inhabiting `A & (B & C)`. The left-nested product `((a, b), c)` inhabits `(A & B) & C`, which is a different structural type under ordinary equality and is bridged only by an explicit elab such as `flatten_prod!` / `fit!`.
 
 **Positional and type-indexed.** The operators are ordered and do not collapse duplicates. `A & A` is a two-component product, not one; `A | A` is a two-branch sum, not one. Repeated types are distinguished **positionally** (first-match wins at elimination). This is *not* Boolean algebra on types: `A & B` ≠ `B & A` and `A & A` ≠ `A` up to type equality. At runtime a `|` value carries a small positional integer tag, not a reflective type tag.
 
-**Construction and parenthesization.** Kio accepts same-operator `&` / `|` chains **without** outer parentheses in both surface and Kio' syntax: `A & B`, `A | B`, `A & B & C`, `A | B | C` are valid `Type` expressions, with grouping required in the arrow positions described below. Chains right-associate: `A & B & C` denotes `A & (B & C)`. Outer parens become **load-bearing** where the grammar requires grouping: when the chain is a child of the *other* operator (`(A & B) | C`, `A & (B | C)`), and directly on either side of a function-type arrow (`(A & B) -> C`, `A -> (B & C)` and `A -> (B | C)`). Values of `A & B` are written as the surface tuple literal `(a, b)`, which is sugar for the Prime intrinsic call `__pair__(a, b)`; correspondingly, `(a, b, c)` is sugar for `__pair__(a, __pair__(b, c))` and inhabits `A & B & C`, whereas `__pair__(__pair__(a, b), c)` inhabits the distinct type `(A & B) & C`. Values of `A | B` are normally produced by the spine elaborator via `widen_sum!(e)`. For explicit construction (the only path in [Kio'](prime.md)), the intrinsic injections `__left__ : [A][B] A -> (A | B)` and `__right__ : [A][B] B -> (A | B)` are available but **not in scope by default**: pull them in (along with the rest of the value intrinsics) with a top-of-file `import __intrinsics__;`. The friction of that declaration reinforces that `widen_sum!` is the usual surface path. Since `A | B | C` is sugar for `A | (B | C)`, the third branch is constructed as `__right__(__right__(c))`. The same applies to the product intrinsics (`__pair__`, `__fst__`, `__snd__`) and the sum eliminator (`__either__`) — those six, together with the branching intrinsic `__if_then_else__` (see [Conditionals](#conditionals)), are all gated behind the same `import __intrinsics__;`.
+**Construction and parenthesization.** Kio accepts same-operator `&` / `|` chains **without** outer parentheses in both surface and Kio' syntax: `A & B`, `A | B`, `A & B & C`, `A | B | C` are valid `Type` expressions, with grouping required in the arrow positions described below. Chains right-associate: `A & B & C` denotes `A & (B & C)`. Outer parens become **load-bearing** where the grammar requires grouping: when the chain is a child of the *other* operator (`(A & B) | C`, `A & (B | C)`), and directly on either side of a function-type arrow (`(A & B) -> C`, `A -> (B & C)` and `A -> (B | C)`). Values of `A & B` are written as the surface tuple literal `(a, b)`, which is sugar for the Prime intrinsic call `__pair__(a, b)`; correspondingly, `(a, b, c)` is sugar for `__pair__(a, __pair__(b, c))` and inhabits `A & B & C`, whereas `__pair__(__pair__(a, b), c)` inhabits the distinct type `(A & B) & C`. Values of `A | B` are normally produced by the spine elab via `widen_sum!(e)`. For explicit construction (the only path in [Kio'](prime.md)), the intrinsic injections `__left__ : [A][B] A -> (A | B)` and `__right__ : [A][B] B -> (A | B)` are available but **not in scope by default**: pull them in (along with the rest of the value intrinsics) with a top-of-file `import __intrinsics__;`. The friction of that declaration reinforces that `widen_sum!` is the usual surface path. Since `A | B | C` is sugar for `A | (B | C)`, the third branch is constructed as `__right__(__right__(c))`. The same applies to the product intrinsics (`__pair__`, `__fst__`, `__snd__`) and the sum eliminator (`__either__`) — those six, together with the branching intrinsic `__if_then_else__` (see [Conditionals](#conditionals)), are all gated behind the same `import __intrinsics__;`.
 
 **The zero-component product.** The anonymous product with no components has type `.` and the sole value `()`. It is typically used as the return type of a function whose effect happens at the host boundary (`String -> .`). The positional non-collapsing rule still applies: `A & .` is a 2-component product distinct from `A`.
 
 **The bottom type.** The type `!` has no values — no surface syntax constructs one, and no newtype or intrinsic ever produces one. `!` enters a program only as the return type of a host function that does not return (e.g., `fn panic(msg: String) -> !;`) or through the `__absurd__` intrinsic described below. `!` is a lexer token like `.`, not a user identifier, and cannot appear at the value level.
 
-`!` is the **sum identity at the elaborator layer**: an elaborator may absorb `A | ! ↔ A` in either direction. The mirror at the product layer is `()` (the zero-component product): `A & . ↔ A` is likewise an elaborator-layer absorption. **Neither identity holds at type equality** — `A | !` and `A` are distinct types under structural comparison, just as `A & .` and `A` are; each pair is bridged only at an elaborator-call site, never by the type checker. Which coercions a particular elaborator admits is that elaborator library's contract; see [§ Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient).
+`!` is the **sum identity at the elab layer**: an elab may absorb `A | ! ↔ A` in either direction. The mirror at the product layer is `()` (the zero-component product): `A & . ↔ A` is likewise an elab-layer absorption. **Neither identity holds at type equality** — `A | !` and `A` are distinct types under structural comparison, just as `A & .` and `A` are; each pair is bridged only at an elab-call site, never by the type checker. Which coercions a particular elab admits is that elab library's contract; see [§ Elabs are imported, not ambient](#elaborators-are-imported-not-ambient).
 
-The asymmetry with type-equality identities is **deliberate**: Kio has no algebra of type equality. Associativity, commutativity, distribution, duplication/collapse, and identity absorption all live at the elaborator layer, not at type comparison. Where other languages teach the equality procedure to rewrite identities away, Kio's equality is purely structural and identity bridging is opt-in. One consequence: a direct sum value `s : ! | T` used where `T` is expected requires an explicit elaborator call — identity absorption (`! | T ↔ T`) is an elaborator-layer rewrite, so an imported coercion elaborator can bridge it.
+The asymmetry with type-equality identities is **deliberate**: Kio has no algebra of type equality. Associativity, commutativity, distribution, duplication/collapse, and identity absorption all live at the elab layer, not at type comparison. Where other languages teach the equality procedure to rewrite identities away, Kio's equality is purely structural and identity bridging is opt-in. One consequence: a direct sum value `s : ! | T` used where `T` is expected requires an explicit elab call — identity absorption (`! | T ↔ T`) is an elab-layer rewrite, so an imported coercion elab can bridge it.
 
 **Elimination.**
 
 - For `x : A & B`, project components with the `__fst__` / `__snd__` intrinsics (after `import __intrinsics__;`): `__fst__(x) : A`, `__snd__(x) : B`. For longer products, chain them (`__fst__(__snd__(x))` for the middle component of a three-tuple).
-- For `x : A | B`, discriminate with the `__either__` intrinsic: `__either__(x, handle_a, handle_b)` picks the arm matching the injected branch. Surface pattern matching over `|` is the `match!` dispatch elaborator — see [Pattern matching](#pattern-matching).
+- For `x : A | B`, discriminate with the `__either__` intrinsic: `__either__(x, handle_a, handle_b)` picks the arm matching the injected branch. Surface pattern matching over `|` is the `match!` dispatch elab — see [Pattern matching](#pattern-matching).
 - For `x : !`, the `__absurd__` intrinsic — `__absurd__ : [A](x: !) -> A` — produces a value of any type. The usual shape is `__absurd__(panic("boom"))` at a call site that expects some `T`. There is no introduction form to mirror this — `!` has no values, so there is nothing to construct.
 
 **Two modes, scoped narrowly.** Per the bidirectional discipline (see [Bidirectional elaboration](#bidirectional-elaboration)), every typing position runs in either synthesize (⇑) or check (⇓) mode. Synthesize is the default — most positions read an expression and compute its type from its children, with no Hindley-Milner-style global unification and no inference variable that escapes its finite connected application or lexical owner. Check mode fires at specific positions where the surrounding context supplies an expected type: a binding annotation, a parent call's parameter slot, a return-type position, or a `fn` value-parameter or return-type slot. A polymorphic application may retain a blocked immediate argument while other arguments or connected nested results refine that finite local relation, but it does not create a third typing mode or a program-wide constraint problem. Check-mode flow does not cross binders or semicolon-separated block prefixes.
 
-An **elaborator call** is an explicit surface bang call that asks a scoped elaborator implementation to synthesize Kio' glue at that call site rather than relying on ambient inference. The umbrella includes source-to-target coercion elaborators, the `match!` dispatch elaborator, and the `derive!` instance-deriving elaborator. This document uses "elaborator" as the shorthand once the family is clear, and specifies the call **mechanism** here; the rule set a particular elaborator admits is that library's contract (see [§ Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient)).
+An **elab** (short for **elaborator macro**) is a type-driven macro declared with `elab`. An **elab call** is an explicit surface bang call that asks a scoped elab implementation to synthesize Kio' glue at that call site rather than relying on ambient inference. The umbrella includes source-to-target coercion elabs, the `match!` dispatch elab, and the `derive!` instance-deriving elab. This document specifies the call **mechanism** here; the rule set a particular elab admits is that library's contract (see [§ Elabs are imported, not ambient](#elaborators-are-imported-not-ambient)).
 
-At a source-to-target elaborator position the source type is synthesized from
+At a source-to-target elab position the source type is synthesized from
 the source expression, and the target is normally fixed by a surrounding
 expected type or an explicit type argument before the implementation runs.
-When an unresolved type variable occurs in the elaborator declaration's result,
+When an unresolved type variable occurs in the elab declaration's result,
 the type of the single checked term returned by the implementation may instead
 solve that already-existing result variable. This remains part of the same
 finite application relation: the returned term cannot introduce an inference
 variable or trigger replay of the implementation.
 
-A source-to-target elaborator takes its target as a type argument that follows
+A source-to-target elab takes its target as a type argument that follows
 the value argument — `name!(e, T)` — subject to the general `_`-or-elide
 inference rule. It is a common reference-library use of Kio's general
 successive-layer call shape: a later type-binder layer may follow a completed
 value-parameter layer. The position keeps `name!(e)` reading as "coerce `e` to
-the surrounding expected type" without giving elaborators a special calling
+the surrounding expected type" without giving elabs a special calling
 rule.
 
 Related local elaboration positions use the same "known shape, generate glue" discipline but are not source-to-target coercions:
 
-- `match!` clause dispatch — the dispatch elaborator selects a clause per DNF branch of the scrutinee's type and synthesizes the projection/injection glue that reconstructs each clause's argument. See [Pattern matching](#pattern-matching).
-- **Surface forms that desugar to polymorphic intrinsic calls with elided type arguments.** The tuple literal `(a, b, …)` desugars to a `__pair__` chain whose leading `[A][B]` type arguments are not written; each operand constrains its corresponding value-parameter slot. Imported block elaborators likewise relate their projected operands through their resolved public types and, when declared, authenticated fills. Neither route searches declarations.
+- `match!` clause dispatch — the dispatch elab selects a clause per DNF branch of the scrutinee's type and synthesizes the projection/injection glue that reconstructs each clause's argument. See [Pattern matching](#pattern-matching).
+- **Surface forms that desugar to polymorphic intrinsic calls with elided type arguments.** The tuple literal `(a, b, …)` desugars to a `__pair__` chain whose leading `[A][B]` type arguments are not written; each operand constrains its corresponding value-parameter slot. Imported block elabs likewise relate their projected operands through their resolved public types and, when declared, authenticated fills. Neither route searches declarations.
 
 Ordinary function calls supply type arguments — fully explicit, partially
 explicit with `_` placeholders, or fully elided — under the same finite
@@ -230,7 +230,7 @@ sum; write the sum construction explicitly in each contributing branch,
 normally with `widen_sum!`.
 
 Alternative-result inference is open-world. The reference conditional relates
-exactly its two written arms through its public type; a fills-marked elaborator
+exactly its two written arms through its public type; a fills-marked elab
 may also supply its finite authenticated fill transcript. Neither route
 consults ambient declarations, so adding an unrelated declaration to a module
 body cannot add an alternative, nominate a result producer, or change the
@@ -267,7 +267,7 @@ existing one.
 
 The `_` placeholder occupies a whole type-argument slot — it cannot appear nested inside a larger type expression at a call site (e.g., `f(List(_), x)` is rejected). The user must either write the type-argument out fully (`f(List(I32), x)`) or drop the slot entirely and let inference fill it from value-arg unification (`f(_, x)`, or just `f(x)`).
 
-**`fn` signatures and the `_` placeholder.** `fn` value parameters and the return type may carry annotations or `_` placeholders. `: _` on a value param may be dropped to write `(a)` for "value param `a` with type inferred from context"; `-> _` may be dropped to write `.(…)` for "return type inferred from context." Each parameter's annotation is independent — there is no all-or-nothing rule. Concrete annotations (`: T`, `-> R`) are verified against the bidirectional flow's expected type from the call site; a contradicting annotation is a type error. Beyond verification, a concrete `-> R` return annotation also *seeds* the body's expected type: when a `fn` sits in a synthesis-only position — no call-site expected type to flow in — its body is still checked against `-> R`, so an elaborator or other expected-type-consuming form in the body's tail position finds its target from the annotation the author already wrote, with no redundant restatement. This is bidirectional *checking*, not return-type inference — `-> _` and a dropped return annotation stay synthesized bottom-up. A `fn` with `_`-marked or dropped types must be applied or bound at a position that determines them; standalone `fn`-expressions with unconstrained metavariables are a compile-time error.
+**`fn` signatures and the `_` placeholder.** `fn` value parameters and the return type may carry annotations or `_` placeholders. `: _` on a value param may be dropped to write `(a)` for "value param `a` with type inferred from context"; `-> _` may be dropped to write `.(…)` for "return type inferred from context." Each parameter's annotation is independent — there is no all-or-nothing rule. Concrete annotations (`: T`, `-> R`) are verified against the bidirectional flow's expected type from the call site; a contradicting annotation is a type error. Beyond verification, a concrete `-> R` return annotation also *seeds* the body's expected type: when a `fn` sits in a synthesis-only position — no call-site expected type to flow in — its body is still checked against `-> R`, so an elab or other expected-type-consuming form in the body's tail position finds its target from the annotation the author already wrote, with no redundant restatement. This is bidirectional *checking*, not return-type inference — `-> _` and a dropped return annotation stay synthesized bottom-up. A `fn` with `_`-marked or dropped types must be applied or bound at a position that determines them; standalone `fn`-expressions with unconstrained metavariables are a compile-time error.
 
 The `_` placeholder may appear nested inside a value-parameter or return
 annotation on an anonymous lambda literal when the literal sits in a checked
@@ -452,9 +452,9 @@ Every cyclic component produced by label elaboration must cross a generated nomi
 labels Color = { red : . } | { green : . } | { blue : . };
 ```
 
-Values use ordinary label construction (`{red=}`) and widen into the named alias through the normal sum-construction elaborators; the named `labels` declaration does not introduce implicit sum construction.
+Values use ordinary label construction (`{red=}`) and widen into the named alias through the normal sum-construction elabs; the named `labels` declaration does not introduce implicit sum construction.
 
-**Neither `into!` nor `onto!` crosses label or host type boundaries.** The elaborator bridges structural rearrangements inside `&` and `|` (and, for `onto!`, forgets product components), but never manufactures or discards a generated label newtype, and never treats a `host type` as structurally equal to its consumer-supplied binding. To move between a payload type `X` and `Foo`, write `{foo = x}` / `Foo.mk(x)` to construct or `Foo.get(v)` / `v.?{foo}` to destruct; to move values in or out of a `host type`, call a host-provided conversion.
+**Neither `into!` nor `onto!` crosses label or host type boundaries.** The elab bridges structural rearrangements inside `&` and `|` (and, for `onto!`, forgets product components), but never manufactures or discards a generated label newtype, and never treats a `host type` as structurally equal to its consumer-supplied binding. To move between a payload type `X` and `Foo`, write `{foo = x}` / `Foo.mk(x)` to construct or `Foo.get(v)` / `v.?{foo}` to destruct; to move values in or out of a `host type`, call a host-provided conversion.
 
 ### Type parameters
 
@@ -609,7 +609,7 @@ value.
 
 These decisions use only the resolved callee type, the written argument list,
 and local type equalities. Declaration parameter groups, runtime ABI arity,
-callee identity or provenance, and a user elaborator's private ABI cannot
+callee identity or provenance, and a user elab's private ABI cannot
 change whether a call is type-only or value-applying. Alias unfolding may
 validate the type of a written value application, but cannot create that
 application. When both applications are written, the type application occurs
@@ -633,9 +633,9 @@ body declared to return `Witness` may write `produce(seed)` and infer
 result, the returned binder run remains in the residual type. A written `_`
 forces that type slot to be solved, and a written type applies it directly.
 This leading-versus-returned distinction is identical for ordinary functions,
-intrinsics, prefix and UFCS calls, and blockless elaborator bang-calls; only
-the elaborator's compile-time execution and Kio' substitution are phase-specific.
-Elaborators with trailing descriptors instead require the complete direct
+intrinsics, prefix and UFCS calls, and blockless elab bang-calls; only
+the elab's compile-time execution and Kio' substitution are phase-specific.
+Elabs with trailing descriptors instead require the complete direct
 block-call form, with inferred type arguments, described below.
 
 There is no separate `[ ]`-style type-application syntax. Type-argument lists may be written in three forms: fully explicit (every type arg written), partial with `_` placeholders for individual type-args to infer, or fully elided. The typer infers `_`-marked or elided type-args from the finite application-local equality relation over value-argument types, connected nested results, and (when present) the expected return type. Kio has no subtyping or implicit coercion in this relation. Unsolved binders and conflicting equalities are type errors. See § Annotations at bindings and § Type-argument inference and the `_` placeholder for the full rule.
@@ -680,13 +680,16 @@ The constructor accepts a polymorphic lambda literal whose binders match the pay
 
 This partial-application rule does not permit a transparent alias reference to omit any parameter declared by that alias.
 
-### Elaborators are imported, not ambient
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="elaborators-are-imported-not-ambient"></a>
 
-Every elaborator is an ordinary module item resolved through scoped imports — there is no built-in coercion, no ambient dispatch, and no language-level palette of named forms. A blockless call writes `name!(...)`; an elaborator with trailing-block descriptors uses `name! … { … }`. The bang must be adjacent to the name. Parsing recognizes either shape without consulting declarations; resolution selects the ordinary imported elaborator (see [`grammar.md` § Surface item additions](grammar.md#surface-item-additions)). The reference `elab` library supplies `if!`, `scope!`, `do!`, `match!`, `derive!`, an **algebraic** coercion palette (`iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`), and a **spine** palette (`reorder_sum!`, `reorder_prod!`, `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`, `fit!`). These are ordinary Kio declarations, imported explicitly. Their per-form algorithms are documented with the executable library in [`docs/poc/elab.md`](../docs/poc/elab.md); [`docs/poc/optics.md`](../docs/poc/optics.md) demonstrates the spine palette and `match!`.
+### Elabs are imported, not ambient
 
-**Named-callable contract.** Top-level `fn`s, intrinsics, and elaborator names are all looked up by name and expose a declared call type (a polytype). At a call site, explicit type arguments, `_` placeholders, value arguments, and the surrounding expected type are all solved against that call type by the ordinary call-type rules of § Type system. The difference is that an elaborator's bang-call runs compile-time implementation code over **reflected arguments** rather than the runtime function-call path; the ordinary and fills-marked reflected ABIs are documented below and in [`docs/guides/elaborators.md`](../docs/guides/elaborators.md).
+Every elab is an ordinary module item resolved through scoped imports — there is no built-in coercion, no ambient dispatch, and no language-level palette of named forms. A blockless call writes `name!(...)`; an elab with trailing-block descriptors uses `name! … { … }`. The bang must be adjacent to the name. Parsing recognizes either shape without consulting declarations; resolution selects the ordinary imported elab (see [`grammar.md` § Surface item additions](grammar.md#surface-item-additions)). The reference `elab` library supplies `if!`, `scope!`, `do!`, `match!`, `derive!`, an **algebraic** coercion palette (`iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`), and a **spine** palette (`reorder_sum!`, `reorder_prod!`, `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`, `fit!`). These are ordinary Kio declarations, imported explicitly. Their per-form algorithms are documented with the executable library in [`docs/poc/elab.md`](../docs/poc/elab.md); [`docs/poc/optics.md`](../docs/poc/optics.md) demonstrates the spine palette and `match!`.
 
-**Trailing-block declarations.** An elaborator may declare one or more final
+**Named-callable contract.** Top-level `fn`s, intrinsics, and elab names are all looked up by name and expose a declared call type (a polytype). At a call site, explicit type arguments, `_` placeholders, value arguments, and the surrounding expected type are all solved against that call type by the ordinary call-type rules of § Type system. The difference is that an elab's bang-call runs compile-time implementation code over **reflected arguments** rather than the runtime function-call path; the ordinary and fills-marked reflected ABIs are documented below and in [`docs/guides/elaborators.md`](../docs/guides/elaborators.md).
+
+**Trailing-block declarations.** An elab may declare one or more final
 value arguments with `trailing product;`, `trailing thunk;`, or
 `trailing sequence;`. The first descriptor is unlabelled; every later descriptor
 has a distinct value-shaped label, for example `trailing thunk else;`.
@@ -699,14 +702,14 @@ slot is a type error.
 | Descriptor | Value projected from the block |
 | --- | --- |
 | `product` | Independent expressions: no entries give unit, one gives that expression's value, and several give their right-associated product. Top-level `let` and `<-` bindings are rejected. A local binding inside a scoped entry cannot extend into another entry. |
-| `thunk` | An expression-block body wrapped in a zero-argument function. Empty gives a thunk returning unit. Ordinary local bindings are admitted; `<-` bindings are rejected. The elaborator determines when the thunk executes. |
+| `thunk` | An expression-block body wrapped in a zero-argument function. Empty gives a thunk returning unit. Ordinary local bindings are admitted; `<-` bindings are rejected. The elab determines when the thunk executes. |
 | `sequence` | An ordinary function with structural type `([A][B] (F(A) & (A -> F(B))) -> F(B)) -> F(R)`, parameterized by the bind function. Ordinary lets, `<-` bindings, and sequenced expressions precede an explicit final `F(R)` result. Empty and statement-only sequences are rejected; no implicit lift is inserted. |
 
 The neutral block grammar admits semicolon runs at either edge and between
 entries. A final semicolon does not discard a real final expression. Descriptor
 validation determines which item forms are admitted. Sequence projection and
 its binding rules are detailed in [Monadic do blocks](#monadic-do-blocks);
-they apply to every `sequence` descriptor, regardless of the elaborator's name.
+they apply to every `sequence` descriptor, regardless of the elab's name.
 
 **Block calls.** Every declared block is supplied exactly once, in declaration
 order. The first is unlabelled and later blocks carry their declared labels.
@@ -732,7 +735,7 @@ is the generic abbreviated spelling of
 has a privileged parsing role.
 
 Malformed syntax is a parse error (`11`). Import and name failures retain
-their ordinary categories (`12`/`13`). Once the elaborator is resolved,
+their ordinary categories (`12`/`13`). Once the elab is resolved,
 missing, duplicate, unknown, or out-of-order blocks, invalid block contents,
 and descriptor/public-type mismatches are type errors (`14`), with source and
 declaration context. An ignored non-unit sequence step explains the required
@@ -746,7 +749,7 @@ Adding unrelated declarations cannot reinterpret an existing call. Descriptor
 metadata, neutral blocks, and provisional projection state are consumed before
 Kio'; none grants persistent authority to the resulting ordinary term.
 
-**Explicit implementation dependency.** An elaborator declaration chooses one
+**Explicit implementation dependency.** An elab declaration chooses one
 of two implementation schedules. In both modes, the field names its
 implementation with an ordinary lexical value path. A bare path may name a
 local function or a selectively imported function. A dotted path may select a
@@ -820,8 +823,8 @@ entering that callback's body. The signature contributes the ordinary equation
 at the already-selected argument slot; it does not select a different grouping
 or infer a missing annotation. A closed result may pass through enclosing
 ordinary calls while their source terms remain pending. The callback body is
-still checked once before publication, including when the elaborator ignores
-the operand. No body, nested elaborator action, or immediate-lambda callee is
+still checked once before publication, including when the elab ignores
+the operand. No body, nested elab action, or immediate-lambda callee is
 entered merely to complete such a header. A direct lambda is the
 structural exception: its complete universal and value-parameter
 header may precede an open final body-result subtree, but no unresolved source
@@ -836,7 +839,7 @@ unfold, `__type_args_fold__` and
 `__type_apply__` remain residual when their outer type or head is unresolved;
 they do not substitute a zero-argument fold result or a no-op application. The
 formal boundary is specified in
-[elaborator evaluation](formal/elaboration.md#74-elaborator-bangs). During this
+[elab evaluation](formal/elaboration.md#74-elaborator-bangs). During this
 staging, a directly synthesized lambda with explicit type binders may omit its
 return annotation or write `-> _` when its written binder and parameter header
 is complete. Its provisional final result belongs to the surrounding scope,
@@ -864,14 +867,14 @@ discard its inputs. This boundary follows resolved intrinsic kind and the
 complete scheme, never a declaration spelling, module identity, result shape
 alone, or raw source position.
 
-A named implementation declared in the elaborator's defining module may remain
-private regardless of the elaborator's visibility, and any implementation may
+A named implementation declared in the elab's defining module may remain
+private regardless of the elab's visibility, and any implementation may
 call private helpers in its own module. A target declared in another module
 must be ordinarily importable into the defining module through a written
-`import`, but it need not meet the elaborator's outward visibility. These
+`import`, but it need not meet the elab's outward visibility. These
 functions are compile-time implementation details, not declarations a caller
 imports. A newtype constructor or projector keeps its ordinary member type and
-cannot satisfy either elaborator ABI; use an ABI-shaped function instead.
+cannot satisfy either elab ABI; use an ABI-shaped function instead.
 
 The implementation path follows only the declaration module's lexical scope
 and its written `import` clauses. Those imports are the only cross-module
@@ -879,12 +882,12 @@ dependency edges created by the target: a selectively imported function or an
 explicit module alias supplies the binding before any dotted member is
 selected. Resolution never scans other modules or treats a slash-qualified FQN
 as an expression. Adding an unrelated declaration therefore cannot rebind the
-target or alter an existing elaborator; a same-scope duplicate is rejected as
+target or alter an existing elab; a same-scope duplicate is rejected as
 a declaration conflict rather than silently taking precedence. Fully qualified
 paths remain available on the separate surfaces that define them, including
 type paths, REPL and Kiodoc name queries, and dynamic-loader identity strings.
 
-Every item named by `captures` must have visibility equal to or wider than the elaborator declaration. Captures differ from implementation helpers: a captured type becomes a quoted `__Type__` descriptor and a captured value becomes a quoted `__Checked_term__` that the implementation may place in the generated runtime term. A capture does not execute the captured declaration at compile time, so it may name a host type, host function, or other runtime-provided item. The visibility floor applies because that dependency can survive the bang call; it does not grant the implementation general access to private declarations.
+Every item named by `captures` must have visibility equal to or wider than the elab declaration. Captures differ from implementation helpers: a captured type becomes a quoted `__Type__` descriptor and a captured value becomes a quoted `__Checked_term__` that the implementation may place in the generated runtime term. A capture does not execute the captured declaration at compile time, so it may name a host type, host function, or other runtime-provided item. The visibility floor applies because that dependency can survive the bang call; it does not grant the implementation general access to private declarations.
 
 **Fill and specialization helpers.** Alongside the compile-time proof and
 reflection helpers, `import __comptime__;` introduces the opaque type
@@ -940,33 +943,33 @@ identities, or transcript contents. `__Fill_ctx__` has no source constructor,
 cannot be converted to or from `__Comptime__`, and cannot be serialized or
 retained in generated runtime code.
 
-**Compile-time purity and runtime result.** An `elab` declaration has no `pure` modifier. Its implementation always executes in a pure context: a named implementation must be a `pure fn`, and every ordinary function reached transitively while evaluating it must also be declared `pure`. Local type annotations and implementation ABI types may mention any well-formed type, including host types; named types in the elaborator call type obey the declaration-visibility floor. Captures remain quoted inputs subject to their separate visibility rule above. This separates the code that computes a term from the term it computes.
+**Compile-time purity and runtime result.** An `elab` declaration has no `pure` modifier. Its implementation always executes in a pure context: a named implementation must be a `pure fn`, and every ordinary function reached transitively while evaluating it must also be declared `pure`. Local type annotations and implementation ABI types may mention any well-formed type, including host types; named types in the elab call type obey the declaration-visibility floor. Captures remain quoted inputs subject to their separate visibility rule above. This separates the code that computes a term from the term it computes.
 
-A bang call in a `pure fn` is therefore not accepted or rejected from a purity bit on the elaborator. The implementation runs, its checked term replaces the bang call, and the assembled Kio' package is validated again. If the generated term contains a host-function or unmarked-function reference, that final check rejects it in a pure caller; the same term remains admissible in an ordinary caller. A generated pure term is admissible in either.
+A bang call in a `pure fn` is therefore not accepted or rejected from a purity bit on the elab. The implementation runs, its checked term replaces the bang call, and the assembled Kio' package is validated again. If the generated term contains a host-function or unmarked-function reference, that final check rejects it in a pure caller; the same term remains admissible in an ordinary caller. A generated pure term is admissible in either.
 
-**Generated terms are hygienic.** The Kio' tree an elaborator emits is constructed through reflected term constructors, not by reaching into the caller's scope:
+**Generated terms are hygienic.** The Kio' tree an elab emits is constructed through reflected term constructors, not by reaching into the caller's scope:
 
-- generated elaborator terms are hygienic — they bind and reference only what the elaborator builds, independent of names in scope at the call site;
-- a caller is **not** required to `import __intrinsics__;` for the intrinsic calls an elaborator emits on its behalf — the elaborator's output carries the intrinsic reference directly;
+- generated elab terms are hygienic — they bind and reference only what the elab builds, independent of names in scope at the call site;
+- a caller is **not** required to `import __intrinsics__;` for the intrinsic calls an elab emits on its behalf — the elab's output carries the intrinsic reference directly;
 - the reflected term constructors are split into core `__term_*__` constructors (for core-language terms) and intrinsic-call `__intrinsic_*__` constructors (for the reserved intrinsic values);
 - the `__intrinsic_*__` constructor names mirror the `__intrinsics__` value names — each `__name__` intrinsic has the constructor `__intrinsic_<name>__` (`__pair__` → `__intrinsic_pair__`).
 
-**Target type-argument.** A source-to-target elaborator takes its target as a
+**Target type-argument.** A source-to-target elab takes its target as a
 type argument *after* the value argument — `name!(e, T)` — subject to the
 general `_`-or-elide rule (see § Type-argument inference and the `_`
 placeholder): explicit `T`, a `_` placeholder, or a fully elided slot. An
 explicit `T` and a surrounding expected type must be `equiv`-equal. An elided
 target is normally filled by the surrounding expected type; for a
-type-producing elaborator, the checked term returned by its implementation may
+type-producing elab, the checked term returned by its implementation may
 instead determine the declaration's pre-existing result variable. If neither
 route determines one type, the call reports "cannot infer type argument." Each
 name also has the [receiver-first UFCS spelling](#ufcs) `r.>name!(T)` (or
 `r.>name!` when no target argument is supplied), equivalent in AST and
 semantics.
 
-**No surface form survives into Kio'.** The typer records each elaborator-call elaboration in the `Elaborations` side channel; the substitute pass swaps the recorded Kio' tree in at the Lowered → Prime boundary. The declaration mode, `__Comptime__`, `__Fill_ctx__`, fill transcript, provisional terms, and compile-time helpers are all consumed before that boundary. The ordinary `pure fn` marker remains on Kio' function declarations so the fresh Prime validation can check the substituted body without hidden surface state. `kio-prime` rejects every elaborator declaration and bang-call at parse time — see [`prime.md` § What's not in Kio'](prime.md#whats-not-in-kio). [Kio'](prime.md) has no elaborator and no sugar: identity absorption and reassociation happen only at elaborator-call sites, never at type comparison.
+**No surface form survives into Kio'.** The typer records each elab-call elaboration in the `Elaborations` side channel; the substitute pass swaps the recorded Kio' tree in at the Lowered → Prime boundary. The declaration mode, `__Comptime__`, `__Fill_ctx__`, fill transcript, provisional terms, and compile-time helpers are all consumed before that boundary. The ordinary `pure fn` marker remains on Kio' function declarations so the fresh Prime validation can check the substituted body without hidden surface state. `kio-prime` rejects every elab declaration and bang-call at parse time — see [`prime.md` § What's not in Kio'](prime.md#whats-not-in-kio). [Kio'](prime.md) has no elab and no sugar: identity absorption and reassociation happen only at elab-call sites, never at type comparison.
 
-**Open-world.** The implementation schedule belongs to the one elaborator
+**Open-world.** The implementation schedule belongs to the one elab
 declaration selected by ordinary resolution, after its public call plan is
 fixed. Marked staging walks only the value operands in that plan. Its one
 call-shell exception uses the already-resolved compiler-owned intrinsic kind
@@ -975,9 +978,9 @@ that kind by matching a name or type shape. Adding an unrelated declaration to
 a module body therefore changes neither the selected schedule, staged
 operands, transcript order, nor completed result of an existing call.
 
-**Crossing label and host boundaries is not an elaborator's job.** A source-to-target coercion rearranges structural shapes inside `&` and `|`; it never manufactures or discards a generated label newtype, and never treats a `host type` as structurally equal to its consumer-supplied binding. Move between a payload type and a generated nominal type `F` with `{f = x}` / `F.mk(x)` or `F.get(r)` / `r.?{f}` (see [Labels](#labels)); cross a `host type` boundary with a host-provided conversion.
+**Crossing label and host boundaries is not an elab's job.** A source-to-target coercion rearranges structural shapes inside `&` and `|`; it never manufactures or discards a generated label newtype, and never treats a `host type` as structurally equal to its consumer-supplied binding. Move between a payload type and a generated nominal type `F` with `{f = x}` / `F.mk(x)` or `F.get(r)` / `r.?{f}` (see [Labels](#labels)); cross a `host type` boundary with a host-provided conversion.
 
-Unlike typeclasses, which insert dictionary lookups at every polymorphic call site automatically, an elaborator only runs where you import its name and write the bang-call.
+Unlike typeclasses, which insert dictionary lookups at every polymorphic call site automatically, an elab only runs where you import its name and write the bang-call.
 
 ### Traits as label-generated types
 
@@ -1029,7 +1032,7 @@ reachable through a declaration's signature must be visible everywhere that
 declaration is visible. The walk is recursive through type arguments,
 functions, sums, products, and transparent aliases, so a public alias cannot
 conceal a private nominal type. It applies to ordinary and recursive function
-signatures, type aliases, host-function signatures, elaborator call types, and
+signatures, type aliases, host-function signatures, elab call types, and
 the declarations produced when `labels` lowers. A newtype's outer name remains
 an opaque API boundary: its payload need not be as visible as the outer
 newtype. Instead, the payload types must meet each constructor or projector's
@@ -1052,7 +1055,7 @@ A `host fn` cannot carry `pure`: its body is opaque to Kio, leaving no body whos
 
 The restriction applies only to executable references in the function body. Type annotations inside that body use the ordinary well-formed-type rules and may mention host types, transparent aliases, newtypes, or any other in-scope type. A function signature also has no purity classification, but its named types obey the declaration-visibility floor above. Type declarations carry no purity classification.
 
-Purity is transitive and declaration-based. In a pure body, executable value paths may resolve to local binders, pure intrinsics and newtype members, or ordinary functions explicitly declared `pure`. While checking an elaborator implementation, compiler compile-time primitives are admitted as the pure primitive environment; they are consumed before persistent Kio' and are not runtime values. A host function or an ordinary function without `pure` is rejected even if a particular implementation happens not to perform an effect. An unrestricted function may refer to both pure and unrestricted functions. The marker is retained in Kio' and on the public function contract so a dumped, freshly reparsed, or validated cached Prime artifact can check the same promise without producer provenance. A loadable image retains the marker, but the runtime loader trusts precompiled function bodies and does not perform that typecheck (see [`prime.md`](prime.md)).
+Purity is transitive and declaration-based. In a pure body, executable value paths may resolve to local binders, pure intrinsics and newtype members, or ordinary functions explicitly declared `pure`. While checking an elab implementation, compiler compile-time primitives are admitted as the pure primitive environment; they are consumed before persistent Kio' and are not runtime values. A host function or an ordinary function without `pure` is rejected even if a particular implementation happens not to perform an effect. An unrestricted function may refer to both pure and unrestricted functions. The marker is retained in Kio' and on the public function contract so a dumped, freshly reparsed, or validated cached Prime artifact can check the same promise without producer provenance. A loadable image retains the marker, but the runtime loader trusts precompiled function bodies and does not perform that typecheck (see [`prime.md`](prime.md)).
 
 This is a restriction on declaration references, not an effect qualifier on function types. A pure function may invoke a callback supplied through a local binder, including a host callback supplied by an unrestricted caller. A call to a pure function is effect-free when argument evaluation and all invoked callbacks are effect-free, including callbacks carried in data or captured by closures; the `pure` marker alone does not establish that condition.
 
@@ -1085,7 +1088,7 @@ An ordinary selection may give its local spelling with `as`, for example
 `import runtime(panic as fail, Handle as Resource);`. The destination preserves
 the source identifier class: value names remain value names and type names
 remain type names. This applies to ordinary functions, host functions, host
-types, transparent types, newtypes, elaborators, and literal aliases. The import
+types, transparent types, newtypes, elabs, and literal aliases. The import
 retains the original declaration's identity, public type and kind, purity,
 visibility, and declaration role. In particular, a renamed host type remains
 a direct host-type candidate for literal roles; a renamed newtype retains
@@ -1112,7 +1115,7 @@ The origin set is determined only by declarations and imports written in the con
 import __comptime__;
 ```
 
-The block imports the complete compile-time helper surface. There is no qualified form, selective form, alias, wildcard, or per-name import for `__comptime__`. Public helper type and value names use the documented double-underscore spellings such as `__Type__`, `__Checked_term__`, `__type_view__`, `__term_call__`, and `__structural_recur__`. See [`specs/formal/elaboration.md`](formal/elaboration.md) for the compile-time boundary: user elaborators return reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
+The block imports the complete compile-time helper surface. There is no qualified form, selective form, alias, wildcard, or per-name import for `__comptime__`. Public helper type and value names use the documented double-underscore spellings such as `__Type__`, `__Checked_term__`, `__type_view__`, `__term_call__`, and `__structural_recur__`. See [`specs/formal/elaboration.md`](formal/elaboration.md) for the compile-time boundary: user elabs return reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
 
 **Module cycles.** Value-level cycles between `.kio` module files are disallowed: if module A imports from module B, then B may not transitively import from A. Every **explicit `import`** counts as an edge — there is no type-only exemption: `import m(X);` always contributes the same `→ m` edge, including an `import` that brings a `host type` or `host fn` into scope. The package file's `bridge` block does not participate in this graph because it targets the contract surface rather than module bodies.
 
@@ -1128,11 +1131,11 @@ Open-world is preserved **structurally**, not by bookkeeping. `into!` and `onto!
 
 **Scope.** Open-world is a property of `.kio` module bodies — its formal statement ([`formal/prime.md` § 7](formal/prime.md)) is scoped there. It does **not** cover the **contract surface**: the transitive closure of `host` items, exports, and the types those reach, as selected by the package file's `bridge` block. Changing anything inside that closure — adding or removing a `host` item, changing a type a bridged signature reaches — is a versioning event, not an open-world violation. The carve-out is keyed to the contract-surface closure, not to a syntactic block.
 
-**Role-based singleton resolution is a contract-surface coupling, not an open-world hole.** Tier 3 of [literal resolution](#literals) reads the role-bearing host identities in the use site's unqualified lexical scope. Adding a second role-bearing `host type` whose role admits a literal shape already served by tier 3 turns those unannotated literals ambiguous: a previously-resolving `let n = 42;` becomes a type error. The `__if_then_else__` scheme and the reference `if!` elaborator’s branching glue likewise require that selected `role(bool)` identity set to be a singleton, so adding a second identity makes those uses ambiguous even when the condition already has one of the two types. A `host type` is part of a module's contract surface, exactly the category the **Scope** paragraph carves out, so this coupling is a versioning event, not a module-body open-world hole. It does not reach across package boundaries or across unrelated module trees. A qualified module import does not add all of that module's members to the pool; a provider addition behind an existing `import provider as p;` therefore cannot perturb resolution. A role-inheriting alias (a `type` whose body resolves to a role-bearing host type) is a candidate only as a fallback, when no `host type` carries the role — so where a host type is in scope, no alias enters the pool. The alias itself must be in unqualified lexical scope, but its body may name its terminal host identity through a qualified import. Multiple aliases reaching one terminal identity remain one candidate, so adding another spelling for an already-present identity changes nothing. The fallback couples to the same role-bearing-type-in-scope property the host-type case does: it transparently denotes a host type through an explicitly in-scope alias, so it carries the identical contract-surface coupling rather than a new module-body hole.
+**Role-based singleton resolution is a contract-surface coupling, not an open-world hole.** Tier 3 of [literal resolution](#literals) reads the role-bearing host identities in the use site's unqualified lexical scope. Adding a second role-bearing `host type` whose role admits a literal shape already served by tier 3 turns those unannotated literals ambiguous: a previously-resolving `let n = 42;` becomes a type error. The `__if_then_else__` scheme and the reference `if!` elab’s branching glue likewise require that selected `role(bool)` identity set to be a singleton, so adding a second identity makes those uses ambiguous even when the condition already has one of the two types. A `host type` is part of a module's contract surface, exactly the category the **Scope** paragraph carves out, so this coupling is a versioning event, not a module-body open-world hole. It does not reach across package boundaries or across unrelated module trees. A qualified module import does not add all of that module's members to the pool; a provider addition behind an existing `import provider as p;` therefore cannot perturb resolution. A role-inheriting alias (a `type` whose body resolves to a role-bearing host type) is a candidate only as a fallback, when no `host type` carries the role — so where a host type is in scope, no alias enters the pool. The alias itself must be in unqualified lexical scope, but its body may name its terminal host identity through a qualified import. Multiple aliases reaching one terminal identity remain one candidate, so adding another spelling for an already-present identity changes nothing. The fallback couples to the same role-bearing-type-in-scope property the host-type case does: it transparently denotes a host type through an explicitly in-scope alias, so it carries the identical contract-surface coupling rather than a new module-body hole.
 
 **Host items preserve open-world.** A module's `host` items are part of its contract surface — peers of a function signature. Adding or removing a `host` declaration is a versioning event, not an ordinary module-body edit, and the break (a newly-required host capability) lands on the host at its recompile against the regenerated interface, caught by the type system at the boundary. No ordinary `pub fn` / `type` added to any other module body can change which host capabilities an existing bridge requires.
 
-**Purity preserves open-world.** A pure function is checked only against executable references already resolved in its body. The checker consults an ordinary function declaration's written `pure` metadata; type paths are irrelevant, and it never scans a growing candidate pool. A bang call likewise names one explicitly imported elaborator, whose implementation and captures are fixed by that declaration; final Prime validation checks only the term that call produced. Adding an unrelated declaration to any module body therefore cannot make an existing pure function impure or change its elaboration. Changing the `pure` modifier on a referenced public function changes that function's contract, the same category as changing its signature.
+**Purity preserves open-world.** A pure function is checked only against executable references already resolved in its body. The checker consults an ordinary function declaration's written `pure` metadata; type paths are irrelevant, and it never scans a growing candidate pool. A bang call likewise names one explicitly imported elab, whose implementation and captures are fixed by that declaration; final Prime validation checks only the term that call produced. Adding an unrelated declaration to any module body therefore cannot make an existing pure function impure or change its elaboration. Changing the `pure` modifier on a referenced public function changes that function's contract, the same category as changing its signature.
 
 **Dependencies preserve open-world.** Declaring a cross-package dependency in a `<local>.dep.kio` file (see [Module system § Dependency roots](#module-system) and [`package.md` § Dependency files](package.md#dependency-files)) only *adds* an importable `<local>/…` module root: the dependency's module tree is re-rooted under the local name, so every dependency lives under its own prefix and adding one cannot change the meaning of an existing module — the consumer's own modules, or another dependency's. The one hazard to monotonicity is a local name shadowing one of the consumer's existing root modules, which would make `import <local>/module as m;` ambiguous; the collision rule (**a dependency's local name must not equal the first path segment of any of the consumer package's own modules**) rules that out, so an `import` path's first segment resolves to exactly one of a declared dependency or a local module. Adding a dependency is therefore monotonic on the consumer's existing code. (A dependency's *contract surface* — the env it requires of the host, folded into the consumer's surface — is a versioning concern, the same carve-out as the **Scope** paragraph above, not a module-body open-world hole.)
 
@@ -1209,7 +1212,7 @@ host type String role(str);
 
 The full role list: `i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`, `u64`, `u128`, `f32`, `f64`, `bool`, `str`. Each role belongs to one of four **shapes** — integer, float, string, boolean — and the [literal admission relation](#literals) keys off the shape. A role-bearing host type carries exactly one role; multiple host types in the same scope may carry the same role. `role` applies only to `host type` declarations. When neither an explicit annotation nor an expected type determines a literal's type, tier 3 requires exactly one admitted role-bearing identity in the use site's unqualified lexical candidate pool.
 
-A role's primary purpose is **literal reception**: source-level literal forms become values of a role-bearing host type via the three-tier resolution in [Literals](#literals). `role(bool)` also identifies the condition type for `__if_then_else__` and for the reference `if!` elaborator's branching glue. Both require one selected Boolean identity in unqualified lexical scope (see [Conditionals](#conditionals)). Multiple Boolean-role declarations remain valid when no construct needs that singleton scheme.
+A role's primary purpose is **literal reception**: source-level literal forms become values of a role-bearing host type via the three-tier resolution in [Literals](#literals). `role(bool)` also identifies the condition type for `__if_then_else__` and for the reference `if!` elab's branching glue. Both require one selected Boolean identity in unqualified lexical scope (see [Conditionals](#conditionals)). Multiple Boolean-role declarations remain valid when no construct needs that singleton scheme.
 
 ### Embeddability and portability
 
@@ -1228,7 +1231,7 @@ Kio identifier spellings are enforced by the compiler: a violation is a parse-er
 Ignoring leading and trailing underscore affixes, each word contains one or more ASCII letters followed by zero or more digits. Exactly one underscore separates adjacent words. Thus `a1_b2`, `foo123_bar4`, `sha256`, and `p0` are valid; `a1b`, `foo_123`, and `foo__bar` are invalid. Any number of trailing underscores is admitted.
 
 - **Type names and type parameters** match `_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`: the first letter is uppercase, and every later letter is lowercase. This applies to aliases, host types, newtypes, named label aliases, and type binders. `I32`, `Foo123_bar4`, `_Logger`, and `_Event_stream` are valid type names.
-- **Values** match `_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`: every letter is lowercase. Functions, elaborators, value binders, and ordinary imported value names obey this rule.
+- **Values** match `_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`: every letter is lowercase. Functions, elabs, value binders, and ordinary imported value names obey this rule.
 - **Labels** match `[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`, without a leading underscore. The generated nominal name preserves every word and affix and capitalizes only the first letter: `foo1_bar2` becomes `Foo1_bar2`. Generated nominals occupy the ordinary type namespace and participate in duplicate-name checking. A second explicit declaration of the same label is rejected; the exact `name: _` marker described in [Labels](#labels) refers to the first generated type without declaring another one.
 - **Modules, subdirectories, packages, and dependency local names** obey the value rule. Module paths and package, dependency, lock, and signature filename stems retain their exact source identity.
 - **Leading underscores** have the same rule for both namespaces. Zero or one leading underscore is user space. A single leading underscore is part of the exact identity and permits an unused binding; `Foo` and `_Foo`, or `foo` and `_foo`, are distinct and remain ordinarily referenceable. It grants no different typing, visibility, or capability.
@@ -1248,8 +1251,8 @@ Per-keyword semantics are documented at the declaration sites; this is the conso
 - **Item-leading words** (recognized at module-level item position, after declaration modifiers where admitted): `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `elab`, `op`, `varop`. (`equiv` is not allowed after `pub`; `rec` is allowed after `pub` in the singleton forms `pub rec newtype`, `pub rec labels`, and `pub rec(loop) fn`; either braced `rec` group takes no leading visibility, so `pub` goes on each member; only an ordinary `fn` is allowed after `pure`.) Outside these positions, ordinary identifiers.
 - **Module-header words** (recognized at the start of a `*.kio` module file): `module` for a module declaration.
 - **Recursive-call introducer**: `recur` introduces a recursive callee, with optional call annotations before that callee: `recur step(x)` or `recur(cont) step(x)`. Without a following callee, a bare `recur` reference or an ordinary call such as `recur(x)` uses the ordinary identifier. Both `rec` and `recur` remain ordinary names outside their grammatical positions; `fn id(rec: .) { rec }` is an ordinary function.
-- **Statement-leading word**: `let` introduces a binding only when the following tokens prove the binding form. Elaborator names such as `if`, `do`, `scope`, and `match` are ordinary identifiers; adjacent `!` introduces a generic elaborator call. Continuation labels such as `else` are ordinary value-shaped names in the block-call grammar. Dot-lambdas use punctuation-led forms (`.(...) { ... }` and `.stem. { ... }`).
-- **Inside elaborator declarations**: `impl`, `captures`, and `trailing` introduce entries; `product`, `thunk`, and `sequence` select the descriptor after `trailing`.
+- **Statement-leading word**: `let` introduces a binding only when the following tokens prove the binding form. Elab names such as `if`, `do`, `scope`, and `match` are ordinary identifiers; adjacent `!` introduces a generic elab call. Continuation labels such as `else` are ordinary value-shaped names in the block-call grammar. Dot-lambdas use punctuation-led forms (`.(...) { ... }` and `.stem. { ... }`).
+- **Inside elab declarations**: `impl`, `captures`, and `trailing` introduce entries; `product`, `thunk`, and `sequence` select the descriptor after `trailing`.
 - **Import-leading and import-context words**: `import` begins a module's
   leading import clause; `as` introduces a module alias. Inside a selective
   list, `op` tags a fixed operator grammar and `varop` tags a variadic delimiter
@@ -1277,7 +1280,7 @@ This list is exhaustive: every reserved word or name recognized by the compiler 
 
 Every comma-separated production in Kio's grammar — type-binder groups, value-parameter groups, `labels` arm lists, tuple literals, call argument lists, type-application argument lists, label-value label lists, and selective `import` name lists — accepts **any number of commas in any position**: leading runs (before the first item), interior runs (between items, beyond the single separator), and trailing runs (after the last item). Equivalent framing: items are separated by *one or more* commas, with optional comma runs at either edge. All shapes collapse to the same AST as the canonical one-comma-per-separator layout, except type-binder groups, whose canonical form is adjacent singleton binders: `[A, B]` parses like `[A][B]` and formats as `[A][B]`. `(,,, a ,,, b ,,,)` and `(a, b)` parse to the same tuple literal; `(, a ,)` parses as grouping around `a`, not as a unary tuple; `(,,,)` parses as `()`. `fn three( , x: A , y: B , z: C , )` and `fn three(x: A, y: B, z: C)` parse to the same value group. Function-type value groups are not comma-separated: write `(A & B) -> C`, not `(A, B) -> C`. The formatter relies on the comma rule for the leading-comma multi-line layout where commas are part of the canonical production.
 
-Block-like clause bodies use the same semicolon separator rule: repeated semicolons do not create empty clauses, and a final semicolon after the final expression is ignored. This applies to expression blocks, neutral elaborator blocks, and keyed/member blocks such as `newtype`, `build`, `target`, and `docs`. A resolved descriptor determines a neutral block's meaning: empty product and thunk blocks produce unit and a unit-returning thunk respectively; a sequence requires an explicit final expression.
+Block-like clause bodies use the same semicolon separator rule: repeated semicolons do not create empty clauses, and a final semicolon after the final expression is ignored. This applies to expression blocks, neutral elab blocks, and keyed/member blocks such as `newtype`, `build`, `target`, and `docs`. A resolved descriptor determines a neutral block's meaning: empty product and thunk blocks produce unit and a unit-returning thunk respectively; a sequence requires an explicit final expression.
 
 The type chains `&` (product) and `|` (sum) follow the symmetric rule: a chain accepts **any number of operators in any position** — leading, interior, trailing — all collapse to the same right-associated chain. `&&& A &&& B &&&` (when terminated by a non-Type token like `,`, `)`, `;`, `=`, `{`, `}`) and `A & B` parse identically; same for `|`. The rule applies in both unparenthesized and parenthesized form: `( &&& A &&& B &&& )` and `(A & B)` parse identically. Empty and unary chains use the algebraic identities: product `&` with no items (`&` or `(&)`) is `.`, sum `|` with no items (`|` or `(|)`) is `!`, and a one-item chain (`& A`, `(A &)`, `| A`, `(A |)`) is just `A`. Mixing `&` and `|` in one chain still requires explicit parentheses (per [Anonymous sum and product types](#anonymous-sum-and-product-types)) — `A & B | C` is a parse error, and the user writes `(A & B) | C` or `A & (B | C)` to disambiguate. The formatter's multi-line emit for a chain mirrors the leading-comma layout for lists: each chain item lives on its own line at +2 indent, prefixed with `&` (or `|`) followed by a space — the leading-operator A1 analogue. Arrow `->` is not a variadic delimiter. Product/sum chains directly on either side of a type-expression arrow must be parenthesized: `(A & B) -> C`, `A -> (B & C)` and `A -> (B | C)`. A named function or lambda's own return annotation retains bare chains; see [Function types](#function-types).
 
@@ -1345,7 +1348,7 @@ The top level of a module supports these declaration forms:
 - **`literal`** — literal aliases, a surface-only way to name bare literal tokens (see [Type and literal aliases](#type-and-literal-aliases)).
 - **`newtype`** — nominal type declarations with explicit constructor and projector (see [Type declarations](#type-declarations)).
 - **`labels`** — label declarations; surface sugar over `newtype` (see [Labels](#labels)).
-- **`elab`** — user-defined elaborators called with bang syntax (see [User-defined elaborators](#user-defined-elaborators)).
+- **`elab`** — user-defined elabs called with bang syntax (see [User-defined elabs](#user-defined-elaborators)).
 - **`op` and `varop`** — user-defined fixed and variadic operator bindings (see [Operators](#operators)).
 - **`equiv`** — compile-time equivalence checks consumed by `kio test` (see [Equivalence claims](#equivalence-claims-equiv)).
 
@@ -1662,7 +1665,7 @@ tail is checked. Its own annotation or required type may guide a source; a
 later use may not. Sequence blocks preserve the source-first rule described
 under [Monadic do blocks](#monadic-do-blocks), with shared bind-call carrier
 and result constraints. Product blocks instead supply separate operands to
-their elaborator and may relate them through its public contract.
+their elab and may relate them through its public contract.
 
 ```kio
 {
@@ -1992,7 +1995,7 @@ An omitted return or `-> _` is also admitted when independently available
 surrounding information or returned fill relations determine a result in the
 enclosing scope before the body is checked. The body does not determine that
 provisional result, and an unanchored result is rejected before body entry.
-See [Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient)
+See [Elabs are imported, not ambient](#elaborators-are-imported-not-ambient)
 for this marked-staging boundary; ordinary calls and monomorphic lambdas retain
 their own inference rules.
 
@@ -2015,7 +2018,7 @@ not trigger an alternate split.
 
 **Explicit core applications.** Lowering materializes
 unit arguments, nested application boundaries, returned type applications,
-and elaborator residual functions as ordinary Kio'. Post-typecheck routing and
+and elab residual functions as ordinary Kio'. Post-typecheck routing and
 backend emission preserve those explicit applications, including one ordered
 stage per universal binder even when the backend erases type representations.
 These stages preserve the [Kio' evaluation contract](prime.md#kio-semantics).
@@ -2159,7 +2162,7 @@ a universally quantified product, not a direct product result.
 ### Conditionals
 
 *Surface only; elaborates to Kio'.* The reference library's conditional is an
-ordinary imported block elaborator:
+ordinary imported block elab:
 
 ```kio
 import elab/control(if);
@@ -2202,7 +2205,7 @@ behavior by their spelling.
 
 ### Pattern matching
 
-*Surface only; desugars to Kio'.* Pattern matching is the `match!` dispatch elaborator, imported like any other elaborator (see [§ Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient)). It is an elaborator because compile-time code synthesizes branch-selection glue at the call site; it is not a source-to-target coercion. The Kio' form `let`-binds each clause as a `fn`, discriminates the scrutinee's sums with nested `__either__` calls, and projects products with `__fst__` / `__snd__` / projector-member calls — see § Desugaring below.
+*Surface only; desugars to Kio'.* Pattern matching is the `match!` dispatch elab, imported like any other elab (see [§ Elabs are imported, not ambient](#elaborators-are-imported-not-ambient)). It is an elab because compile-time code synthesizes branch-selection glue at the call site; it is not a source-to-target coercion. The Kio' form `let`-binds each clause as a `fn`, discriminates the scrutinee's sums with nested `__either__` calls, and projects products with `__fst__` / `__snd__` / projector-member calls — see § Desugaring below.
 
 ```kio
 import elab/match(match);
@@ -2260,7 +2263,7 @@ Concretely — a clause slot's annotated type may be **any structural type** —
 Type-parameter declarations (`[A]`) written in a clause `fn` work exactly as in any `fn`. The one twist is who supplies the type arguments: `match!`, as the caller, specializes the clause's explicit leading binders against each compatible scrutinee branch rather than taking them from a written call site. Writing `.[A](v: Ok(A)) -> String { … }` matches any compatible `Ok` branch and binds `A` to the payload type. A polymorphic clause used by several source branches contributes one specialized result per branch, in source-branch order.
 
 An inline polymorphic clause follows the marked-lambda staging rules in
-[Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient).
+[Elabs are imported, not ambient](#elaborators-are-imported-not-ambient).
 Its written binder and parameter header is complete before staging. A result
 that depends on a newly introduced clause type binder requires a concrete
 return annotation or a complete expected function type; an independently
@@ -2291,16 +2294,16 @@ explicit `-> R` return annotation; that annotation is checked against the
 common result and also seeds its body when no match result is otherwise
 available (see [Anonymous functions](#anonymous-functions)).
 
-**Exhaustiveness.** The DNF branches of the scrutinee's type must be **covered**: every DNF branch must fit at least one clause's parameter-product type. A `match!` whose clauses leave some DNF branch uncovered is a compile-time error in the elaborator-error category (exit code `15` — `match!` is a user-defined elaborator, so its coverage failures surface via `__elab_error__`; see [`exit-codes.md`](exit-codes.md)). A trailing `.() { … }` catch-all covers everything, so it always makes a `match!` exhaustive regardless of earlier clauses.
+**Exhaustiveness.** The DNF branches of the scrutinee's type must be **covered**: every DNF branch must fit at least one clause's parameter-product type. A `match!` whose clauses leave some DNF branch uncovered is a compile-time error in the elaborator-error category (exit code `15` — `match!` is a user-defined elab, so its coverage failures surface via `__elab_error__`; see [`exit-codes.md`](exit-codes.md)). A trailing `.() { … }` catch-all covers everything, so it always makes a `match!` exhaustive regardless of earlier clauses.
 
 **Reachability.** Every clause must cover at least one DNF branch that earlier clauses do not cover. A clause that adds no new coverage is unreachable — a compile-time error in the same elaborator-error category (exit code `15`). A clause that covers nothing at all is also a `15` elaborator error — including a slot whose type DNF-normalizes to zero branches (a `!`-typed slot covers no branch). First-match ordering means an earlier clause can eclipse a later one. A slot type **wider** than the branches it ends up covering is *not* an error: a sum slot whose later arms were already taken by narrower sibling clauses is fine — the slot type is an upper bound, not a coverage obligation.
 
 **Desugaring.** `match!` lowers to ordinary Kio': it `let`-binds each clause once (evaluating the clause expressions in source order, before any branch is taken), builds a decision tree of nested `__either__` calls over the scrutinee's DNF branches, and at each leaf calls the selected clause function with its argument reconstructed by `let` / `__either__` / projection-intrinsic glue. The reconstruction is duplication-free — a scrutinee factor is never threaded through two slot positions of one clause leaf, and the clause's return value is evaluated once. The elaboration is recorded in the side channel and substituted at the Lowered → Prime boundary; no `match!` form survives into Kio'. The per-leaf coercion algorithm is worked through in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/elab.md`](../docs/poc/elab.md).
 
-**Type flow.** `match!` is an elaborator position (see [Type system](#type-system)
+**Type flow.** `match!` is an elab position (see [Type system](#type-system)
 for the bidirectional-flow mechanism). The scrutinee synthesizes bottom-up, and
 each clause independently determines the parameter type that serves as its
-dispatch target; the elaborator decides which clause handles each branch and
+dispatch target; the elab decides which clause handles each branch and
 what projection produces its argument. Only after those prerequisites are
 known do the authenticated returned occurrences participate in their finite
 symmetric common-result relation. A surrounding expected type checks every
@@ -2311,11 +2314,11 @@ dispatch-pattern parameter shape.
 
 The relation contains only occurrences from the written clauses and the finite
 authenticated fill transcript produced by the already-resolved imported
-elaborator. It never searches visible declarations, so adding an unrelated
+elab. It never searches visible declarations, so adding an unrelated
 module-body declaration cannot add an occurrence, change the common result, or
 alter dispatch.
 
-`match!` takes an explicit scrutinee/domain value, checks coverage and reachability against that scrutinee's DNF, binds polymorphic clause type parameters from each concrete branch, and returns the common selected-clause result type. It is imported explicitly like any other elaborator (see [§ Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient)).
+`match!` takes an explicit scrutinee/domain value, checks coverage and reachability against that scrutinee's DNF, binds polymorphic clause type parameters from each concrete branch, and returns the common selected-clause result type. It is imported explicitly like any other elab (see [§ Elabs are imported, not ambient](#elaborators-are-imported-not-ambient)).
 
 ```kio
 import elab/match(match);
@@ -2347,14 +2350,17 @@ dispatch-pattern parameters.
 
 **Elaboration.** `match!` elaborates to the decision tree over the scrutinee's DNF branches, the per-leaf reconstruction at each value-parameter slot and the return position, and the `let`-bind-each-clause-once discipline described above. Behind the sugar it is ordinary Kio' — `let`, `__either__`, and the projection intrinsics — and no `match!` form survives into Kio'.
 
-### The `derive!` elaborator
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="the-derive-elaborator"></a>
+
+### The `derive!` elab
 
 *Surface only; desugars to Kio'.*
 
-`derive!` constructs a value of a requested **target type** by composing a caller-supplied set of **rule functions**, threading their outputs into one another's parameters until the target is produced. It is imported explicitly like any other elaborator (see [§ Elaborators are imported, not ambient](#elaborators-are-imported-not-ambient)). The motivating use case is building typeclass-like *instances* — most importantly deriving a `Monad` / `Applicative` / `Functor` instance for a composite type constructor (a monad-transformer stack) from base instances plus per-transformer rules — but the form is type-constructor-agnostic: any family of `fn`s whose signatures read as inference rules participates.
+`derive!` constructs a value of a requested **target type** by composing a caller-supplied set of **rule functions**, threading their outputs into one another's parameters until the target is produced. It is imported explicitly like any other elab (see [§ Elabs are imported, not ambient](#elaborators-are-imported-not-ambient)). The motivating use case is building typeclass-like *instances* — most importantly deriving a `Monad` / `Applicative` / `Functor` instance for a composite type constructor (a monad-transformer stack) from base instances plus per-transformer rules — but the form is type-constructor-agnostic: any family of `fn`s whose signatures read as inference rules participates.
 
 ```kio
-import derive(derive);        // imported like any elaborator
+import derive(derive);        // imported like any elab
 
 derive!((
   , <candidate1>
@@ -2409,13 +2415,13 @@ fn <rule-name>[T1](…)[TN](// binders, each with optional kind annotation
 
 A singleton candidate that is not of function type, or an element of a multi-candidate product that is not of function type, is a type error pointing at the offending position (`derive_non_function_candidate`).
 
-**Resolution.** Given the goal `T` and the candidate set, the `derive!` implementation finds the **unique** composition of candidates whose result types thread together to produce `T`, treating each candidate's value parameters as sub-goals to discharge from the same set. Resolution is kind-aware (a candidate binder of kind `*→*` binds only to a kind-`*→*` argument), reports an elaborator error when no composition applies or when two distinct compositions exist, and is total by the structural-decrease rules governing its compile-time recursion. The [HKT case study](../docs/poc/hkt.md#deriving-an-instance-with-derive) shows dictionary derivation. The [elaborator case study](../docs/poc/elab.md#derive--instance-deriving) explains the resolution algorithm, exactly-one-coherence rule, termination conditions, and recursive and polymorphic compositions of wrapper rules.
+**Resolution.** Given the goal `T` and the candidate set, the `derive!` implementation finds the **unique** composition of candidates whose result types thread together to produce `T`, treating each candidate's value parameters as sub-goals to discharge from the same set. Resolution is kind-aware (a candidate binder of kind `*→*` binds only to a kind-`*→*` argument), reports an elaborator error when no composition applies or when two distinct compositions exist, and is total by the structural-decrease rules governing its compile-time recursion. The [HKT case study](../docs/poc/hkt.md#deriving-an-instance-with-derive) shows dictionary derivation. The [elab case study](../docs/poc/elab.md#derive--instance-deriving) explains the resolution algorithm, exactly-one-coherence rule, termination conditions, and recursive and polymorphic compositions of wrapper rules.
 
 The goal may carry **unbound binders inherited from the enclosing `fn`** (a type-constructor-generic combinator with a `derive!` site whose target mentions the function's own `[*F]`). The implementation's structural unifier treats those as logic variables; the generated derivation is then polymorphic in them and the enclosing function compiles to a single type-constructor-generic body.
 
-**Open-world.** The candidate set is exactly the function expressions the candidate argument literally supplies; `derive!` cannot reach module-level `fn`s or explicitly imported items implicitly, and the ordinary import brings only `derive` itself into scope, never any candidate. A "module handle" candidate (passing some module's exports as the candidate set) is **rejected** — it would let another package change resolution at an existing site by adding or removing exports. Adding a `fn` anywhere in the local package source provably cannot change resolution at any existing `derive!` site, because there is no implicit pool to grow. This is the same local open-world guarantee every elaborator carries.
+**Open-world.** The candidate set is exactly the function expressions the candidate argument literally supplies; `derive!` cannot reach module-level `fn`s or explicitly imported items implicitly, and the ordinary import brings only `derive` itself into scope, never any candidate. A "module handle" candidate (passing some module's exports as the candidate set) is **rejected** — it would let another package change resolution at an existing site by adding or removing exports. Adding a `fn` anywhere in the local package source provably cannot change resolution at any existing `derive!` site, because there is no implicit pool to grow. This is the same local open-world guarantee every elab carries.
 
-**Elaboration.** The imported elaborator implementation executes at compile time and returns a checked nested call tree of the chosen candidates applied to their bound type arguments and recursively generated precondition values — exactly what the user would write by hand. The front-end records that checked term in the same boundary-local side channel used by every bang call; the substitute pass swaps the `derive!` call for the recorded tree at the Lowered → Prime boundary, and standalone Prime validation checks the assembled package. No `derive!` form or compile-time machinery survives into Kio': what remains is an ordinary call tree of the caller-supplied rule functions, executed at runtime like equivalent hand-written code. The rules themselves need no `pure` marker because they are runtime values placed in that tree; the elaborator's own implementation and helpers obey the ordinary compile-time purity contract.
+**Elaboration.** The imported elab implementation executes at compile time and returns a checked nested call tree of the chosen candidates applied to their bound type arguments and recursively generated precondition values — exactly what the user would write by hand. The front-end records that checked term in the same boundary-local side channel used by every bang call; the substitute pass swaps the `derive!` call for the recorded tree at the Lowered → Prime boundary, and standalone Prime validation checks the assembled package. No `derive!` form or compile-time machinery survives into Kio': what remains is an ordinary call tree of the caller-supplied rule functions, executed at runtime like equivalent hand-written code. The rules themselves need no `pure` marker because they are runtime values placed in that tree; the elab's own implementation and helpers obey the ordinary compile-time purity contract.
 
 `derive!` imposes no backend constraint — it synthesizes an ordinary call tree, so a derived instance emits exactly as the equivalent hand-written composition would. This holds for the transformer-stack goal too: a transformer type constructor (`State_t`, `Maybe_t` — a newtype with a kind-`*→*` parameter) in a kind-`*→*` position emits on every backend, including `rust`, where it rides the erased `Rc<dyn Any>` body like every other value (see [`specs/backends/rust.md` § Higher-kinded types](backends/rust.md#higher-kinded-types)).
 
@@ -2423,7 +2429,7 @@ The goal may carry **unbound binders inherited from the enclosing `fn`** (a type
 
 *Surface only; elaborates to Kio'.*
 
-The reference `scope!` elaborator accepts one `thunk` block and invokes it
+The reference `scope!` elab accepts one `thunk` block and invokes it
 once. Its body uses ordinary scoped local bindings, row and existential-opening
 lets, and expression statements. Its final expression is the result; an empty
 body returns unit. Import it explicitly to put a scoped computation in an
@@ -2449,7 +2455,7 @@ retains the body's recursive tail behavior when the call is in tail position.
 
 *Surface only; desugars to Kio'.*
 
-The reference `do!` elaborator runs a `sequence` block with an explicitly
+The reference `do!` elab runs a `sequence` block with an explicitly
 supplied bind function. The library exports the transparent aliases:
 
 ```kio
@@ -2467,7 +2473,7 @@ structural carrier such as identity `M(A) = A` or constant `M(A) = .`;
 the `Bind` alias is not a restriction to first-class constructor arguments.
 The compiler recognizes the structural bind type, not the aliases' names or
 the identity of `do`. Every sequence block projects to an ordinary
-`Receiver -> Result` function, independently of which elaborator receives it.
+`Receiver -> Result` function, independently of which elab receives it.
 
 The receiver's carrier is determined by available ordinary public-call and
 header constraints. The sequence body does not infer a missing carrier
@@ -2581,7 +2587,7 @@ Desugars to a nested `box_bind`-and-`fn` chain with `let b = …` interposed in 
 
 *Surface only; substituted before Kio'.*
 
-**UFCS** — *Uniform Function Call Syntax* — is the dot-led family of call splices. The four spellings share one rule for ordinary functions, type-member functions, and blockless bang-call elaborators:
+**UFCS** — *Uniform Function Call Syntax* — is the dot-led family of call splices. The four spellings share one rule for ordinary functions, type-member functions, and blockless bang-call elabs:
 
 ```kio
 r.>f           // = f(r)
@@ -2614,7 +2620,7 @@ UFCS chains compose by ordinary nesting. `r.>f.>>g(x)` parses as the outer splic
 
 **Call rule.** A dot-splice resolves the explicitly written callee first, then inserts the receiver into that callee's value-argument stream:
 
-1. Resolve the callee as the written callable: a regular path for non-bang forms, or a scoped user-defined elaborator name for bang forms.
+1. Resolve the callee as the written callable: a regular path for non-bang forms, or a scoped user-defined elab name for bang forms.
 2. Read the resolved callee type as a sequence of `Forall` type slots and
    value slots derived from each `Function` domain. Explicit type arguments in
    the surface argument list remain in type slots. At the receiver boundary,
@@ -2629,11 +2635,11 @@ UFCS chains compose by ordinary nesting. `r.>f.>>g(x)` parses as the outer splic
 
 Thus `r.>f(T, x)` has the same call plan as `f(T, r, x)`, and `r.>>f(T, x)` has the same call plan as `f(T, x, r)`. The same rule applies to bang-call callees: `r.>iso!(T)` and `iso!(T).<<r` both plan as `iso!(r, T)`.
 
-Each UFCS spelling has the same evaluation order as its equivalent prefix call above. For an ordinary call, the callee is evaluated once and value arguments are evaluated once from left to right: insertion-first forms evaluate the receiver before the written value arguments, while insertion-last forms evaluate the written value arguments before the receiver. For a bang call, the equivalence applies to elaborator argument planning and quotation; UFCS does not turn quoted operands into runtime evaluations.
+Each UFCS spelling has the same evaluation order as its equivalent prefix call above. For an ordinary call, the callee is evaluated once and value arguments are evaluated once from left to right: insertion-first forms evaluate the receiver before the written value arguments, while insertion-last forms evaluate the written value arguments before the receiver. For a bang call, the equivalence applies to elab argument planning and quotation; UFCS does not turn quoted operands into runtime evaluations.
 
 **Type-argument solving.** UFCS accepts the same explicit type-argument syntax as prefix calls. A type argument still has to land in a type slot; a type argument supplied where the planned slot is a value slot produces the same diagnostic a prefix call would. When a callee binder is not explicitly supplied, the ordinary call machinery solves it from value-argument types and, in checking mode, the expected result type. Any callee type parameter that remains unsolved is a type error.
 
-**Bidirectional flow through UFCS chains.** A splice step's expected return type — set by the surrounding context (e.g., the next chain step's inserted-argument position, or a `let` binding's expected type when one is present) — propagates down to the step being checked. This is the same expected-type-at-the-position mechanism the typer uses for elaborator targets and `fn` parameter slots; UFCS chains pick it up through the rewritten call shape, so elided elaborator targets in chained positions (e.g. `r.>onto!.>callee` with `onto!`'s target unspoken) get filled from the next callee's required argument type.
+**Bidirectional flow through UFCS chains.** A splice step's expected return type — set by the surrounding context (e.g., the next chain step's inserted-argument position, or a `let` binding's expected type when one is present) — propagates down to the step being checked. This is the same expected-type-at-the-position mechanism the typer uses for elab targets and `fn` parameter slots; UFCS chains pick it up through the rewritten call shape, so elided elab targets in chained positions (e.g. `r.>onto!.>callee` with `onto!`'s target unspoken) get filled from the next callee's required argument type.
 
 **Errors.** Each gets a clear diagnostic:
 
@@ -2692,11 +2698,11 @@ m.f(x).<r               // = m.f(x, r)
 m.f(x).<<r              // = m.f(r, x)
 ```
 
-**Lowering.** UFCS survives through the resolved and lowered typing phase. The typer resolves the named callee, plans the value-slot insertion from the callee's actual call type, and records the normalized replacement. Regular UFCS records an ordinary prefix `Expr::Call`; bang UFCS records the same user-elaborator expansion the equivalent prefix spelling would have produced. The substitute pass swaps the recorded replacement in at the Lowered → Prime boundary.
+**Lowering.** UFCS survives through the resolved and lowered typing phase. The typer resolves the named callee, plans the value-slot insertion from the callee's actual call type, and records the normalized replacement. Regular UFCS records an ordinary prefix `Expr::Call`; bang UFCS records the same user-elab expansion the equivalent prefix spelling would have produced. The substitute pass swaps the recorded replacement in at the Lowered → Prime boundary.
 
-The Kio' grammar has no UFCS syntax in expression position; the kio-prime backend's parser rejects it the same way it rejects every other Kio-surface-only form. **Surface preservation:** `kio fmt` round-trips the user-authored spelling (UFCS vs prefix, and `.>` / `.>>` / `.<` / `.<<`) for both regular calls and elaborator bang-call splices — see [`style.md` § UFCS preservation](style.md).
+The Kio' grammar has no UFCS syntax in expression position; the kio-prime backend's parser rejects it the same way it rejects every other Kio-surface-only form. **Surface preservation:** `kio fmt` round-trips the user-authored spelling (UFCS vs prefix, and `.>` / `.>>` / `.<` / `.<<`) for both regular calls and elab bang-call splices — see [`style.md` § UFCS preservation](style.md).
 
-**Elaborator bang-call splices.** Blockless elaborator calls participate in the same dot-splice rule as ordinary calls. Elaborators with trailing-block descriptors require their complete direct block spelling. The imported elaborator's public type determines the blockless call slots, including which surface arguments are type arguments and which are values. The parens after a right-callee elaborator name carry the ordinary post-`!` argument list and follow the same parens-iff-args rule as the rest of UFCS — dropped when there is no trailing argument to write:
+**Elab bang-call splices.** Blockless elab calls participate in the same dot-splice rule as ordinary calls. Elabs with trailing-block descriptors require their complete direct block spelling. The imported elab's public type determines the blockless call slots, including which surface arguments are type arguments and which are values. The parens after a right-callee elab name carry the ordinary post-`!` argument list and follow the same parens-iff-args rule as the rest of UFCS — dropped when there is no trailing argument to write:
 
 ```kio
 r.>iso!           // = iso!(r)
@@ -2713,7 +2719,7 @@ r.>atom!(T)        // = atom!(r, T)
 derive!(T).<cs     // = derive!(cs, T)
 ```
 
-The rule is intentionally uniform: `r.>>iso!(T)` is equivalent to `r.>iso!(T)` because `iso!` has only one value slot and `T` stays in its type slot. Direction matters for a blockless elaborator with several value slots, following the same ordinary first/last-slot rule. A bang-suffix callee that resolves to no scoped user-defined elaborator is reported as an unresolved elaborator call.
+The rule is intentionally uniform: `r.>>iso!(T)` is equivalent to `r.>iso!(T)` because `iso!` has only one value slot and `T` stays in its type slot. Direction matters for a blockless elab with several value slots, following the same ordinary first/last-slot rule. A bang-suffix callee that resolves to no scoped user-defined elab is reported as an unresolved elab call.
 
 ### Operators
 
@@ -2734,7 +2740,7 @@ fn sum_three(x: Int, y: Int, z: Int) -> Int {
 ```
 
 The `impl` field uses the same lexical value-path grammar as every fold
-callable and elaborator implementation. It may name a local or selectively
+callable and elab implementation. It may name a local or selectively
 imported function, select through an explicit module alias, or select a
 constructor/projector on a local or imported newtype, directly or through an
 identity alias. It is not an arbitrary expression and does not admit a
@@ -3052,7 +3058,7 @@ equiv <name>[A](x: A) {
 - **Parameter list reuses `fn`'s grammar.** Type and value parameters mixed positionally; every value parameter annotated. The list is optional (no parens parses a zero-param `equiv`). Parameters bind in the body's scope; each arm sees the same binding set. Parametric equivs run: type parameters are erased at evaluation time; each value parameter is bound, once per equiv block, to a fresh opaque atom shared across every arm, so equal references on different sides compare equal. The arms are claimed equal *for every instantiation* of the parameters — the runner discharges the universal quantification by reasoning about the bound names symbolically.
 - **At least two arms.** `N=0` and `N=1` blocks are parse errors — there is nothing to compare.
 - **No visibility.** `pub equiv …` is a parse error. Equivs are not part of any public API surface.
-- **Arm syntax.** Arms are semicolon-separated expressions. Repeated semicolons are accepted and ignored; a final semicolon after the final arm is accepted and ignored. Comma-separated arms are rejected with a migration diagnostic. An arm that needs local statements uses the imported `scope! { ... }` elaborator.
+- **Arm syntax.** Arms are semicolon-separated expressions. Repeated semicolons are accepted and ignored; a final semicolon after the final arm is accepted and ignored. Comma-separated arms are rejected with a migration diagnostic. An arm that needs local statements uses the imported `scope! { ... }` elab.
 
 **Typing.** Each arm is typechecked in the parameter scope; all arms must synthesize the same type under ordinary definitional equality. A complete polymorphic function scheme is a value type here just as it is in every other value position; incomplete schemes remain ill-kinded as values. A type mismatch is a regular type error, not a test failure.
 
@@ -3096,13 +3102,13 @@ Four literal **shapes** are recognized — string, integer, float, and bool. Str
 **Three-tier resolution (surface only).** Tiers 2 and 3 below apply only to the full Kio surface — Kio' admits no unannotated-literal form (see [`grammar.md` § Kio' grammar](grammar.md#kio-grammar)), so a Kio' literal's host type is always tier 1. A surface literal's host type is resolved in order:
 
 1. **Explicit annotation.** If the literal carries a `(Type)` annotation, that host type is its type. The annotation must name a role-bearing `host type` whose role the literal's shape admits. This is the only tier Kio' admits.
-2. **Expected type.** Otherwise, if the surrounding position supplies an expected type — a function-return type, a call argument checked against a parameter type, an elaborator target, or a fully concrete typed `let` binder — and that expected type is a role-bearing `host type` whose role the literal's shape admits, the literal takes it. An untyped or partially typed `let` right-hand side remains a synthesis position and supplies no expected type; only the fully concrete binding pattern creates the checked RHS position (see [Bindings and expressions](#bindings-and-expressions)).
+2. **Expected type.** Otherwise, if the surrounding position supplies an expected type — a function-return type, a call argument checked against a parameter type, an elab target, or a fully concrete typed `let` binder — and that expected type is a role-bearing `host type` whose role the literal's shape admits, the literal takes it. An untyped or partially typed `let` right-hand side remains a synthesis position and supplies no expected type; only the fully concrete binding pattern creates the checked RHS position (see [Bindings and expressions](#bindings-and-expressions)).
 3. **Unique in-scope candidate.** Otherwise, if exactly one role-bearing `host type` whose role the literal's shape admits is in lexical scope, the literal takes it.
 4. **Otherwise, a type error** — either no admitting host type exists, or more than one does and none of tiers 1–2 disambiguated. Annotate the literal with the intended host type to resolve it.
 
 **Role-inheriting aliases.** A `type` alias whose body resolves — directly or through a chain of aliases — to a role-bearing `host type` **inherits** that host type's role, since the alias names the same type. Such an alias is accepted everywhere a role-bearing host type is in tiers 1 and 2: `42(I32)` typechecks when `I32` is `type I32 = provider.I32`, and a literal in a position whose expected type is that alias takes it. Tier 3, however, stays keyed to host types: an alias and the host type it names are the same type, so admitting both into the bare-literal candidate pool would spuriously make an unannotated literal ambiguous. A role-inheriting alias serves as a tier-3 candidate only when **no** `host type` in scope carries the literal's role — the case of a module whose host type was replaced by such an alias (the local form a dependency `rehost` materializes; see [`package.md` § Dependency files](package.md#dependency-files)).
 
-Role candidates are grouped by the terminal host declaration's identity, `(declaring module, host-type name)`, not by the spelling used in the consumer. The selected pool is the nonempty set of host types in unqualified lexical scope, or otherwise the fallback set reached through aliases in that scope. Two aliases or repeated imports that reach one declaration contribute one candidate. Declarations in different modules remain different candidates even when they have the same leaf name. A lexical lookup that requires one exact role, including the `__if_then_else__` scheme and the reference `if!` elaborator's branching glue for `role(bool)`, reports a type error when this selected identity-keyed set is empty or has more than one member; declaration order and map iteration never choose a winner.
+Role candidates are grouped by the terminal host declaration's identity, `(declaring module, host-type name)`, not by the spelling used in the consumer. The selected pool is the nonempty set of host types in unqualified lexical scope, or otherwise the fallback set reached through aliases in that scope. Two aliases or repeated imports that reach one declaration contribute one candidate. Declarations in different modules remain different candidates even when they have the same leaf name. A lexical lookup that requires one exact role, including the `__if_then_else__` scheme and the reference `if!` elab's branching glue for `role(bool)`, reports a type error when this selected identity-keyed set is empty or has more than one member; declaration order and map iteration never choose a winner.
 
 Tier 3 is keyed to the role-bearing `host type`s **in unqualified lexical scope** at the literal's site: those declared in the same module plus those brought in by a selective `import module(Name);` clause (plus, as a fallback when no host type carries the role, a role-inheriting alias in that same scope). `import module as qualifier;` makes qualified member references possible but does not add those members to the pool. An in-scope alias may use such a qualifier in its body; in that case the alias contributes the terminal host identity to the fallback pool, while the qualified member does not contribute independently. A `host type` is an ordinary scoped declaration, so importing one selectively adds it to the tier-3 pool, and a module that imports no role-bearing host type for a given shape resolves no tier-3 candidate for that shape. See [Open-world design](#open-world-design) for the contract-surface coupling this introduces.
 

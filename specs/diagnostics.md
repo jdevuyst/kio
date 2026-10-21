@@ -81,7 +81,7 @@ one without the other.
   ("import a type marked `role(bool)`").
 - A **machine-applicable fix** fires only when a near-miss is mechanically
   detectable (a typo'd name within edit distance of an in-scope name, a
-  wrong elaborator form whose sibling would succeed, a missing import the
+  wrong elab form whose sibling would succeed, a missing import the
   resolver can name).
 - A **maybe-incorrect fix** is an editor convenience for edits that are
   syntactically plausible but may erase deliberately sequenced

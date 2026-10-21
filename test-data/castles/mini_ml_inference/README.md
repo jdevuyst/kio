@@ -46,7 +46,7 @@ directly from those expressions; they do not depend on internal variable IDs.
 The modules separate prefix parsing and syntax, type traversal and display,
 substitution unification, scheme/environment operations, Algorithm W, and
 framed input. Persistent lists come from the reusable list package; direct
-elaborator imports provide matching, conditionals, and sum construction.
+elab imports provide matching, conditionals, and sum construction.
 
 What this adds to the corpus: a language-processing pipeline with lexical
 schemes and environment-relative generalization, beyond first-order term

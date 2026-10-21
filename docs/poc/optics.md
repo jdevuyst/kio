@@ -24,7 +24,7 @@ combinator just pulls those two functions out of the pair and applies them.
 Nothing in the library is magic — each optic is two functions in a tuple,
 plus the structural glue that builds and takes apart tuples and sums. The
 library is **host-capability-free**: it depends on nothing but the spine
-elaborators and `match!`, so the whole vocabulary is one file you can copy
+elabs and `match!`, so the whole vocabulary is one file you can copy
 into your own package and use as-is.
 
 ## How the package is laid out
@@ -71,7 +71,7 @@ point its host imports at your own host.
 The library definitions and tour helpers compile together in a hidden harness.
 It supplies the same host shape the POC's `testapi` modules declare — `Bool`,
 `I32`, `Int`, `String`, and the `add` / `int_to_string` / `print` host functions
-— plus the spine elaborators and `match!`. The three worked tour expressions
+— plus the spine elabs and `match!`. The three worked tour expressions
 below compile separately against the real `optics` library with the host types
 they use.
 
@@ -135,7 +135,7 @@ fn check_prism() {
 
 Before the optics themselves, a word on the toolkit they are built from. The
 optic functions read and write `&`-products and `|`-sums, and the library
-does that entirely with **spine elaborators** — checked, imported
+does that entirely with **spine elabs** — checked, imported
 compile-time helpers that generate the value-level glue to build and take
 apart structural types. The library's import block is its whole dependency
 list:
@@ -159,7 +159,7 @@ The library's import line names five spine forms (`flatten_sum`,
 `widen_sum!` are used in `optics.kio` itself; the others ride along in the
 import because they are part of the spine palette an adopter typically keeps
 in scope. The row-update operator in `demo/testapi/main` adds `narrow_prod!`. No
-algebraic elaborator (`iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`)
+algebraic elab (`iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`)
 and no raw `__intrinsics__` appear anywhere in the library — a deliberate
 constraint the library header states: the optic vocabulary is built from the
 everyday structural palette an adopter already has.
@@ -173,12 +173,12 @@ setter of *distinct* types are still distinguishable by `one_prod!`, and a
 left-vs-right arm of a sum is still distinguishable by position even when both
 arms have the same type. The full per-form contract for the spine palette —
 the right-spine slot multiset each form matches, why each form is sound and
-total, and what information it preserves or discards — is documented in the elaborator-POC case
+total, and what information it preserves or discards — is documented in the elab-POC case
 study [`docs/poc/elab.md`](elab.md), which exercises every spine form against
 `equiv` laws; this case study uses the forms in the optics setting rather
 than re-deriving their per-form semantics.
 
-`match!` is the dispatch elaborator. Its product block supplies clause lambdas,
+`match!` is the dispatch elab. Its product block supplies clause lambdas,
 which it turns into structural dispatch over a product or sum: a product
 scrutinee is destructured positionally by a single clause, and a sum
 scrutinee is dispatched arm-by-arm by clauses whose parameter types name the
@@ -187,7 +187,7 @@ preview returns, and to destructure an iso's pair when `one_prod!` cannot
 (see § Iso). The `match!` clause-dispatch mechanism is specified in
 [`specs/language.md` § Pattern matching](../../specs/language.md#pattern-matching);
 the per-branch dispatch and per-leaf reconstruction algorithm is exercised
-end to end in the elaborator-POC case study [`docs/poc/elab.md`](elab.md).
+end to end in the elab-POC case study [`docs/poc/elab.md`](elab.md).
 
 ## Lens — a getter paired with a setter
 
@@ -683,7 +683,7 @@ let deep_hit = review(p_outer, widen_sum!(5, I32 | String));
 `left_prism(I32 | String, I32)`'s `rev` is `widen_sum!(av, A | B)` generated
 against the abstract `A` (a single opaque spine slot), so its left-injection
 glue stays valid when `A` is instantiated to the sum `I32 | String`. No
-intrinsic, no algebraic elaborator — the polymorphic prism *is* the tool that
+intrinsic, no algebraic elab — the polymorphic prism *is* the tool that
 reaches the nested arm. The outer-*right* arm, by contrast, is reachable with
 `widen_sum!` directly, because `100 : I32` finds a like-typed target arm at
 the outer-right slot:
@@ -931,9 +931,9 @@ explains that choice.
 
 ## See also
 
-- [The elaborator POC](elab.md) — the case study that documents the spine
+- [The elab POC](elab.md) — the case study that documents the spine
   palette (`one_prod!`, `widen_sum!`, `narrow_prod!`, …), `match!`, and the
-  rest of the elaborator vocabulary per form, with their `equiv` laws.
+  rest of the elab vocabulary per form, with their `equiv` laws.
 - [Operators](../guides/operators.md) — the `op` mechanics
   behind the `^` / `**` / `^?` / `##` / `%%` DSL.
 - [Structural products and row types](../guides/products.md) — the
@@ -942,7 +942,7 @@ explains that choice.
 - [Structural sums and pattern matching](../guides/sums.md) —
   the sum machinery prisms are built on, and `match!` in depth.
 - [Using libraries](../guides/using-libraries.md) — the
-  map of the `elab` POC modules the spine elaborators and `match!` live in.
+  map of the `elab` POC modules the spine elabs and `match!` live in.
 - [Testing with `equiv`](../guides/equiv.md) — how the laws
   above are written and run.
 - [`test-data/poc/optics/`](../../test-data/poc/optics/) — the full worked

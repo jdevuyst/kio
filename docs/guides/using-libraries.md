@@ -182,14 +182,14 @@ its right result. The [list consumer below](#a-list-consumer-with-host-bindings)
 shows this traversal capability and all of `list`'s bindings in a complete
 package.
 
-All six packages also include an elaborator dependency with four host types
+All six packages also include an elab dependency with four host types
 under `<local>/elab/testapi`: `String` (`str`), `I32` and `Int` (both `i32`),
 and `Bool` (`bool`). `option`, `queue`, and `vec` include another copy under
 `<local>/list/elab/testapi`. When bridging the full interfaces, include these
 modules and supply their type bindings as well. These are distinct
 module-qualified types unless you explicitly unify them through rehosting;
 using the same host integer representation alone does not unify Kio types.
-The [elaborator library case study](../poc/elab.md#adopting-the-elaborators) explains the four-type
+The [elab library case study](../poc/elab.md#adopting-the-elaborators) explains the four-type
 setup. Constructors in `option/core`, `queue/core`, and `list/core` use no
 host operations; importing those alone does not require their traversal
 modules' host functions.
@@ -238,7 +238,7 @@ that module:
 | `loop` | `[S][R] ((S -> S \| R) & S) -> R`; continue on the left arm, return the right arm |
 | `string_concat` | `(String & String) -> String` |
 
-The elaborator dependency also requires host types under `list/elab/testapi`:
+The elab dependency also requires host types under `list/elab/testapi`:
 `Bool` (`bool`), `I32` and `Int` (both `i32`), and `String` (`str`).
 
 These are the bridged modules' requirements even though this particular
@@ -258,7 +258,10 @@ kio check
 kio test
 ```
 
-## The elaborator library
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="the-elaborator-library"></a>
+
+## The elab library
 
 [`elab`](../../test-data/poc/elab/) is the reusable compile-time structural
 toolkit used throughout these guides. Its modules are deliberately separate so
@@ -286,7 +289,7 @@ a consumer can import a narrow vocabulary:
 - `algebraic_elaborators` supplies the DNF-level `iso!`, `into!`, `onto!`,
   `align!`, `ease!`, and `atom!` palette.
 - `elaborator_util` contains shared implementation types and folds for
-  elaborator authors rather than an application-facing surface.
+  elab authors rather than an application-facing surface.
 
 For example:
 
@@ -298,9 +301,9 @@ import elab/lookup(contains, lookup);
 import elab/spine_elaborators(fit, widen_sum);
 ```
 
-[Defining elaborators](elaborators.md) explains the reflection ABI behind
-these modules. [Building and testing elaborators](elaborator-authoring.md)
-develops complete small implementations and their callers. [The elaborator
+[Defining elabs](elaborators.md) explains the reflection ABI behind
+these modules. [Building and testing elabs](elaborator-authoring.md)
+develops complete small implementations and their callers. [The elab
 library case study](../poc/elab.md) covers the library's operations, how its
 modules fit together, and its laws; the linked source provides implementation
 details.

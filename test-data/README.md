@@ -67,7 +67,7 @@ Each case is a directory containing:
 
 - `workdir/` — the directory where the case's Kio commands run. It may
   contain one package or an intentionally invalid package layout. When a
-  case needs the shared POC elaborator library (`derive!`, `match!`, the
+  case needs the shared POC `elab` library (`derive!`, `match!`, the
   spine palette, …), it declares a **path dependency** on the canonical
   `elab` package — a `<local>.dep.kio` at the package root:
 
@@ -235,7 +235,7 @@ Custom case commentary — what the case asserts, the exit-code rationale, links
 
 Per-case `*.kio` files carry **only program-local notes**, and only where the WHY is non-obvious. Don't restate a standard `run.args` case's harness mechanics in the source. Default to no comments in `*.kio` if the code speaks for itself.
 
-**Surface forms in non-`IS_KIO_PRIME` cases.** When a case is not marked `IS_KIO_PRIME`, its `*.kio` sources should use the surface forms described in [`specs/language.md`](../specs/language.md) (operators, tuple literals, `if`/`else`, `match!`, spine elaborators such as `widen_sum!` / `fit!`, label-generated sugar, and algebraic elaborators when the case is specifically about them) rather than directly calling the underlying Kio' intrinsics. The exception is cases whose *subject* is the intrinsic itself.
+**Surface forms in non-`IS_KIO_PRIME` cases.** When a case is not marked `IS_KIO_PRIME`, its `*.kio` sources should use the surface forms described in [`specs/language.md`](../specs/language.md) (operators, tuple literals, `if`/`else`, `match!`, spine elabs such as `widen_sum!` / `fit!`, label-generated sugar, and algebraic elabs when the case is specifically about them) rather than directly calling the underlying Kio' intrinsics. The exception is cases whose *subject* is the intrinsic itself.
 
 ### Invoking cases
 

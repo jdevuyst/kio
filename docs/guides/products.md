@@ -2,7 +2,7 @@
 
 A product type `A & B` says a value carries both pieces. Label values build on that: a field such as `{name = "ada"}` has a generated nominal type `Name`, and a record-shaped value is just a product of those label types.
 
-Products are Kio's tuple foundation. A tuple value is an element of a finite cartesian product, and Kio represents those products as right-associated binary trees: `(a, b, c)` has type `A & (B & C)`. Parentheses by themselves only group, so `(x)` is `x`, `()` is the zero-component product, and product types use `&`, not commas. This choice keeps tuple values, call arguments, function domains, UFCS insertion, and product elaborators on one structural rule.
+Products are Kio's tuple foundation. A tuple value is an element of a finite cartesian product, and Kio represents those products as right-associated binary trees: `(a, b, c)` has type `A & (B & C)`. Parentheses by themselves only group, so `(x)` is `x`, `()` is the zero-component product, and product types use `&`, not commas. This choice keeps tuple values, call arguments, function domains, UFCS insertion, and product elabs on one structural rule.
 
 Row-polymorphic records fall out of the same machinery. A function that needs a `Name` field and does not care what else is present writes `(Name & R)`, where `R` is an ordinary type variable.
 
@@ -218,5 +218,5 @@ fn call_it(x: Name & Note) { wants_note_first(x.>reorder_prod!(Note & Name)) }
 ## Where this leads
 
 - [The optics library](../poc/optics.md) builds first-class get/set pairs on the same field-access shape.
-- [Using libraries](using-libraries.md) explains how to consume the elaborator
+- [Using libraries](using-libraries.md) explains how to consume the elab
   library that provides the structural product helpers used by these examples.

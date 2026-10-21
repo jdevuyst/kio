@@ -65,7 +65,7 @@ that both replays yield the same 20 distinct pairs.
 This castle composes event-time interval joining, independent watermark
 frontiers, incremental cross-stream probing, state eviction, and multiset
 auditing. Its reusable List dependency carries event and pair state, while
-imported elaborators drive command decoding and recursion. The execution
+imported elabs drive command decoding and recursion. The execution
 shape is a two-input temporal relation with separate progress frontiers;
 its output depends on cross-stream pair multiplicity and exact inclusive
 boundaries, beyond a single-stream rolling aggregate or command journal.

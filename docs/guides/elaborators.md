@@ -1,17 +1,26 @@
-# Defining elaborators
+# Defining elabs
 
-An elaborator is ordinary Kio code that runs while a bang call is being
-typechecked and returns a checked Kio' term to substitute at that call site.
-The declaration defines the source-level call shape; an implementation
-function programs against reflected types and already-checked arguments.
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="defining-elaborators"></a>
 
-This guide introduces a small identity elaborator and explains the declaration
+An elab, short for *elaborator macro*, is Kio's type-driven macro: ordinary Kio
+code that runs while a bang call is being typechecked and returns a checked Kio'
+term to substitute at that call site. The declaration defines the source-level
+call shape; an implementation function programs against reflected types and
+already-checked arguments. The compiler's elaborator turns surface Kio into
+Kio' core; an elab is an imported declaration that the compiler invokes at a
+written bang call as one part of that process.
+
+This guide introduces a small identity elab and explains the declaration
 and reflection rules. Start with the [language tutorial](../tutorials/language.md)
 for ordinary functions, generic types, sums, and imports. For a complete package
 that generates and tests lets, lambdas, calls, type walks, fills, and blocks,
-follow [Building and testing elaborators](elaborator-authoring.md).
+follow [Building and testing elabs](elaborator-authoring.md).
 
-## A complete checked elaborator
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="a-complete-checked-elaborator"></a>
+
+## A complete checked elab
 
 The implementation below receives the source type, checked source term, and
 an optional target type. It returns the source term unchanged when the caller
@@ -63,7 +72,7 @@ pub elab identity_block : [Source] Source -> [Target] Target {
 }
 ```
 
-The consumer is a separate module, so the call imports the elaborator and adds
+The consumer is a separate module, so the call imports the elab and adds
 the bang only at the use site:
 
 <!--kio {harness=identity_consumer file placeholder="__INSERT_CODE_HERE__"}
@@ -131,25 +140,28 @@ There are three ways for a declaration to expose a block:
 - `trailing product` supplies the expression value or product described above.
 - `trailing thunk` supplies an ordinary zero-argument function. Its local
   bindings and final expression form the function body; an empty block returns
-  unit. The elaborator decides where that function is called.
+  unit. The elab decides where that function is called.
 - `trailing sequence` supplies an ordinary polymorphic sequencing function.
   It receives a supplied step function and uses it for each `let x <- action;`
   binding or non-final action. Pure `let` bindings remain local, and the block
   ends with an explicit final action.
 
-Descriptors belong to the end of the elaborator's public value arguments, in
+Descriptors belong to the end of the elab's public value arguments, in
 the written descriptor order. The first is unlabelled; later descriptors have
 distinct labels, such as `trailing thunk else`. Other declaration entries can
 appear between descriptors without changing that order. A block call must
 supply every required block and cannot leave an ordinary argument group
-unapplied. An elaborator with trailing descriptors is called with blocks, not
+unapplied. An elab with trailing descriptors is called with blocks, not
 with blockless parentheses or UFCS.
 
-### Calling a block elaborator
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="calling-a-block-elaborator"></a>
+
+### Calling a block elab
 
 Every block-call head has an adjacent bang. Continuation labels do not:
 `if! condition { yes() } else { no() }`. These are imported library names, not
-reserved control words. Renaming an elaborator does not change its syntax.
+reserved control words. Renaming an elab does not change its syntax.
 
 Ordinary values before the blocks are prefix arguments. One unambiguous value
 can be bare (`match! value { clauses }`); several use parentheses
@@ -181,10 +193,10 @@ source. These are ordinary source-closing binding rules, not a search through
 possible providers.
 
 The parser and formatter use the written head, grouping and braces without
-loading the elaborator's provider. Once the declaration resolves through an
+loading the elab's provider. Once the declaration resolves through an
 explicit import, checking validates its descriptors and exposes the blocks
 as the ordinary values above. Adding unrelated declarations cannot change
-either the parse or the selected elaborator.
+either the parse or the selected elab.
 
 ## Declaration ABI
 
@@ -208,23 +220,23 @@ The path follows ordinary expression source order: a same-module ordinary
 function, host function, or recursive-group member must appear first. The same
 is true of the newtype or identity-alias head used to qualify a constructor or
 projector. Local captured types and functions, including host declarations,
-must also appear before the elaborator. A same-module alias
+must also appear before the elab. A same-module alias
 or selective self-import does not make a later declaration available early.
 
 This is the default and remains the right choice for an implementation that
 needs completed arguments. Every declaration listed in `captures` must be at
-least as visible as the elaborator because a quoted capture may survive in the
-generated runtime term. An implementation declared in the elaborator's
+least as visible as the elab because a quoted capture may survive in the
+generated runtime term. An implementation declared in the elab's
 defining module may remain private, and any implementation may call private
 helpers in its own module. A target declared in another module must be
 ordinarily importable into the defining module, but need not meet the
-elaborator's outward visibility. Callers import the elaborator, not its
+elab's outward visibility. Callers import the elab, not its
 compile-time implementation details.
 
 To target another module, import the function selectively or import its module
 under an alias. That written `import` is the dependency; the compiler does not
 search other modules for a matching function. Adding an unrelated declaration
-therefore cannot change which implementation an existing elaborator uses.
+therefore cannot change which implementation an existing elab uses.
 
 Read the declaration as a sequence of call slots:
 
@@ -311,13 +323,13 @@ callback without checking the callback body first. For example, given
 through enclosing ordinary calls too. The body is still checked before the
 elaborated call is accepted, even if the implementation discards its value.
 A missing parameter or result annotation cannot be discovered from the body
-to make an unfinished producer ready for the elaborator.
+to make an unfinished producer ready for the elab.
 
 A polymorphic lambda literal can omit its return annotation, or write `-> _`,
 when its type binders and parameter types are written completely and the result
 can be determined without reading its body. For example, a surrounding
 `String` result can constrain the result of `.[A](boxed: Box(A)) { label(boxed) }`
-through the elaborator's fills. The implementation runs over the provisional
+through the elab's fills. The implementation runs over the provisional
 header first; then the compiler checks the one generic body against that
 independently determined result. Ignoring a source does not excuse checking
 its body, and an undetermined result is rejected before the body is entered.
@@ -381,7 +393,7 @@ sum, function, forall, type variable, or named head. Equality helpers preserve
 nominal and host identities; transparent aliases unfold.
 
 A checked term is stronger than an untyped syntax tree. Construction helpers
-validate the type at every step, so an elaborator cannot return malformed Kio'
+validate the type at every step, so an elab cannot return malformed Kio'
 and rely on a backend to discover the problem.
 
 ## Constructing types and terms
@@ -427,7 +439,7 @@ the callback. If `fn_type` is not a one-parameter function with the callback's
 result type, construction cannot yield a valid term. `__term_call__` applies
 the same discipline to a callee and argument packet.
 
-The checked example invokes this helper through an elaborator that constructs
+The checked example invokes this helper through an elab that constructs
 an application of the generated function. The
 [worked construction lesson](elaborator-authoring.md#construct-a-let-a-lambda-and-a-call)
 shows the implementation, caller, and behavior test together.
@@ -447,7 +459,7 @@ structure is known.
 These APIs live at different phases:
 
 - `import __intrinsics__;` introduces runtime Kio values such as `__pair__`,
-  `__left__`, `__right__`, `__either__`, and `__fst__`. An elaborator
+  `__left__`, `__right__`, `__either__`, and `__fst__`. An elab
   implementation may call them while computing, but they are still the core
   values ordinary Kio' terms execute.
 - `import __comptime__;` introduces reflection and checked-term construction.
@@ -465,7 +477,7 @@ the phase boundary.
 
 ## Captures
 
-An elaborator does not gain arbitrary runtime values from its defining module.
+An elab does not gain arbitrary runtime values from its defining module.
 List each declaration whose reflected type or checked runtime term the
 implementation needs:
 
@@ -518,7 +530,7 @@ For a complete captured polymorphic function and an invoked type application,
 see [the template lesson](elaborator-authoring.md#reuse-an-ordinary-polymorphic-function-as-a-template).
 
 Captures are explicit dependency injection for generated code. Their visibility
-must be at least that of the elaborator because generated code may retain them.
+must be at least that of the elab because generated code may retain them.
 They also keep name resolution open-world: adding another declaration to a
 module cannot change an existing elaboration because the implementation's input
 set does not grow implicitly.
@@ -526,7 +538,7 @@ set does not grow implicitly.
 ## Diagnostics
 
 Return `__elab_error__(ct, message)` when the requested elaboration is not
-defined for the supplied shape. It reports the elaborator-error category at
+defined for the supplied shape. It reports the elab-error category at
 the bang call. Return `__type_error__(ct, message)` when the appropriate result
 is an ordinary type error. Both are checked-term sentinels, not runtime terms.
 
@@ -546,12 +558,12 @@ marked `pure`.
 That restriction applies to executable references in implementation bodies,
 not to types or quoted runtime dependencies. Implementation ABI types and
 local type annotations may mention any well-formed type, including host types;
-named types in the elaborator's call type obey its visibility floor. Captures
+named types in the elab's call type obey its visibility floor. Captures
 remain subject to their declaration-visibility rule. A captured host function
 is a checked term the implementation may put into generated runtime code; the
 implementation does not call that function merely by capturing it.
 
-Purity of the generated runtime term is a separate question. After elaborator
+Purity of the generated runtime term is a separate question. After elab
 results replace their bang calls, the compiler validates the assembled Kio'
 package again. A generated host-function or unmarked-function reference is
 rejected when it lands in a `pure fn`, while the same term is allowed in an
@@ -595,7 +607,7 @@ Unmeasurable fuel or a non-descending callback is a totality failure (exit code
 `16`). The diagnostic includes initial, current, and next measures when
 available so you can find the failing edge. Ignoring the callback's result
 does not erase the failure: compile-time evaluation reports its first failed
-edge. The size check permits recursive elaborator code while ensuring that
+edge. The size check permits recursive elab code while ensuring that
 every recursive path terminates.
 
 The [reflected product walk](elaborator-authoring.md#walk-an-actual-reflected-product-tree)
@@ -612,13 +624,13 @@ The compiler then checks the resulting package as standalone Kio', including
 the caller's `pure` promise. This second check ensures that generated code
 obeys the same rules as handwritten core code.
 
-Reflection, fills, and the elaborator action run only at compile time.
+Reflection, fills, and the elab action run only at compile time.
 Compilation continues from ordinary, validated Kio' code, without a runtime
-invocation of the elaborator. To inspect that result, follow
+invocation of the elab. To inspect that result, follow
 [Debugging with Kio'](debugging-with-kio-prime.md).
 
 For an authoring and verification progression, use
-[Building and testing elaborators](elaborator-authoring.md). For reusable implementations, read the checked
+[Building and testing elabs](elaborator-authoring.md). For reusable implementations, read the checked
 [`elab` library](using-libraries.md#the-elaborator-library) alongside this
 guide. The exhaustive helper contracts remain in
 [Builtin modules](builtin-modules.md).

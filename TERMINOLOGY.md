@@ -23,7 +23,7 @@ duplicate branches collapse. See [products](docs/guides/products.md),
 **Spine.** The right-hand chain of a product or sum tree. `A & B & C` means
 `A & (B & C)`; its spine has three components. `(A & B) & C` has a different
 tree, with the grouped product in its first slot. Order and grouping matter to
-ordinary type equality. Library [spine elaborators](docs/poc/elab.md#two-source-to-target-palettes)
+ordinary type equality. Library [spine elabs](docs/poc/elab.md#two-source-to-target-palettes)
 perform explicit structural transformations.
 
 **Row, record, field, label.** Record-shaped values use ordinary products of
@@ -56,7 +56,7 @@ See [declarations](docs/guides/declarations.md),
 
 **Type equality versus conversion.** The Unit type `.` has the sole value
 `()`, and bottom `!` has no values. `A & .` and `A | !` are distinct from `A`
-under ordinary type equality. An elaborator can generate a conversion between
+under ordinary type equality. An elab can generate a conversion between
 these shapes when its library contract admits it. The same distinction applies
 to reordering, reassociation, and other isomorphisms: an available conversion
 does not make two types equal. See the
@@ -74,17 +74,19 @@ claims. In particular, the
 validates structural and host/export contract edges, trusting precompiled
 function-body typing. See [Kio'](specs/prime.md).
 
-**Elaboration, elaborator, bang call.** Elaboration is the compiler's process
-of resolving surface code and type information into explicit core code.
-A *library elaborator* is an ordinary resolved `elab` declaration whose
+**Elaboration, compiler elaborator; elab, elaborator macro, bang call.**
+Elaboration is the compiler's process of resolving surface code and type
+information into explicit core code; the *compiler elaborator* performs it.
+An *elab*, short for *elaborator macro*, is a library-defined type-driven macro
+declared with `elab`. Its
 implementation runs while a written bang call, such as `match!`, is checked.
 It works with reflected types and checked-term recipes and produces checked
-core code for that call site. "Typed compile-time macro" explains its purpose;
-it does not mean textual substitution. Elaborators are declared or imported
+core code for that call site, rather than substituting source text.
+Elabs are declared or imported
 explicitly, with ordinary resolution; their names do not make them compiler
 primitives. Reflected terms describe code, rather than its computed runtime
-value. See [defining elaborators](docs/guides/elaborators.md) and
-[building elaborators](docs/guides/elaborator-authoring.md).
+value. See [defining elabs](docs/guides/elaborators.md) and
+[building elabs](docs/guides/elaborator-authoring.md).
 
 **Builtin module, intrinsic, library.** Builtin modules expose the compiler's
 specified primitive interfaces. Intrinsics are reserved operations in
@@ -102,7 +104,7 @@ not every possible behavior of host implementations. See
 
 **Pure function.** `pure fn` restricts executable declaration references in a
 function body. It does not classify types or promise that every call is
-effect-free: a supplied callback may have effects. Elaborator implementations
+effect-free: a supplied callback may have effects. Elab implementations
 execute under the pure-function rules. See
 [function purity](specs/language.md#module-system).
 

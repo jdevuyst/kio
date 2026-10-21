@@ -55,7 +55,7 @@ siblings. The first two separately exercise both directions of ancestry
 preservation.
 
 The package uses the exact `testapi-array` host protocol and a materialized
-dependency on the shared elaborator library. Iteration and recursive forest
+dependency on the shared `elab` library. Iteration and recursive forest
 decomposition use `rec(loop)`, including continuations for nested subproblems.
 
 What this adds to the corpus: ordered tree/forest dynamic programming with

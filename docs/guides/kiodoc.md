@@ -29,7 +29,7 @@ The body is Markdown. Blank `///` lines become blank Markdown lines.
 The rendered docs include the item's signature, and editor hover shows
 the same Markdown content for documented declarations. This works for
 functions, aliases, newtypes, labels, operators, and user-defined
-elaborators.
+elabs.
 
 Editor highlighting distinguishes headings, emphasis, list and quote markers,
 links, Kiodoc reference operands, directive words, and fenced examples from
@@ -229,5 +229,5 @@ gives the exact selection rules and links to each target's presentation.
 
 The language server renders Kiodoc as Markdown in hover. It also shows
 builtin docs for `__intrinsics__` and `__comptime__`, so compile-time
-helpers and user-defined elaborators are presented through the same
+helpers and user-defined elabs are presented through the same
 documentation surface.

@@ -126,7 +126,7 @@ Here the outer call's argument and result information can determine the inner
 factory's `A`. By contrast, two calls appearing in the same function are not
 automatically connected. An already completed inner call contributes only its
 finished type; Kio does not reconsider its body. Lambda bodies still follow
-their own rules, and elaborator inputs must also satisfy the
+their own rules, and elab inputs must also satisfy the
 [pre-expansion boundary](#elaborators-need-input-descriptions-before-they-expand).
 
 This is local cooperation between expressions you wrote, not a search through
@@ -259,7 +259,7 @@ function and carrier type.
 
 Semicolons are not a universal inference barrier for every kind of block.
 A **product block**, such as the collection of clauses supplied to `match!`,
-provides separate values to the elaborator; their result types can cooperate
+provides separate values to the elab; their result types can cooperate
 according to its public contract. It is not an expression or sequence block's
 chain of local bindings and earlier expressions.
 
@@ -316,7 +316,7 @@ fn either_value(flag: Bool, number: Int, text: String) -> Int | String {
 The condition is checked before the branch results; those results do not infer
 the condition's type backward. At runtime only the selected branch runs.
 
-These are library-defined elaborators, not special meanings attached to the
+These are library-defined elabs, not special meanings attached to the
 names `if` or `match`. Their public types and declared elaboration rules
 determine how their arguments cooperate. The same applies to imported `do!`:
 each action determines its payload before the following binding uses it;
@@ -325,7 +325,7 @@ later uses do not infer an earlier action backward. See
 
 ### Inferring a match result
 
-Add the [elaborator library](using-libraries.md#the-elaborator-library) as an
+Add the [elab library](using-libraries.md#the-elaborator-library) as an
 `elab` dependency, follow the [dependency workflow](using-libraries.md#the-minimal-dependency-workflow)
 to fetch it, and write `import elab/match(match);` in your module.
 
@@ -369,19 +369,22 @@ directly from a function whose return type supplies the result. If clause
 results disagree, choose the intended common type and construct it in each
 clause; Kio does not automatically combine incompatible results into a sum.
 
-## Elaborators need input descriptions before they expand
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="elaborators-need-input-descriptions-before-they-expand"></a>
 
-An elaborator constructs code at compile time. Some elaborators, including
+## Elabs need input descriptions before they expand
+
+An elab constructs code at compile time. Some elabs, including
 `if!` and `match!`, exchange type information with callback bodies: their
 declarations use `impl(fills)`. They can use the types and structure already
 available at the call, but cannot ask the compiler to enter an unfinished
 argument body to find information they need to expand. Ordinary `impl`
-elaborators instead receive arguments whose checking is already complete.
+elabs instead receive arguments whose checking is already complete.
 The distinction can matter to callers, not just library authors.
 
 Computed arguments must have determined types before the expansion starts.
 The call's outside expected result and already known sibling arguments can
-help determine them through the elaborator's public type. The implementation's
+help determine them through the elab's public type. The implementation's
 later choices cannot. A declared generic parameter still counts as known:
 `Box(A)` inside a function declaring `A` is different from a factory call whose
 type argument has not been chosen. Supply an explicit type argument or a
@@ -392,10 +395,10 @@ For example, suppose an ordinary function has the signature
 `drive[S][R](step: S -> (S | R), seed: S) -> R`. A callback written as
 `.(state: State) -> State | Done { advance(state) }` identifies the call's
 result as `Done` without inspecting the callback body. An `impl(fills)`
-elaborator receiving that call can use the result type. If the callback omits
+elab receiving that call can use the result type. If the callback omits
 its return annotation and only its body establishes `Done`, the same input needs to finish ordinary
 checking first. Bind the complete `drive(...)` call to a local value before
-passing it to the elaborator, or supply the callback's result annotation.
+passing it to the elab, or supply the callback's result annotation.
 
 This does not require every argument type to be fully determined in advance.
 For instance, `match!` can relate the results of directly supplied clauses
@@ -409,8 +412,8 @@ their result annotations.
 
 These rules keep compile-time expansion from depending on exploratory checks
 of unfinished bodies. They do not excuse checking those bodies: an invalid
-argument is still rejected even when the elaborator ignores its value. The
-[elaborator guide](elaborators.md#marked-fills-implementations) explains the
+argument is still rejected even when the elab ignores its value. The
+[elab guide](elaborators.md#marked-fills-implementations) explains the
 precise input requirements and how library authors declare result relations.
 
 ## Type equality is not automatic conversion
@@ -420,7 +423,7 @@ type. `A & B` and `B & A` have different layouts; a newtype remains distinct
 from its payload type. Transparent type aliases name an existing type without
 creating that distinction.
 
-Kio makes structural rearrangement explicit with elaborators such as
+Kio makes structural rearrangement explicit with elabs such as
 `reorder_prod!` and `widen_sum!`, rather than trying conversions during every
 type comparison. This keeps ordinary checking predictable and makes the
 adaptation visible. Read [products](products.md), [sums](sums.md), and

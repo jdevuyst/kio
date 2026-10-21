@@ -17,9 +17,9 @@ The table below is a **convention**, not a hard requirement of the language. Imp
 | 11 | parse error              | unexpected token, unterminated string, invalid or missing literal suffix, malformed syntax (including forbidden `rec type`, a redundant singleton `rec`, or an ill-formed/non-minimal bare type `rec` group), identifier-spelling violation (a type name outside `_?[A-Z][a-z0-9_]*`, or a value name with an uppercase initial), a letterless name (a value name with no letter, such as `_1`; bare `_` is the wildcard binder, not a name), or a user identifier that begins with two consecutive underscores (the `__name__` reserved shape) |
 | 12 | import error             | the module named by an `import` statement cannot be found, the module does not export the requested `pub` identifier, the intra-package `import` graph contains a cycle, or package source walking finds multiple package files |
 | 13 | name resolution error    | unbound identifier (including a recursive singleton missing its required `rec` marker or an ordinary reference to a declaration that appears later), duplicate declaration, two distinct source identities bound to one visible name, shadowing a reserved word |
-| 14 | type error               | type mismatch, wrong arity, an invalid `host type` parameter list (a higher-kinded parameter, or any parameters on a role-bearing type), a literal that three-tier resolution cannot type (no admitting `role(...)` type, or an ambiguous one), a role-bound intrinsic with no unique required `role(...)` identity, or a user-defined elaborator returning `__type_error__(message)` from the generated checked term |
-| 15 | elaborator error         | an imported elaborator rejects its input or cannot derive its result, reported through `__elab_error__` in the generated checked term; see [Elaborator failures](#elaborator-failures). `__type_error__` reports under code 14 instead. |
-| 16 | totality error           | strict-positivity violation in a recursive `newtype` component, an alias-only cycle (including an alias-only subcycle inside a nominal group), or a `__structural_recur__` evaluation that gets stuck because its fuel is not structurally decreasing (a loop-via-arrow that does not decrease). `match!` non-exhaustiveness, an unreachable `match!` clause, and a `match!` clause that covers no scrutinee branch are **not** here: `match!` is a user-defined elaborator, so those surface as elaborator errors (code 15) via `__elab_error__` |
+| 14 | type error               | type mismatch, wrong arity, an invalid `host type` parameter list (a higher-kinded parameter, or any parameters on a role-bearing type), a literal that three-tier resolution cannot type (no admitting `role(...)` type, or an ambiguous one), a role-bound intrinsic with no unique required `role(...)` identity, or a user-defined elab returning `__type_error__(message)` from the generated checked term |
+| 15 | elaborator error         | an imported elab rejects its input or cannot derive its result, reported through `__elab_error__` in the generated checked term; see [Elab failures](#elaborator-failures). `__type_error__` reports under code 14 instead. |
+| 16 | totality error           | strict-positivity violation in a recursive `newtype` component, an alias-only cycle (including an alias-only subcycle inside a nominal group), or a `__structural_recur__` evaluation that gets stuck because its fuel is not structurally decreasing (a loop-via-arrow that does not decrease). `match!` non-exhaustiveness, an unreachable `match!` clause, and a `match!` clause that covers no scrutinee branch are **not** here: `match!` is a user-defined elab, so those surface as elaborator errors (code 15) via `__elab_error__` |
 | 20 | bridge error (non-specific)  | an error in the package's host contract surface the implementation cannot assign a more specific 2x code to — e.g. a `bridge` glob matching no module (dead glob), a host-bearing module reachable from a bridged module but selected by no glob (module completeness), or a type a bridged signature reaches that is not itself exposed (type closure) |
 | 30 | dependency / resolution error (non-specific) | a cross-package dependency declared by a `<local>.dep.kio` file (see [`package.md` § Dependency files](package.md#dependency-files)) cannot be resolved into the consumer package, and the implementation cannot assign a more specific 3x code to it — e.g. the `source { path ... }` does not resolve to an existing `*.pkg.kio` package file, the dependency's local name collides with the first path segment of a local module (local-name / local-root collision), or the resolved dependency does not itself collect / parse |
 | 40 | build error (non-specific)   | a build-time error the implementation cannot assign a more specific 4x code to — e.g. a missing `<name>.pkg.kio` package marker, a package file with no `build { ... }` block, a build block with duplicate target names; a target whose backend is unknown or an unknown explicit target name on the CLI; invalid keys for a backend; backend transpilation failure |
@@ -30,17 +30,20 @@ The table below is a **convention**, not a hard requirement of the language. Imp
 | 81 | sig stale-but-compatible     | `kio sig status` found an unrecorded **compatible** contract-surface delta. Run `kio sig stage` to record it. |
 | 82 | sig unsealed-break-pending   | `kio sig status` found a recorded break that has not yet been sealed by `kio sig commit`. Run `kio sig commit` to seal it. |
 
-### Elaborator failures
+<!-- markdownlint-disable-next-line MD033 -->
+<a id="elaborator-failures"></a>
 
-The [reference elaborator libraries](../docs/poc/elab.md) report code `15`
+### Elab failures
+
+The [reference elab libraries](../docs/poc/elab.md) report code `15`
 for these failures; their spelling does not make them compiler primitives:
 
-- **Algebraic elaborators** (`iso!`, `into!`, `onto!`, `align!`, `ease!`,
+- **Algebraic elabs** (`iso!`, `into!`, `onto!`, `align!`, `ease!`,
   `atom!`): no valid coercion under the form's rule subset; an `ease!` target
   requiring factor duplication; or failure to pick a single value with `atom!`
   (atomic source, multi-arm sum target, or no admissible single arm in the
   source's disjunctive normal form).
-- **Spine elaborators** (`reorder_sum!`, `reorder_prod!`, `narrow_sum!`,
+- **Spine elabs** (`reorder_sum!`, `reorder_prod!`, `narrow_sum!`,
   `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`,
   `one_sum!`, `one_prod!`, `fit!`): a failed precondition (axis or spine-multiset
   mismatch, polymorphic source/target during `fit!`'s function-arrow walk,
@@ -55,7 +58,7 @@ for these failures; their spelling does not make them compiler primitives:
   also fail: a precondition is not structurally smaller than the result
   (`derive_rule_not_decreasing`), or mentions a binder absent from the result
   (`derive_rule_fresh_binder`).
-- **Any user-defined elaborator**: returning `__elab_error__` from its generated
+- **Any user-defined elab**: returning `__elab_error__` from its generated
   checked term. Returning `__type_error__` reports code `14` instead.
 
 ### Tiers

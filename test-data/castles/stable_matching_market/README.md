@@ -41,7 +41,7 @@ bounded enumeration independently establishes the expected fixture results;
 the Kio runtime certificates verify validity and stability of each run.
 
 The package uses the `testapi-array` protocol and a materialized dependency on
-the shared elaborator library for lazy conditionals. Modules separate the
+the shared `elab` library for lazy conditionals. Modules separate the
 market fixture, proposal engine, certificates, and presentation.
 
 What this adds to the corpus: a preference-stability algorithm whose workqueue

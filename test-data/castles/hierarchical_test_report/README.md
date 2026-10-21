@@ -25,7 +25,7 @@ suite, aggregate totals for completed roots, and diagnostics in encounter order.
 The modules separate event decoding, tree data, stack aggregation, and report
 rendering. The reusable List library supplies stack cells, immutable child
 lists, folds, and the rendering frontier; its host functions are rehosted onto
-the package's existing capabilities. The elaborator library provides ordinary
+the package's existing capabilities. The `elab` library provides ordinary
 conditionals, sum construction, and exhaustive matching.
 
 What this adds to the corpus: hierarchical event-to-document assembly with

@@ -156,7 +156,7 @@ marking over an explicit `Array(I32)` stack (drained through
 through a forwarding table with root and pointer-field fixup, and a
 post-compaction reachability verification that re-derives the heap's
 soundness from scratch. It is the corpus's first program to combine the
-host-array surface with the `elab` elaborator library -- `match!`
+host-array surface with the `elab` library -- `match!`
 dispatches the tagged field slots and the worklist's empty-stack arm,
 and `widen_sum!` builds them -- and its object-list and field-list walks
 go through two polymorphic `rec(loop)` folds that take a step closure,

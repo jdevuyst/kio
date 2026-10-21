@@ -12,5 +12,5 @@ tree.
 
 What this adds to the corpus: this is a medium symbolic simplifier/evaluator
 castle. It stresses recursive newtypes over structural sums, labeled branches,
-`match!` dispatch through the elaborator POC dependency, non-tail `rec(loop)`
+`match!` dispatch through the `elab` POC dependency, non-tail `rec(loop)`
 tree walks, and the `testapi-arith-collection` host surface without using stdin.

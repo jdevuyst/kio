@@ -13,5 +13,5 @@ and whether the expression reduced to a dimensionless unit.
 
 What this adds to the corpus: this is a medium symbolic evaluator with a
 recursive label-grounded term tree, recursive sum dispatch, a path dependency
-on the elaborator POC for `match!` and spine widening, and a numeric reduction
+on the `elab` POC for `match!` and spine widening, and a numeric reduction
 pass over a fixed expression set.

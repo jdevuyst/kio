@@ -175,7 +175,7 @@ Cache and memo probes are deliberately opt-in because they write extra stderr:
 - `KIO_DEBUG_DOC_CACHE=1` — Kiodoc snippet cache hit/miss status.
 - `KIO_DEBUG_EQUIV_CACHE=1` — `kio test` equiv cache hit/miss status.
 - `KIO_DEBUG_MEMO=1` — in-memory typecheck memo trace lines.
-- `KIO_DEBUG_MEMO_VERIFY=1` — compare memoized elaborator/typecheck results with fresh computation and panic on divergence.
+- `KIO_DEBUG_MEMO_VERIFY=1` — compare memoized elab/typecheck results with fresh computation and panic on divergence.
 - `KIO_DEBUG_WRITE_TYPED_CACHE=0` — disable typed-module cache writes while investigating cache behavior.
 - `KIO_DEBUG_TEST_RUNNER_COMPILER_OBSERVER=<executable>` — place one opaque
   executable outermost around every actual Rust, Go, Java, Haskell, or Swift
@@ -211,21 +211,21 @@ Cache and memo probes are deliberately opt-in because they write extra stderr:
 
 ### Reading frontend timing
 
-Use `KIO_DEBUG_TIMING=frontend` when a `kio check` or `kio build` change may have moved frontend, cache, or user-elaborator cost. Compare at least these cache states before drawing conclusions:
+Use `KIO_DEBUG_TIMING=frontend` when a `kio check` or `kio build` change may have moved frontend, cache, or elab cost. Compare at least these cache states before drawing conclusions:
 
 - `--no-cache` — pure recomputation baseline, with semantic cache reads and writes disabled.
 - cache-cold — delete `.kio-cache/`, run normally, and treat extra time as cache population cost.
-- repeated elaborator shapes in one run — force multiple modules or calls with the same shape to exercise the in-process template and prepared memos independently of persistent-cache state.
-- fully warm — run normally twice; package-check hits should make elaborator/typecheck counters drop to zero for skipped packages.
+- repeated elab call shapes in one run — force multiple modules or calls with the same shape to exercise the in-process template and prepared memos independently of persistent-cache state.
+- fully warm — run normally twice; package-check hits should make elab/typecheck counters drop to zero for skipped packages.
 
 Interpret the lines in this order:
 
 - `frontend-workspace-timing` explains work before per-package typechecking: walk/parse, source-map assembly, package-check cache-state construction, typed-cache state construction, and package-level layout. If a warm run is slow while package lines show `package_check_skipped=1`, look here first.
-- `frontend-timing` is per package. `package_check_lookup_ms`, `typed_cache_lookup_ms`, and `typed_cache_store_ms` explain non-elaborator cache overhead. `prepare_ms`, `forced_modules`, `typed_hits`, and `typed_misses` explain how much module work was still needed. `typecheck_ms` is the aggregate of `pipeline_typecheck_ms` and `prime_validation_ms`. The pipeline stage includes elaborator work when modules are forced; it checks Lowered input in `kio` and source-Prime input in `kio-prime`. The validation stage is the standalone check of the assembled Prime artifact in both binaries.
+- `frontend-timing` is per package. `package_check_lookup_ms`, `typed_cache_lookup_ms`, and `typed_cache_store_ms` explain non-elab cache overhead. `prepare_ms`, `forced_modules`, `typed_hits`, and `typed_misses` explain how much module work was still needed. `typecheck_ms` is the aggregate of `pipeline_typecheck_ms` and `prime_validation_ms`. The pipeline stage includes elab work when modules are forced; it checks Lowered input in `kio` and source-Prime input in `kio-prime`. The validation stage is the standalone check of the assembled Prime artifact in both binaries.
 - `frontend-package-cache-store-timing` reports post-green package-check cache writes. It appears after package work because package-check entries are written only after the workspace succeeds.
-- The `user_elaborator_*` fields explain user-elaborator cost. For repeated shapes in one run, `user_elaborator_prepared_hits`, the template batch unique/duplicate counts, and the `KIO_DEBUG_MEMO=1` trace show in-process reuse; `user_elaborator_template_eval_ms` measures fresh template evaluation while `user_elaborator_template_replay_ms` measures applying trusted in-process templates at each call site. `user_elaborator_eval_arg_vecs` / `user_elaborator_eval_arg_values` and `user_elaborator_eval_capture_vecs` / `user_elaborator_eval_capture_values` are allocation-pressure counters for the compiled evaluator's hot value-vector sites. In a fully warm package-check hit, all user-elaborator counters should be zero.
+- The `user_elaborator_*` fields explain user-elab cost. For repeated shapes in one run, `user_elaborator_prepared_hits`, the template batch unique/duplicate counts, and the `KIO_DEBUG_MEMO=1` trace show in-process reuse; `user_elaborator_template_eval_ms` measures fresh template evaluation while `user_elaborator_template_replay_ms` measures applying trusted in-process templates at each call site. `user_elaborator_eval_arg_vecs` / `user_elaborator_eval_arg_values` and `user_elaborator_eval_capture_vecs` / `user_elaborator_eval_capture_values` are allocation-pressure counters for the compiled evaluator's hot value-vector sites. In a fully warm package-check hit, all user-elaborator counters should be zero.
 
-When comparing built-in and user elaborators, use a fair corpus where both variants parse/typecheck the same imported elaborator modules unless the experiment is explicitly about dependency weight. Report medians and include cache state; a single cache-cold wall time is usually measuring cache writes, not steady-state compiler speed.
+When comparing built-in forms and user elabs, use a fair corpus where both variants parse/typecheck the same imported elab modules unless the experiment is explicitly about dependency weight. Report medians and include cache state; a single cache-cold wall time is usually measuring cache writes, not steady-state compiler speed.
 
 ### Reading build timing
 

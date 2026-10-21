@@ -631,7 +631,7 @@ comment-parser error; that's an acceptable failure mode.
   package build block. Support directories are validation-only:
   their files are available to snippets, but are not rendered as
   documentation content. This lets snippets import same-package or
-  shared imported elaborators exactly as ordinary modules do
+  shared imported elabs exactly as ordinary modules do
   without injecting unrelated root modules into the scratch
   package. Module identities are their full relative slash paths,
   including subdirectories. Discovery excludes nested packages,

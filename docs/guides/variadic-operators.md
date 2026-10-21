@@ -24,8 +24,8 @@ __INSERT_CODE_HERE__
 
 Here `nil()` constructs an empty list and `cons(head, tail)` prepends an
 element. The host supplies `I32` with `role(i32)` for the integer literals.
-The `widen_sum!` elaborator constructs the sum payloads; follow the
-[elaborator-library setup](using-libraries.md#the-elaborator-library) and
+The `widen_sum!` elab constructs the sum payloads; follow the
+[elab-library setup](using-libraries.md#the-elaborator-library) and
 import it with `import elab/spine_elaborators(widen_sum);` when the dependency
 is named `elab`:
 

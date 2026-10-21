@@ -46,7 +46,7 @@ use GF256 or correct unknown symbol errors. A surplus consistency failure is
 detection only; exactly `k` incorrect samples can interpolate a different
 polynomial and are not authenticated by the decoder.
 
-The package composes the reusable List and elaborator libraries through the
+The package composes the reusable List and `elab` libraries through the
 exact `testapi-compute-list-elab` host interface. Field arithmetic,
 polynomials, symbol encoding, interpolation and validation, input framing,
 and reporting live in separate modules.

@@ -75,7 +75,7 @@ operators bind to their operand, so `- a + b` means `add(neg(a), b)`.
 
 A pattern can contain several symbols and operands. This example also uses a
 host `Bool` with `role(bool)` and `if!` from the
-[elaborator library](using-libraries.md#the-elaborator-library); with that
+[elab library](using-libraries.md#the-elaborator-library); with that
 dependency named `elab`, import it as `import elab/control(if);`:
 
 ```kio {@module}

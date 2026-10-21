@@ -26,7 +26,7 @@ A package directory contains:
   optional `build` block and the optional single `bridge { ... }` block.
 - **`*.kio`** (except `<pkg>.sig.kio`, `<local>.dep.kio`, and
   `<local>.lock.kio`, below) — Kio source modules. Contain
-  types, functions, operators, elaborators, `equiv` claims, `host type` /
+  types, functions, operators, elabs, `equiv` claims, `host type` /
   `host fn` declarations, and other module-body items.
   A root module begins with `module <name>;`. Submodules live in
   separate files (`module root/sub;`).
@@ -143,7 +143,7 @@ carry the same role. When neither an explicit annotation nor an expected type
 determines a literal's type, tier 3 resolves it only if exactly one in-scope
 role-bearing type is admitted for that literal; zero candidates are unresolved
 and multiple candidates are ambiguous. `role(bool)` additionally supplies the
-condition type for `__if_then_else__` and the reference `if!` elaborator's
+condition type for `__if_then_else__` and the reference `if!` elab's
 branching glue, but only when the
 identity-keyed candidate set is a singleton. Directly in-scope host types form
 the candidate set when any exist; only otherwise do transparent aliases supply

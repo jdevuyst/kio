@@ -19,7 +19,7 @@ equiv name[A](x: A) {
 
 The runner, conceptually:
 
-1. Parses, type-checks, and substitutes the module to `Lowered` and finally to `Prime`-shaped terms. Every block and blockless elaborator call, including the library's `if!`, `scope!`, `do!`, `match!`, and `derive!`, has its ordinary Kio' expansion substituted at the Lowered → Prime boundary.
+1. Parses, type-checks, and substitutes the module to `Lowered` and finally to `Prime`-shaped terms. Every block and blockless elab call, including the library's `if!`, `scope!`, `do!`, `match!`, and `derive!`, has its ordinary Kio' expansion substituted at the Lowered → Prime boundary.
 2. For each `equiv` item: binds each value parameter `pᵢ : Tᵢ` to a **fresh opaque atom** `aᵢ` shared across every arm, ignores the type parameters (they're erased), and partial-evaluates each arm body to a residual normal form `vᵢ`.
 3. Compares the `N` residual NFs pairwise. If every pair is equivalent under the relation in § 4, the `equiv` passes; otherwise it fails with the partition into NF-equivalence groups (see [`../cli.md`](../cli.md) § kio test for the diagnostic shape).
 
@@ -329,5 +329,5 @@ The else-arm closures differ (`Stuck(bar, [])` vs `Stuck(baz, [])`). Inequivalen
 ## 6. References
 
 - [`prime.md`](prime.md) — Kio' typing rules, reduction, type safety, SN, decidability. The reduction rules in § 3 of this page reuse the rules from `prime.md` § 3.
-- The `equiv` discharge sees the **elaborated** calls — the typer substitutes every elaborator bang-call (the reference coercion palettes, `match!`, `derive!`) at the `Lowered → Prime` boundary, so only the ordinary intrinsic glue they expand to reaches the partial evaluator. The per-library soundness arguments for those expansions live with the executable POC ([`../../docs/poc/elab.md`](../../docs/poc/elab.md), [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not in this formal directory.
+- The `equiv` discharge sees the **elaborated** calls — the typer substitutes every elab bang-call (the reference coercion palettes, `match!`, `derive!`) at the `Lowered → Prime` boundary, so only the ordinary intrinsic glue they expand to reaches the partial evaluator. The per-library soundness arguments for those expansions live with the executable POC ([`../../docs/poc/elab.md`](../../docs/poc/elab.md), [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not in this formal directory.
 - Pierce 2002, *Types and Programming Languages*, chapters 11, 20, and 23 — background on products and sums, iso-recursive types, and System F, respectively. The Kio-specific reduction and residual-equivalence rules are stated on this page and in `prime.md`; the textbook is not a proof of their combined implementation.

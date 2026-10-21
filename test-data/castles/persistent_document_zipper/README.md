@@ -33,7 +33,7 @@ names, unknown commands, and a missing final operand are ordinary reports.
 
 The package adopts the persistent `list` library for children, breadcrumbs,
 history, snapshots, and traversal worklists. Its list host requirements are
-rehosted through an ordinary adapter; imported elaborators provide control
+rehosted through an ordinary adapter; imported elabs provide control
 flow and structural sums. The standard `testapi-compute-list-elab` protocol
 supplies input, output, strings, integers, and iteration.
 

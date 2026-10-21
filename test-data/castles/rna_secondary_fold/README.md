@@ -10,7 +10,7 @@ There are no energies, chemical conditions, or biological claims.
 The fixture sequences live in `workdir/fold/fixtures.kio`; this program reads
 no stdin. The host supplies mutable arrays and elementary arithmetic, text,
 and looping operations through `testapi-array`. The direct `elab` dependency
-supplies ordinary control and structural elaborators.
+supplies ordinary control and structural elabs.
 
 `solver.kio` fills interval scores in increasing span order. For an interval
 `[i,j]`, it compares leaving `i` unmatched with pairing `i` to each compatible

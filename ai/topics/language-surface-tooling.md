@@ -59,7 +59,7 @@ Use that argument to choose the affected surface area:
 - Formatter and style contract: canonical spelling, list layout, shorthand expansion/collapse, and stable round trips.
 - Lowering boundary: every surface-only form disappears before Kio'; phase-local elaboration data must be consumed before the boundary closes.
 - Typechecker behavior: synthesis/checking rules, expected-type flow, open-world argument when name resolution, imports, dispatch, or inference are involved.
-- Normalization behavior: `equiv`, REPL `:normalize`, user elaborator execution, and any compile-time evaluator path that observes the changed semantics.
+- Normalization behavior: `equiv`, REPL `:normalize`, elab execution, and any compile-time evaluator path that observes the changed semantics.
 - Generated corpus: whether `kio-gen-rs` can still generate well-typed programs for the changed language and whether it should generate the new shape.
 - File-kind surface parity: every Kio-family file kind in the shared file-kind vocabulary must be considered together, not by a hard-coded module/package subset. Check `kio fmt`, `kio doc` `variant=KIND`, highlighters, LSP routing, IDE plugins, syntax fixtures, and docs against the whole set.
 - LSP: diagnostics, formatting, semantic tokens, hover, completion, code actions (including the source they generate), definition, references, prepare-rename, and rename. File-kind routing must follow the shared Kio-family predicates rather than ad hoc suffix lists.

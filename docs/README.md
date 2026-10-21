@@ -9,7 +9,7 @@ terms and distinctions while following the learning path.
 
 New to Kio? Start here — these read top to bottom.
 
-- [The Kio language](tutorials/language.md) — a guided tour: packages, modules, functions, types, tuples and labels, sums and pattern matching, polymorphism, elaborator calls, and structural glue.
+- [The Kio language](tutorials/language.md) — a guided tour: packages, modules, functions, types, tuples and labels, sums and pattern matching, polymorphism, elab calls, and structural glue.
 - [Getting started with the tooling](tutorials/tooling.md) — one full lap of the dev loop on a tiny package: `kio init`, `fmt`, `check`, `test`, `build`, and sealing the contract surface with `kio sig`.
 
 For exact command-line behavior, see [`specs/cli.md`](../specs/cli.md).
@@ -17,7 +17,7 @@ For exact command-line behavior, see [`specs/cli.md`](../specs/cli.md).
 ## Guides
 
 Once you know the basics, choose the task below. Ordinary source starts with
-the language guides; compiler pseudo-modules are a reference for elaborator
+the language guides; compiler pseudo-modules are a reference for elab
 authors, not the starting point for products and sums.
 
 ### Writing the language
@@ -49,10 +49,10 @@ authors, not the starting point for products and sums.
 
 ### Compiler-facing material
 
-- [Defining elaborators](guides/elaborators.md) — the checked-term ABI, reflection, captures, diagnostics, and total compile-time recursion.
-- [Building and testing elaborators](guides/elaborator-authoring.md) — a runnable authoring progression through generated bindings, captured templates, reflected walks, fills, blocks, and behavior tests.
+- [Defining elabs](guides/elaborators.md) — the checked-term ABI, reflection, captures, diagnostics, and total compile-time recursion.
+- [Building and testing elabs](guides/elaborator-authoring.md) — a runnable authoring progression through generated bindings, captured templates, reflected walks, fills, blocks, and behavior tests.
 - [Builtin modules](guides/builtin-modules.md) — generated exhaustive reference for `__intrinsics__` and `__comptime__`.
-- [The open-world story](guides/open-world.md) — what open-world compilation means for imports, inference, and elaborator design.
+- [The open-world story](guides/open-world.md) — what open-world compilation means for imports, inference, and elab design.
 
 ### Tooling
 
@@ -66,7 +66,7 @@ End-to-end read-throughs of the runnable proof-of-concept packages under [`test-
 
 - [The optics library](poc/optics.md) — [`test-data/poc/optics/`](../test-data/poc/optics/): lenses, prisms, and isos as function pairs, the spine palette and `match!` in use, an operator DSL, and every `equiv` law.
 - [Higher-kinded types](poc/hkt.md) — [`test-data/poc/hkt/`](../test-data/poc/hkt/): kinded brands, first-class instance dictionaries, `do!` pipelines over an abstract type constructor, and a `derive!` instance pick.
-- [The elaborator library](poc/elab.md) — [`test-data/poc/elab/`](../test-data/poc/elab/): the source-to-target coercion palettes (algebraic and spine), `match!`, `derive!`, and the reflected-type vocabulary, documented per form with their `equiv` laws.
+- [The elab library](poc/elab.md) — [`test-data/poc/elab/`](../test-data/poc/elab/): the source-to-target coercion palettes (algebraic and spine), `match!`, `derive!`, and the reflected-type vocabulary, documented per form with their `equiv` laws.
 - [Dynamic loading](poc/dyn_load_prime.md) — [`test-data/poc/dyn_load_prime/`](../test-data/poc/dyn_load_prime/): a host loads a pre-compiled package from its emitted Kio' image at runtime, contract-matches it, and calls its exports through a universal existential surface.
 
 ## Host integrations

@@ -88,7 +88,7 @@ bool-to-word function:
 What this adds to the corpus: the first castle on the print-only tier - an
 entire multi-module program whose host surface is a single `print`, with every
 other thing in-language. No arithmetic, no comparisons, no string helpers, no
-host loop, no arrays, and no dependency, so no elaborator library and therefore
+host loop, no arrays, and no dependency, so no `elab` library and therefore
 no sums: the whole program is built from labeled record products, `Bool` with
 `if` / `else`, and function composition across modules. It is the corpus's
 minimal-host extreme, and it pins that a structured program with real derived

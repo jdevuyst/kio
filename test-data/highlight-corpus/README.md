@@ -33,8 +33,8 @@ least one fixture per kind:
   `align!` / `ease!` / `atom!`), spine-palette (`reorder_sum!` /
   `reorder_prod!` / `narrow_sum!` / `narrow_prod!` / `widen_sum!` /
   `widen_prod!` / `flatten_sum!` / `flatten_prod!` / `one_sum!` /
-  `one_prod!` / `fit!`), and dispatch (`match!`) elaborator-bang forms,
-  plus an arbitrary user elaborator and a non-fusion intervening-space case
+  `one_prod!` / `fit!`), and dispatch (`match!`) elab-bang forms,
+  plus an arbitrary user elab and a non-fusion intervening-space case
 - `04_operators_and_brackets` — reserved (`builtin`) ops vs. user ops,
   brackets vs. separators
 - `05_literals` — strings, ints, floats, bools
@@ -53,7 +53,7 @@ least one fixture per kind:
   a function call
 - `27_import_operator_grammar` — full fixed and variadic selected grammars
   retain their tags, slots, separators and delimiters
-- `32_callable_declaration_targets` — fixed, variadic and elaborator
+- `32_callable_declaration_targets` — fixed, variadic and elab
   callable targets retain ordinary function and type-member roles across trivia
 - `33_contextual_variadic` — `variadic` and mode-shaped ordinary names
   stay identifiers outside actual declarations, including calls and comments

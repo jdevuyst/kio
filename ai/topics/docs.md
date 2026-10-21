@@ -29,6 +29,11 @@ alone does not make a glossary route unnecessary. Also flag redundant entries,
 generic prerequisite material and peripheral implementation detail. Do not
 require an entry per heading or maintain a separate term registry.
 
+Use *elab* (*elabs* in the plural) for a library-defined `elab` construct;
+its full name is *elaborator macro*, and *type-driven macro* explains its
+purpose. Keep this distinct from the compiler's elaborator and elaboration
+process.
+
 ## Website and offline bundle inputs
 
 `docs/`, `specs/`, and the explicit root files `KIO-FOR-AGENTS.md` and
@@ -198,15 +203,16 @@ from the latest published tagged release, names that version, and warns when
 the linked content has changed since then. Replacement still needs exact-text
 approval and renewed affected review.
 
-**Existing posts retain their communicated meaning.** Later commits must not
-make substantial silent edits. Language and formatting corrections, including
-`kio fmt` changes, may remain unannounced only when they preserve meaning.
-Formatting is substantive when the post describes those formatting principles.
-Small visible code/API updates, such as adding, dropping or renaming a field,
-may remain unannounced when they preserve the example's meaning and the post's
-claims; line count alone does not establish that. Bigger substantive revisions
-require a clear notice in the post giving the edit date and briefly describing
-its nature. The notice does not erase historical claims or replace an explicit
+**Existing posts retain their communicated meaning.** Meaningful changes to a
+published post require a dated, italic notice beginning `Edit:` and briefly
+describing the change. Place it at the end of the post body, before any standard
+footer or disclosure. This includes terminology updates and changes to reflect
+newer Kio versions, even small code or API updates that preserve an example's
+purpose. Routine spelling, grammar and formatting corrections may remain
+unannounced only when they preserve meaning and do not update the post's account
+of Kio. Formatting changes are substantive when the post describes those
+formatting principles. Judge the nature of the change, not its line count.
+The notice does not erase historical claims or replace an explicit
 correction when one is needed. Every post or hidden-harness edit, including
 the notice, still needs exact-text approval; this classification grants no
 blanket editing authority. Preserve the author's voice and hand-written body,

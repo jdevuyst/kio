@@ -171,7 +171,7 @@ instances, `do!` sequencing, and combinators generic over the type constructor
 
 ## Monadic `do!`
 
-`do!` comes from the [elaborator library](using-libraries.md#the-elaborator-library),
+`do!` comes from the [elab library](using-libraries.md#the-elaborator-library),
 not a keyword. After adopting that dependency under the name `elab`, import
 it with `import elab/sequence(do);`.
 

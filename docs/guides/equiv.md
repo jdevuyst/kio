@@ -11,7 +11,7 @@ round trip. Use a runtime test in your host when the behavior depends on I/O,
 mutation, a backend's emitted representation, or other host-runtime details.
 
 The examples assume a host-provided `String` and `print` operation. The
-`scope!` used for local statements is an imported library elaborator; see
+`scope!` used for local statements is an imported library elab; see
 [Using libraries](using-libraries.md#the-elaborator-library) for its setup.
 
 <!--kio {harness=equiv placeholder="__INSERT_CODE_HERE__"}
@@ -199,7 +199,7 @@ normal form. A three-arm failure can therefore show that arms 1 and 3 agree
 while arm 2 differs, instead of reducing the result to a single boolean.
 
 A failed claim exits with code `50`. Parse, name-resolution, type, and
-elaborator failures retain their own earlier compile-time exit categories. A
+elab failures retain their own earlier compile-time exit categories. A
 successful run prints one `pass` line per claim and a final passed/total
 summary.
 
@@ -229,7 +229,7 @@ skips dependency claims.
 A passing parameterized `equiv` proves equality, under Kio's documented
 partial-evaluation and α/η relation, for every instantiation of its symbolic
 parameters. It can pin helper unfolding, newtype round trips, structural laws,
-or the result of elaborator-generated glue.
+or the result of elab-generated glue.
 
 It does not execute host code, establish a host function's mathematical law,
 exercise an emitter, compare performance, or prove arbitrary semantic
