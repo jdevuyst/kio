@@ -93,6 +93,16 @@ The design balances expressive power, reasoning cost, portability, and ease of
 use. Features are judged by how well they work together and by the complexity
 they introduce throughout the language and its tools.
 
+### Readable grouping
+
+Readers should be able to determine syntactic grouping from visible structure
+and a small set of regular composition rules, without knowing parser
+implementation details. Explicit boundaries and
+[declared chaining rules](specs/language.md#operators), such as associativity
+or greediness, can make parentheses unnecessary. Where those rules leave
+competing groupings, Kio requires parentheses rather than choosing by incidental
+parser order or by which interpretation happens to succeed.
+
 ### An explicit core and an expressive surface
 
 [Kio'](specs/prime.md) is the explicit semantic subset shared with full Kio.

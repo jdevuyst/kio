@@ -49,6 +49,29 @@ parser test alone does not prove that every contextual entry point uses it.
 parser agreement; [`audit-test-strategy`](../skills/audit-test-strategy/SKILL.md)
 checks the context witnesses and their actual assertions.
 
+## Readable grouping
+
+Apply [DESIGN.md's grouping principle](../../DESIGN.md#readable-grouping)
+to proposed rules as well as existing syntax. Explain the grouping from
+written boundaries and declared composition permissions, not the parser's
+control flow. Distinguish ordinary structural composition from operator
+associativity, greediness and lenient operands; test how those permissions
+interact rather than checking each only in isolation.
+
+For overlapping continuations, closing tokens or competing chain directions,
+state the public boundary rule and show parenthesized alternatives. Flag a
+choice made only by branch order, lookup order or successful trial parsing.
+Explicit permissions can still compete; their existence alone does not settle
+ownership. Keep syntactic grouping separate from type-directed argument
+planning after that grouping is fixed. Gate 0 still governs contract changes;
+an audit must report an unsettled rule rather than silently choose one.
+
+Use focused grouping and meaning-preserving formatter witnesses at affected
+boundaries, including nested and grouped controls. Where custom operators are
+involved, also check independent import-order permutations and unrelated
+provider additions under the existing open-world contract. Parsing successfully
+and formatting idempotently do not prove that grouping is correct.
+
 ## Impact checklist
 
 A surface or semantic change is not complete until the language and tooling agree on the same accepted spelling and the same user-facing behavior. Before implementation or landing, state the impact argument: which bridge surfaces must change, which are intentionally unchanged, and why "unchanged" follows from the boundary being modified.

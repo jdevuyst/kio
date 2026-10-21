@@ -81,6 +81,14 @@ for deliberate restrictions. Report incidental parser divergence and missing
 specification separately; a consistency finding grants no contract-change
 authority and does not imply all syntax must be redesigned.
 
+Apply [`language-surface-tooling.md` § Readable
+grouping](../../topics/language-surface-tooling.md#readable-grouping) to the
+selected grammar and any proposed replacement. Check interactions between
+boundary and chaining rules, including competing permissions, rather than
+accepting parser determinism as the justification. Trace focused grouping and
+formatter-meaning witnesses; separate definite contract violations from rules
+that still need a design decision.
+
 ## 4. Package files
 
 Compare analogous fields across configuration, operator, elaborator and type
