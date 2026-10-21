@@ -8,7 +8,7 @@ In some ways the 0.1 version number is underselling the maturity of the language
 
 - A type system based on polymorphic lambda calculus, with rank-N types, product/row types, sum types, and higher-kinded types.
 - Provable equivalences allow the user to assert that two expressions are equivalent. The compiler normalizes the expressions, up to the point where they call host functionality, and verifies that they match.
-- Type-driven macros, called elaborators, take a number of type and value arguments and construct a return value. Elaborators see value arguments as opaque boxes, but they can inspect the type arguments and use those to guide the construction of return values. If the result type has a 'waiting for inference' status, the elaborator can additionally 'fill' that type slot. This approach is powerful enough to implement `match!` (for pattern matching) and `derive!` (for deriving the Kio counterpart of trait instances) as user code.
+- Elaborator macros (elabs) are type-driven macros that take a number of type and value arguments and construct a return value. Elabs see value arguments as opaque boxes, but they can inspect the type arguments and use those to guide the construction of return values. If the result type has a 'waiting for inference' status, the elab can additionally 'fill' that type slot. This approach is powerful enough to implement `match!` (for pattern matching) and `derive!` (for deriving the Kio counterpart of trait instances) as user code.
 - Tooling includes a REPL, a formatter, an API documentation generator, an LSP server, a Tree-sitter grammar, and a VS Code plugin.
 - 8 host languages are supported right now; more are on the way.
 
@@ -27,7 +27,7 @@ I would also benefit from having an extensive test corpus to get me started. (I 
 And that's a worst-case scenario. I have taken a number of steps to steer away from that outcome:
 
 - Agents are instructed to proactively produce [golden tests](https://github.com/jdevuyst/kio/tree/90bf45cfcc420e61722104c4dcaf85e4c00b4a67/test-data/goldens) when adding features and to produce more goldens whenever a bug is discovered.
-- I asked AI to create several [POC packages](https://github.com/jdevuyst/kio/tree/90bf45cfcc420e61722104c4dcaf85e4c00b4a67/test-data/poc), such as optics, functional data structures, elaborators, and an interpreter for the core language. The Kio-in-Kio interpreter is itself tested against the same golden tests that are used to test the compiler. The elaborators are used by a good chunk of the golden tests.
+- I asked AI to create several [POC packages](https://github.com/jdevuyst/kio/tree/90bf45cfcc420e61722104c4dcaf85e4c00b4a67/test-data/poc), such as optics, functional data structures, elabs, and an interpreter for the core language. The Kio-in-Kio interpreter is itself tested against the same golden tests that are used to test the compiler. The elabs are used by a good chunk of the golden tests.
 - I asked AI to come up with concepts for ['realistic' programs](https://github.com/jdevuyst/kio/tree/90bf45cfcc420e61722104c4dcaf85e4c00b4a67/test-data/castles) and then implement them.
 - The agents also maintain a [program generator](https://github.com/jdevuyst/kio/tree/90bf45cfcc420e61722104c4dcaf85e4c00b4a67/ci/infra/kio-gen-rs) that is used for testing. `cargo-llvm-cov` helps ensure that the program generator is sufficiently complete.
 - Core functionality is also tested by [fuzzing](https://github.com/jdevuyst/kio/blob/90bf45cfcc420e61722104c4dcaf85e4c00b4a67/reports/fuzz.sh) and [mutation testing](https://github.com/jdevuyst/kio/blob/90bf45cfcc420e61722104c4dcaf85e4c00b4a67/reports/mutation.sh).
@@ -49,3 +49,5 @@ The parts that concern me the most right now are the individual compiler backend
 When new models are released, I intend to give them a few hygiene tasks, such as running the `audit` skill. I think that may be quite a revealing experiment in its own right.
 
 While it's likely that Kio still has bugs (almost all compilers do), I hope that Kio 0.1 meets reasonable standards. I'm excited to keep working on this language. In future posts I will be discussing the features that I believe make Kio stand out from other languages.
+
+_Edit: 2026-10-21 — Updated elab terminology._
