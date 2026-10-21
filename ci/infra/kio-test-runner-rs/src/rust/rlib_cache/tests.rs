@@ -41,6 +41,44 @@ fn bin_key(input: &BinInput) -> String {
     hash_fields(Some(b"bin\0"), &key::bin_fields(input))
 }
 
+#[cfg(unix)]
+#[test]
+fn native_input_admission_counts_the_linked_rlib_and_skips_hits() {
+    use crate::compiler_admission::NATIVE_INPUT_PRECAUTION_BYTES as LIMIT;
+    for (package_bytes, rlib_class, bin_class) in [
+        (1, "ordinary", "ordinary"),
+        (LIMIT - 1, "ordinary", "native"),
+        (LIMIT, "native", "native"),
+    ] {
+        let fixture = tempfile::TempDir::new().unwrap();
+        let observer = crate::compiler_observer::admission_probe(fixture.path());
+        let cache = super::RlibCache::open(
+            fixture.path().join("cache"),
+            None,
+            observer,
+            None,
+            CompilerAdmission::shared(fixture.path().join("schedule"), 4).unwrap(),
+        )
+        .unwrap();
+        let rlib = input("p", &[("src/lib.rs", &vec![b' '; package_bytes as usize])]);
+        let mut bin = bin_input();
+        bin.driver_source = vec![b' '];
+        bin.rlib_key = super::rlib_key(&rlib);
+        let driver = fixture.path().join("driver.rs");
+        let first = cache
+            .get_or_compile_bin(&rlib, fixture.path(), &driver, &bin)
+            .unwrap();
+        assert_eq!(
+            cache
+                .get_or_compile_bin(&rlib, fixture.path(), &driver, &bin)
+                .unwrap(),
+            first
+        );
+        let classes = fs::read_to_string(fixture.path().join("admission-probe.classes")).unwrap();
+        assert_eq!(classes.lines().collect::<Vec<_>>(), [rlib_class, bin_class]);
+    }
+}
+
 #[test]
 fn rustc_command_nests_observer_outside_cache_wrapper() {
     let observer = CompilerObserver::for_test("observe");

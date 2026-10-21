@@ -8,10 +8,11 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::compiler_admission::{
     AdmissionDecision, AdmissionEvaluation, DecisionBlocker, DecisionBlockers,
+    NATIVE_INPUT_PRECAUTION_BYTES, NativeCompileInput,
 };
 
 pub(crate) const TRACE_ENV: &str = "KIO_DEBUG_CI_SCHEDULER_TRACE";
-const SCHEMA: &str = "kio-ci-compiler-admission-v3";
+const SCHEMA: &str = "kio-ci-compiler-admission-v6";
 const MAX_TOKEN_BYTES: usize = 64;
 static PROCESS_ACQUISITION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -63,6 +64,8 @@ impl CompilerTraceConfig {
         &self,
         program: Option<&OsStr>,
         mode: &'static str,
+        class: &'static str,
+        native_input: Option<NativeCompileInput>,
         requested_capacity: usize,
         _ticket: u64,
     ) -> Result<CompilerTrace, Error> {
@@ -106,6 +109,8 @@ impl CompilerTraceConfig {
             wall_anchor_unix_ms,
             acquisition_sequence,
             mode,
+            class,
+            native_input,
             requested_capacity,
             program_basename_hex: program_basename_hex(program),
             last_wait: None,
@@ -144,6 +149,8 @@ pub(crate) struct CompilerTrace {
     wall_anchor_unix_ms: u128,
     acquisition_sequence: u64,
     mode: &'static str,
+    class: &'static str,
+    native_input: Option<NativeCompileInput>,
     requested_capacity: usize,
     program_basename_hex: String,
     last_wait: Option<AdmissionEvaluation>,
@@ -180,16 +187,34 @@ impl CompilerTrace {
         line.push_str(&self.requested_capacity.to_string());
         line.push_str(",\"mode\":\"");
         line.push_str(self.mode);
-        line.push_str("\",\"program_basename_hex\":\"");
+        line.push_str("\",\"class\":\"");
+        line.push_str(self.class);
+        line.push_str("\",\"classification_reason\":\"");
+        line.push_str(
+            self.native_input
+                .map_or("ordinary-work", NativeCompileInput::reason),
+        );
+        line.push_str("\",\"native_input_bytes\":");
+        push_option_u64(
+            &mut line,
+            self.native_input.and_then(NativeCompileInput::bytes),
+        );
+        line.push_str(",\"native_input_precaution_bytes\":");
+        line.push_str(&NATIVE_INPUT_PRECAUTION_BYTES.to_string());
+        line.push_str(",\"program_basename_hex\":\"");
         line.push_str(&self.program_basename_hex);
         line.push_str("\",\"active_total\":");
         push_option_usize(&mut line, evaluation.active_total);
         line.push_str(",\"active_adaptive\":");
         push_option_usize(&mut line, evaluation.active_adaptive);
+        line.push_str(",\"active_native\":");
+        push_option_usize(&mut line, evaluation.active_native);
         line.push_str(",\"pending_total\":");
         push_option_usize(&mut line, evaluation.pending_total);
         line.push_str(",\"oldest_pending_ticket\":");
         push_option_u64(&mut line, evaluation.oldest_pending_ticket);
+        line.push_str(",\"oldest_eligible_ticket\":");
+        push_option_u64(&mut line, evaluation.oldest_eligible_ticket);
         line.push_str(",\"fixed_capacity_min\":");
         push_option_usize(&mut line, evaluation.fixed_capacity_min);
         line.push_str(",\"effective_limit\":");
@@ -620,8 +645,10 @@ mod tests {
             ticket: Some(ticket),
             active_total: Some(0),
             active_adaptive: Some(0),
+            active_native: Some(0),
             pending_total: Some(1),
             oldest_pending_ticket: Some(ticket),
+            oldest_eligible_ticket: Some(ticket),
             fixed_capacity_min: Some(1),
             effective_limit: Some(1),
             candidate_slot: Some(1),
@@ -629,7 +656,7 @@ mod tests {
         }
     }
 
-    fn assert_v3_schema(values: &BTreeMap<&str, JsonValue<'_>>) {
+    fn assert_v6_schema(values: &BTreeMap<&str, JsonValue<'_>>) {
         use JsonType::{Number, String, StringArray};
         use SchemaType::{Exact, Nullable};
 
@@ -642,11 +669,17 @@ mod tests {
             ("ticket", Nullable(Number)),
             ("requested_capacity", Exact(Number)),
             ("mode", Exact(String)),
+            ("class", Exact(String)),
+            ("classification_reason", Exact(String)),
+            ("native_input_bytes", Nullable(Number)),
+            ("native_input_precaution_bytes", Exact(Number)),
             ("program_basename_hex", Exact(String)),
             ("active_total", Nullable(Number)),
             ("active_adaptive", Nullable(Number)),
+            ("active_native", Nullable(Number)),
             ("pending_total", Nullable(Number)),
             ("oldest_pending_ticket", Nullable(Number)),
+            ("oldest_eligible_ticket", Nullable(Number)),
             ("fixed_capacity_min", Nullable(Number)),
             ("effective_limit", Nullable(Number)),
             ("candidate_slot", Nullable(Number)),
@@ -670,14 +703,21 @@ mod tests {
     }
 
     #[test]
-    fn produced_lines_are_valid_v3_json_with_the_required_field_types() {
+    fn produced_lines_are_valid_v6_json_with_the_required_field_types() {
         let root =
             std::env::temp_dir().join(format!("kio-compiler-trace-schema-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         let config = CompilerTraceConfig::for_test(&root, "schema");
         let mut trace = config
-            .start(Some(OsStr::new("generic-program")), "adaptive", 2, 1)
+            .start(
+                Some(OsStr::new("generic-program")),
+                "adaptive",
+                "ordinary",
+                None,
+                2,
+                1,
+            )
             .unwrap();
         trace.record(admitted(1)).unwrap();
 
@@ -691,14 +731,54 @@ mod tests {
         assert_eq!(lines.len(), 2);
         let admitted = FlatJsonParser::parse(lines[0]);
         let waiting = FlatJsonParser::parse(lines[1]);
-        assert_v3_schema(&admitted);
-        assert_v3_schema(&waiting);
+        assert_v6_schema(&admitted);
+        assert_v6_schema(&waiting);
         assert_eq!(
             waiting.get("blockers"),
             Some(&JsonValue::StringArray(vec!["adaptive-cap"]))
         );
         drop(trace);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn trace_explains_native_input_classification() {
+        use crate::{NATIVE_INPUT_PRECAUTION_BYTES as LIMIT, NativeCompileInput};
+        let root =
+            std::env::temp_dir().join(format!("kio-compiler-trace-input-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let config = CompilerTraceConfig::for_test(&root, "input");
+        for (input, class, reason, bytes) in [
+            (
+                NativeCompileInput::from_lengths([1]),
+                "ordinary",
+                "small-input",
+                "1",
+            ),
+            (
+                NativeCompileInput::from_lengths([LIMIT]),
+                "native",
+                "large-input",
+                "6291456",
+            ),
+            (
+                NativeCompileInput::unknown(),
+                "ordinary",
+                "unknown-input",
+                "null",
+            ),
+        ] {
+            let mut trace = config
+                .start(None, "fixed", class, Some(input), 2, 1)
+                .unwrap();
+            trace.record(admitted(1)).unwrap();
+            let line = std::fs::read_to_string(trace.path()).unwrap();
+            assert_v6_schema(&FlatJsonParser::parse(line.trim()));
+            assert!(line.contains(&format!("\"classification_reason\":\"{reason}\"")));
+            assert!(line.contains(&format!("\"native_input_bytes\":{bytes},")));
+            assert!(line.contains("\"native_input_precaution_bytes\":6291456,"));
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -709,10 +789,10 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let config = CompilerTraceConfig::for_test(&root, "repeat");
         let mut first = config
-            .start(Some(OsStr::new("one")), "fixed", 1, 1)
+            .start(Some(OsStr::new("one")), "fixed", "ordinary", None, 1, 1)
             .unwrap();
         let mut second = config
-            .start(Some(OsStr::new("two")), "fixed", 1, 1)
+            .start(Some(OsStr::new("two")), "fixed", "ordinary", None, 1, 1)
             .unwrap();
         first.record(admitted(1)).unwrap();
         second.record(admitted(1)).unwrap();
@@ -747,6 +827,8 @@ mod tests {
             .start(
                 Some(OsStr::new("private/path/custom-driver")),
                 "adaptive",
+                "ordinary",
+                None,
                 2,
                 1,
             )
@@ -770,13 +852,21 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let config = CompilerTraceConfig::for_test(&root, "transitions");
         let mut trace = config
-            .start(Some(OsStr::new("compiler")), "adaptive", 2, 2)
+            .start(
+                Some(OsStr::new("compiler")),
+                "adaptive",
+                "ordinary",
+                None,
+                2,
+                2,
+            )
             .unwrap();
         for blocker in [
             DecisionBlocker::UnknownLiveClaim,
             DecisionBlocker::NotFifoHead,
             DecisionBlocker::AdaptiveCapacity,
             DecisionBlocker::FixedCapacity,
+            DecisionBlocker::NativeCapacity,
         ] {
             let mut wait = admitted(2);
             wait.decision = AdmissionDecision::Wait;
@@ -788,8 +878,8 @@ mod tests {
         trace.record(admitted(2)).unwrap();
 
         let contents = std::fs::read_to_string(trace.path()).unwrap();
-        assert_eq!(contents.lines().count(), 5);
-        assert_eq!(contents.matches("\"decision\":\"wait\"").count(), 4);
+        assert_eq!(contents.lines().count(), 6);
+        assert_eq!(contents.matches("\"decision\":\"wait\"").count(), 5);
         assert_eq!(contents.matches("\"decision\":\"admit\"").count(), 1);
         drop(trace);
         let _ = std::fs::remove_dir_all(root);

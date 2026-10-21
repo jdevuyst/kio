@@ -33,6 +33,91 @@ const TEST_FEEDBACK_TARGET: usize = 2;
 const READINESS_HOOK_PROGRAM_ENV: &str = "KIO_CI_SCHEDULE_READINESS_HOOK_PROGRAM";
 const READINESS_HOOK_ARG_COUNT_ENV: &str = "KIO_CI_SCHEDULE_READINESS_HOOK_ARG_COUNT";
 const READINESS_HOOK_ARG_ENV_PREFIX: &str = "KIO_CI_SCHEDULE_READINESS_HOOK_ARG_";
+pub(crate) const COMPILER_CLASS_ENV: &str = "KIO_CI_SCHEDULE_COMPILER_CLASS";
+
+/// An empirical admission precaution, not a source-byte-to-memory estimate.
+pub const NATIVE_INPUT_PRECAUTION_BYTES: u64 = 6 * 1024 * 1024;
+
+/// Complete project-produced source closure, including sources behind linked
+/// local artifacts and the driver; pinned toolchain/stdlib sources are excluded.
+/// Missing inventories stay on ordinary admission. Totals saturate at u64::MAX,
+/// retaining the proof that a complete overflowing inventory is large.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NativeCompileInput {
+    bytes: Option<u64>,
+}
+
+impl NativeCompileInput {
+    pub const fn unknown() -> Self {
+        Self { bytes: None }
+    }
+
+    pub fn from_lengths(lengths: impl IntoIterator<Item = u64>) -> Self {
+        lengths
+            .into_iter()
+            .fold(Self { bytes: Some(0) }, Self::with_bytes)
+    }
+
+    pub fn with_bytes(self, bytes: u64) -> Self {
+        Self {
+            bytes: self.bytes.map(|total| total.saturating_add(bytes)),
+        }
+    }
+
+    pub fn including(self, other: Self) -> Self {
+        match other.bytes {
+            Some(bytes) => self.with_bytes(bytes),
+            None => Self::unknown(),
+        }
+    }
+
+    pub const fn bytes(self) -> Option<u64> {
+        self.bytes
+    }
+
+    pub(crate) const fn precaution(self) -> bool {
+        match self.bytes {
+            Some(bytes) => bytes >= NATIVE_INPUT_PRECAUTION_BYTES,
+            None => false,
+        }
+    }
+
+    pub(crate) const fn reason(self) -> &'static str {
+        match self.bytes {
+            None => "unknown-input",
+            Some(_) if self.precaution() => "large-input",
+            Some(_) => "small-input",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum CompilerClass {
+    #[default]
+    Ordinary,
+    Native,
+}
+
+impl CompilerClass {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Ordinary => "ordinary",
+            Self::Native => "native",
+        }
+    }
+
+    fn inherited() -> Result<Self, Error> {
+        match env::var(COMPILER_CLASS_ENV) {
+            Err(env::VarError::NotPresent) => Ok(Self::Ordinary),
+            Ok(value) if value == "ordinary" => Ok(Self::Ordinary),
+            Ok(value) if value == "native" => Ok(Self::Native),
+            _ => Err(Error::invalid(
+                PathBuf::from(COMPILER_CLASS_ENV),
+                format!("{COMPILER_CLASS_ENV} must be ordinary, native, or unset"),
+            )),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AdmissionMode {
@@ -50,10 +135,12 @@ impl AdmissionMode {
             .unwrap_or_else(|| unreachable!("compiler admission validates positive capacities"))
     }
 
-    const fn claim_kind(self) -> ClaimKind {
-        match self {
-            Self::Fixed(_) => ClaimKind::Normal,
-            Self::Adaptive => ClaimKind::Adaptive,
+    const fn claim_kind(self, class: CompilerClass) -> ClaimKind {
+        match (self, class) {
+            (Self::Fixed(_), CompilerClass::Ordinary) => ClaimKind::Normal,
+            (Self::Adaptive, CompilerClass::Ordinary) => ClaimKind::Adaptive,
+            (Self::Fixed(_), CompilerClass::Native) => ClaimKind::Native,
+            (Self::Adaptive, CompilerClass::Native) => ClaimKind::AdaptiveNative,
         }
     }
 
@@ -68,6 +155,8 @@ impl AdmissionMode {
 #[derive(Clone, Debug)]
 pub struct CompilerAdmission {
     context: AdmissionContext,
+    class: CompilerClass,
+    native_input: Option<NativeCompileInput>,
     readiness_hook: Option<ReadinessHook>,
     trace: Option<CompilerTraceConfig>,
 }
@@ -99,6 +188,8 @@ impl CompilerAdmission {
     pub fn disabled() -> Self {
         Self {
             context: AdmissionContext::Disabled,
+            class: CompilerClass::Ordinary,
+            native_input: None,
             readiness_hook: None,
             trace: None,
         }
@@ -123,6 +214,8 @@ impl CompilerAdmission {
         let trace = CompilerTraceConfig::from_env(store.schedule_root()).map_err(Error::trace)?;
         Ok(Self {
             context: AdmissionContext::Shared { store, mode },
+            class: CompilerClass::Ordinary,
+            native_input: None,
             readiness_hook: None,
             trace,
         })
@@ -210,6 +303,8 @@ impl CompilerAdmission {
 
     fn reusing(held: HeldResources) -> Result<Self, Error> {
         Ok(Self {
+            class: CompilerClass::inherited()?,
+            native_input: None,
             context: AdmissionContext::Inherited(InheritedAdmission {
                 held,
                 #[cfg(unix)]
@@ -218,6 +313,20 @@ impl CompilerAdmission {
             readiness_hook: None,
             trace: None,
         })
+    }
+
+    /// Classify before publishing a root claim. Descendants never upgrade or
+    /// downgrade their inherited root, even when their own inventory differs.
+    pub fn for_native_input(mut self, input: NativeCompileInput) -> Self {
+        if matches!(self.context, AdmissionContext::Shared { .. }) {
+            self.class = if input.precaution() {
+                CompilerClass::Native
+            } else {
+                CompilerClass::Ordinary
+            };
+            self.native_input = Some(input);
+        }
+        self
     }
 
     pub(crate) fn configure_readiness_hook(
@@ -255,11 +364,13 @@ impl CompilerAdmission {
             AdmissionContext::Disabled => {
                 return Ok(CompilerPermit {
                     context: PermitContext::Disabled,
+                    class: self.class,
                 });
             }
             AdmissionContext::Inherited(inherited) => {
                 return Ok(CompilerPermit {
                     context: PermitContext::Inherited(inherited.clone()),
+                    class: self.class,
                 });
             }
             AdmissionContext::Shared { store, mode } => (store, *mode),
@@ -267,7 +378,7 @@ impl CompilerAdmission {
         let capacity = mode.claim_capacity();
         let mut evaluation = None;
         let (lease, mut outcome) =
-            store.create_pending(capacity, mode.claim_kind(), |snapshot, ticket| {
+            store.create_pending(capacity, mode.claim_kind(self.class), |snapshot, ticket| {
                 let current = admission_evaluation_with_feedback(store, snapshot, ticket);
                 evaluation = Some(current);
                 store_decision(current.decision)
@@ -277,7 +388,16 @@ impl CompilerAdmission {
         let mut trace = self
             .trace
             .as_ref()
-            .map(|config| config.start(program, mode.label(), capacity.get(), outcome.ticket))
+            .map(|config| {
+                config.start(
+                    program,
+                    mode.label(),
+                    self.class.label(),
+                    self.native_input,
+                    capacity.get(),
+                    outcome.ticket,
+                )
+            })
             .transpose()
             .map_err(Error::trace)?;
         record_trace(&mut trace, current)?;
@@ -287,6 +407,7 @@ impl CompilerAdmission {
                 StoreDecision::Admit => {
                     return Ok(CompilerPermit {
                         context: PermitContext::Acquired(lease),
+                        class: self.class,
                     });
                 }
                 StoreDecision::Wait => std::thread::sleep(Duration::from_millis(50)),
@@ -328,6 +449,15 @@ impl CompilerAdmission {
         })
     }
 
+    /// Admit a native compilation tree, retaining an inherited root's class.
+    pub fn acquire_native_for<'command>(
+        &self,
+        command: &'command mut Command,
+        input: NativeCompileInput,
+    ) -> Result<AdmittedCommand<'command>, Error> {
+        self.clone().for_native_input(input).acquire_for(command)
+    }
+
     pub(crate) fn run_readiness_hook(&self, target: &Command) -> Result<Option<ExitStatus>, Error> {
         let Some(hook) = &self.readiness_hook else {
             return Ok(None);
@@ -339,7 +469,8 @@ impl CompilerAdmission {
             .arg("--")
             .arg(target.get_program())
             .args(target.get_args())
-            .env_remove("KIO_CI_SCHEDULE_HELD");
+            .env_remove("KIO_CI_SCHEDULE_HELD")
+            .env_remove(COMPILER_CLASS_ENV);
         crate::process_supervisor::readiness_status(&mut command)
             .map(Some)
             .map_err(|error| Error::io(Path::new(&hook.program), error))
@@ -525,14 +656,16 @@ pub(crate) enum DecisionBlocker {
     NotFifoHead,
     AdaptiveCapacity,
     FixedCapacity,
+    NativeCapacity,
 }
 
 impl DecisionBlocker {
-    pub(crate) const ALL: [Self; 4] = [
+    pub(crate) const ALL: [Self; 5] = [
         Self::UnknownLiveClaim,
         Self::NotFifoHead,
         Self::AdaptiveCapacity,
         Self::FixedCapacity,
+        Self::NativeCapacity,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -541,6 +674,7 @@ impl DecisionBlocker {
             Self::NotFifoHead => "not-fifo",
             Self::AdaptiveCapacity => "adaptive-cap",
             Self::FixedCapacity => "fixed-cap",
+            Self::NativeCapacity => "native-tree-active",
         }
     }
 
@@ -569,8 +703,10 @@ pub(crate) struct AdmissionEvaluation {
     pub(crate) ticket: Option<u64>,
     pub(crate) active_total: Option<usize>,
     pub(crate) active_adaptive: Option<usize>,
+    pub(crate) active_native: Option<usize>,
     pub(crate) pending_total: Option<usize>,
     pub(crate) oldest_pending_ticket: Option<u64>,
+    pub(crate) oldest_eligible_ticket: Option<u64>,
     pub(crate) fixed_capacity_min: Option<usize>,
     pub(crate) effective_limit: Option<usize>,
     pub(crate) candidate_slot: Option<usize>,
@@ -581,8 +717,10 @@ pub(crate) struct AdmissionEvaluation {
 struct ClaimEvaluationContext {
     active_total: usize,
     active_adaptive: usize,
+    active_native: usize,
     pending_total: usize,
     oldest_pending_ticket: Option<u64>,
+    oldest_eligible_ticket: Option<u64>,
     fixed_capacity_min: Option<usize>,
     has_adaptive_claim: bool,
     adaptive_capacity_min: usize,
@@ -593,8 +731,10 @@ impl ClaimEvaluationContext {
         let mut context = Self {
             active_total: 0,
             active_adaptive: 0,
+            active_native: 0,
             pending_total: 0,
             oldest_pending_ticket: None,
+            oldest_eligible_ticket: None,
             fixed_capacity_min: None,
             has_adaptive_claim: false,
             adaptive_capacity_min: usize::MAX,
@@ -602,7 +742,8 @@ impl ClaimEvaluationContext {
         for claim in claims.claims() {
             if claim.state == crate::resource_admission::ClaimState::Active {
                 context.active_total += 1;
-                if claim.metadata.kind == ClaimKind::Adaptive {
+                context.active_native += usize::from(claim.metadata.kind.is_native());
+                if claim.metadata.kind.is_adaptive() {
                     context.active_adaptive += 1;
                 }
             } else {
@@ -615,7 +756,7 @@ impl ClaimEvaluationContext {
                         }),
                 );
             }
-            if claim.metadata.kind == ClaimKind::Adaptive {
+            if claim.metadata.kind.is_adaptive() {
                 context.has_adaptive_claim = true;
                 context.adaptive_capacity_min = context
                     .adaptive_capacity_min
@@ -630,6 +771,15 @@ impl ClaimEvaluationContext {
                 );
             }
         }
+        context.oldest_eligible_ticket = claims
+            .claims()
+            .iter()
+            .filter(|claim| {
+                claim.state == crate::resource_admission::ClaimState::Pending
+                    && (context.active_native == 0 || !claim.metadata.kind.is_native())
+            })
+            .map(|claim| claim.metadata.ticket)
+            .min();
         context
     }
 
@@ -655,8 +805,10 @@ impl AdmissionEvaluation {
             ticket: Some(ticket),
             active_total: Some(context.active_total),
             active_adaptive: Some(context.active_adaptive),
+            active_native: Some(context.active_native),
             pending_total: Some(context.pending_total),
             oldest_pending_ticket: context.oldest_pending_ticket,
+            oldest_eligible_ticket: context.oldest_eligible_ticket,
             fixed_capacity_min: context.fixed_capacity_min,
             effective_limit: if context.has_adaptive_claim {
                 adaptive_limit.map(|limit| context.effective_limit(limit))
@@ -698,7 +850,7 @@ fn admission_evaluation_with_target(
     let context = ClaimEvaluationContext::collect(claims);
     let target = if context.has_adaptive_claim
         && !claims.has_unknown_live_claim()
-        && context.oldest_pending_ticket == Some(ticket)
+        && context.oldest_eligible_ticket == Some(ticket)
     {
         Some(target(
             context.effective_limit(usize::MAX),
@@ -726,7 +878,15 @@ fn admission_evaluation_at_capacity(
     if claims.has_unknown_live_claim() {
         return evaluation.wait(DecisionBlocker::UnknownLiveClaim);
     }
-    if context.oldest_pending_ticket != Some(ticket) {
+    if context.active_native > 0
+        && claims
+            .claims()
+            .iter()
+            .any(|claim| claim.metadata.ticket == ticket && claim.metadata.kind.is_native())
+    {
+        return evaluation.wait(DecisionBlocker::NativeCapacity);
+    }
+    if context.oldest_eligible_ticket != Some(ticket) {
         return evaluation.wait(DecisionBlocker::NotFifoHead);
     }
     let active_total = context.active_total;
@@ -761,8 +921,10 @@ fn store_wait_evaluation(outcome: StoreOutcome) -> AdmissionEvaluation {
             ticket: Some(outcome.ticket),
             active_total: None,
             active_adaptive: None,
+            active_native: None,
             pending_total: None,
             oldest_pending_ticket: None,
+            oldest_eligible_ticket: None,
             fixed_capacity_min: None,
             effective_limit: None,
             candidate_slot: None,
@@ -797,6 +959,7 @@ fn effective_limit(claims: &ClaimSnapshot) -> usize {
 
 pub struct CompilerPermit {
     context: PermitContext,
+    class: CompilerClass,
 }
 
 enum PermitContext {
@@ -833,10 +996,12 @@ impl CompilerPermit {
         match &self.context {
             PermitContext::Disabled => {}
             PermitContext::Acquired(lease) => {
+                command.env(COMPILER_CLASS_ENV, self.class.label());
                 command.env("KIO_CI_SCHEDULE_DIR", lease.schedule_root());
                 append_command_held(command, HeldResource::Compiler)?;
             }
             PermitContext::Inherited(inherited) => {
+                command.env(COMPILER_CLASS_ENV, self.class.label());
                 append_command_held_with_ambient(command, HeldResource::Compiler, inherited.held)?;
                 #[cfg(unix)]
                 crate::resource_admission::propagate_inherited_lease_fds(
@@ -1005,6 +1170,360 @@ mod tests {
         ClaimSnapshot::from_claims(Vec::from(claims))
     }
 
+    #[test]
+    fn native_input_classification_edges_unknown_and_overflow() {
+        use super::{NATIVE_INPUT_PRECAUTION_BYTES as LIMIT, NativeCompileInput};
+        for (lengths, bytes, precaution) in [
+            (vec![], Some(0), false),
+            (vec![LIMIT - 1], Some(LIMIT - 1), false),
+            (vec![LIMIT - 1, 1], Some(LIMIT), true),
+            (vec![LIMIT, 1], Some(LIMIT + 1), true),
+            (vec![u64::MAX, 1], Some(u64::MAX), true),
+        ] {
+            let input = NativeCompileInput::from_lengths(lengths);
+            assert_eq!(input.bytes(), bytes);
+            assert_eq!(input.precaution(), precaution);
+        }
+        let unknown = NativeCompileInput::unknown().with_bytes(1);
+        assert_eq!(unknown.bytes(), None);
+        assert!(!unknown.precaution());
+        assert_eq!(
+            NativeCompileInput::from_lengths([1])
+                .including(unknown)
+                .bytes(),
+            None
+        );
+        assert_eq!(
+            unknown
+                .including(NativeCompileInput::from_lengths([1]))
+                .bytes(),
+            None
+        );
+    }
+
+    #[test]
+    fn small_native_input_uses_ordinary_capacity_behind_a_precaution_waiter() {
+        use super::{CompilerClass, NATIVE_INPUT_PRECAUTION_BYTES as LIMIT, NativeCompileInput};
+        let root = root("native-input-classification");
+        for mode in [AdmissionMode::Fixed(4), AdmissionMode::Adaptive] {
+            let base = CompilerAdmission::with_mode(root.clone(), mode).unwrap();
+            let small = base
+                .clone()
+                .for_native_input(NativeCompileInput::from_lengths([LIMIT - 1]));
+            let large = base
+                .clone()
+                .for_native_input(NativeCompileInput::from_lengths([LIMIT]));
+            let unknown = base.for_native_input(NativeCompileInput::unknown());
+            assert_eq!(small.class, CompilerClass::Ordinary);
+            assert_eq!(large.class, CompilerClass::Native);
+            assert_eq!(unknown.class, CompilerClass::Ordinary);
+            let input = claims([
+                claim(1, 4, mode.claim_kind(large.class), ClaimState::Active),
+                claim(2, 4, mode.claim_kind(large.class), ClaimState::Pending),
+                claim(3, 4, mode.claim_kind(small.class), ClaimState::Pending),
+            ]);
+            assert_eq!(
+                super::admission_evaluation_at_capacity(&input, 3, Some(4)).decision,
+                AdmissionDecision::Admit
+            );
+            assert_eq!(
+                super::admission_evaluation_at_capacity(&input, 2, Some(4)).decision,
+                AdmissionDecision::Wait
+            );
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_roots_do_not_overlap() {
+        for kind in [ClaimKind::Native, ClaimKind::AdaptiveNative] {
+            assert!(kind.is_native());
+            let input = claims([
+                claim(1, 4, kind, ClaimState::Active),
+                claim(2, 4, kind, ClaimState::Pending),
+            ]);
+            assert_eq!(
+                super::admission_evaluation_at_capacity(&input, 2, Some(4)).decision,
+                AdmissionDecision::Wait
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_root_passes_a_blocked_native_waiter() {
+        let input = claims([
+            claim(1, 4, ClaimKind::Native, ClaimState::Active),
+            claim(2, 4, ClaimKind::Native, ClaimState::Pending),
+            claim(3, 4, ClaimKind::Normal, ClaimState::Pending),
+        ]);
+        assert_eq!(
+            super::admission_evaluation_at_capacity(&input, 3, Some(4)).decision,
+            AdmissionDecision::Admit
+        );
+    }
+
+    #[test]
+    fn native_release_restores_fifo_and_cancellation_exposes_next_waiter() {
+        let input = claims([
+            claim(2, 3, ClaimKind::Normal, ClaimState::Active),
+            claim(3, 3, ClaimKind::Native, ClaimState::Pending),
+            claim(4, 3, ClaimKind::Normal, ClaimState::Pending),
+            claim(5, 3, ClaimKind::Native, ClaimState::Pending),
+        ]);
+        assert_eq!(admission_decision(&input, 3), AdmissionDecision::Admit);
+        assert_eq!(admission_decision(&input, 4), AdmissionDecision::Wait);
+        assert_eq!(admission_decision(&input, 5), AdmissionDecision::Wait);
+        let canceled = ClaimSnapshot::from_claims(
+            input
+                .claims()
+                .iter()
+                .copied()
+                .filter(|claim| claim.metadata.ticket != 3)
+                .collect(),
+        );
+        assert_eq!(admission_decision(&canceled, 4), AdmissionDecision::Admit);
+        assert_eq!(admission_decision(&canceled, 5), AdmissionDecision::Wait);
+    }
+
+    #[test]
+    fn native_class_preserves_aggregate_fixed_and_adaptive_ceilings() {
+        for kind in [ClaimKind::Native, ClaimKind::AdaptiveNative] {
+            let input = claims([
+                claim(1, 4, ClaimKind::Normal, ClaimState::Active),
+                claim(2, 1, kind, ClaimState::Pending),
+            ]);
+            assert_eq!(admission_decision(&input, 2), AdmissionDecision::Wait);
+        }
+        let input = claims([
+            claim(1, 4, ClaimKind::AdaptiveNative, ClaimState::Active),
+            claim(2, 4, ClaimKind::AdaptiveNative, ClaimState::Pending),
+            claim(3, 4, ClaimKind::Adaptive, ClaimState::Pending),
+        ]);
+        assert_eq!(
+            super::admission_evaluation_at_capacity(&input, 3, Some(1)).decision,
+            AdmissionDecision::Wait
+        );
+        assert_eq!(
+            super::admission_evaluation_at_capacity(&input, 3, Some(2)).decision,
+            AdmissionDecision::Admit
+        );
+    }
+
+    #[test]
+    fn native_blocked_demand_does_not_advance_feedback() {
+        let input = claims([
+            claim(1, 4, ClaimKind::AdaptiveNative, ClaimState::Active),
+            claim(2, 4, ClaimKind::AdaptiveNative, ClaimState::Pending),
+        ]);
+        let evaluation = super::admission_evaluation_with_target(&input, 2, |_, _, _| {
+            panic!("an ineligible native waiter must not advance feedback")
+        });
+        assert_eq!(evaluation.adaptive_capacity, None);
+        assert_eq!(
+            evaluation.blockers,
+            DecisionBlockers::one(DecisionBlocker::NativeCapacity)
+        );
+        let input = claims([
+            claim(1, 4, ClaimKind::AdaptiveNative, ClaimState::Active),
+            claim(2, 4, ClaimKind::AdaptiveNative, ClaimState::Pending),
+            claim(3, 4, ClaimKind::Adaptive, ClaimState::Pending),
+        ]);
+        let evaluation = super::admission_evaluation_with_target(&input, 3, |_, idle, backlog| {
+            assert!(!idle);
+            assert!(backlog);
+            2
+        });
+        assert_eq!(evaluation.decision, AdmissionDecision::Admit);
+        assert_eq!(evaluation.oldest_pending_ticket, Some(2));
+        assert_eq!(evaluation.oldest_eligible_ticket, Some(3));
+    }
+
+    #[test]
+    #[ignore]
+    fn native_inherited_tree_fixture() {
+        let expected = std::env::var("KIO_TEST_EXPECT_CLASS").unwrap();
+        let admission = CompilerAdmission::from_env()
+            .unwrap()
+            .for_native_input(super::NativeCompileInput::unknown());
+        assert!(matches!(admission.context, AdmissionContext::Inherited(_)));
+        assert_eq!(admission.class.label(), expected);
+        for input in [
+            super::NativeCompileInput::from_lengths([1]),
+            super::NativeCompileInput::from_lengths([super::NATIVE_INPUT_PRECAUTION_BYTES]),
+            super::NativeCompileInput::unknown(),
+        ] {
+            assert_eq!(
+                admission.clone().for_native_input(input).class.label(),
+                expected
+            );
+        }
+        if std::env::var_os("KIO_TEST_CLASS_LEAF").is_some() {
+            return;
+        }
+        let threads: Vec<_> = [None, Some("ordinary"), Some("native"), Some("invalid")]
+            .into_iter()
+            .map(|override_value| {
+                let admission = admission.clone();
+                std::thread::spawn(move || {
+                    let mut command = Command::new(std::env::current_exe().unwrap());
+                    command
+                        .args([
+                            "--ignored",
+                            "--exact",
+                            "compiler_admission::tests::native_inherited_tree_fixture",
+                        ])
+                        .env("KIO_TEST_CLASS_LEAF", "1");
+                    match override_value {
+                        None => {
+                            command.env_remove(super::COMPILER_CLASS_ENV);
+                        }
+                        Some(value) => {
+                            command.env(super::COMPILER_CLASS_ENV, value);
+                        }
+                    }
+                    assert!(
+                        admission
+                            .acquire_native_for(&mut command, super::NativeCompileInput::unknown())
+                            .unwrap()
+                            .status()
+                            .unwrap()
+                            .success()
+                    );
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let root = PathBuf::from(std::env::var_os("KIO_CI_SCHEDULE_DIR").unwrap());
+        assert_eq!(
+            std::fs::read_dir(root.join("compiler/claims"))
+                .unwrap()
+                .filter(|entry| entry.as_ref().unwrap().path().extension()
+                    == Some(OsStr::new("active")))
+                .count(),
+            1,
+            "inherited siblings must retain one root claim"
+        );
+    }
+
+    #[test]
+    fn native_selection_preserves_inherited_ordinary_and_native_trees() {
+        for native in [false, true] {
+            let root = root(if native {
+                "native-inheritance"
+            } else {
+                "ordinary-inheritance"
+            });
+            let mut admission = CompilerAdmission::shared(root.clone(), 4).unwrap();
+            if native {
+                admission = admission.for_native_input(super::NativeCompileInput::from_lengths([
+                    super::NATIVE_INPUT_PRECAUTION_BYTES,
+                ]));
+            }
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "compiler_admission::tests::native_inherited_tree_fixture",
+                ])
+                .env(
+                    "KIO_TEST_EXPECT_CLASS",
+                    if native { "native" } else { "ordinary" },
+                )
+                .env_remove("KIO_TEST_CLASS_LEAF")
+                .env_remove("KIO_CI_SCHEDULE")
+                .env_remove(READINESS_HOOK_PROGRAM_ENV)
+                .env_remove(READINESS_HOOK_ARG_COUNT_ENV);
+            assert!(
+                admission
+                    .acquire_for(&mut command)
+                    .unwrap()
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let _ = std::fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn native_permit_preserves_root_class_despite_child_env_overrides() {
+        let root = root("native-child-env");
+        let admission = CompilerAdmission::shared(root.clone(), 4)
+            .unwrap()
+            .for_native_input(super::NativeCompileInput::from_lengths([
+                super::NATIVE_INPUT_PRECAUTION_BYTES,
+            ]));
+        let permit = admission.acquire().unwrap();
+        for override_value in [None, Some("ordinary"), Some("invalid")] {
+            let mut command = Command::new("unused-child");
+            match override_value {
+                None => {
+                    command.env_remove(super::COMPILER_CLASS_ENV);
+                }
+                Some(value) => {
+                    command.env(super::COMPILER_CLASS_ENV, value);
+                }
+            }
+            permit.prepare_for(&mut command).unwrap();
+            assert_eq!(
+                command
+                    .get_envs()
+                    .find(|(key, _)| *key == super::COMPILER_CLASS_ENV)
+                    .unwrap()
+                    .1,
+                Some(OsStr::new("native"))
+            );
+        }
+        drop(permit);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[ignore]
+    fn invalid_inherited_class_fixture() {
+        if std::env::var_os(super::COMPILER_CLASS_ENV).is_none() {
+            assert_eq!(
+                super::CompilerClass::inherited().unwrap(),
+                super::CompilerClass::Ordinary
+            );
+            return;
+        }
+        assert_eq!(
+            CompilerAdmission::from_env().unwrap_err().to_string(),
+            "compiler admission at KIO_CI_SCHEDULE_COMPILER_CLASS: KIO_CI_SCHEDULE_COMPILER_CLASS must be ordinary, native, or unset"
+        );
+    }
+
+    #[test]
+    fn inherited_native_class_defaults_and_invalid_values() {
+        for value in [None, Some(""), Some("Native"), Some("native,ordinary")] {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "compiler_admission::tests::invalid_inherited_class_fixture",
+                ])
+                .env("KIO_CI_SCHEDULE_HELD", "compiler")
+                .env_remove("KIO_CI_SCHEDULE")
+                .env_remove(READINESS_HOOK_PROGRAM_ENV)
+                .env_remove(READINESS_HOOK_ARG_COUNT_ENV);
+            match value {
+                None => {
+                    command.env_remove(super::COMPILER_CLASS_ENV);
+                }
+                Some(value) => {
+                    command.env(super::COMPILER_CLASS_ENV, value);
+                }
+            }
+            let status = command.status().unwrap();
+            assert!(status.success());
+        }
+    }
+
     fn traced_admission(
         root: &Path,
         mode: AdmissionMode,
@@ -1016,6 +1535,8 @@ mod tests {
             .assert_io_after_publication(lock_path.to_path_buf());
         CompilerAdmission {
             context: AdmissionContext::Shared { store, mode },
+            class: super::CompilerClass::Ordinary,
+            native_input: None,
             readiness_hook: None,
             trace: Some(trace),
         }
@@ -1398,7 +1919,13 @@ mod tests {
         }
         assert_eq!(
             DecisionBlocker::ALL.map(DecisionBlocker::label),
-            ["unknown-live", "not-fifo", "adaptive-cap", "fixed-cap",]
+            [
+                "unknown-live",
+                "not-fifo",
+                "adaptive-cap",
+                "fixed-cap",
+                "native-tree-active"
+            ]
         );
     }
 
@@ -1481,11 +2008,14 @@ mod tests {
     }
 
     #[test]
-    fn trace_setup_follows_ticket_publication_and_unlock() {
+    fn native_trace_setup_follows_ticket_publication_and_unlock() {
         let root = root("trace-start-boundary");
         let lock_path = root.join("compiler/state.lock");
         let admission =
-            traced_admission(&root, AdmissionMode::Fixed(1), "start-boundary", &lock_path);
+            traced_admission(&root, AdmissionMode::Fixed(1), "start-boundary", &lock_path)
+                .for_native_input(super::NativeCompileInput::from_lengths([
+                    super::NATIVE_INPUT_PRECAUTION_BYTES,
+                ]));
         let directory = root.join("debug/compiler-admission/start-boundary");
         assert!(!directory.exists());
 
@@ -1493,6 +2023,16 @@ mod tests {
             .acquire_for_program(OsStr::new("generic-compiler"))
             .unwrap();
         assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+        let path = std::fs::read_dir(&directory)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let trace = std::fs::read_to_string(path).unwrap();
+        assert!(trace.contains("\"schema\":\"kio-ci-compiler-admission-v6\""));
+        assert!(trace.contains("\"class\":\"native\""));
+        assert!(trace.contains("\"active_native\":0"));
 
         drop(permit);
         let _ = std::fs::remove_dir_all(root);
@@ -1505,6 +2045,8 @@ mod tests {
         let trace = CompilerTraceConfig::for_test(&root, "disabled");
         let admission = CompilerAdmission {
             context: AdmissionContext::Disabled,
+            class: super::CompilerClass::Ordinary,
+            native_input: None,
             readiness_hook: None,
             trace: Some(trace),
         };
@@ -1969,7 +2511,9 @@ mod tests {
     #[test]
     #[ignore]
     fn readiness_hook_fixture() {
-        let admission = CompilerAdmission::from_env().unwrap();
+        let admission = CompilerAdmission::from_env().unwrap().for_native_input(
+            super::NativeCompileInput::from_lengths([super::NATIVE_INPUT_PRECAUTION_BYTES]),
+        );
         let target = std::env::var_os("KIO_TEST_READINESS_TARGET").unwrap();
         let mut command = Command::new(target);
         drop(admission.acquire_for(&mut command).unwrap());
@@ -1984,7 +2528,7 @@ mod tests {
         let hook = write_script(
             &root,
             "readiness-hook",
-            "#!/bin/sh\nset -eu\n[ \"$1\" = probe ]\n[ \"$2\" = --compiler-readiness ]\n[ \"$3\" = -- ]\n[ \"$4\" = unused-target ]\n[ -z \"${KIO_CI_SCHEDULE_HELD:-}\" ]\n[ -z \"${KIO_CI_SCHEDULE_LEASE_FDS:-}\" ]\n: >\"$KIO_TEST_READINESS_STARTED\"\n",
+            "#!/bin/sh\nset -eu\n[ \"$1\" = probe ]\n[ \"$2\" = --compiler-readiness ]\n[ \"$3\" = -- ]\n[ \"$4\" = unused-target ]\n[ -z \"${KIO_CI_SCHEDULE_HELD:-}\" ]\n[ -z \"${KIO_CI_SCHEDULE_LEASE_FDS:-}\" ]\n[ -z \"${KIO_CI_SCHEDULE_COMPILER_CLASS:-}\" ]\n: >\"$KIO_TEST_READINESS_STARTED\"\n",
         );
         let status = Command::new(std::env::current_exe().unwrap())
             .arg("--ignored")

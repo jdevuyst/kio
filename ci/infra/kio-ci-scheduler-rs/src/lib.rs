@@ -9,7 +9,10 @@ mod process_supervisor;
 mod resource_admission;
 pub mod self_test;
 
-pub use compiler_admission::{AdmittedCommand, CompilerAdmission, CompilerPermit, Error};
+pub use compiler_admission::{
+    AdmittedCommand, CompilerAdmission, CompilerPermit, Error, NATIVE_INPUT_PRECAUTION_BYTES,
+    NativeCompileInput,
+};
 
 use held_resources::{HeldResource, HeldResources, ResourceRequest};
 use resource_admission::{FixedResourceAdmission, FixedResourcePermit, WorkMode};
@@ -147,6 +150,7 @@ where
         readiness
             .args(&command[1..])
             .env_remove("KIO_CI_SCHEDULE_HELD")
+            .env_remove(compiler_admission::COMPILER_CLASS_ENV)
             .env_remove(resource_admission::LEASE_FDS_ENV);
         let status = process_supervisor::readiness_status(&mut readiness)
             .map_err(|error| format!("cannot run isolated readiness command: {error}"))?;

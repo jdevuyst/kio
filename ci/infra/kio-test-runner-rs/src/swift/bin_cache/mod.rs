@@ -94,7 +94,7 @@
 //! small constant per miss.
 
 use crate::build_cache::{ArtifactRequest, BuildCache, CompilerAdapter, ProduceCtx, ProduceError};
-use crate::compiler_admission::CompilerAdmission;
+use crate::compiler_admission::{CompilerAdmission, NativeCompileInput};
 use crate::compiler_observer::CompilerObserver;
 use crate::opt_profile::OptProfile;
 use std::ffi::OsString;
@@ -423,7 +423,9 @@ fn do_swiftc_build(
         .arg(&lib)
         .args(&pkg_names)
         .current_dir(&build_root);
-    run_swiftc(cmd1, compiler_admission)?;
+    let input =
+        NativeCompileInput::from_lengths(tree.files.iter().map(|(_, bytes)| bytes.len() as u64));
+    run_swiftc(cmd1, compiler_admission, input)?;
 
     // Invocation 2 — the driver: `import <ns>` resolves against the
     // `.swiftmodule` in the build root; static-linking `lib<ns>.a` folds
@@ -443,7 +445,7 @@ fn do_swiftc_build(
         .arg("-o")
         .arg(&bin_path)
         .current_dir(&build_root);
-    run_swiftc(cmd2, compiler_admission)?;
+    run_swiftc(cmd2, compiler_admission, input)?;
 
     Ok(())
 }
@@ -455,9 +457,13 @@ fn swiftc_command(observer: &CompilerObserver) -> Command {
 
 /// Run one `swiftc` invocation, mapping a spawn failure / non-zero exit
 /// to [`CacheError`].
-fn run_swiftc(mut cmd: Command, compiler_admission: &CompilerAdmission) -> Result<(), CacheError> {
+fn run_swiftc(
+    mut cmd: Command,
+    compiler_admission: &CompilerAdmission,
+    input: NativeCompileInput,
+) -> Result<(), CacheError> {
     let admitted = compiler_admission
-        .acquire_for(&mut cmd)
+        .acquire_native_for(&mut cmd, input)
         .map_err(CacheError::Admission)?;
     let out = admitted
         .output()

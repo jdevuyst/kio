@@ -8,7 +8,8 @@ workload.
 - [Backend decisions](backend-decisions.md) — implementation choices and their correctness arguments.
 - [Backend performance](backend-performance.md) — generated-code and backend mechanism measurements.
 - [Call-stack safety](call-stack-safety.md) — staged experiment, depth limits, host-interface changes, and measured costs.
-- [Compiler performance](compiler-performance.md) — checking, representation, preparation and tooling measurements.
+- [CI performance](ci-performance.md) — test-runner scheduling, build preparation and harness measurements.
+- [Compiler performance](compiler-performance.md) — checking, representation and language-tooling measurements.
 - [Generation baselines](generation-baselines.md) — compiler selection, harness ownership, and bounded native compatibility validation.
 
 These records support engineering decisions, not new behavioral authority.

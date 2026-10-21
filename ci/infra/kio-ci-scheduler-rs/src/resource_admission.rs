@@ -88,7 +88,13 @@ impl SchedulerResource {
             (self, kind),
             (Self::Work, ClaimKind::Normal | ClaimKind::Barrier)
                 | (Self::Cargo, ClaimKind::Normal)
-                | (Self::Compiler, ClaimKind::Normal | ClaimKind::Adaptive)
+                | (
+                    Self::Compiler,
+                    ClaimKind::Normal
+                        | ClaimKind::Adaptive
+                        | ClaimKind::Native
+                        | ClaimKind::AdaptiveNative
+                )
         )
     }
 }
@@ -622,14 +628,26 @@ pub(crate) enum ClaimKind {
     Normal,
     Barrier,
     Adaptive,
+    Native,
+    AdaptiveNative,
 }
 
 impl ClaimKind {
+    pub(crate) const fn is_adaptive(self) -> bool {
+        matches!(self, Self::Adaptive | Self::AdaptiveNative)
+    }
+
+    pub(crate) const fn is_native(self) -> bool {
+        matches!(self, Self::Native | Self::AdaptiveNative)
+    }
+
     const fn tag(self) -> &'static str {
         match self {
             Self::Normal => "n",
             Self::Barrier => "b",
             Self::Adaptive => "a",
+            Self::Native => "nn",
+            Self::AdaptiveNative => "an",
         }
     }
 
@@ -638,6 +656,8 @@ impl ClaimKind {
             Self::Normal => "normal",
             Self::Barrier => "barrier",
             Self::Adaptive => "adaptive",
+            Self::Native => "native",
+            Self::AdaptiveNative => "adaptive-native",
         }
     }
 
@@ -646,6 +666,8 @@ impl ClaimKind {
             "n" => Some(Self::Normal),
             "b" => Some(Self::Barrier),
             "a" => Some(Self::Adaptive),
+            "nn" => Some(Self::Native),
+            "an" => Some(Self::AdaptiveNative),
             _ => None,
         }
     }
@@ -754,16 +776,14 @@ impl ClaimSnapshot {
     pub(crate) fn active_adaptive(&self) -> usize {
         self.claims
             .iter()
-            .filter(|claim| {
-                claim.state == ClaimState::Active && claim.metadata.kind == ClaimKind::Adaptive
-            })
+            .filter(|claim| claim.state == ClaimState::Active && claim.metadata.kind.is_adaptive())
             .count()
     }
 
     pub(crate) fn fixed_capacity_min(&self) -> Option<usize> {
         self.claims
             .iter()
-            .filter(|claim| claim.metadata.kind != ClaimKind::Adaptive)
+            .filter(|claim| !claim.metadata.kind.is_adaptive())
             .map(|claim| claim.metadata.capacity.get())
             .min()
     }
@@ -1037,7 +1057,7 @@ fn work_admission_decision(snapshot: &ClaimSnapshot, contender: &LiveClaim) -> b
             oldest_pending_ticket(claims, |claim| claim.metadata.kind == ClaimKind::Barrier)
                 == Some(contender.metadata.ticket)
         }
-        ClaimKind::Adaptive => false,
+        ClaimKind::Adaptive | ClaimKind::Native | ClaimKind::AdaptiveNative => false,
     }
 }
 
@@ -1216,6 +1236,16 @@ mod tests {
                 ticket: 17,
                 capacity: NonZeroUsize::new(2).unwrap(),
                 kind: ClaimKind::Adaptive,
+            },
+            ClaimMetadata {
+                ticket: 18,
+                capacity: NonZeroUsize::new(4).unwrap(),
+                kind: ClaimKind::Native,
+            },
+            ClaimMetadata {
+                ticket: 19,
+                capacity: NonZeroUsize::new(4).unwrap(),
+                kind: ClaimKind::AdaptiveNative,
             },
         ] {
             assert_eq!(

@@ -75,7 +75,7 @@
 //!    shared temp root).
 
 use crate::build_cache::{ArtifactRequest, BuildCache, CompilerAdapter, ProduceCtx, ProduceError};
-use crate::compiler_admission::CompilerAdmission;
+use crate::compiler_admission::{CompilerAdmission, NativeCompileInput};
 use crate::compiler_observer::CompilerObserver;
 use std::ffi::OsString;
 use std::fs;
@@ -348,7 +348,12 @@ fn do_go_build(
         .env("GOFLAGS", "-mod=mod");
     apply_hermetic_go_environment(&mut cmd, &telemetry_dir);
     let admitted = compiler_admission
-        .acquire_for(&mut cmd)
+        .acquire_native_for(
+            &mut cmd,
+            NativeCompileInput::from_lengths(
+                tree.files.iter().map(|(_, bytes)| bytes.len() as u64),
+            ),
+        )
         .map_err(CacheError::Admission)?;
     let out = admitted
         .output()

@@ -247,8 +247,9 @@ fn run_coexist(
     }
     let build_dir = temp_dir("coexist")?;
     let mut java_files: Vec<PathBuf> = Vec::new();
-    copy_package_tree(&a, &build_dir, &mut java_files)?;
-    copy_package_tree(&b, &build_dir, &mut java_files)?;
+    let mut input = compiler_admission::NativeCompileInput::from_lengths([]);
+    copy_package_tree(&a, &build_dir, &mut java_files, &mut input)?;
+    copy_package_tree(&b, &build_dir, &mut java_files, &mut input)?;
     let contract = RunnerProtocol::Coexist.contract();
     let root_arguments = java_root_binding_arguments(contract);
     let root_use = if root_arguments.is_empty() {
@@ -290,6 +291,7 @@ fn run_coexist(
     driver.push_str(&format!(
         "    pa.greeter.{main}.main();\n    pb.greeter.{main}.main();\n    pa.greeter.{main}.main();\n    var qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa.left() + \" \" + qa.right());\n    var qb = pb.greeter.{main}.pair();\n    System.out.println(\"second pair: \" + qb.left() + \" \" + qb.right());\n    qa = pa.greeter.{main}.pair();\n    System.out.println(\"first pair: \" + qa.left() + \" \" + qa.right());\n  }}\n}}\n"
     ));
+    input = input.with_bytes(driver.len() as u64);
     fs::write(build_dir.join("Driver.java"), driver)
         .map_err(|e| format!("writing Java driver in {}: {e}", build_dir.display()))?;
     java_files.push(PathBuf::from("Driver.java"));
@@ -298,6 +300,7 @@ fn run_coexist(
         &java_files,
         compiler_observer,
         compiler_admission,
+        input,
         &[],
     )
 }
@@ -349,6 +352,7 @@ fn copy_package_tree(
     artifact: &EmittedPackage,
     build_dir: &Path,
     java_files: &mut Vec<PathBuf>,
+    input: &mut compiler_admission::NativeCompileInput,
 ) -> Result<(), String> {
     let ns_rel: PathBuf = artifact.namespace.split('.').collect();
     let dest_ns_dir = build_dir.join(&ns_rel);
@@ -363,8 +367,9 @@ fn copy_package_tree(
         if path.extension().is_some_and(|x| x == "java") {
             let name = path.file_name().unwrap();
             let dest = dest_ns_dir.join(name);
-            fs::copy(&path, &dest)
+            let bytes = fs::copy(&path, &dest)
                 .map_err(|e| format!("copying {} into build dir: {e}", path.display()))?;
+            *input = input.with_bytes(bytes);
             java_files.push(ns_rel.join(name));
             copied += 1;
         }
@@ -383,6 +388,7 @@ fn compile_and_run_driver(
     java_files: &[PathBuf],
     compiler_observer: &CompilerObserver,
     compiler_admission: &compiler_admission::CompilerAdmission,
+    input: compiler_admission::NativeCompileInput,
     java_args: &[&str],
 ) -> Result<i32, String> {
     let mut compile = javac_compile_command(compiler_observer);
@@ -391,7 +397,7 @@ fn compile_and_run_driver(
     }
     compile.current_dir(build_dir);
     let admitted = compiler_admission
-        .acquire_for(&mut compile)
+        .acquire_native_for(&mut compile, input)
         .map_err(|e| format!("acquiring compiler admission: {e}"))?;
     let compile = admitted
         .output()
@@ -445,12 +451,12 @@ impl TestRunner for JavaRunner {
         let artifact = emitted_package(output_dir, &self.identity)?;
         let build_dir = temp_dir("build")?;
         let mut java_files: Vec<PathBuf> = Vec::new();
-        copy_package_tree(&artifact, &build_dir, &mut java_files)?;
-        fs::write(
-            build_dir.join("Driver.java"),
-            build_driver_source(host_api, protocol, &artifact),
-        )
-        .map_err(|e| format!("writing Java driver in {}: {e}", build_dir.display()))?;
+        let mut input = compiler_admission::NativeCompileInput::from_lengths([]);
+        copy_package_tree(&artifact, &build_dir, &mut java_files, &mut input)?;
+        let driver = build_driver_source(host_api, protocol, &artifact);
+        input = input.with_bytes(driver.len() as u64);
+        fs::write(build_dir.join("Driver.java"), driver)
+            .map_err(|e| format!("writing Java driver in {}: {e}", build_dir.display()))?;
         java_files.push(PathBuf::from("Driver.java"));
         let java_args = if protocol == RunnerProtocol::FacadeSelectorCollisions {
             &["-Duser.language=tr", "-Duser.country=TR"][..]
@@ -462,6 +468,7 @@ impl TestRunner for JavaRunner {
             &java_files,
             &self.compiler_observer,
             &self.compiler_admission,
+            input,
             java_args,
         )
     }
@@ -2608,6 +2615,86 @@ fn temp_dir(label: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn native_input_admission_counts_copied_packages_and_driver() {
+        use compiler_admission::{CompilerAdmission, NATIVE_INPUT_PRECAUTION_BYTES as LIMIT};
+        for (bytes, expected) in [(4, "ordinary"), (LIMIT - 1, "native")] {
+            for coexist in [false, true] {
+                let root = temp_dir("native-input").unwrap();
+                let identities = [
+                    ArtifactIdentity {
+                        namespace: "first".into(),
+                    },
+                    ArtifactIdentity {
+                        namespace: "second".into(),
+                    },
+                ];
+                let count = if coexist { 2 } else { 1 };
+                for (index, identity) in identities[..count].iter().enumerate() {
+                    let namespace = &identity.namespace;
+                    let ns_dir = root.join(namespace);
+                    fs::create_dir_all(&ns_dir).unwrap();
+                    let package_bytes =
+                        bytes / count as u64 + if index == 0 { bytes % count as u64 } else { 0 };
+                    let handle = pascal_case(namespace);
+                    fs::write(
+                        ns_dir.join(format!("{handle}.java")),
+                        vec![b' '; package_bytes as usize - 1],
+                    )
+                    .unwrap();
+                    fs::write(ns_dir.join(format!("{handle}Host.java")), b" ").unwrap();
+                }
+                let observer = compiler_observer::admission_probe(&root);
+                let admission = CompilerAdmission::shared(root.join("schedule"), 4).unwrap();
+                let error = if coexist {
+                    run_coexist(
+                        &root,
+                        &identities[0],
+                        &root,
+                        &identities[1],
+                        &observer,
+                        &admission,
+                    )
+                    .unwrap_err()
+                } else {
+                    let runner = JavaRunner {
+                        compiler_observer: observer,
+                        compiler_admission: admission,
+                        protocol: RunnerProtocol::CompileOnly,
+                        identity: identities[0].clone(),
+                    };
+                    runner
+                        .execute_artifact(&root, &runner.host_api(), RunnerProtocol::CompileOnly)
+                        .unwrap_err()
+                };
+                let classes = fs::read_to_string(root.join("admission-probe.classes")).unwrap();
+                // Failed javac intentionally preserves its build dir for diagnostics.
+                let build = PathBuf::from(
+                    fs::read_to_string(root.join("admission-probe.dirs"))
+                        .unwrap()
+                        .trim(),
+                );
+                assert!(build.starts_with(env::temp_dir()));
+                assert!(
+                    build
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with("kio-test-runner-java-")
+                );
+                fs::remove_dir_all(build).unwrap();
+                fs::remove_dir_all(root).unwrap();
+                assert!(error.contains("exit status: 94"), "{error}");
+                assert_eq!(
+                    classes.lines().collect::<Vec<_>>(),
+                    [expected],
+                    "coexist={coexist}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn javac_uses_the_shared_outer_observer_shape() {

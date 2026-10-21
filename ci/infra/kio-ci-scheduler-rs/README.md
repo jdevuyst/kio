@@ -36,6 +36,29 @@ in that order. Re-entering a held resource reuses it; trying to acquire an
 earlier resource after a later one is an error. A nested barrier cannot
 strengthen an already-held normal work lease and therefore reuses that lease.
 
+Compiler claims distinguish ordinary work from a large-native-input precaution.
+`CompilerAdmission::acquire_native_for` accepts the complete project-produced
+source closure, including the sources behind linked local artifacts and the
+driver, excluding the pinned toolchain and standard library. One shared cutoff
+of 6 MiB selects the precaution for known totals at or above that size. Smaller
+inputs and missing inventories retain ordinary fixed/adaptive admission.
+Direct shell compiler requests retain ordinary admission without an inventory;
+the scheduler does not infer input size from program names or parse host dependencies.
+
+At most one independently admitted precaution-class tree is active. Ordinary
+work can pass precaution waiters blocked by that tree, subject to aggregate
+capacity. Once it drains, the oldest pending precaution claim regains its FIFO
+priority. A waiting claim consumes no active permit. Source volume is an
+empirical admission precaution, not a memory estimate or proof that smaller or
+unmeasured inputs are inexpensive. Missing inventories receive no extra
+memory-overlap protection.
+
+Nested commands retain their root's class and lease. Whole Cargo invocations
+and mixed compile/execution commands such as `go run`, `go test`, `go tool dist`
+and interactive GHC stay ordinary; their descendants are outside the additional
+native-tree bound. This policy does not count individual compiler processes,
+limit compiler-internal fan-out or guarantee against memory exhaustion.
+
 `KIO_CI_SERIALIZE_CARGO=1` opts a top-level `ci/cargo.sh` invocation into the
 Git-common `cargo` resource. It replaces the old arbitrary-path external Cargo
 lock: it intentionally coordinates this repository and its sibling worktrees,
@@ -72,6 +95,10 @@ admission after a crash; an empty queue may safely restart at ticket one.
 
 All active clients use the same protocol and Git-common state root. Separate
 concurrent state layouts would permit oversubscription.
+When changing claim formats, drain all clients and rebuild both the scheduler
+and linked runners before admitting new work. Unknown live claims fail closed;
+that safeguard is not a rolling-upgrade protocol. Do not clear live state to
+make incompatible clients proceed.
 
 ## Process-tree lifetime
 
@@ -193,9 +220,17 @@ file with `create_new`; repeated queue tickets therefore cannot overwrite an
 earlier acquisition. Disabled scheduling and inherited compiler-lease reuse do
 not create a new file.
 
-Every line uses schema `kio-ci-compiler-admission-v3`. It carries one wall-clock
+Every line uses schema `kio-ci-compiler-admission-v6`. It carries one wall-clock
 anchor plus monotonic elapsed time, process and acquisition identity, queue and
 capacity state, the fixed/adaptive mode, the decision, and its typed blockers.
+The `class`, `active_native` and `oldest_eligible_ticket` fields distinguish
+large-input precaution contention from aggregate capacity and queue order;
+`native-tree-active` identifies a precaution claim blocked by an active one.
+`classification_reason` distinguishes ordinary work, small input, large input,
+and unknown input. `native_input_bytes` is null without a complete inventory;
+complete totals saturate at `u64::MAX` rather than overflow into a smaller class.
+`native_input_precaution_bytes` records the shared cutoff. None of these values
+enters artifact cache keys or persisted learned state.
 An adaptive claim stopped at its effective bound records
 `adaptive-cap`; a smaller explicit request records `fixed-cap`. Evaluations
 that do not consult feedback carry a null `adaptive_capacity`; non-head

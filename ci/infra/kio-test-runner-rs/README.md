@@ -415,13 +415,29 @@ turns that state into an injected `CompilerAdmission` capability, using
 adaptive admission when the capacity variable is absent. The build cache itself is
 environment-agnostic. After the per-key lock and second cache probe prove that
 this process will produce an artifact, the cache passes the capability to the
-adapter; cache staging and publication consume no permit. Each adapter acquires
-immediately around its compiler command, and Swift releases between its two
+adapter; cache staging and publication consume no permit. Each adapter requests
+input-classified admission immediately around its compiler command, and Swift
+releases between its two
 `swiftc` calls. Warm hits and same-key waiters consume no permit. A disabled
 persistent cache still uses a fresh cache with the same admission capability.
 Rust and Swift coexist paths and Java's direct `javac` route use the same
 command boundary; Go and Haskell compilation flows through their admitted cache
 adapters.
+
+The shared scheduler's extra one-tree precaution applies only to complete native
+input closures of at least 6 MiB. Smaller and unmeasured inputs retain ordinary
+admission alongside Kio/Cargo under aggregate capacity. Existing cache buffers
+supply the counts, including the Rust rlib sources behind a driver link and the
+Swift package sources behind its driver. Go includes its assembled module wiring.
+Java counts copied bytes plus the driver. Swift coexist counts during its source
+enumeration; Rust coexist reuses the ordinary crate-source collector once per
+package, drops those buffers after counting, and adds both packages to the link's
+driver total. Advisory collection failures leave the size unknown and do not
+replace compiler diagnostics. These counts change no artifact keys or cache format.
+Inherited commands retain their ancestor's class rather than upgrade or reacquire
+it; Cargo's internal fan-out is outside this additional bound.
+See the [resource policy](../kio-ci-scheduler-rs/README.md#resources-and-acquisition-order)
+for eligible FIFO ordering and the root-tree scope.
 
 The native runners and `ci/schedule.sh --resource compiler` share the
 `kio-ci-scheduler` crate's `CompilerAdmission` implementation and this protocol:
@@ -471,7 +487,7 @@ The cached artifacts are **path-neutral** so a populated cache reuses across wor
 
 `KIO_TEST_RUNNER_COMPILER_WRAPPER` is optional. The Rust runner treats it as an opaque `<wrapper> rustc ...` command, so setting `KIO_TEST_RUNNER_COMPILER_WRAPPER=sccache` accelerates cache misses without changing the cache key (which uses the real rustc identity). The explicit shell adapter is the sole sccache name recognizer: for its small declared tool vocabulary it accepts POSIX or Windows path separators, strips the native `.exe` suffix, and normalizes ASCII case; it sets `SCCACHE_IDLE_TIMEOUT=0` and registers the generic last-safe-point hook after compiler admission. A direct runner invocation outside that adapter must provide the equivalent environment and generic readiness-hook configuration explicitly; neither the Rust scheduler nor the runner infers it from a tool name. Restarting sccache while compilation is in flight would reopen the inherited-lease hazard described above. The JS, Go, Java, Haskell, and Swift runners have no `sccache`-compatible compiler invocation (`sccache` wraps C/C++/rustc-shaped compilers and rejects `go` / `javac` / `ghc` / `swiftc`) and ignore the variable; their build cache or direct compiler invocation is the only acceleration layer.
 
-`KIO_DEBUG_TEST_RUNNER_COMPILER_OBSERVER` is an independent internal debug seam. Its value is one nonempty opaque executable path, never shell-split and never extended with inline arguments. Each actual native compile is nested beneath it: Rust cache misses use `<observer> <wrapper> rustc ...` when the cache wrapper is enabled and `<observer> rustc ...` otherwise; Go, Java, Haskell, Swift, and the distinct Rust/Swift coexist routes use `<observer> <compiler> ...`. The fully nested command is assembled before `CompilerAdmission::acquire_for`, so the outer observer receives the compiler lease and unchanged cwd, environment, stdio, and status behavior. Toolchain identity/version probes and runtime launches stay bare. Since the observer is applied only inside an artifact producer, warm cache hits and same-key waiters do not invoke it; it is absent from artifact keys and `meta.json`.
+`KIO_DEBUG_TEST_RUNNER_COMPILER_OBSERVER` is an independent internal debug seam. Its value is one nonempty opaque executable path, never shell-split and never extended with inline arguments. Each actual native compile is nested beneath it: Rust cache misses use `<observer> <wrapper> rustc ...` when the cache wrapper is enabled and `<observer> rustc ...` otherwise; Go, Java, Haskell, Swift, and the distinct Rust/Swift coexist routes use `<observer> <compiler> ...`. The fully nested command is assembled before `CompilerAdmission::acquire_native_for`, so the outer observer receives the compiler lease and unchanged cwd, environment, stdio, and status behavior. Toolchain identity/version probes and runtime launches stay bare. Since the observer is applied only inside an artifact producer, warm cache hits and same-key waiters do not invoke it; it is absent from artifact keys and `meta.json`.
 
 Readiness classification peels this layer only when argv[0] exactly equals the configured observer value, before any tool-basename recognition. It then inspects the exact inner old command, so even an observer executable whose basename is `rustc` cannot hide an inner sccache wrapper. The scheduler remains tool-agnostic; `ci/infra/sccache.sh` owns both this structural peel and sccache recognition.
 

@@ -21,6 +21,41 @@ use std::path::PathBuf;
 
 use super::key::{self, BinInput};
 
+#[cfg(unix)]
+#[test]
+fn native_input_admission_counts_package_and_driver_and_skips_cache_hits() {
+    use crate::compiler_admission::{CompilerAdmission, NATIVE_INPUT_PRECAUTION_BYTES as LIMIT};
+    for (package_bytes, expected) in [(1, "ordinary"), (LIMIT - 1, "native")] {
+        let fixture = tempfile::TempDir::new().unwrap();
+        let observer = crate::compiler_observer::admission_probe(fixture.path());
+        let cache = super::HaskellCache::open(
+            fixture.path().join("cache"),
+            None,
+            observer,
+            None,
+            CompilerAdmission::shared(fixture.path().join("schedule"), 4).unwrap(),
+        )
+        .unwrap();
+        let tree = super::HaskellBuildTree {
+            ghc_identity: "fixture".into(),
+            main_module: "Main.hs".into(),
+            profile: OptProfile::Unoptimized,
+            files: vec![
+                (
+                    PathBuf::from("Package.hs"),
+                    vec![b' '; package_bytes as usize],
+                ),
+                (PathBuf::from("Main.hs"), vec![b' ']),
+            ],
+        };
+        let first = cache.get_or_compile_bin(&tree).unwrap();
+        assert_eq!(cache.get_or_compile_bin(&tree).unwrap(), first);
+        let classes =
+            std::fs::read_to_string(fixture.path().join("admission-probe.classes")).unwrap();
+        assert_eq!(classes.lines().collect::<Vec<_>>(), vec![expected; 1]);
+    }
+}
+
 #[test]
 fn ghc_build_uses_the_shared_outer_observer_shape() {
     let observer = crate::compiler_observer::CompilerObserver::for_test("observe");

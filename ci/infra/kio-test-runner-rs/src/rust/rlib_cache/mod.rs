@@ -33,7 +33,7 @@
 //! Cargo machinery on the call path.
 
 use crate::build_cache::{ArtifactRequest, BuildCache, CompilerAdapter, ProduceCtx, ProduceError};
-use crate::compiler_admission::CompilerAdmission;
+use crate::compiler_admission::{CompilerAdmission, NativeCompileInput};
 use crate::compiler_observer::CompilerObserver;
 use crate::path_display::DisplayPath;
 use std::ffi::OsString;
@@ -259,6 +259,15 @@ impl CompilerAdapter for BinArtifact<'_> {
     }
 }
 
+fn native_input(rlib: &RlibInput, bin: Option<&BinInput>) -> NativeCompileInput {
+    NativeCompileInput::from_lengths(
+        rlib.crate_files
+            .iter()
+            .map(|(_, bytes)| bytes.len() as u64)
+            .chain(bin.map(|bin| bin.driver_source.len() as u64)),
+    )
+}
+
 fn rustc_command(observer: &CompilerObserver, wrapper: Option<&OsString>) -> Command {
     observer.command(
         std::ffi::OsStr::new("rustc"),
@@ -322,7 +331,7 @@ fn do_rustc_rlib(
     let program = rustc_program_name(&cmd);
     let admitted = ctx
         .compiler_admission
-        .acquire_for(&mut cmd)
+        .acquire_native_for(&mut cmd, native_input(input, None))
         .map_err(CacheError::Admission)?;
     let status = admitted
         .status()
@@ -371,7 +380,7 @@ fn do_rustc_bin(
     let program = rustc_program_name(&cmd);
     let admitted = ctx
         .compiler_admission
-        .acquire_for(&mut cmd)
+        .acquire_native_for(&mut cmd, native_input(rlib_input, Some(bin_input)))
         .map_err(CacheError::Admission)?;
     let status = admitted
         .status()

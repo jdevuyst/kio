@@ -131,25 +131,28 @@ fn run_coexist(
     let build =
         tempfile::TempDir::new().map_err(|e| format!("cannot create build tempdir: {e}"))?;
     let module_cache = build.path().join(".module-cache");
-    let swiftc = |args: &[String]| -> Result<(), String> {
-        let mut command = coexist_swiftc_command(compiler_observer);
-        command.args(args).current_dir(build.path());
-        let admitted = compiler_admission
-            .acquire_for(&mut command)
-            .map_err(|e| format!("acquiring compiler admission: {e}"))?;
-        let out = admitted
-            .output()
-            .map_err(|e| format!("spawning swiftc: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "swiftc {} failed: {}",
-                args.join(" "),
-                compiler_failure::describe(&out)
-            ));
-        }
-        Ok(())
-    };
+    let swiftc =
+        |args: &[String], input: compiler_admission::NativeCompileInput| -> Result<(), String> {
+            let mut command = coexist_swiftc_command(compiler_observer);
+            command.args(args).current_dir(build.path());
+            let admitted = compiler_admission
+                .acquire_native_for(&mut command, input)
+                .map_err(|e| format!("acquiring compiler admission: {e}"))?;
+            let out = admitted
+                .output()
+                .map_err(|e| format!("spawning swiftc: {e}"))?;
+            if !out.status.success() {
+                return Err(format!(
+                    "swiftc {} failed: {}",
+                    args.join(" "),
+                    compiler_failure::describe(&out)
+                ));
+            }
+            Ok(())
+        };
+    let mut linked_input = compiler_admission::NativeCompileInput::from_lengths([]);
     for (module, dir) in [(mod_a, dir_a), (mod_b, dir_b)] {
+        let mut module_input = compiler_admission::NativeCompileInput::from_lengths([]);
         let mut args: Vec<String> = vec![
             "-Onone".into(),
             "-module-name".into(),
@@ -169,6 +172,13 @@ fn run_coexist(
         for entry in entries {
             let path = entry.map_err(|e| e.to_string())?.path();
             if path.extension().is_some_and(|x| x == "swift") {
+                let input = fs::metadata(&path)
+                    .map(|metadata| {
+                        compiler_admission::NativeCompileInput::from_lengths([metadata.len()])
+                    })
+                    .unwrap_or_else(|_| compiler_admission::NativeCompileInput::unknown());
+                module_input = module_input.including(input);
+                linked_input = linked_input.including(input);
                 args.push(path.display().to_string());
                 found += 1;
             }
@@ -176,7 +186,7 @@ fn run_coexist(
         if found == 0 {
             return Err(format!("no .swift files in {}", dir.display()));
         }
-        swiftc(&args)?;
+        swiftc(&args, module_input)?;
     }
     let mut driver = format!("import {mod_a}\nimport {mod_b}\n\n");
     for (tag, prefix, module) in [("A", "first", mod_a), ("B", "second", mod_b)] {
@@ -192,6 +202,7 @@ fn run_coexist(
     driver.push_str(&format!(
         "let pa = create{mod_a}(host: HostA())\nlet pb = create{mod_b}(host: HostB())\npa.greeter.{main}.main()\npb.greeter.{main}.main()\npa.greeter.{main}.main()\nvar qa = pa.greeter.{main}.pair()\nprint(\"first pair: \\(qa._0) \\(qa._1)\")\nlet qb = pb.greeter.{main}.pair()\nprint(\"second pair: \\(qb._0) \\(qb._1)\")\nqa = pa.greeter.{main}.pair()\nprint(\"first pair: \\(qa._0) \\(qa._1)\")\n"
     ));
+    linked_input = linked_input.with_bytes(driver.len() as u64);
     fs::write(build.path().join("main.swift"), driver)
         .map_err(|e| format!("writing driver: {e}"))?;
     let driver_args: Vec<String> = vec![
@@ -208,7 +219,7 @@ fn run_coexist(
         "-o".into(),
         "driver".into(),
     ];
-    swiftc(&driver_args)?;
+    swiftc(&driver_args, linked_input)?;
     let status = Command::new(build.path().join("driver"))
         .status()
         .map_err(|e| format!("spawning coexist driver: {e}"))?;
@@ -2407,6 +2418,47 @@ const CLAMP_EXIT_DECL: &str = "func clampExit(_ n: Int64) -> Int64 {\n\tif n < 0
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn native_input_coexist_counts_both_linked_packages() {
+        use compiler_admission::NATIVE_INPUT_PRECAUTION_BYTES as LIMIT;
+        for (bytes, driver_class) in [(1, "ordinary"), (LIMIT / 2, "native")] {
+            let fixture = tempfile::TempDir::new().unwrap();
+            let a = fixture.path().join("a");
+            let b = fixture.path().join("b");
+            for dir in [&a, &b] {
+                fs::create_dir_all(dir).unwrap();
+                fs::write(dir.join("pkg.swift"), vec![b' '; bytes as usize]).unwrap();
+            }
+            let observer = compiler_observer::admission_probe(fixture.path());
+            let admission =
+                compiler_admission::CompilerAdmission::shared(fixture.path().join("schedule"), 4)
+                    .unwrap();
+            assert_eq!(
+                run_coexist(
+                    &a,
+                    &ArtifactIdentity {
+                        namespace: "First".into()
+                    },
+                    &b,
+                    &ArtifactIdentity {
+                        namespace: "Second".into()
+                    },
+                    &observer,
+                    &admission,
+                )
+                .unwrap(),
+                0
+            );
+            let classes =
+                fs::read_to_string(fixture.path().join("admission-probe.classes")).unwrap();
+            assert_eq!(
+                classes.lines().collect::<Vec<_>>(),
+                ["ordinary", "ordinary", driver_class]
+            );
+        }
+    }
 
     #[test]
     fn trace_unit_effects_are_not_suppressed_by_simulated_failure() {

@@ -390,6 +390,9 @@ one.
 One Cargo invocation consumes one compiler permit; the resource coordinates
 Cargo with compiler-producing Kio commands and actual native compiler commands
 but does not count or cap Cargo's individual `rustc` children.
+Cargo retains ordinary admission; its nested compilers inherit that class.
+The additional one-tree precaution for measured large native input closures
+does not bound Cargo's internal fan-out or unmeasured native commands.
 Omitting `--compiler-jobs` uses paced, best-effort CPU/memory feedback within
 live CPU and fixed-capacity limits. See
 [Shared work, Cargo, and compiler admission](local-ci.md#shared-work-cargo-and-compiler-admission)

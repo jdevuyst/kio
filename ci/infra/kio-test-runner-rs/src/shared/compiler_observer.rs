@@ -70,6 +70,37 @@ impl CompilerObserver {
 }
 
 #[cfg(test)]
+#[cfg(unix)]
+pub(crate) fn admission_probe(root: &std::path::Path) -> CompilerObserver {
+    use std::os::unix::fs::PermissionsExt;
+    let path = root.join("admission-probe");
+    std::fs::write(
+        &path,
+        br#"#!/bin/sh
+set -eu
+printf '%s\n' "$KIO_CI_SCHEDULE_COMPILER_CLASS" >> "$0.classes"
+printf '%s\n' "$PWD" >> "$0.dirs"
+artifact= out_dir= crate_name=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o) artifact=$2; shift ;;
+        --out-dir) out_dir=$2; shift ;;
+        --crate-name) crate_name=$2; shift ;;
+    esac
+    shift
+done
+if [ -n "$out_dir" ]; then artifact=$out_dir/lib$crate_name.rlib; fi
+if [ -z "$artifact" ]; then exit 94; fi
+printf '#!/bin/sh\nexit 0\n' > "$artifact"
+chmod +x "$artifact"
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    CompilerObserver::for_test(path)
+}
+
+#[cfg(test)]
 mod tests {
     use super::{CompilerObserver, ENV};
     use std::ffi::{OsStr, OsString};

@@ -802,7 +802,7 @@ new subproject, so no new version mirror is needed. The deliverables:
    by compiler startup + frontend, not codegen, so in-compile parallelism has
    nothing to parallelize. The Swift and Rust runners both measured exactly
    this (a wash on each) and ship without it; the
-   [runner-profile evidence](../../../evidence/compiler-performance.md#runner-compile-profiles)
+   [runner-profile evidence](../../../evidence/ci-performance.md#runner-compile-profiles)
    records the Rust comparison — a standing instance of `AGENTS.md` § Universal rules —
    "Optimizations are justified, not assumed." The acceleration is the cache.
 8. **Protocol host-body completeness gate.** Add a mechanical runner test

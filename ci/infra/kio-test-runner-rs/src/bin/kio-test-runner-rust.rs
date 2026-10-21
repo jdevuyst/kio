@@ -157,37 +157,44 @@ fn run_coexist(
     }
     let build =
         tempfile::TempDir::new().map_err(|e| format!("cannot create build tempdir: {e}"))?;
-    let rustc = |args: &[&str]| -> Result<(), String> {
-        let mut command = coexist_rustc_command(compiler_observer);
-        command.args(args).current_dir(build.path());
-        let admitted = compiler_admission
-            .acquire_for(&mut command)
-            .map_err(|e| format!("acquiring compiler admission: {e}"))?;
-        let out = admitted
-            .output()
-            .map_err(|e| format!("spawning rustc: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "rustc {} failed: {}",
-                args.join(" "),
-                compiler_failure::describe(&out)
-            ));
-        }
-        Ok(())
-    };
+    let rustc =
+        |args: &[&str], input: compiler_admission::NativeCompileInput| -> Result<(), String> {
+            let mut command = coexist_rustc_command(compiler_observer);
+            command.args(args).current_dir(build.path());
+            let admitted = compiler_admission
+                .acquire_native_for(&mut command, input)
+                .map_err(|e| format!("acquiring compiler admission: {e}"))?;
+            let out = admitted
+                .output()
+                .map_err(|e| format!("spawning rustc: {e}"))?;
+            if !out.status.success() {
+                return Err(format!(
+                    "rustc {} failed: {}",
+                    args.join(" "),
+                    compiler_failure::describe(&out)
+                ));
+            }
+            Ok(())
+        };
+    let mut linked_input = compiler_admission::NativeCompileInput::from_lengths([]);
     for (name, dir) in [(name_a, dir_a), (name_b, dir_b)] {
+        let input = coexist_native_input(dir);
+        linked_input = linked_input.including(input);
         let lib_rs = dir.join("src/lib.rs");
-        rustc(&[
-            "--edition",
-            "2024",
-            "--crate-type",
-            "rlib",
-            "--crate-name",
-            name,
-            lib_rs.to_str().ok_or("non-utf8 artifact path")?,
-            "-o",
-            &format!("lib{name}.rlib"),
-        ])?;
+        rustc(
+            &[
+                "--edition",
+                "2024",
+                "--crate-type",
+                "rlib",
+                "--crate-name",
+                name,
+                lib_rs.to_str().ok_or("non-utf8 artifact path")?,
+                "-o",
+                &format!("lib{name}.rlib"),
+            ],
+            input,
+        )?;
     }
     assert_eq!(
         contract.execution,
@@ -238,23 +245,41 @@ fn run_coexist(
         factory_a = artifact_identity::value_brand(name_a),
         factory_b = artifact_identity::value_brand(name_b),
     ));
+    linked_input = linked_input.with_bytes(driver.len() as u64);
     fs::write(build.path().join("driver.rs"), driver)
         .map_err(|e| format!("writing driver: {e}"))?;
-    rustc(&[
-        "--edition",
-        "2024",
-        "driver.rs",
-        "--extern",
-        &format!("{name_a}=lib{name_a}.rlib"),
-        "--extern",
-        &format!("{name_b}=lib{name_b}.rlib"),
-        "-o",
-        "driver",
-    ])?;
+    rustc(
+        &[
+            "--edition",
+            "2024",
+            "driver.rs",
+            "--extern",
+            &format!("{name_a}=lib{name_a}.rlib"),
+            "--extern",
+            &format!("{name_b}=lib{name_b}.rlib"),
+            "-o",
+            "driver",
+        ],
+        linked_input,
+    )?;
     let status = Command::new(build.path().join("driver"))
         .status()
         .map_err(|e| format!("spawning coexist driver: {e}"))?;
     Ok(status.code().unwrap_or(EXIT_RUNTIME_FAILURE))
+}
+
+fn coexist_native_input(dir: &Path) -> compiler_admission::NativeCompileInput {
+    // Collection is advisory here: rustc still owns errors for the direct route.
+    collect_crate_files(dir)
+        .map(|files| {
+            if files.is_empty() {
+                return compiler_admission::NativeCompileInput::unknown();
+            }
+            compiler_admission::NativeCompileInput::from_lengths(
+                files.iter().map(|(_, bytes)| bytes.len() as u64),
+            )
+        })
+        .unwrap_or_else(|_| compiler_admission::NativeCompileInput::unknown())
 }
 
 fn coexist_rustc_command(compiler_observer: &CompilerObserver) -> Command {
@@ -2880,6 +2905,53 @@ fn render_array_body_rust(op: &ArrayOp, m: &TraitMethod) -> String {
 mod tests {
     use super::*;
     use protocol::HostRoleRef;
+
+    #[cfg(unix)]
+    #[test]
+    fn native_input_coexist_counts_both_linked_packages() {
+        use compiler_admission::NATIVE_INPUT_PRECAUTION_BYTES as LIMIT;
+        for (bytes, driver_class) in [(1, "ordinary"), (LIMIT / 2, "native")] {
+            let fixture = tempfile::TempDir::new().unwrap();
+            let a = fixture.path().join("a");
+            let b = fixture.path().join("b");
+            for dir in [&a, &b] {
+                fs::create_dir_all(dir.join("src")).unwrap();
+                fs::write(dir.join("src/lib.rs"), vec![b' '; bytes as usize]).unwrap();
+            }
+            assert_eq!(coexist_native_input(&a).bytes(), Some(bytes));
+            assert_eq!(
+                coexist_native_input(&fixture.path().join("missing")).bytes(),
+                None
+            );
+            let observer = compiler_observer::admission_probe(fixture.path());
+            let admission =
+                compiler_admission::CompilerAdmission::shared(fixture.path().join("schedule"), 4)
+                    .unwrap();
+            assert_eq!(
+                run_coexist(
+                    RunnerProtocol::Coexist.contract(),
+                    &a,
+                    &ArtifactIdentity {
+                        namespace: "first".into()
+                    },
+                    &b,
+                    &ArtifactIdentity {
+                        namespace: "second".into()
+                    },
+                    &observer,
+                    &admission,
+                )
+                .unwrap(),
+                0
+            );
+            let classes =
+                fs::read_to_string(fixture.path().join("admission-probe.classes")).unwrap();
+            assert_eq!(
+                classes.lines().collect::<Vec<_>>(),
+                ["ordinary", "ordinary", driver_class]
+            );
+        }
+    }
 
     #[cfg(unix)]
     #[test]

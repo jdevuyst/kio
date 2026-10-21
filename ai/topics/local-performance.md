@@ -190,10 +190,16 @@ Cache and memo probes are deliberately opt-in because they write extra stderr:
   per independent compiler acquisition below the Git-common scheduler root at
   `debug/compiler-admission/<run-token>/`. The portable token accepts 1–64
   ASCII letters, digits, `-`, or `_` and excludes reserved filenames. Schema
-  `kio-ci-compiler-admission-v3` records exact queue state and typed blockers
+  `kio-ci-compiler-admission-v6` records exact queue state and typed blockers
   without changing admission policy; repeated waits are recorded only on
   semantic transitions. The `adaptive-cap` blocker identifies the effective
-  adaptive bound. A non-head or fixed-only evaluation does not sample feedback;
+  adaptive bound. Class and active-native counts distinguish the additional
+  large-input precaution. Input byte totals, the cutoff and the classification
+  reason distinguish measured-small, measured-large and unmeasured native work;
+  only measured-large requests the extra restriction. Totals saturate at
+  `u64::MAX`. `oldest_eligible_ticket` accounts for ordinary work
+  passing precaution waiters blocked by an active precaution tree. An ineligible or
+  fixed-only evaluation does not sample feedback;
   its `adaptive_capacity` is null rather than an invented current target.
   Program attribution is an opaque hex-encoded basename, never a tool
   classification. Disabled scheduling and inherited compiler-lease reuse create

@@ -13,6 +13,48 @@ or sleeps as synchronization. Use observable state, explicit synchronization,
 controlled clocks, and deterministic work/shape checks as appropriate; retain
 generous hang safeguards and separately justified blowup-regression bounds.
 
+## CI scheduling requirements
+
+Scheduling changes are judged on reliable completion and end-to-end elapsed
+time together, not CPU occupancy or peak concurrency alone:
+
+- **Avoid resource exhaustion.** Out-of-memory kills, sustained swapping and
+  exhausted temporary storage are failures to investigate, not normal feedback
+  for finding concurrency limits. Account for participating work across
+  worktrees and leave headroom for compiler growth and other processes. The
+  existing [admission policy](../../ci/infra/kio-ci-scheduler-rs/README.md#omitted-compiler-capacity)
+  is best-effort, not a universal OOM guarantee; report its unprotected cases
+  rather than claiming that a memory estimate bounds them.
+- **Preserve useful parallelism and progress.** Do not solve pressure by
+  serializing unrelated cheap work or leaving capacity unused after pressure
+  clears. Preserve fair admission, cancellation and crash recovery; a large
+  request must neither block all eligible work nor starve indefinitely.
+- **Learn within a run, not across runs.** Any learned per-command resource
+  model starts without observations on each run. Do not read prior-run learning
+  or commit machine-derived scheduling data. This does not prohibit build or
+  artifact caches, retained diagnostic evidence, or live Git-common leases and
+  aggregate feedback coordinating concurrent clients. Missing observations are
+  routine, especially with sampled implementations: do not run extra compiles
+  just to train a predictor. Explain consequential fallback concisely without
+  per-case warning spam.
+- **Keep overhead proportionate.** Count feature collection, observation,
+  model updates and compiler preparation in the elapsed-time cost. A full-matrix
+  improvement must not meaningfully slow the ordinary sampled gate. Use matched
+  workloads, tool identities and cache conditions as described in
+  [local-performance.md](local-performance.md#machine-shape-and-contention);
+  report uncertainty and any residual slowdown. Avoid a new dependency or
+  analysis framework without measured benefit.
+- **Keep coverage and results unchanged.** Scheduling may change when work
+  runs, never which required checks run or whether failures count. Keep one
+  shared scheduling architecture with portable platform adapters, explicit
+  fixed overrides and diagnosable waits. Validate policy with deterministic
+  tests; performance measurements are separate from test pass/fail timing.
+
+These are acceptance criteria for scheduling work, not a claim that the current
+scheduler predicts every allocation. Keep measurements and their limits in
+[`evidence/ci-performance.md`](../../evidence/ci-performance.md); do not turn a
+machine-specific timing target into a universal CI deadline.
+
 ## End-to-end sweeps
 
 `sh ci/all.sh SAMPLE_IMPL` runs the same check categories as the Linux GitHub gate. Each selected matrix case chooses an applicable backend, a concrete generation baseline, and one distinct execution endpoint, then runs once. Prepare the pool explicitly with `sh ci/install-target-language-toolchains.sh --supported-set --for-tests`; ordinary language/set setup installs development tools. Each check is also invocable individually as `sh ci/checks/<bucket>/<name>.sh` (see [`ai/topics/repo-layout.md`](repo-layout.md) for the `ci/` bucket structure).
@@ -127,6 +169,18 @@ available CPU ceiling; feedback selects the target within live CPU and fixed
 ceilings. A numeric fixed client retains its explicit positive capacity. This is why
 `--jobs` and `--compiler-jobs` are capacities rather than private per-command
 fan-out settings.
+
+Native compile adapters classify their complete local source closure before
+admission. Known inputs of at least 6 MiB request the extra one-tree precaution;
+smaller or unmeasured inputs retain ordinary admission with Kio/Cargo within
+aggregate capacity. Only precaution waiters blocked by an active precaution
+tree are bypassed; they regain FIFO priority when that tree drains. Descendants
+reuse their ancestor's class without upgrading it, so Cargo and other mixed
+compile/execution trees remain outside this extra bound. The scheduler
+[resource policy](../../ci/infra/kio-ci-scheduler-rs/README.md#resources-and-acquisition-order)
+owns the exact classification and inheritance contract. Changing the claim
+protocol requires drained clients and coherent scheduler/runner rebuilds, not
+live state deletion.
 
 `ci/schedule.sh` is the single shell-facing scheduler facade. Its default and
 `--barrier` forms map to `work`; `--resource cargo` and `--resource compiler`

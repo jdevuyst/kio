@@ -48,7 +48,7 @@
 //! toolchain offers a remap.
 
 use crate::build_cache::{ArtifactRequest, BuildCache, CompilerAdapter, ProduceCtx, ProduceError};
-use crate::compiler_admission::CompilerAdmission;
+use crate::compiler_admission::{CompilerAdmission, NativeCompileInput};
 use crate::compiler_observer::CompilerObserver;
 use crate::opt_profile::OptProfile;
 use std::ffi::OsString;
@@ -282,7 +282,12 @@ fn do_ghc_build(
         .arg(&work)
         .current_dir(&build_root);
     let admitted = compiler_admission
-        .acquire_for(&mut cmd)
+        .acquire_native_for(
+            &mut cmd,
+            NativeCompileInput::from_lengths(
+                tree.files.iter().map(|(_, bytes)| bytes.len() as u64),
+            ),
+        )
         .map_err(CacheError::Admission)?;
     let out = admitted
         .output()
