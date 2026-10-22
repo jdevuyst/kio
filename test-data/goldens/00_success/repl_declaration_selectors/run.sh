@@ -5,7 +5,6 @@ cd workdir || exit
 printf '%s\n' \
     ':sig op _ + _' \
     ':sig demo/ops.(op _ + _)' \
-    ':sig arithmetic.(op _ .. _)' \
     ':sig arithmetic.(op _ (=) _)' \
     ':sig demo/ops.(varop [* *])' \
     ':src arithmetic.(op _ + _)' \

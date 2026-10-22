@@ -73,25 +73,25 @@ fn assert_modes(source: &str, expected: &str) {
 }
 
 #[test]
-fn recursive_operand_leaves_its_owned_closing_run() {
+fn fixed_operand_leaves_its_owned_closing_word() {
     let mut failures = Vec::new();
     for imported in [false, true] {
         for (pattern, other, expression, expected) in [
-            ("_ <| __ |>", "_ |> _", "a <| b |>", "<| |>(a,b)"),
+            ("_ <| _ |>", "_ |> _", "a <| b |>", "<| |>(a,b)"),
             (
-                "_ <| __ |>",
+                "_ <| _ |>",
                 "_ |> _",
                 "a <| b <| c |> |>",
                 "<| |>(a,<| |>(b,c))",
             ),
-            ("_ ? __ !", "_ ! _", "a ? b !", "? !(a,b)"),
+            ("_ ? _ !", "_ ! _", "a ? b !", "? !(a,b)"),
             (
-                "_ <| __ |> ++",
-                "_ |> ++ _",
-                "a <| b <| c |> ++ |> ++",
-                "<| |> ++(a,<| |> ++(b,c))",
+                "_ <| _ |>++",
+                "_ |>++ _",
+                "a <| b <| c |>++ |>++",
+                "<| |>++(a,<| |>++(b,c))",
             ),
-            ("_ <| __ |> ++", "_ |> _", "a <| b |> ++", "<| |> ++(a,b)"),
+            ("_ <| _ |>++", "_ |> _", "a <| b |>++", "<| |>++(a,b)"),
         ] {
             let source = source(pattern, other, expression, imported);
             let result = std::panic::catch_unwind(|| assert_modes(&source, expected));
@@ -104,15 +104,14 @@ fn recursive_operand_leaves_its_owned_closing_run() {
 }
 
 #[test]
-fn recursive_operand_still_rejects_non_owning_operators_and_incomplete_suffixes() {
+fn atom_operand_rejects_open_chains_and_incomplete_closing_words() {
     for imported in [false, true] {
         for (pattern, other, expression) in [
-            ("_ <| __ |>", "_ + _", "a <| b + c |>"),
-            ("_ <| __ |> ++", "_ |> _", "a <| b |> c"),
-            ("_ <| __ |> ++", "_ |> _", "a <| b |> --"),
-            ("_ <| __ |> ++", "_ |> _", "a <| b |>"),
-            ("_ <| __ |>", "_ |> _", "a <| b"),
-            ("_ <| __ |>", "_ |> _", "a <| b |> |> c"),
+            ("_ <| _ |>", "_ + _", "a <| b + c |>"),
+            ("_ <| _ |>++", "_ |> _", "a <| b |> c"),
+            ("_ <| _ |>++", "_ |> _", "a <| b |> --"),
+            ("_ <| _ |>++", "_ |> _", "a <| b |>"),
+            ("_ <| _ |>", "_ |> _", "a <| b"),
         ] {
             let source = source(pattern, other, expression, imported);
             assert!(parse(&source).is_err(), "{source}");
@@ -129,32 +128,36 @@ fn recursive_operand_still_rejects_non_owning_operators_and_incomplete_suffixes(
 }
 
 #[test]
-fn owned_suffix_exception_preserves_plain_prefix_postfix_and_unbounded_recursion() {
+fn closed_results_and_explicit_groups_compose_with_unbounded_recursion() {
     for imported in [false, true] {
         for (pattern, other, expression, expected) in [
             ("_ <| _ |>", "_ |> _", "a <| b |>", "<| |>(a,b)"),
-            ("_ <| __ |>", "~ __", "~ a <| b |>", "<| |>(~(a),b)"),
-            ("_ <| __ |>", "_ ~", "(a ~) <| b |>", "<| |>(~(a),b)"),
+            ("_ <| _ |>", "~ __", "(~ a) <| b |>", "<| |>(~(a),b)"),
+            ("_ <| _ |>", "_ ~", "(a ~) <| b |>", "<| |>(~(a),b)"),
+            ("_ <| _ |>", "_ ~", "a ~ <| b |>", "<| |>(~(a),b)"),
+            ("_ <| _ |>", "_ |> _", "a <| b |> |> c", "|>(<| |>(a,b),c)"),
             ("_ ? __", "_ ! _", "a ? b ? c", "?(a,?(b,c))"),
         ] {
             assert_modes(&source(pattern, other, expression, imported), expected);
         }
-        for (pattern, other, expression) in [
-            ("_ <| __ |>", "_ ~", "a ~ <| b |>"),
-            ("_ ? __", "_ ! _", "a ? b ! c"),
-        ] {
-            assert!(parse(&source(pattern, other, expression, imported)).is_err());
-        }
+        assert!(parse(&source("_ ? __", "_ ! _", "a ? b ! c", imported)).is_err());
     }
 }
 
 #[test]
-fn owned_suffix_exception_does_not_override_same_binding_dispatch() {
-    // A suffix matching the same binding's head must still enter recursive
-    // continuation; the parent-suffix exception is only for another binding.
+fn owned_word_preempts_same_binding_continuation() {
     let declaration = "module source; op _ ? __ ? { impl pick; };";
-    assert!(parse(declaration).is_ok());
-    let source = source("_ ? __ ?", "_ ! _", "a ? b ?", false);
-    let error = parse(&source).unwrap_err();
-    assert!(error.diag().1.contains("expected expression"), "{error:?}");
+    let error = parse(declaration).unwrap_err();
+    assert!(error.diag().1.contains("ineffective"), "{error:?}");
+    for imported in [false, true] {
+        assert_modes(
+            &source("_ ? ___ ?", "_ ! _", "a ? b ?", imported),
+            "? ?(a,b)",
+        );
+        assert_modes(
+            &source("_ ? ___ ?", "_ ! _", "a ? (b ? c ?) ?", imported),
+            "? ?(a,? ?(b,c))",
+        );
+        assert!(parse(&source("_ ? ___ ?", "_ ! _", "a ? b ? c ?", imported)).is_err());
+    }
 }

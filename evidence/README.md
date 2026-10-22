@@ -11,6 +11,7 @@ workload.
 - [CI performance](ci-performance.md) — test-runner scheduling, build preparation and harness measurements.
 - [Compiler performance](compiler-performance.md) — checking, representation and language-tooling measurements.
 - [Generation baselines](generation-baselines.md) — compiler selection, harness ownership, and bounded native compatibility validation.
+- [Operator grouping](operator-grouping.md) — slot usefulness, structural grouping, and provider-independence arguments.
 
 These records support engineering decisions, not new behavioral authority.
 The [specifications](../specs/) define the language and host contracts;

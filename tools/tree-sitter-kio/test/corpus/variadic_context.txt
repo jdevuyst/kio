@@ -93,10 +93,10 @@ varop [* *] { foldr helper.variadic variadic; };
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_star_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)
@@ -191,10 +191,10 @@ varop [! !] { foldl1 helpers.foldr1 finalize; };
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)
@@ -214,10 +214,10 @@ varop [! !] { foldl1 helpers.foldr1 finalize; };
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_close))
+      (bracket_lbracket)
+      (operator_builtin)
+      (operator_builtin)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)
@@ -234,7 +234,7 @@ varop [! !] { foldl1 helpers.foldr1 finalize; };
 ================================================================================
 complete imported grammars retain fixed groups and split variadic heads
 ================================================================================
-import syntax(op, import, variadic, {entry}, op _ "=" _, op _ ( ~ _ ~ ), op _ ? _ : ___, varop [< <]);
+import syntax(op, import, variadic, {entry}, op _ (=) _, op _ ~ ___ ~, op _ ? _ : ___, varop [< <]);
 --------------------------------------------------------------------------------
 
 (source_file
@@ -257,18 +257,18 @@ import syntax(op, import, variadic, {entry}, op _ "=" _, op _ ( ~ _ ~ ), op _ ? 
     (import_operator_item
       (keyword_op)
       (slot)
-      (string_literal)
+      (import_pattern_group
+        (bracket_lparen)
+        (operator_builtin)
+        (bracket_rparen))
       (slot))
     (separator_comma)
     (import_operator_item
       (keyword_op)
       (slot)
-      (import_pattern_group
-        (bracket_lparen)
-        (operator_run)
-        (slot)
-        (operator_run)
-        (bracket_rparen)))
+      (operator_run)
+      (slot)
+      (operator_run))
     (separator_comma)
     (import_operator_item
       (keyword_op)
@@ -281,10 +281,10 @@ import syntax(op, import, variadic, {entry}, op _ "=" _, op _ ( ~ _ ~ ), op _ ? 
     (import_operator_item
       (keyword_varop)
       (variadic_head
-        (variadic_open)
-        (variadic_head_gap
-          (head_whitespace))
-        (variadic_close)))
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket)))
     (bracket_rparen)
     (separator_semicolon)))
 

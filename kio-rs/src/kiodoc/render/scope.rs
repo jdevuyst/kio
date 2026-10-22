@@ -277,7 +277,7 @@ mod tests {
     fn exact_operator_names_precede_qualified_path_fallback() {
         let module = crate::pass::parser::parse(concat!(
             "module api; ",
-            "pub op _ +. _ { impl dotted; }; ",
+            "pub op _ +? _ { impl symbolic; }; ",
             "pub op _ / _ { impl slash; }; ",
             "pub varop [* *] { foldl push empty; };"
         ))
@@ -294,8 +294,8 @@ mod tests {
             std::iter::once(("api", &module)),
         );
         for (query, anchor) in [
-            ("+.", "op-api-op_20_5f_20_2b_2e_20_5f"),
-            ("op _ +. _", "op-api-op_20_5f_20_2b_2e_20_5f"),
+            ("+?", "op-api-op_20_5f_20_2b_3f_20_5f"),
+            ("op _ +? _", "op-api-op_20_5f_20_2b_3f_20_5f"),
             ("/", "op-api-op_20_5f_20_2f_20_5f"),
             ("op _ / _", "op-api-op_20_5f_20_2f_20_5f"),
             ("varop [* *]", "op-api-varop_20_5b_2a_20_2a_5d"),

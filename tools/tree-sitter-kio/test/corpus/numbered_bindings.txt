@@ -23,13 +23,14 @@ fn h() { let.x.>f }
           (bracket_rparen))))
     (expression_block
       (bracket_lbrace)
-      (operator_expression
-        (expression_path
-          (identifier)
-          (separator_dot)
-          (identifier))
-        (operator_run)
-        (unit_expression
+      (call_expr
+        (operator_expression
+          (expression_path
+            (identifier)
+            (separator_dot)
+            (identifier))
+          (operator_run))
+        (expression_arguments
           (bracket_lparen)
           (bracket_rparen)))
       (separator_semicolon)

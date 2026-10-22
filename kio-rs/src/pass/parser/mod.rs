@@ -335,17 +335,14 @@ fn expression_parser<'a>(
 
 /// Structural square-bracket events committed by one ordinary expression-
 /// parse attempt. The parse may fail for live incomplete input; delimiters
-/// already confirmed by its selected grammar path remain useful to
-/// continuation and highlighting consumers.
-#[cfg(any(test, feature = "repl"))]
+/// already confirmed by its selected grammar path remain observable to tests.
+#[cfg(test)]
 pub(crate) struct ExpressionFragmentProbe {
-    #[cfg(test)]
     pub(crate) structural_bracket_offsets: Vec<u32>,
-    #[cfg(any(test, feature = "repl"))]
     pub(crate) unclosed_structural_forall_at_eof: bool,
 }
 
-#[cfg(any(test, feature = "repl"))]
+#[cfg(test)]
 pub(crate) fn probe_expression_fragment(
     source: &str,
     context: Option<&ExpressionParseContext>,
@@ -360,9 +357,7 @@ pub(crate) fn probe_expression_fragment(
     });
     let facts = parser.structural_forall_facts();
     Ok(ExpressionFragmentProbe {
-        #[cfg(test)]
         structural_bracket_offsets: facts.bracket_offsets,
-        #[cfg(any(test, feature = "repl"))]
         unclosed_structural_forall_at_eof: facts.unclosed_at_eof,
     })
 }
@@ -383,7 +378,7 @@ pub(crate) fn parse_type_fragment(source: &str) -> Result<Type, Error> {
 /// context is an opaque snapshot of the loaded module's resolved operator
 /// grammar, so the probe follows ordinary parser context without guessing an
 /// operator shape from its spelling.
-#[cfg(any(test, feature = "repl"))]
+#[cfg(test)]
 pub(crate) fn expression_has_unclosed_structural_forall(
     source: &str,
     context: Option<&ExpressionParseContext>,
@@ -2899,15 +2894,15 @@ mod tests {
             "_ + ___",
             "_ ? _ : _",
             "< _ : _ : _ >",
-            "< ( _ : _ ) >",
-            "_ + (_)",
-            "(__) + _",
+            "< ___ : ___ >",
+            "_ ? __ : _",
+            "__ ? _ : _",
             "_ (=) _",
-            "_ && ++ _",
-            "++",
-            "_ ... _",
+            "_ &&++ _",
+            "++ __",
+            "@ ___ # ___ $",
             "<% _ %>",
-            "< ! _ ! >",
+            "<! _ !>",
         ];
         for pattern in admitted {
             let grammar =
@@ -2925,6 +2920,13 @@ mod tests {
             "[ _ ]",
             "[ ! _ ! ]",
             "_ [! _ !]",
+            "< ( _ : _ ) >",
+            "_ + (_)",
+            "(__) + _",
+            "_ && ++ _",
+            "++",
+            "_ ... _",
+            "< ! _ ! >",
         ];
         for pattern in rejected {
             assert!(
@@ -2950,10 +2952,10 @@ mod tests {
         let mut count = 0;
         for (open, close) in [
             ("[%", "%]"),
-            ("[...", "...]"),
+            ("[", "]"),
             ("[<", "<]"),
-            ("+[?", "?]+"),
-            ("[[*", "*]]"),
+            ("[?+", "+?]"),
+            ("[**", "**]"),
             ("[!", "!]"),
         ] {
             for whitespace in [" ", "\t", "\n", "\r\n"] {
@@ -2991,7 +2993,7 @@ mod tests {
         };
         let strategy = (
             proptest::collection::vec(
-                prop::sample::select(vec!["+", "?", "&&", "..", "<%", "%>"]),
+                prop::sample::select(vec!["+", "?", "&&", "<%", "%>"]),
                 1..17,
             ),
             0usize..6,
@@ -3001,14 +3003,14 @@ mod tests {
         let mut runner = TestRunner::new(config);
         runner
             .run(&strategy, |(runs, class)| {
-                let run = runs.join(" ");
+                let run = runs.join("");
                 let pattern = match class {
                     0 => format!("_ {run} _"),
                     1 => format!("{run} _"),
                     2 => format!("_ {run}"),
                     3 => format!("__ {run} _"),
                     4 => format!("_ {run} ___"),
-                    _ => format!("_ {run} (_)"),
+                    _ => format!("_ {run} ___ : _"),
                 };
                 let grammar =
                     import_grammar_declaration_grammar(&format!("op {pattern} {{ impl f; }};"));
@@ -3031,13 +3033,13 @@ mod tests {
         let pairs = [
             ("op _ + _", "op __ + _"),
             ("op _ + _", "op _ + ___"),
-            ("op _ + _", "op _ + (_)"),
+            ("op _ + _", "op _ + ___ : _"),
             ("op _ ? _", "op _ ? _ : _"),
-            ("op _ && ++ _", "op _ &&++ _"),
+            ("op _ && _ ++ _", "op _ &&++ _"),
             ("op <% _ %>", "varop [% %]"),
             ("varop [% %]", "varop [: :]"),
             ("varop [% %]", "varop [%% %%]"),
-            ("varop [% %]", "varop %[% %]%"),
+            ("varop [% %]", "varop []"),
         ];
         for (left, right) in pairs {
             let a = import_grammar_import_grammar(left);
@@ -3046,7 +3048,7 @@ mod tests {
             assert_ne!(a.render(), b.render(), "{left} / {right}");
             import_grammar_roundtrip(&a);
             import_grammar_roundtrip(&b);
-            if !left.contains("&& ++") && !right.starts_with("varop") {
+            if !left.contains("&& _ ++") && !right.starts_with("varop") {
                 assert_eq!(a.dispatch_key(), b.dispatch_key());
             } else {
                 assert_ne!(a.dispatch_key(), b.dispatch_key());
@@ -3075,7 +3077,7 @@ mod tests {
                     .is_empty()
             );
         }
-        for bad in ["op _ = _", "varop [%", "varop [% ]%"] {
+        for bad in ["op _ = _", "varop [% !]", "varop [% ]%"] {
             let source = format!(
                 "module c; import m({bad}, // sibling once\n good); fn after() -> . {{ () }}"
             );
@@ -3099,6 +3101,16 @@ mod tests {
                 1
             );
         }
+        let unclosed = "module c; import m(varop [%, good); fn after() -> . { () }";
+        assert!(parse(unclosed).is_err());
+        let (module, errors) =
+            parse_recover_imports(unclosed).expect("recover unclosed square frame");
+        assert!(!errors.is_empty());
+        let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
+            panic!("selective")
+        };
+        assert!(items.is_empty(), "the unclosed frame owns its inner comma");
+        assert!(matches!(&module.items[0], Item::FnDef(d) if d.name == "after"));
         for declaration in [
             "type A = .;",
             "newtype A : . { constructor make; projector take; };",
@@ -3118,7 +3130,9 @@ mod tests {
                 crate::pretty::pretty_module(&expected)
             );
         }
-        eprintln!("recovery: incomplete=5 malformed_with_siblings=3 declaration_heads=5");
+        eprintln!(
+            "recovery: incomplete=5 malformed_with_siblings=3 unclosed_frames=1 declaration_heads=5"
+        );
     }
 
     #[test]
@@ -4111,16 +4125,16 @@ mod tests {
         let local_prefix = local_expression_context(
             "module local; fn prefix(a: A) -> A { a } op <% _ { impl prefix; };",
         );
-        assert!(p_expr_with_context("<% A", Some(&local_prefix)).is_ok());
+        assert!(p_expr_with_context("<% a", Some(&local_prefix)).is_ok());
         assert!(!expression_has_unclosed_structural_forall(
-            "<% A",
+            "<% a",
             Some(&local_prefix),
         ));
         let no_context_call =
             probe_expression_fragment("f([ A", None).expect("unresolved call fragment probe");
         assert_eq!(no_context_call.structural_bracket_offsets, vec![2]);
         assert!(no_context_call.unclosed_structural_forall_at_eof);
-        let prefix_call = probe_expression_fragment("f(<% A", Some(&local_prefix))
+        let prefix_call = probe_expression_fragment("f(<% a", Some(&local_prefix))
             .expect("prefix-operator call fragment probe");
         assert!(prefix_call.structural_bracket_offsets.is_empty());
         assert!(!prefix_call.unclosed_structural_forall_at_eof);
@@ -4129,15 +4143,15 @@ mod tests {
             .expect("consumer-declared consumer parse");
         let imported =
             expression_parse_context(&consumer).expect("imported expression parse context");
-        assert!(p_expr_with_context("a <% B", Some(&imported)).is_ok());
+        assert!(p_expr_with_context("a <% b", Some(&imported)).is_ok());
         assert!(!expression_has_unclosed_structural_forall(
-            "a <% B",
+            "a <% b",
             Some(&imported),
         ));
 
         let unrelated = local_expression_context("module unrelated;");
-        assert!(p_expr_with_context("a <% B", Some(&unrelated)).is_err());
-        let unrelated_probe = probe_expression_fragment("a <% B", Some(&unrelated))
+        assert!(p_expr_with_context("a <% b", Some(&unrelated)).is_err());
+        let unrelated_probe = probe_expression_fragment("a <% b", Some(&unrelated))
             .expect("unselected operator fragment probe");
         assert!(unrelated_probe.structural_bracket_offsets.is_empty());
         assert!(!unrelated_probe.unclosed_structural_forall_at_eof);
@@ -4556,8 +4570,8 @@ fn ok() -> . { () }
     fn operator_aliases_preserve_the_complete_grammar_shape() {
         for selection in [
             "op _ + __ as _ ++ __",
-            "op _ ? (_ : _) as _ ?? (_ :: _)",
-            "op _ + + _ as _ - - _",
+            "op _ ? ___ : ___ as _ ?? ___ :: ___",
+            "op _ + _ + _ as _ - _ - _",
             "varop [* *] as [% %]",
         ] {
             let module = p(&format!("module x; import provider({selection});"));
@@ -4574,10 +4588,10 @@ fn ok() -> . { () }
         for selection in [
             "op _ + __ as _ + _",
             "op _ + __ as _ + ___",
-            "op _ ? (_ : _) as _ ?? _ :: _",
-            "op _ + + _ as _ - + _",
-            "op _ + - _ as _ ? ? _",
-            "op _ + + _ as _ ++ _",
+            "op _ ? ___ : ___ as _ ?? _ :: _",
+            "op _ + _ + _ as _ - _ + _",
+            "op _ + _ - _ as _ ? _ ? _",
+            "op _ + _ + _ as _ ++ _",
             "varop [* *] as [% *]",
             "op _ + _ as op _ - _",
         ] {
@@ -4798,26 +4812,16 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn import_nullary_fixed_grammar_is_admitted() {
-        let module = p_header("module x; import syntax(op ++);");
-        assert_eq!(
-            imported_grammar(&selective_items(&module.imports[0])[0]).render(),
-            "op ++"
-        );
+    fn import_nullary_fixed_grammar_is_rejected() {
+        let error = parse("module x; import syntax(op ++);").unwrap_err();
+        assert!(error.diag().1.contains("at least one value slot"));
     }
 
     #[test]
-    fn import_operator_leading_dot_needs_a_second_dot() {
-        let message = p_err("module x; import syntax(op _ .+ _);");
-        assert!(
-            message.contains("starts with `.`") || message.contains("must contain at least two"),
-            "unexpected: {message}"
-        );
-        let module = p_header("module x; import syntax(op _ .+. _);");
-        assert_eq!(
-            imported_grammar(&selective_items(&module.imports[0])[0]).render(),
-            "op _ .+. _"
-        );
+    fn import_operator_dots_are_reserved() {
+        for word in [".+", ".+.", "..", "+.", "<.>"] {
+            assert!(parse(&format!("module x; import syntax(op _ {word} _);")).is_err());
+        }
     }
 
     // ---- fn ------------------------------------------------------------
@@ -7711,17 +7715,10 @@ fn ok() -> . { () }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn fixed_dispatch_key_adjacent_runs_keep_load_bearing_space() {
-        // Two whitespace-separated op-token runs (`&&` then `++`)
-        // must NOT collapse to `&&++` — the lexer would re-fuse them
-        // into a single run, changing the operator's identity.
-        assert_eq!(
-            fixed_dispatch_key_of("op _ && ++ _ { impl f; };"),
-            "_ && ++"
-        );
-        // A single fused run keeps no space.
+    fn fixed_dispatch_key_keeps_whole_symbol_words() {
+        assert!(parse("module x; op _ && ++ _ { impl f; };").is_err());
         assert_eq!(fixed_dispatch_key_of("op _ &&++ _ { impl f; };"), "_ &&++");
-        assert_eq!(fixed_dispatch_key_of("op _ < ! _ { impl f; };"), "_ < !");
+        assert!(parse("module x; op _ < ! _ { impl f; };").is_err());
         assert_eq!(fixed_dispatch_key_of("op _ <! _ { impl f; };"), "_ <!");
     }
 
@@ -7752,11 +7749,8 @@ fn ok() -> . { () }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn fixed_dispatch_key_lenient_grouping_keeps_leading_run() {
-        assert_eq!(
-            fixed_dispatch_key_of("op _ ( <% _ %> ) { impl f; };"),
-            "_ <%"
-        );
+    fn fixed_dispatch_key_chain_slot_keeps_leading_word() {
+        assert_eq!(fixed_dispatch_key_of("op _ <% ___ %> { impl f; };"), "_ <%");
     }
 
     #[cfg(feature = "surface")]
@@ -7959,7 +7953,6 @@ fn ok() -> . { () }
             "op variadic [ ! (_ ~) ... ! ]",
             "varop [* (_ ,) ... *]",
             "varop [% (_ => _ ,) ... %]",
-            "varop [ ! ! ]",
             "varop [% ]%",
             "op [* *]",
         ] {
@@ -7970,23 +7963,40 @@ fn ok() -> . { () }
     }
 
     #[test]
+    fn op_square_bracket_reports_fixed_pattern_error() {
+        for visibility in ["", "pub "] {
+            let source = format!(
+                "module x;\nfn wrap(a: .) {{ a }}\n\
+                 {visibility}op [ _ ] {{ impl wrap; }};\n\
+                 varop [* *] {{ foldr cons nil; }};"
+            );
+            let eager = parse(&source).expect_err("square brackets are not fixed words");
+            let lazy = parse_lazy(&source).expect_err("lazy headers validate fixed words");
+            let (span, message) = eager.diag();
+            assert!(
+                message.contains("fixed operator tokens cannot contain square brackets"),
+                "{message}"
+            );
+            assert_eq!(&source[span.start as usize..span.end as usize], "[");
+            assert_eq!(lazy.diag(), eager.diag());
+        }
+    }
+
+    #[test]
     fn op_body_comma_terminator_rejected() {
         let msg = p_err("module x; fn f() -> . { () } op _ + _ { impl f, };");
         assert!(msg.contains("`;`"), "unexpected: {msg}");
     }
 
     #[test]
-    fn op_two_recursive_slots_rejected() {
+    fn op_opposing_recursive_slots_rejected() {
         let msg = p_err("module x; fn f() -> . { () } op __ + __ { impl f; };");
-        assert!(
-            msg.contains("at most one recursive slot"),
-            "unexpected: {msg}"
-        );
+        assert!(msg.contains("both exposed"), "unexpected: {msg}");
     }
 
     #[test]
     fn op_adjacent_slots_rejected() {
-        let msg = p_err("module x; fn f() -> . { () } op _ _ { impl f; };");
+        let msg = p_err("module x; fn f() -> . { () } op _ _ + _ { impl f; };");
         assert!(msg.contains("adjacent slots"), "unexpected: {msg}");
     }
 
@@ -7996,7 +8006,7 @@ fn ok() -> . { () }
         // the adjacent-slots check or the empty-token check.
         let msg = p_err("module x; fn f() -> . { () } op _ _ _ { impl f; };");
         assert!(
-            msg.contains("operator token") || msg.contains("adjacent"),
+            msg.contains("operator word") || msg.contains("adjacent"),
             "unexpected: {msg}"
         );
     }
@@ -8055,12 +8065,7 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn op_prefix_forbidden_conflict_rejected() {
-        // The prefix-forbidden conflict rule (see `specs/language.md`
-        // § Operators) applies *within* a keyspace. Two prefix-shaped
-        // declarations whose op-token sequences have a prefix
-        // relationship — `-` vs `--` here — collide in the prefix
-        // keyspace and the second declaration is rejected.
+    fn op_split_prefix_word_rejected() {
         let msg = p_err(
             "module x; \
              fn neg(a: A) -> A { a } \
@@ -8068,10 +8073,7 @@ fn ok() -> . { () }
              op - _ { impl neg; }; \
              op - - _ { impl decrement; };",
         );
-        assert!(
-            msg.contains("prefix relationship") || msg.contains("longer operator"),
-            "unexpected: {msg}"
-        );
+        assert!(msg.contains("must alternate"), "unexpected: {msg}");
     }
 
     #[test]
@@ -8244,12 +8246,12 @@ fn ok() -> . { () }
     fn op_postfix_unary_parses() {
         let m = p("module x; \
              fn maybe(a: A) -> A { a } \
-             op __ ? { impl maybe; };");
+             op _ ? { impl maybe; };");
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
         let OpBody::Normal { pattern, .. } = &d.body;
-        assert!(matches!(pattern[0], OpPart::SlotRecursive { .. }));
+        assert!(matches!(pattern[0], OpPart::SlotPlain { .. }));
         assert!(matches!(pattern[1], OpPart::Token { .. }));
     }
 
@@ -8291,13 +8293,19 @@ fn ok() -> . { () }
     #[test]
     fn op_leading_dot_one_dot_rejected() {
         let msg = p_err("module x; fn f(a: A, b: A) -> A { a } op _ .+ _ { impl f; };");
-        assert!(msg.contains("must contain at least two"), "got: {msg}");
+        assert!(
+            msg.contains("reserved") || msg.contains("must alternate"),
+            "got: {msg}"
+        );
     }
 
     #[test]
     fn op_quoted_leading_dot_one_dot_rejected() {
         let msg = p_err("module x; fn f(a: A, b: A) -> A { a } op _ (.+) _ { impl f; };");
-        assert!(msg.contains("must contain at least two"), "got: {msg}");
+        assert!(
+            msg.contains("reserved") || msg.contains("one quoted operator word"),
+            "got: {msg}"
+        );
     }
 
     #[test]
@@ -8307,26 +8315,22 @@ fn ok() -> . { () }
                 "module x; fn f(a: A, b: A) -> A {{ a }} op _ {spelling} _ {{ impl f; }};"
             ));
             assert!(
-                msg.contains("must contain at least two"),
+                msg.contains("reserved") || msg.contains("must alternate"),
                 "{spelling}: {msg}"
             );
         }
     }
 
     #[test]
-    fn op_leading_dot_two_dots_admitted() {
-        let m = p("module x; fn f(a: A, b: A) -> A { a } op _ .+. _ { impl f; };");
-        assert!(matches!(&m.items[1], Item::Op(_, _)));
+    fn op_leading_dot_two_dots_rejected() {
+        assert!(parse("module x; op _ .+. _ { impl f; };").is_err());
     }
 
     #[test]
-    fn op_internal_or_trailing_dot_admitted() {
-        let m = p("module x; \
-             fn f(a: A, b: A) -> A { a } \
-             op _ +. _ { impl f; }; \
-             op _ <.> _ { impl f; };");
-        assert!(matches!(&m.items[1], Item::Op(_, _)));
-        assert!(matches!(&m.items[2], Item::Op(_, _)));
+    fn op_internal_or_trailing_dot_rejected() {
+        for word in ["+.", "<.>"] {
+            assert!(parse(&format!("module x; op _ {word} _ {{ impl f; }};")).is_err());
+        }
     }
 
     #[test]
@@ -8387,7 +8391,7 @@ fn ok() -> . { () }
     fn operator_usage_postfix_unary() {
         let m = p("module x; \
              fn maybe(a: A) -> A { a } \
-             op __ ? { impl maybe; }; \
+             op _ ? { impl maybe; }; \
              fn use_op(x: A) -> A { x? }");
         if let Item::FnDef(d) = &m.items[2] {
             match &d.body {
@@ -8409,7 +8413,7 @@ fn ok() -> . { () }
         // `x ? ?` parses as nested postfix OpChains.
         let m = p("module x; \
              fn maybe(a: A) -> A { a } \
-             op __ ? { impl maybe; }; \
+             op _ ? { impl maybe; }; \
              fn use_op(x: A) -> A { x ? ? }");
         if let Item::FnDef(d) = &m.items[2]
             && let Expr::OpChain { kind, .. } = &d.body
@@ -8480,16 +8484,13 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn operator_nesting_prefix_with_binary_composes() {
-        // `- x + y` parses as nested OpChain placeholders: outer
-        // binary `+`, first slot a prefix `-`. After op-fold the
-        // tree resolves to `add(neg(x), y)`.
+    fn operator_nesting_grouped_prefix_with_binary_composes() {
         let m = p("module x; \
              fn neg(a: A) -> A { a } \
              fn add(a: A, b: A) -> A { a } \
              op - __ { impl neg; }; \
              op _ + __ { impl add; }; \
-             fn use_op(x: A, y: A) -> A { - x + y }");
+             fn use_op(x: A, y: A) -> A { (- x) + y }");
         if let Item::FnDef(d) = &m.items[4]
             && let Expr::OpChain { kind, .. } = &d.body
         {
@@ -8508,20 +8509,15 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn operator_nesting_postfix_with_binary_rejected() {
-        // `x ? + y` is a parse error — postfix completion does not
-        // implicitly compose with binary; user writes `(x ?) + y`.
-        let msg = p_err(
-            "module x; \
+    fn operator_nesting_postfix_with_binary_composes() {
+        let module = p("module x; \
              fn maybe(a: A) -> A { a } \
              fn add(a: A, b: A) -> A { a } \
-             op __ ? { impl maybe; }; \
+             op _ ? { impl maybe; }; \
              op _ + __ { impl add; }; \
-             fn use_op(x: A, y: A) -> A { x ? + y }",
-        );
+             fn use_op(x: A, y: A) -> A { x ? + y }");
         assert!(
-            msg.contains("different operators") || msg.contains("explicit parens"),
-            "unexpected: {msg}"
+            matches!(&module.items[4], Item::FnDef(def) if matches!(&def.body, Expr::OpChain { kind, .. } if kind.leading_op_run() == ["+"]))
         );
     }
 
@@ -8532,7 +8528,7 @@ fn ok() -> . { () }
         let m = p("module x; \
              fn maybe(a: A) -> A { a } \
              fn add(a: A, b: A) -> A { a } \
-             op __ ? { impl maybe; }; \
+             op _ ? { impl maybe; }; \
              op _ + __ { impl add; }; \
              fn use_op(x: A, y: A) -> A { (x ?) + y }");
         if let Item::FnDef(d) = &m.items[4]
@@ -9330,27 +9326,27 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn wholly_lenient_operator_after_function_keeps_its_item_boundary() {
+    fn quoted_operator_after_function_keeps_its_item_boundary() {
         let source = "module x;
             fn op(left: ., right: .) -> . { left }
-            pub op (_ ? _) { impl op; };
+            pub op _ (?) _ { impl op; };
             fn run() -> . { () ? () }";
         for module in [
-            parse(source).expect("eager lenient operator"),
+            parse(source).expect("eager quoted operator"),
             parse_lazy(source)
-                .expect("lazy lenient operator")
+                .expect("lazy quoted operator")
                 .force_all()
-                .expect("materialized lenient operator"),
+                .expect("materialized quoted operator"),
         ] {
             assert_eq!(module.items.len(), 3);
             assert!(matches!(&module.items[0], Item::FnDef(def) if def.name == "op"));
             let Item::Op(declaration, _) = &module.items[1] else {
-                panic!("separate lenient operator declaration");
+                panic!("separate quoted operator declaration");
             };
             let crate::ast::OpBody::Normal { pattern, .. } = &declaration.body;
             assert_eq!(
                 crate::ast::OperatorGrammar::fixed(pattern).render(),
-                "op (_) ? (_)"
+                "op _ ? _"
             );
             assert!(matches!(&module.items[2], Item::FnDef(def) if def.name == "run"));
         }
@@ -12472,62 +12468,56 @@ mod operator_grammar_proptests {
     use proptest::prelude::*;
 
     fn token() -> impl Strategy<Value = String> {
-        prop::sample::select(vec![
-            "+", "-", "*", "..", ".+.", "+.", "<.>", "&&", "++", "?", ":", "$", "<|", "=>",
-        ])
-        .prop_map(str::to_owned)
-    }
-
-    fn run() -> impl Strategy<Value = Vec<String>> {
-        prop::collection::vec(token(), 1..6)
+        prop::sample::select(vec!["+", "-", "*", "&&", "++", "?", ":", "$", "<|", "=>"])
+            .prop_map(str::to_owned)
     }
 
     fn grammar() -> impl Strategy<Value = OperatorGrammar> {
         prop_oneof![
-            (any::<bool>(), any::<bool>(), run()).prop_map(|(prefix, lenient, run)| {
+            (any::<bool>(), prop::collection::vec(token(), 1..6)).prop_map(|(prefix, words)| {
                 let span = Span::new(0, 0);
-                let slot = OpPart::SlotPlain { span, lenient };
+                let slot = OpPart::SlotPlain { span };
                 let mut pattern = Vec::new();
                 if !prefix {
                     pattern.push(slot.clone());
                 }
-                pattern.extend(run.into_iter().map(|content| OpPart::Token {
-                    content,
-                    span,
-                    lenient: false,
-                    quoted: false,
-                }));
-                pattern.push(slot);
+                for content in words {
+                    pattern.push(OpPart::Token {
+                        content,
+                        span,
+                        quoted: false,
+                    });
+                    pattern.push(slot.clone());
+                }
                 OperatorGrammar::fixed(&pattern)
             }),
-            (
-                prop::collection::vec(
-                    prop::sample::select(vec!['+', '-', '*', '%', '<', '>', '?', ':', '[']),
-                    1..16
-                ),
-                any::<bool>()
+            prop::collection::vec(
+                prop::sample::select(vec!['+', '-', '*', '%', '<', '>', '?', ':']),
+                0..16
             )
-                .prop_map(|(parts, leading)| {
-                    let symbols: String = parts.into_iter().collect();
-                    let open = if leading {
-                        format!("[{symbols}")
-                    } else {
-                        format!("{symbols}[")
-                    };
-                    let close = open
-                        .chars()
-                        .rev()
-                        .map(|ch| if ch == '[' { ']' } else { ch })
-                        .collect();
-                    OperatorGrammar::Variadic {
-                        open: vec![open],
-                        close: vec![close],
-                    }
-                }),
+            .prop_map(|parts| {
+                let symbols: String = parts.into_iter().collect();
+                let open = format!("[{symbols}");
+                let close = open
+                    .chars()
+                    .rev()
+                    .map(|ch| if ch == '[' { ']' } else { ch })
+                    .collect();
+                OperatorGrammar::Variadic {
+                    open: vec![open],
+                    close: vec![close],
+                }
+            }),
         ]
     }
 
     proptest! {
+        #![proptest_config(proptest::test_runner::Config {
+            rng_seed: proptest::test_runner::RngSeed::Fixed(0x0240_6f70_6772),
+            failure_persistence: None,
+            ..proptest::test_runner::Config::default()
+        })]
+
         #[test]
         fn render_then_parse_is_identity(grammar in grammar()) {
             let rendered = grammar.render();

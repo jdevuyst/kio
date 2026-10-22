@@ -1,0 +1,5 @@
+module main;
+
+fn pick(left: ., _right: .) { left }
+
+op _ .+. _ { impl pick }

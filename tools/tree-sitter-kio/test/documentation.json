@@ -176,9 +176,11 @@
         "text": "[`code`]",
         "kind": "comment.doc.code",
         "vscodeTargets": [
-          { "start": 16, "end": 18, "kind": "operator.user" },
+          { "start": 16, "end": 17, "kind": "punctuation.bracket" },
+          { "start": 17, "end": 18, "kind": "operator.user" },
           { "start": 18, "end": 22, "kind": "identifier" },
-          { "start": 22, "end": 24, "kind": "operator.user" }
+          { "start": 22, "end": 23, "kind": "operator.user" },
+          { "start": 23, "end": 24, "kind": "punctuation.bracket" }
         ],
         "owners": []
       },

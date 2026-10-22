@@ -1,7 +1,7 @@
 module petri/fixture;
 
 import petri/model as model;
-import queue/list/list(varop [* *]);
+import queue/list/list(varop [] as [* *]);
 import testapi(I32, String);
 
 fn transition(name: String, consumes: model.Marking, produces: model.Marking) -> model.Transition {

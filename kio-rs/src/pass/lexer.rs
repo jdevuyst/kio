@@ -6,8 +6,8 @@
 //! expression-leading words `let` / `fn` / `if` / `else` / `do` —
 //! is lexed as an ordinary `Ident` and disambiguated in the parser
 //! by position. The structural punctuators `( ) { } , ;` keep
-//! dedicated token kinds; `.`, `[`, and `]` are ordinary op-chars that join
-//! greedy `SymbolRun`s alongside `+ - * < > = ! & | :` etc., and
+//! dedicated token kinds; `.`, `[`, and `]` have structural boundaries,
+//! while ordinary punctuation forms greedy `SymbolRun`s, and
 //! string and number literals also get their own token kinds.
 //!
 //! Spec for which words are contextual at which positions: see
@@ -118,16 +118,9 @@ pub enum TokenKind {
     Comma,     // ,
     Semicolon, // ;
 
-    /// A run of symbol characters — the unified token for every
-    /// non-structural symbol. Covers user-defined operator runs
-    /// (`+`, `?`, `++`, `][`, …), the type-chain separators `&` / `|`,
-    /// and fixed-role symbols such as `< > [ ] : = ! -> .> .>> .< .<<`
-    /// that the grammar pins to specific positions. Greedy lexing over the
-    /// operator-character set `+ - * / % ^ ~ ? @ # $ \ ' ` < > = !
-    /// & | : . [ ]`; brackets, arrows, and dot-splice spellings fuse with adjacent
-    /// op-chars under the same greedy rule. Parser sites that want a
-    /// specific symbol match on the run's content — see
-    /// [`TokenKind::sym`] / [`TokenKind::is_sym`].
+    /// An ordinary maximal punctuation word, or a native structural symbol.
+    /// Square brackets and dots never join ordinary words. The native dot
+    /// compounds `.>`, `.>>`, `.<`, `.<<`, `.?`, and `.!` stay indivisible.
     SymbolRun(String),
 
     /// `_` — plain slot token, recognized at slot positions
@@ -441,7 +434,7 @@ impl<'a> Lexer<'a> {
         // sits flush against a digit, the lexer consumes the `-` as
         // part of the numeric literal so `-40` is a single negative
         // literal token. After an expression-ending token (identifier,
-        // literal, `)`, or `}`), the `-` is always a binary
+        // literal, `)`, `}`, or `]`), the `-` is always a binary
         // operator and lexes as an ordinary op-run regardless of what
         // follows. The "flush against a digit" half is required so
         // that `- 40` (whitespace between) keeps lexing as two tokens.
@@ -487,21 +480,24 @@ impl<'a> Lexer<'a> {
                 self.bump();
                 TokenKind::Semicolon
             }
-            // Every operator character lexes as a greedy `SymbolRun`.
-            // The fixed-role symbols `< > = ! & | : -` are unified
-            // with the user-operator characters: a standalone `<`
-            // and a fused `<=` are the same token kind, distinguished
-            // only by content. `&` / `|` join an adjacent run too
-            // (so `&&` / `||` lex as one token); the type-chain
-            // parsers accept any all-`&` / all-`|` run as a chain
-            // separator. The arrow and dot-splice spellings are not
-            // carved out — they fuse with neighbours like any other
-            // op-char run, and the parser peels them off at the
-            // structural-recovery sites.
-            b'+' | b'-' | b'*' | b'/' | b'%' | b'^' | b'~' | b'?' | b'@' | b'$' | b'\\' | b'\''
-            | b'`' | b'<' | b'>' | b'=' | b'!' | b'&' | b'|' | b':' | b'.' | b'#' | b'[' | b']' => {
-                self.lex_op_run()
+            b'[' | b']' => {
+                self.bump();
+                TokenKind::sym(if b == b'[' { "[" } else { "]" })
             }
+            b'.' => {
+                self.bump();
+                if let Some(next @ (b'<' | b'>')) = self.peek() {
+                    self.bump();
+                    if self.peek() == Some(next) {
+                        self.bump();
+                    }
+                } else if matches!(self.peek(), Some(b'?' | b'!')) {
+                    self.bump();
+                }
+                TokenKind::sym(std::str::from_utf8(&self.bytes[start..self.pos]).unwrap())
+            }
+            b'+' | b'-' | b'*' | b'/' | b'%' | b'^' | b'~' | b'?' | b'@' | b'$' | b'\\' | b'\''
+            | b'`' | b'<' | b'>' | b'=' | b'!' | b'&' | b'|' | b':' | b'#' => self.lex_op_run(),
             b'"' => {
                 let mut tok = self.lex_string(start)?;
                 tok.leading_trivia = std::mem::take(&mut self.pending_trivia);
@@ -530,13 +526,11 @@ impl<'a> Lexer<'a> {
 
     /// Greedy operator-character run starting at the current
     /// position. Consumes characters in the operator set
-    /// (`+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | : . [ ]`) until it hits
+    /// (`+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | :`) until it hits
     /// a non-operator char or a block-listed sequence, and produces
     /// one [`TokenKind::SymbolRun`]. The block-list reserves `//`
     /// (line comment) and the second-or-later `/` of any run (so a
-    /// run carries at most one `/`). Lexing is uniformly greedy
-    /// over op-chars — no structural carve-outs for `->`, `.>`, or
-    /// any other arrow-shaped sequence. Parser sites that need to
+    /// run carries at most one `/`). Parser sites that need to
     /// recognize an arrow swallowed by greedy fusion peel it back
     /// via `SkeletonCursor::split_current_sym`.
     fn lex_op_run(&mut self) -> TokenKind {
@@ -799,7 +793,7 @@ impl<'a> Lexer<'a> {
 ///   keyword in expression-tail position (`a-1` is subtraction);
 /// - any literal (`IntLit`, `FloatLit`, `StrLit`, `BoolLit`) —
 ///   `1-2` is subtraction;
-/// - closing structural brackets `)` and `}` — closing a call or block.
+/// - closing structural brackets `)`, `}`, and `]`.
 ///
 /// A placeholder reference is a value, but it lexes as a `SymbolRun`
 /// matching the lambda's marker — indistinguishable at lex time from
@@ -813,7 +807,7 @@ impl<'a> Lexer<'a> {
 /// the `-` separated from the digit (`# - 2`).
 ///
 /// Everything else (`LParen`, `LBrace`, `Comma`, `Semicolon`, every
-/// `SymbolRun` including `]`, `=`, `<`, `>`, `:`,
+/// `SymbolRun` other than `]`, including `=`, `<`, `>`, `:`,
 /// `,` and arithmetic op-runs, slot tokens)
 /// leaves the lexer in an expression-starting position.
 fn token_ends_expression(kind: &TokenKind) -> bool {
@@ -824,6 +818,7 @@ fn token_ends_expression(kind: &TokenKind) -> bool {
         | TokenKind::StrLit(_)
         | TokenKind::BoolLit(_) => true,
         TokenKind::RParen | TokenKind::RBrace => true,
+        TokenKind::SymbolRun(run) if run == "]" => true,
         TokenKind::LParen
         | TokenKind::LBrace
         | TokenKind::Comma
@@ -835,18 +830,7 @@ fn token_ends_expression(kind: &TokenKind) -> bool {
     }
 }
 
-/// Characters admitted into a greedy [`TokenKind::SymbolRun`]. The
-/// full operator-character set: `+ - * / % ^ ~ ? @ # $ \ ' ` < > =
-/// ! & | : . [ ]`. The fixed-role symbols (`< > [ ] = ! & | : ->` plus the
-/// dot-splice family `.> .>> .< .<<`) are unified with the user-
-/// operator characters — they all join a run when adjacent, and a
-/// standalone one lexes as a one-character run.
-/// `.` joins runs alongside the rest (so the dot-splice family fuses
-/// by ordinary greedy lexing, and `..`, `.+`, `<.>` lex as single
-/// runs). Parser sites decide which dotted runs are admissible as
-/// user operator tokens. Brackets join their neighbours under the same
-/// maximal-run rule; parser sites peel them only where a forall binder
-/// structurally requires them.
+/// Ordinary punctuation words stop at native dot and square boundaries.
 fn is_op_char_in_run(b: u8) -> bool {
     matches!(
         b,
@@ -870,9 +854,6 @@ fn is_op_char_in_run(b: u8) -> bool {
             | b':'
             | b'&'
             | b'|'
-            | b'.'
-            | b'['
-            | b']'
     )
 }
 
@@ -1138,8 +1119,8 @@ mod tests {
         // The structural punctuators (`( ) { } , ;`) keep
         // dedicated kinds; every fixed-role symbol — including
         // `< > [ ] : -> .> .>> .< .<< | & = ! .` — lexes as a `SymbolRun`
-        // carrying its spelling. `.` joins greedy op-runs and
-        // appears as a one-char `SymbolRun` when standalone.
+        // carrying its spelling. Dots and brackets retain structural
+        // boundaries even next to ordinary punctuation words.
         assert_eq!(
             kinds("( ) { } < > [ ] , ; : -> .> .>> .< .<< | & = . !"),
             vec![
@@ -1179,8 +1160,7 @@ mod tests {
 
     #[test]
     fn dot_splice_lexes_as_symbol_run() {
-        // Dot-splice symbols are produced by ordinary greedy fusion
-        // of `.` and following op-chars.
+        // Native dot-splice symbols retain their adjacent spelling.
         let toks = lex(".>>").unwrap();
         assert_eq!(toks.len(), 1);
         assert!(toks[0].kind.is_sym(".>>"));
@@ -1188,8 +1168,7 @@ mod tests {
 
     #[test]
     fn standalone_dot_lexes_as_one_char_symbol_run() {
-        // A standalone `.` lexes as a one-character `SymbolRun` —
-        // `.` is an ordinary op-char that joins greedy runs.
+        // A standalone `.` retains a one-character structural boundary.
         let toks = lex(".").unwrap();
         assert_eq!(toks.len(), 1);
         assert!(toks[0].kind.is_sym("."));
@@ -1208,14 +1187,11 @@ mod tests {
     }
 
     #[test]
-    fn dot_runs_fuse_under_greedy_lexing() {
-        // Dotted op-char runs fuse uniformly. Whether a run is
-        // admissible as a user operator token is a parser-side rule.
-        let toks = lex(".. .+ <.>").unwrap();
-        assert_eq!(toks.len(), 3);
-        assert!(toks[0].kind.is_sym(".."));
-        assert!(toks[1].kind.is_sym(".+"));
-        assert!(toks[2].kind.is_sym("<.>"));
+    fn dots_reserve_native_boundaries_inside_symbol_sequences() {
+        assert_eq!(
+            kinds(".. .+ <.>"),
+            [".", ".", ".", "+", "<", ".>"].map(TokenKind::sym)
+        );
     }
 
     #[test]
@@ -1271,9 +1247,8 @@ mod tests {
     // into the literal when the prior context is expression-starting and
     // the `-` sits flush against a digit, producing a single negative
     // literal token. After an expression-ending token (identifier,
-    // literal, `)`, or `}`), the `-` is always binary subtraction. A
-    // `SymbolRun`, including a bracket-bearing run, instead leaves the lexer
-    // in an expression-starting position.
+    // literal, `)`, `}`, or `]`), the `-` stays a separate operator word.
+    // Other symbol tokens leave the lexer in an expression-starting position.
 
     #[test]
     fn leading_minus_at_bof_lexes_as_negative_literal() {
@@ -1403,20 +1378,21 @@ mod tests {
     }
 
     #[test]
-    fn bracket_operator_run_does_not_end_expression_for_minus() {
-        // `]` is an ordinary operator run, not a lexer-level structural
-        // closer. Flush `]-` therefore fuses, while a separated `] -1`
-        // leaves the lexer in expression-starting position and reads a
-        // negative literal.
+    fn closing_bracket_ends_expression_for_minus() {
         let flush = lex("]-1").unwrap();
-        assert_eq!(flush.len(), 2);
-        assert!(flush[0].kind.is_sym("]-"));
-        assert!(matches!(&flush[1].kind, TokenKind::IntLit { digits } if digits == "1"));
+        assert_eq!(flush.len(), 3);
+        assert!(flush[0].kind.is_sym("]"));
+        assert!(flush[1].kind.is_sym("-"));
+        assert!(matches!(&flush[2].kind, TokenKind::IntLit { digits } if digits == "1"));
 
         let separated = lex("] -1").unwrap();
-        assert_eq!(separated.len(), 2);
+        assert_eq!(separated.len(), 3);
         assert!(separated[0].kind.is_sym("]"));
-        assert!(matches!(&separated[1].kind, TokenKind::IntLit { digits } if digits == "-1"));
+        assert!(separated[1].kind.is_sym("-"));
+        assert!(matches!(&separated[2].kind, TokenKind::IntLit { digits } if digits == "1"));
+        assert!(
+            matches!(&lex("[-1]").unwrap()[1].kind, TokenKind::IntLit { digits } if digits == "-1")
+        );
     }
 
     #[test]
@@ -1668,14 +1644,19 @@ mod tests {
     }
 
     #[test]
-    fn brackets_join_maximal_operator_runs() {
+    fn brackets_bound_maximal_operator_runs() {
         assert_eq!(
             kinds("[! ]] ]- ][*"),
             vec![
-                TokenKind::sym("[!"),
-                TokenKind::sym("]]"),
-                TokenKind::sym("]-"),
-                TokenKind::sym("][*"),
+                TokenKind::sym("["),
+                TokenKind::sym("!"),
+                TokenKind::sym("]"),
+                TokenKind::sym("]"),
+                TokenKind::sym("]"),
+                TokenKind::sym("-"),
+                TokenKind::sym("]"),
+                TokenKind::sym("["),
+                TokenKind::sym("*"),
             ]
         );
         assert_eq!(
@@ -1706,13 +1687,11 @@ mod tests {
     }
 
     #[test]
-    fn op_run_absorbs_dot_splice_under_greedy_fusion() {
-        // `+.>>` lexes as one greedy `SymbolRun("+.>>")` — dot-
-        // splice spellings are not carved out. The parser peels the
-        // relevant prefix at its recognition site when it needs to.
+    fn native_dot_splice_bounds_an_operator_word() {
         let toks = lex("+.>>").unwrap();
-        assert_eq!(toks.len(), 1);
-        assert!(toks[0].kind.is_sym("+.>>"));
+        assert_eq!(toks.len(), 2);
+        assert!(toks[0].kind.is_sym("+"));
+        assert!(toks[1].kind.is_sym(".>>"));
     }
 
     #[test]

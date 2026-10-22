@@ -51,6 +51,15 @@ roles. Shared grammar helpers are preferable to duplicated parsing, but helper
 tests alone do not establish contextual coverage. Classify missing evidence
 without inventing acceptance authority or expanding execution scope.
 
+Operator tests must pin grouping or lowered meaning, not only acceptance and
+formatter idempotence. Include competing parenthesized trees, final-word atoms,
+opposing chain permissions, and definition-validator branches. Whitespace and
+comment mutations use independently specified legal gaps, not reparsing success
+to decide which mutations count. Keep controls for whole symbol words and native
+adjacency, compact/spaced bracket convergence, signed literals and raw comments
+at marker edges. Check applicable grammar consumers and generator coverage;
+compiler-only assertions do not establish editor or independent-Prime agreement.
+
 For analogous block fields, test the shared semantic roles and their contextual
 entry points, including default/absence and comment behavior. Distinguish
 existing references from new-name declarations and collections; parentheses

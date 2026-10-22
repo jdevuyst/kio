@@ -6,7 +6,7 @@ import lab/replica as replica;
 import lab/report as report;
 import list/core as core;
 import list/list as lists;
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import result/result as result;
 import testapi(String);
 

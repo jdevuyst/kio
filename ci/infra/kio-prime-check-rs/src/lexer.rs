@@ -30,19 +30,9 @@ pub enum TokenKind {
     RBrace,
     Comma,
     Semicolon,
-    /// Every operator character lexes into a **greedy** `SymbolRun`
-    /// carrying the run's spelling: adjacent op-chars fuse (`->`,
-    /// `.>`, and — like the main kio-rs lexer — `=.`), while
-    /// whitespace, identifiers, digits, and the structural punctuators
-    /// break the run. Kio' pins each fixed-role symbol
-    /// (`< > : = | & ! . /`, the arrow `->`, the kind-marker run
-    /// `*`/`**`/`***`) to a grammatical role; `[` and `]` otherwise join
-    /// ordinary maximal runs like every other op-char. A parser site matches on
-    /// the run's content and peels a structural delimiter (`->`, `>`)
-    /// off the front of a longer fused run where the grammar needs it.
-    /// This mirrors the main lexer so the two implementations agree on
-    /// token vocabulary (see `specs/grammar.md` § Lexical structure
-    /// (Kio')).
+    /// An ordinary maximal punctuation word or a native structural symbol.
+    /// Dots and square brackets have their own boundaries; native dot
+    /// compounds retain their adjacent spelling.
     SymbolRun(String),
     Ident(String),
     IntLit,
@@ -144,9 +134,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
         // surface)"): a `-` flush against a digit fuses into the
         // following numeric literal when the prior token does not
         // end an expression. After an expression-ending token
-        // (identifier, literal, `)`, or `}`), the `-` stays as a
-        // separate op-token. A SymbolRun, including a bracket-bearing
-        // run, instead leaves the lexer in an expression-starting
+        // (identifier, literal, `)`, `}`, or `]`), the `-` stays as a
+        // separate op-token. Other SymbolRuns leave an expression-starting
         // position. The Kio'-grammar verifier mirrors the
         // main lexer's contextual decision so the two implementations
         // agree on token vocabulary. The check happens before the
@@ -171,14 +160,9 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             continue;
         }
 
-        // Structural punctuators keep dedicated token kinds. Every operator
-        // character lexes as a **greedy** `SymbolRun`: the arrow `->`,
-        // the dot-splice family (`.>` / `.>>` / `.<` / `.<<`), the
-        // kind-marker run (`*` / `**` / `***`), and fused runs such as
-        // `=.` all emerge from ordinary greedy fusion rather than
-        // fixed carve-outs, matching the main kio-rs lexer so the two
-        // agree on token vocabulary (see specs/grammar.md § Lexical
-        // structure (Kio')). Parser sites peel a structural delimiter
+        // Ordinary punctuation words are greedy `SymbolRun`s; dots and
+        // square brackets bound them, matching the main lexer. Native
+        // dot compounds retain their adjacent spelling. Parser sites peel a structural delimiter
         // (`->`, `>`) back off the front of a longer run where the
         // grammar needs it. The leading-minus carve-out above already
         // consumed a `-` that should become part of a numeric literal.
@@ -189,6 +173,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
             b'}' => Some(TokenKind::RBrace),
             b',' => Some(TokenKind::Comma),
             b';' => Some(TokenKind::Semicolon),
+            b'[' => Some(TokenKind::sym("[")),
+            b']' => Some(TokenKind::sym("]")),
             _ => None,
         };
         if let Some(kind) = structural {
@@ -197,6 +183,22 @@ pub fn lex(src: &str) -> Result<Vec<Token>, LexError> {
                 span: Span { start, end: i + 1 },
             });
             i += 1;
+            continue;
+        }
+        if b == b'.' {
+            i += 1;
+            if let Some(next @ (b'<' | b'>')) = bytes.get(i).copied() {
+                i += 1;
+                if bytes.get(i) == Some(&next) {
+                    i += 1;
+                }
+            } else if matches!(bytes.get(i), Some(b'?' | b'!')) {
+                i += 1;
+            }
+            tokens.push(Token {
+                kind: TokenKind::sym(&src[start..i]),
+                span: Span { start, end: i },
+            });
             continue;
         }
         if is_op_char(b) {
@@ -312,11 +314,7 @@ fn is_ident_continue(b: u8) -> bool {
 }
 
 /// Characters admitted into a greedy operator [`TokenKind::SymbolRun`].
-/// The full operator-character set (`+ - * / % ^ ~ ? @ # $ \ ' ` < >
-/// = ! & | : . [ ]`).
-/// Mirrors the main kio-rs lexer's `is_op_char_in_run` so the two
-/// implementations agree on token vocabulary; `.` joins runs like any
-/// other op-char, so `.>` and `=.` fuse by ordinary greedy lexing.
+/// Ordinary punctuation words stop at native dot and square boundaries.
 fn is_op_char(b: u8) -> bool {
     matches!(
         b,
@@ -340,9 +338,6 @@ fn is_op_char(b: u8) -> bool {
             | b'&'
             | b'|'
             | b':'
-            | b'.'
-            | b'['
-            | b']'
     )
 }
 
@@ -351,9 +346,8 @@ fn is_op_char(b: u8) -> bool {
 /// block-listed sequence, producing one [`TokenKind::SymbolRun`]. The
 /// block-list reserves `//` (a line comment) and any second `/` in a
 /// run, so a run carries at most one `/`. Mirrors the main kio-rs
-/// lexer's `lex_op_run`; the arrow `->`, the dot-splice family, and
-/// fused runs like `=.` are all produced here rather than by fixed
-/// carve-outs.
+/// lexer's `lex_op_run`; dots and square brackets are handled before
+/// this ordinary-word scan.
 fn lex_op_run(bytes: &[u8], i: &mut usize, start: usize) -> Token {
     let mut slash_count = 0;
     while *i < bytes.len() && is_op_char(bytes[*i]) {
@@ -431,10 +425,10 @@ fn lex_digit_run(bytes: &[u8], i: &mut usize) {
 /// True iff the previous token (or absence thereof, at BOF) ends an
 /// expression. Drives the leading-minus carve-out (see [`lex`]).
 /// **Expression-ending** kinds: identifiers, every literal kind,
-/// closing structural brackets `)`, `}`. Everything else (BOF, opening
+/// closing structural brackets `)`, `}`, `]`. Everything else (BOF, opening
 /// brackets, structural separators, any other `SymbolRun`) leaves
 /// the lexer in an expression-starting position. Mirrors
-/// `kio-rs/src/lexer.rs` `token_ends_expression`.
+/// `kio-rs/src/pass/lexer.rs` `token_ends_expression`.
 fn prior_ends_expression(last: Option<&Token>) -> bool {
     let Some(last) = last else {
         return false; // BOF — expression-starting
@@ -443,6 +437,7 @@ fn prior_ends_expression(last: Option<&Token>) -> bool {
         TokenKind::Ident(_) => true,
         TokenKind::IntLit | TokenKind::FloatLit | TokenKind::StrLit => true,
         TokenKind::RParen | TokenKind::RBrace => true,
+        TokenKind::SymbolRun(run) if run == "]" => true,
         TokenKind::LParen
         | TokenKind::LBrace
         | TokenKind::Comma
@@ -701,14 +696,12 @@ mod tests {
 
     // ---- Greedy operator-run fusion -------------------------------------
     //
-    // Adjacent operator characters fuse into one `SymbolRun`, matching
-    // the main kio-rs lexer: without the same fusion a flush spelling
-    // like `type A=.;` lexes as `=` `.` here and slips past the
-    // verifier while kio-rs (which fuses `=.`) rejects it.
+    // Ordinary punctuation words fuse identically in both lexers;
+    // native dots and brackets bound those words.
 
     #[test]
     fn op_chars_fuse_greedily() {
-        assert_eq!(kinds("=."), vec![TokenKind::sym("=.")]);
+        assert_eq!(kinds("=."), vec![TokenKind::sym("="), TokenKind::sym(".")]);
         assert_eq!(kinds("**"), vec![TokenKind::sym("**")]);
         assert_eq!(kinds("***"), vec![TokenKind::sym("***")]);
         assert_eq!(kinds("->"), vec![TokenKind::sym("->")]);
@@ -724,14 +717,19 @@ mod tests {
     }
 
     #[test]
-    fn brackets_join_maximal_operator_runs() {
+    fn brackets_bound_maximal_operator_runs() {
         assert_eq!(
             kinds("[! ]] ]- ][*"),
             vec![
-                TokenKind::sym("[!"),
-                TokenKind::sym("]]"),
-                TokenKind::sym("]-"),
-                TokenKind::sym("][*"),
+                TokenKind::sym("["),
+                TokenKind::sym("!"),
+                TokenKind::sym("]"),
+                TokenKind::sym("]"),
+                TokenKind::sym("]"),
+                TokenKind::sym("-"),
+                TokenKind::sym("]"),
+                TokenKind::sym("["),
+                TokenKind::sym("*"),
             ]
         );
         assert_eq!(
@@ -751,9 +749,17 @@ mod tests {
     }
 
     #[test]
-    fn bracket_operator_run_does_not_end_expression_for_minus() {
-        assert_eq!(kinds("]-1"), vec![TokenKind::sym("]-"), TokenKind::IntLit]);
-        assert_eq!(kinds("] -1"), vec![TokenKind::sym("]"), TokenKind::IntLit]);
+    fn closing_bracket_ends_expression_for_minus() {
+        for source in ["]-1", "] -1"] {
+            assert_eq!(
+                kinds(source),
+                vec![TokenKind::sym("]"), TokenKind::sym("-"), TokenKind::IntLit]
+            );
+        }
+        assert_eq!(
+            kinds("[-1]"),
+            vec![TokenKind::sym("["), TokenKind::IntLit, TokenKind::sym("]")]
+        );
     }
 
     #[test]

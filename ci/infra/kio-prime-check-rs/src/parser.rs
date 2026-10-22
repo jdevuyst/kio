@@ -2268,21 +2268,13 @@ mod tests {
     //
     // The lexer fuses adjacent operator characters into one greedy
     // `SymbolRun` (matching the main kio-rs lexer); the parser peels a
-    // structural delimiter (`->`, `>`, the unit `.`) off the front of a
-    // fused run where the grammar needs it, and rejects fused spellings
-    // that kio-rs also rejects (e.g. `type A=.;`, whose fused `=.` run
-    // never yields the `=` the production needs).
+    // structural delimiter (`->`, `>`) off the front of a fused run
+    // where the grammar needs it. Dots and square brackets stay
+    // separate structural tokens in both lexers.
 
     #[test]
-    fn flush_equals_led_run_rejected() {
-        // `A=.` fuses `=.` into one run, so the `=` the type-alias
-        // production needs never appears — the same rejection the
-        // kio-rs lexer's greedy fusion produces.
-        assert!(
-            err("module m; type A=.;").contains("expected `=`"),
-            "fused `=.` never yields the `=` the type alias needs"
-        );
-        // The spaced spelling stays accepted.
+    fn unit_type_stays_separate_from_equals() {
+        ok("module m; type A=.;");
         ok("module m; type A = .;");
     }
 

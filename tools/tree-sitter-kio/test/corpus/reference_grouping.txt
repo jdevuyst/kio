@@ -187,10 +187,10 @@ varop [+ +] { finalize ((helpers.done)); foldr (helpers.join) ((helpers.empty)) 
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_star_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)
@@ -226,10 +226,10 @@ varop [+ +] { finalize ((helpers.done)); foldr (helpers.join) ((helpers.empty)) 
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)

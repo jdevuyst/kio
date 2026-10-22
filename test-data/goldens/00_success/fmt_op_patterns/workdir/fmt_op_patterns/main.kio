@@ -4,7 +4,7 @@ op _ + _ { impl add; };
 
 op _ ? _ : __ { impl if_then_else; };
 
-op _ <| __ |> { impl index; };
+op _ <| _ |> { impl index; };
 
 fn add(x: I32, y: I32) -> I32 { x }
 

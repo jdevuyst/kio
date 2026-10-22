@@ -60,27 +60,49 @@ The clause `foldr cons nil` combines elements from the right:
 ```
 
 The return type `List(I32)` supplies the element type for the empty literal.
-Each element is an ordinary expression. Commas are the fixed separator;
+Each element is a value expression; a raw type such as `I32` is not an
+element, even when parenthesized. Commas are the fixed separator;
 leading, repeated, and trailing commas are allowed, as in tuples.
 
 ## Choose the delimiters
 
-Delimiter tokens use these ASCII characters:
+Markers inside the square edges use these ASCII characters:
 
 ```text
-+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | : . [ ]
++ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | :
 ```
 
-The opener must contain `[` and no `]`, and cannot be bare `[`. Reverse its
-characters and replace every `[` with `]` to get the closer: `[*` pairs with
-`*]`, `*[` with `]*`, and `[[` with `]]`.
+A frame is one square pair. Bare `varop []` supplies ordinary `[a, b]`
+collection syntax. A marked frame places one whole symbol word after `[` and
+its character reversal before `]`: `[* *]`, `[** **]`, and `[!? ?!]`.
+Dots, nested bracket pairs, letters, digits, and Unicode symbols cannot be
+marker characters. Each marker word has at most one `/`; `//` starts a comment.
 
-Write whitespace between the delimiters in declarations and imports:
-`varop [* *]`, never `varop [**]`. Keep that separation in empty and nested
-literals too: `[* *]` and `[* [* 1 *] *]`.
-Each delimiter may contain at most one `/`; `//` starts a comment. A delimiter
-starting with `.` must contain at least two dots. Letters, digits, and Unicode
-symbols are excluded.
+The same list helpers from above can expose bare brackets alongside the marked
+spelling:
+
+```kio {@collections}
+varop [] { foldr cons nil }
+
+fn plain_items() -> List(I32) { [1, 2, 3] }
+```
+
+Compact forms are accepted too: `[**]` is empty marker `*`, `[****]` is empty
+marker `**`, and `[*[**]*]` is one marker-`*` frame containing an empty one.
+`kio fmt` writes `[* *]`, `[** **]`, and `[* [* *] *]`. The same spelling
+rules apply to declarations and imports. Bare forms format as `[]` or `[a, b]`.
+
+Punctuation belonging to an element needs grouping where it meets a marker.
+To put `|x|` inside marker `*`, write `[*(|x|)*]`, which formats as
+`[* (| x |) *]`. Spaces alone in `[* |x| *]` do not provide that boundary.
+`[*|x|*]` selects the whole marker `*|`, rather than retrying the shorter `*`.
+An unknown binding or a wrong closing word does not change the selected marker.
+This keeps nesting independent of which operators a library exports.
+
+Signed literals retain their ordinary token boundaries: `[* -1 *]` contains
+negative one. A compact spelling needs `[*(-1)*]`; `[*-1*]` instead starts
+marker `*-` and has a mismatched close. After a completed frame, `[a, b]-1`
+has binary-minus shape, like `(value)-1`, and requires the declared operator.
 
 ## Choose the fold mode
 
@@ -150,7 +172,7 @@ adaptation in a named helper. Declare local targets before the `varop`, and the
 Use `pub varop` to export the syntax. Its directly named targets must be at
 least as visible as the operator; for a newtype member, this includes both the
 type or identity alias and the member. Import the delimiter pair without the
-body: `import list(varop [* *]);`. The mandatory whitespace stays; commas are
+body: `import list(varop [* *]);`. Canonical marked spacing stays; commas are
 implicit and do not appear in the pair. Importing a helper alone does not
 import the syntax. Write each import once; two variadic operators in the same
 scope cannot share an opener.

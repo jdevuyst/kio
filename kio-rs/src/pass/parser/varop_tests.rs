@@ -13,13 +13,12 @@ fn body(source: &str) -> Expr {
 fn delimiter_shape_is_independent_of_operator_scope() {
     for (open, close) in [
         ("[*", "*]"),
-        ("[[", "]]"),
+        ("[", "]"),
         ("[%", "%]"),
-        ("+[<", "<]+"),
-        ("/[", "]/"),
-        ("..[", "].."),
-        ("[.+.", ".+.]"),
-        ("[[[[", "]]]]"),
+        ("[+<", "<+]"),
+        ("[/", "/]"),
+        ("[!?", "?!]"),
+        ("[**", "**]"),
     ] {
         let declaration = format!("module source; varop {open} {close} {{ foldr step seed; }};");
         let parsed = parse(&declaration).unwrap_or_else(|error| panic!("{declaration}: {error:?}"));
@@ -59,14 +58,7 @@ fn commas_separate_ordinary_expressions_without_phantom_elements() {
             "{source}"
         );
     }
-    for source in [
-        "[* x y *]",
-        "[* x; y *]",
-        "[* x => y *]",
-        "[* x ]",
-        "[* x",
-        "[[]]",
-    ] {
+    for source in ["[* x y *]", "[* x; y *]", "[* x => y *]", "[* x ]", "[* x"] {
         assert!(
             parse(&format!("module source; fn run() {{ {source} }}")).is_err(),
             "{source}"
@@ -148,6 +140,7 @@ fn tooling_source_selects_ordinary_roots_without_wrapping() {
     for source in [
         "fn run() { () }",
         "varop [* *] { foldl step seed; };",
+        "varop [! !] { foldl step seed; };",
         "import source(foo);",
     ] {
         assert!(
@@ -172,17 +165,16 @@ fn tooling_source_selects_ordinary_roots_without_wrapping() {
 #[test]
 fn declaration_and_import_share_strict_mirrored_heads() {
     for head in [
-        "varop [ ]",
         "varop [* *>",
         "varop [* _ *]",
-        "varop [**]",
         "varop [* , *]",
         "varop [* ; *]",
         "varop [* ... *]",
         "varop .[ ].",
         "varop [. .]",
         "varop [] []",
-        "varop [ ! ! ]",
+        "varop [[ ]]",
+        "varop *[ ]*",
         "op variadic [ (_ ,) ... ]",
     ] {
         assert!(
@@ -196,7 +188,148 @@ fn declaration_and_import_share_strict_mirrored_heads() {
     }
     parse("module source; varop [* // head\n *] { foldl step seed; finalize done; }; fn varop(x: .) { x }").unwrap();
     parse("module source; varop [*// head\n*] { foldl seed seed; };").unwrap();
-    parse("module source; import ops(varop [[/// head\n]]);").unwrap();
+    parse("module source; import ops(varop [*/// head\n*]);").unwrap();
+}
+
+#[test]
+fn compact_frames_fix_marker_identity_before_binding_lookup() {
+    for (source, marker, count) in [
+        ("[]", "", 0),
+        ("[ ]", "", 0),
+        ("[,,,]", "", 0),
+        ("[**]", "*", 0),
+        ("[* *]", "*", 0),
+        ("[****]", "**", 0),
+        ("[!??!]", "!?", 0),
+        ("[*[**]*]", "*", 1),
+        ("[[]]", "", 1),
+        ("[*[]*]", "*", 1),
+        ("[**[**]**]", "**", 1),
+        ("[*a, b, c*]", "*", 3),
+        ("[*|x|*]", "*|", 1),
+        ("[*()*]", "*", 1),
+        ("[-1]", "", 1),
+        ("[* -1 *]", "*", 1),
+        ("[*(-1)*]", "*", 1),
+        ("[*-1-*]", "*-", 1),
+        ("[- 1 -]", "-", 1),
+        ("[--1--]", "--", 1),
+    ] {
+        let Expr::OpChain {
+            kind:
+                OpChainKind::Variadic {
+                    open_tokens,
+                    close_tokens,
+                    elements,
+                    ..
+                },
+            ..
+        } = body(source)
+        else {
+            panic!("expected frame for {source}");
+        };
+        assert_eq!(open_tokens, [format!("[{marker}")], "{source}");
+        assert_eq!(
+            close_tokens,
+            [format!("{}]", marker.chars().rev().collect::<String>())],
+            "{source}"
+        );
+        assert_eq!(elements.len(), count, "{source}");
+    }
+    for source in [
+        "[*]",
+        "[+*]",
+        "[* * * *]",
+        "[* |x| *]",
+        "[*x**]",
+        "[*x? *]",
+        "[*-1*]",
+        "[--1-]",
+        "[A]",
+        "[(A)]",
+    ] {
+        assert!(
+            parse(&format!("module source; fn run() {{ {source} }}")).is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn frame_elements_reject_type_wrappers_before_mixed_argument_commit() {
+    for imports in ["", "import ops(varop [], varop [* *], op | _ |);"] {
+        for value in ["A", "(A)", "F(A)", "A.>f", "A.?{field}", "owner.A"] {
+            for frame in [format!("[({value})]"), format!("[* ({value}) *]")] {
+                for expression in [frame.clone(), format!("keep({frame})")] {
+                    let source = format!("module source; {imports} fn run() {{ {expression} }}");
+                    assert!(parse(&source).is_err(), "{source}");
+                }
+            }
+        }
+        for expression in ["keep(A)", "keep(F(A))"] {
+            let source = format!("module source; {imports} fn run() {{ {expression} }}");
+            let module = parse(&source).unwrap();
+            let Item::FnDef(function) = &module.items[0] else {
+                panic!("function");
+            };
+            let Expr::Call { args, .. } = &function.body else {
+                panic!("call");
+            };
+            assert!(
+                matches!(args.as_slice(), [crate::ast::CallArg::Value(_)]),
+                "{source}"
+            );
+        }
+        parse(&format!(
+            "module source; {imports} fn run() {{ keep([A] A) }}"
+        ))
+        .unwrap();
+    }
+}
+
+#[test]
+fn frame_formatting_converges_with_structural_edge_grouping() {
+    let imports = "module source; import ops(op | _ |, op <| _ |>, op _ ?);";
+    for (source, canonical) in [
+        ("[**]", "[* *]"),
+        ("[****]", "[** **]"),
+        ("[*a,b*]", "[* a, b *]"),
+        ("[ ]", "[]"),
+        ("[a,b]", "[a, b]"),
+        ("[*[**]*]", "[* [* *] *]"),
+        ("[* -1 *]", "[* -1 *]"),
+        ("[*(-1)*]", "[* -1 *]"),
+        ("[*,|x|,*]", "[* (| x |) *]"),
+        ("[,|x|,]", "[(| x |)]"),
+        ("[*x?,*]", "[* (x ?) *]"),
+        ("[x?]", "[x ?]"),
+        ("[* (<|x|>.?{foo}) *]", "[* (<| x |>.?{foo}) *]"),
+        ("[(<|x|>.?{foo})]", "[(<| x |>.?{foo})]"),
+        ("[* (<|x|>.!{foo = y}) *]", "[* (<| x |>.!{foo = y}) *]"),
+    ] {
+        let module = parse(&format!("{imports} fn run() {{ {source} }}")).unwrap();
+        let formatted = crate::pretty::pretty_module(&module);
+        assert!(formatted.contains(canonical), "{source}: {formatted}");
+        let reparsed = parse(&formatted).unwrap();
+        assert_eq!(formatted, crate::pretty::pretty_module(&reparsed));
+    }
+    for head in ["[]", "[**]", "[* *]", "[****]", "[!? ?!]", "[/ /]"] {
+        let source = format!("module source; import ops(varop {head});");
+        let module = parse(&source).unwrap();
+        let formatted = crate::pretty::pretty_module(&module);
+        assert_eq!(
+            formatted,
+            crate::pretty::pretty_module(&parse(&formatted).unwrap())
+        );
+    }
+    let source =
+        "module source; fn before() { () } varop [! !] { foldl step seed; }; fn after() { () }";
+    let eager = parse(source).unwrap();
+    let lazy = super::parse_lazy(source).unwrap().force_all().unwrap();
+    assert_eq!(
+        crate::pretty::pretty_module(&eager),
+        crate::pretty::pretty_module(&lazy)
+    );
 }
 
 #[test]
@@ -357,7 +490,7 @@ fn incomplete_cursor_facts_follow_argument_tuple_import_and_target_owners() {
 
 #[test]
 fn operator_cursor_owns_whole_written_leading_run() {
-    let source = "module source; import ops(op _ && ++ _); fn run() { x && + }";
+    let source = "module source; import ops(op _ &&++ _); fn run() { x &&+ }";
     let cursor = source.find("+ }").unwrap() as u32 + 1;
     let probe = probe_tooling(
         source,
@@ -367,13 +500,10 @@ fn operator_cursor_owns_whole_written_leading_run() {
     );
     let context = probe.facts.cursor.unwrap();
     assert_eq!(context.slot, super::CursorSlot::OperatorContinuation);
-    assert_eq!(
-        context.operator_prefix,
-        Some(vec!["&&".to_owned(), "+".to_owned()])
-    );
+    assert_eq!(context.operator_prefix, Some(vec!["&&+".to_owned()]));
     assert_eq!(
         &source[context.atom.replacement.start as usize..context.atom.replacement.end as usize],
-        "&& +"
+        "&&+"
     );
 }
 

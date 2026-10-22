@@ -91,12 +91,9 @@ fn collect_ranges(node: &SkeletonNode, line_index: &LineIndex, out: &mut Vec<Fol
         }
         SkeletonNode::Group {
             children,
-            kind: GroupKind::Paren,
+            kind: GroupKind::Paren | GroupKind::Square,
             ..
         } => {
-            // Paren groups: recurse into children only (no top-level
-            // fold range for paren groups — they're too small /
-            // argument-list-shaped to be useful collapse points).
             for child in children {
                 collect_ranges(child, line_index, out);
             }
@@ -134,6 +131,13 @@ mod tests {
     #[test]
     fn empty_module_yields_no_ranges() {
         assert!(ranges_for("module pkg/main;\n").is_empty());
+    }
+
+    #[test]
+    fn square_groups_retain_nested_brace_folds() {
+        let ranges = ranges_for("[\n .() {\n  ()\n }\n]");
+        assert_eq!(ranges.len(), 1);
+        assert_eq!((ranges[0].start_line, ranges[0].end_line), (1, 3));
     }
 
     #[test]

@@ -20,8 +20,8 @@
 //! The classifier lives here rather than in [`crate::pass::lexer`]
 //! because the lexer's `TokenKind` (imported as [`LexTokenKind`]) is a
 //! parser-facing enum and the highlighter's kind taxonomy is
-//! cross-cutting (bang-call elaborator fusion, parser-contextual mapping of
-//! forall `[` / `]` bytes inside operator runs, etc.) that doesn't belong on
+//! cross-cutting (bang-call elaborator fusion, parsed declaration and reference
+//! roles, etc.) that doesn't belong on
 //! the parser-facing type.
 
 use std::collections::{HashMap, HashSet};
@@ -406,9 +406,6 @@ fn dump_with_tooling_and_docs(
             },
         );
     }
-    overrides
-        .structural_brackets
-        .extend(&probe.facts.structural_forall.bracket_offsets);
     dump_with_ast_overrides_and_docs(raw, trailing, probe.source, &overrides, refine_docs)
 }
 
@@ -557,11 +554,7 @@ pub(crate) fn dump_type_fragment(source: &str) -> Result<Vec<ClassifiedToken>, E
             token.kind = *kind;
         }
     }
-    Ok(split_structural_brackets(
-        out,
-        &overrides.structural_brackets,
-        source,
-    ))
+    Ok(out)
 }
 
 /// Classify `source` using a module parsed with its surrounding package
@@ -736,7 +729,11 @@ fn dump_with_ast_overrides_and_docs(
             }
         }
 
-        if let Some(fused) = try_fuse_elaborator_bang(raw, i) {
+        if let Some(fused) = try_fuse_elaborator_bang(raw, i)
+            && !overrides
+                .variadic_closing_bangs
+                .contains(&raw[i + 1].span.start)
+        {
             out.push(fused);
             i += 2;
             continue;
@@ -744,15 +741,6 @@ fn dump_with_ast_overrides_and_docs(
 
         if let Some(fused) = try_fuse_dot_bool(raw, i) {
             out.push(fused);
-            i += 2;
-            continue;
-        }
-
-        if let Some((elaborator, suffix)) =
-            try_split_confirmed_elaborator_bang(raw, i, overrides, source)
-        {
-            out.push(elaborator);
-            out.push(suffix);
             i += 2;
             continue;
         }
@@ -785,7 +773,7 @@ fn dump_with_ast_overrides_and_docs(
         });
     }
     if !refine_docs {
-        return split_structural_brackets(out, &overrides.structural_brackets, source);
+        return out;
     }
     let docs = crate::doc_markup::source::DocSource::from_tokens(source, raw, trailing);
     let mut structured = docs
@@ -806,23 +794,18 @@ fn dump_with_ast_overrides_and_docs(
         }
     }
 
-    split_structural_brackets(refined, &overrides.structural_brackets, source)
+    refined
 }
 
 #[derive(Default)]
 struct AstOverrides {
     kinds: HashMap<u32, TokenKind>,
+    /// A compact `!` frame may put its closing marker immediately after a
+    /// value name. That marker is not an elaborator suffix on the value.
+    variadic_closing_bangs: HashSet<u32>,
     source_references: Option<Vec<SourceReference>>,
     #[cfg(feature = "lsp")]
     source_dependencies: bool,
-    /// Starts of `!` bytes that the parser confirmed as elaborator suffixes.
-    /// This lets the final stream split a greedy `!.>` / `!.<` lexer run
-    /// without guessing that an arbitrary bang-led operator is an elaborator.
-    elaborator_bangs: HashSet<u32>,
-    /// Byte offsets of square brackets consumed as forall delimiters. A raw
-    /// `SymbolRun` may contain both such a delimiter and an ordinary operator
-    /// suffix or prefix, so the final classified stream splits at these bytes.
-    structural_brackets: HashSet<u32>,
     #[cfg(all(feature = "surface", feature = "lsp"))]
     rec_members: Vec<RecMemberTokenFact>,
     #[cfg(all(feature = "surface", feature = "lsp"))]
@@ -931,53 +914,6 @@ fn try_fuse_elaborator_bang(raw: &[LexToken], i: usize) -> Option<ClassifiedToke
     })
 }
 
-/// Split an AST-confirmed elaborator `!` from a greedily fused following UFCS
-/// arrow. The lexer intentionally emits `!.>`, `!.>>`, `!.<`, or `!.<<` as one
-/// symbol run. A parsed [`ast::Expr::Ufcs`] retains the exact `!` span, so the
-/// highlighter can safely emit `name!` plus the builtin arrow without treating
-/// an unrelated bang-led user operator as an elaborator call.
-fn try_split_confirmed_elaborator_bang(
-    raw: &[LexToken],
-    i: usize,
-    overrides: &AstOverrides,
-    source: &str,
-) -> Option<(ClassifiedToken, ClassifiedToken)> {
-    let head = &raw[i];
-    let next = raw.get(i + 1)?;
-    let LexTokenKind::Ident(_) = &head.kind else {
-        return None;
-    };
-    let LexTokenKind::SymbolRun(run) = &next.kind else {
-        return None;
-    };
-    if !overrides.elaborator_bangs.contains(&next.span.start)
-        || !run.starts_with('!')
-        || run.len() == 1
-        || !next.leading_trivia.is_empty()
-        || head.span.end != next.span.start
-    {
-        return None;
-    }
-
-    let bang_end = next.span.start + 1;
-    let suffix = &source[bang_end as usize..next.span.end as usize];
-    if !matches!(suffix, ".>" | ".>>" | ".<" | ".<<") {
-        return None;
-    }
-    Some((
-        ClassifiedToken {
-            span: Span::new(head.span.start, bang_end),
-            kind: TokenKind::KeywordElaborator,
-            in_documentation: false,
-        },
-        ClassifiedToken {
-            span: Span::new(bang_end, next.span.end),
-            kind: classify_symbol_run(suffix),
-            in_documentation: false,
-        },
-    ))
-}
-
 /// If `raw[i..i+2]` spells `.t` or `.f` with no whitespace, return
 /// one fused boolean-literal token. The lexer deliberately keeps the
 /// spelling as `SymbolRun(".")` + `Ident("t"|"f")`; the parser and
@@ -1031,9 +967,7 @@ fn classify(kind: &LexTokenKind) -> TokenKind {
 
 /// Classify a [`SymbolRun`](LexTokenKind::SymbolRun) by content.
 ///
-/// Square brackets retain operator coloring here. Parser-driven classification
-/// splits bytes that delimit forall binders into `punctuation.bracket`.
-/// A standalone `.` is the
+/// Square brackets are structural punctuation in every context. A standalone `.` is the
 /// member-access / `DotPath` separator and classifies as
 /// `punctuation.separator`. The reserved op-tokens (`.>`, `.>>`,
 /// `.<`, `.<<`, `&`, `|`, `=`, `:`, `!`, `->`) are `operator.builtin`; everything
@@ -1042,6 +976,7 @@ fn classify(kind: &LexTokenKind) -> TokenKind {
 /// comparison operators) is `operator.user`.
 fn classify_symbol_run(run: &str) -> TokenKind {
     match run {
+        "[" | "]" => TokenKind::PunctuationBracket,
         "." => TokenKind::PunctuationSeparator,
         ".>" | ".>>" | ".<" | ".<<" | "&" | "|" | "=" | ":" | "!" | "->" => {
             TokenKind::OperatorBuiltin
@@ -1650,112 +1585,9 @@ fn walk_type(ty: &ast::Type<ast::Surface>, raw: &[LexToken], overrides: &mut Ast
 /// pair (`[A]` or `<U>`); the inner IDENT is the part we want to
 /// classify.
 fn mark_type_param(tp: &ast::TypeParam, raw: &[LexToken], overrides: &mut AstOverrides) {
-    let Some(name_span) = find_ident_in_span(raw, tp.span, &tp.name) else {
-        return;
-    };
-    overrides.insert(name_span.start, TokenKind::VariableParameter);
-
-    let name_index = first_token_at_or_after(raw, name_span.start);
-    let mut before = name_index;
-    while let Some(index) = before.checked_sub(1) {
-        let token = &raw[index];
-        match &token.kind {
-            LexTokenKind::Comma => before = index,
-            LexTokenKind::SymbolRun(run)
-                if !run.is_empty() && run.bytes().all(|byte| byte == b'*') =>
-            {
-                before = index;
-            }
-            LexTokenKind::SymbolRun(run) => {
-                if let Some(offset) = run.rfind('[')
-                    && run[offset + 1..].bytes().all(|byte| byte == b'*')
-                {
-                    overrides
-                        .structural_brackets
-                        .insert(token.span.start + offset as u32);
-                }
-                break;
-            }
-            _ => break,
-        }
+    if let Some(name_span) = find_ident_in_span(raw, tp.span, &tp.name) {
+        overrides.insert(name_span.start, TokenKind::VariableParameter);
     }
-
-    let mut after = name_index + 1;
-    while let Some(token) = raw.get(after) {
-        match &token.kind {
-            LexTokenKind::Comma => after += 1,
-            LexTokenKind::SymbolRun(run) if run.starts_with(']') => {
-                overrides.structural_brackets.insert(token.span.start);
-                break;
-            }
-            _ => break,
-        }
-    }
-}
-
-/// Split parser-confirmed forall brackets out of classified symbol runs.
-/// Remaining fragments are reclassified by their own spelling: `]->` becomes
-/// punctuation `]` followed by builtin operator `->`, while an unmarked `[!`
-/// remains one ordinary user-operator token.
-fn split_structural_brackets(
-    tokens: Vec<ClassifiedToken>,
-    structural: &HashSet<u32>,
-    source: &str,
-) -> Vec<ClassifiedToken> {
-    if structural.is_empty() {
-        return tokens;
-    }
-
-    let mut offsets = structural.iter().copied().collect::<Vec<_>>();
-    offsets.sort_unstable();
-    let mut next_offset = 0usize;
-    let mut out = Vec::with_capacity(tokens.len() + offsets.len());
-    for token in tokens {
-        while offsets
-            .get(next_offset)
-            .is_some_and(|offset| *offset < token.span.start)
-        {
-            next_offset += 1;
-        }
-        let first_cut = next_offset;
-        while offsets
-            .get(next_offset)
-            .is_some_and(|offset| *offset < token.span.end)
-        {
-            next_offset += 1;
-        }
-        if first_cut == next_offset {
-            out.push(token);
-            continue;
-        }
-
-        let mut start = token.span.start;
-        for &offset in &offsets[first_cut..next_offset] {
-            if start < offset {
-                let spelling = &source[start as usize..offset as usize];
-                out.push(ClassifiedToken {
-                    span: Span::new(start, offset),
-                    kind: classify_symbol_run(spelling),
-                    in_documentation: token.in_documentation,
-                });
-            }
-            out.push(ClassifiedToken {
-                span: Span::new(offset, offset + 1),
-                kind: TokenKind::PunctuationBracket,
-                in_documentation: token.in_documentation,
-            });
-            start = offset + 1;
-        }
-        if start < token.span.end {
-            let spelling = &source[start as usize..token.span.end as usize];
-            out.push(ClassifiedToken {
-                span: Span::new(start, token.span.end),
-                kind: classify_symbol_run(spelling),
-                in_documentation: token.in_documentation,
-            });
-        }
-    }
-    out
 }
 
 fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
@@ -1789,7 +1621,6 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
         } => {
             overrides.source_reference(&head.name, head.span, SourceNameKind::Elaborator, false);
             overrides.insert(head.span.start, TokenKind::EntityNameFunctionReference);
-            overrides.elaborator_bangs.insert(head.span.end);
             for value in prefix {
                 walk_expr(value, raw, overrides);
             }
@@ -2054,9 +1885,6 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             if let Some(last) = callee_segments.last() {
                 overrides.insert(last.span.start, TokenKind::EntityNameFunctionReference);
             }
-            if let Some(span) = bang {
-                overrides.elaborator_bangs.insert(span.start);
-            }
             for arg in args {
                 walk_call_arg(arg, raw, overrides);
             }
@@ -2081,13 +1909,27 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
                 walk_expr(&label.value, raw, overrides);
             }
         }
-        OpChain { kind, .. } => match kind {
+        OpChain { kind, meta, .. } => match kind {
             ast::OpChainKind::Normal { slots, .. } => {
                 for slot in slots {
                     walk_expr(slot, raw, overrides);
                 }
             }
-            ast::OpChainKind::Variadic { elements, .. } => {
+            ast::OpChainKind::Variadic {
+                close_tokens,
+                elements,
+                ..
+            } => {
+                if close_tokens.as_slice() == ["!]"]
+                    && let Some(marker_index) =
+                        first_token_at_or_after(raw, meta.span.end).checked_sub(2)
+                    && raw[marker_index].kind.is_sym("!")
+                    && raw[marker_index + 1].kind.is_sym("]")
+                {
+                    overrides
+                        .variadic_closing_bangs
+                        .insert(raw[marker_index].span.start);
+                }
                 for element in elements {
                     walk_expr(element, raw, overrides);
                 }
@@ -2419,8 +2261,10 @@ mod tests {
         };
         super::walk_module(&module, &raw, &mut observed);
         assert_eq!(ordinary.kinds, observed.kinds);
-        assert_eq!(ordinary.elaborator_bangs, observed.elaborator_bangs);
-        assert_eq!(ordinary.structural_brackets, observed.structural_brackets);
+        assert_eq!(
+            ordinary.variadic_closing_bangs,
+            observed.variadic_closing_bangs
+        );
         assert_eq!(legacy, super::source_references(source, &module).unwrap());
         assert_eq!(
             super::dump(source).unwrap(),
@@ -3332,7 +3176,7 @@ mod tests {
         };
         assert_eq!(kind_at(header_open), Some(TokenKind::PunctuationBracket));
         assert_eq!(kind_at(header_close), Some(TokenKind::PunctuationBracket));
-        assert_eq!(kind_at(body_open), Some(TokenKind::OperatorUser));
+        assert_eq!(kind_at(body_open), Some(TokenKind::PunctuationBracket));
     }
 
     #[test]
@@ -3436,7 +3280,7 @@ mod tests {
     #[test]
     fn grouped_callable_fields_preserve_bracket_tokens() {
         let source = "module app; op _ + _ { impl ((ops.add)) }\n\
-            varop [[ ]] { foldl ((ops.step)) ((ops.base)); finalize ((ops.finish)) }";
+            varop [] { foldl ((ops.step)) ((ops.base)); finalize ((ops.finish)) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let tokens = dump_with_module(source, &module).unwrap();
         for (start, ch) in source
@@ -3479,7 +3323,7 @@ mod tests {
             "foldl ((finalize)) ((helpers.finalize)); finalize ((()))",
             "finalize ((())); foldl ((helpers.finalize)) ((finalize))",
         ] {
-            let source = format!("module app; varop [[ ]] {{ {fields} }}");
+            let source = format!("module app; varop [] {{ {fields} }}");
             let module = crate::pass::parser::parse(&source).unwrap();
             let tokens = dump_with_module(&source, &module).unwrap();
             assert_eq!(tokens, dump(&source).unwrap());
@@ -3775,7 +3619,7 @@ mod tests {
     }
 
     #[test]
-    fn parser_confirmed_bare_bang_ufcs_splits_greedy_symbol_runs() {
+    fn native_bare_bang_ufcs_preserves_separate_arrow_tokens() {
         let src = "module x;\n\
                    fn run(r: ., s: .) -> . {\n\
                      transform!.<r;\n\
@@ -3813,6 +3657,31 @@ mod tests {
             ],
             "lexical fallback must not guess that a bang-led user operator is an elaborator"
         );
+    }
+
+    #[test]
+    fn compact_variadic_closing_bang_does_not_fuse_with_element_name() {
+        let source = "module app; import syntax(varop [! !]); \
+            fn run(x: .) { [!x!]; [![!x!]!]; ([!x!]); [!x.>tail!]; [! helper!(x) !] }";
+        let classified = dumped_text(source);
+        assert_eq!(
+            classified
+                .iter()
+                .filter(|(text, _)| *text == "x")
+                .copied()
+                .collect::<Vec<_>>(),
+            [
+                ("x", "variable.parameter"),
+                ("x", "identifier"),
+                ("x", "identifier"),
+                ("x", "identifier"),
+                ("x", "identifier"),
+                ("x", "identifier")
+            ]
+        );
+        assert!(!classified.iter().any(|(text, _)| *text == "x!"));
+        assert!(classified.contains(&("helper!", "keyword.elaborator")));
+        assert!(classified.contains(&("tail", "entity.name.function")));
     }
 
     #[test]
@@ -3915,7 +3784,7 @@ mod tests {
     }
 
     #[test]
-    fn square_brackets_classify_by_parser_context() {
+    fn square_brackets_are_structural_in_every_context() {
         let src = "module x; fn id[, *F,][,, **G,,,][A](f: F(A), x: A) -> A { x }";
         let got = dumped_text(src);
         let binder_symbols: Vec<_> = got
@@ -3940,12 +3809,14 @@ mod tests {
         assert_eq!(
             operators,
             vec![
-                ("[!", "operator.user"),
-                ("[", "operator.user"),
+                ("[", "punctuation.bracket"),
                 ("!", "operator.builtin"),
-                ("]]", "operator.user"),
-                ("]", "operator.user"),
-                ("]", "operator.user"),
+                ("[", "punctuation.bracket"),
+                ("!", "operator.builtin"),
+                ("]", "punctuation.bracket"),
+                ("]", "punctuation.bracket"),
+                ("]", "punctuation.bracket"),
+                ("]", "punctuation.bracket"),
             ]
         );
     }
@@ -3968,7 +3839,7 @@ mod tests {
         // in some positions but which can also be user-declared
         // comparison operators (open-world means the lexer can't
         // commit either way).
-        let got = dumped("+ ++ <= < > ~ ? [ ] [! ]] ]-");
+        let got = dumped("+ ++ <= < > ~ ?");
         let kinds: Vec<&str> = got.iter().map(|(_, _, k)| *k).collect();
         assert!(
             kinds.iter().all(|k| *k == "operator.user"),

@@ -15,7 +15,7 @@ import library/vec(
 , length
 , map
 , op _ <@> _
-, op _ <| __ |>
+, op _ <| _ |>
 , op _ ~~ _
 , op __ +> _
 , pop_back
@@ -26,7 +26,7 @@ import library/vec(
 );
 import list/core(List);
 import list/list as lists;
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import testapi(Bool, I32, String);
 import testapi/arith(add, mul);
 import testapi/fmt(bool_to_string, int_to_string);

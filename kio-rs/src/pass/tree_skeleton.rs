@@ -4,16 +4,13 @@
 //! in [`crate::pass::parser`]. Walks a token stream and produces a
 //! lossless, in-house CST that:
 //!
-//! - Matches `(` / `)` and `{` / `}` into balanced groups.
+//! - Matches parentheses, braces, and square brackets into balanced groups.
 //! - Recovers locally on unbalanced groups by marking the
 //!   offending subtree as an error and continuing past it.
 //!
-//! `[` and `]` are *intentionally* not paired here per spec — forall
-//! binders such as `[A] A -> A` use them structurally, while ordinary
-//! operators may contain either byte; the full parser decides in context. Brace
-//! and paren groups, by contrast, are balanced at the macroscopic
-//! level (function bodies, paren groupings, `match!` clauses, …) and
-//! benefit from skeleton-level pairing.
+//! Square groups expose the direct children needed to select variadic marker
+//! edges independently of bindings. Type contexts use the same groups for
+//! their native binder grammar.
 //!
 //! The recursive-descent parser consumes the CST via
 //! [`SkeletonCursor`]: paren and brace boundaries come from
@@ -60,6 +57,7 @@ pub enum SkeletonNode {
 pub enum GroupKind {
     Paren,
     Brace,
+    Square,
 }
 
 /// The skeleton of one source file. Children are the file's top-
@@ -112,6 +110,9 @@ fn read_node<I: Iterator<Item = Token>>(
     match &tok.kind {
         TokenKind::LParen => read_group(iter, tok, GroupKind::Paren, surrounding),
         TokenKind::LBrace => read_group(iter, tok, GroupKind::Brace, surrounding),
+        TokenKind::SymbolRun(run) if run == "[" => {
+            read_group(iter, tok, GroupKind::Square, surrounding)
+        }
         _ => SkeletonNode::Leaf(tok),
     }
 }
@@ -137,7 +138,7 @@ fn read_group<I: Iterator<Item = Token>>(
         let matches_close = matches!(
             (kind, &peek.kind),
             (GroupKind::Paren, TokenKind::RParen) | (GroupKind::Brace, TokenKind::RBrace)
-        );
+        ) || (kind == GroupKind::Square && peek.kind.is_sym("]"));
         if matches_close {
             let close_tok = iter.next().expect("just peeked");
             return SkeletonNode::Group {
@@ -155,6 +156,7 @@ fn read_group<I: Iterator<Item = Token>>(
         let surrounds = match surrounding {
             Some(GroupKind::Paren) => matches!(&peek.kind, TokenKind::RParen),
             Some(GroupKind::Brace) => matches!(&peek.kind, TokenKind::RBrace),
+            Some(GroupKind::Square) => peek.kind.is_sym("]"),
             None => false,
         };
         if surrounds {
@@ -215,6 +217,8 @@ pub struct SkeletonCursor<'a> {
     /// Backtracking captures and restores it alongside the frame
     /// stack via the cursor's derived `Clone`.
     residual: Option<Token>,
+    /// A source-region boundary hides a reserved marker from native parsing.
+    limit: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -253,6 +257,7 @@ impl<'a> SkeletonCursor<'a> {
             consumed: 0,
             just_entered_recovered: false,
             residual: None,
+            limit: None,
         }
     }
 
@@ -279,6 +284,11 @@ impl<'a> SkeletonCursor<'a> {
     /// pending, returns that in preference to the underlying
     /// frame token.
     pub fn peek_token(&self) -> Option<&Token> {
+        self.unbounded_peek_token()
+            .filter(|token| self.limit.is_none_or(|limit| token.span.start < limit))
+    }
+
+    fn unbounded_peek_token(&self) -> Option<&Token> {
         if let Some(t) = self.residual.as_ref() {
             return Some(t);
         }
@@ -321,9 +331,10 @@ impl<'a> SkeletonCursor<'a> {
     /// Span of the current token, or the EOF span when past the
     /// end of input.
     pub fn peek_span(&self) -> Span {
-        self.peek_token()
-            .map(|t| t.span)
-            .unwrap_or_else(|| Span::new(self.eof, self.eof))
+        self.peek_token().map(|t| t.span).unwrap_or_else(|| {
+            let end = self.limit.unwrap_or(self.eof);
+            Span::new(end, end)
+        })
     }
 
     /// Leading trivia of the current token. Empty at EOF.
@@ -343,6 +354,7 @@ impl<'a> SkeletonCursor<'a> {
     /// EOF. Updates the cursor state, including descending into
     /// groups and ascending past close tokens.
     pub fn advance(&mut self) -> Option<Token> {
+        self.peek_token()?;
         // Reset the recovery flag — it's only true for the
         // single advance call that just consumed an open token.
         self.just_entered_recovered = false;
@@ -386,6 +398,7 @@ impl<'a> SkeletonCursor<'a> {
                         let close_kind = match kind {
                             GroupKind::Paren => TokenKind::RParen,
                             GroupKind::Brace => TokenKind::RBrace,
+                            GroupKind::Square => TokenKind::sym("]"),
                         };
                         Some(Token {
                             kind: close_kind,
@@ -460,6 +473,10 @@ impl<'a> SkeletonCursor<'a> {
             .unwrap_or(&[])
     }
 
+    pub fn replace_limit(&mut self, limit: Option<u32>) -> Option<u32> {
+        std::mem::replace(&mut self.limit, limit)
+    }
+
     /// Consume `n` leading bytes from the current
     /// [`TokenKind::SymbolRun`], returning them as a freshly-
     /// spanned token. The remaining suffix becomes the new
@@ -467,7 +484,7 @@ impl<'a> SkeletonCursor<'a> {
     /// [`advance`](Self::advance) clears it.
     ///
     /// Used at narrow parser-contextual structural-recovery sites
-    /// (including function arrows, forall binders, existential closers,
+    /// (including function arrows, existential closers,
     /// and bang-call dispatch)
     /// when greedy fusion absorbed the structural delimiter into
     /// a longer run — `A ->!` fuses `->!`, and the parser
@@ -672,30 +689,17 @@ mod tests {
     }
 
     #[test]
-    fn brackets_are_not_paired() {
-        // `[*A][B]` lexes as `[*`, `A`, `][`, `B`, `]`: brackets
-        // belong to maximal operator runs, and the skeleton pass leaves
-        // those runs as leaves. The full parser peels binder delimiters
-        // contextually.
+    fn brackets_pair_and_expose_only_direct_children() {
         let file = build_str("[*A][B]");
-        assert_eq!(file.children.len(), 5);
-        assert!(matches!(&file.children[0], SkeletonNode::Leaf(t) if t.kind.is_sym("[*")));
-        assert!(
-            matches!(&file.children[1], SkeletonNode::Leaf(t) if matches!(&t.kind, TokenKind::Ident(s) if s == "A"))
-        );
-        assert!(matches!(&file.children[2], SkeletonNode::Leaf(t) if t.kind.is_sym("][")));
-        assert!(
-            matches!(&file.children[3], SkeletonNode::Leaf(t) if matches!(&t.kind, TokenKind::Ident(s) if s == "B"))
-        );
-        assert!(matches!(&file.children[4], SkeletonNode::Leaf(t) if t.kind.is_sym("]")));
-
-        let file = build_str("[A]");
-        assert_eq!(file.children.len(), 3);
-        assert!(matches!(&file.children[0], SkeletonNode::Leaf(t) if t.kind.is_sym("[")));
-        assert!(
-            matches!(&file.children[1], SkeletonNode::Leaf(t) if matches!(&t.kind, TokenKind::Ident(s) if s == "A"))
-        );
-        assert!(matches!(&file.children[2], SkeletonNode::Leaf(t) if t.kind.is_sym("]")));
+        assert_eq!(file.children.len(), 2);
+        assert_eq!(group_kind(&file.children[0]), Some(GroupKind::Square));
+        assert_eq!(group_children(&file.children[0]).len(), 2);
+        assert_eq!(group_kind(&file.children[1]), Some(GroupKind::Square));
+        assert_eq!(group_children(&file.children[1]).len(), 1);
+        let file = build_str("[*[**]*]");
+        let children = group_children(&file.children[0]);
+        assert_eq!(children.len(), 3);
+        assert_eq!(group_kind(&children[1]), Some(GroupKind::Square));
     }
 
     #[test]

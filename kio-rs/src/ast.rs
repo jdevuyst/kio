@@ -2247,9 +2247,9 @@ pub struct Op<P: Phase = Surface> {
 pub struct VariadicOperator<P: Phase = Surface> {
     /// Visibility of the operator's grammar and its callable binding.
     pub vis: Visibility,
-    /// The single maximal OPEN symbol run that starts the delimited syntax.
+    /// The complete opening delimiter, stored as one string.
     pub open: Vec<String>,
-    /// Mirrored CLOSE token, fold mode, and callable targets.
+    /// Mirrored closing delimiter, fold mode, and callable targets.
     pub spec: Box<VariadicSpec>,
     /// Canonical trivia owner for comments inside the compact body, keeping
     /// them distinct from declaration documentation during formatting.
@@ -2414,10 +2414,10 @@ pub enum OpBody {
 }
 
 /// Callable behavior of a comma-separated variadic operator.
-/// The OPEN tokens live on [`VariadicOperator::open`].
+/// The opening delimiter lives on [`VariadicOperator::open`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct VariadicSpec {
-    /// The single maximal CLOSE run, mirroring OPEN.
+    /// The complete closing delimiter, mirroring the opening marker.
     pub close: Vec<String>,
     pub mode: VariadicMode,
     /// The mode determines whether this callable receives no arguments or
@@ -2477,59 +2477,27 @@ impl CallableSpec {
 /// op tokens are the literal operator strings between slots.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OpPart {
-    /// `_` — an ordinary slot, admits a single atom or paren-
-    /// expression. `lenient = true` marks the slot as wrapped in
-    /// the declaration-only `( … )` grouping marker, which widens
-    /// the use-site operand parser from atom-only to a full
-    /// expression chain (cross-operator mixing inside the slot
-    /// still requires explicit parens — same as `___`).
-    SlotPlain { span: Span, lenient: bool },
-    /// `__` — a self-recursive slot. Admits the surrounding op's
-    /// same-op chain. At most one of `__` or [`SlotGreedy`] per
-    /// pattern; the position relative to the operator(s) sets the
-    /// associativity. `lenient` mirrors [`SlotPlain::lenient`].
-    SlotRecursive { span: Span, lenient: bool },
-    /// `___` — a greedy slot. Admits a chain of *any* single
-    /// operator (possibly different from the surrounding op), with
-    /// cross-operator mixing inside the slot still rejected. Shares
-    /// the at-most-one-recursive-slot count with `__`; dual-greedy
-    /// patterns (`___ OP ___`) are a parse error since there is no
-    /// position info to pin associativity. Always full-chain at
-    /// use sites — `( ___ )` is rejected as redundant.
+    /// `_` — an atom slot. Grouping and a final fixed word complete atoms.
+    SlotPlain { span: Span },
+    /// `__` — an atom or a chain rooted at this local operator binding.
+    SlotRecursive { span: Span },
+    /// `___` — an atom or an operator chain. Every nested operator still
+    /// checks its own slots, and opposing chain claims require grouping.
     SlotGreedy { span: Span },
-    /// An operator-character literal. The string is the textual
-    /// operator content; consecutive operator-character runs lex
-    /// as one [`crate::pass::lexer::TokenKind::SymbolRun`]. `lenient`
-    /// records group-membership for round-trip preservation of
-    /// the `( … )` declaration-only slot-grouping marker —
-    /// pretty-printing wraps maximal runs of `lenient = true`
-    /// parts in `( … )`. `quoted` records that the token was
+    /// One contiguous operator word. `quoted` records that the token was
     /// written in operator-token-quotation form `(token)` — the
     /// declaration-only `(...)` wrapper that distinguishes an
     /// operator token from its structural role in the surrounding
     /// grammar. Quotation does not bypass spelling reservations such
-    /// as dot-led one-dot runs.
+    /// as dots or square brackets.
     Token {
         content: String,
         span: Span,
-        lenient: bool,
         quoted: bool,
     },
 }
 
 impl OpPart {
-    /// True if this part was declared inside the `( … )` lenient-
-    /// grouping marker. Slots use the flag to widen use-site
-    /// operand parsing; tokens use it for round-trip preservation.
-    pub fn is_lenient(&self) -> bool {
-        match self {
-            OpPart::SlotPlain { lenient, .. }
-            | OpPart::SlotRecursive { lenient, .. }
-            | OpPart::Token { lenient, .. } => *lenient,
-            OpPart::SlotGreedy { .. } => false,
-        }
-    }
-
     /// True if this token was declared in operator-token-quotation
     /// form `(token)`. Only `Token` variants can be quoted.
     pub fn is_quoted(&self) -> bool {
@@ -2721,17 +2689,10 @@ impl OperatorGrammar {
                     OpPart::Token { content, .. } => OpPart::Token {
                         content: content.clone(),
                         span: zero,
-                        lenient: false,
                         quoted: content == "=",
                     },
-                    OpPart::SlotPlain { lenient, .. } => OpPart::SlotPlain {
-                        span: zero,
-                        lenient: *lenient,
-                    },
-                    OpPart::SlotRecursive { lenient, .. } => OpPart::SlotRecursive {
-                        span: zero,
-                        lenient: *lenient,
-                    },
+                    OpPart::SlotPlain { .. } => OpPart::SlotPlain { span: zero },
+                    OpPart::SlotRecursive { .. } => OpPart::SlotRecursive { span: zero },
                     OpPart::SlotGreedy { .. } => OpPart::SlotGreedy { span: zero },
                 })
                 .collect(),
@@ -2794,28 +2755,12 @@ impl OperatorGrammar {
                         );
                     }
                 }
-                (
-                    OpPart::SlotPlain {
-                        lenient: source, ..
-                    },
-                    OpPart::SlotPlain {
-                        lenient: destination,
-                        ..
-                    },
-                )
-                | (
-                    OpPart::SlotRecursive {
-                        lenient: source, ..
-                    },
-                    OpPart::SlotRecursive {
-                        lenient: destination,
-                        ..
-                    },
-                ) if source == destination => {}
+                (OpPart::SlotPlain { .. }, OpPart::SlotPlain { .. })
+                | (OpPart::SlotRecursive { .. }, OpPart::SlotRecursive { .. }) => {}
                 (OpPart::SlotGreedy { .. }, OpPart::SlotGreedy { .. }) => {}
                 _ => {
                     return Err(
-                        "an operator alias must preserve operand kinds, leniency and token positions",
+                        "an operator alias must preserve operand kinds and token positions",
                     );
                 }
             }
@@ -2830,15 +2775,16 @@ impl OperatorGrammar {
                 words.extend(pattern.iter().map(|part| match part {
                     OpPart::Token { content, .. } if content == "=" => "(=)".to_owned(),
                     OpPart::Token { content, .. } => content.clone(),
-                    OpPart::SlotPlain { lenient: false, .. } => "_".to_owned(),
-                    OpPart::SlotPlain { lenient: true, .. } => "(_)".to_owned(),
-                    OpPart::SlotRecursive { lenient: false, .. } => "__".to_owned(),
-                    OpPart::SlotRecursive { lenient: true, .. } => "(__)".to_owned(),
+                    OpPart::SlotPlain { .. } => "_".to_owned(),
+                    OpPart::SlotRecursive { .. } => "__".to_owned(),
                     OpPart::SlotGreedy { .. } => "___".to_owned(),
                 }));
                 words.join(" ")
             }
             Self::Variadic { open, close } => {
+                if open == &["[".to_owned()] && close == &["]".to_owned()] {
+                    return "varop []".to_owned();
+                }
                 let mut words = vec!["varop".to_owned()];
                 words.extend(open.iter().cloned());
                 words.extend(close.iter().cloned());
@@ -2848,15 +2794,15 @@ impl OperatorGrammar {
     }
 }
 
-/// Internal dispatch and collision key: expression position plus leading
-/// operator-token runs. Distinct full grammars can share this key, so imports,
+/// Internal dispatch and collision key: expression position plus the first
+/// fixed word or variadic opening marker. Distinct full grammars can share this key, so imports,
 /// documentation identities and public queries use [`OperatorGrammar`] instead.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct OperatorDispatchKey {
     /// Expression-start syntax shares one keyspace across fixed and variadic
     /// operators. A leading operand instead selects the continuation keyspace.
     pub expr_start: bool,
-    /// Token-run boundaries are significant: `&& ++` differs from `&&++`.
+    /// The complete fixed word or variadic opening marker, stored as one element.
     pub leading_run: Vec<String>,
 }
 
@@ -2888,24 +2834,15 @@ impl OperatorDispatchKey {
     }
 }
 
-/// The leading op-token run-sequence of a fixed-arity `op` pattern —
-/// the contiguous run of op-tokens from the first token up to the
-/// next slot. This is the `SYMBOLS` part of the operator's short name
-/// and, paired with the expression-start flag, its registry
-/// uniqueness key. For an expression-start pattern the run starts at
-/// index 0; for a non-expression-start pattern it starts at the first
-/// token after the leading slot.
+/// The first fixed word, paired with expression position for local dispatch.
 pub(crate) fn op_leading_run(pattern: &[OpPart]) -> Vec<String> {
-    let start = pattern
+    pattern
         .iter()
-        .position(|p| matches!(p, OpPart::Token { .. }))
-        .unwrap_or(0);
-    pattern[start..]
-        .iter()
-        .map_while(|p| match p {
+        .find_map(|p| match p {
             OpPart::Token { content, .. } => Some(content.clone()),
             _ => None,
         })
+        .into_iter()
         .collect()
 }
 
@@ -5808,13 +5745,13 @@ pub struct EnrichedArm<P: Phase = Surface> {
 /// a concrete `Expr::Call` shape.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OpChainKind<P: Phase = Surface> {
-    /// Normal-op application (`a + b`, `a ? b : c`,
-    /// `a ? b : c`, etc.). `pattern` is the full matched op pattern
+    /// Normal-op application (`a + b`, `a ? b : c`, etc.).
+    /// `pattern` is the full matched op pattern
     /// in source order; `slots` carries one parsed operand
     /// per slot part in `pattern`, in source order. Keeping the
     /// pattern with the chain makes the placeholder self-describing
     /// — the operator-fold pass uses it as the lookup key (via the
-    /// leading-token run helper) and the pretty-printer uses it to
+    /// first-word helper) and the pretty-printer uses it to
     /// reconstruct the source-level interleaving of tokens and
     /// slot operands without consulting any out-of-band operator
     /// scope.
@@ -5822,7 +5759,7 @@ pub enum OpChainKind<P: Phase = Surface> {
         pattern: Vec<OpPart>,
         slots: Vec<Expr<P>>,
     },
-    /// Variadic bracket literal (`[[a, b, c]]`). Each element is one ordinary
+    /// Variadic bracket literal (`[a, b, c]`). Each element is one ordinary
     /// expression. The written delimiters identify the operator independently
     /// of the declaration scope and preserve its source spelling for formatting.
     Variadic {
@@ -5917,34 +5854,10 @@ impl<P: Phase> OpChainKind<P> {
         }
     }
 
-    /// The op-token run that the parser matched as the chain's
-    /// lookup key — the leading tokens of `pattern` for a
-    /// `Normal` chain (skipping a leading slot if non-prefix);
-    /// the `open_tokens` for a `Variadic` chain. Used by the
-    /// operator-fold pass and by diagnostics; matches the
-    /// `leading_op_run` semantics in the parser and op-fold.
+    /// The first fixed word or complete variadic opening marker used for lookup.
     pub fn leading_op_run(&self) -> Vec<String> {
         match self {
-            OpChainKind::Normal { pattern, .. } => {
-                let start = if matches!(
-                    pattern.first(),
-                    Some(OpPart::SlotPlain { .. })
-                        | Some(OpPart::SlotRecursive { .. })
-                        | Some(OpPart::SlotGreedy { .. })
-                ) {
-                    1
-                } else {
-                    0
-                };
-                pattern[start..]
-                    .iter()
-                    .take_while(|p| matches!(p, OpPart::Token { .. }))
-                    .filter_map(|p| match p {
-                        OpPart::Token { content, .. } => Some(content.clone()),
-                        _ => None,
-                    })
-                    .collect()
-            }
+            OpChainKind::Normal { pattern, .. } => op_leading_run(pattern),
             OpChainKind::Variadic { open_tokens, .. } => open_tokens.clone(),
         }
     }

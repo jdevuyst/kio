@@ -7,7 +7,8 @@ import source(Item as Local, item as local, op as operation, varop as variadic, 
 (source_file
   (import_decl
     (keyword_import)
-    (module_path (entity_name_module))
+    (module_path
+      (entity_name_module))
     (bracket_lparen)
     (identifier)
     (keyword_declaration)
@@ -38,14 +39,16 @@ import source(Item as Local, item as local, op as operation, varop as variadic, 
     (import_operator_item
       (keyword_varop)
       (variadic_head
-        (variadic_open)
-        (variadic_head_gap (head_whitespace))
-        (variadic_star_close))
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket))
       (keyword_declaration)
       (variadic_head
-        (variadic_open)
-        (variadic_head_gap (head_whitespace))
-        (variadic_close)))
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket)))
     (bracket_rparen)
     (separator_semicolon)))
 
@@ -53,9 +56,9 @@ import source(Item as Local, item as local, op as operation, varop as variadic, 
 operator aliases own whole grouped patterns and boundary comments
 ================================================================================
 import source(
-  op _ ( ~ __ ~ )
+  op _ ~ ___ ~
     // local spelling
-    as _ ( ~~ __ ~~ ),
+    as _ ~~ ___ ~~,
   value
 );
 --------------------------------------------------------------------------------
@@ -63,26 +66,21 @@ import source(
 (source_file
   (import_decl
     (keyword_import)
-    (module_path (entity_name_module))
+    (module_path
+      (entity_name_module))
     (bracket_lparen)
     (import_operator_item
       (keyword_op)
       (slot)
-      (import_pattern_group
-        (bracket_lparen)
-        (operator_run)
-        (slot)
-        (operator_run)
-        (bracket_rparen))
+      (operator_run)
+      (slot)
+      (operator_run)
       (comment_line)
       (keyword_declaration)
       (slot)
-      (import_pattern_group
-        (bracket_lparen)
-        (operator_run)
-        (slot)
-        (operator_run)
-        (bracket_rparen)))
+      (operator_run)
+      (slot)
+      (operator_run))
     (separator_comma)
     (identifier)
     (bracket_rparen)

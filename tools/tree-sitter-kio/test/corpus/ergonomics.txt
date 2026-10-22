@@ -2468,8 +2468,8 @@ module probe; fn run() { [* value; fn neighbor() { () }
             (variadic_element
               (expression_path
                 (identifier))))
-          (variadic_star_close
-            (MISSING _varop_star_close)))
+          (variadic_close
+            (MISSING bracket_rbracket)))
         (separator_semicolon)
         (function_definition
           (fn_decl_head
@@ -2516,8 +2516,8 @@ module probe; fn run() { [* value; fn neighbor() { () } }
           (variadic_element
             (expression_path
               (identifier))))
-        (variadic_star_close
-          (MISSING _varop_star_close)))
+        (variadic_close
+          (MISSING bracket_rbracket)))
       (separator_semicolon)
       (unowned_function
         (unowned_function_head

@@ -293,32 +293,13 @@ fn find_function_name_in_tokens(tokens: &[Token], name: &str, item_span: Span) -
         })
 }
 
-/// Compute a rough display name for an `op` item. The operator's
-/// pattern tokens are joined with spaces; the bound function name
-/// is omitted (it's captured by the `FnDef` symbol separately).
-///
-/// Example: `op _ + _ { impl add }` → `"op _ + _"`.
 fn op_display_name(op: &crate::ast::Op) -> String {
-    use crate::ast::{OpBody, OpPart};
-    match &op.body {
-        OpBody::Normal { pattern, .. } => {
-            let parts: Vec<&str> = pattern
-                .iter()
-                .map(|p| match p {
-                    OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. } => "_",
-                    OpPart::SlotGreedy { .. } => "___",
-                    OpPart::Token { content, .. } => content.as_str(),
-                })
-                .collect();
-            format!("op {}", parts.join(" "))
-        }
-    }
+    let crate::ast::OpBody::Normal { pattern, .. } = &op.body;
+    crate::ast::OperatorGrammar::fixed(pattern).render()
 }
 
 fn variadic_display_name(operator: &crate::ast::VariadicOperator) -> String {
-    let open = operator.open.join("");
-    let close = operator.spec.close.join("");
-    format!("varop {open} {close}")
+    crate::ast::OperatorGrammar::variadic(&operator.open, &operator.spec).render()
 }
 
 /// Search for `name` in `source` starting from `item_span.start`.
@@ -428,6 +409,28 @@ mod tests {
                 symbols[0].selection_range.end,
                 lsp_types::Position::new(1, 5)
             );
+        }
+    }
+
+    #[test]
+    fn operator_symbol_names_preserve_complete_slot_grammar() {
+        let source = "module pkg; op _ ? __ : ___ @ __ { impl choose }";
+        for symbols in [symbols_for(source), lazy_symbols_for(source)] {
+            assert_eq!(symbols.len(), 1);
+            assert_eq!(symbols[0].name, "op _ ? __ : ___ @ __");
+            assert_eq!(symbols[0].kind, SymbolKind::OPERATOR);
+        }
+    }
+
+    #[test]
+    fn variadic_symbol_names_canonicalize_bare_and_compact_frames() {
+        for (head, expected) in [("[]", "varop []"), ("[**]", "varop [* *]")] {
+            let source = format!("module pkg; varop {head} {{ foldr step empty }}");
+            for symbols in [symbols_for(&source), lazy_symbols_for(&source)] {
+                assert_eq!(symbols.len(), 1);
+                assert_eq!(symbols[0].name, expected);
+                assert_eq!(symbols[0].kind, SymbolKind::OPERATOR);
+            }
         }
     }
 

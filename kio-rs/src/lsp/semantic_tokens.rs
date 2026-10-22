@@ -737,9 +737,9 @@ mod tests {
     }
 
     #[test]
-    fn semantic_tokens_keep_bracket_operator_runs_maximal() {
+    fn semantic_tokens_keep_words_separate_from_structural_brackets() {
         let result = semantic_tokens("[! ]] ]- ][*").unwrap();
-        assert_eq!(result.data.len(), 4);
+        assert_eq!(result.data.len(), 3);
         assert!(
             result
                 .data
@@ -752,7 +752,15 @@ mod tests {
                 .iter()
                 .map(|token| token.length)
                 .collect::<Vec<_>>(),
-            vec![2, 2, 2, 3]
+            vec![1, 1, 1]
+        );
+        assert_eq!(
+            result
+                .data
+                .iter()
+                .map(|token| token.delta_start)
+                .collect::<Vec<_>>(),
+            vec![1, 6, 4]
         );
     }
 

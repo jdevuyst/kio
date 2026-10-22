@@ -1,0 +1,13 @@
+module main;
+
+op _ $ ___ { impl apply }
+
+op ___ < _ > { impl index }
+
+op _ + _ { impl add }
+
+fn right() { a $ (b < k >) }
+
+fn left() { (a $ b) < k > }
+
+fn nested() { a + (b < k >) }

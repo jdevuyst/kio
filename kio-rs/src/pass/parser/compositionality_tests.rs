@@ -492,9 +492,11 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
     },
     ExprContext {
         id: "variadic-element",
-        grammar: "VariadicLiteral",
+        grammar: "ValueElements",
         declarations: "varop [! !] { foldr context_push context_empty; };",
-        item: "fn subject() -> . { [! __EXPR_HOLE__ !] }",
+        // Grouping keeps an arbitrary expression's edge punctuation separate
+        // from the source-selected mirrored frame.
+        item: "fn subject() -> . { [! (__EXPR_HOLE__) !] }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -1628,9 +1630,13 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "Equiv",
     "FixedOpToken",
     "VaropHead",
-    "VaropOpen",
-    "VaropClose",
+    "Marker",
+    "ReverseMarker",
     "VariadicLiteral",
+    "ValueElements",
+    "ClosedFixedOpExpr",
+    "FixedOperatorUse",
+    "OpUsePart",
     "TupleLit",
     "LabelValue",
     "LabelValueLabel",
@@ -1684,12 +1690,11 @@ const DIRECT_EXPR_OWNERS: &[&str] = &[
     "LetStmt",
     "NeutralBind",
     "NeutralBlock",
-    "OperatorTail",
+    "OpUsePart",
     "PatternLet",
-    "PrefixOpExpr",
     "RowLet",
     "TupleLit",
-    "VariadicLiteral",
+    "ValueElements",
 ];
 
 const DIRECT_TYPE_OWNERS: &[&str] = &[
@@ -1767,6 +1772,7 @@ Stmt += PatternLet | ExistentialLet | RowLet
 LetStmt ::= 'let' LetBinder '=' Expr ';'
 ExprStmt ::= Expr ';'
 Expr ::= ExprPostfix
+Expr += PrefixOpExpr
 ExprPostfix ::= ExprAtom ExprSuffix*
 ExprPostfix += LeftCallSplice ExprSuffix*
 ExprSuffix ::= '(' (CallArg (',' CallArg)*)? ')'
@@ -1775,7 +1781,7 @@ ExprSuffix += DotSpliceSuffix | OperatorTail
 CallArg ::= Expr | Type
 ExprAtom ::= LiteralCall | '(' ')' | '(' Expr ')' | ValuePath | FnExpr
 ExprAtom += TupleLit | LabelValue | BangCall | BlockElabCall | PlaceholderLambda | RecCall
-ExprAtom += PrefixOpExpr | VariadicLiteral
+ExprAtom += VariadicLiteral | ClosedFixedOpExpr
 LiteralCall ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '(' Type ')'
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)
 BoolLit ::= '.' ('t' | 'f')
@@ -1787,10 +1793,14 @@ ElaboratorImpl ::= 'impl' GroupedValuePath | 'impl' '(' 'fills' ')' GroupedValue
 GroupedValuePath ::= ValuePath | '(' GroupedValuePath ')'
 Equiv ::= 'equiv' IDENT ValueSignature? '{' ';'* Expr (';'+ Expr)+ ';'* '}'
 FixedOpToken ::= OpToken
-VaropHead ::= VaropOpen VaropClose
-VaropOpen ::= OpToken
-VaropClose ::= OpToken
-VariadicLiteral ::= VaropOpen (Expr (',' Expr)*)? VaropClose
+VaropHead ::= '[' ']' | '[' Marker ReverseMarker ']'
+Marker ::= OpToken
+ReverseMarker ::= OpToken
+VariadicLiteral ::= '[' ValueElements? ']' | '[' Marker ValueElements? ReverseMarker ']'
+ValueElements ::= Expr (',' Expr)*
+ClosedFixedOpExpr ::= FixedOperatorUse
+FixedOperatorUse ::= OpUsePart+
+OpUsePart ::= FixedOpToken | Expr
 TupleLit ::= '(' Expr ',' Expr (',' Expr)* ','? ')'
 LabelValue ::= '{' (LabelValueLabel (',' LabelValueLabel)* ','?)? '}'
 LabelValueLabel ::= LabelPath ('=' Expr?)?
@@ -1808,14 +1818,14 @@ CallArgList ::= '(' (CallArg (',' CallArg)*)? ','? ')'
 NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
 DotPlaceholderIntro ::= '.' IDENT '.'
 PlaceholderLambda ::= DotPlaceholderIntro Block
-PrefixOpExpr ::= FixedOpToken+ Expr
+PrefixOpExpr ::= FixedOperatorUse
 DotSpliceSuffix ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
 DotSpliceCallee ::= GroupedValuePath | IDENT '!'
 LeftCallSplice ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
 LeftSpliceCallee ::= LeftSplicePathCallee | IDENT '!' NonemptyCallArgList?
 LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList? | '(' LeftSplicePathCallee ')'
 TightCallArg ::= ExprAtom CallArgList*
-OperatorTail ::= (FixedOpToken Expr)+
+OperatorTail ::= FixedOperatorUse
 PatternLet ::= 'let' ('.' ParamPatternTuple | DotPlaceholderIntro) '=' Expr ';'
 ParamPatternElem ::= IDENT (':' Type)? | '_' (':' Type)? | ParamPatternTuple | IDENT ':' ParamPatternTuple
 ExistentialLet ::= 'let' '.' '(' ExistsBinder+ ExistentialLetBinder ')' '=' Expr ';'

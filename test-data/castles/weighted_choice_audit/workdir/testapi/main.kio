@@ -2,7 +2,7 @@ module testapi/main;
 
 import choice as choice;
 import game as game;
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import report as report;
 import testapi(I32);
 import testapi/arith as arith;

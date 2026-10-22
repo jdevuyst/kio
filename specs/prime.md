@@ -366,16 +366,17 @@ These features live only in `language.md`; each one either desugars to Kio' or r
 - **`equiv`** — declarative test claim discharged by the `kio test` runner. `kio-prime` rejects `equiv` items at parse time. See [`language.md`](language.md#equivalence-claims-equiv) and [`cli.md`](cli.md#kio-test).
 - **literal aliases** — `literal name = <literal>;` is surface-only. The desugar pass expands a bare reference to the stored literal token, expands `name(Type)` to the stored literal with that annotation, and drops the declaration at the Surface → Desugared boundary. Kio' keeps only the already-expanded literal expression; a Kio'-only parser rejects `literal` items.
 - **Fixed and variadic operators** — `op <pattern> { impl <ValuePath>; };`
-  binds a fixed pattern, while `varop OPEN CLOSE` binds mirrored delimiters
-  around comma-separated ordinary expressions.
+  binds a fixed value-operand pattern, while `varop []` or a marked head
+  such as `varop [* *]` binds a square frame around comma-separated values.
   A variadic body selects `foldl`, `foldr`, `foldl1`, or `foldr1` with a
   step and base/seed path, then optionally a unary `finalize` path. These are
   ordinary lexical value paths, not expressions or slash-qualified FQNs.
   Declarations are local unless exported with `pub`. Before Kio', operator
   lowering replaces every use with ordinary calls, consumes the declarations,
-  and removes tagged operator selections from imports. Kio' shares the maximal
-  operator-run lexer, but has no fixed/variadic operator declaration, tagged
-  operator selection, or operator expression. See [language.md](language.md#operators).
+  and removes tagged operator selections from imports. Kio' shares the
+  symbol-word lexer and structural delimiters, but has no fixed/variadic
+  operator declaration, tagged selection, or operator expression.
+  See [language.md](language.md#operators).
 
 ## Grammar
 
@@ -396,7 +397,7 @@ an ordinary value named `op` does not introduce an operator.
 
 Kio''s grammar is the **regular-module** file shape — every `*.kio` file with a `module` declaration. The productions live in [`grammar.md`](grammar.md) § Kio' grammar; this section narrates the Kio'-specific properties that the productions encode. Package boundary files have their own grammars in [`grammar.md`](grammar.md) § Package files (see also [`package.md`](package.md)).
 
-**Lexical structure.** Kio' uses the same maximal `SymbolRun` lexer as Kio over the ASCII operator-character allow-list, including `[` and `]`. Its grammar then admits only runs assigned a fixed structural role. In particular, parser-contextual peeling of forall delimiters keeps `[A]`, `[*F]`, `[A][B]`, and `.[*F]` compact even though their raw maximal runs can include `[*`, `][`, or `.[*`. No Kio' production admits an `op` or `varop` declaration, operator import, or operator expression, and structural peeling never creates one. Two other shared lexer rules carry over from [`grammar.md` § Lexical structure (Kio')](grammar.md#lexical-structure-kio) unchanged: the **negative-literal carve-out** (a leading `-` flush against a digit fuses into the literal at expression-starting positions) and the **comment-marker rule** (`//` / `///` must be followed by whitespace, end-of-line, or end-of-file; `////` and a marker flush against a non-whitespace character are lex errors).
+**Lexical structure.** Kio' shares Kio's maximal ordinary symbol words, structural dots and square brackets, and finite native dot compounds. The native grammar preserves `[A]`, `[*F]`, `[A][B]`, `.[*F]`, and `type A=.;`; dots and brackets never join user operator words. Native structural-prefix handling remains confined to its grammatical contexts. There is no Kio' fixed/variadic declaration, tagged operator import, or user-operator expression. The shared signed-number rule treats identifiers, literals, `)`, `}`, and `]` as expression-ending; a flush leading minus belongs to a literal only elsewhere. Comment markers `//` and `///` require following whitespace, end-of-line, or end-of-file; `////` and markers flush against non-whitespace characters are lex errors. See [the shared lexical contract](grammar.md#lexical-structure-kio).
 
 **Contextual keywords.** Every Kio' keyword (`module`, `import`, `as`, `pub`, `pure`, `type`, `host`, `fn`, `rec`, `newtype`, `let`, `constructor`, `projector`, plus the magic phrase `__intrinsics__`) lexes as an ordinary `IDENT`; the parser recognizes the keyword role only at the positions where the productions show it as a literal terminal. `pure` modifies only an ordinary `fn`, `rec` marks an explicitly recursive data declaration or mutual type group, and `host` is a host-declaration modifier only when immediately followed by `type` or `fn`. Surface-only forms have no productions in the Kio' grammar — a Kio'-only parser rejects them as syntax errors. The rejected surface set covers:
 

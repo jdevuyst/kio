@@ -1,1 +1,1 @@
-`\.` is reserved as an `op` operator-token
+reserved dot; dots belong to native syntax and cannot occur in operator words

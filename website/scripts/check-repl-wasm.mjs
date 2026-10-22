@@ -27,14 +27,14 @@ try {
   assert.equal(output(repl.eval(':normalize ()')), '()')
 
   for (const prefix of ['', ':t ', ':pure ', ':normalize ']) {
-    const diagnostic = output(repl.eval(`${prefix}index([1], 0)`))
+    const diagnostic = output(repl.eval(`${prefix}index(x., 0)`))
     assert.ok(diagnostic.includes('not a name or a Kio expression'), diagnostic)
-    assert.ok(diagnostic.includes('<repl>:1:8: error: expected identifier'), diagnostic)
-    assert.match(diagnostic, /1 \| index\(\[1\], 0\)/)
-    assert.match(diagnostic, /\| {8}\^/)
+    assert.ok(diagnostic.includes('<repl>:1:9: error: expected identifier'), diagnostic)
+    assert.match(diagnostic, /1 \| index\(x\., 0\)/)
+    assert.match(diagnostic, /\| {9}\^/)
     assert.ok(!diagnostic.includes('_expr') && !diagnostic.includes('_repl_parse_check_'), diagnostic)
   }
-  assert.equal(output(repl.eval(':t index([* 1 *], 0)')), 'index([* 1 *], 0) : list.I32 | .')
+  assert.equal(output(repl.eval(':t index([1], 0)')), 'index([1], 0) : list.I32 | .')
 
   const completion = repl.complete('fi', 2)
   assert.deepEqual(Object.keys(completion).sort(), ['candidates', 'replaceEnd', 'replaceStart'])
@@ -53,7 +53,7 @@ try {
   }
   for (const [input, expected] of [
     [':sig list.(op _ ++', 'pub op _ ++ _ { impl append }'],
-    [':sig list.(varop', 'pub varop [* *] { foldr prepend empty }'],
+    [':sig list.(varop', 'pub varop [] { foldr prepend empty }'],
   ]) {
     const result = repl.complete(input, input.length)
     assert.equal(result.replaceStart, 5)

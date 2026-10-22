@@ -387,13 +387,13 @@ pub op _ +: __ { impl prepend }
 pub op _ ++ _ { impl append }
 
 /// Indexes into a list, returning an optional element.
-pub op _ <| __ |> { impl index }
+pub op _ <| _ |> { impl index }
 
 /// Maps over a list.
 pub op _ |> _ { impl map_with }
 
 /// Builds lists with bracket syntax.
-pub varop [* *] { foldr prepend empty }
+pub varop [] { foldr prepend empty }
 
 // =====================================================================
 // equiv-law battery

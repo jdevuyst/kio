@@ -12,7 +12,7 @@ op _ %% _ {
   ;
 };
 
-varop [[ ]] {
+varop [] {
   foldr
   // step target
   folds

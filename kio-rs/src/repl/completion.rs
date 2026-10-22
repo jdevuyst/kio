@@ -60,8 +60,8 @@ use crate::pass::lexer::{TokenKind, lex};
 use crate::pass::parser::ExpressionParseContext;
 use crate::repl_core::commands::{CompletionShape, all_command_spellings};
 use crate::repl_core::completion::{
-    AstScopeProvider, Candidate, ScopeProvider, complete, expression_input_start,
-    expression_target, first_token, shape_for_position, word_start,
+    AstScopeProvider, Candidate, ScopeProvider, complete, expression_target, first_token,
+    shape_for_position, word_start,
 };
 use crate::repl_core::highlight::{self, Palette};
 
@@ -214,8 +214,8 @@ fn common_prefix_len(a: &str, b: &str) -> usize {
         .min(b.len())
 }
 
-/// Whether `line` is a complete input — every parenthesis, brace, and
-/// structural forall binder it opens is closed, and every string literal is
+/// Whether `line` is a complete input — every structural bracket it opens
+/// is closed, and every string literal is
 /// terminated. The hinter suppresses its ghost text on an incomplete line,
 /// and the multi-line validator reports continuation on one, so the two
 /// surfaces agree on what "complete" means.
@@ -224,10 +224,8 @@ fn common_prefix_len(a: &str, b: &str) -> usize {
 /// string literal (one [`TokenKind::StrLit`] token) keeps any brackets
 /// *inside* it (`:normalize "foo {"`) out of the counter.
 ///
-/// Square brackets are ordinary operator characters at the lexer boundary.
-/// Only a parser-confirmed forall-binder prefix contributes square delimiter
-/// facts; a bare `[` or a run such as `[!` is an operator and must not strand
-/// an otherwise complete input in the continuation prompt.
+/// Source-local delimiter balance also works before a frame's binding or
+/// an incomplete expression's operator grammar can be resolved.
 ///
 /// Lexer rejection splits two ways: an **unterminated string at end of
 /// input** (`:normalize "foo`) is *incomplete* (a closing quote would
@@ -241,7 +239,7 @@ pub(crate) fn input_is_complete(line: &str) -> bool {
 
 pub(crate) fn input_is_complete_with_context(
     line: &str,
-    context: Option<&ExpressionParseContext>,
+    _context: Option<&ExpressionParseContext>,
 ) -> bool {
     let tokens = match lex(line) {
         Ok(tokens) => tokens,
@@ -249,26 +247,19 @@ pub(crate) fn input_is_complete_with_context(
     };
     let mut paren: i32 = 0;
     let mut curly: i32 = 0;
+    let mut square: i32 = 0;
     for tok in &tokens {
         match &tok.kind {
             TokenKind::LParen => paren += 1,
             TokenKind::RParen => paren -= 1,
             TokenKind::LBrace => curly += 1,
             TokenKind::RBrace => curly -= 1,
+            TokenKind::SymbolRun(run) if run == "[" => square += 1,
+            TokenKind::SymbolRun(run) if run == "]" => square -= 1,
             _ => {}
         }
     }
-    let has_square = tokens
-        .iter()
-        .any(|token| matches!(&token.kind, TokenKind::SymbolRun(run) if run.contains('[')));
-    let unclosed_forall = has_square
-        && expression_input_start(line).is_some_and(|expr_start| {
-            crate::pass::parser::expression_has_unclosed_structural_forall(
-                &line[expr_start..],
-                context,
-            )
-        });
-    paren <= 0 && !unclosed_forall && curly <= 0
+    paren <= 0 && square <= 0 && curly <= 0
 }
 
 /// Whether a lexer [`Error`] is the *unterminated-string-at-end-of-input*
@@ -782,16 +773,21 @@ mod tests {
     }
 
     #[test]
-    fn validator_does_not_balance_ordinary_bracket_operators() {
-        assert!(validates_complete("a [! b"));
-        assert!(validates_complete("a [ b"));
-        assert!(validates_complete("a [ B"));
-        assert!(validates_complete("xs[0"));
-        assert!(validates_complete("["));
+    fn validator_balances_source_local_square_frames() {
+        for input in ["[", "[*", "[* value", "[* [**]", "[value,", "xs[0"] {
+            assert!(!validates_complete(input), "{input}");
+        }
+        for input in ["[]", "[**]", "[* [**] *]", "[value, other]", "[* -1 *]"] {
+            assert!(validates_complete(input), "{input}");
+        }
+        assert!(validates_complete(":normalize \"[*\""));
+        assert!(validates_complete(":normalize () // [*"));
+        assert!(!validates_complete("[* // ]\n value"));
+        assert!(validates_complete("[* // ]\n value *]"));
     }
 
     #[test]
-    fn validator_uses_the_loaded_operator_context() {
+    fn validator_square_balance_is_independent_of_operator_context() {
         let plus = local_expression_context(
             "module x; fn add(a: A, b: A) -> A { a } op _ + _ { impl add; };",
         );
@@ -800,7 +796,7 @@ mod tests {
         let dollar = local_expression_context(
             "module x; fn apply(a: A, b: A) -> A { a } op _ $ _ { impl apply; };",
         );
-        assert!(validates_complete(":t lhs $ .[A"));
+        assert!(!validates_complete(":t lhs $ .[A"));
         assert!(!validates_complete_with_context(":t lhs $ .[A", dollar,));
     }
 
@@ -814,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn highlighter_uses_imported_operator_context_for_bracket_roles() {
+    fn highlighter_keeps_structural_brackets_distinct_from_operator_markers() {
         let highlighter = ReplHighlighter::new(
             Palette::truecolor(),
             Arc::new(Mutex::new(imported_bracket_operator_names())),
@@ -826,17 +822,20 @@ mod tests {
             .filter_map(|(style, text)| text.starts_with('[').then_some(*style))
             .collect();
         assert_eq!(bracket_styles.len(), 2, "{:?}", styled.buffer);
-        assert_eq!(
-            bracket_styles[0],
-            Palette::truecolor()
-                .style_for_kind_reedline(crate::tokens::TokenKind::OperatorUser)
-                .expect("operator style")
-        );
-        assert_eq!(
-            bracket_styles[1],
-            Palette::truecolor()
-                .style_for_kind_reedline(crate::tokens::TokenKind::PunctuationBracket)
-                .expect("structural bracket style")
+        let bracket_style = Palette::truecolor()
+            .style_for_kind_reedline(crate::tokens::TokenKind::PunctuationBracket)
+            .expect("structural bracket style");
+        assert_eq!(bracket_styles, [bracket_style, bracket_style]);
+        let marker_style = Palette::truecolor()
+            .style_for_kind_reedline(crate::tokens::TokenKind::OperatorUser)
+            .expect("operator marker style");
+        assert!(
+            styled
+                .buffer
+                .iter()
+                .any(|(style, text)| text.contains('*') && *style == marker_style),
+            "{:?}",
+            styled.buffer
         );
 
         let fqn_command = highlighter.highlight(":load .[A", 0);
@@ -1143,27 +1142,25 @@ mod tests {
         ));
         assert!(!input_is_complete(":normalize if true {"));
         assert!(!input_is_complete(":t foo("));
-        assert!(input_is_complete(":t a[b"));
+        assert!(!input_is_complete(":t a[b"));
         assert!(input_is_complete(":t foo)"));
     }
 
     #[test]
-    fn input_is_complete_balances_only_structural_forall_binders() {
+    fn input_is_complete_balances_frames_and_forall_binders() {
         assert!(input_is_complete(":t .[A](x) { x }"));
         assert!(input_is_complete(":t .[*F][**G](f) { f }"));
         assert!(!input_is_complete(":t .["));
         assert!(!input_is_complete(":t .[A"));
         assert!(!input_is_complete(":t .[*F"));
-        // Unknown operators cannot be guessed here. The validator's context-
-        // aware test above covers the same suffix after a loaded `+`.
-        assert!(input_is_complete(":t value + .[A"));
-        assert!(input_is_complete(":t a [ B"));
-        assert!(input_is_complete(":t a [! b"));
-        assert!(input_is_complete(":t ["));
-        assert!(input_is_complete(":t .[! { [!1 }"));
-        assert!(input_is_complete(":t .[ { [1 }"));
-        assert!(input_is_complete(":load .[A"));
-        assert!(input_is_complete(":source .[A"));
+        assert!(!input_is_complete(":t value + .[A"));
+        assert!(!input_is_complete(":t a [ B"));
+        assert!(!input_is_complete(":t a [! b"));
+        assert!(!input_is_complete(":t ["));
+        assert!(!input_is_complete(":t .[! { [!1 }"));
+        assert!(!input_is_complete(":t .[ { [1 }"));
+        assert!(!input_is_complete(":load .[A"));
+        assert!(!input_is_complete(":source .[A"));
         assert!(!input_is_complete(":type .[A"));
         assert!(!input_is_complete(":norm .[A"));
     }

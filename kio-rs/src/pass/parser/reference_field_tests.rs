@@ -52,10 +52,10 @@ fn grouped_reference_contexts_share_canonical_paths() {
     for mode in ["foldl", "foldr", "foldl1", "foldr1"] {
         assert_eq!(
             canonical(&format!(
-                "module main; varop [[ ]] {{ {mode} ((helpers.step)) ((Box.seed)); finalize ((helpers.finish)) }}"
+                "module main; varop [] {{ {mode} ((helpers.step)) ((Box.seed)); finalize ((helpers.finish)) }}"
             )),
             canonical(&format!(
-                "module main; varop [[ ]] {{ {mode} helpers.step Box.seed; finalize helpers.finish }}"
+                "module main; varop [] {{ {mode} helpers.step Box.seed; finalize helpers.finish }}"
             )),
         );
     }
@@ -87,21 +87,21 @@ fn grouped_fills_reference_and_schedule_are_distinct() {
 
 #[test]
 fn optional_finalizer_unit_is_absence_but_still_present_for_duplicates() {
-    let bare = canonical("module main; varop [[ ]] { foldl step base }");
-    assert_eq!(bare, "module main;\n\nvarop [[ ]] { foldl step base }\n");
+    let bare = canonical("module main; varop [] { foldl step base }");
+    assert_eq!(bare, "module main;\n\nvarop [] { foldl step base }\n");
     for unit in ["()", "(())", "((()))"] {
         for body in [
             format!("foldl step base; finalize {unit}"),
             format!("finalize {unit}; foldl step base"),
         ] {
             assert_eq!(
-                canonical(&format!("module main; varop [[ ]] {{ {body} }}")),
-                "module main;\n\nvarop [[ ]] { foldl step base; finalize () }\n"
+                canonical(&format!("module main; varop [] {{ {body} }}")),
+                "module main;\n\nvarop [] { foldl step base; finalize () }\n"
             );
         }
         for second in ["()", "finish"] {
             let source = format!(
-                "module main; varop [[ ]] {{ foldl step base; finalize {unit}; finalize {second} }}"
+                "module main; varop [] {{ foldl step base; finalize {unit}; finalize {second} }}"
             );
             assert!(
                 parse(&source)
@@ -127,8 +127,8 @@ fn grouped_references_preserve_name_only_boundaries() {
         for field in [
             format!("op _ + _ {{ impl {target} }}"),
             format!("elab inspect : . -> . {{ impl {target} }}"),
-            format!("varop [[ ]] {{ foldl {target} base }}"),
-            format!("varop [[ ]] {{ foldl step {target} }}"),
+            format!("varop [] {{ foldl {target} base }}"),
+            format!("varop [] {{ foldl step {target} }}"),
         ] {
             assert!(parse(&format!("module main; {field}")).is_err(), "{field}");
         }
@@ -150,7 +150,7 @@ fn grouped_references_preserve_name_only_boundaries() {
     for declaration in [
         "op _ + _ { impl ((provider/path.add)) }",
         "elab inspect : . -> . { impl ((provider/path.add)) }",
-        "varop [[ ]] { foldl ((provider/path.add)) base }",
+        "varop [] { foldl ((provider/path.add)) base }",
     ] {
         let error = parse(&format!("module main; {declaration}")).unwrap_err();
         assert!(
@@ -167,7 +167,7 @@ fn grouped_reference_comments_survive_removed_tokens_once() {
     for declaration in [
         "op _ + _ { impl (// opener\n(// inner\nadd // leaf\n) // closer\n) }",
         "elab inspect : . -> . { captures ((// capture\nBox)); impl ((// implementation\nhelper)) }",
-        "varop [[ ]] { foldl ((// step\nstep)) ((// base\nbase)); finalize ((// absent\n())) }",
+        "varop [] { foldl ((// step\nstep)) ((// base\nbase)); finalize ((// absent\n())) }",
         "rec((// capability\nloop // closing\n)) fn f(x: .) -> . { x }",
         "fn f(x: .) -> . { x.>((// callee\nhelper // closing\n)) }",
     ] {
@@ -191,7 +191,7 @@ fn unfinished_grouped_references_remain_tooling_input() {
         "op _ + _ { impl ((",
         "elab inspect : . -> . { impl (fills) (",
         "elab inspect : . -> . { captures ((",
-        "varop [[ ]] { foldl ((step)) ((",
+        "varop [] { foldl ((step)) ((",
         "rec((",
         "fn f(x: .) { x.>((",
     ] {
@@ -213,9 +213,9 @@ fn recovered_reference_closers_never_authorize_normal_input() {
         "op _ + _ { impl(fi }",
         "elab make: . { impl(fi }",
         "elab make: . { impl f; captures ((Type) }",
-        "varop [[ ]] { foldl (step base }",
-        "varop [[ ]] { foldl step base; finalize ( }",
-        "varop [[ ]] { foldl step base; finalize (( }",
+        "varop [] { foldl (step base }",
+        "varop [] { foldl step base; finalize ( }",
+        "varop [] { foldl step base; finalize (( }",
         "fn f(x: .) { x.>(fi }",
     ] {
         let source = format!("module main; {declaration}");

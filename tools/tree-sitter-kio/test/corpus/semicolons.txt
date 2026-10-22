@@ -39,10 +39,10 @@ module source; varop [+ +] { ; finalize done; foldl join empty; };
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (separator_semicolon)
@@ -921,10 +921,10 @@ module source; varop [+ +] { foldl join empty finalize done }
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)
@@ -952,10 +952,10 @@ module source; varop [+ +] { foldl join empty;; finalize done }
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)

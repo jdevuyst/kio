@@ -767,12 +767,22 @@ mod tests {
                 "module main; import lib(kept);",
             ),
             (
-                "module main; import lib(op (_) + _, kept);",
+                "module main; import lib(op ___ (=) _, kept);",
                 0,
                 "module main; import lib( kept);",
             ),
             (
-                "module main; import lib(kept, op _ + (_));",
+                "module main; import lib(kept, op _ (=) ___);",
+                1,
+                "module main; import lib(kept);",
+            ),
+            (
+                "module main; import lib(varop [], kept);",
+                0,
+                "module main; import lib( kept);",
+            ),
+            (
+                "module main; import lib(kept, varop [**]);",
                 1,
                 "module main; import lib(kept);",
             ),

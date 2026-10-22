@@ -5,7 +5,7 @@ import elab/control(if);
 import elab/match(match);
 import list/core as lc;
 import list/list as ll;
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import testapi(Bool, I32);
 import testapi/arith(eq_i32, sub_i32);
 import testapi/iter(loop);

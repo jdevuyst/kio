@@ -1,8 +1,7 @@
 #!/bin/sh
-# User-defined operators have no precedence — different operators
-# in one expression require explicit parentheses. `x + y * z` is a
-# parse error per spec; the user disambiguates with `(x + y) * z`
-# or `x + (y * z)`.
+# Self-chain (`__`) slots cannot admit a different operator inside
+# their captured expression. This subject checks `x + y * z` without
+# explicit parentheses; adding them selects the intended grouping.
 set -u
 cd workdir || exit
 "$KIO_BIN" check

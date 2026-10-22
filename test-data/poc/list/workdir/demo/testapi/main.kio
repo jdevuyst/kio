@@ -20,13 +20,13 @@ import library/list(
 , null
 , op _ ++ _
 , op _ +: __
-, op _ <| __ |>
+, op _ <| _ |>
 , op _ |> _
 , replicate
 , reverse
 , take
 , to_string
-, varop [* *]
+, varop [] as [* *]
 );
 import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);

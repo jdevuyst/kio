@@ -4,7 +4,7 @@ import syntax(
   op _ ? _ : ___,
   op __ + _,
   varop [% %],
-  varop [[ ]],
+  varop [],
   op,
   variadic
   );

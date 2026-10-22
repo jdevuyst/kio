@@ -1,0 +1,21 @@
+module bang_frames;
+import ops(varop [! !], varop []);
+fn run(x: .) {
+  [!x!];
+  [! x, x!];
+  [![!x!]!];
+  ([!x!]);
+  [!x.>tail!];
+  [x.>helper!];
+  [,x.>helper!];
+  [!helper!(x)!];
+  [!x!
+  ];
+  [!x! // closing marker
+  ];
+  helper!(x);
+  varop!(x);
+  foldl!(x);
+  varop;
+  foldl
+}

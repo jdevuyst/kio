@@ -10,19 +10,28 @@ The grammar maps Kio's tokens to TextMate scope conventions; the canonical token
 
 ## Limitations
 
-User-declared operators (anything declared via `op _ TOK _ { impl fn; };` in source) are approximated — any non-reserved symbol-run is scoped as `keyword.operator.user.kio`, accepting some misclassification at structural positions as a known regex limitation. Tree-sitter has parser context and handles this better; the TextMate grammar is the load-fast floor.
+Ordinary symbol words receive operator scopes; dots and square brackets keep
+their native lexical roles. Operator association and slot validation belong to
+the compiler. Neither this grammar nor standalone Tree-sitter reconstructs a
+consumer's dynamic operator grammar.
 
 TextMate uses bounded `begin` / `end` states for strings, module-first import
 paths and selection groups, row lets, and variadic callable clauses. An import's
-written grammar is sufficient; no provider is read. Nested pattern groups and
+written grammar is sufficient; no provider is read. Token quotation and
 variadic separator semicolons stay inside the parenthesized selection list.
-Grammar-owned `op`/`variadic` tags and four-mode/finalizer clause heads receive
+Grammar-owned `op`/`varop` tags and four-mode/finalizer clause heads receive
 keyword scopes; ordinary contextual names keep identifier or entity scopes.
 Positive declaration-head scopes require bounded same-line syntax evidence.
 An incomplete or line-split head and its unresolved contextual words stay
 unscoped; neutral recovery ends at the construct's boundary or a following
-recognizable declaration. The tree-sitter grammar supplies the deeper parser
-context.
+recognizable declaration. Canonically spaced marked heads retain callable-clause
+scopes. Compact heads beyond the regex engine's authentication capacity retain
+lexical coloring while callable-clause words stay neutral. The tree-sitter
+grammar supplies deeper structural context.
+Inside square value regions, a name-plus-bang at a possible closing edge stays
+neutral: regex context alone does not distinguish a closing `!` marker from a
+native elaborator suffix. Interior calls such as `helper!(arg)` retain their
+elaborator scopes.
 
 ## Distribution
 

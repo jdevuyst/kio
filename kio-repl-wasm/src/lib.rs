@@ -407,7 +407,32 @@ fn declaration_selectors_repl() -> Repl {
         ("demo/main.kio", include_str!("../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/main.kio")),
         ("demo/ops.kio", include_str!("../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/ops.kio")),
         ("demo/other.kio", include_str!("../../test-data/goldens/00_success/repl_declaration_selectors/workdir/demo/other.kio")),
-    ].into_iter().map(|(path, source)| (root.join(path), source.to_owned())).collect();
+    ]
+    .into_iter()
+    .map(|(path, source)| {
+        let mut source = source.to_owned();
+        if path == "demo/ops.kio" {
+            source.push_str(
+                "\npub fn choose_three(left: ., _middle: ., _right: .) { left }\n\
+                 pub op _ ? __ : ___ { impl choose_three }\n\
+                 pub varop [] { foldr choose empty }\n",
+            );
+        } else if path == "demo/main.kio" {
+            source = source.replace(
+                "varop [* *], {field}",
+                "varop [* *], varop [* *] as [% %], {field}",
+            );
+            source.push_str("\npub fn alias_use() { [% () %] }\n");
+        } else if path == "demo/other.kio" {
+            source.push_str(
+                "\npub fn empty() { () }\n\
+                 pub varop [* *] { foldr choose empty }\n\
+                 pub fn foreign_marked_use() { [* () *] }\n",
+            );
+        }
+        (root.join(path), source)
+    })
+    .collect();
     Repl {
         poc_id: "selectors".to_owned(),
         session: Session::new_in_memory(root, files),
@@ -487,31 +512,60 @@ mod tests {
                 "{listing:?}"
             );
         }
-        let line = ":sig arithmetic.(op _ +";
-        let completion = repl.complete_core(line, line.len());
-        let selected = completion
-            .candidates
-            .iter()
-            .find(|item| item.label == "arithmetic.(op _ + _)")
-            .unwrap();
-        let inserted = format!(
-            "{}{}{}",
-            &line[..completion.replace.start],
-            selected.label,
-            &line[completion.replace.end..]
-        );
-        let command = parse_command(&inserted).unwrap();
+        for (line, label, expected) in [
+            (
+                ":sig arithmetic.(op _ +",
+                "arithmetic.(op _ + _)",
+                "pub op _ + _ { impl choose }",
+            ),
+            (
+                ":sig arithmetic.(varop [*",
+                "arithmetic.(varop [* *])",
+                "pub varop [* *] { foldr choose empty }",
+            ),
+            (
+                ":sig arithmetic.(varop []",
+                "arithmetic.(varop [])",
+                "pub varop [] { foldr choose empty }",
+            ),
+            (
+                ":sig arithmetic.(op _ ?",
+                "arithmetic.(op _ ? __ : ___)",
+                "pub op _ ? __ : ___ { impl choose_three }",
+            ),
+        ] {
+            let completion = repl.complete_core(line, line.len());
+            assert_eq!(completion.replace, 5..line.len());
+            let selected = completion
+                .candidates
+                .iter()
+                .find(|item| item.label == label)
+                .unwrap();
+            let inserted = format!(
+                "{}{}{}",
+                &line[..completion.replace.start],
+                selected.label,
+                &line[completion.replace.end..]
+            );
+            let command = parse_command(&inserted).unwrap();
+            assert_eq!(
+                strip_ansi(&repl.run_command(command).output).trim(),
+                expected
+            );
+        }
+        let command = parse_command(":sig arithmetic.(varop [**])").unwrap();
         assert_eq!(
             strip_ansi(&repl.run_command(command).output).trim(),
-            "pub op _ + _ { impl choose }"
+            "pub varop [* *] { foldr choose empty }"
         );
         repl.run_command(Command::Reset);
+        let line = ":sig arithmetic.(op _ +";
         assert!(
             !repl
                 .complete_core(line, line.len())
                 .candidates
                 .iter()
-                .any(|item| item.label == selected.label)
+                .any(|item| item.label == "arithmetic.(op _ + _)")
         );
     }
 

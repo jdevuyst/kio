@@ -337,22 +337,22 @@ fn parser_context_repl_newtype_and_identity_alias_members() {
 }
 
 #[test]
-fn parser_context_repl_replaces_started_multi_run_operator_once() {
+fn parser_context_repl_replaces_started_symbol_word_once() {
     let names = NameSet {
         current_module_src: Some(
-            "module app; fn choose(x: ., y: .) { x } op _ && ++ _ { impl choose; };".to_owned(),
+            "module app; fn choose(x: ., y: .) { x } op _ &&++ _ { impl choose; };".to_owned(),
         ),
         ..Default::default()
     };
-    let input = "x && +";
+    let input = "x &&+";
     let result = complete(&names, &AstScopeProvider::new(&names), input, input.len());
-    assert_eq!(result.replace, 2..6);
+    assert_eq!(result.replace, 2..5);
     assert_eq!(
         result
             .candidates
             .iter()
             .map(|candidate| candidate.label.as_str())
             .collect::<Vec<_>>(),
-        ["&& ++"]
+        ["&&++"]
     );
 }

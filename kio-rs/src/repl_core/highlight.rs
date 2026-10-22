@@ -425,10 +425,8 @@ pub fn highlight(src: &str, palette: Palette) -> String {
     render(src, palette, &BracketEmphasis::none())
 }
 
-/// Highlight a standalone type rendered by the REPL. The explicit type entry
-/// point lets the parser classify forall delimiters without guessing whether
-/// an arbitrary bracket-bearing snippet is a type or an ordinary operator
-/// expression.
+/// Highlight a standalone type rendered by the REPL through the type grammar,
+/// so rendered type names and binders retain their grammatical roles.
 pub fn highlight_type(src: &str, palette: Palette) -> String {
     if palette == Palette::Plain {
         return src.to_owned();
@@ -688,12 +686,9 @@ struct Bracket {
     is_open: bool,
 }
 
-/// The three structural bracket families Kio source uses. `(` `)` and
-/// `{` `}` arrive as dedicated lexer tokens. Square brackets are ordinary
-/// operator characters and join maximal symbol runs; the reference
-/// classifier exposes them as `punctuation.bracket` only when the parser
-/// consumed those exact bytes as forall delimiters. The scanner therefore
-/// reads the family off the source byte after classification.
+/// The three structural bracket families Kio source uses. Classification
+/// excludes brackets inside literals and comments before matching reads each
+/// bracket's family from its source byte.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BracketFamily {
     Paren,
@@ -1037,8 +1032,6 @@ mod tests {
 
     #[test]
     fn bracket_match_respects_families() {
-        // The bracket-shaped operator run is not structural punctuation:
-        // cursor on the outer `(` matches the `)`, ignoring `[x]`.
         let src = "(f [x] )";
         let open = src.find('(').expect("open paren");
         let close = src.rfind(')').expect("close paren");
@@ -1054,7 +1047,7 @@ mod tests {
     }
 
     #[test]
-    fn bracket_match_uses_parser_confirmed_forall_brackets_only() {
+    fn bracket_match_includes_source_local_square_frames() {
         let forall = "module x; type Id = [A] A -> A;";
         let open = forall.find('[').expect("forall opener present");
         let close = forall.find(']').expect("forall closer present");
@@ -1062,9 +1055,21 @@ mod tests {
         assert!(emphasis.style_at(open).is_some());
         assert!(emphasis.style_at(close).is_some());
 
-        let operator = "[x]";
-        let operator_emphasis = bracket_emphasis_at(operator, 0);
-        assert!(operator_emphasis.marks.is_empty());
+        for frame in ["[]", "[x]", "[**]", "[* x *]", "[* [**] *]"] {
+            let emphasis = bracket_emphasis_at(frame, 0);
+            assert!(emphasis.style_at(0).is_some(), "{frame}");
+            assert!(emphasis.style_at(frame.len() - 1).is_some(), "{frame}");
+            assert_eq!(emphasis.marks.len(), 2, "{frame}");
+        }
+        let nested = "[* [**] *]";
+        let inner = bracket_emphasis_at(nested, 3);
+        assert!(inner.style_at(3).is_some());
+        assert!(inner.style_at(6).is_some());
+        for source in ["\"[*\"", "// [*", "/// [*\n"] {
+            let bracket = source.find('[').unwrap();
+            assert!(bracket_emphasis_at(source, bracket).marks.is_empty());
+        }
+        assert_eq!(bracket_emphasis_at("[*", 0).marks.len(), 1);
     }
 
     #[cfg(feature = "repl")]

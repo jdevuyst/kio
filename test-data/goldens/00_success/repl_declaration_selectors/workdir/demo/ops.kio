@@ -18,8 +18,6 @@ pub type {field} = {original};
 /// Select the left operand.
 pub op _ + _ { impl choose }
 
-pub op _ .. _ { impl choose }
-
 pub op _ (=) _ { impl choose }
 
 /// Fold a bracketed sequence.

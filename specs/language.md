@@ -477,7 +477,7 @@ A type parameter is introduced by writing **`[name]`** — Kio's surface syntax 
 
 Only those two structural positions interpret `[Name]` as a forall binder.
 Fixed operators cannot contain square brackets. A variadic value expression
-instead uses nonbare mirrored runs such as `[*` and `*]`, with its `varop`
+instead uses bare brackets or a marked square frame such as `[* *]`, with its `varop`
 binding locally declared or selectively imported. Type parameters follow the
 **type-name rule** (an optional single underscore followed by an uppercase
 initial), not the value-name rule — see [Naming conventions](#naming-conventions).
@@ -2616,6 +2616,10 @@ A present UFCS argument list must contain at least one argument. The explicit-em
 
 The right-hand inserted value for `.<` / `.<<` is tight: it is a primary expression plus ordinary call applications, stopping before another dot-splice suffix. Thus `f.<x.>g` parses as `(f.<x).>g`; to insert the result of a UFCS expression, write `f.<(x.>g)`. Parentheses around any splice expression work normally and decide grouping.
 
+The same atom boundary applies to user operators. With `! _`, `f.<!x` is
+rejected; write `f.<(!x)`. A pattern ending in a fixed word completes an atom,
+so `< _ >` permits `f.< <x>` and `f.< <x>.>g` applies `g` to the splice result.
+
 UFCS chains compose by ordinary nesting. `r.>f.>>g(x)` parses as the outer splice over the result of `r.>f`. `f.<x.>g` parses as the outer `.>` over the result of `f.<x`, while `f.<(x.>g)` inserts the result of `x.>g` into `f`.
 
 **Call rule.** A dot-splice resolves the explicitly written callee first, then inserts the receiver into that callee's value-argument stream:
@@ -2756,13 +2760,37 @@ imported operator or a local `op` or `varop` declared before its enclosing item.
 Function bodies and recursive-group members do not see operators declared
 later in the module. Deferring a body's parsing does not change that scope.
 
-**Pattern shape and associativity.** An `op` pattern alternates **slot tokens** with **operator tokens**. The slot kinds are:
+**Pattern shape and operand permissions.** A fixed pattern alternates value
+slots and single contiguous symbol words, starting and ending with either.
+It contains at least one slot and at least one word. Thus `!? _`, `_ + _`,
+and `_ ? _ : _` are shapes; `! ? _`, adjacent slots, and a word alone are
+rejected. A fixed operator has no zero-argument form; use an ordinary named
+call for that operation. All slots take value expressions, never raw types.
+An implementation's generic arguments are inferred by the ordinary call rules.
+Grouping does not turn `A` into a value operand; an ordinary value expression
+such as `f(A)` or `A.member` retains its value role. This syntactic separation
+also applies before a mixed ordinary-call argument is classified as a type
+or a value, independently of the imported operator set.
 
-- `_` — ordinary slot, admits a single atom or paren-expression.
-- `__` — **self-recursive slot**: admits the surrounding operator's same-op chain. Position relative to the operator pins associativity.
-- `___` — **greedy slot**: admits a chain of *any* single operator (possibly different from the surrounding one), with cross-operator mixing *inside* the slot still rejected.
+The slot kinds specify the same permissions at every position:
 
-At most one of `__` or `___` per pattern. Two adjacent slots are a parse error (`op _ _ + _ { impl …; };` is rejected). Underscore runs of four or more (`____` and longer) are reserved; only `_`, `__`, and `___` are slot tokens.
+- `_` admits an atom, including an explicitly parenthesized expression.
+- `__` additionally admits an unparenthesized chain of this same operator.
+- `___` additionally admits an unparenthesized chain of another operator.
+
+Each nested operator still obeys its own slot permissions. An any-chain slot
+does not establish precedence between operators inside it. Patterns may have
+any number of these slots, subject to the structural restrictions below.
+Runs of four or more underscores are reserved.
+
+**Atoms and final words.** Native atomic expressions, grouped expressions,
+variadic literals, and completed native calls or forward-UFCS expressions are
+atoms. A fixed expression whose pattern ends in a fixed word also completes
+an atom, regardless of whether the pattern is prefix, postfix, or has several
+operands. A pattern ending in a slot has no such boundary. Consequently `_ ?`
+admits `a ? ?`, and `_ < _ >` admits `row<key>(arg)` with the call applied to
+the indexing result. In contrast, `! _` requires `!(!a)` for self-nesting;
+`! __` admits `! !a`. There is no automatic prefix-unary exception.
 
 | Shape                | Pattern                | Chain meaning                 |
 |----------------------|------------------------|-------------------------------|
@@ -2771,34 +2799,85 @@ At most one of `__` or `___` per pattern. Two adjacent slots are a parse error (
 | Binary left-assoc    | `__ OP _`              | `a OP b OP c` → `OP(OP(a, b), c)` |
 | **Right-greedy binary** | `_ OP ___`          | `f $ a + b` → `OP(f, add(a, b))`; same-op chains right-fold |
 | **Left-greedy binary**  | `___ OP _`          | terminates any preceding chain so the chain-so-far becomes the left operand |
-| Prefix unary         | `OP __` *(or `OP _`)*  | `OP a` → `OP(a)`; `OP OP a` → `OP(OP(a))` (right-assoc) |
-| **Prefix-greedy**    | `OP ___`               | `throw $ a + b` → `OP(add(a, b))`; operand admits a chain |
-| Postfix unary        | `__ OP` *(or `_ OP`)*  | `a OP` → `OP(a)`; `a OP OP` → `OP(OP(a))` (left-fold)  |
+| Prefix self-nesting   | `OP __`               | `OP a` → `OP(a)`; `OP OP a` → `OP(OP(a))` (right-assoc) |
+| **Prefix-greedy**    | `OP ___`               | `$ a + b` → `OP(add(a, b))` when `OP` is `$`; operand admits a chain |
+| Postfix unary        | `_ OP`                | `a OP` → `OP(a)`; `a OP OP` → `OP(OP(a))` (each result is an atom) |
 | Ternary right-assoc  | `_ OP1 _ OP2 __`       | C-style: `a ? b : c ? d : e` → `OP(a, b, OP(c, d, e))` |
 | Ternary mid-rec      | `_ OP1 __ OP2 _`       | `a ? b ? c : d : e` → `OP(a, OP(b, c, d), e)`          |
 | Ternary non-assoc    | `_ OP1 _ OP2 _`        | parse error on chain          |
 
-**Greedy slot semantics.** `___` subsumes `__`'s same-op chain behavior — a user could in principle use only `___` — but `__` stays in the grammar as the stricter shape, useful when the writer wants to *forbid* cross-op chains on the slot side. Dual-greedy patterns (`___ OP ___`) are rejected: without an asymmetric position, there is no associativity hint to drive parsing.
+**Structural restrictions.** A `__` must add an actual self-nesting permission.
+It is rejected in every pattern ending in a fixed word, because such a child
+is already an atom. In an operand-ending non-prefix pattern, a nonleading
+`__` is also ineffective when its immediately following word equals the
+pattern's first word: that following boundary owns the word needed to start
+the child. For example, `_ ? __ ? _` is rejected, while `_ ? __ : __` has two
+useful self-recursive positions. Other `__` positions in operand-ending
+patterns are useful: a prefix slot, a leading slot, or a later slot with no
+following word or a different following word.
 
-Higher-arity multi-token patterns (`_ OP1 _ OP2 _ OP3 _`, etc.) are accepted by the parser but follow the same rules: alternating slots and tokens, at most one `__` or `___` per pattern, and the recursive slot drives chain continuation when at one of the two end positions.
+An operand-ending non-prefix pattern cannot enable chaining at both exposed
+ends. Its leading and final slots cannot both be `__` or `___`, in any
+combination; `__ + __`, `__ + ___`, `___ + __`, and `___ + ___` are rejected.
+Bounded interior chain slots do not conflict merely by being multiple.
+Parentheses in a pattern quote one operator word, such as `(=)`; they do not
+change a slot's permission. Pattern groups containing slots are rejected.
 
 **Variadic operators.** `varop` declares delimited collection syntax. Its head
-contains an opening symbol run and its mirrored closing run, separated by
-whitespace:
+is a structural square frame, either bare `[]` or marked by a symbol word
+inside each square edge:
 
 ```kio
 varop [* *] { foldr cons nil; };
 varop [! !] { foldl insert_entry empty_builder; };
 ```
 
-OPEN is one maximal symbol run containing `[` and no `]`, and is not bare `[`.
-CLOSE reverses that run and replaces each `[` with `]`, preserving every other
-character. Thus `[*` pairs with `*]`, `*[` with `]*`, and `[[` with `]]`.
-Both runs obey the symbol-run and reserved-spelling rules below. A head always
-writes the two complete runs separately: `varop [* *]`, not `varop [**]`.
+For a marker `M`, OPEN is `[` followed by `M` and CLOSE is the reversed `M`
+followed by `]`. The marker contains neither dots nor brackets and obeys the
+ordinary symbol-word restrictions. The empty marker gives bare brackets.
+Examples are `[]`, `[* *]`, `[** **]`, and `[!? ?!]`. Brackets outside the
+square edges, multiple bracket pairs in a head, and fixed `_ [ _ ]` patterns
+are rejected. Square-bracket indexing is not native syntax; a library can
+declare a fixed pattern such as `_ < _ >` instead.
 
-Each comma-separated element at a use site is one ordinary expression. The
-ordinary comma-list rule applies, including leading, repeated and trailing
+Compact and spaced spellings select the same frame at legal lexical
+boundaries: `[**]` is empty marker `*`, `[****]` is empty marker `**`, and
+`[*[**]*]` is marker `*` containing one empty marker-`*` literal. An otherwise
+empty uninterrupted symbol word is split only at its mirrored midpoint;
+an odd or nonmirrored word is rejected. Declarations and imports accept the
+same empty-frame spellings. Canonical output uses `[]` for bare frames and
+spaces for marked frames: `[* *]`, `[** **]`, and `[* a, b *]`.
+
+Frame recognition uses written bracket nesting and whole edge words before
+binding lookup or element parsing. An opening edge's adjacent ordinary-symbol
+word determines the whole marker; a closing edge must match it in full.
+Multiple separately written symbolic words at an edge are rejected rather
+than merged, and a wrong edge never retries a shorter marker. Thus
+`[*|x|*]` selects marker `*|`, not `*` around `|x|`; to put `|x|` inside marker
+`*`, write `[*(|x|)*]`. Spaces alone in `[* |x| *]` do not supply that grouping.
+Commas can supply element boundaries, but formatting may replace an edge
+comma with grouping to preserve the selected frame. Signed literal tokens
+retain their lexical role: `[* -1 *]` has marker `*` and element negative one,
+whereas `[*-1*]` starts marker `*-` and has the wrong closing edge. A compact
+spelling of the former is `[*(-1)*]`.
+
+Precisely, an empty square pair is bare. A pair whose first direct token is
+not an ordinary symbol word is also bare, and its contents are the value
+comma-list region. If the whole contents are one legal word, the unique
+mirrored midpoint must divide it into the two empty-frame markers. Otherwise
+the first direct word is the whole opening marker and the last direct token
+must be its exact reversal. Between marked edges, a nonempty region cannot
+begin or end with an ordinary symbol word: grouping, nested structural frames,
+or edge commas provide boundaries, and signed numeric tokens are literals.
+Parse that fixed region as the value comma-list, then resolve the marker's
+binding. For bare frames a final postfix word needs no marker protection,
+so `[x?]` can contain `x?`; a leading symbol needs grouping or an edge comma.
+
+Each comma-separated element at a use site is one value expression, not a
+type or forall-binder entry. Grouping a raw type does not make it a value.
+Native `[A]` and `[*F]` type binders keep their type grammar; they cannot serve
+as value elements or operator slots. The ordinary comma-list rule applies,
+including leading, repeated and trailing
 commas. For example, `[* a, b, c *]` contains three expressions. A fixed
 operator can construct an element: with `op _ => _ { impl entry; };`, the
 literal `[! k1 => v1, k2 => v2 !]` folds two values produced by ordinary `entry`
@@ -2847,8 +2926,8 @@ fields still require names; only the optional finalizer admits `()`.
 Argument adaptation belongs in an ordinary named helper. Callable source order
 and visibility are the same as for fixed operators.
 
-Variadic delimiter runs are distinct from fixed-operator tokens, which contain
-neither `[` nor `]`. Their nesting and comma-separated expression boundaries
+Variadic square frames are distinct from fixed-operator words, which contain
+neither dots nor brackets. Their nesting and comma-separated expression boundaries
 are determined by the written source, without consulting operator declarations
 or imports. A literal still requires its `varop` binding to be in scope for
 resolution and lowering.
@@ -2856,7 +2935,7 @@ resolution and lowering.
 {:#operator-grammar}
 **Complete operator grammar.** The public identity of an operator selection is
 its complete tagged grammar. Fixed forms include every literal run, every slot
-kind, all later slots, and significant lenient groups. Variadic forms contain
+kind, and all later slots. Variadic forms contain
 the same OPEN and CLOSE in declarations and imports; the import omits only
 the callable body. For example:
 
@@ -2864,25 +2943,23 @@ the callable body. For example:
 |---|---|
 | `op _ + __ { impl add; };` | `op _ + __` |
 | `op _ ? _ : ___ { impl cond; };` | `op _ ? _ : ___` |
-| `op _ ( <\| _ \|> ) { impl index; };` | `op _ ( <\| _ \|> )` |
+| `op _ <\| ___ \|> { impl index; };` | `op _ <\| ___ \|>` |
 | `varop [* *] { foldr cons nil; };` | `varop [* *]` |
 | `varop [! !] { foldl insert empty; };` | `varop [! !]` |
 
 Canonical rendering retains distinctions between complete grammars, including
-lenient groups, slot kinds, maximal-run boundaries, and required contextual
-operator-token quotation in fixed patterns. Variadic heads consume exactly two
-unquoted maximal runs separated by whitespace; the comma separator is implicit
-in the `varop` construct and is not written in its head.
+slot kinds, whole-word boundaries, and required contextual operator-token
+quotation in fixed patterns. Variadic heads retain the selected square frame
+and marker; the comma separator is implicit and is not written in the head.
 
 **Dispatch and conflicts.** Parsing dispatches on the operator's expression-start
-position and leading run-sequence; variadic bindings dispatch on OPEN. This
+position and first fixed word; variadic bindings dispatch on their marker. This
 shorter key is deliberately distinct from the complete public grammar. It
 prevents two incompatible parses in one scope: two bindings with the same
-position and leading run conflict even if their tails or slot kinds differ.
+position and first word conflict even if their tails or slot kinds differ.
 Two variadic bindings with the same OPEN also conflict; CLOSE is fixed by its
 mirror. Fixed and variadic keys cannot collide because fixed tokens exclude
-square brackets. The prefix-forbidden rule below additionally rejects a strict
-fixed-op-token prefix. Public imports, diagnostics, and
+square brackets. Public imports, diagnostics, and
 queries retain the complete grammar rather than displaying a shortened key.
 
 **Module-local by default; `pub` exports the binding.** Importing an ordinary
@@ -2913,7 +2990,7 @@ internal comma, so a following comma belongs to the surrounding selection list.
 
 Semantic resolution then checks the exact explicitly named provider's exported
 record and compares the whole grammar. An unavailable export or a mismatching
-slot, token, group, or delimiter pair is an import error; provider data never
+slot, token, or delimiter pair is an import error; provider data never
 changes the already-written consumer grammar. The selected declaration supplies
 the callable paths, fold mode, and finalizer for lowering. Changing those fields
 does not change the grammar a consumer must write.
@@ -2927,13 +3004,14 @@ Visibility is checked on every directly named callable as described above.
 
 **Import aliases.** `import arithmetic(op _ + __ as _ ++ __);` selects the
 complete source grammar and installs only the complete destination grammar.
-Every token/slot position, slot kind, effective leniency and token-run boundary
+Every token/slot position, slot kind, and word boundary
 is preserved. Literal tokens may change by a consistent injective substitution:
 each repeated token keeps one replacement and distinct tokens stay distinct.
-`import collections(varop [[ ]] as [* *]);` similarly changes only the admitted
+`import collections(varop [] as [* *]);` similarly changes only the admitted
 mirrored delimiter pair, preserving fold direction, initializer, step and
-finalizer. Reserved syntax and structural prefix checks apply to the local
-grammar. An alias never changes the callable's type or argument order.
+finalizer. Reserved syntax and structural pattern checks, including `__`
+usefulness, apply to the local grammar. An alias never changes the callable's
+type or argument order.
 Distinct destination grammars may select one source declaration; they remain
 distinct operators for chaining, even when their callables coincide.
 
@@ -2943,8 +3021,8 @@ Imports also conflict with other imports or local fixed/variadic declarations
 that occupy the same local dispatch key. These are Name errors. There is no
 same-provider exception. Validation consumes the written import environment
 and module-cycle graph; this prerequisite does not establish diagnostic
-precedence when independent errors coexist. Distinct dispatch keys still obey
-the structural prefix-forbidden rule.
+precedence when independent errors coexist. Distinct dispatch keys remain
+separate; a word is never decomposed to select an imported shorter spelling.
 
 **Open-world.** A consumer's parse depends only on its complete written imports
 and preceding local declarations. Resolution compares each selection with the
@@ -2955,76 +3033,106 @@ operator, or callable resolution. A duplicate provider key is a same-module
 conflict, not a silent rebind. Lowering makes the resolved ordinary dependencies
 explicit, and downstream phases perform no fresh provider search.
 
-**No precedence; only associativity.** Different operators in one expression require explicit parentheses — `2 + 3 * 4` is a parse error. The user writes `(2 + 3) * 4` or `2 + (3 * 4)`. This is deliberate: precedence tables grow into a long-tail of opinion, and parens are cheap. The rule mirrors the type-chain mixing rule (`(A & B) | C`) — operator nesting requires the same explicit grouping that nested-type chains do.
+**Grouping and chain extent.** There is no numeric operator precedence.
+With `_ + _` and `_ * _`, `a + b * c` is rejected; write
+`a + (b * c)` or `(a + b) * c`. Declared chain slots and final-word atoms
+provide the unparenthesized compositions described here.
 
-**Nesting summary.** The full rule, in one place:
+A following fixed word bounds its operand: the innermost pending following
+word owns that whole word before another operator can dispatch on it. A prefix
+whose final slot has no following word inherits the enclosing boundary. Words
+are compared in full; `|>|>` cannot supply two separately written `|>` closes.
+Thus `_ <| ___ |>` admits `a <| b + c |>` when `_ + _` is declared;
+a separate `_ |> _` cannot steal that closing word. Grouping
+`a <| (b |> c) |>` instead exposes the different inner operator.
 
-| Composition                              | Without parens | Required form           |
-|------------------------------------------|----------------|-------------------------|
-| Same operator, associative                | OK             | per the operator's assoc |
-| Same operator, non-associative            | parse error    | `(a OP b) OP c` etc.    |
-| Different binary operators                | parse error    | `(a + b) * c`           |
-| Different operators inside a recursive ternary slot | parse error    | `a ? b : (c + d)`       |
-| Postfix unary then binary                 | parse error    | `(a OP1) OP2 b`         |
-| **Prefix unary then binary**              | **OK**         | `- a + b` is `add(neg(a), b)` |
-| Same prefix unary, chained                | OK             | `! ! a` is `not(not(a))` (right-assoc) |
-| Same postfix unary, chained               | OK             | `a ? ?` is `?(?(a))` (left-fold) |
+At a non-prefix operator, a leading chain slot takes the widest structurally
+finished preceding expression that its permission admits. For this decision,
+the expression's outermost operator determines whether it is the same
+operator. A leading `__` takes the widest expression with that same outermost
+operator, or the immediate atom; a leading `___` takes the widest expression.
+Parentheses, native
+argument/list boundaries, and an enclosing pattern still awaiting its own
+fixed word bound that extent. A preceding operand-ending pattern is
+structurally finished once its final operand has started. This rule selects
+the grouping before checking operand validity; a failure never retries a
+shorter extent.
 
-Prefix unary is the lone composition that doesn't require parens — it binds tightly to its operand and the result becomes the LHS of any subsequent binary/ternary. Every other cross-operator composition requires explicit grouping, the same way type-chain mixing does.
+For example, with `_ + _`, `! _`, and `___ < _ >`, the source
+`a + !b < k >` gives `<` the whole preceding `a + !b`. That expression then
+fails because the strict right slot of `+` does not admit bare `!b`.
+The invalid operand does not make `<` take only `b` to rescue the expression.
 
-**Operator-character set.** An `OpToken` is a maximal contiguous run drawn from the **allow-list** ``+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | : . [ ]`` (the apostrophe `'` and the backtick `` ` `` have no other role in the language). The lexer produces every such run as a single `SymbolRun` — the one unified symbol-token kind — so there is no standalone-vs-fused distinction at the token-kind level: `[!`, `]]`, `]-`, and `][*` are single runs just as `<=`, `&&`, or `->` are. Whitespace is load-bearing when two runs are intended: `[ !`, `] ]`, `] -`, and `] [ *` are distinct run sequences. `&` and `|` join runs like any other op-char; the type-product and type-sum chain parsers recognize a `SymbolRun` whose content is all `&` (resp. all `|`) as a chain separator. `.` joins greedy runs alongside the rest, so `.>`, `.>>`, `.<`, and `.<<` lex as ordinary fused `SymbolRun`s. Dotted runs are admissible as user operator tokens when they do not start with `.` (`+.` / `<.>`) or, if they do start with `.`, when they contain at least two dots (`..` / `.+.`). Leading-dot runs with exactly one dot (`.`, `.>`, `.+`, `.###$`) are reserved for dot-led syntax. The lexer is **uniformly greedy** over op-chars — `->`, `.>`, `<-`, and all other multi-char sequences flow through the same fusion rule, with no per-arrow carve-out.
+If that left extent crosses an operand-ending operator whose final slot
+also admits the incoming operator's bare chain, the two declarations make
+opposing claims. Parentheses are required regardless of which alternative
+would typecheck. With `_ $ ___` and `___ < _ >`, therefore,
+`a $ b < k >` is rejected. Write `(a $ b) < k >` or
+`a $ (b < k >)`.
 
-At grammar positions that structurally require a delimiter, the parser may peel that leading delimiter from a fused run: this covers function arrows, existential closers, bang-call suffixes, unit-type dots, type-chain separators, and the `[` / `]` around forall binders. Contextual bracket peeling preserves compact spellings such as `[*F]`, `[A][B]`, `[A][*F]`, and `.[*F]`. The peel is opt-in per structural call site — user-`op` patterns, variadic patterns, operator expressions, and operator imports read each `SymbolRun` whole. There is no bracket-only compatibility decomposition in operator grammar. Whitespace, identifiers, digits, and structural punctuators (`, ; ( ) { }`) all break the run. **The op-char allow-list is ASCII-only.** Unicode math operators, arrows, set-theoretic symbols, and composition dots are not op-chars: an `op ∘ _ { impl compose; };` is a lex error. Identifiers are likewise ASCII-only under the standard `IDENT` grammar; operator tokens have this separate character allow-list. The homoglyph hazard (`×` vs `x`, `−` vs `-`, `∘` vs `o`), the synonym-pair maintenance cost (every Unicode op-char would need an ASCII fallback for users without IMEs / copy-paste), and the audience fit (Kio targets host-language developers embedding a small language, not Agda / Lean / APL users with Unicode-friendly editor setups) all point at ASCII-only as the right floor for operator tokens.
+Native calls and forward UFCS after a final fixed word attach to that completed
+result. After a pattern ending in an operand they attach to its final operand.
+A suffix never repairs an invalid operand within the selected grouping.
 
-A small **block-list** governs sequences an operator run will not absorb:
+| Declared patterns | Source | Meaning or required grouping |
+|---|---|---|
+| `_ + _`, `_ ?` | `a ? + b` | `(a ?) + b`; the postfix result is an atom |
+| `_ + _`, `! _` | `!a + b` | rejected; write `(!a) + b` |
+| `_ + _`, `! _` | `a + !b` | rejected; write `a + (!b)` |
+| `___ + _`, `! _` | `!a + b` | `(!a) + b` by the declared left extent |
+| `_ + _`, `___ < _ >` | `a + b < k >` | `(a + b) < k >`; group `b < k >` for the other reading |
+| `_ + _`, `_ < _ >` | `a + b<k>(x)` | `a + ((b<k>)(x))` |
+| `_ + _` | `a + b.>f` | `a + (b.>f)` |
+| `_ + _`, `! _`, `___ < _ >` | `a + !b < k >` | rejected: the maximal left extent contains an invalid strict operand |
 
-- `//` — opens a line comment (handled by trivia, before operator lexing).
-- Any run carrying two or more `/` characters — reserved (a run includes at most one `/`).
+**Symbol words and native structure.** Ordinary operator words are maximal
+contiguous runs from the ASCII allow-list
+``+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | :``.
+Dots and square brackets are structural tokens and cannot occur in a user
+operator word or marker. Native dot-led forms include qualification, member
+access, UFCS, booleans, lambdas, and placeholder stems. These roles are
+recognized independently of operator imports. Compact native syntax such as
+`type A=.;`, `[*F]`, `[A][B]`, and `.[*F]` remains structural.
 
-`#` is an ordinary operator character and joins greedy runs (`##`, `#-`, …). Placeholder lambdas use ordinary identifier stems and numbered references, as specified in [Placeholder lambdas](#placeholder-lambdas).
+Whole words are never split according to shorter imported operators:
+`!? _` is one component; `! ? _` is rejected. At use sites, `?+`,
+`??`, and `><` are each one word, regardless of available bindings.
+Whitespace may separate complete words; it cannot split or join them without
+changing the spelling. Required native adjacency and numeric/string token
+boundaries remain load-bearing. In particular `! !a` and `!!a` differ,
+and `1 + -2` and `1+-2` have different token boundaries.
 
-**Reserved operator-token spellings.**
+A symbol word contains at most one slash; `//` opens a comment and comment
+markers retain their trailing-whitespace requirement. `#`, apostrophe, and
+backtick are ordinary operator characters. Unicode symbols are not operator
+characters.
 
-- Fixed-operator tokens contain neither `[` nor
-  `]`, including in quoted operator patterns. Square brackets retain their
-  structural type roles and form the delimiter runs of `varop` literals.
-- `=` has fixed roles in `let`, `type`, `literal`, and `op` bodies. An unquoted standalone `=` in op pattern position is rejected before any operator-token can be recorded; the quoted form `op _ (=) _ { impl my_eq; };` (operator-token quotation) admits `=` as an op-token.
-- Any op-token that **starts with `.`** must contain at least two dots. This reserves dot-led one-dot runs **unquoted and quoted both**: `.`, `.>`, `.+`, `.###$`, and the corresponding quoted forms `(.)`, `(.>)`, `(.+)`, `(.###$)`. The reservation holds in any operator component, not only when the component is the sole token of the pattern. Valid dotted examples include `..`, `.+.`, `+.` and `<.>`.
+**Operator-token quotation.** A standalone `=` requires quotation in a
+declaration or import: `op _ (=) _ { impl my_eq; };`. Use sites write
+`a = b`. Quotation encloses exactly one word and does not admit dots,
+brackets, or slots. `:` and `->` can appear directly in a pattern; their
+native structural meanings remain fixed by the surrounding grammar.
 
-`:` was previously reserved the same way, but is now admissible directly: `op _ : _ { impl annot; };` parses, because the parser disambiguates `:` between binding-position contexts (fn parameters, `newtype` headers — type annotation) and expression position (operator) via the surrounding parser state. `->` is similarly admissible directly — its structural role (function-type arrow / fn return-type marker) is pinned by surrounding-grammar context. Multi-token patterns containing `=`, `:`, `->`, or admissible dotted runs (e.g. `op _ ? _ : _ { impl cond; };`, `op _ .. _ { impl range; };`, `op _ .+. _ { impl compose; };`, `op _ +. _ { impl trailing_dot; };`, `op _ <-> _ { impl bidir; };`) parse without ceremony.
+**Native bang ownership.** Within an already framed expression region, an
+eligible value identifier immediately followed by `!` starts the ordinary
+native bang-call atom. A pending custom closing word cannot take that suffix.
+With `_ < _ !`, `a < f!(x)` therefore lacks the outer closing `!`;
+`a < f !(x)` closes the fixed expression after `f` and calls its result.
+A malformed or unresolved adjacent bang call is not retried as a custom close.
+This rule does not extend the admitted native bang-head grammar. Variadic
+frame edges are reserved before their elements are parsed, so `[!x!]` has
+element `x`.
 
-The stricter reservation on dot-led one-dot runs (no quotation escape) is deliberate. `=` is admissible via `(=)` because `=` never appears in expression position structurally — any `=` in expression position is, by definition, a user-op call. Dot-led syntax appears in expression position **as** structural roles — member access, UFCS dispatch, `.(...)` lambdas, and `.stem.` placeholder lambdas — so the one-dot family stays held back for those forms and future dot-led extensions.
+**Conflict keys.** Prefix and non-prefix fixed patterns have separate
+keyspaces, so prefix `- __` and binary `_ - __` can coexist. In either
+keyspace, the first whole fixed word uniquely selects a binding. Patterns
+`_ + _` and `_ + _ ? _ : _` conflict even though their complete grammars
+differ; `_ && _` and `_ &&-- _` have distinct whole words and can coexist.
+Variadic keys are the structurally selected markers, including the empty
+marker for bare brackets. No provider census or successful trial parse chooses
+a key.
 
-**Reserved `//…` operator family.** Independently of the dot-led rule above, an operator component whose spelling **starts with** `//` is reserved for future syntax: an `op` whose maximal run of adjacent op-tokens begins with `//` is a parse error, holding the whole `//…` family (`//!`, `//?`, `//=`, …) back. Because the lexer caps a single `SymbolRun` at one `/` (a second `/` opens a line comment — see [`grammar.md`](grammar.md#lexical-structure-kio-surface)), a `//` prefix is only reachable as two adjacent `/` op-tokens (`op _ / / _ { impl …; };`); the parser joins the adjacent run and rejects it. This is a `starts_with("//")` **prefix** reservation — it reserves the entire family, not a single spelling. The reservation keeps the surface coherent with the line-comment marker `//`, so the `//…` family can later take on operator meaning without colliding with existing user operators.
-
-**Operator-token quotation `(tok)`.** The binding separator `=` can still be used as an `op` operator-token by wrapping it in parens: `op _ (=) _ { impl my_eq; };` declares a binary `=` operator that binds to `my_eq`. The `(...)` is pattern syntax, retained in declarations and complete imports — it tells the parser to read the inner token as a literal operator-token rather than its structural role. At use sites, the operator is invoked without the parens: `a = b` desugars to `my_eq(a, b)`. The quotation form is non-conflicting with the [lenient-grouping marker](#operators) `( … )` (which wraps slots, not lone tokens); the parser distinguishes by content. Quotation does **not** bypass the leading-dot one-dot reservation: `(.)`, `(.>)`, `(.+)`, and `(.###$)` remain reserved, while `(..)` and `(.+.)` are admitted for the same reason as their unquoted forms. Open-world is preserved by the same keyspace argument as in [Open-world](#operators) above — the unquoted token contributes to the (shape, op-tokens, prefix-vs-non-prefix) tuple identically to any other op-token, so an added `pub op _ (=) _ { impl ...; };` in a provider occupies a fresh keyspace slot and cannot perturb an existing import.
-
-**Pattern tokens** are bracket-free `OpToken` runs. Quotation cannot admit `[` or `]` into a fixed pattern. A symbol used as a pattern token keeps its structural meaning elsewhere. Adjacent operator tokens are permitted when whitespace keeps their runs separate: `op _ && ++ _ { impl combine; };` has two runs, while `op _ &&++ _ { impl combine; };` has one. Only adjacent slots are rejected. Matched-pair patterns such as `_ <| _ |>` use the same rules; their separate runs remain separate at use sites. The keyspace is the sequence of runs, not a concatenated string, so an imported complete pattern continues to identify the same target when a provider adds unrelated patterns.
-
-A recursive last slot can be followed by fixed closing runs while retaining
-same-operator chaining. For example, `_ <| __ |>` admits
-`a <| b <| c |> |>`; `a<|b<|c|>|>` instead ends in the single maximal run
-`|>|>` and does not supply two closes. When the next operator would select a
-different binding, the complete closing-run sequence belonging to the enclosing
-pattern terminates its recursive operand. Thus a separate `_ |> _` in scope
-does not consume the closing `|>` of `_ <| __ |>` in `a <| b |>`.
-The cross-operator grouping rules apply within recursive operands; closing
-runs do not establish operator precedence.
-
-**Explicit `( … )` lenient-grouping marker.** An `op` pattern may wrap a contiguous sub-pattern (slots and tokens, any mix) in `( … )` to mark the slots inside as **lenient**: at use sites, a lenient slot admits a full single-op chain instead of the default atom-or-paren operand. `op _ ( <| _ |> ) { impl idx; };` declares an indexing operator whose inner slot admits `a <| b + c + d |>` directly; the strict-atom default `op _ <| _ |> { impl idx; };` would require explicit parens around the inner chain. The `( … )` themselves are not typed at use sites — they are pattern syntax and remain present in complete imports. Cross-operator mixing inside the lenient slot still requires explicit parens (no precedence). Groups don't nest, must contain at least one part, and the greedy slot `___` is rejected inside `( … )` (already full-chain by definition).
-
-**Conflict rule — prefix-forbidden op-token sequences.** Subject to dispatch-key uniqueness, two `op`s in one module may share leading operator-token sequences *as long as neither's op-token sequence is a strict prefix of the other's*. Prefix-shaped patterns (`OP _`, `OP __`) live in a separate keyspace from non-prefix patterns, so the same op-token spelling can be both prefix and non-prefix simultaneously (e.g. unary `op - __ { impl neg; };` plus binary `op _ - __ { impl sub; };` coexist). Within either keyspace:
-
-- ✓ `_ && ++ _` and `_ && -- _` — share `&&`, branch at `++` vs `--`. No prefix relation. Coexist.
-- ✓ `_ && _` and `_ &&-- _` — `&&` (one op-token; the lexer fuses adjacent op-chars) and `&&--` (one op-token) are disjoint at the token level; neither is a prefix of the other. Coexist.
-- ✗ `_ && _` and `_ && ++ _` — whitespace separates `&&` from `++`, so the second pattern's sequence is `[OpToken("&&"), OpToken("++")]` — `&&` is a strict prefix. Conflict; the second declaration is a name-conflict error. (Re-spelling the second as `_ &&++ _` (no whitespace) makes them disjoint single tokens and resolves the conflict.)
-- ✗ `_ + _` and `_ + _ ? _ : _` — `+` is a strict prefix of `+ ? :`. Conflict.
-
-The implementation stores operators in a trie keyed by op-token sequence; inserting an op whose pattern's sequence lands on an existing entry, or whose sequence is a strict prefix of an existing entry, is a name-conflict error. At parse time the parser walks the trie forward token-by-token; bounded lookahead equals the maximum declared pattern depth.
-
-**Whitespace as the disambiguator.** Operator characters fuse into a run only when adjacent (no whitespace), so `&&` and `&&--` each lex as one `SymbolRun` and the trie keys are disjoint, while `& &` (whitespace between) is two one-character runs. There is no dedicated-token-kind distinction for any symbol: a standalone `&`, `|`, `!`, `=`, `:`, `<`, `>`, `.`, `[`, or `]` is just a one-character `SymbolRun`, and its structural role (chain separator / bang-call suffix / binding separator / type annotation / existential binder / member access / forall delimiter) is recognized from content and parser position; the same character fused into a longer run is part of that run. The "leading/trailing/repeated `&`s collapse" rule from [`grammar.md`](grammar.md) — `A &&& B` and `A &&&&&& B` parsing the same as `A & B` — is implemented by the chain parser recognizing any `SymbolRun` whose content is all `&` characters as a product separator (and the symmetric rule for `|`).
-
-**Lowering.** The operator-fold pass replaces fixed-operator applications and variadic literals with ordinary calls using the consumer's explicit operator scope. Fixed and variadic declaration records and tagged import selections are consumed before Kio'. Kio' shares the maximal symbol-run lexer but has no `op` or `varop` declaration, operator import, or user-operator expression production.
+**Lowering.** The operator-fold pass replaces fixed-operator applications and variadic literals with ordinary calls using the consumer's explicit operator scope. Fixed and variadic declaration records and tagged import selections are consumed before Kio'. Kio' shares the symbol-word lexer and structural delimiters but has no `op` or `varop` declaration, operator import, or user-operator expression production.
 
 **Out of scope.** Bare-operator-as-value (`map(+, xs)`) is not supported.
 
@@ -3084,7 +3192,7 @@ Four literal **shapes** are recognized — string, integer, float, and bool. Str
 
     Pure parser-side rule: no operator is added, and the rule does not extend to any other literal shape (integers, floats, booleans don't fold).
 
-- **Integer** — decimal digits, optionally grouped with `_` as a digit separator (`1_000_000`). A leading `-` adjacent to a digit is consumed by the lexer as the literal's sign when the preceding token does not end an expression (BOF, after `(`, `,`, `=`, an op-token, etc.); after an expression-ending token (identifier, literal, `)`, or `}`), `-` is a separate op-token and `a-1` / `1-2` parse as the subtraction shape. A `]` is an ordinary op-token, not a lexer-level expression closer. See [`grammar.md`](grammar.md) § Notes (Kio surface) for the precise rule. There is no hex/binary/octal syntax. Magnitude is unbounded at the source level; representability in a given host language is the host's concern.
+- **Integer** — decimal digits, optionally grouped with `_` as a digit separator (`1_000_000`). A leading `-` adjacent to a digit is consumed by the lexer as the literal's sign when the preceding token does not end an expression (BOF, after `(`, `,`, `=`, an op-token, etc.); after an expression-ending token (identifier, literal, `)`, `}`, or `]`), `-` is a separate op-token and `a-1` / `1-2` parse as the subtraction shape. A completed square frame therefore has the same subtraction boundary as `)` or `}`. See [`grammar.md`](grammar.md) § Notes (Kio surface) for the precise rule. There is no hex/binary/octal syntax. Magnitude is unbounded at the source level; representability in a given host language is the host's concern.
 
 - **Float** — decimal digits with a `.`-separated fractional part and/or an `e`/`E` exponent with an optional sign (`3.14`, `1.0e-9`, `2e10`). Digit separators are allowed in both mantissa and exponent. An integer-shaped run with neither a fractional part nor an exponent is an integer literal, not a float. The leading-`-` sign rule above applies to float literals too (`-3.14`, `-1.0e-9` at expression-starting positions).
 

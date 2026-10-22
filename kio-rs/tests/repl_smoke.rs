@@ -1448,17 +1448,17 @@ fn repl_type_on_garbage_reports_cause_without_wrapper_framing() {
 fn repl_parse_cause_marks_the_actual_prompt_in_all_expression_views() {
     let pkg = minimal_package("parsecause");
     for prefix in ["", ":t ", ":pure ", ":normalize "] {
-        let input = format!("{prefix}index([1], 0)");
+        let input = format!("{prefix}index(x., 0)");
         let out = run_repl(
             pkg.path(),
             &[":load demo/main", &input, ":normalize ()", ":quit"],
         );
         assert!(out.contains("not a name or a Kio expression"), "{out}");
         assert!(
-            out.contains("<repl>:1:8: error: expected identifier"),
+            out.contains("<repl>:1:9: error: expected identifier"),
             "{out}"
         );
-        assert!(out.contains("1 | index([1], 0)\n  |        ^"), "{out}");
+        assert!(out.contains("1 | index(x., 0)\n  |         ^"), "{out}");
         assert!(
             !out.contains("_expr") && !out.contains("_repl_parse_check_"),
             "{out}"

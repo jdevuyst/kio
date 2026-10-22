@@ -8,7 +8,7 @@ import elab/control(if);
 import elab/match(match);
 import list/core as lc;
 import list/list as ll;
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import poly/arith as arith;
 import poly/calculus as calculus;
 import poly/core as core;

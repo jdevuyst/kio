@@ -95,6 +95,16 @@ Ordinary libraries, including those defining `if!`, `match!` and `do!`, use
 these interfaces without becoming builtins themselves. See
 [builtin modules](docs/guides/builtin-modules.md).
 
+**Operator word, slot, atom, frame.** A fixed operator alternates whole symbol
+words with value slots: `_` accepts an atom, `__` also its own operator's
+chain, and `___` also another operator's chain. An *atom* is a syntactically
+bounded expression, including a fixed operator completed by a final symbol
+word; a pattern ending in an operand needs declared chain permission or
+grouping to compose in that position. A variadic *frame* is a bare or marked
+square pair, such as `[]` or `[* *]`. See [operators](docs/guides/operators.md),
+[collection frames](docs/guides/variadic-operators.md), and the
+[grouping contract](specs/language.md#operators).
+
 **Normalization, residual, equivalence.** Normalization reduces core code
 without running arbitrary host capabilities. A *residual* is what remains
 after that simplification; REPL displays need not be reparsable Kio' programs.

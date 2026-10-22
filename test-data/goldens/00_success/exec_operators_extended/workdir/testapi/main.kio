@@ -25,11 +25,11 @@ op _ `` _ { impl cat }
 
 op _ '` _ { impl cat }
 
-// Adjacent punctuation characters form one ordinary operator run.
-op _ <! __ !> { impl pick }
+// Each operator word is one contiguous run between operand slots.
+op _ <! _ !> { impl pick }
 
-// Whitespace makes `<` and `!` separate runs, so this is a distinct operator.
-op _ < ! __ ! > { impl pick_second }
+// A longer contiguous pair of symbol words remains a separate operator.
+op _ <!! _ !!> { impl pick_second }
 
 pub fn main() {
   print("a" ## "b");
@@ -44,7 +44,7 @@ pub fn main() {
   print("\n");
   print("fused" <! "ignored" !>);
   print("\n");
-  print("ignored" < ! "separated" ! >);
+  print("ignored" <!! "separated" !!>);
   print("\n");
   print(plain_outer());
   print("\n");

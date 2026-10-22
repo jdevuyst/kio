@@ -1,1 +1,1 @@
-`;` is not admissible as an `op` operator token
+commas and semicolons are not admissible as operator tokens

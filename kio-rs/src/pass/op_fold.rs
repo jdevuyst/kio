@@ -1252,10 +1252,8 @@ impl PackageOpScope {
     }
 }
 
-/// In-scope operator bindings for one module. Keyed structurally
-/// per the prefix-forbidden conflict rule: `(leading_op_run,
-/// is_prefix)` for normal ops, and the OPEN-token sequence for
-/// folds.
+/// In-scope bindings keyed by the first fixed word and expression position,
+/// or by the complete variadic opening marker.
 struct OpScope {
     normal: HashMap<(Vec<String>, bool), NormalBinding>,
     variadic: HashMap<Vec<String>, VariadicBinding>,
@@ -1401,28 +1399,8 @@ impl OpScope {
     }
 }
 
-/// Compute the leading op-token run from a op pattern — the
-/// sequence of `Token` parts from the start up to the first slot
-/// (or all of them, for prefix patterns).
 fn leading_op_run(pattern: &[OpPart]) -> Vec<String> {
-    let start = if matches!(
-        pattern.first(),
-        Some(OpPart::SlotPlain { .. })
-            | Some(OpPart::SlotRecursive { .. })
-            | Some(OpPart::SlotGreedy { .. })
-    ) {
-        1
-    } else {
-        0
-    };
-    pattern[start..]
-        .iter()
-        .take_while(|p| matches!(p, OpPart::Token { .. }))
-        .filter_map(|p| match p {
-            OpPart::Token { content, .. } => Some(content.clone()),
-            _ => None,
-        })
-        .collect()
+    crate::ast::op_leading_run(pattern)
 }
 
 fn is_prefix_shape(pattern: &[OpPart]) -> bool {
@@ -3913,19 +3891,14 @@ mod tests {
     }
 
     #[test]
-    fn fold_prefix_then_binary_composes() {
-        // Prefix-unary then binary parses without parens — `- a + b`
-        // folds to `add(neg(a), b)` (per `specs/language.md` §
-        // Operators — Nesting summary). The outer call is `add`
-        // with two args; the first arg is the inner prefix call
-        // `neg(a)`.
+    fn fold_grouped_prefix_then_binary_composes() {
         let body = folded_fn_def_body(
             "module x; \
              fn neg(a: A) -> A { a } \
              fn add(a: A, b: A) -> A { a } \
              op - __ { impl neg; }; \
              op _ + __ { impl add; }; \
-             fn use_op(a: A, b: A) -> A { - a + b }",
+             fn use_op(a: A, b: A) -> A { (- a) + b }",
             4,
         );
         match body {
@@ -4372,7 +4345,7 @@ mod tests {
         for (declared, selected, body) in [
             ("_ ? _ : _", "op _ ? _", "a ? b"),
             ("_ ? __", "op _ ? _", "a ? b"),
-            ("(_ ? _)", "op _ ? _", "a ? b"),
+            ("_ ? ___", "op _ ? __", "a ? b"),
         ] {
             let provider = p(&format!(
                 "module syntax;

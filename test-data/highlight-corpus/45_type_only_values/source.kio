@@ -13,7 +13,7 @@ fn run() {
   let multiline = . // dot
     [A] // stages
     [B] { () };
-  let dots = ..[ .[A] { () } ]..;
-  let plus = +.[ .[A] { () } ].+;
+  let dots = [@ .[A] { () } @];
+  let plus = [+$ .[A] { () } $+];
   direct(.)
 }

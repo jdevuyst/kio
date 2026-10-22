@@ -6,7 +6,7 @@ fn pick(a: String, b: String) -> String { a }
 
 // The recursive operand admits nested indexing. Spaces keep the nested
 // closing runs separate under ordinary maximal lexing.
-op _ <| __ |> { impl pick }
+op _ <| _ |> { impl pick }
 
 pub fn plain_outer() -> String { "outer" <| "inner" |> }
 

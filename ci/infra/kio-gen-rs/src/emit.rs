@@ -301,6 +301,9 @@ pub literal hello_str = \"hello\";
 // grammar `_ <+> _`; a consumer selects it as `import prog(op _ <+> _);`.
 const UTIL_KIO_OP: &str = "
 pub op _ <+> _ { impl kio_gen_op_pick }
+pub op !? __ { impl id }
+pub op _ ?! { impl id }
+pub op @ ___ # ___ $ { impl kio_gen_op_pick }
 ";
 
 // A surface-only seeded variadic operator. The seed consumes the rightmost
@@ -312,6 +315,7 @@ const UTIL_KIO_VARIADIC: &str = "
 pub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }
 pub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0(I32) }
 pub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
+pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
 ";
 
 fn util_kio(prog: &Program) -> String {
@@ -589,6 +593,11 @@ pub fn render_package_files(prog: &Program) -> Vec<(String, String)> {
         "\nequiv kio_gen_unit_equiv { (); id(., ()) }\n\
 equiv kio_gen_seeded_fold_singleton { [* 2(I32) *]; 2(I32) }\n\
 equiv kio_gen_seeded_fold_step { [* 1(I32), 2(I32) *]; 0(I32) }\n\
+equiv kio_gen_bare_fold_singleton { [2(I32)]; 2(I32) }\n\
+equiv kio_gen_bare_fold_step { [1(I32), 2(I32)]; 0(I32) }\n\
+equiv kio_gen_prefix_chain { !? !? 2(I32); 2(I32) }\n\
+equiv kio_gen_closed_result_suffix { 2(I32) ?! ?!.>id; 2(I32) }\n\
+equiv kio_gen_bounded_chain_slots { @ 1(I32) <+> 2(I32) # !? 3(I32) $; 1(I32) }\n\
 equiv kio_gen_label_forward_nominal { {kio_gen_count_forward = 7(I32)}; Count.mk(7(I32)) }\n\
 equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}; 11(I32) }\n"
     } else {
@@ -897,10 +906,13 @@ build {
         assert!(UTIL_KIO_BASE.contains(
             "rec {\n  pub type Kio_gen_cycle = Kio_gen_node;\n  pub newtype Kio_gen_node : Kio_gen_cycle\n    { pub constructor mk_kio_gen_node; pub projector un_kio_gen_node }\n}\n"
         ));
-        assert_eq!(UTIL_KIO_OP, "\npub op _ <+> _ { impl kio_gen_op_pick }\n");
+        assert_eq!(
+            UTIL_KIO_OP,
+            "\npub op _ <+> _ { impl kio_gen_op_pick }\npub op !? __ { impl id }\npub op _ ?! { impl id }\npub op @ ___ # ___ $ { impl kio_gen_op_pick }\n"
+        );
         assert_eq!(
             UTIL_KIO_VARIADIC,
-            "\npub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }\npub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0(I32) }\npub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n"
+            "\npub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }\npub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0(I32) }\npub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\npub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n"
         );
     }
 

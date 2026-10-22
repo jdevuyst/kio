@@ -44,6 +44,11 @@ or export the tree for browsing and searching with local tools. Run
   [UFCS spelling choices](docs/guides/ufcs.md#choosing-a-spelling).
 - Export deliberately: keep helpers private, adding `pub` when another module
   or a host-facing package surface needs the item.
+- Read a library's complete [operator pattern](docs/guides/operators.md)
+  before composing it: `_`, `__`, and `___` have different operand permissions,
+  and a final symbol completes an atom. Use parentheses where chain claims
+  compete. [Collection frames](docs/guides/variadic-operators.md) are bare or
+  marked square pairs; element punctuation at a marked edge needs grouping.
 - Reuse a library's public API when shared nominal identity matters. Use
   [the library adoption guide](docs/guides/using-libraries.md) for dependencies;
   do not clone a public abstraction merely to avoid understanding its API.

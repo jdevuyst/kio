@@ -55,7 +55,7 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
                             close: close_tokens.clone(),
                         },
                         elements,
-                        open_tokens.first().map(String::as_str),
+                        Some("["),
                     ),
                 };
                 if &actual == grammar {
@@ -147,4 +147,93 @@ fn values<'a>(args: &'a [CallArg<Surface>], pending: &mut Vec<&'a Expr<Surface>>
         CallArg::Value(value) => Some(value),
         CallArg::Type(_) => None,
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pass::parser::{parse, parse_operator_grammar};
+
+    #[test]
+    fn variadic_alias_uses_follow_structural_openings() {
+        for (grammar, expression) in [
+            ("varop []", "[(), ([])]"),
+            ("varop [% %]", "[% (), ([% () %]) %]"),
+            ("varop [! !]", "[! ([!()!]) !]"),
+            ("varop [** **]", "[ ** ([ // edge\n ** () ** ]) ** ]"),
+            ("varop [$? ?$]", "[$? ([$? () ?$]) ?$]"),
+        ] {
+            let source = format!(
+                "module app; import ops(varop [* *] as {}); fn run() {{ {expression} }}",
+                grammar.strip_prefix("varop ").unwrap()
+            );
+            let module = parse(&source).unwrap();
+            let local = parse_operator_grammar(grammar).unwrap();
+            let hits = uses(&module, &source, &local);
+            for span in &hits {
+                assert_eq!(&source[span.start as usize..span.end as usize], "[");
+            }
+            let mut actual: Vec<_> = hits.into_iter().map(|span| span.start as usize).collect();
+            actual.sort_unstable();
+            let body_start = source.find(expression).unwrap();
+            let expected: Vec<_> = expression
+                .match_indices('[')
+                .map(|(offset, _)| body_start + offset)
+                .collect();
+            assert_eq!(actual, expected, "{source}");
+            assert!(
+                uses(
+                    &module,
+                    &source,
+                    &parse_operator_grammar("varop [* *]").unwrap()
+                )
+                .is_empty(),
+                "the source grammar is not the local alias: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn variadic_uses_ignore_brackets_in_strings_and_comments() {
+        let source = "module app; import ops(varop [% %]);
+            fn run() { [% \"[\", // [
+                \"[]\" %] }";
+        let module = parse(source).unwrap();
+        let hits = uses(
+            &module,
+            source,
+            &parse_operator_grammar("varop [% %]").unwrap(),
+        );
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].start as usize, source.find("[% \"[").unwrap());
+        assert_eq!(&source[hits[0].start as usize..hits[0].end as usize], "[");
+    }
+
+    #[test]
+    fn operator_uses_keep_exact_local_grammar_identity() {
+        let source = "module app;
+            import ops(op _ + _ as _ ++ _, varop [* *] as [% %], varop [!! !!] as [! !]);
+            fn run() { [% ([! (() ++ ()) ++ () !]) %] }";
+        let module = parse(source).unwrap();
+        for (grammar, spelling) in [("varop [% %]", "[%"), ("varop [! !]", "[!")] {
+            let hits = uses(&module, source, &parse_operator_grammar(grammar).unwrap());
+            assert_eq!(hits.len(), 1);
+            assert_eq!(hits[0].start as usize, source.rfind(spelling).unwrap());
+        }
+        let mut fixed: Vec<_> = uses(
+            &module,
+            source,
+            &parse_operator_grammar("op _ ++ _").unwrap(),
+        )
+        .into_iter()
+        .map(|span| span.start as usize)
+        .collect();
+        fixed.sort_unstable();
+        let expected: Vec<_> = source
+            .match_indices("++")
+            .skip(1)
+            .map(|(offset, _)| offset)
+            .collect();
+        assert_eq!(fixed, expected);
+    }
 }

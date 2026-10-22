@@ -715,6 +715,16 @@ fn surface_forms_appear_in_corpus() {
                 && root.contains("equiv kio_gen_seeded_fold_step { [* 1(I32), 2(I32) *]; 0(I32) }"),
             "surface-mode prog.kio missing nonvacuous seeded variadic-operator coverage"
         );
+        for witness in [
+            "pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }",
+            "equiv kio_gen_bare_fold_singleton { [2(I32)]; 2(I32) }",
+            "equiv kio_gen_bare_fold_step { [1(I32), 2(I32)]; 0(I32) }",
+            "equiv kio_gen_prefix_chain { !? !? 2(I32); 2(I32) }",
+            "equiv kio_gen_closed_result_suffix { 2(I32) ?! ?!.>id; 2(I32) }",
+            "equiv kio_gen_bounded_chain_slots { @ 1(I32) <+> 2(I32) # !? 3(I32) $; 1(I32) }",
+        ] {
+            assert!(root.contains(witness), "missing surface witness: {witness}");
+        }
         assert!(
             root.contains("labels Kio_gen_labels = { greet : _ } | { count : _ }"),
             "surface-mode prog.kio missing explicit repeated-label reuse coverage"

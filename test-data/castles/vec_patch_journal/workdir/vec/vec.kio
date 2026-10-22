@@ -486,7 +486,7 @@ pub fn slice[A](v: Vec(A), lo: I32, hi: I32) -> Vec(A) {
 pub fn flip_map[A][B](v: Vec(A), f: A -> B) -> Vec(B) { map(f, v) }
 
 /// Indexed read operator.
-pub op _ <| __ |> { impl at }
+pub op _ <| _ |> { impl at }
 
 /// Append-one operator.
 pub op __ +> _ { impl push_back }

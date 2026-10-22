@@ -38,6 +38,8 @@ use crate::error::{Error, Fix, FixEdit};
 use crate::pass::lexer::{Token, TokenKind, Trivia};
 use crate::pass::tree_skeleton::{SkeletonCursor, SkeletonFile, SkeletonNode};
 use crate::span::Span;
+#[path = "fixed_operators.rs"]
+mod fixed_operators;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
@@ -1062,16 +1064,6 @@ pub(super) struct Parser<'a> {
     /// parsing consults the table to recognize operator usages.
     operator_scope: OpRegistry,
     recover_import_errors: Option<Vec<Error>>,
-    /// Depth of lenient `( … )` operand slots currently being
-    /// parsed. When > 0, the chain-mixing check in
-    /// `try_operator_continuation` bails (returns the chain so far)
-    /// instead of erroring — the outer operator's continuation
-    /// tokens, which may collide with another operator's leading
-    /// run, are then matched by the enclosing pattern walk.
-    /// Greedy `___` slots intentionally do *not* increment this
-    /// depth: a `___` is always the last slot of its pattern, so
-    /// there are no outer continuation tokens to leave behind.
-    lenient_depth: usize,
     block_stop_depth: Option<usize>,
     /// Optional source-local tooling facts. The ordinary compiler path keeps
     /// this absent; expression probes request only structural forall facts.
@@ -1247,72 +1239,44 @@ impl ItemModifiers {
     }
 }
 
-/// Module-local operator scope. Two keyspaces (prefix vs. non-
-/// prefix), each storing ops keyed by their op-token sequence.
-///
-/// **Prefix-forbidden conflict rule.** Within either keyspace, two
-/// patterns may not stand in a strict prefix relationship in their
-/// op-token sequences. So `_ && ++ _` and `_ && -- _` coexist
-/// (sharing `&&` and branching at the third token); but `_ && _`
-/// and `_ && ++ _` conflict (the first's sequence is a strict
-/// prefix of the second's). At parse time, the trie walk reads
-/// op-tokens forward token-by-token until it lands on a leaf
-/// binding, with bounded lookahead = max declared pattern depth.
+/// Complete consumer-written patterns, keyed by their first whole word in
+/// separate expression-start and continuation positions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OpRegistry {
-    non_prefix: OpTrie,
-    prefix: OpTrie,
+    non_prefix: std::collections::HashMap<String, OperatorBinding>,
+    prefix: std::collections::HashMap<String, OperatorBinding>,
     /// The first written shape determines parsing; semantic registry validation
     /// separately checks exact projections and ordinary introduction uniqueness.
     seen_keys: std::collections::HashSet<OperatorDispatchKey>,
-    /// Names declared locally, kept separately so a prior import can defer an
-    /// import/local collision without masking a second local declaration.
+    /// A prior import may defer an import/local collision without masking a
+    /// second local declaration.
     local_keys: std::collections::HashSet<OperatorDispatchKey>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct OpTrie {
-    /// op-token sequence → bound op. Each entry sits at a "leaf"
-    /// of the conceptual trie; the prefix-forbidden rule guarantees
-    /// no entry's key is a proper prefix of another's.
-    leaves: std::collections::HashMap<Vec<String>, OperatorBinding>,
-    /// Every *proper* prefix of every leaf key. Used both to reject
-    /// inserts that would create a prefix relation and to drive the
-    /// parse-time walk's "keep reading?" decision.
-    prefixes: std::collections::HashSet<Vec<String>>,
 }
 
 impl OpRegistry {
     fn new() -> Self {
         Self {
-            non_prefix: OpTrie::new(),
-            prefix: OpTrie::new(),
+            non_prefix: std::collections::HashMap::new(),
+            prefix: std::collections::HashMap::new(),
             seen_keys: std::collections::HashSet::new(),
             local_keys: std::collections::HashSet::new(),
         }
     }
 
-    /// Local declarations share a dispatch-key collision check across kinds.
-    /// Diagnostics retain the incoming full grammar without storing a second
-    /// copy beside the parser's key sets.
     fn begin_local_shape(
         &mut self,
         key: &OperatorDispatchKey,
         grammar: impl FnOnce() -> String,
     ) -> Result<bool, String> {
         if !self.local_keys.insert(key.clone()) {
-            let grammar = grammar();
             return Err(format!(
-                "operator `{grammar}` is already defined in this scope; \
-                 the same expression position and leading token run may be bound only once"
+                "operator `{}` is already defined in this scope; the same expression position and leading word may be bound only once",
+                grammar(),
             ));
         }
         Ok(self.seen_keys.insert(key.clone()))
     }
 
-    /// Try to insert a op. Returns an error message if it
-    /// conflicts with an existing binding — by name first,
-    /// then by the keyspace prefix-forbidden rule.
     fn insert(&mut self, pattern: Vec<OpPart>) -> Result<(), String> {
         let name = OperatorDispatchKey::from_pattern(&pattern);
         if !self.begin_local_shape(&name, || {
@@ -1324,18 +1288,28 @@ impl OpRegistry {
     }
 
     fn insert_pattern_shape(&mut self, pattern: Vec<OpPart>) -> Result<(), String> {
-        let is_prefix = matches!(pattern.first(), Some(OpPart::Token { .. }));
-        let trie = if is_prefix {
+        let words = if matches!(pattern.first(), Some(OpPart::Token { .. })) {
             &mut self.prefix
         } else {
             &mut self.non_prefix
         };
-        trie.insert(pattern)
+        let key = pattern
+            .iter()
+            .find_map(|part| match part {
+                OpPart::Token { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .expect("validated fixed pattern has a word");
+        if words.contains_key(&key) {
+            return Err(format!(
+                "operator `{}` is already defined in this scope",
+                crate::ast::OperatorGrammar::fixed(&pattern).render()
+            ));
+        }
+        words.insert(key, OperatorBinding { pattern });
+        Ok(())
     }
 
-    /// Register a variadic operator keyed by its OPEN-token sequence.
-    /// A duplicate dispatch key, or another variadic
-    /// binding sharing the same OPEN sequence, is a name conflict.
     fn insert_variadic(
         &mut self,
         open: Vec<String>,
@@ -1345,26 +1319,21 @@ impl OpRegistry {
             expr_start: true,
             leading_run: open.clone(),
         };
-        if !self.begin_local_shape(&name, || {
+        self.begin_local_shape(&name, || {
             crate::ast::OperatorGrammar::variadic(&open, &binding).render()
-        })? {
-            return Ok(());
-        }
+        })?;
         Ok(())
     }
 
-    /// Walk forward from the parser's current position, reading
-    /// op-tokens until a leaf matches in the given keyspace. Returns
-    /// `Some((binding, n))` where `n` is the number of input tokens
-    /// to consume after the LHS (or all input tokens consumed when
-    /// `is_prefix` is true).
+    /// Whole-word lookup never splits punctuation according to available bindings.
     fn find_at(&self, parser: &Parser<'_>, is_prefix: bool) -> Option<(OperatorBinding, usize)> {
-        let trie = if is_prefix {
+        let words = if is_prefix {
             &self.prefix
         } else {
             &self.non_prefix
         };
-        trie.find_at(parser)
+        let word = parser.peek().and_then(token_kind_to_op_string)?;
+        words.get(&word).cloned().map(|binding| (binding, 1))
     }
 
     fn cursor_prefix(
@@ -1373,71 +1342,38 @@ impl OpRegistry {
         is_prefix: bool,
         cursor: u32,
     ) -> Option<(Span, Vec<String>)> {
-        let trie = if is_prefix {
+        let words = if is_prefix {
             &self.prefix
         } else {
             &self.non_prefix
         };
-        for key in trie.leaves.keys() {
-            let mut written = Vec::new();
-            let start = parser.peek_span().start;
-            for (index, expected) in key.iter().enumerate() {
-                let Some(token) = parser.peek_token_at(index) else {
-                    if !written.is_empty() && cursor >= start {
-                        return Some((Span::new(start, cursor), written));
-                    }
-                    break;
-                };
-                if token.span.start > cursor {
-                    if !written.is_empty() {
-                        return Some((Span::new(start, cursor), written));
-                    }
-                    break;
-                }
-                let Some(content) = token_kind_to_op_string(&token.kind) else {
-                    break;
-                };
-                if cursor <= token.span.end {
-                    let prefix = &content[..(cursor - token.span.start) as usize];
-                    if expected.starts_with(prefix) {
-                        written.push(prefix.to_owned());
-                        return Some((Span::new(start, token.span.end), written));
-                    }
-                    break;
-                }
-                if &content != expected {
-                    break;
-                }
-                written.push(content);
-            }
+        let token = parser.cursor.peek_token()?;
+        if cursor < token.span.start || cursor > token.span.end {
+            return None;
         }
-        None
+        let content = token_kind_to_op_string(&token.kind)?;
+        let prefix = content.get(..(cursor - token.span.start) as usize)?;
+        words
+            .keys()
+            .any(|word| word.starts_with(prefix))
+            .then(|| (token.span, vec![prefix.to_owned()]))
     }
 
-    /// Look up a non-prefix operator whose leading token run begins
-    /// `offset` tokens after the parser's current position. Expression-prefix
-    /// disambiguation uses this to distinguish `module/path.item` from a
-    /// registered `/` operator applied to a dotted right operand without
-    /// consuming either interpretation first.
+    /// Distinguish a registered slash operator from an unclaimed direct FQN
+    /// without consuming either interpretation first.
     fn find_non_prefix_at_offset(
         &self,
         parser: &Parser<'_>,
         offset: usize,
     ) -> Option<(OperatorBinding, usize)> {
-        self.non_prefix.find_at_offset(parser, offset)
-    }
-
-    /// Is the next non-prefix op at the parser's current position
-    /// left-greedy (i.e. its first slot is `___`)? Drives the outer
-    /// `expr()` loop that lets a left-greedy operator attach to
-    /// any preceding expression, even one settled into a chain.
-    fn next_is_left_greedy(&self, parser: &Parser<'_>) -> bool {
-        match self.non_prefix.find_at(parser) {
-            Some((binding, _)) => {
-                matches!(binding.pattern.first(), Some(OpPart::SlotGreedy { .. }))
-            }
-            None => false,
-        }
+        let word = parser
+            .peek_at(offset)
+            .as_ref()
+            .and_then(token_kind_to_op_string)?;
+        self.non_prefix
+            .get(&word)
+            .cloned()
+            .map(|binding| (binding, 1))
     }
 }
 
@@ -1497,118 +1433,14 @@ fn build_operator_scope(module: &Module, local_end: usize) -> Result<OpRegistry,
     Ok(scope)
 }
 
-impl OpTrie {
-    fn new() -> Self {
-        Self {
-            leaves: std::collections::HashMap::new(),
-            prefixes: std::collections::HashSet::new(),
-        }
-    }
-
-    fn insert(&mut self, pattern: Vec<OpPart>) -> Result<(), String> {
-        let key = leading_op_run(&pattern);
-        debug_assert!(
-            !key.is_empty(),
-            "validated patterns always include at least one leading op-token"
-        );
-        if self.leaves.contains_key(&key) {
-            return Err(format!(
-                "operator `{}` is already defined in this scope; \
-                 each operator binds to exactly one function",
-                crate::ast::OperatorGrammar::fixed(&pattern).render(),
-            ));
-        }
-        // Existing entry is a proper prefix of the new key?
-        for n in 1..key.len() {
-            let prefix = &key[..n];
-            if let Some(existing) = self.leaves.get(prefix) {
-                return Err(format!(
-                    "operator `{}` conflicts with the existing \
-                     `{}` (op-token sequences must not have a \
-                     prefix relationship)",
-                    crate::ast::OperatorGrammar::fixed(&pattern).render(),
-                    crate::ast::OperatorGrammar::fixed(&existing.pattern).render(),
-                ));
-            }
-        }
-        // New key is itself a proper prefix of some existing entry?
-        if self.prefixes.contains(&key) {
-            return Err(format!(
-                "operator `{}` conflicts with an existing longer \
-                 operator that starts with the same op-tokens \
-                 (op-token sequences must not have a prefix relationship)",
-                crate::ast::OperatorGrammar::fixed(&pattern).render(),
-            ));
-        }
-
-        for n in 1..key.len() {
-            self.prefixes.insert(key[..n].to_vec());
-        }
-        self.leaves.insert(key, OperatorBinding { pattern });
-        Ok(())
-    }
-
-    fn find_at(&self, parser: &Parser<'_>) -> Option<(OperatorBinding, usize)> {
-        self.find_at_offset(parser, 0)
-    }
-
-    fn find_at_offset(
-        &self,
-        parser: &Parser<'_>,
-        offset: usize,
-    ) -> Option<(OperatorBinding, usize)> {
-        let mut seq: Vec<String> = Vec::new();
-        let mut depth = 0usize;
-        loop {
-            let token_str = parser
-                .peek_at(offset + depth)
-                .as_ref()
-                .and_then(token_kind_to_op_string)?;
-            seq.push(token_str);
-            depth += 1;
-            if let Some(binding) = self.leaves.get(&seq) {
-                return Some((binding.clone(), depth));
-            }
-            if !self.prefixes.contains(&seq) {
-                return None;
-            }
-        }
-    }
-}
-
-/// An in-scope user-defined operator. Records the function the
-/// operator desugars to plus the full pattern (alternating slots
-/// and operator tokens). The first token of the pattern is what
-/// the parser keys lookup on:
-///
-/// - **Prefix** patterns (start with a token, e.g., `! __`) are
-///   keyed for use at the start of a primary expression.
-/// - **Non-prefix** patterns (start with a slot, e.g., `_ + _`,
-///   `__ + _`, `_ ? _ : _`) are keyed for use after a left-hand-
-///   side has been parsed.
-///
-/// A given operator-token string can appear in at most one
-/// prefix binding and at most one non-prefix binding.
+/// A local parse grammar. The operator-fold pass resolves its callable
+/// separately against the explicitly selected provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OperatorBinding {
-    /// The op's exact declaration pattern. Imported bindings are installed
-    /// from their provider before body parsing.
+    /// Exact locally written declaration or import-destination pattern.
     pattern: Vec<OpPart>,
 }
 
-fn same_operator_binding(left: &OperatorBinding, right: &OperatorBinding) -> bool {
-    OperatorDispatchKey::from_pattern(&left.pattern)
-        == OperatorDispatchKey::from_pattern(&right.pattern)
-}
-
-// A literal operator token in user source is a `SymbolRun` matched
-// against the next input token. Operator-character runs (`+`, `?`,
-// `++`, `.+.`) and fixed-role symbols (`!`, `:`, `&`, `|`, `<`,
-// `>`, `=`) are all the one token kind. The validator forbids a
-// symbol run as the sole pattern-token for reserved standalone forms
-// (`=`, `:`, `->`, `.>`, `.>>`, `.<`, `.<<`, and all dot-led
-// one-dot runs); any of them is fine in a multi-token shape.
-//
 /// Discriminator for which type-chain we're inside — product
 /// (`&`-runs) or sum (`|`-runs). Used by `type_expr` and
 /// `type_paren` to thread the chain operator through helpers
@@ -1666,47 +1498,23 @@ fn token_kind_to_op_string(kind: &TokenKind) -> Option<String> {
     }
 }
 
-fn leading_dot_dot_count(s: &str) -> usize {
-    if s.starts_with('.') {
-        s.bytes().filter(|b| *b == b'.').count()
-    } else {
-        0
-    }
+fn is_ordinary_op_word(word: &str) -> bool {
+    !word.is_empty() && !word.contains(['.', '[', ']'])
 }
 
-/// True iff a run is held back for dot-led syntax instead of being
-/// admissible as a user operator token. Runs that begin with `.` must
-/// contain at least two dots (`..`, `.+.`); runs that contain `.` away
-/// from the first byte (`+.` / `<.>`) are ordinary op-tokens.
-fn is_reserved_leading_dot_op_token(s: &str) -> bool {
-    s.starts_with('.') && leading_dot_dot_count(s) == 1
-}
-
-fn mirrored_varop_close(open: &str) -> Option<String> {
-    if open.len() < 2
-        || !open.contains('[')
-        || open.contains(']')
-        || is_reserved_leading_dot_op_token(open)
-    {
-        return None;
-    }
-    let close: String = open
-        .chars()
-        .rev()
-        .map(|c| if c == '[' { ']' } else { c })
-        .collect();
-    (!is_reserved_leading_dot_op_token(&close)).then_some(close)
+struct VariadicFrame {
+    marker: String,
+    close_marker: Option<String>,
+    region_end: u32,
+    opening_trivia: Vec<Trivia>,
+    closing_trivia: Vec<Trivia>,
 }
 
 fn reserved_leading_dot_op_token_error(content: &str, span: Span) -> Error {
     Error::parse(
         span,
         format!(
-            "`{content}` is reserved as an `op` operator-token — \
-             operator tokens that start with `.` must contain at least two `.` characters. \
-             Dot-led one-dot runs are held back for member access, UFCS, lambdas, \
-             placeholder lambdas, and future dot-led syntax. Use a spelling such as \
-             `..`, `.+.`, `<.>`, or `+.` instead."
+            "`{content}` contains a reserved dot; dots belong to native syntax and cannot occur in operator words"
         ),
     )
 }
@@ -1734,7 +1542,6 @@ impl<'a> Parser<'a> {
             next_node_id: 0,
             operator_scope: OpRegistry::new(),
             recover_import_errors: None,
-            lenient_depth: 0,
             block_stop_depth: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
@@ -1797,7 +1604,6 @@ impl<'a> Parser<'a> {
             next_node_id: 0,
             operator_scope: OpRegistry::new(),
             recover_import_errors: None,
-            lenient_depth: 0,
             block_stop_depth: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
@@ -1833,9 +1639,7 @@ impl<'a> Parser<'a> {
             .unwrap_or(false)
     }
 
-    /// Lookahead returning the [`TokenKind`] at `offset`, or `None`
-    /// past EOF. Used by the operator-scope trie walk, which reads
-    /// multiple op-tokens before deciding which op matches.
+    /// Lookahead returning the [`TokenKind`] at `offset`, or `None` past EOF.
     fn peek_at(&self, offset: usize) -> Option<TokenKind> {
         self.cursor.peek_kind_at(offset)
     }
@@ -2006,10 +1810,10 @@ impl<'a> Parser<'a> {
 
     /// True iff the next token is the [`TokenKind::SymbolRun`]
     /// whose content starts with `s`. Used by the structural-
-    /// recovery sites (function arrow `->`, forall brackets,
+    /// recovery sites (function arrow `->`,
     /// existential closer `>`, bang-call dispatch `!`) to recognize their delimiter
     /// even when greedy lexer fusion pulled it into a longer run
-    /// (`->!`, `>:`, `><`, `!.`). The `expect_*` peelers
+    /// (`->!`, `>:`, `><`). The `expect_*` peelers
     /// downstream do the actual split.
     fn at_sym_prefix(&self, s: &str) -> bool {
         self.peek().is_some_and(|k| match k {
@@ -2024,10 +1828,9 @@ impl<'a> Parser<'a> {
         matches!(self.peek(), Some(TokenKind::SymbolRun(run)) if run.starts_with('.'))
     }
 
-    /// Consume the leading `.` of a leading-dot form. When greedy
-    /// lexing fused the dot with the following symbol (`.<`,
-    /// `.&`, ...), peel only the dot and leave the suffix as the
-    /// current token for the existing parser path.
+    /// Consume the leading `.` of a leading-dot form. A native dot
+    /// compound such as `.<` can also begin this grammatical form;
+    /// this context peels its dot and leaves the suffix to the parser.
     fn expect_leading_dot(&mut self) -> Result<Span, Error> {
         match self.peek() {
             Some(TokenKind::SymbolRun(run)) if run == "." => Ok(self.advance().span),
@@ -2069,9 +1872,7 @@ impl<'a> Parser<'a> {
                 | Some(TokenKind::RParen)
                 | Some(TokenKind::RBrace)
                 | Some(TokenKind::Semicolon)
-        ) || matches!(tok, Some(TokenKind::SymbolRun(run))
-            if run.contains(']') && !run.contains('[')
-                && mirrored_varop_close(&run.chars().rev().map(|c| if c == ']' { '[' } else { c }).collect::<String>()).is_some())
+        ) || matches!(tok, Some(TokenKind::SymbolRun(run)) if run == "]")
     }
 
     fn rec_call_starts_here(&mut self) -> bool {
@@ -2187,7 +1988,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Consume `!` either as a standalone one-char SymbolRun or
-    /// as the leading byte of a fused run (`!.`, `!=`, …). At
+    /// as the leading byte of a fused run (`!=`, `!~`, …). At
     /// the second shape, peels `!` off the front via
     /// [`SkeletonCursor::split_current_sym`] and leaves the
     /// suffix as the new "current" for the next consumer. Used
@@ -6650,11 +6451,6 @@ impl<'a> Parser<'a> {
             // Only preceding local declarations enter the expression scope.
             // Imported grammars enter through their explicit selection lists.
             let op = self.op(modifiers)?;
-            // Register the binding in the operator scope so subsequent
-            // expression parsing recognizes the operator. The registry
-            // enforces the prefix-forbidden rule: same-token-sequence
-            // collisions and strict-prefix relationships are both
-            // rejected as name conflicts per spec.
             let span = op.meta.span;
             let OpBody::Normal { pattern, .. } = &op.body;
             self.operator_scope
@@ -7732,31 +7528,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a `op` declaration:
-    ///
-    ///   op  PatternPart+  { impl Path; } ;
-    ///
-    /// where `PatternPart` is `_` (plain slot), `__` (recursive
-    /// slot — at most one per pattern), or a `SymbolRun` literal.
-    /// Validates the pattern shape:
-    /// - at most one `__` slot
-    /// - no two adjacent slots
-    /// - at least one operator token
-    /// - the recursive slot (`__`), if present, sits at one of
-    ///   the operand-position ends (first or last operand slot)
-    /// - each operator token satisfies the reserved-spelling rules
-    ///   (dot-led one-dot runs and the `//…` family are held back).
-    ///
-    /// Supported pattern shapes:
-    ///   - **Binary**: `_ OP _`, `_ OP __`, `__ OP _`
-    ///   - **Prefix-unary**: `OP _`, `OP __`
-    ///   - **Postfix-unary**: `_ OP`, `__ OP`
-    ///   - **Multi-token** (≥2 operator tokens with operand slots
-    ///     between them): `_ OP1 _ OP2 _`, `_ ? _ : _`,
-    ///     `_ ? _ : __`, `_ ? __ : _`. Multi-token patterns can
-    ///     freely use language-reserved tokens (e.g., `:`) since
-    ///     the reserved-standalone-token rule applies only to the
-    ///     single-token case.
+    /// Parse a fixed pattern and its ordinary callable implementation.
     fn op(&mut self, modifiers: ItemModifiers) -> Result<Op, Error> {
         let start = self.peek_span().start;
         self.expect_ident_named("op")?;
@@ -7774,208 +7546,67 @@ impl<'a> Parser<'a> {
 
     fn parse_op_pattern(&mut self, import_item: bool) -> Result<Vec<OpPart>, Error> {
         let start = self.peek_span().start;
-        let mut pattern: Vec<OpPart> = Vec::new();
-        let mut last_was_slot = false;
-        // `Some(group_start_span)` while inside a `( … )` lenient
-        // grouping marker. Tracked across pattern parts so slots
-        // emitted while open carry `lenient = true`.
-        let mut group_open: Option<Span> = None;
+        let mut pattern = Vec::new();
         loop {
-            match self.peek() {
-                Some(TokenKind::Slot1) => {
-                    let span = self.peek_span();
-                    self.advance();
-                    if last_was_slot {
-                        return Err(
-                            self.err(span, "two adjacent slots in `op` pattern are ambiguous")
-                        );
-                    }
-                    pattern.push(OpPart::SlotPlain {
-                        span,
-                        lenient: group_open.is_some(),
-                    });
-                    last_was_slot = true;
-                }
-                Some(TokenKind::Slot2) => {
-                    let span = self.peek_span();
-                    self.advance();
-                    if last_was_slot {
-                        return Err(
-                            self.err(span, "two adjacent slots in `op` pattern are ambiguous")
-                        );
-                    }
-                    if pattern.iter().any(|p| {
-                        matches!(p, OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. })
-                    }) {
-                        return Err(self.err(
-                            span,
-                            "at most one recursive slot (`__` or `___`) per `op` pattern \
-                             (the recursive slot determines associativity)",
-                        ));
-                    }
-                    pattern.push(OpPart::SlotRecursive {
-                        span,
-                        lenient: group_open.is_some(),
-                    });
-                    last_was_slot = true;
-                }
-                Some(TokenKind::Slot3) => {
-                    let span = self.peek_span();
-                    self.advance();
-                    if last_was_slot {
-                        return Err(
-                            self.err(span, "two adjacent slots in `op` pattern are ambiguous")
-                        );
-                    }
-                    if group_open.is_some() {
-                        return Err(self.err(
-                            span,
-                            "`___` is redundant inside a `( … )` lenient-grouping marker — \
-                             the greedy slot is already full-chain at use sites",
-                        ));
-                    }
-                    if pattern.iter().any(|p| {
-                        matches!(p, OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. })
-                    }) {
-                        return Err(self.err(
-                            span,
-                            "at most one recursive slot (`__` or `___`) per `op` pattern; \
-                             dual-greedy patterns have no position info to pin associativity",
-                        ));
-                    }
-                    pattern.push(OpPart::SlotGreedy { span });
-                    last_was_slot = true;
-                }
+            let span = self.peek_span();
+            let part = match self.peek() {
+                Some(TokenKind::Slot1) => OpPart::SlotPlain { span },
+                Some(TokenKind::Slot2) => OpPart::SlotRecursive { span },
+                Some(TokenKind::Slot3) => OpPart::SlotGreedy { span },
                 Some(TokenKind::Ident(s)) if s.chars().all(|c| c == '_') && s.len() >= 4 => {
-                    let span = self.peek_span();
                     return Err(self.err(
                         span,
-                        "underscore runs of 4 or more (`____`+) are reserved; \
-                         only `_`, `__`, and `___` are slot tokens in `op` patterns",
+                        "underscore runs of 4 or more (`____`+) are reserved; only `_`, `__`, and `___` are operator slots",
                     ));
                 }
                 Some(TokenKind::LParen) => {
-                    let span = self.peek_span();
                     self.advance();
-                    if group_open.is_some() {
-                        return Err(self.err(
-                            span,
-                            "nested `( … )` lenient-grouping markers are not permitted in \
-                             `op` patterns",
+                    if matches!(self.peek(), Some(TokenKind::Comma | TokenKind::Semicolon)) {
+                        return Err(self.err_here(
+                            "commas and semicolons are not admissible as operator tokens; commas separate list elements and semicolons separate statements",
                         ));
                     }
-                    group_open = Some(span);
-                    // Reset slot-adjacency tracking: the `(` is a
-                    // pattern boundary, not a slot.
-                    last_was_slot = false;
-                }
-                Some(TokenKind::RParen) => {
-                    let span = self.peek_span();
-                    if import_item && group_open.is_none() {
-                        break;
-                    }
-                    let Some(open_span) = group_open else {
-                        return Err(
-                            self.err(span, "unmatched `)` in `op` pattern (no preceding `(`)")
-                        );
-                    };
-                    self.advance();
-                    // Reject empty `()` groups: there must be at
-                    // least one slot or token between `(` and `)`.
-                    let group_start_idx = pattern
-                        .iter()
-                        .position(|p| op_part_span(p).start > open_span.start);
-                    let Some(group_start_idx) = group_start_idx else {
-                        return Err(self.err(
-                            Span::new(open_span.start, span.end),
-                            "empty `( )` grouping marker — must contain at least one slot \
-                             or token",
+                    let Some(content) = self.peek().and_then(token_kind_to_op_string) else {
+                        return Err(self.err_here(
+                            "operator-token quotation requires one symbol word; write `___` for an operator-chain slot",
                         ));
                     };
-                    // Slots inside ⇒ slot-grouping marker; only
-                    // tokens inside ⇒ operator-token quotation.
-                    let group_has_slots = pattern[group_start_idx..].iter().any(|p| {
-                        matches!(
-                            p,
-                            OpPart::SlotPlain { .. }
-                                | OpPart::SlotRecursive { .. }
-                                | OpPart::SlotGreedy { .. }
-                        )
+                    let word_span = self.peek_span();
+                    self.advance();
+                    self.expect_kind(TokenKind::RParen, "`)` after one quoted operator word")?;
+                    pattern.push(OpPart::Token {
+                        content,
+                        span: word_span,
+                        quoted: true,
                     });
-                    if !group_has_slots {
-                        for part in pattern[group_start_idx..].iter_mut() {
-                            if let OpPart::Token {
-                                lenient, quoted, ..
-                            } = part
-                            {
-                                *lenient = false;
-                                *quoted = true;
-                            }
-                        }
-                    }
-                    group_open = None;
-                    last_was_slot = false;
+                    continue;
                 }
-                Some(TokenKind::Comma) if import_item && group_open.is_none() => break,
-                Some(TokenKind::Comma) | Some(TokenKind::Semicolon) => {
-                    let span = self.peek_span();
-                    let tok = if matches!(self.peek(), Some(TokenKind::Comma)) {
-                        ","
-                    } else {
-                        ";"
-                    };
+                Some(TokenKind::RParen | TokenKind::Comma) if import_item => break,
+                Some(TokenKind::Comma | TokenKind::Semicolon) => {
                     return Err(self.err(
                         span,
-                        format!(
-                            "`{tok}` is not admissible as an `op` operator token; \
-                             commas separate list elements and semicolons separate statements"
-                        ),
+                        "commas and semicolons are not admissible as operator tokens; commas separate list elements and semicolons separate statements",
                     ));
                 }
+                Some(TokenKind::LBrace) => break,
                 _ => {
-                    // `{` at top level ends the pattern (body
-                    // separator); inside a `( … )` group it's
-                    // invalid pattern content that falls through to
-                    // the generic "expected body" error below.
-                    let inside_group = group_open.is_some();
-                    if matches!(self.peek(), Some(TokenKind::LBrace)) && !inside_group {
-                        break;
-                    }
                     let Some(content) = self.peek().and_then(token_kind_to_op_string) else {
                         break;
                     };
-                    let span = self.peek_span();
-                    if is_reserved_standalone_equals_op_token(&content) && !inside_group {
+                    if is_reserved_standalone_equals_op_token(&content) {
                         return Err(reserved_standalone_equals_op_token_error(span));
                     }
-                    self.advance();
-                    pattern.push(OpPart::Token {
+                    OpPart::Token {
                         content,
                         span,
-                        lenient: inside_group,
                         quoted: false,
-                    });
-                    last_was_slot = false;
+                    }
                 }
-            }
+            };
+            self.advance();
+            pattern.push(part);
         }
-        if let Some(open_span) = group_open {
-            return Err(self.err(
-                open_span,
-                "unmatched `(` in `op` pattern (no closing `)` before `{`)",
-            ));
-        }
-        if pattern.is_empty() {
-            return Err(self.err_here("expected `_`, `__`, or operator characters in `op` pattern"));
-        }
-        if !pattern.iter().any(|p| matches!(p, OpPart::Token { .. })) {
-            return Err(self.err(
-                Span::new(start, self.peek_span().start),
-                "`op` pattern must include at least one operator token",
-            ));
-        }
-        let pattern_span = Span::new(start, self.peek_span().start);
-        validate_op_pattern(&pattern, pattern_span)?;
+        validate_op_pattern(&pattern, Span::new(start, self.peek_span().start))?;
         Ok(pattern)
     }
 
@@ -8014,23 +7645,101 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_variadic_delimiters(&mut self) -> Result<(Vec<String>, Vec<String>), Error> {
-        let Some(TokenKind::SymbolRun(open)) = self.peek() else {
-            return Err(self.err_here("expected a varop OPEN delimiter such as `[[` or `[*`"));
-        };
-        let Some(close) = mirrored_varop_close(open) else {
-            return Err(self.err_here("varop OPEN must be a non-bare symbol run containing `[` and no `]`; both delimiters must obey the dot-led reservation"));
-        };
-        let open = open.clone();
-        let open_end = self.peek_span().end;
-        self.advance();
-        if self.peek_span().start == open_end {
-            return Err(self.err_here("varop OPEN and CLOSE must be separated by whitespace"));
+        let frame = self.begin_variadic_frame()?;
+        if self.peek_span().start < frame.region_end {
+            return Err(self.err_here("a varop head contains only its mirrored markers"));
         }
-        self.expect_kind(
-            TokenKind::sym(&close),
-            &format!("mirrored varop CLOSE `{close}`"),
-        )?;
-        Ok((vec![open], vec![close]))
+        self.finish_variadic_frame(&frame)?;
+        Ok((
+            vec![format!("[{}", frame.marker)],
+            vec![format!(
+                "{}]",
+                frame.marker.chars().rev().collect::<String>()
+            )],
+        ))
+    }
+
+    fn begin_variadic_frame(&mut self) -> Result<VariadicFrame, Error> {
+        self.expect_kind(TokenKind::sym("["), "`[` opening a variadic frame")?;
+        let close_span = self
+            .cursor
+            .current_group_close_span()
+            .expect("the skeleton pairs each square opener");
+        if close_span.start == close_span.end {
+            return Err(self.err(close_span, "expected `]` closing the variadic frame"));
+        }
+        let children = self.cursor.remaining_current_frame();
+        let word = |node: &SkeletonNode| match node {
+            SkeletonNode::Leaf(Token {
+                kind: TokenKind::SymbolRun(word),
+                ..
+            }) if is_ordinary_op_word(word) => Some(word.clone()),
+            _ => None,
+        };
+        let mut frame = VariadicFrame {
+            marker: String::new(),
+            close_marker: None,
+            region_end: close_span.start,
+            opening_trivia: Vec::new(),
+            closing_trivia: Vec::new(),
+        };
+        let Some(marker) = children.first().and_then(word) else {
+            return Ok(frame);
+        };
+        frame.opening_trivia = self.peek_leading_trivia();
+        if children.len() == 1 {
+            let mid = marker.len() / 2;
+            if marker.len() % 2 != 0 || !marker[..mid].bytes().eq(marker[mid..].bytes().rev()) {
+                return Err(
+                    self.err_here("an empty marked frame requires two mirrored marker halves")
+                );
+            }
+            frame.marker = marker[..mid].to_owned();
+            self.advance();
+            return Ok(frame);
+        }
+        let expected: String = marker.chars().rev().collect();
+        let Some(SkeletonNode::Leaf(last)) = children.last() else {
+            return Err(self.err(
+                close_span,
+                format!("expected mirrored marker `{expected}` before `]`"),
+            ));
+        };
+        if !last.kind.is_sym(&expected) {
+            return Err(self.err(
+                last.span,
+                format!("expected mirrored marker `{expected}` before `]`"),
+            ));
+        }
+        if children.len() == 2 && self.peek_span().end == last.span.start {
+            return Err(self.err(
+                last.span,
+                "separate slash-bearing marker words with whitespace",
+            ));
+        }
+        if children.len() > 2 {
+            for edge in [&children[1], &children[children.len() - 2]] {
+                if word(edge).is_some() {
+                    return Err(self.err(
+                        Span::new(self.peek_span().start, close_span.end),
+                        "group an element's punctuation at a marked frame edge with parentheses",
+                    ));
+                }
+            }
+        }
+        frame.marker = marker;
+        frame.close_marker = Some(expected);
+        frame.region_end = last.span.start;
+        frame.closing_trivia = last.leading_trivia.clone();
+        self.advance();
+        Ok(frame)
+    }
+
+    fn finish_variadic_frame(&mut self, frame: &VariadicFrame) -> Result<Span, Error> {
+        if let Some(marker) = &frame.close_marker {
+            self.expect_kind(TokenKind::sym(marker), "the mirrored closing marker")?;
+        }
+        self.expect_kind(TokenKind::sym("]"), "`]` closing the variadic frame")
     }
 
     fn parse_normal_op_body(&mut self) -> Result<crate::ast::LexicalCallablePath, Error> {
@@ -9121,20 +8830,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Returns true if the next operator run starts with the structural
-    /// `[` required by a universal type binder. The lexer keeps brackets
-    /// in ordinary maximal operator runs, so compact `[*F]` begins with
-    /// `SymbolRun("[*")`; only this binder context peels the bracket.
+    /// The structural opening bracket shared by universal type binders.
     fn peek_starts_type_param(&self) -> bool {
-        self.at_sym_prefix("[")
+        self.at_sym("[")
     }
 
     fn expect_type_param_open(&mut self) -> Result<Span, Error> {
         let span = match self.peek() {
             Some(TokenKind::SymbolRun(run)) if run == "[" => Ok(self.advance().span),
-            Some(TokenKind::SymbolRun(run)) if run.starts_with('[') => {
-                Ok(self.split_current_sym(1).span)
-            }
             _ => Err(self.err_here("expected `[`")),
         }?;
         if let Some(tooling) = &mut self.tooling {
@@ -9148,14 +8851,13 @@ impl<'a> Parser<'a> {
     }
 
     fn at_type_param_close(&self) -> bool {
-        self.at_sym_prefix("]")
+        self.at_sym("]") && self.peek_span().start != self.peek_span().end
     }
 
     fn expect_type_param_close(&mut self) -> Result<Span, Error> {
         let span = match self.peek() {
-            Some(TokenKind::SymbolRun(run)) if run == "]" => Ok(self.advance().span),
-            Some(TokenKind::SymbolRun(run)) if run.starts_with(']') => {
-                Ok(self.split_current_sym(1).span)
+            Some(TokenKind::SymbolRun(run)) if run == "]" && self.at_type_param_close() => {
+                Ok(self.advance().span)
             }
             _ => Err(self.err_here("expected `]`")),
         }?;
@@ -10434,20 +10136,10 @@ impl<'a> Parser<'a> {
     // =====================================================================
 
     pub(super) fn expr(&mut self) -> Result<Expr, Error> {
-        let lhs = self.expr_postfix()?;
-        let mut lhs = self.try_operator_continuation(lhs)?;
-        // A left-greedy operator (`___ OP _`, `___ OP`, ...)
-        // attaches to *any* preceding expression — even one that
-        // already settled into a chain through a different operator.
-        // Iterate so chained left-greedy ops compose naturally
-        // (`a + b $> f $> g`).
-        while self.operator_scope.next_is_left_greedy(self) {
-            lhs = self.try_operator_continuation(lhs)?;
-        }
-        Ok(lhs)
+        self.fixed_operator_expr()
     }
 
-    #[cfg(any(test, feature = "repl"))]
+    #[cfg(test)]
     pub(super) fn enable_structural_forall_facts(&mut self) {
         self.tooling = Some(ParserTooling::default());
     }
@@ -11129,344 +10821,24 @@ impl<'a> Parser<'a> {
 
     /// The real end of an expression fragment, including the zero-width
     /// synthetic closer which the tree skeleton gives a recovered outer
-    /// parenthesis or brace. Normal source closers have a non-empty span and
+    /// group. Normal source closers have a non-empty span and
     /// are syntax errors rather than continuation evidence.
     fn at_fragment_eof(&self) -> bool {
         if self.peek().is_none() {
             return true;
         }
         self.tooling.is_some()
-            && matches!(self.peek(), Some(TokenKind::RParen | TokenKind::RBrace))
+            && (matches!(self.peek(), Some(TokenKind::RParen | TokenKind::RBrace))
+                || self.at_sym("]"))
             && self.peek_span().start == self.peek_span().end
     }
 
-    #[cfg(any(test, feature = "repl"))]
+    #[cfg(test)]
     pub(super) fn structural_forall_facts(&self) -> StructuralForallFacts {
         self.tooling
             .as_ref()
             .map(|tooling| tooling.facts.structural_forall.clone())
             .unwrap_or_default()
-    }
-
-    /// After parsing a primary-and-postfix expression, check for a
-    /// user-defined operator continuation. If the next token is a
-    /// `SymbolRun` registered in `operator_scope`, consume it and
-    /// parse a right-hand side with the operator's associativity:
-    ///
-    /// - **Non-assoc** (`op _ OP _ { impl …; };`): exactly one binary
-    ///   application; chaining (`a OP b OP c`) is a parse error.
-    /// - **Right-assoc** (`op _ OP __ { impl …; };`): recurse on the RHS
-    ///   so `a OP b OP c` parses as `OP(a, OP(b, c))`.
-    /// - **Left-assoc** (`op __ OP _ { impl …; };`): iterate so
-    ///   `a OP b OP c` parses as `OP(OP(a, b), c)`.
-    ///
-    /// Mixing different operators in one chain (e.g., `a + b * c`)
-    /// is a parse error per spec — operator dispatch is precedence-
-    /// free; users disambiguate with explicit parens.
-    fn try_operator_continuation(&mut self, mut lhs: Expr) -> Result<Expr, Error> {
-        if !self.operator_scope.non_prefix.leaves.is_empty() {
-            self.cursor_choices(CursorSlot::OperatorContinuation, &[]);
-        }
-        self.operator_cursor(false);
-        let Some((binding, n_tokens)) = self.operator_scope.find_at(self, false) else {
-            return Ok(lhs);
-        };
-        // Display name for diagnostics: the leading op-token run we
-        // matched on. (Multi-token patterns like `_ ?? _` display as
-        // `"??"`, but `_ && _` displays as `"&&"` because the trie
-        // walked two `Amp` tokens.)
-        let leading_run = leading_op_run(&binding.pattern);
-        let content = leading_run.join("");
-        self.consume_operator_run_after(&mut lhs, n_tokens);
-        // Skip past the first slot (the LHS we already parsed) and
-        // the leading op-token run we just consumed.
-        let pattern = binding.pattern.clone();
-        let first_slot_pos = pattern
-            .iter()
-            .position(|p| matches!(p, OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. }))
-            .expect("non-prefix pattern starts with a slot");
-        let after_leading_run = first_slot_pos + 1 + n_tokens;
-        let pattern_tail = &pattern[after_leading_run..];
-        // Dispatch by pattern shape:
-        // - Postfix unary: tail is empty (just `__ Tok` or `_ Tok`).
-        // - Binary (right-assoc): tail is `[Recursive]`.
-        // - Binary (left-assoc): tail is `[Plain]` and the FIRST
-        //   slot of the pattern was Recursive.
-        // - Binary (non-assoc): tail is `[Plain]` and the first
-        //   slot was Plain.
-        // - Multi-token (ternary etc.): tail starts with a slot,
-        //   has multiple Token entries, etc.
-        let first_slot_is_recursive = matches!(pattern.first(), Some(OpPart::SlotRecursive { .. }));
-        let last_slot_is_recursive = pattern
-            .iter()
-            .rev()
-            .find(|p| matches!(p, OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. }))
-            .map(|p| matches!(p, OpPart::SlotRecursive { .. }))
-            .unwrap_or(false);
-        // Walk the rest of the pattern, parsing operands and
-        // expecting the operator tokens between them. The
-        // recursive slot, when it's the last slot of the pattern,
-        // drives right-associative chain continuation (same-op
-        // only). It need not be the literal-last pattern element —
-        // matched-pair patterns like `_ <| __ |>` have a closing
-        // token after the recursive slot, and the closing token
-        // terminates the nested usage's parse so chaining still
-        // composes via the recursive slot.
-        let last_slot_index_in_tail = pattern_tail
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, p)| matches!(p, OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. }))
-            .map(|(i, _)| i);
-        let mut operands: Vec<Expr> = vec![lhs];
-        for (i, part) in pattern_tail.iter().enumerate() {
-            match part {
-                OpPart::Token {
-                    content: expected, ..
-                } => {
-                    let actual = self.peek().and_then(token_kind_to_op_string);
-                    if actual.as_deref() != Some(expected.as_str()) {
-                        return Err(self.err_here(format!(
-                            "expected `{expected}` to continue the `{content}` operator pattern"
-                        )));
-                    }
-                    self.advance();
-                }
-                OpPart::SlotPlain { .. }
-                | OpPart::SlotRecursive { .. }
-                | OpPart::SlotGreedy { .. } => {
-                    let is_last_slot = Some(i) == last_slot_index_in_tail;
-                    let is_recursive = matches!(part, OpPart::SlotRecursive { .. });
-                    let is_greedy = matches!(part, OpPart::SlotGreedy { .. });
-                    let is_lenient = matches!(
-                        part,
-                        OpPart::SlotPlain { lenient: true, .. }
-                            | OpPart::SlotRecursive { lenient: true, .. }
-                    );
-                    let has_closer = pattern_tail
-                        .get(i + 1)
-                        .is_some_and(|part| matches!(part, OpPart::Token { .. }));
-                    let operand_result = self.with_block_slot_boundary(has_closer, |parser| {
-                        Ok(if is_greedy {
-                            // Greedy slot (`___`) admits any single-op
-                            // chain in its operand position — call the
-                            // full expression parser (which itself runs
-                            // operator-continuation). Cross-op mixing
-                            // inside the slot is still rejected by the
-                            // inner `try_operator_continuation` (no
-                            // precedence in Kio). No outer continuation
-                            // tokens to preserve, so `lenient_depth`
-                            // stays at zero.
-                            parser.expr()?
-                        } else if is_lenient {
-                            // Lenient `( … )`-wrapped slot admits the
-                            // same single-op chain, but the outer
-                            // operator may have continuation tokens
-                            // after the slot — so bump `lenient_depth`
-                            // for the duration of the inner parse, and
-                            // the chain-mixing check leaves any
-                            // unconsumed op-tokens for the enclosing
-                            // pattern walk to match.
-                            parser.lenient_depth += 1;
-                            let r = parser.expr();
-                            parser.lenient_depth -= 1;
-                            r?
-                        } else if is_last_slot && is_recursive && last_slot_is_recursive {
-                            // Right-recursive (`__` at the last slot):
-                            // parse the operand as a postfix expression,
-                            // then continue with the same operator only
-                            // — mixing different operators is rejected.
-                            let inner = parser.expr_postfix()?;
-                            parser.try_operator_continuation_same_op(
-                                &content,
-                                &binding,
-                                &pattern_tail[i + 1..],
-                                inner,
-                            )?
-                        } else {
-                            parser.expr_postfix()?
-                        })
-                    });
-                    operands.push(operand_result?);
-                }
-            }
-        }
-
-        // Emit the OpChain placeholder. The operator-fold pass
-        // re-looks-up the leading run in the module's operator
-        // scope (now augmented with cross-module imports) and
-        // rebuilds a concrete `Expr::Call`. The full pattern
-        // travels with the chain so both the fold pass and the
-        // pretty-printer can reconstruct token positions without
-        // consulting any external scope.
-        let last_end = operands.last().unwrap().span().end;
-        let span = Span::new(operands[0].span().start, last_end);
-        let chain = Expr::OpChain {
-            occurrence: Default::default(),
-            kind: OpChainKind::Normal {
-                pattern: pattern.clone(),
-                slots: operands,
-            },
-            meta: Meta::new(span),
-            ext: (),
-        };
-
-        // If the FIRST slot was the recursive one and the pattern
-        // is binary-shaped (single token, two slots), we iterate
-        // for left-associative chains — `a OP b OP c` →
-        // `OP(OP(a, b), c)`. Multi-token left-recursive patterns
-        // aren't supported in this slice; the validator already
-        // accepted them, so the iteration only fires for the
-        // exact 3-element `[Recursive, Token, Plain]` shape.
-        if first_slot_is_recursive
-            && pattern.len() == 2 + n_tokens
-            && pattern[1..1 + n_tokens]
-                .iter()
-                .all(|p| matches!(p, OpPart::Token { .. }))
-        {
-            let mut acc = chain;
-            loop {
-                match self.operator_scope.find_at(self, false) {
-                    Some((next_binding, next_n))
-                        if same_operator_binding(&next_binding, &binding) =>
-                    {
-                        self.consume_operator_run_after(&mut acc, next_n);
-                        let rhs = self.expr_postfix()?;
-                        let span = Span::new(acc.span().start, rhs.span().end);
-                        acc = Expr::OpChain {
-                            occurrence: Default::default(),
-                            kind: OpChainKind::Normal {
-                                pattern: pattern.clone(),
-                                slots: vec![acc, rhs],
-                            },
-                            meta: Meta::new(span),
-                            ext: (),
-                        };
-                    }
-                    Some((next_binding, _)) => {
-                        if self.lenient_depth > 0 {
-                            break;
-                        }
-                        let next_content = leading_op_run(&next_binding.pattern).join("");
-                        return Err(self.operator_chain_error(&content, &next_content));
-                    }
-                    None => break,
-                }
-            }
-            return Ok(acc);
-        }
-
-        // For postfix unary (tail empty), iterate so `a OP OP`
-        // wraps repeatedly.
-        if pattern_tail.is_empty() {
-            let mut acc = chain;
-            loop {
-                match self.operator_scope.find_at(self, false) {
-                    Some((next_binding, next_n))
-                        if same_operator_binding(&next_binding, &binding) =>
-                    {
-                        let next_span = self.peek_span();
-                        self.consume_operator_run_after(&mut acc, next_n);
-                        let span = Span::new(acc.span().start, next_span.end);
-                        acc = Expr::OpChain {
-                            occurrence: Default::default(),
-                            kind: OpChainKind::Normal {
-                                pattern: pattern.clone(),
-                                slots: vec![acc],
-                            },
-                            meta: Meta::new(span),
-                            ext: (),
-                        };
-                    }
-                    Some((next_binding, _)) => {
-                        if self.lenient_depth > 0 {
-                            break;
-                        }
-                        let next_content = leading_op_run(&next_binding.pattern).join("");
-                        return Err(self.operator_chain_error(&content, &next_content));
-                    }
-                    None => break,
-                }
-            }
-            return Ok(acc);
-        }
-
-        // Non-assoc check: if the pattern has no recursive slot
-        // anywhere, reject any immediate chain — this covers both
-        // binary `_ OP _` and ternary-non-assoc `_ OP1 _ OP2 _`.
-        // Inside a lenient `( … )` slot, leave the next op-token
-        // run for the enclosing pattern to match instead of
-        // erroring.
-        if !first_slot_is_recursive
-            && !last_slot_is_recursive
-            && let Some((next_binding, _)) = self.operator_scope.find_at(self, false)
-        {
-            if self.lenient_depth > 0 {
-                return Ok(chain);
-            }
-            let next_content = leading_op_run(&next_binding.pattern).join("");
-            return Err(self.operator_chain_error(&content, &next_content));
-        }
-
-        Ok(chain)
-    }
-
-    /// The lexer's leading-only trivia before an operator follows its operand.
-    /// Append it after any comments already retained from grouping closers.
-    fn consume_operator_run_after(&mut self, operand: &mut Expr, count: usize) {
-        for _ in 0..count {
-            if let Some(token) = self.cursor.peek_token()
-                && token
-                    .leading_trivia
-                    .iter()
-                    .any(|trivia| comment_span(trivia).is_some())
-            {
-                append_relocated_trivia(
-                    &mut operand.meta_mut().trailing_trivia,
-                    token.leading_trivia.clone(),
-                );
-            }
-            self.advance();
-        }
-    }
-
-    /// Continuation pinned to a specific operator. Used by the
-    /// right-associative recursive-slot path: only the same op
-    /// drives further folding. A different in-scope op is a mixing
-    /// error unless its tokens belong to the enclosing pattern's
-    /// pending closing run; anything else stops.
-    fn try_operator_continuation_same_op(
-        &mut self,
-        op_str: &str,
-        binding: &OperatorBinding,
-        closing_tokens: &[OpPart],
-        lhs: Expr,
-    ) -> Result<Expr, Error> {
-        match self.operator_scope.find_at(self, false) {
-            Some((next_binding, _)) if same_operator_binding(&next_binding, binding) => {
-                // Same operator: re-enter the dispatcher, which
-                // will parse the rest of the pattern and recurse
-                // on the recursive slot again.
-                self.try_operator_continuation(lhs)
-            }
-            Some((next_binding, _)) => {
-                let at_own_close = !closing_tokens.is_empty()
-                    && closing_tokens.iter().enumerate().all(|(offset, part)| {
-                        matches!(part, OpPart::Token { content, .. }
-                            if self.peek_at(offset).as_ref().and_then(token_kind_to_op_string).as_deref()
-                                == Some(content.as_str()))
-                    });
-                if at_own_close {
-                    return Ok(lhs);
-                }
-                if self.lenient_depth > 0 {
-                    return Ok(lhs);
-                }
-                let next_content = leading_op_run(&next_binding.pattern).join("");
-                Err(self.operator_chain_error(op_str, &next_content))
-            }
-            None => Ok(lhs),
-        }
     }
 
     /// Delimiters determine this grammar before any operator is resolved.
@@ -11475,45 +10847,36 @@ impl<'a> Parser<'a> {
     }
 
     fn try_variadic_literal_body(&mut self) -> Result<Option<Expr>, Error> {
-        let Some(TokenKind::SymbolRun(open)) = self.peek() else {
+        if !self.peek().is_some_and(|kind| kind.is_sym("[")) {
             return Ok(None);
-        };
-        let Some(close) = mirrored_varop_close(open) else {
-            return Ok(None);
-        };
-        let open = open.clone();
-        let start = self.peek_span().start;
-        self.advance();
-        let mut elements = Vec::new();
-        let mut pending_trivia = self.peek_leading_trivia();
-        loop {
-            self.skip_commas_with_trivia(&mut pending_trivia);
-            if self.peek().is_some_and(|kind| kind.is_sym(&close)) {
-                break;
-            }
-            let mut element = self.expr()?;
-            inject_leading_trivia(&mut element, std::mem::take(&mut pending_trivia));
-            elements.push(element);
-            pending_trivia = self.peek_leading_trivia();
-            if !matches!(self.peek(), Some(TokenKind::Comma))
-                && !self.peek().is_some_and(|kind| kind.is_sym(&close))
-            {
-                return Err(
-                    self.err_here(format!("expected `,` or mirrored varop CLOSE `{close}`"))
-                );
-            }
         }
+        let start = self.peek_span().start;
+        let frame = self.begin_variadic_frame()?;
+        let old_limit = self.cursor.replace_limit(Some(frame.region_end));
+        let result = self.variadic_elements(&frame);
+        self.cursor.replace_limit(old_limit);
+        let (mut elements, mut pending_trivia) = result?;
+        if frame.close_marker.is_some() {
+            self.advance();
+        }
+        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
         if let Some(last) = elements.last_mut() {
-            set_trailing_trivia(last.meta_mut(), std::mem::take(&mut pending_trivia));
+            append_relocated_trivia(
+                &mut last.meta_mut().trailing_trivia,
+                std::mem::take(&mut pending_trivia),
+            );
         }
         let end = self
-            .expect_kind(TokenKind::sym(&close), &format!("`{close}`"))?
+            .expect_kind(TokenKind::sym("]"), "`]` closing the variadic frame")?
             .end;
         Ok(Some(Expr::OpChain {
             occurrence: Default::default(),
             kind: OpChainKind::Variadic {
-                open_tokens: vec![open],
-                close_tokens: vec![close],
+                open_tokens: vec![format!("[{}", frame.marker)],
+                close_tokens: vec![format!(
+                    "{}]",
+                    frame.marker.chars().rev().collect::<String>()
+                )],
                 elements,
                 empty_trivia: pending_trivia,
             },
@@ -11522,90 +10885,29 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn try_prefix_operator(&mut self) -> Result<Option<Expr>, Error> {
-        self.operator_cursor(true);
-        let Some((binding, n_tokens)) = self.operator_scope.find_at(self, true) else {
-            return Ok(None);
-        };
-        let op_span = self.peek_span();
-        // Consume the leading op-token run.
-        for _ in 0..n_tokens {
-            self.advance();
-        }
-        let mut slots = Vec::new();
-        let mut end = op_span.end;
-        let tail = &binding.pattern[n_tokens..];
-        for (index, part) in tail.iter().enumerate() {
-            match part {
-                OpPart::Token {
-                    content: expected, ..
-                } => {
-                    let actual = self.peek().and_then(token_kind_to_op_string);
-                    if actual.as_deref() != Some(expected.as_str()) {
-                        return Err(self.err_here(format!(
-                            "expected `{expected}` to continue the `{}` operator pattern",
-                            leading_op_run(&binding.pattern).join(""),
-                        )));
-                    }
-                    end = self.peek_span().end;
-                    self.advance();
-                }
-                OpPart::SlotGreedy { .. }
-                | OpPart::SlotPlain { .. }
-                | OpPart::SlotRecursive { .. } => {
-                    let has_closer = tail
-                        .get(index + 1)
-                        .is_some_and(|part| matches!(part, OpPart::Token { .. }));
-                    let operand = self.with_block_slot_boundary(has_closer, |parser| {
-                        if matches!(part, OpPart::SlotGreedy { .. }) {
-                            parser.expr()
-                        } else if matches!(
-                            part,
-                            OpPart::SlotPlain { lenient: true, .. }
-                                | OpPart::SlotRecursive { lenient: true, .. }
-                        ) {
-                            parser.lenient_depth += 1;
-                            let result = parser.expr();
-                            parser.lenient_depth -= 1;
-                            result
-                        } else {
-                            parser.expr_postfix()
-                        }
-                    })?;
-                    end = operand.span().end;
-                    slots.push(operand);
-                }
+    fn variadic_elements(
+        &mut self,
+        frame: &VariadicFrame,
+    ) -> Result<(Vec<Expr>, Vec<Trivia>), Error> {
+        let mut elements = Vec::new();
+        let mut pending_trivia = frame.opening_trivia.clone();
+        append_relocated_trivia(&mut pending_trivia, self.peek_leading_trivia());
+        loop {
+            self.skip_commas_with_trivia(&mut pending_trivia);
+            if self.peek().is_none() {
+                break;
+            }
+            let mut element = self.expr()?;
+            Self::ensure_value_operand(&element)?;
+            inject_leading_trivia(&mut element, std::mem::take(&mut pending_trivia));
+            elements.push(element);
+            pending_trivia = self.peek_leading_trivia();
+            if !matches!(self.peek(), Some(TokenKind::Comma)) && self.peek().is_some() {
+                return Err(self.err_here("expected `,` or the end of the variadic element list"));
             }
         }
-        let span = Span::new(op_span.start, end);
-        Ok(Some(Expr::OpChain {
-            occurrence: Default::default(),
-            kind: OpChainKind::Normal {
-                pattern: binding.pattern.clone(),
-                slots,
-            },
-            meta: Meta::new(span),
-            ext: (),
-        }))
-    }
-
-    /// Build the diagnostic for chaining operators in one
-    /// expression: same-op chains on a non-associative operator
-    /// get the "non-associative" wording; different-op chains get
-    /// the "different operators" / no-precedence wording.
-    fn operator_chain_error(&self, first: &str, next: &str) -> Error {
-        let msg = if first == next {
-            format!(
-                "operator `{first}` is non-associative; chained use \
-                 (`a {first} b {first} c`) requires explicit parens"
-            )
-        } else {
-            format!(
-                "different operators (`{first}` and `{next}`) in one expression require \
-                 explicit parens — operator dispatch is precedence-free"
-            )
-        };
-        self.err_here(msg)
+        append_relocated_trivia(&mut pending_trivia, frame.closing_trivia.clone());
+        Ok((elements, pending_trivia))
     }
 
     /// Parses a primary expression, then loops over postfix call
@@ -11614,7 +10916,11 @@ impl<'a> Parser<'a> {
     /// compose freely: chains like `r.>f.>g(x)` or `f(r).>g` fall
     /// out of the loop.
     fn expr_postfix(&mut self) -> Result<Expr, Error> {
-        let mut e = self.expr_primary()?;
+        let e = self.expr_primary()?;
+        self.expr_suffixes(e)
+    }
+
+    fn expr_suffixes(&mut self, mut e: Expr) -> Result<Expr, Error> {
         loop {
             match self.peek() {
                 Some(TokenKind::LParen) => {
@@ -11727,7 +11033,7 @@ impl<'a> Parser<'a> {
                     // value slots, and records the expansion for substitution.
                     // The peek accepts
                     // a fused `!`-prefix SymbolRun
-                    // (`!.`, `!=`, …) too — greedy lexer fusion can
+                    // (`!=`, `!~`, …) too — greedy lexer fusion can
                     // absorb a trailing op-char into the `!` run,
                     // and `expect_bang` peels it back.
                     if self.at_sym_prefix("!") {
@@ -11997,7 +11303,11 @@ impl<'a> Parser<'a> {
     /// expression as the inserted value, parenthesize it.
     fn expr_tight_call_arg(&mut self) -> Result<Expr, Error> {
         let leading = self.peek_leading_trivia();
-        let mut e = self.expr_primary()?;
+        let mut e = if self.operator_scope.find_at(self, true).is_some() {
+            self.fixed_operator_primary()?
+        } else {
+            self.expr_primary()?
+        };
         while matches!(self.peek(), Some(TokenKind::LParen)) {
             let start = e.span().start;
             append_relocated_trivia(
@@ -12126,7 +11436,7 @@ impl<'a> Parser<'a> {
         flavor: UfcsFlavor,
     ) -> Result<Expr, Error> {
         // Consume the `!` — peel from the front of any fused
-        // SymbolRun (e.g. `!.`) so the trailing op-chars stay
+        // SymbolRun (e.g. `!=`) so the trailing op-chars stay
         // available for the next consumer.
         let bang_span = self.expect_bang()?;
         if segments.len() != 1 {
@@ -12846,15 +12156,6 @@ impl<'a> Parser<'a> {
         if self.at_leading_dot_prefix() {
             return self.leading_dot_expr();
         }
-        // First, see if a prefix-shaped user-defined operator
-        // applies (`! a`, `- a`, `~ a`, etc.). The prefix scope
-        // is keyed separately from non-prefix bindings, so a
-        // token like `-` can have both a `op - __ { impl neg; };`
-        // (prefix, used here) and a `op _ - __ { impl sub; };`
-        // (binary, used post-LHS) registered at once.
-        if let Some(e) = self.try_prefix_operator()? {
-            return Ok(e);
-        }
         // A direct module/item FQN starts at this expression-primary
         // position. Value expressions admit only local/imported names and
         // dotted module aliases, so reject the exact path here instead of
@@ -13082,22 +12383,17 @@ impl<'a> Parser<'a> {
                 annotation_error.get_or_insert(error);
                 // Only the containing list's separator starts another mode;
                 // nested items and unseparated suffixes own no annotation roles.
-                let mut varop_closers = Vec::new();
+                let mut malformed_frame = false;
                 while self.peek().is_some() {
-                    if self.cursor.depth() == annotation_depth {
-                        if matches!(self.peek(), Some(TokenKind::RParen))
-                            || (varop_closers.is_empty()
-                                && matches!(self.peek(), Some(TokenKind::Comma)))
-                        {
-                            break;
-                        }
-                        if let Some(TokenKind::SymbolRun(run)) = self.peek() {
-                            if varop_closers.last() == Some(run) {
-                                varop_closers.pop();
-                            } else if let Some(close) = mirrored_varop_close(run) {
-                                varop_closers.push(close);
-                            }
-                        }
+                    if self.cursor.depth() == annotation_depth
+                        && (matches!(self.peek(), Some(TokenKind::RParen))
+                            || (!malformed_frame && matches!(self.peek(), Some(TokenKind::Comma))))
+                    {
+                        break;
+                    }
+                    if self.at_sym("[") {
+                        malformed_frame |= self.begin_variadic_frame().is_err();
+                        continue;
                     }
                     self.advance();
                 }
@@ -14485,6 +13781,33 @@ impl<'a> Parser<'a> {
         )
     }
 
+    fn ensure_value_operand(expr: &Expr) -> Result<(), Error> {
+        let mut pending = vec![expr];
+        while let Some(value) = pending.pop() {
+            match value {
+                Expr::Path { segments, .. }
+                    if segments.last().is_some_and(|segment| {
+                        crate::naming::starts_like_type_name(&segment.name)
+                    }) =>
+                {
+                    return Err(Error::parse(
+                        value.span(),
+                        "expected a value operand, found a type path",
+                    ));
+                }
+                Expr::Tuple { items, .. } => pending.extend(items),
+                Expr::Call { callee, .. } => pending.push(callee),
+                Expr::Ufcs { receiver, .. } => pending.push(receiver),
+                Expr::Elaborator { call, .. } => match call {
+                    ElaboratorCall::FieldAccess { receiver, .. }
+                    | ElaboratorCall::FieldUpdate { receiver, .. } => pending.push(receiver),
+                },
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
     fn expr_can_be_type_arg_candidate(expr: &Expr) -> bool {
         fn walk(expr: &Expr) -> (bool, bool) {
             match expr {
@@ -14804,6 +14127,13 @@ fn item_keyword_starts_here(
                         | TokenKind::SymbolRun(_)
                 )
         ) || paren_group(offset)
+            || matches!(
+                children.get(idx + offset),
+                Some(SkeletonNode::Group {
+                    kind: GroupKind::Square,
+                    ..
+                })
+            )
     };
 
     // The `host` modifier (with `host type` / `host fn`) is absorbed by
@@ -14816,7 +14146,14 @@ fn item_keyword_starts_here(
         "type" => leaf_ident(1) || brace_group(1),
         "literal" | "newtype" | "equiv" | "elab" => leaf_ident(1),
         "labels" => leaf_ident(1) || brace_group(1),
-        "op" | "varop" => op_pattern_lead(1),
+        "op" => op_pattern_lead(1),
+        "varop" => matches!(
+            children.get(idx + 1),
+            Some(SkeletonNode::Group {
+                kind: GroupKind::Square,
+                ..
+            })
+        ),
         "rec" => {
             paren_group(1)
                 || brace_group(1)
@@ -14970,66 +14307,17 @@ pub(crate) fn parse_declaration_query(
     Ok((provider, selector))
 }
 
-/// Build the operator-scope trie key for a validated `op`
-/// pattern: the contiguous **leading op-token run** that the parser
-/// can read forward at a use site before hitting a slot.
-///
-/// For non-prefix patterns the leading run sits between the first
-/// slot (the LHS, already parsed at the use site) and the next slot
-/// (or the pattern's end). For prefix patterns the leading run is
-/// the run of tokens before the first slot. Multi-slot patterns
-/// (`_ ? _ : __`) supply *only* their leading run as the key (e.g.
-/// `["?"]`) — the inner tokens are matched by the existing pattern
-/// walk after the trie has identified which op is firing.
-///
-/// Prefix-shaped operators are stored in a separate trie, so the
-/// same op-token spelling can be both prefix and non-prefix (e.g.
-/// unary `-` plus binary `-`).
-fn leading_op_run(pattern: &[OpPart]) -> Vec<String> {
-    let starts_with_token = matches!(pattern.first(), Some(OpPart::Token { .. }));
-    let start = if starts_with_token {
-        0
-    } else {
-        pattern
-            .iter()
-            .position(|p| matches!(p, OpPart::Token { .. }))
-            .expect("validated patterns include >= 1 token")
-    };
-    let mut run = Vec::new();
-    for p in &pattern[start..] {
-        match p {
-            OpPart::Token { content, .. } => run.push(content.clone()),
-            OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. } => {
-                break;
-            }
-        }
-    }
-    run
-}
-
 #[cfg(any(feature = "surface", feature = "cli"))]
 impl OperatorDispatchKey {
     /// Render the internal collision key for structural comparisons.
     /// Run boundaries remain explicit so distinct keys cannot alias.
     pub(crate) fn render(&self) -> String {
-        let mut out = CanonicalWriter::default();
+        let word = self.leading_run.join(" ");
         if self.expr_start {
-            // Expression-start (prefix-unary / bracket-unary /
-            // variadic): `SYMBOLS _`. A space separates the run from
-            // the slot for readability and to keep the slot a distinct
-            // token on re-parse.
-            push_op_token_run(&self.leading_run, &mut out);
-            out.push_space_then("_");
+            format!("{word} _")
         } else {
-            // Non-expression-start (binary / postfix / ternary):
-            // `_ SYMBOLS`.
-            out.push_unit("_");
-            if let Some(first) = self.leading_run.first() {
-                out.push_space_then(first);
-                push_op_token_run(&self.leading_run[1..], &mut out);
-            }
+            format!("_ {word}")
         }
-        out.into_string()
     }
 }
 
@@ -15045,156 +14333,40 @@ pub(crate) fn variadic_name(operator: &VariadicOperator) -> String {
     crate::ast::OperatorGrammar::variadic(&operator.open, &operator.spec).render()
 }
 
-/// True iff `c` is an op-char that the lexer fuses into a `SymbolRun`.
-/// Only the dedicated structural punctuators are absent; square brackets
-/// are ordinary op-chars and therefore need the same load-bearing boundary
-/// spaces as the rest. Mirrors the op-char allow-list in
-/// `specs/language.md` § Operators (Operator-character set).
-#[cfg(any(feature = "surface", feature = "cli"))]
-fn is_fusable_op_char(c: char) -> bool {
-    matches!(
-        c,
-        '+' | '-'
-            | '*'
-            | '/'
-            | '%'
-            | '^'
-            | '~'
-            | '?'
-            | '@'
-            | '#'
-            | '$'
-            | '\\'
-            | '\''
-            | '`'
-            | '<'
-            | '>'
-            | '='
-            | '!'
-            | '&'
-            | '|'
-            | ':'
-            | '.'
-            | '['
-            | ']'
-    )
-}
-
-/// Accumulates the canonical name one **lexical unit** at a time (a
-/// slot `_` / `__` / `___`, an op-token run, the `...` ellipsis, a
-/// bracket / paren, or a `,` / `;` separator), inserting a
-/// load-bearing space between two consecutive units only when the
-/// previous unit's last char and the next unit's first char are
-/// **both** fusable op-chars — otherwise the lexer would re-fuse two
-/// separately-declared op-token runs into one (`&& ++` → `&&++`).
-/// A unit is never split internally (`...` stays `...`, never `. . .`);
-/// the boundary rule applies only *between* whole units.
-#[cfg(any(feature = "surface", feature = "cli"))]
-#[derive(Default)]
-struct CanonicalWriter {
-    buf: String,
-    last: Option<char>,
-}
-
-#[cfg(any(feature = "surface", feature = "cli"))]
-impl CanonicalWriter {
-    /// Append one lexical unit, inserting a boundary space if the
-    /// previous unit could fuse with this one.
-    fn push_unit(&mut self, unit: &str) {
-        let Some(first) = unit.chars().next() else {
-            return;
-        };
-        if let Some(prev) = self.last
-            && is_fusable_op_char(prev)
-            && is_fusable_op_char(first)
-        {
-            self.buf.push(' ');
-        }
-        self.buf.push_str(unit);
-        self.last = unit.chars().next_back();
-    }
-
-    /// Append a unit, always preceded by exactly one space (used at the
-    /// slot↔run boundary of an operator name, where a space is part of
-    /// the canonical spelling regardless of fusion).
-    fn push_space_then(&mut self, unit: &str) {
-        if !self.buf.is_empty() {
-            self.buf.push(' ');
-        }
-        self.buf.push_str(unit);
-        self.last = unit.chars().next_back();
-    }
-
-    fn into_string(self) -> String {
-        self.buf
-    }
-}
-
-/// Append a run of op-tokens (`["&&", "++"]`) to `out`, each as its
-/// own unit. The writer's boundary rule inserts a load-bearing space
-/// between two fusable op-token units (`&&` `++` → `&& ++`).
-#[cfg(any(feature = "surface", feature = "cli"))]
-fn push_op_token_run(tokens: &[String], out: &mut CanonicalWriter) {
-    for tok in tokens {
-        out.push_unit(tok);
-    }
-}
-
-/// Validate that a `op` pattern is one of the supported
-/// shapes. See [`Parser::op`] for the supported set.
-/// Two reservations apply:
-///
-/// - **Leading-dot reservation** (any pattern): an operator component
-///   whose spelling starts with `.` must contain at least two dots.
-///   Dot-led one-dot runs (`.`, `.>`, `.+`, `.###$`, …) are held back
-///   for member access, UFCS, lambdas, placeholder lambdas, and future
-///   dot-led syntax. This is a per-token spelling rule, quoted or
-///   unquoted: `..`, `.+.`, `<.>`, and `+.` stay valid.
-/// - **`//`-prefix reservation** (any pattern): an operator component
-///   whose spelling **starts with** `//` is reserved for the future
-///   `//…` syntax family. This is a `starts_with("//")` **prefix**
-///   reject, reserving the whole family (`//!`, `//?`, `//=`, …), not
-///   a single spelling.
-/// - **Standalone `=` reservation**: `=` is admissible only through
-///   operator-token quotation, so the fixed-arity parser rejects it
-///   when recorded as an unquoted token.
-///
-/// See `specs/language.md` § Operators.
+/// Validate alternating words and value slots, exposed chaining directions,
+/// and whether each self slot can admit a bare self-child.
 fn validate_op_pattern(pattern: &[OpPart], span: Span) -> Result<(), Error> {
-    // Adjacent slots (`_ _` or `_ __`) are rejected — there's no
-    // delimiter between them. Adjacent op-tokens (`_ & & _` for
-    // the `_ && _` pattern) are accepted: each token is consumed
-    // in sequence during operator-usage parsing.
-    let mut prev_was_slot = false;
-    for (i, part) in pattern.iter().enumerate() {
-        let is_slot = matches!(
-            part,
-            OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. }
-        );
-        if i > 0 && prev_was_slot && is_slot {
-            return Err(Error::parse(
-                span,
-                "adjacent slots (`_` / `__`) in a `op` pattern are ambiguous".to_owned(),
-            ));
-        }
-        prev_was_slot = is_slot;
-    }
-    let op_tokens: Vec<(&str, Span)> = pattern
+    let first_word = pattern.iter().find_map(|part| match part {
+        OpPart::Token { content, .. } => Some(content),
+        _ => None,
+    });
+    let Some(first_word) = first_word else {
+        return Err(Error::parse(
+            span,
+            "`op` pattern must include at least one operator word",
+        ));
+    };
+    if pattern
         .iter()
-        .filter_map(|p| match p {
-            OpPart::Token { content, span, .. } => Some((content.as_str(), *span)),
-            _ => None,
-        })
-        .collect();
-    for (content, tok_span) in &op_tokens {
-        if content.contains(['[', ']']) {
+        .all(|part| matches!(part, OpPart::Token { .. }))
+    {
+        return Err(Error::parse(
+            span,
+            "`op` pattern must include at least one value slot",
+        ));
+    }
+    for pair in pattern.windows(2) {
+        let first_is_word = matches!(pair[0], OpPart::Token { .. });
+        let second_is_word = matches!(pair[1], OpPart::Token { .. });
+        if first_is_word == second_is_word {
             return Err(Error::parse(
-                *tok_span,
-                "fixed operator tokens cannot contain square brackets; use a mirrored `varop` delimiter",
+                op_part_span(&pair[1]),
+                if first_is_word {
+                    "operator words and slots must alternate; use one contiguous symbol word between slots"
+                } else {
+                    "adjacent slots in an `op` pattern are ambiguous; separate them with an operator word"
+                },
             ));
-        }
-        if is_reserved_leading_dot_op_token(content) {
-            return Err(reserved_leading_dot_op_token_error(content, *tok_span));
         }
     }
     for part in pattern {
@@ -15202,52 +14374,59 @@ fn validate_op_pattern(pattern: &[OpPart], span: Span) -> Result<(), Error> {
             content,
             span,
             quoted,
-            ..
         } = part
-            && is_reserved_standalone_equals_op_token(content)
-            && !quoted
         {
-            return Err(reserved_standalone_equals_op_token_error(*span));
+            if content.contains(['[', ']']) {
+                return Err(Error::parse(
+                    *span,
+                    "fixed operator tokens cannot contain square brackets; use a mirrored `varop` delimiter",
+                ));
+            }
+            if content.contains('.') {
+                return Err(reserved_leading_dot_op_token_error(content, *span));
+            }
+            if is_reserved_standalone_equals_op_token(content) && !quoted {
+                return Err(reserved_standalone_equals_op_token_error(*span));
+            }
         }
     }
-    // `//`-prefix reservation: any operator component whose spelling
-    // starts with `//` is reserved for future syntax — the whole
-    // `//…` family (`//!`, `//?`, `//=`, …). The lexer caps a single
-    // `SymbolRun` at one `/`, so a `//` prefix is only reachable as
-    // two adjacent `/` op-tokens; check each maximal run of adjacent
-    // op-tokens. Unlike the leading-dot rule above, this checks the
-    // maximal adjacent run because the lexer splits before a second
-    // `/`; it is a
-    // `starts_with("//")` prefix reject, not a narrow spelling reject:
-    // it reserves the entire family, not a single spelling. The `//`
-    // sequence already lexes as a line comment outside `op` patterns,
-    // so reserving it here keeps the surface coherent if `//…` later
-    // takes on operator meaning.
-    let mut run = String::new();
-    let mut run_span: Option<Span> = None;
-    for part in pattern {
-        match part {
-            OpPart::Token { content, span, .. } => {
-                run.push_str(content);
-                run_span = Some(match run_span {
-                    None => *span,
-                    Some(s) => Span::new(s.start, span.end),
-                });
-                if run.starts_with("//") {
-                    return Err(Error::parse(
-                        run_span.expect("run is non-empty when it has a `//` prefix"),
-                        "an `op` operator component starting with `//` is reserved for \
-                             future syntax — the whole `//…` family (`//!`, `//?`, `//=`, …) \
-                             is held back. Use a different operator spelling."
-                            .to_owned(),
-                    ));
-                }
-            }
-            // A slot breaks the adjacent-token run; reset.
-            OpPart::SlotPlain { .. } | OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. } => {
-                run.clear();
-                run_span = None;
-            }
+
+    let prefix = matches!(pattern.first(), Some(OpPart::Token { .. }));
+    let closed = matches!(pattern.last(), Some(OpPart::Token { .. }));
+    let chain_slot = |part: &OpPart| {
+        matches!(
+            part,
+            OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. }
+        )
+    };
+    if !prefix
+        && !closed
+        && chain_slot(&pattern[0])
+        && chain_slot(pattern.last().expect("nonempty pattern"))
+    {
+        return Err(Error::parse(
+            span,
+            "both exposed operand slots claim an operator chain; use an atom slot `_` at one end",
+        ));
+    }
+    for (index, part) in pattern.iter().enumerate() {
+        let OpPart::SlotRecursive { span } = part else {
+            continue;
+        };
+        if closed {
+            return Err(Error::parse(
+                *span,
+                "`__` is ineffective in an operator ending in a fixed word: its completed result is already an atom; use `_`",
+            ));
+        }
+        if !prefix
+            && index != 0
+            && matches!(pattern.get(index + 1), Some(OpPart::Token { content, .. }) if content == first_word)
+        {
+            return Err(Error::parse(
+                *span,
+                "`__` is ineffective here: its following word closes the operand before the same operator can continue; use `_`",
+            ));
         }
     }
     Ok(())

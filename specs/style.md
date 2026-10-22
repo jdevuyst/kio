@@ -221,7 +221,7 @@ Same width-driven trigger as the comma-separated lists: single-line if the flat 
 
 ## User-operator chains
 
-User-defined `op` applications use a width-driven, all-or-nothing semantic-segment layout. The flat form preserves the pattern's ordinary single-space spelling. When it does not fit in the 100-column budget, the first segment remains at the expression's anchor and every later segment starts on its own line at +2 indent. Segments follow the pattern's operator-token boundaries: consecutive token runs stay together, an adjacent non-spliced operand stays on the same segment, and a trailing token run forms its own segment.
+User-defined `op` applications use a width-driven, all-or-nothing semantic-segment layout. The flat form preserves the pattern's ordinary single-space spelling. When it does not fit in the 100-column budget, the first segment remains at the expression's anchor and every later segment starts on its own line at +2 indent. Segments follow the pattern's single-word boundaries: an adjacent non-spliced operand stays on the same segment, and a trailing word forms its own segment.
 
 Identical-pattern children in recursive (`__`) and greedy (`___`) slots contribute their segments to the same layout decision. This covers right- and left-recursive binary operators, prefix and postfix operators, matched pairs, and higher-arity patterns without changing associativity. A different-pattern child is not flattened into the surrounding chain and retains any load-bearing parentheses.
 
@@ -234,14 +234,24 @@ let result =
 ```
 
 Variadic literals follow the same comma-list layout as tuples, retaining their
-own OPEN and CLOSE runs for every element count. The flat form has a space
-inside each delimiter (`[* a, b *]`), or one space between the delimiters when
-empty (`[* *]`), keeping symbol runs separate. Zero- and one-element literals
+selected bare or marked square frame for every element count. Bare frames
+use `[]` or `[a, b]`. Marked frames have a space inside each delimiter
+(`[* a, b *]`), or one space between the delimiters when empty (`[* *]`).
+Thus `[**]`, `[****]`, and `[*a, b*]` normalize to `[* *]`, `[** **]`, and
+`[* a, b *]`, including in declarations and imports. Zero- and one-element literals
 stay flat under the ordinary list rule. A longer literal stays flat when it
 fits; otherwise OPEN ends the introducing line, every element's leading comma
 and CLOSE occupy the introducing line's base column. Continuations
 within an element align with its content after the comma. Leading, repeated
 and trailing input commas collapse to this ordinary list layout.
+
+Removing an edge comma must preserve the selected frame and element tree.
+When necessary, the formatter inserts grouping: `[*,|x|,*]` becomes
+`[* (| x |) *]`, and `[,|x|,]` becomes `[(| x |)]`. Existing grouping that
+protects an element's symbolic edge remains. Signed numeric literals need no
+grouping in spaced marked output, so `[* -1 *]` is canonical. Comment text
+and ownership survive comma removal, midpoint separation, and regrouping;
+a line comment retains its terminating newline.
 
 ```kio
 let values =
@@ -330,29 +340,29 @@ An `op` declaration introduces a user operator by binding a pattern of operator-
 op _ + _ { impl add }
 op _ + __ { impl add }
 op _ ? _ : __ { impl if_then_else }
-op _ <| __ |> { impl index }
+op _ <| ___ |> { impl index }
 ```
 
 Layout rules:
 
-- **One space between pattern units.** Each placeholder slot (`_`, `__`, `___`) and each maximal operator run is separated from its neighbors by exactly one space. `_+_` is rewritten to `_ + _`, and `_<|__|>` to `_ <| __ |>`. A fused run such as `&&++` stays intact while separately written runs remain separated: `_ && ++ _` and `_ &&++ _` are distinct patterns. Fixed patterns contain neither `[` nor `]`.
+- **One space between pattern units.** Each placeholder slot (`_`, `__`, `___`) and its neighboring whole symbol word are separated by exactly one space. `_+_` is rewritten to `_ + _`, and `_<|___|>` to `_ <| ___ |>`. A fused word such as `&&++` stays intact. Adjacent words, dots, brackets, and slot-containing pattern groups are rejected by the grammar.
 - **Compact body spacing.** `op _ + _ { impl add }` is the canonical form; `op _+_{impl add;};` is rewritten to it.
 - **Always single-line.** An `op` declaration emits on one line. The 100-column budget does not apply: an over-budget operator declaration stays on one line rather than breaking — operator patterns aren't comma-separated, so there's no A1-style fallback layout. The outer declaration ends at its closing body brace.
 
 Top-level item spacing (one blank line between items per [§ Indent and blank lines](#indent-and-blank-lines)) applies to `op` like every other top-level item.
 
 **Operator import selections** retain the complete tagged grammar. Fixed
-selections render every slot kind, literal run, and significant lenient group,
-with the same token spacing and necessary quotation as the declaration:
-`import syntax(op _ + __, op _ ( <| _ |> ));`. A variadic selection renders
-`varop`, OPEN and CLOSE, with one space between them:
+selections render every slot kind and whole word,
+with the same spacing and necessary quotation as the declaration:
+`import syntax(op _ + __, op _ <| ___ |>);`. A variadic selection renders
+`varop` and its canonical frame, bare `[]` or a spaced marked pair:
 `import syntax(varop [* *]);`. Formatting never shortens
 these selections to a dispatch key or reads a provider to recover grammar.
 
 ## Variadic operator declarations
 
-A `varop` declaration uses one space after its keyword and between OPEN and
-CLOSE. Its compact body stays on one line,
+A `varop` declaration uses one space after its keyword, bare `[]` or a
+spaced marked pair such as `[* *]`. Its compact body stays on one line,
 like a fixed operator declaration. The primary clause always comes first; it
 renders one of `foldl`, `foldr`, `foldl1`, or `foldr1`, followed by the step
 path and then the base/seed path. A written `finalize` clause follows it,
@@ -361,7 +371,7 @@ Dotted path segments have no surrounding spaces.
 
 ```kio
 varop [* *] { foldr cons empty }
-varop [[ ]] { foldl append empty; finalize () }
+varop [] { foldl append empty; finalize () }
 varop [! !] { foldr1 cons singleton }
 varop [% %] { foldl1 append_entry seed_entry; finalize finish }
 ```

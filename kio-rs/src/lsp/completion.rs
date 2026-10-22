@@ -1431,7 +1431,7 @@ mod tests {
         fn zero() -> . { () }
         /// Adds two values.
         pub op _ + _ { impl pair }
-        pub(app) op (_ ? __) { impl pair }
+        pub(app) op _ ? __ { impl pair }
         op _ - _ { impl pair }
         /// Collects values.
         pub varop [%?:+- -+:?%] { foldl pair zero }";
@@ -1440,7 +1440,7 @@ mod tests {
     fn operator_import_completion_uses_full_grammar_and_visibility() {
         let analysis = operator_catalog(OPERATOR_PROVIDER);
         for (importer, expected) in [("app/main", 3), ("outside/main", 2)] {
-            for tail in ["", "op", "varop [%", "op (_ ?"] {
+            for tail in ["", "op", "varop [%", "op _ ?"] {
                 let source = format!("module {importer}; import syntax({tail}");
                 let list =
                     import_list_completions(&source, source.len() as u32, None, Some(&analysis))
@@ -1448,7 +1448,7 @@ mod tests {
                 assert!(!list.is_incomplete);
                 let count = match tail {
                     "varop [%" => 1,
-                    "op (_ ?" => expected - 1,
+                    "op _ ?" => expected - 1,
                     _ => expected,
                 };
                 assert_eq!(list.items.len(), count, "{source}");
@@ -1459,7 +1459,7 @@ mod tests {
                 );
                 assert_eq!(
                     labels(&list.items).contains(&"varop [%?:+- -+:?%]"),
-                    tail != "op (_ ?"
+                    tail != "op _ ?"
                 );
                 for item in list.items {
                     assert_eq!(item.kind, Some(CompletionItemKind::OPERATOR));
@@ -1616,6 +1616,9 @@ mod tests {
             "module app/main; import syntax(\n , // Leading trivia\n , ",
             "module app/main; import syntax(foo, op",
             "module app/main; import syntax(varop [* *], op",
+            "module app/main; import syntax(varop [], op",
+            "module app/main; import syntax(varop [**], op",
+            "module app/main; import syntax(op _ ? ___, op",
             "module app/main; import syntax(op (_ ? ___), op",
             "module app/main; import syntax(varop [%",
             "module app/main; import syntax // Provider\n (foo, // Item\n op",

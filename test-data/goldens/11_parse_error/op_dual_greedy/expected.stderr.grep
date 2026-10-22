@@ -1,1 +1,1 @@
-at most one recursive slot \(`__` or `___`\) per `op` pattern
+both exposed operand slots claim an operator chain

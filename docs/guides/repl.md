@@ -146,8 +146,8 @@ A module path followed by a dot selects the provider directly, even when it
 is not current. For a qualified operator, wrap the entire tagged selector in
 parentheses: `math/arith.(op _ + _)`. These outer parentheses are required;
 ordinary names keep `math/arith.add`, without parentheses. Parentheses inside
-the operator pattern keep their import meaning: `(=)` quotes the equals token,
-and `(_)` or `(__)` marks a lenient slot.
+the operator pattern keep their import meaning: `(=)` quotes the equals token.
+Slots use `_`, `__`, or `___` directly; parentheses containing slots are rejected.
 
 An explicit module alias works too. If the current module imports `math/arith`
 as `arithmetic`, use `:sig arithmetic.(op _ + _)`. Selectors name declarations;

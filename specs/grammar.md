@@ -12,7 +12,7 @@ A program that parses against the Kio' productions is *syntactically* Kio'. A pr
 
 ## Notation
 
-`'token'` is a literal terminal. *PascalCase* names are non-terminals. `?` marks an optional element; `*` zero-or-more; `+` one-or-more. `|` separates alternatives. Whitespace, `// …` line comments, and `/// …` doc-comment lines are lexer trivia and may appear between any two tokens; they are not standalone productions — doc-comment attachment is described in the per-production notes below.
+`'token'` is a literal terminal. *PascalCase* names are non-terminals. `?` marks an optional element; `*` zero-or-more; `+` one-or-more. `|` separates alternatives. Whitespace, `// …` line comments, and `/// …` doc-comment lines are lexer trivia and may appear between tokens where no native adjacency rule applies; they cannot split a token or join separately written symbol words. They are not standalone productions — doc-comment attachment is described in the per-production notes below.
 
 **Dictionary-like entries are unordered.** Where a definition body or package-root
 configuration section consists of named fields or sections, those entries may
@@ -57,12 +57,12 @@ The Kio' grammar covers the **regular-module** file shape — every `*.kio` file
 - `IDENT` — `[A-Za-z_][A-Za-z0-9_]*`. Naming conventions distinguish *type names and type parameters* (`_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`) and *value/parameter names* (`_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`). Each word contains letters followed by optional digits; exactly one underscore separates internal words. Leading and trailing underscores are affixes, not empty words. User identifiers admit at most one leading underscore; two or more reserve the spelling for the compiler, without requiring a trailing underscore. Reserved names obey the same word and role rules. Parser sites validate the role-specific convention they require. `_Foo` and `_Foo123_bar4` are type-shaped, `_foo` is value-shaped, and `_1Foo`, `FooBar`, `foo_123`, `foo__bar`, and `a1b` match neither user role. Every name contains at least one ASCII letter. Bare `_` is the wildcard binder (`let _`, a discarded parameter or neutral-block binder) and, doubled/tripled, an operator slot token (`_` / `__` / `___`); it is admitted only at those binder/slot positions, never as a name. In type expressions, the final segment of a type path must be a type name or reserved compiler-internal type name; lowercase identifiers remain value syntax. Keyword-shaped words, including `true` and `false`, lex as `IDENT` unless another lexical rule for their surrounding punctuation applies.
 - `INT_LIT` — a digit sequence, optionally grouped with `_` digit separators. No width suffix: in Kio' the literal's type comes from its mandatory `LiteralCall` annotation (see [`language.md` § Literals](language.md#literals)). A digit sequence directly followed by an identifier character (`42i32`) is *not* one token — it lexes as `INT_LIT` then `IDENT`, which the parser cannot place.
 - `FLOAT_LIT` — a digit sequence with a `.`-fractional part and/or an exponent (`e`/`E`, optional sign), optionally grouped with `_` digit separators. No width suffix. A digit sequence with neither a fractional part nor an exponent is `INT_LIT`, not `FLOAT_LIT`.
-- **Negative-literal carve-out.** A leading `-` flush against the first digit of an `INT_LIT` / `FLOAT_LIT` (no whitespace between) is consumed as part of the literal token when, and only when, the **prior token is not expression-ending**. Identifiers, literals, `)`, and `}` are expression-ending; start-of-file and every `SymbolRun` — including a standalone `]` operator run — are expression-starting. After an expression-ending token the `-` is its own symbol token (so `a-1`, `1-2`, `(x)-1`, and `}-1` are binary-subtraction shapes), and `- 40` (whitespace between `-` and the digit) is always two tokens. This is a **shared lexer rule** — it applies identically in Kio' and in Kio surface. The surface-extension framing with worked examples is in [§ Notes (Kio surface)](#notes-kio-surface).
+- **Negative-literal carve-out.** A leading `-` flush against the first digit of an integer or float is part of the literal only when the prior token is not expression-ending. Identifiers, literals, `)`, `}`, and `]` end expressions; start-of-file and ordinary symbol words do not. Thus `a-1`, `(x)-1`, and `[a, b]-1` have binary-subtraction shape, while `[-1]` and `[* -1 *]` contain signed literals. Whitespace in `- 40` always separates the sign. This shared rule applies in full Kio and Kio'.
 - `STR_LIT` — `"…"` with JSON-style escapes: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and `\uXXXX` for code points in the Basic Multilingual Plane.
-- Structural punctuation tokens, each its own token kind: `(` `)` `{` `}` `,` `;`.
-- Symbol runs use one shared lexical rule in Kio and Kio': an `OpToken` is a **maximal contiguous run** drawn from ``+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | : . [ ]``. The Kio' productions admit only the fixed grammatical roles they name (`<` `>` `[` `]` `:` `=` `|` `&` `!` `.` `/` `*` `->`); user-operator expressions and declarations still have no Kio' production. `*` marks a `TypeBinder`'s kind annotation, and an all-star run carries its arrow count. `&` / `|` runs collapse as chain separators. `/` is admitted as a module-path separator only. At a grammar position that requires a structural prefix, the parser may peel that prefix from the maximal run: function `->`, an existential closer `>`, a forall opener or closer `[` / `]`, a unit `.`, and the documented chain separators. Thus compact forall spellings such as `[*F]`, `[A][B]`, and `.[*F]` remain valid even though their raw runs include `[*`, `][`, or `.[*`. This recovery is parser-contextual; no operator-pattern or expression path decomposes a bracket-bearing run. At every other fixed-symbol position a fused spelling is a parse error: `type A=.;` does not parse — its flush `=.` is one run, not the required `=` — while `type A = .;` does.
+- Structural punctuation: `(` `)` `{` `}` `[` `]` `,` `;` and `.`. Dot-led native compounds `.>`, `.>>`, `.<`, `.<<`, `.?`, and `.!` retain their specified adjacent spelling; decimal dots are part of numeric tokens.
+- Symbol words use one shared lexical rule in Kio and Kio': an `OpToken` is a maximal contiguous run from ``+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | :``, subject to comment and slash restrictions. Dots and brackets terminate a word. Kio' admits words only in its fixed native grammatical roles: arrows, existential delimiters, annotations, binding separators, type chains, kind stars, bottom, and module paths. A required native structural prefix may be consumed from a word in that grammatical context; user-operator matching never splits words. Structural dots and brackets keep `type A=.;`, `[*F]`, `[A][B]`, and `.[*F]` valid without consulting an operator binding.
 
-**No user-operator productions in Kio'.** Kio' uses the shared maximal-run lexer, then admits a run only where the grammar assigns its spelling a fixed role. Sequential parser-contextual peeling may expose adjacent fixed delimiters such as the `][` between forall groups, but it never turns a run into an operator expression or pattern. The surface language's `op` or `varop` item, tagged operator import, and operator-call productions are absent from Kio'.
+**No user-operator productions in Kio'.** Kio' shares full Kio's lexical rules and structural delimiters, but has no fixed or variadic declaration, tagged operator import, or operator expression production. Native parsing cannot create such a production.
 
 **Contextual keywords (Kio').** The words `module`, `import`, `as`, `pub`, `pure`, `type`, `fn`, `rec`, `newtype`, `let`, `constructor`, `projector`, `host`, and the magic phrase `__intrinsics__` lex as ordinary `IDENT` tokens. They are recognized as keywords *only* in the grammatical positions where the productions below show them as literal terminals; in any other position the same spelling is an identifier. `pure` is a modifier only on an ordinary `fn` declaration. `rec` marks either one self-recursive `newtype` or one mutually recursive type group; it takes no runtime capability in Kio'. `host` is a host-declaration modifier only when immediately followed by `type` or `fn` (optionally with a redundant `pub` between them); elsewhere `host` is an ordinary identifier, so existing code that uses `host` as a name keeps parsing. Package-boundary words such as `package` and `bridge` are recognized only inside the package shapes that admit them. (`file` is not a Kio grammar keyword; it is a kiodoc fence attribute — see [`kiodoc.md`](kiodoc.md).)
 
@@ -240,10 +240,10 @@ Each surface form's prose meaning (what it means, how it desugars) lives in [`la
 
 Kio surface admits everything Kio' admits plus:
 
-- `OpToken` — the shared maximal `SymbolRun` class over ``+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | : . [ ]``. There is no standalone-vs-fused distinction: `[!`, `]]`, `]-`, and `][*` are each one run, while whitespace makes `[ !`, `] ]`, `] -`, and `] [ *` distinct run sequences. Dotted runs are admissible as user operator tokens when they do not start with `.` (`+.` / `<.>`) or, if they do start with `.`, when they contain at least two dots (`..` / `.+.`); leading-dot runs with exactly one dot (`.`, `.>`, `.+`, `.###$`) are reserved. Whitespace, identifiers, digits, and structural punctuators (`, ; ( ) { }`) break a run. See [`language.md` § Operators](language.md#operators) for per-pattern admissibility.
+- `OpToken` — the shared maximal symbol-word class over ``+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | :``. Whitespace, identifiers, digits, dots, brackets, and other structural punctuation end a word. Each fixed component is one complete word; `!?` and `! ?` are different sequences. Dots and brackets are not operator-word characters. See [`language.md` § Operators](language.md#operators).
 - Placeholder stems and numbered references are ordinary `IDENT` tokens. The adjacent `.stem.` introduction establishes source-local ownership; no operator-character marker or indexed-token fusion participates.
 
-The symbols `< > [ ] = ! : . / -> .? .! .> .>> .< .<<` appear in fixed structural roles in many productions: `<` and `>` bracket existential binders (`<U>`); `[` and `]` bracket forall binders; `!` is the bottom type and bang-call suffix; `=` introduces binding bodies; `:` introduces type annotations; `.` appears in lexical value paths, type-path qualification, member access, and row lets; `/` separates module paths; `->` is the function arrow; and the dot-prefixed forms have their documented access/update/splice roles. The lexer makes no token-kind distinction between a structural spelling and the same character inside a longer run, so productions disambiguate by parser position. At a required structural position the parser peels the delimiter from the front of a fused run and leaves the residual for the next production. This includes the two forall brackets, preserving `[*F]`, `[A][*F]`, and `.[*F]`. User-operator declarations, expressions, variadic operators, and imports never use this recovery: they read each maximal run whole.
+The symbols `< > [ ] = ! : . / -> .? .! .> .>> .< .<<` have fixed native roles in their grammatical contexts. Square brackets and dots are structural boundaries; their roles do not depend on imported operators. Native arrows, existential delimiters, kind stars, and type-chain separators retain their required structural-prefix handling. Fixed-operator matching consumes complete ordinary words; variadic framing instead uses the written square pair and its mirrored marker.
 
 ### Contextual keywords (Kio surface)
 
@@ -300,16 +300,15 @@ TypeRecMember += DocBlock? Vis? 'labels' LabelsBody
 Op             ::= Vis? 'op' OpBody
 OpBody         ::= OpPattern '{' SemiEntries<OpEntry> '}'                 (* fixed arity only *)
 OpEntry        ::= 'impl' GroupedValuePath                               (* exactly once *)
-OpPattern      ::= OpPatternStep+                                       (* must include >= 1 FixedOpToken *)
-OpPatternStep  ::= OpPart
-                    | '(' OpPart+ ')'                                      (* lenient-grouping marker; doesn't nest *)
-OpPart         ::= '_' | '__' | '___'                                      (* slots: plain / recursive / greedy *)
-                    | FixedOpToken
-                    | '(' FixedOpToken ')'                                    (* operator-token quotation *)
-FixedOpToken   ::= OpToken                                                   (* contains neither `[` nor `]` *)
-VaropHead         ::= VaropOpen VaropClose                                  (* whitespace is required between the two runs *)
-VaropOpen         ::= OpToken                                               (* one nonbare run containing `[` and no `]` *)
-VaropClose        ::= OpToken                                               (* reverse OPEN and replace each `[` with `]` *)
+OpPattern      ::= OpSlot? OpWord (OpSlot OpWord)* OpSlot?
+                    (* at least one slot; structural slot restrictions below *)
+OpSlot         ::= '_' | '__' | '___'                 (* atom / self-chain / any-chain *)
+OpWord         ::= FixedOpToken | '(' FixedOpToken ')' (* quotation, not a slot group *)
+FixedOpToken   ::= OpToken                            (* no dots or brackets; bare '=' requires quotation *)
+VaropHead      ::= '[' ']' | '[' Marker ReverseMarker ']'
+Marker         ::= OpToken
+ReverseMarker  ::= OpToken                            (* exact character reversal of Marker *)
+                    (* a legal fused empty pair is split at its mirrored midpoint *)
 VariadicOperator ::= Vis? 'varop' VaropHead VariadicBody
 VariadicBody      ::= '{' SemiEntries<VariadicEntry> '}'
 VariadicEntry     ::= VariadicPrimary | 'finalize' OptionalCallable
@@ -343,12 +342,7 @@ step receives the accumulator first for left modes and last for right modes;
 an optional unary finalizer runs once and may change the result type. The full
 expansions are specified in [language.md](language.md#operators).
 
-`VaropOpen` and `VaropClose` are whole maximal runs, not sequences of runs.
-Both satisfy the shared symbol-run and reserved-spelling rules; the closing
-run must be the exact mirror, such as `[*` / `*]`, `*[` / `]*`, or `[[` / `]]`.
-The head contains whitespace between the two runs and has no slots or separator
-declaration. Fixed `OpPart` tokens, including quoted tokens, contain neither
-`[` nor `]`.
+`VaropHead` is one structural square pair. It contains either nothing or one marker and its character reversal; a legal fused empty pair is split at its unique mirrored midpoint. `[]`, `[**]`, and `[* *]` select the bare, marker-`*`, and marker-`*` forms respectively. Commas, slots, nested bracket pairs, dots, and symbol words outside the square edges are rejected in a head. Canonical spelling is `[]` or a spaced pair such as `[* *]`.
 
 `Labels` admits a leading underscore in label names only via the lexer's `IDENT` rule, but the parser rejects `_`-prefixed label names at declaration (see [`language.md` § Naming conventions](language.md#naming-conventions)). Anonymous `labels` declarations are single products; sum syntax requires the named form so there is an alias to bind. In `LabelPayload`, exact bare `_` is not an inferred top-level annotation: it is the surface-only marker that reuses an earlier explicit module-local label declaration. A nested `_` remains the ordinary inference placeholder governed by its surrounding type position. A `pub op` or `pub varop` exports its operator binding for module imports via complete tagged operator import selections below (see [`language.md` § Operators — Module-local by default; `pub` exports the binding](language.md#operators)). `Equiv` enforces `N >= 2` arms at parse time. Its arms are semicolon-separated expressions; repeated semicolons are accepted and a final semicolon is ignored.
 
@@ -388,7 +382,7 @@ The Kio' item grammar has no `elab`, `impl`, or `impl(fills)` production.
 
 `pure` is admitted only on an ordinary `FnDef`, in both Kio and Kio'. It is not admitted on `type`, `newtype`, `labels`, `elab`, `op`, `literal`, `equiv`, `host` declarations, or any `rec` group/member. `pub` and `pure` may appear in either order on a function, but each may appear at most once; `kio fmt` emits `pub pure fn`.
 
-`OpPattern` reserves operator components whose spelling **starts with** `//`: the parser rejects any `op` whose maximal adjacent-op-token run begins with `//`, holding the entire `//…` family (`//!`, `//?`, `//=`, …) back for future syntax. This is a `starts_with("//")` **prefix** reservation. Dot-leading operator-token components have a separate spelling rule: if a component starts with `.`, it must contain at least two dots (`..` / `.+.` valid; `.`, `.>`, `.+`, `.###$` reserved). See [`language.md` § Operators](language.md#operators).
+`OpPattern` requires alternating single words and value slots, with at least one of each. Adjacent slots, adjacent words, zero-slot patterns, and pattern parentheses containing slots are rejected. Arbitrary numbers of `_`, `__`, and `___` are admitted subject to [`language.md` § Operators](language.md#operators): every `__` must be useful, and an operand-ending non-prefix pattern cannot have chain permission at both exposed ends. Dots and square brackets are forbidden in quoted and unquoted words. A word contains at most one `/`; comment spellings do not become operator words.
 
 The `type` declaration is a Kio' type alias. The `literal` declaration is surface-only: it binds a lowercase name to one bare literal token and is expanded by the desugar pass at reference sites. A bare reference expands to the stored literal; `name(Type)` expands to the stored literal carrying that annotation. See [`language.md` § Type and literal aliases](language.md#type-and-literal-aliases).
 
@@ -443,21 +437,21 @@ ordinary leading-comma rule in
 such a list or an explicit `as` alias; builtin block imports have neither.
 
 A fixed `OperatorImport` carries the whole `OpPattern`: every literal run, slot
-kind (`_`, `__`, `___`), later slot, and lenient group. A variadic import carries
-the same whitespace-separated OPEN and CLOSE as its declaration. For example:
+kind (`_`, `__`, `___`), and later slot. A variadic import carries
+its declaration's complete bare or marked square frame. For example:
 
 ```kio
-import syntax(op _ ? _ : ___, op _ ( <| _ |> ), varop [* *]);
+import syntax(op _ ? _ : ___, op _ <| ___ |>, varop [* *]);
 ```
 
-Literal runs are consumed whole. Fixed patterns admit contextual operator-token
-quotation where required; variadic heads use two unquoted mirrored runs.
-Fixed-pattern lenient groups are retained in the import and its formatted form.
+Symbol words are consumed whole. Fixed patterns admit contextual operator-token
+quotation where required. Variadic heads use structural brackets and mirrored
+marker words; compact and spaced empty heads select the same marker.
 The formatter never merges distinct complete grammars into one public spelling.
 
 An optional `as` supplies the complete local grammar, without repeating the
 `op` or `varop` tag. A fixed alias preserves every token/slot position, slot
-kind, effective slot leniency, and token-run boundary. Its token substitution
+kind, and whole-word boundary. Its token substitution
 is consistent and injective: repeated source tokens receive one destination
 token, and distinct source tokens stay distinct. A variadic alias supplies an
 admitted mirrored OPEN/CLOSE pair and preserves the selected declaration's
@@ -577,13 +571,18 @@ may elide its braces, and then its whole body is another block call. This gives
 ownership without reserving `if`, `do`, `else`, or any library name.
 
 ```ebnf
-ExprAtom += PrefixOpExpr | VariadicLiteral
+ExprAtom += VariadicLiteral | ClosedFixedOpExpr
 
-VariadicLiteral  ::= VaropOpen (Expr (',' Expr)*)? VaropClose
-                     (* ordinary comma-list rule; CLOSE is the exact mirror of OPEN *)
+VariadicLiteral  ::= '[' ValueElements? ']'
+                   | '[' Marker ValueElements? ReverseMarker ']'
+                     (* source-local framing fixes marker and element region first *)
+ValueElements    ::= Expr (',' Expr)*                  (* ordinary comma-list rule; value expressions only *)
+ClosedFixedOpExpr ::= FixedOperatorUse                 (* selected pattern ends in a fixed word *)
+PrefixOpExpr     ::= FixedOperatorUse                  (* selected pattern begins with a fixed word *)
+FixedOperatorUse ::= OpUsePart+                        (* exactly one scoped pattern's word/slot sequence *)
+OpUsePart        ::= FixedOpToken | Expr               (* each Expr satisfies its selected slot permission *)
 
-PrefixOpExpr      ::= FixedOpToken+ Expr                                      (* prefix-unary operator call; the run sequence matches a registered prefix-keyspace `op` pattern *)
-
+Expr += PrefixOpExpr
 ExprSuffix += DotSpliceSuffix | OperatorTail
 ExprPostfix += LeftCallSplice ExprSuffix*
 
@@ -596,12 +595,12 @@ LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList?
                       | '(' LeftSplicePathCallee ')'                         (* grouping is transparent *)
 TightCallArg      ::= ExprAtom CallArgList*                                   (* stops before another ExprSuffix *)
 
-OperatorTail      ::= (FixedOpToken Expr)+                                    (* infix / postfix operator call *)
+OperatorTail     ::= FixedOperatorUse                  (* selected non-prefix pattern continues a preceding Expr *)
 ```
 
 Placeholder references use the existing single-segment value-path `IDENT` production, not a token or expression alternative. Inside `.stem. { ... }`, the stem followed by a positive decimal index is owned by that lambda unless shadowed by a body-local authored value binder. Indices have no leading zeroes and fit in `u32`. At least one owned reference is required; the highest index determines arity. Explicit lambdas retain the enclosing owner, while nested placeholder lambdas start fresh owners. Qualified paths, type positions, and dedicated bang/recursive callee positions do not participate. Ordinary UFCS callees do. See [Placeholder lambdas](language.md#placeholder-lambdas) for the complete source-local ownership rule.
 
-The `PrefixOpExpr` and `OperatorTail` productions cover fixed prefix, infix and postfix operators, including multi-token and matched-pair patterns. Their tokens contain neither `[` nor `]`. `VariadicLiteral` instead recognizes its mirrored delimiter pair and comma-separated region boundaries from local syntax. Fixed operators inside an element still use the consumer's explicit operator scope. Operator folding resolves each use in the consumer's explicit scope and replaces it with ordinary calls before Kio'. See [`language.md` § Operators](language.md#operators) for associativity and grouping rules; variadic elements retain those ordinary expression rules.
+These schematic fixed-operator productions instantiate the complete pattern explicitly declared or imported in scope; they are constrained by the operand, boundary, maximal-extent, and opposing-claim rules in [`language.md` § Operators](language.md#operators). A final fixed word completes an atom; an operand-ending pattern does not. Their words contain neither dots nor brackets. Variadic framing fixes the marker and comma-list region from source before binding lookup; raw types and forall entries cannot be elements. Both forms lower to ordinary calls before Kio'.
 
 ### Surface statement additions
 
@@ -636,9 +635,9 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
   Type slots are never filled by the receiver.
 - A braced label-value prefix is parenthesized, as in `outer!({field = value}) { body }`.
 - `rec(loop)` items and `recur` calls are surface-only. Groups lower to state-packet `newtype`, ordinary `fn`, closure, and call forms before Kio'; generated packets use `rec newtype` or one minimal bare `rec { ... }` type group when their payload graph is cyclic. `rec labels` likewise preserves genuine recursive components through those ordinary Kio' declarations. The capability-free data forms are not recursive-function syntax. A recursive function call uses `recur`; `poly` marks a type-changing call, `cont` marks a non-tail call, and `escape` marks a call captured across an ordinary closure boundary. `escape` entails `cont`; both may be written, while canonical formatting omits the entailed `cont`. Each annotation must satisfy the contextual rules in [`language.md` § Recursive functions](language.md#recursive-functions).
-- The parser recognizes `OperatorTail` only after parsing an `Expr`; `PrefixOpExpr` matches before parsing an `Expr` when the next op-token run begins a pattern registered in the prefix keyspace (per [`language.md` § Operators](language.md#operators)). An item's expression scope contains exactly imported operators and local `op` or `varop` declarations preceding that item, including when a function or recursive-group body is parsed lazily. A leading fixed-operator token that does not begin a registered prefix pattern is a parse error. Variadic delimiter recognition is structural; its binding is checked during resolution and lowering. An independent lexer-level carve-out applies to `-` on a numeric literal: the lexer (not the parser) consumes the `-` as part of `Literal` when (a) the `-` sits **flush against an ASCII digit** and (b) the prior token is not expression-ending. Identifiers, literals, `)`, and `}` end expressions; start-of-file and every `OpToken`, including `]`, are expression-starting. A flush `-N` after an op-token therefore fuses into a negative literal (`1 + -2` is `add(1, -2)`). A numbered placeholder reference is an ordinary identifier, so `x1 - 2` and `x1 -2` use the same expression-ending rule as other value names. Whitespace in `- 40` keeps the `-` separate. The same rule applies to float-shaped literals.
+- An expression's fixed-operator scope contains exactly its written imports and local declarations preceding the enclosing item, including lazily parsed bodies. A leading word without a registered prefix pattern is rejected. Native atom introducers, whole pending following words, and square-frame edges have their source-local roles before custom dispatch. The signed-number rule includes expression-ending `]`, so `[a, b]-1` has subtraction shape and `[-1]` remains a signed-literal frame. Missing variadic bindings never change a frame's marker.
 - A program that parses against the Kio' productions also parses against the full Kio grammar with the same meaning. It needs none of the additional surface productions; the full grammar is a strict superset.
-- **Parser-contextual structural peeling.** The maximal-run lexer may absorb `->`, `>`, `!`, `[`, or `]` into a longer `SymbolRun`. At a grammar position that requires one of those structural delimiters, the parser peels that leading prefix and leaves the residual as the next token. Forall binder parsing is therefore compact across kind stars and adjacent groups (`[*F]`, `[A][*F]`, `.[*F]`). The dot-splice tokens `'.>'`, `'.>>'`, `'.<'`, and `'.<<'` remain exact greedy runs. No fused-run carving happens at user-`op`, operator-expression, or operator-import positions; those consume each maximal run whole.
+- **Native structural prefixes.** Required native symbols such as `->`, existential `>`, kind stars, and type-chain separators retain their grammatical prefix handling. Brackets and dots are already structural, preserving `[*F]`, `[A][*F]`, and `.[*F]`. Native dot compounds retain their adjacent spelling. User-operator positions consume complete words and never carve a word into shorter imported operators.
 - **`NeutralBind` vs user-defined `<-` op.** The `<-` token remains an ordinary operator token in expressions. Only a `let`-led binder inside a neutral block treats it as a structural connective. Ordinary function and lambda blocks accept only `=` after a let binder. A selected sequence exposure admits `<-`; product and thunk exposures reject it during block validation. No context-sensitive lexing or provider lookup decides the parse.
 
 ## Package files

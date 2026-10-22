@@ -172,6 +172,11 @@ fn grouped(a: String, b: String) -> String { wrap.<(a.>pair(b)) }
 
 `tight(a, b)` means `pair(wrap(a), b)`. `grouped(a, b)` means `wrap(pair(a, b))`.
 
+User operators follow the same atom rule. With prefix `! _`, write
+`f.<(!x)` rather than `f.<!x`. A final fixed symbol completes an atom, so
+`< _ >` permits `f.< <x>`; in `f.< <x>.>g`, the final splice applies `g`
+to the result of calling `f`. See [operator grouping](operators.md#choose-how-it-chains).
+
 <!-- markdownlint-disable-next-line MD033 -->
 <a id="elaborator-calls"></a>
 

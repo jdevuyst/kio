@@ -1,7 +1,7 @@
 /// The workbench's fixture polynomials.
 module poly/fixtures;
 
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import poly/core as core;
 import testapi(I32);
 

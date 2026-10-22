@@ -55,7 +55,7 @@ Apply [DESIGN.md's grouping principle](../../DESIGN.md#readable-grouping)
 to proposed rules as well as existing syntax. Explain the grouping from
 written boundaries and declared composition permissions, not the parser's
 control flow. Distinguish ordinary structural composition from operator
-associativity, greediness and lenient operands; test how those permissions
+associativity, chain-slot permissions and final-word atoms; test how those permissions
 interact rather than checking each only in isolation.
 
 For overlapping continuations, closing tokens or competing chain directions,
@@ -71,6 +71,17 @@ boundaries, including nested and grouped controls. Where custom operators are
 involved, also check independent import-order permutations and unrelated
 provider additions under the existing open-world contract. Parsing successfully
 and formatting idempotently do not prove that grouping is correct.
+
+For operator changes, retain the complete structural classifier: arbitrary
+slot counts do not waive ineffective-`__` rejection or conflicting exposed
+ends. Exercise maximal leading extent before operand checks, opposing claims,
+native suffix ownership and bang adjacency. Frame identity follows structural
+square edges and whole mirrored marker words before binding lookup; a failed
+parse or missing binding cannot select a shorter marker. Keep value-only
+slots/elements distinct from native types at mixed call-argument boundaries.
+The shared lexical rules also apply to independent Prime parsing and all five
+file kinds; dot/bracket roles, signed literals and comment ownership need
+their own witnesses.
 
 ## Impact checklist
 

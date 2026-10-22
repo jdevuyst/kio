@@ -13,6 +13,16 @@ const identifier = "variable.other.kio";
 const functionName = "entity.name.function.kio";
 const fixtures = [];
 
+for (const ending of ["]", "\n]", " // closing\n]"]) {
+  fixture(`ambiguous square bang marker ${JSON.stringify(ending)}`, `module m; fn run() { [!x!${ending} }`, [["x!", "x!", null]]);
+  fixture(`ambiguous bare square bang ${JSON.stringify(ending)}`, `module m; fn run() { [x!${ending} }`, [["x!", "x!", null]]);
+}
+fixture("square bang fallback preserves genuine interior and outside macros", "module m; fn run() { [!helper!(arg)!]; helper!(arg); outside!\n{ arg } }", [
+  ["[!helper!(arg)", "helper!", "entity.name.function.macro.elaborator.kio"],
+  ["; helper!(arg)", "helper!", "entity.name.function.macro.elaborator.kio"],
+  ["outside!\n", "outside!", "entity.name.function.macro.elaborator.kio"],
+]);
+
 function fixture(name, source, targets) {
   assert.ok(!fixtures.some((fixture) => fixture.name === name), `${name}: unique fixture name`);
   const spans = new Set();
@@ -100,8 +110,8 @@ fixture("selective ambiguous fixed tag continues into pattern", "module source; 
 fixture("selective ambiguous variadic tag continues into pattern", "module source; import m(varop // selector\n [* *] as [% %]);", [
   ["(varop // selector", "varop", null], ["as [%", "as", keyword],
 ]);
-fixture("selective operator aliases across trivia", "module source; import m(op (_ + _) // fixed\n as (_ ++ _), varop [* *] // variadic\n as [% %]);", [
-  ["op (_", "op", keyword], ["as (_", "as", keyword],
+fixture("selective operator aliases across trivia", "module source; import m(op _ + _ // fixed\n as _ ++ _, varop [* *] // variadic\n as [% %]);", [
+  ["op _", "op", keyword], ["as _", "as", keyword],
   ["varop [*", "varop", keyword], ["as [%", "as", keyword],
 ]);
 fixture("same-line signature import", "signature app v(1); v(1) { with { module imports { import helper as h }; module empty {} }; breaking { remove { api.old } } }", [
@@ -450,7 +460,7 @@ fixture("varop inverse", "module ops;\nfn varop(varop: .) -> . { varop }", [
   ["fn varop", "varop", functionName], ["varop:", "varop", identifier], ["{ varop }", "varop", identifier],
 ]);
 fixture("maximal bracket runs and rejected marker", "module ops;\nfn apply() -> . { #[* #1, #2 *]; .+[+ 1, 2 +] }", [
-  ["#[*", "#[*", "keyword.operator.user.kio"], [".+[+", ".+[+", "keyword.operator.user.kio"],
+  ["#[*", "#", "keyword.operator.user.kio"], ["#[*", "[", "punctuation.bracket.kio"], ["#[*", "*", "keyword.operator.user.kio"], [".+[+", ".", "punctuation.separator.kio"], [".+[+", "+", "keyword.operator.user.kio"], [".+[+", "[", "punctuation.bracket.kio"], ["[+ 1", "+", "keyword.operator.user.kio"],
 ]);
 fixture("multiline target keys", 'package p;\nbuild { target js {\n target "a";\n docs "b";\n cache "c";\n} }', [
   ['target "a"', "target", identifier], ['docs "b"', "docs", identifier], ['cache "c"', "cache", identifier],
@@ -513,9 +523,9 @@ fixture("string keywords", '"rec again() constructor projector role cache docs t
   ['target"', '"', "string.quoted.double.kio"],
 ]);
 fixture("marker before comment", "module m;\nfn f() -> . { .+// trailing\n () }", [
-  [".+//", ".+", "keyword.operator.user.kio"], ["// trailing", "// trailing", "comment.line.double-slash.kio"],
+  [".+//", ".", "punctuation.separator.kio"], [".+//", "+", "keyword.operator.user.kio"], ["// trailing", "// trailing", "comment.line.double-slash.kio"],
 ]);
-fixture("marker second slash", "module m;\nfn f() -> . { .+/+/ }", [[".+/+/", ".+/+", "keyword.operator.user.kio"]]);
+fixture("marker second slash", "module m;\nfn f() -> . { .+/+/ }", [[".+/+/", ".", "punctuation.separator.kio"], [".+/+/", "+/+", "keyword.operator.user.kio"]]);
 for (const word of ["if", "do"]) {
   fixture(`${word} ordinary body value`, `module m;\nfn f(${word}: .) -> . { ${word} }`, [
     [`${word}:`, word, identifier], [`{ ${word} }`, word, identifier],
@@ -609,23 +619,35 @@ fixture("declaration payload parents", "module m;\nliteral if = .t;\ntype T = if
 fixture("fixed operator body parents", "module m;\nop _ + _ { impl if.let; };", [
   ["op _", "op", keyword], ["impl if", "impl", keyword], ["if.let", "if", identifier], ["let;", "let", identifier],
 ]);
-for (const head of ["[* *]", "[+ +]", "[[ ]]", "/[ ]/", "[/ /]", "*[ ]*"]) {
+for (const head of ["[* *]", "[+ +]", "[]", "[/ /]", "[**]", "[****]", "[!? ?!]", "[+ + ]"]) {
   fixture(`varop delimiter ${head}`, `module ops;\nvarop ${head} { foldl join empty; };`, [
     [`varop ${head}`, "varop", keyword], ["foldl join", "foldl", keyword],
   ]);
 }
-for (const head of ["[**]", "[ _ ]", "[ ]"]) {
+for (const head of ["[ _ ]", "[[ ]]", "/[ ]/", "*[ ]*", "[***]"]) {
   fixture(`invalid varop head ${head}`, `module ops;\nvarop ${head} { foldl join empty; };`, [
     [`varop ${head}`, "varop", keyword], ["foldl join", "foldl", null],
   ]);
 }
-for (const head of ["[+ *]", "+[< >]+", "[+\n *]", "[+ + ]", "[+ +// split\n ]", "[+ +] extra"]) {
+for (const head of ["[+ *]", "[+< >+]", "[+\n *]", "[+ +] extra"]) {
   fixture(`mismatched varop head ${head}`, `module ops;\nvarop ${head} { foldl join empty; };\nfn after(foldl: .) -> . { foldl }`, [
     ["foldl join", "foldl", null], ["foldl:", "foldl", identifier], ["{ foldl }", "foldl", identifier],
   ]);
 }
-for (const head of ["+[< <]+", "+[<\n <]+", "**[ ]**", "[[\n ]]", "[+ // split\n +]"]) {
+for (const head of ["[+< <+]", "[+<\n <+]", "[** **]", "[\n ]", "[+ // split\n +]", "[+ +// split\n ]"]) {
   fixture(`mirrored varop head ${head}`, `module ops;\nvarop ${head} { foldl join empty; };`, [["foldl join", "foldl", keyword]]);
+}
+for (const width of [32, 128, 512]) {
+  const marker = "+!?".repeat(width);
+  const close = [...marker].reverse().join("");
+  for (const gap of ["", " ", "\n"]) {
+    fixture(`long mirrored head ${width} ${JSON.stringify(gap)}`,
+      `module ops;\nvarop [${marker}${gap}${close}] { foldl join empty; };`,
+      [["foldl join", "foldl", gap === "" ? null : keyword]]);
+  }
+  fixture(`long mismatched head ${width}`,
+    `module ops;\nvarop [${marker} ${close.slice(0, -1)}%] { foldl join empty; };\nfn after() { () }`,
+    [["foldl join", "foldl", null], ["fn after", "fn", keyword]]);
 }
 
 fixture("slots in type and scalar binding positions", "module m;\nlabels Shared = { field: _ };\nfn run() -> . { let _ = (); let scalar = (); scalar }", [
@@ -687,10 +709,10 @@ for (const head of ["[_A]", "[,A]", "[ // binder\n A]", "[\n A]", "[* F]", "[ * 
 }
 const starPrefix = "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* // shared";
 fixture("star argument later-line forall", `${starPrefix}\n F] F(.), value) }`, [
-  ["consume([* // shared", "[*", null], [" F] F", "]", "punctuation.bracket.kio"],
+  ["consume([* // shared", "[", "punctuation.bracket.kio"], ["consume([* // shared", "*", "keyword.operator.user.kio"], [" F] F", "]", "punctuation.bracket.kio"],
 ]);
 fixture("star argument later-line varop", `${starPrefix}\n F.make() *], value) }`, [
-  ["consume([* // shared", "[*", null], ["*], value", "*]", "keyword.operator.user.kio"],
+  ["consume([* // shared", "[", "punctuation.bracket.kio"], ["consume([* // shared", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
 ]);
 for (const [partial, binderTail, valueTail] of [
   [" F", " ] F(.)", " .make() *]"],
@@ -704,48 +726,48 @@ for (const [partial, binderTail, valueTail] of [
 ]) {
   const prefix = `module m;\nvarop [* *] { foldl join empty; };\nop * _ { impl star; };\nop ** _ { impl double_star; };\nfn f() { consume([*${partial}`;
   fixture(`star partial binder later-line forall ${partial}`, `${prefix}\n${binderTail}, value) }`, [
-    [`consume([*${partial}`, "[*", null], [`${binderTail}, value`, "]", "punctuation.bracket.kio"],
+    [`consume([*${partial}`, "[", "punctuation.bracket.kio"], [`consume([*${partial}`, "*", "keyword.operator.user.kio"], [`${binderTail}, value`, "]", "punctuation.bracket.kio"],
   ]);
   fixture(`star partial binder later-line varop ${partial}`, `${prefix}\n${valueTail}, value) }`, [
-    [`consume([*${partial}`, "[*", null], [`${valueTail}, value`, "*]", "keyword.operator.user.kio"],
+    [`consume([*${partial}`, "[", "punctuation.bracket.kio"], [`consume([*${partial}`, "*", "keyword.operator.user.kio"], [`${valueTail}, value`, "*", "keyword.operator.user.kio"], [`${valueTail}, value`, "]", "punctuation.bracket.kio"],
   ]);
 }
 fixture("star binder spaced commas resolve on the same line", "module m;\nfn f() { consume([* F, , * G, ]., value) }", [
   ["consume([*", "[", "punctuation.bracket.kio"], ["G, ].", "]", "punctuation.bracket.kio"],
 ]);
 fixture("star literal written callable resolves before later line", "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* F.make() // value\n *], value) }", [
-  ["consume([*", "[*", "keyword.operator.user.kio"], ["*], value", "*]", "keyword.operator.user.kio"],
+  ["consume([*", "[", "punctuation.bracket.kio"], ["consume([*", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
 ]);
 for (const name of ["value", "value1", "_value", "_1foo"]) {
   for (const prefix of [name, `F, ${name}`]) {
     fixture(`star value name fixes literal owner ${prefix}`, `module m;\nvarop [* *] { foldl join empty; };\nfn f(value: .) { consume([* ${prefix} // value\n *], value) }`, [
-      ["consume([*", "[*", "keyword.operator.user.kio"], ["*], value", "*]", "keyword.operator.user.kio"],
+      ["consume([*", "[", "punctuation.bracket.kio"], ["consume([*", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
       [`${prefix} // value`, name, identifier],
     ]);
   }
 }
 for (const names of ["value", "F, value"]) {
   fixture(`rejected value shaped star binder ${names}`, `module m;\nfn f() { consume([* ${names}]., value) }`, [
-    ["consume([*", "[*", "keyword.operator.user.kio"], ["]., value", "].", "keyword.operator.user.kio"],
+    ["consume([*", "[", "punctuation.bracket.kio"], ["consume([*", "*", "keyword.operator.user.kio"], ["]., value", "]", "punctuation.bracket.kio"], ["]., value", ".", "punctuation.separator.kio"],
   ]);
 }
 fixture("star binder lambda keeps its unambiguous owner", "module m;\nfn f() { .[* // kind\n F](x: .) { let item = x; item } }", [
   [".[*", "[", "punctuation.bracket.kio"], ["let item", "let", keyword],
 ]);
 fixture("pending dot preserves star varop runs", "module m;\nfn run() { . // dot\n [* value *] }\nfn after() { () }", [
-  ["[* value", "[*", "keyword.operator.user.kio"], ["*] }", "*]", "keyword.operator.user.kio"],
+  ["[* value", "[", "punctuation.bracket.kio"], ["[* value", "*", "keyword.operator.user.kio"], ["*] }", "*", "keyword.operator.user.kio"], ["*] }", "]", "punctuation.bracket.kio"],
   ["fn after", "fn", keyword],
 ]);
 fixture("pending dot preserves double-star varop runs", "module m;\nfn run() { . // dot\n [** value **] }\nfn after() { () }", [
-  ["[** value", "[**", "keyword.operator.user.kio"], ["**] }", "**]", "keyword.operator.user.kio"],
+  ["[** value", "[", "punctuation.bracket.kio"], ["[** value", "**", "keyword.operator.user.kio"], ["**] }", "**", "keyword.operator.user.kio"], ["**] }", "]", "punctuation.bracket.kio"],
   ["fn after", "fn", keyword],
 ]);
 fixture("pending dot star continuation later-line varop", "module m;\nfn run() { . // dot\n [* // shared\n F.make() *] }\nfn after() { () }", [
-  ["[* // shared", "[*", null], ["*] }", "*]", "keyword.operator.user.kio"],
+  ["[* // shared", "[", "punctuation.bracket.kio"], ["[* // shared", "*", "keyword.operator.user.kio"], ["*] }", "*", "keyword.operator.user.kio"], ["*] }", "]", "punctuation.bracket.kio"],
   ["fn after", "fn", keyword],
 ]);
 fixture("pending dot star continuation later-line binder", "module m;\nfn run() { . // dot\n [* // shared\n F] -> F(.) -> F(.) { .(x: F(.)) { let item = x; item } } }", [
-  ["[* // shared", "[*", null], [" F] ->", "]", "punctuation.bracket.kio"],
+  ["[* // shared", "[", "punctuation.bracket.kio"], ["[* // shared", "*", "keyword.operator.user.kio"], [" F] ->", "]", "punctuation.bracket.kio"],
   ["let item", "let", keyword],
 ]);
 fixture("pending dot complete higher-kind binder", "module m;\nfn run() { . // dot\n [**F] -> F(., .) -> F(., .) { .(x: F(., .)) { let item = x; item } } }", [
@@ -753,7 +775,7 @@ fixture("pending dot complete higher-kind binder", "module m;\nfn run() { . // d
   ["let item", "let", keyword],
 ]);
 fixture("star literal with uppercase callable is not a binder", "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* F.make() *], value) }", [
-  ["consume([* F", "[*", "keyword.operator.user.kio"], ["*], value", "*]", "keyword.operator.user.kio"],
+  ["consume([* F", "[", "punctuation.bracket.kio"], ["consume([* F", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
 ]);
 fixture("signature version tag ownership", "signature app v(2);\nv(1) { with { module app { pub fn v() -> .; } } }\nv(2) { nonbreaking { remove { app.v; } } }", [
   ["app v(2)", "v", keyword], ["v(1)", "v", keyword], ["\nv(2)", "v", keyword],
@@ -771,9 +793,9 @@ fixture("signature multiline path and version", "signature // header\n app/ // p
 fixture("raw expression does not own later declaration words", "if else match do\nfn newtype rec with", [["fn newtype", "fn", identifier], ["rec with", "rec", identifier]]);
 fixture("headerless declaration retains owned fn", "fn run() -> . { () }", [["fn run", "fn", keyword]]);
 fixture("raw bracket runs retain lexical operator role", "] [! ][*\n.[!/+ /\n[ ]", [
-  ["] [!", "]", "keyword.operator.user.kio"], ["] [!", "[!", "keyword.operator.user.kio"],
-  ["][*", "][*", "keyword.operator.user.kio"], [".[!/+", ".[!/+", "keyword.operator.user.kio"],
-  ["[ ]", "[", "keyword.operator.user.kio"], ["[ ]", "]", "keyword.operator.user.kio"],
+  ["] [!", "]", "punctuation.bracket.kio"], ["] [!", "[", "punctuation.bracket.kio"], ["] [!", "!", "keyword.operator.kio"],
+  ["][*", "]", "punctuation.bracket.kio"], ["][*", "[", "punctuation.bracket.kio"], ["][*", "*", "keyword.operator.user.kio"], [".[!/+", ".", "punctuation.separator.kio"], [".[!/+", "[", "punctuation.bracket.kio"], [".[!/+", "!/+", "keyword.operator.user.kio"],
+  ["[ ]", "[", "punctuation.bracket.kio"], ["[ ]", "]", "punctuation.bracket.kio"],
 ]);
 fixture("module varop head begins on later line", "module m;\nvarop // declaration\n[-\n-]\n{ foldr join empty; finalize finish; };", [
   ["varop //", "varop", keyword], ["foldr join", "foldr", keyword], ["finalize finish", "finalize", keyword],

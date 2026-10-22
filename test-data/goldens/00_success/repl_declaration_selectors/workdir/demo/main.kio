@@ -1,13 +1,12 @@
 module demo/main;
 
 import demo/ops as arithmetic;
-import demo/ops(choose, field, op _ (=) _, op _ + _, op _ .. _, varop [* *], {field});
+import demo/ops(choose, field, op _ (=) _, op _ + _, varop [* *], {field});
 import demo/other as other;
 
 pub fn use() {
   let value = () + choose((), ());
-  let dots = value .. ();
-  let equal = dots = ();
+  let equal = value = ();
   [* equal, arithmetic.empty() *]
 }
 

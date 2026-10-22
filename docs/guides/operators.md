@@ -48,11 +48,17 @@ target.
 
 ## Choose how it chains
 
+A fixed symbol at the end of a pattern closes its expression, much like a
+closing parenthesis. The result is an *atom*: it can fill an ordinary `_`
+slot. A pattern ending in an operand needs explicit chain permission or
+parentheses when used there. This visible endpoint rule applies to every
+pattern shape.
+
 | Slot | Accepts |
 | --- | --- |
-| `_` | One operand, such as a name, literal, call, or parenthesized expression |
-| `__` | An operand or a chain of this same operator |
-| `___` | An operand or a chain of any one operator |
+| `_` | An atom: a name, literal, call, parenthesized expression, or an operator completed by a final symbol |
+| `__` | An atom or a chain of this same operator |
+| `___` | An atom or an operator chain; nested slots keep their own rules |
 
 The position of `__` or `___` chooses the grouping:
 
@@ -63,13 +69,32 @@ The position of `__` or `___` chooses the grouping:
 | `__ + _` | `a + b + c` | `add(add(a, b), c)` |
 | `_ $ ___` | `f $ a + b` | `apply(f, add(a, b))` |
 | `- __` | `- - a` | `neg(neg(a))` |
-| `__ ?` | `a ? ?` | `check(check(a))` |
+| `_ ?` | `a ? ?` | `check(check(a))`; each completed result is an atom |
 
-A pattern may contain at most one `__` or `___`; adjacent slots and longer
-underscore runs are rejected. Kio has no operator precedence: write
-`a + (b * c)` or `(a + b) * c`. A greedy slot admits one operator's chain,
-but still needs parentheses when that chain mixes operators. Prefix unary
-operators bind to their operand, so `- a + b` means `add(neg(a), b)`.
+A pattern can contain several `__` and `___` slots. It must alternate single
+symbol words and slots, and contain at least one of each; adjacent slots,
+adjacent words, and longer underscore runs are rejected. Every slot takes a
+value, not a raw type such as `Int`.
+
+Kio has no operator precedence: with `_ + _` and `_ * _`, write
+`a + (b * c)` or `(a + b) * c`. Nested operators keep their own slot rules
+even inside `___`. A prefix pattern ending in an operand does not complete
+an atom: `! _` needs `!(!a)` for repetition and `(!a) + b` before strict
+`_ + _`. Declare `! __` when bare self-nesting is intended.
+
+A leading `___` takes the widest completed expression before it. With
+`_ + _` and `___ < _ >`, `a + b < key >` means `(a + b) < key >`.
+Write `a + (b < key >)` for the other reading. If the preceding operator
+also claims the following chain, neither wins: `_ $ ___` and `___ < _ >`
+require `(a $ b) < key >` or `a $ (b < key >)`. Failed operand checks never
+cause the parser to choose a smaller grouping.
+
+The same conflict makes operand-ending patterns with chain slots at both
+ends invalid, including `__ + __` and `___ + ___`. A `__` must add a useful
+permission: it is rejected in patterns ending in a fixed word, whose results
+are already atoms. It is also rejected in a later slot immediately followed
+by the same word that starts a non-prefix pattern, as in `_ ? __ ? _`.
+The [specification](../../specs/language.md#operators) gives the full rule.
 
 ## Multi-token patterns
 
@@ -90,27 +115,33 @@ fn choose(c: Bool, d: Bool) -> Int { c ? 1 : d ? 2 : 3 }
 
 `choose` calls `cond(c, 1, cond(d, 2, 3))`.
 
-For a delimited pattern, `op _ ( <| _ |> ) { impl index }` permits
-`xs <| a + b |>`: the pattern's parentheses let the enclosed slot accept a
-single-operator chain. They are omitted at use sites. Such groups cannot nest
-or contain `___`. A recursive slot can also precede closing symbols:
-`_ <| __ |>` permits `a <| b <| c |> |>`.
+For a delimited pattern, `op _ <| ___ |> { impl index }` permits
+`xs <| a + b |>`: the inner `___` admits that chain. With `_ <| _ |>`,
+write `xs <| (a + b) |>` instead. A closing symbol completes an atom, so
+`_ <| _ |>` also permits `a <| b <| c |> |>` without a recursive slot.
+The separate closing words must stay separate: `|>|>` is one different word.
+
+A call or forward UFCS after the final symbol acts on the completed result:
+`row<key>(arg)` means `(row<key>)(arg)` for `_ < _ >`.
+After an operand-ending pattern, the suffix acts on its final operand:
+`a + b.>f` means `a + (b.>f)`.
 
 ## Allowed symbols
 
 Fixed operator tokens use these ASCII characters:
 
 ```text
-+ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | : .
++ - * / % ^ ~ ? @ # $ \ ' ` < > = ! & | :
 ```
 
 Combine them into tokens such as `+`, `!=`, `<=`, `::`, or `<|>`.
-Whitespace separates tokens: `&& ++` and `&&++` are different spellings.
+Each component is one contiguous word: `!? _` is valid, while `! ? _`
+is rejected. Whitespace cannot split a word into interchangeable pieces.
 
 - `=` must be quoted in declarations and imports: `op _ (=) _ { impl equal }`.
   Use it without quotation: `a = b`. Both `:` and `->` work directly.
-- A token starting with `.` must contain at least two dots: `..` and `.+.`
-  work; `.`, `.>`, and `.+` are reserved, even when quoted.
+- Dots belong to native syntax, including qualification and UFCS. They cannot
+  occur in an operator word, even when quoted.
 - A token may contain at most one `/`; `//` starts a comment.
 - Letters, digits, Unicode symbols, and square brackets are not fixed operator
   tokens. Square-bracket delimiters use [`varop`](variadic-operators.md).
@@ -123,7 +154,7 @@ For `pub(path)`, the target must be visible throughout that path. A newtype
 member target requires both its type or identity alias and the member to meet
 the same visibility requirement.
 
-Import the complete pattern, including its slot kinds, quotation, and grouping:
+Import the complete pattern, including its slot kinds and token quotation:
 `import math(op _ + __);`. For example, the dictionary library exports `=>`
 as a pair-building operator:
 
@@ -150,8 +181,8 @@ symbols, as with unary and binary `-`.
 
 An import can change only the operator's spelling:
 `import math(op _ + __ as _ ++ __);`. Write both complete grammars, with the
-namespace tag only before the source. Every slot, recursive-slot leniency,
-token-run boundary, and grouping stays the same. Token replacement must be
+namespace tag only before the source. Every slot kind and whole-word boundary
+stays the same. Token replacement must be
 consistent and injective: repeated source tokens have one destination spelling,
 and distinct source tokens remain distinct. The alias retains the provider's
 implementation and installs only the destination syntax. Distinct aliases of

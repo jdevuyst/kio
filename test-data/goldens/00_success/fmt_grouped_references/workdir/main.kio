@@ -2,7 +2,7 @@ module main;
 
 op _ + _ { impl ((helpers.add)) }
 
-varop [[ ]] { foldl ((helpers.step)) ((Box.base)); finalize ((helpers.finish)) }
+varop [] { foldl ((helpers.step)) ((Box.base)); finalize ((helpers.finish)) }
 
 varop [* *] { foldr ((helpers.step)) ((Box.base)); finalize ((())) }
 

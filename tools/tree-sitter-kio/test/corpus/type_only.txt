@@ -567,8 +567,8 @@ v(1) { breaking { add { module api { fn nil[A] -> List(A); fn thunk[A]() -> List
 type-only adjacent whole variadic runs
 ================================================================================
 module m;
-import ops(varop ..[ ].., varop +.[ ].+);
-fn run() { ..[ .[A] { () }, +.[ .[B] { () } ].+ ].. }
+import ops(varop [@ @], varop [+$ $+]);
+fn run() { [@ .[A] { () }, [+$ .[B] { () } $+] @] }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -585,18 +585,18 @@ fn run() { ..[ .[A] { () }, +.[ .[B] { () } ].+ ].. }
     (import_operator_item
       (keyword_varop)
       (variadic_head
-        (variadic_open)
-        (variadic_head_gap
-          (head_whitespace))
-        (variadic_close)))
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket)))
     (separator_comma)
     (import_operator_item
       (keyword_varop)
       (variadic_head
-        (variadic_open)
-        (variadic_head_gap
-          (head_whitespace))
-        (variadic_close)))
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket)))
     (bracket_rparen)
     (separator_semicolon))
   (function_definition
@@ -610,43 +610,55 @@ fn run() { ..[ .[A] { () }, +.[ .[B] { () } ].+ ].. }
     (expression_block
       (bracket_lbrace)
       (variadic_expression
-        (variadic_open)
+        (variadic_open
+          (bracket_lbracket))
         (variadic_elements
           (variadic_element
-            (fn_lambda_expr
-              (separator_dot)
-              (fn_signature
-                (type_param_group
-                  (bracket_lbracket)
-                  (type_param_binder
-                    (variable_parameter))
-                  (bracket_rbracket)))
-              (expression_block
-                (bracket_lbrace)
-                (unit_expression
-                  (bracket_lparen)
-                  (bracket_rparen))
-                (bracket_rbrace))))
+            (operator_expression
+              (operator_run)
+              (fn_lambda_expr
+                (separator_dot)
+                (fn_signature
+                  (type_param_group
+                    (bracket_lbracket)
+                    (type_param_binder
+                      (variable_parameter))
+                    (bracket_rbracket)))
+                (expression_block
+                  (bracket_lbrace)
+                  (unit_expression
+                    (bracket_lparen)
+                    (bracket_rparen))
+                  (bracket_rbrace)))))
           (separator_comma)
           (variadic_element
-            (variadic_expression
-              (variadic_open)
-              (variadic_elements
-                (variadic_element
-                  (fn_lambda_expr
-                    (separator_dot)
-                    (fn_signature
-                      (type_param_group
-                        (bracket_lbracket)
-                        (type_param_binder
-                          (variable_parameter))
-                        (bracket_rbracket)))
-                    (expression_block
-                      (bracket_lbrace)
-                      (unit_expression
-                        (bracket_lparen)
-                        (bracket_rparen))
-                      (bracket_rbrace)))))
-              (variadic_close))))
-        (variadic_close))
+            (operator_expression
+              (variadic_expression
+                (variadic_open
+                  (bracket_lbracket))
+                (variadic_elements
+                  (variadic_element
+                    (operator_expression
+                      (operator_expression
+                        (operator_run)
+                        (fn_lambda_expr
+                          (separator_dot)
+                          (fn_signature
+                            (type_param_group
+                              (bracket_lbracket)
+                              (type_param_binder
+                                (variable_parameter))
+                              (bracket_rbracket)))
+                          (expression_block
+                            (bracket_lbrace)
+                            (unit_expression
+                              (bracket_lparen)
+                              (bracket_rparen))
+                            (bracket_rbrace))))
+                      (operator_run))))
+                (variadic_close
+                  (bracket_rbracket)))
+              (operator_run))))
+        (variadic_close
+          (bracket_rbracket)))
       (bracket_rbrace))))

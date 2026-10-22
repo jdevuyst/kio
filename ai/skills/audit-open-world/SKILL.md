@@ -34,6 +34,14 @@ Read the kio-rs name-resolution and lookup code (`kio-rs/src/**/resolve*.rs`, `n
 
 Flag any path where the contrary isn't obvious from the code.
 
+For operator syntax, verify that complete consumer-written patterns select
+bindings exactly, while symbol-word and variadic-frame boundaries are determined
+from source before lookup. Test unchanged consumers against provider growth and
+unrelated import-order permutations. A missing marker or failed operand must
+not trigger shorter-word splitting, another frame interpretation or a smaller
+successful grouping. Keep this provider-growth guarantee distinct from a broader
+claim that arbitrary additions to a consumer's own imports are harmless.
+
 Discharged pattern — multi-reading resolution over the parser-validated module map: a "try reading A, else reading B" lookup whose readings disagree on how many trailing segments name the item (fn-in-module vs newtype-member) is safe when the readings are **name-role-disjoint** — module path segments match the exact value-name grammar while type names match the exact type-name grammar (specs/language.md § Naming conventions), so the segment that would have to be both a module leaf and a newtype name can never make both readings viable, and first-match ordering cannot be hijacked by a new declaration. This discharge holds only for resolvers over the parser-validated module map; the dyn_load_prime runtime loader consumes hand-written Kio' image text whose module names are *not* role-validated, so its one-dot lookups face a genuine fn-vs-member collision and resolve it by an explicit documented fn-first preference (its ambiguity reporting covers same-kind duplicates) — a resolver-local policy, not this role-disjointness discharge.
 
 ## 3. Recent feature additions

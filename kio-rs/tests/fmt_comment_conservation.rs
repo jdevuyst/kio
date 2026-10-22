@@ -197,6 +197,51 @@ fn raw_generated_sources_conserve_sparse_seeded_comments() {
 }
 
 #[test]
+fn operator_frames_conserve_comments_at_declared_structural_gaps() {
+    let declarations = "module m; fn nil() { () } fn cons(a: A, b: A) -> A { a } \
+        fn wrap(a: A) -> A { a } varop [] { foldr cons nil } \
+        varop [* *] { foldr cons nil } op | _ | { impl wrap }";
+    // These gaps are explicit grammar boundaries, including bracket edges;
+    // unlike an arbitrary character insertion they do not split symbol words.
+    for template in [
+        "[§]",
+        "[§*§*§]",
+        "[§*§x§,§y§*§]",
+        "[§*§[§*§*§]§*§]",
+        "[§*§(§x§)§*§]",
+        "[§*§(§|§x§|§)§*§]",
+        "[§*§-1§*§]",
+        "|§x§|§(§y§)",
+    ] {
+        let pieces: Vec<_> = template.split('§').collect();
+        let gaps = pieces.len() - 1;
+        let mut selections: Vec<Vec<usize>> = (0..gaps).map(|gap| vec![gap]).collect();
+        for first in 0..gaps {
+            for second in first + 1..gaps {
+                selections.push(vec![first, second]);
+            }
+        }
+        selections.push((0..gaps).collect());
+        for selected in selections {
+            let mut expression = pieces[0].to_owned();
+            let mut expected = Vec::new();
+            for (index, piece) in pieces[1..].iter().enumerate() {
+                if selected.contains(&index) {
+                    let id = expected.len() as u64 + 1;
+                    expected.push(id);
+                    expression.push_str(&format!(" // {MARKER}{id}\n"));
+                } else {
+                    expression.push(' ');
+                }
+                expression.push_str(piece);
+            }
+            let source = format!("{declarations}\nfn f() {{ {expression} }}");
+            assert_conserved("m.kio", &source, &expected, true);
+        }
+    }
+}
+
+#[test]
 fn existential_let_headers_conserve_comments() {
     for pattern in [
         "<Hidden> packet",

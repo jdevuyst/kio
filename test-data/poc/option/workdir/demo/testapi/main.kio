@@ -28,7 +28,7 @@ import library/option(
 , op __ ?> _
 );
 import list/core(List, cons, nil);
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import testapi(Bool, I32, String);
 import testapi/arith(add, leq_i32, mul);
 import testapi/fmt(bool_to_string, int_to_string);

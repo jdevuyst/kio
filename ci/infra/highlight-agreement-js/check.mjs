@@ -6,7 +6,7 @@
 //   - tree-sitter WASM parser (exact positive kinds/spans, explicit neutral
 //     line-local literal fallback)
 //   - vscode-textmate tokenization (positive roles must agree; neutrality
-//     is limited to roles that require later-line evidence)
+//     covers later-line evidence and explicit regex-capacity limits)
 //
 // Invoked with argv:
 //   node check.mjs <corpus-dir> <tree-sitter-wasm-path> \
@@ -126,11 +126,8 @@ const TS_KIND_MAP = {
   operator_builtin: "operator.builtin",
   operator_run: "operator.user",
   unowned_symbol_run: "operator.user",
-  // The star-shaped opener splits into bracket/kind leaves in a forall owner
-  // and is emitted as one operator token in a variadic owner below.
-  variadic_open: "operator.user",
-  variadic_close: "operator.user",
-  variadic_star_close: "operator.user",
+  // The star-shaped opener retains separate bracket and ordinary-word leaves
+  // in both forall and variadic owners.
   star_open_prefix: "punctuation.bracket",
   kind_annotation: "operator.user",
   // The `/` module-path separator. The canonical `kio debug tokens`
@@ -198,10 +195,6 @@ function treeSitterLeaves(root, source, embedded = false) {
     const { node, parentType } = stack.pop();
     if (node.isMissing || node.startIndex === node.endIndex) continue;
     if (node.type === "head_whitespace") continue;
-    if (node.type === "ambiguous_lbracket_star" && parentType !== "type_param_group") {
-      leaves.push({ node, kind: "operator.user" });
-      continue;
-    }
     if (TS_KIND_MAP[node.type] !== undefined) {
       const rawCallType =
         node.type === "identifier" &&

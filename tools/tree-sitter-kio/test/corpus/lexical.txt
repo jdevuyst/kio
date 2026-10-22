@@ -38,9 +38,8 @@ iso! into! atom!
 
 (source_file
   (elaborator_name)
-  (ERROR
-    (elaborator_name)
-    (elaborator_name)))
+  (elaborator_name)
+  (elaborator_name))
 
 ================================================================================
 elaborator bang requires contiguity
@@ -103,7 +102,9 @@ leading-dot runs are ordinary operators
 --------------------------------------------------------------------------------
 
 (source_file
+  (separator_dot)
   (operator_run)
+  (separator_dot)
   (operator_run))
 
 ================================================================================
@@ -127,8 +128,11 @@ builtin vs user operator discrimination
   (operator_run)
   (operator_run)
   (operator_run)
+  (separator_dot)
+  (separator_dot)
+  (separator_dot)
   (operator_run)
-  (operator_run))
+  (separator_dot))
 
 ================================================================================
 UFCS structural roles follow callee direction
@@ -223,8 +227,11 @@ brackets and separators
     (expression_block
       (bracket_lbrace)
       (bracket_rbrace)))
-  (unowned_symbol_run)
-  (unowned_symbol_run)
+  (variadic_expression
+    (variadic_open
+      (bracket_lbracket))
+    (variadic_close
+      (bracket_rbracket)))
   (separator_comma)
   (separator_semicolon)
   (separator_dot))
@@ -237,12 +244,28 @@ unowned bracket runs recover without fixed operator authority
 
 (source_file
   (variadic_expression
-    (variadic_open)
-    (variadic_close))
-  (unowned_symbol_run)
-  (unowned_symbol_run)
+    (variadic_open
+      (bracket_lbracket))
+    (variadic_elements
+      (operator_builtin))
+    (variadic_close
+      (bracket_rbracket)))
+  (bracket_rbracket)
+  (bracket_rbracket)
+  (operator_run)
+  (bracket_rbracket)
   (incomplete_variadic_expression
-    (variadic_open)))
+    (ambiguous_lbracket_star
+      (star_open_prefix)
+      (kind_annotation))
+    (variadic_elements
+      (variadic_element
+        (incomplete_variadic_expression
+          (ambiguous_lbracket_star
+            (star_open_prefix)
+            (kind_annotation))
+          (variadic_elements
+            (operator_run)))))))
 
 ================================================================================
 rejected bracket markers preserve following lexical boundaries
@@ -261,40 +284,73 @@ rejected bracket markers preserve following lexical boundaries
 --------------------------------------------------------------------------------
 
 (source_file
-  (unowned_symbol_run)
+  (bracket_rbracket)
   (comment_line)
-  (unowned_symbol_run)
-  (unowned_symbol_run)
-  (unowned_symbol_run)
+  (bracket_rbracket)
+  (operator_run)
+  (bracket_rbracket)
+  (module_path_sep)
+  (bracket_rbracket)
+  (operator_run)
+  (module_path_sep)
   (variadic_expression
-    (variadic_open)
-    (variadic_close))
+    (variadic_open
+      (bracket_lbracket))
+    (variadic_close
+      (bracket_rbracket)))
+  (operator_run)
   (module_path_sep)
-  (unowned_symbol_run)
-  (unowned_symbol_run)
-  (unowned_symbol_run)
+  (variadic_expression
+    (variadic_open
+      (bracket_lbracket))
+    (variadic_elements
+      (operator_run))
+    (variadic_close
+      (bracket_rbracket)))
+  (separator_dot)
+  (ERROR
+    (bracket_lbracket))
+  (operator_builtin)
   (body_block
     (expression_block
       (bracket_lbrace)
       (incomplete_variadic_expression
-        (variadic_open))
+        (variadic_open
+          (bracket_lbracket))
+        (variadic_elements
+          (operator_builtin)))
       (bracket_rbrace)))
-  (unowned_symbol_run)
+  (separator_dot)
+  (ERROR
+    (bracket_lbracket))
+  (operator_run)
   (body_block
     (expression_block
       (bracket_lbrace)
       (incomplete_variadic_expression
-        (variadic_open))
+        (variadic_open
+          (bracket_lbracket))
+        (variadic_elements
+          (operator_run)))
       (bracket_rbrace)))
-  (unowned_symbol_run)
-  (module_path_sep)
-  (unowned_symbol_run)
+  (separator_dot)
+  (ERROR
+    (bracket_lbracket))
+  (operator_run)
+  (operator_run)
+  (separator_dot)
+  (ERROR
+    (bracket_lbracket))
+  (operator_builtin)
   (comment_line)
   (body_block
     (expression_block
       (bracket_lbrace)
       (incomplete_variadic_expression
-        (variadic_open))
+        (variadic_open
+          (bracket_lbracket))
+        (variadic_elements
+          (operator_builtin)))
       (bracket_rbrace))))
 
 ================================================================================
@@ -341,36 +397,39 @@ fn id[A][*F](x: F(A)) -> A {}
     (expression_block
       (bracket_lbrace)
       (bracket_rbrace)))
-  (unowned_symbol_run)
-  (identifier)
-  (unowned_symbol_run)
-  (bracket_lparen)
-  (ERROR
-    (operator_expression
+  (fn_lambda_expr
+    (separator_dot)
+    (fn_signature
+      (type_param_group
+        (ambiguous_lbracket_star
+          (star_open_prefix)
+          (kind_annotation))
+        (variable_parameter)
+        (bracket_rbracket))
+      (value_param_group
+        (bracket_lparen)
+        (value_param_binder
+          (binding_pattern
+            (variable_parameter)
+            (operator_builtin)
+            (type_path
+              (entity_name_type)
+              (type_arguments
+                (bracket_lparen)
+                (separator_dot)
+                (bracket_rparen)))))
+        (bracket_rparen)))
+    (operator_arrow_type)
+    (type_path
+      (entity_name_type)
+      (type_arguments
+        (bracket_lparen)
+        (separator_dot)
+        (bracket_rparen)))
+    (expression_block
+      (bracket_lbrace)
       (expression_path
         (identifier))
-      (operator_builtin)
-      (expression_path
-        (identifier)))
-    (operator_expression
-      (unit_expression
-        (bracket_lparen)
-        (ERROR
-          (separator_dot)
-          (bracket_rparen))
-        (bracket_rparen))
-      (operator_arrow_type)
-      (expression_path
-        (identifier)))
-    (bracket_lparen)
-    (ERROR
-      (separator_dot)
-      (bracket_rparen))
-    (label_value_expr
-      (bracket_lbrace)
-      (label_value_label
-        (label_path
-          (entity_name_label)))
       (bracket_rbrace))))
 
 ================================================================================
@@ -885,10 +944,10 @@ elab choose : [A] A -> A {
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_star_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)
@@ -1018,10 +1077,10 @@ elab choose : . -> . {
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_star_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)
@@ -1100,10 +1159,10 @@ elab normal : . -> . {
   (variadic_decl
     (keyword_varop)
     (variadic_head
-      (variadic_open)
-      (variadic_head_gap
-        (head_whitespace))
-      (variadic_star_close))
+      (bracket_lbracket)
+      (operator_run)
+      (operator_run)
+      (bracket_rbracket))
     (variadic_callable_block
       (bracket_lbrace)
       (keyword_declaration)

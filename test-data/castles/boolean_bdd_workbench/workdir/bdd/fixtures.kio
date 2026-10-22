@@ -2,7 +2,7 @@ module bdd/fixtures;
 
 import bdd/expression as expr;
 import list/core as lists;
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import testapi(String);
 
 pub fn x() -> expr.Expression { expr.variable_expr(0) }

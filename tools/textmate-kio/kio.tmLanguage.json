@@ -1253,17 +1253,25 @@
       ]
     },
     "import-varop-tag": {
-      "begin": "\\bvarop\\b(?=[ \\t]+(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?[ \\t\\r\\n])",
-      "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
+      "begin": "\\bvarop\\b(?=[ \\t]+\\[)",
+      "beginCaptures": {
+        "0": {
+          "name": "keyword.declaration.kio"
+        }
+      },
       "end": "(?=[,)])",
       "patterns": [
-        { "include": "#import-selection-alias" },
-        { "include": "#import-selection-tokens" }
+        {
+          "include": "#import-selection-alias"
+        },
+        {
+          "include": "#import-selection-tokens"
+        }
       ]
     },
     "varop-delimiter": {
-      "match": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?:(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?|(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]*\\])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*)?)(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.]|[\\[\\]])",
-      "name": "keyword.operator.user.kio"
+      "match": "[\\[\\]]",
+      "name": "punctuation.bracket.kio"
     },
     "source-tokens": {
       "patterns": [
@@ -2205,13 +2213,13 @@
       "name": "variable.parameter.slot.kio"
     },
     "operator-arrow": {
-      "comment": "Function-type arrow and fixed-role dot-splice operators. These are exact spellings, not prefixes of larger symbol-runs. A dot-splice may immediately follow an identifier-plus-bang elaborator token, as in the bare `transform!.<value` form consumed by the earlier elaborator rule.",
-      "match": "(?:(?<![+\\-*/%^~?@#$\\\\'`<>=!&|:.])(?:->|\\.>>|\\.<<|\\.>|\\.<)|(?<=[A-Za-z0-9_]!)(?:\\.>>|\\.<<|\\.>|\\.<))(?![+\\-*/%^~?@#$\\\\'`<>=!&|:.])",
+      "comment": "Dots start native compounds independently of adjacent ordinary symbol words.",
+      "match": "(?<![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])->(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])|\\.>>|\\.<<|\\.>|\\.<",
       "name": "keyword.operator.arrow.kio"
     },
     "operator-row-suffix": {
       "comment": "Row access/update suffix tokens. Classified as user operators to match the reference token dump.",
-      "match": "(?<![+\\-*/%^~?@#$\\\\'`<>=!&|:.])(?:\\.\\?|\\.\\!)(?![+\\-*/%^~?@#$\\\\'`<>=!&|:.])",
+      "match": "\\.\\?|\\.\\!",
       "name": "keyword.operator.user.kio"
     },
     "placeholder-lambda": {
@@ -2241,8 +2249,8 @@
       ]
     },
     "lexical-bracket-run": {
-      "match": "(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]/]*[\\[\\]])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]]*)?",
-      "name": "keyword.operator.user.kio"
+      "match": "[\\[\\]]",
+      "name": "punctuation.bracket.kio"
     },
     "lexical-tokens": {
       "patterns": [
@@ -2265,12 +2273,12 @@
     },
     "operator-builtin": {
       "comment": "Standalone built-in operators. Multi-char runs containing these chars are user-declared operators and fall through to `operator-user`.",
-      "match": "(?<![+\\-*/%^~?@#$\\\\'`<>=!&|:.])[&|=:!](?![+\\-*/%^~?@#$\\\\'`<>=!&|:.])",
+      "match": "(?<![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])[&|=:!](?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])",
       "name": "keyword.operator.kio"
     },
     "operator-user": {
-      "comment": "A symbol run stops before a comment or second slash; a standalone dot is a separator.",
-      "match": "(?:\\.[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]+|[+\\-*%^~?@#$\\\\'`<>][+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]*|[=!&|:][+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]+)(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]*)?|\\.?/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.]*",
+      "comment": "Ordinary symbol words stop at structural dots, square brackets, comments and a second slash.",
+      "match": "(?:[+\\-*%^~?@#$\\\\'\\x60<>][+\\-*%^~?@#$\\\\'\\x60<>=!&|:]*|[=!&|:][+\\-*%^~?@#$\\\\'\\x60<>=!&|:]+|[=!&|:](?=/(?!/)))(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:]*)?|/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:]*",
       "name": "keyword.operator.user.kio"
     },
     "label-value-shorthand": {
@@ -2407,12 +2415,14 @@
       ]
     },
     "ambiguous-star-argument": {
-      "begin": "\\[\\*+(?=[ \\t]*(?:_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*(?:(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*)*(?:(?:,[ \\t]*)+\\**[ \\t]*)?)?(?://[^\\r\\n]*)?$)",
-      "beginCaptures": { "0": { "name": "meta.ambiguous-argument-binder.kio" } },
-      "end": "(\\*+\\])|(\\])|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "begin": "(\\[)(\\*+)(?=[ \\t]*(?:_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*(?:(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*)*(?:(?:,[ \\t]*)+\\**[ \\t]*)?)?(?://[^\\r\\n]*)?$)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.bracket.kio" },
+        "2": { "name": "keyword.operator.user.kio" }
+      },
+      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
       "endCaptures": {
-        "1": { "name": "keyword.operator.user.kio" },
-        "2": { "name": "punctuation.bracket.kio" }
+        "0": { "name": "punctuation.bracket.kio" }
       },
       "patterns": [
         { "include": "#expression-tokens" }
@@ -2523,16 +2533,26 @@
       ]
     },
     "expression-varop": {
-      "begin": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])",
+      "begin": "\\[",
       "beginCaptures": {
-        "0": { "name": "keyword.operator.user.kio" }
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
       },
-      "end": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]*\\])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
       "endCaptures": {
-        "0": { "name": "keyword.operator.user.kio" }
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
       },
       "patterns": [
-        { "include": "#expression-tokens" }
+        {
+          "comment": "A bang at a square-frame edge can be a marker or a native suffix. Keep that ambiguous role neutral, including when the closer is on a later line.",
+          "match": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!(?=[ \\t]*(?:\\]|$|//))"
+        },
+        {
+          "include": "#expression-tokens"
+        }
       ]
     },
     "dot-lambda": {
@@ -3000,22 +3020,60 @@
       "begin": "\\G\\[",
       "end": "(?!\\G)\\]|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "beginCaptures": {
-        "0": { "name": "keyword.operator.user.kio" }
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
       },
       "endCaptures": {
-        "0": { "name": "keyword.operator.user.kio" }
+        "0": {
+          "name": "punctuation.bracket.kio"
+        }
       },
       "patterns": [
-        { "include": "#varop-mirror-bracket" },
-        { "include": "#varop-mirror-symbol" },
-        { "include": "#varop-mirror-gap" },
         {
-          "begin": "(?!\\G)[\\s\\S]",
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "match": "[ \\t\\r\\n]+"
+        },
+        {
+          "include": "#varop-mirror-symbol"
+        },
+        {
+          "include": "#varop-mirror-gap"
+        },
+        {
+          "begin": "(?!\\G)(?=\\S)",
           "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
-            { "include": "#comment-doc" },
-            { "include": "#comment" },
+            {
+              "include": "#comment-doc"
+            },
+            {
+              "include": "#comment"
+            },
+            {
+              "include": "#operator-arrow"
+            },
+            {
+              "include": "#operator-row-suffix"
+            },
+            {
+              "include": "#operator-builtin"
+            },
+            {
+              "include": "#operator-user"
+            },
+            {
+              "include": "#punctuation-bracket"
+            },
+            {
+              "include": "#punctuation-separator"
+            },
             {
               "match": "[A-Za-z_][A-Za-z0-9_]*",
               "name": "meta.invalid-varop-name.kio"
@@ -3023,28 +3081,57 @@
           ]
         }
       ],
-      "comment": "Each adjacent OPEN character pushes its mirrored CLOSE onto the rule stack. Only the innermost frame admits split whitespace; outer frames require adjacent closing characters."
+      "comment": "Later-line header evidence is retained by the mirrored marker stack."
     },
     "varop-mirror-symbol": {
-      "begin": "\\G([+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])",
+      "begin": "\\G([+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])",
       "end": "(?!\\G)\\1|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "beginCaptures": {
-        "0": { "name": "keyword.operator.user.kio" }
+        "0": {
+          "name": "keyword.operator.user.kio"
+        }
       },
       "endCaptures": {
-        "0": { "name": "keyword.operator.user.kio" }
+        "0": {
+          "name": "keyword.operator.user.kio"
+        }
       },
       "patterns": [
-        { "include": "#varop-mirror-bracket" },
-        { "include": "#varop-mirror-symbol" },
-        { "include": "#varop-mirror-gap" },
         {
-          "begin": "(?!\\G)[\\s\\S]",
+          "include": "#varop-mirror-symbol"
+        },
+        {
+          "include": "#varop-mirror-gap"
+        },
+        {
+          "begin": "(?!\\G)(?=\\S)",
           "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
-            { "include": "#comment-doc" },
-            { "include": "#comment" },
+            {
+              "include": "#comment-doc"
+            },
+            {
+              "include": "#comment"
+            },
+            {
+              "include": "#operator-arrow"
+            },
+            {
+              "include": "#operator-row-suffix"
+            },
+            {
+              "include": "#operator-builtin"
+            },
+            {
+              "include": "#operator-user"
+            },
+            {
+              "include": "#punctuation-bracket"
+            },
+            {
+              "include": "#punctuation-separator"
+            },
             {
               "match": "[A-Za-z_][A-Za-z0-9_]*",
               "name": "meta.invalid-varop-name.kio"
@@ -3054,22 +3141,76 @@
       ]
     },
     "varop-head": {
-      "begin": "[ \\t]*(?=(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?[ \\t\\r\\n])",
+      "begin": "[ \\t]*(?=\\[)",
       "end": "(?<=\\})|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "patterns": [
-        { "include": "#varop-mirror-bracket" },
-        { "include": "#varop-mirror-symbol" },
-        { "include": "#comment-doc" },
-        { "include": "#comment" },
-        { "include": "#variadic-callables" },
         {
-          "begin": "\\S",
+          "begin": "(?=\\[[ \\t]*(?:(?<head_mirror>(?<head_char>[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])(?:\\g<head_mirror>|[ \\t]*)\\k<head_char+0>))?[ \\t]*\\])\\[",
+          "end": "\\]",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
+        },
+        {
+          "include": "#varop-mirror-bracket"
+        },
+        {
+          "include": "#varop-mirror-symbol"
+        },
+        {
+          "include": "#comment-doc"
+        },
+        {
+          "include": "#comment"
+        },
+        {
+          "include": "#variadic-callables"
+        },
+        {
+          "begin": "(?=\\S)",
           "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
-            { "include": "#comment-doc" },
-            { "include": "#comment" },
-            { "match": "[A-Za-z_][A-Za-z0-9_]*", "name": "meta.invalid-varop-name.kio" }
+            {
+              "include": "#comment-doc"
+            },
+            {
+              "include": "#comment"
+            },
+            {
+              "include": "#operator-arrow"
+            },
+            {
+              "include": "#operator-row-suffix"
+            },
+            {
+              "include": "#operator-builtin"
+            },
+            {
+              "include": "#operator-user"
+            },
+            {
+              "include": "#punctuation-bracket"
+            },
+            {
+              "include": "#punctuation-separator"
+            },
+            {
+              "match": "[A-Za-z_][A-Za-z0-9_]*",
+              "name": "meta.invalid-varop-name.kio"
+            }
           ]
         }
       ]
@@ -3167,23 +3308,70 @@
     "recursive-annotation-lexical-groups": {
       "patterns": [
         {
-          "begin": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[/]*\\[)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\[]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])",
-          "end": "(?!\\.(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:\\[\\]]*\\.))(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]{2})(?=[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]/]*\\])[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*(?:/(?!/)[+\\-*%^~?@#$\\\\'\\x60<>=!&|:.\\]]*)?(?![A-Za-z0-9_]|[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.\\[\\]])|(?=[)};])",
-          "beginCaptures": { "0": { "name": "keyword.operator.user.kio" } },
-          "endCaptures": { "0": { "name": "keyword.operator.user.kio" } },
-          "patterns": [{ "include": "#recursive-annotation-lexical-groups" }, { "include": "#lexical-tokens" }]
+          "begin": "\\[",
+          "end": "\\]|(?=[)};])",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#recursive-annotation-lexical-groups"
+            },
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
         },
         {
-          "begin": "\\(", "end": "\\)",
-          "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-          "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-          "patterns": [{ "include": "#recursive-annotation-lexical-groups" }, { "include": "#lexical-tokens" }]
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#recursive-annotation-lexical-groups"
+            },
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
         },
         {
-          "begin": "\\{", "end": "\\}",
-          "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-          "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-          "patterns": [{ "include": "#recursive-annotation-lexical-groups" }, { "include": "#lexical-tokens" }]
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.bracket.kio"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#recursive-annotation-lexical-groups"
+            },
+            {
+              "include": "#lexical-tokens"
+            }
+          ]
         }
       ]
     },

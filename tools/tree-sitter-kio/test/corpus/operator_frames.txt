@@ -1,0 +1,233 @@
+================================================================================
+structural closed_operator_results_accept_native_suffixes
+================================================================================
+module m; import ops(op <| _ |>, op _ < _ >); fn run() { <|x|>.>keep; row<key>(arg) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (import_operator_item
+      (keyword_op)
+      (operator_run)
+      (slot)
+      (operator_run))
+    (separator_comma)
+    (import_operator_item
+      (keyword_op)
+      (slot)
+      (operator_run)
+      (slot)
+      (operator_run))
+    (bracket_rparen)
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ufcs_expr
+        (operator_expression
+          (operator_expression
+            (operator_run)
+            (expression_path
+              (identifier)))
+          (operator_run))
+        (operator_arrow_ufcs)
+        (call_callee
+          (entity_name_function)))
+      (separator_semicolon)
+      (operator_expression
+        (expression_path
+          (identifier))
+        (operator_run)
+        (call_expr
+          (operator_expression
+            (expression_path
+              (identifier))
+            (operator_run))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))))
+      (bracket_rbrace))))
+
+================================================================================
+structural structural_compact_frames_and_minus
+================================================================================
+module m; import ops(varop [], varop [* *], varop [** **]); fn run() { [*[**]*]; [****]; []-1; [-1]; [*(-1)*] }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (bracket_lbracket)
+        (bracket_rbracket)))
+    (separator_comma)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket)))
+    (separator_comma)
+    (import_operator_item
+      (keyword_varop)
+      (variadic_head
+        (bracket_lbracket)
+        (operator_run)
+        (operator_run)
+        (bracket_rbracket)))
+    (bracket_rparen)
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (variadic_expression
+        (ambiguous_lbracket_star
+          (star_open_prefix)
+          (kind_annotation))
+        (variadic_elements
+          (variadic_element
+            (operator_expression
+              (variadic_expression
+                (ambiguous_lbracket_star
+                  (star_open_prefix)
+                  (kind_annotation))
+                (variadic_close
+                  (bracket_rbracket)))
+              (operator_run))))
+        (variadic_close
+          (bracket_rbracket)))
+      (separator_semicolon)
+      (variadic_expression
+        (ambiguous_lbracket_star
+          (star_open_prefix)
+          (kind_annotation))
+        (variadic_close
+          (bracket_rbracket)))
+      (separator_semicolon)
+      (operator_expression
+        (variadic_expression
+          (variadic_open
+            (bracket_lbracket))
+          (variadic_close
+            (bracket_rbracket)))
+        (operator_run)
+        (number_literal))
+      (separator_semicolon)
+      (variadic_expression
+        (variadic_open
+          (bracket_lbracket))
+        (variadic_elements
+          (variadic_element
+            (number_literal)))
+        (variadic_close
+          (bracket_rbracket)))
+      (separator_semicolon)
+      (variadic_expression
+        (ambiguous_lbracket_star
+          (star_open_prefix)
+          (kind_annotation))
+        (variadic_elements
+          (variadic_element
+            (operator_expression
+              (grouped_expression
+                (bracket_lparen)
+                (number_literal)
+                (bracket_rparen))
+              (operator_run))))
+        (variadic_close
+          (bracket_rbracket)))
+      (bracket_rbrace))))
+
+================================================================================
+single symbol words retain token quotation
+================================================================================
+module m;
+import syntax(op _ (=) _, op (?) _ as (!) _);
+op _ (=) _ { impl equality }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (import_operator_item
+      (keyword_op)
+      (slot)
+      (import_pattern_group
+        (bracket_lparen)
+        (operator_builtin)
+        (bracket_rparen))
+      (slot))
+    (separator_comma)
+    (import_operator_item
+      (keyword_op)
+      (import_pattern_group
+        (bracket_lparen)
+        (operator_run)
+        (bracket_rparen))
+      (slot)
+      (keyword_declaration)
+      (import_pattern_group
+        (bracket_lparen)
+        (operator_builtin)
+        (bracket_rparen))
+      (slot))
+    (bracket_rparen)
+    (separator_semicolon))
+  (op_decl
+    (keyword_op)
+    (slot)
+    (import_pattern_group
+      (bracket_lparen)
+      (operator_builtin)
+      (bracket_rparen))
+    (slot)
+    (callable_impl_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (entity_name_function))
+      (bracket_rbrace))))

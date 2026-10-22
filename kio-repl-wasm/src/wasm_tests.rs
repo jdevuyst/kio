@@ -112,7 +112,9 @@ export function exerciseSelectors(repl) {
     }
     for (const [input, expected] of [
       [':sig arithmetic.(op _ +', 'pub op _ + _ { impl choose }'],
-      [':sig arithmetic.(varop', 'pub varop [* *] { foldr choose empty }'],
+      [':sig arithmetic.(varop [*', 'pub varop [* *] { foldr choose empty }'],
+      [':sig arithmetic.(varop []', 'pub varop [] { foldr choose empty }'],
+      [':sig arithmetic.(op _ ?', 'pub op _ ? __ : ___ { impl choose_three }'],
     ]) {
       const result = repl.complete(input, input.length);
       check(result.replaceStart === 5 && result.replaceEnd === input.length, 'whole selector range');
@@ -122,12 +124,23 @@ export function exerciseSelectors(repl) {
       check(clean(repl.eval(inserted).output) === expected, 'accepted insertion');
     }
     check(clean(repl.eval(':sig arithmetic.(op _ (=) _)').output) === 'pub op _ (=) _ { impl choose }', 'inner parentheses');
+    check(clean(repl.eval(':sig arithmetic.(varop [**])').output) === 'pub varop [* *] { foldr choose empty }', 'compact marked selector');
     const refs = clean(repl.eval(':refs arithmetic.(op _ + _)').output);
     check(refs.includes('in fn use') && !refs.includes('demo/other'), 'operator reference identity');
+    for (const selector of ['arithmetic.(varop [* *])', 'varop [% %]']) {
+      const refs = clean(repl.eval(':refs ' + selector).output);
+      check(refs.includes('in fn use'), `${selector}: imported marked frame use: ${refs}`);
+      check(refs.includes('in fn alias_use'), `${selector}: aliased marked frame use: ${refs}`);
+      check(refs.includes('in varop [* *]'), `${selector}: provider declaration: ${refs}`);
+      check(!refs.includes('demo/other'), `${selector}: foreign operator identity: ${refs}`);
+    }
+    const foreignRefs = clean(repl.eval(':refs other.(varop [* *])').output);
+    check(foreignRefs.includes('in fn foreign_marked_use'), `competing provider use: ${foreignRefs}`);
+    check(!foreignRefs.includes('in fn use') && !foreignRefs.includes('in fn alias_use'), `competing provider identity: ${foreignRefs}`);
     repl.eval(':reset');
     const input = ':sig arithmetic.(op _ +';
     check(repl.complete(input, input.length).candidates.length === 0, 'reset candidates');
-    return 2;
+    return 4;
   } finally { repl.free(); }
 }
 "#)]
@@ -140,7 +153,7 @@ extern "C" {
 pub fn declaration_selectors_cross_public_javascript_boundaries() {
     assert_eq!(
         exercise_selectors(super::declaration_selectors_repl().into()).unwrap(),
-        2
+        4
     );
 }
 

@@ -89,6 +89,17 @@ accepting parser determinism as the justification. Trace focused grouping and
 formatter-meaning witnesses; separate definite contract violations from rules
 that still need a design decision.
 
+For fixed operators, check the complete definition-validity classification
+against [the operator contract](../../../specs/language.md#operators), including
+every position of a same-operator slot and opposing exposed chain directions.
+Finite examples supplement the structural argument; they do not establish that
+all ineffective slots are rejected. Verify leading extent is chosen before
+operand admission, without retrying a smaller successful parse. At use sites,
+compare explicit competing trees and their formatted forms, including closed
+results nested under a leading-chain operator. For variadic brackets, derive
+the mirrored frame from source before resolving its binding, and check native
+type syntax, signed literals and grouped symbolic elements at that boundary.
+
 ## 4. Package files
 
 Compare analogous fields across configuration, operator, elaborator and type

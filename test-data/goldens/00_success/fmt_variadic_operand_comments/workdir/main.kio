@@ -1,0 +1,5 @@
+module probe;
+import ops(varop [] as [* *]);
+fn probe() { [* (x // first
+) // second
+*] }

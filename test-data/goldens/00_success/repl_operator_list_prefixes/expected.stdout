@@ -5,8 +5,8 @@ demo:
   pub fn choose
   pub fn empty
   pub op _ + _
+  pub(demo) op _ ++ _
   pub varop [* *]
-  pub(demo) op _ .. _
   pub(demo) varop [! !]
   op _ - _
   varop [% %]
@@ -16,12 +16,12 @@ scope of demo:
     pub fn choose
     pub fn empty
     pub op _ + _
+    pub(demo) op _ ++ _
     pub varop [* *]
-    pub(demo) op _ .. _
     pub(demo) varop [! !]
     op _ - _
     varop [% %]
-  operators: op _ + _, varop [* *], op _ .. _, varop [! !], op _ - _, varop [% %]
+  operators: op _ + _, op _ ++ _, varop [* *], varop [! !], op _ - _, varop [% %]
   intrinsics: not in scope
   comptime: not in scope
 (… :ls -v for full signatures)

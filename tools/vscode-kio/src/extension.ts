@@ -144,9 +144,6 @@ const NODE_KIND: Record<string, SemanticKind> = {
   operator_arrow_ufcs: "operator",
   operator_run: "operator",
   unowned_symbol_run: "operator",
-  variadic_open: "operator",
-  variadic_close: "operator",
-  variadic_star_close: "operator",
   star_open_prefix: "punctuation",
   kind_annotation: "operator",
   // The `/` module-path separator — the canonical classifier paints
@@ -277,10 +274,6 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
   }
   if (["ERROR", "unowned_function_head"].includes(node.parent?.type ?? "") && /^(keyword_|entity_name_|variable_parameter$)/.test(node.type)) {
     emitToken(node, "variable", builder, body);
-    return;
-  }
-  if (node.type === "ambiguous_lbracket_star" && node.parent?.type !== "type_param_group") {
-    emitToken(node, "operator", builder, body);
     return;
   }
   if (node.type === "keyword_rec" || node.type === "keyword_recur") {

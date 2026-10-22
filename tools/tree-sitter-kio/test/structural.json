@@ -2601,34 +2601,53 @@
   },
   {
     "name": "type_only_invalid_dot_before_varop",
-    "source": "module m;\nfn run() { . // dot\n +.[ value ].+ }\n",
+    "source": "module m;\nfn run() { . // dot\n [+$ value $+] }\nfn after() { let(x) }\n",
     "partial": true,
     "targets": [
       {
         "start": 31,
-        "end": 34,
-        "text": "+.[",
-        "kind": "operator.user",
+        "end": 32,
+        "text": "[",
+        "kind": "punctuation.bracket",
         "owners": [
-          "variadic_expression"
+          "source_file"
         ],
         "textmate": [
-          "keyword.operator.user.kio"
+          "punctuation.bracket.kio"
         ]
       },
       {
-        "start": 41,
+        "start": 43,
         "end": 44,
-        "text": "].+",
-        "kind": "operator.user",
+        "text": "]",
+        "kind": "punctuation.bracket",
         "owners": [
-          "variadic_expression"
+          "source_file"
         ],
         "textmate": [
-          "keyword.operator.user.kio"
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "text": "after",
+        "start": 50,
+        "end": 55,
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head"
+        ]
+      },
+      {
+        "text": "let",
+        "start": 60,
+        "end": 63,
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
         ]
       }
-    ]
+    ],
+    "error": true
   },
   {
     "name": "type_only_named",
@@ -2925,24 +2944,48 @@
   },
   {
     "name": "type_only_whole_varops",
-    "source": "module m;\nfn run() { ..[ .[A] { () }, +.[ .[B] { () } ].+ ].. }\n",
+    "source": "module m;\nfn run() { [@ .[A] { () }, [+$ .[B] { () } $+] @] }\n",
     "targets": [
       {
         "start": 21,
-        "end": 24,
-        "text": "..[",
+        "end": 22,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 22,
+        "end": 23,
+        "text": "@",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
         ],
         "textmate": [
           "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "start": 37,
+        "end": 38,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
         ]
       },
       {
         "start": 38,
-        "end": 41,
-        "text": "+.[",
+        "end": 40,
+        "text": "+$",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -2952,9 +2995,33 @@
         ]
       },
       {
-        "start": 54,
-        "end": 57,
-        "text": "].+",
+        "start": 53,
+        "end": 55,
+        "text": "$+",
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      },
+      {
+        "start": 55,
+        "end": 56,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 57,
+        "end": 58,
+        "text": "@",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -2965,19 +3032,19 @@
       },
       {
         "start": 58,
-        "end": 61,
-        "text": "]..",
-        "kind": "operator.user",
+        "end": 59,
+        "text": "]",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_expression"
         ],
         "textmate": [
-          "keyword.operator.user.kio"
+          "punctuation.bracket.kio"
         ]
       },
       {
-        "start": 27,
-        "end": 28,
+        "start": 26,
+        "end": 27,
         "text": "A",
         "kind": "variable.parameter",
         "owners": [
@@ -2986,8 +3053,8 @@
         ]
       },
       {
-        "start": 44,
-        "end": 45,
+        "start": 43,
+        "end": 44,
         "text": "B",
         "kind": "variable.parameter",
         "owners": [
@@ -3309,8 +3376,17 @@
     "targets": [
       {
         "start": 32,
+        "end": 33,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "start": 33,
         "end": 34,
-        "text": "[*",
+        "text": "*",
         "kind": "operator.user",
         "owners": [
           "variadic_head"
@@ -3318,8 +3394,17 @@
       },
       {
         "start": 58,
+        "end": 59,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 59,
         "end": 60,
-        "text": "[*",
+        "text": "*",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -3339,12 +3424,12 @@
   },
   {
     "name": "comma_keyword_calls",
-    "source": "module source;\nfn run() { id([[ let(x), if!((ok)) { () } else { () } ]]) }\n",
+    "source": "module source;\nfn run() { id([ let(x), if!((ok)) { () } else { () } ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 32,
-        "end": 35,
+        "start": 31,
+        "end": 34,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -3352,8 +3437,8 @@
         ]
       },
       {
-        "start": 40,
-        "end": 43,
+        "start": 39,
+        "end": 42,
         "text": "if!",
         "kind": "keyword.elaborator",
         "owners": [
@@ -3365,12 +3450,12 @@
   },
   {
     "name": "ordinary_fixed_pair",
-    "source": "module source;\nimport ops(varop [[ ]], op _ => _);\nfn run() { id([[ key => value, other => let(x) ]]) }\n",
+    "source": "module source;\nimport ops(varop [ ], op _ => _);\nfn run() { id([ key => value, other => let(x) ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 91,
-        "end": 94,
+        "start": 88,
+        "end": 91,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -3379,8 +3464,8 @@
         ]
       },
       {
-        "start": 88,
-        "end": 90,
+        "start": 85,
+        "end": 87,
         "text": "=>",
         "kind": "operator.user",
         "owners": [
@@ -3392,12 +3477,12 @@
   },
   {
     "name": "nested_groups",
-    "source": "module source;\nfn run() { id([[ pair(x, y), [[ x ]] ]]) }\n",
+    "source": "module source;\nfn run() { id([ pair(x, y), [ x ] ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 32,
-        "end": 36,
+        "start": 31,
+        "end": 35,
         "text": "pair",
         "kind": "entity.name.function",
         "owners": [
@@ -3405,10 +3490,10 @@
         ]
       },
       {
-        "start": 44,
-        "end": 46,
-        "text": "[[",
-        "kind": "operator.user",
+        "start": 43,
+        "end": 44,
+        "text": "[",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_expression"
         ]
@@ -3418,13 +3503,22 @@
   },
   {
     "name": "mixed_openers",
-    "source": "module source;\nfn run() { id(*[ x, [* y *] ]*) }\n",
+    "source": "module source;\nfn run() { id([% x, [* y *] %]) }\n",
     "partial": false,
     "targets": [
       {
         "start": 29,
+        "end": 30,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 30,
         "end": 31,
-        "text": "*[",
+        "text": "%",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -3432,8 +3526,17 @@
       },
       {
         "start": 35,
+        "end": 36,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 36,
         "end": 37,
-        "text": "[*",
+        "text": "*",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -3444,12 +3547,12 @@
   },
   {
     "name": "polymorphic_lambda",
-    "source": "module source;\nfn run() { id([[ .[*F](x: F(.)) -> F(.) { x } ]]) }\n",
+    "source": "module source;\nfn run() { id([ .[*F](x: F(.)) -> F(.) { x } ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 35,
-        "end": 36,
+        "start": 34,
+        "end": 35,
         "text": "F",
         "kind": "variable.parameter",
         "owners": [
@@ -3460,9 +3563,9 @@
       },
       {
         "start": 29,
-        "end": 31,
-        "text": "[[",
-        "kind": "operator.user",
+        "end": 30,
+        "text": "[",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_expression"
         ]
@@ -3472,12 +3575,12 @@
   },
   {
     "name": "placeholder",
-    "source": "module source;\nfn run() { id([[ .x. { x1 }, x ]]) }\n",
+    "source": "module source;\nfn run() { id([ .x. { x1 }, x ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 33,
-        "end": 34,
+        "start": 32,
+        "end": 33,
         "text": "x",
         "kind": "variable.parameter",
         "owners": [
@@ -3485,8 +3588,8 @@
         ]
       },
       {
-        "start": 38,
-        "end": 40,
+        "start": 37,
+        "end": 39,
         "text": "x1",
         "kind": "identifier",
         "owners": [
@@ -3498,12 +3601,12 @@
   },
   {
     "name": "label_and_call",
-    "source": "module source;\nfn run() { id([[ { field = let(x) }, call([*F] F(.) -> F(.)) ]]) }\n",
+    "source": "module source;\nfn run() { id([ { field = let(x) }, call([*F] F(.) -> F(.)) ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 34,
-        "end": 39,
+        "start": 33,
+        "end": 38,
         "text": "field",
         "kind": "entity.name.label",
         "owners": [
@@ -3511,8 +3614,8 @@
         ]
       },
       {
-        "start": 42,
-        "end": 45,
+        "start": 41,
+        "end": 44,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -3520,8 +3623,8 @@
         ]
       },
       {
-        "start": 59,
-        "end": 60,
+        "start": 58,
+        "end": 59,
         "text": "F",
         "kind": "variable.parameter",
         "owners": [
@@ -3533,14 +3636,14 @@
   },
   {
     "name": "short_declaration",
-    "source": "module source;\nfn seed(x: .) -> . { x }\nvarop [[ ]] { foldr1 seed seed; };\n",
+    "source": "module source;\nfn seed(x: .) -> . { x }\nvarop [ ] { foldr1 seed seed; };\n",
     "partial": false,
     "targets": [
       {
         "start": 46,
-        "end": 48,
-        "text": "[[",
-        "kind": "operator.user",
+        "end": 47,
+        "text": "[",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -3559,12 +3662,12 @@
   },
   {
     "name": "missing_close",
-    "source": "module source;\nfn run() { id([[ let(x),\n",
+    "source": "module source;\nfn run() { id([ let(x),\n",
     "partial": true,
     "targets": [
       {
-        "start": 32,
-        "end": 35,
+        "start": 31,
+        "end": 34,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -3600,12 +3703,12 @@
   },
   {
     "name": "prefix_postfix",
-    "source": "module source;\nimport ops(varop [[ ]], op ~ _, op _ ++);\nfn run() { id([[ ~let(x), value++ ]]) }\n",
+    "source": "module source;\nimport ops(varop [ ], op ~ _, op _ ++);\nfn run() { id([ ~let(x), value++ ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 75,
-        "end": 78,
+        "start": 72,
+        "end": 75,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -3613,8 +3716,8 @@
         ]
       },
       {
-        "start": 83,
-        "end": 88,
+        "start": 80,
+        "end": 85,
         "text": "value",
         "kind": "identifier",
         "owners": [
@@ -3663,9 +3766,36 @@
     "targets": [
       {
         "start": 29,
+        "end": 30,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 30,
+        "end": 31,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 31,
+        "end": 32,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 32,
         "end": 33,
-        "text": "[[[[",
-        "kind": "operator.user",
+        "text": "[",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_expression"
         ]
@@ -3681,9 +3811,36 @@
       },
       {
         "start": 41,
+        "end": 42,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 42,
+        "end": 43,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 43,
+        "end": 44,
+        "text": "]",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 44,
         "end": 45,
-        "text": "]]]]",
-        "kind": "operator.user",
+        "text": "]",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_expression"
         ]
@@ -3698,8 +3855,17 @@
     "targets": [
       {
         "start": 32,
+        "end": 33,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "start": 33,
         "end": 34,
-        "text": "[/",
+        "text": "/",
         "kind": "operator.user",
         "owners": [
           "variadic_head"
@@ -3707,8 +3873,17 @@
       },
       {
         "start": 54,
+        "end": 55,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 55,
         "end": 56,
-        "text": "[/",
+        "text": "/",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -3733,8 +3908,17 @@
     "targets": [
       {
         "start": 32,
+        "end": 33,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "start": 33,
         "end": 35,
-        "text": "[/*",
+        "text": "/*",
         "kind": "operator.user",
         "owners": [
           "variadic_head"
@@ -3742,8 +3926,17 @@
       },
       {
         "start": 56,
+        "end": 57,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 57,
         "end": 59,
-        "text": "[/*",
+        "text": "/*",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -3754,38 +3947,41 @@
   },
   {
     "name": "dot_pair",
-    "source": "module source;\nimport ops(varop ..[ ]..);\nfn run() { id(..[ let(x) ]..) }\n",
-    "partial": false,
+    "source": "module source;\nimport ops(varop ..[ ]..);\nfn run() { id(..[ let(x) ]..) }\nfn after() { let(x) }\n",
+    "partial": true,
     "targets": [
       {
-        "start": 32,
-        "end": 35,
-        "text": "..[",
-        "kind": "operator.user",
+        "text": "after",
+        "start": 77,
+        "end": 82,
+        "kind": "entity.name.function",
         "owners": [
-          "variadic_head"
+          "fn_decl_head"
         ]
       },
       {
-        "start": 56,
-        "end": 59,
-        "text": "..[",
-        "kind": "operator.user",
+        "text": "let",
+        "start": 87,
+        "end": 90,
+        "kind": "entity.name.function",
         "owners": [
-          "variadic_expression"
+          "call_expr"
         ]
       }
     ],
-    "absent": []
+    "absent": [
+      "variadic_head"
+    ],
+    "error": true
   },
   {
     "name": "comments",
-    "source": "module source;\nfn run() { id([[ // region\n let(x), // element\n [[ x ]] // nested\n ]]) }\n",
+    "source": "module source;\nfn run() { id([ // region\n let(x), // element\n [ x ] // nested\n ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 43,
-        "end": 46,
+        "start": 42,
+        "end": 45,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -3796,13 +3992,11 @@
     "absent": []
   },
   {
-    "name": "compact_head_rejected",
+    "name": "compact_head",
     "source": "module source;\nvarop [**] { foldr seed seed; };\n",
-    "partial": true,
+    "partial": false,
     "targets": [],
-    "absent": [
-      "variadic_head"
-    ]
+    "absent": []
   },
   {
     "name": "one_dot_pair_rejected",
@@ -3815,7 +4009,7 @@
   },
   {
     "name": "bracket_marker_rejected",
-    "source": "module source;\nfn run() { id(.[[ { [[ }) }\n",
+    "source": "module source;\nfn run() { id(.[ { [ }) }\n",
     "partial": true,
     "targets": [],
     "absent": [
@@ -3839,12 +4033,12 @@
   },
   {
     "name": "nested_control_values",
-    "source": "module source;\nfn run() { id([[ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }, .(x) { scope! { x } } ]]) }\n",
+    "source": "module source;\nfn run() { id([ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }, .(x) { scope! { x } } ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 80,
-        "end": 86,
+        "start": 79,
+        "end": 85,
         "text": "scope!",
         "kind": "keyword.elaborator",
         "owners": [
@@ -3852,8 +4046,8 @@
         ]
       },
       {
-        "start": 41,
-        "end": 44,
+        "start": 40,
+        "end": 43,
         "text": "let",
         "kind": "keyword.declaration",
         "owners": [
@@ -3861,8 +4055,8 @@
         ]
       },
       {
-        "start": 64,
-        "end": 67,
+        "start": 63,
+        "end": 66,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -4191,12 +4385,12 @@
   },
   {
     "name": "all_expression_forms",
-    "source": "module source;\nfn run() { id([[ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]]) }\n",
+    "source": "module source;\nfn run() { id([ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 32,
-        "end": 35,
+        "start": 31,
+        "end": 34,
         "text": "do!",
         "kind": "keyword.elaborator",
         "owners": [
@@ -4204,8 +4398,8 @@
         ]
       },
       {
-        "start": 63,
-        "end": 68,
+        "start": 62,
+        "end": 67,
         "text": "recur",
         "kind": "keyword.declaration",
         "owners": [
@@ -4213,8 +4407,8 @@
         ]
       },
       {
-        "start": 102,
-        "end": 105,
+        "start": 101,
+        "end": 104,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -4312,12 +4506,12 @@
   },
   {
     "name": "recovery_\"[[\"",
-    "source": "module source; fn broken() { id([[ let(x)",
+    "source": "module source; fn broken() { id([ let(x)",
     "partial": true,
     "targets": [
       {
-        "start": 35,
-        "end": 38,
+        "start": 34,
+        "end": 37,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -4329,12 +4523,12 @@
   },
   {
     "name": "recovery_\"[[,\"",
-    "source": "module source; fn broken() { id([[ let(x),",
+    "source": "module source; fn broken() { id([ let(x),",
     "partial": true,
     "targets": [
       {
-        "start": 35,
-        "end": 38,
+        "start": 34,
+        "end": 37,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -4346,12 +4540,12 @@
   },
   {
     "name": "recovery_\"[[ ) }\\nfn after() { let(x) }\"",
-    "source": "module source; fn broken() { id([[ let(x) ) }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { id([ let(x) ) }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
-        "start": 49,
-        "end": 54,
+        "start": 48,
+        "end": 53,
         "text": "after",
         "kind": "entity.name.function",
         "owners": [
@@ -4359,8 +4553,8 @@
         ]
       },
       {
-        "start": 59,
-        "end": 62,
+        "start": 58,
+        "end": 61,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -4372,12 +4566,12 @@
   },
   {
     "name": "recovery_\"[[ }\\nfn after() { let(x) }\"",
-    "source": "module source; fn broken() { id([[ let(x) }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { id([ let(x) }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
-        "start": 47,
-        "end": 52,
+        "start": 46,
+        "end": 51,
         "text": "after",
         "kind": "entity.name.function",
         "owners": [
@@ -4385,8 +4579,8 @@
         ]
       },
       {
-        "start": 57,
-        "end": 60,
+        "start": 56,
+        "end": 59,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -4484,7 +4678,7 @@
   },
   {
     "name": "recovery_\"*[\"",
-    "source": "module source; fn broken() { id(*[ let(x)",
+    "source": "module source; fn broken() { id([% let(x)",
     "partial": true,
     "targets": [
       {
@@ -4501,7 +4695,7 @@
   },
   {
     "name": "recovery_\"*[,\"",
-    "source": "module source; fn broken() { id(*[ let(x),",
+    "source": "module source; fn broken() { id([% let(x),",
     "partial": true,
     "targets": [
       {
@@ -4518,7 +4712,7 @@
   },
   {
     "name": "recovery_\"*[ ) }\\nfn after() { let(x) }\"",
-    "source": "module source; fn broken() { id(*[ let(x) ) }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { id([% let(x) ) }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
@@ -4544,7 +4738,7 @@
   },
   {
     "name": "recovery_\"*[ }\\nfn after() { let(x) }\"",
-    "source": "module source; fn broken() { id(*[ let(x) }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { id([% let(x) }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
@@ -4678,8 +4872,17 @@
     "targets": [
       {
         "start": 29,
+        "end": 30,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 30,
         "end": 31,
-        "text": "[*",
+        "text": "*",
         "kind": "operator.user",
         "owners": [
           "variadic_expression"
@@ -4687,9 +4890,18 @@
       },
       {
         "start": 35,
-        "end": 37,
-        "text": "*]",
+        "end": 36,
+        "text": "*",
         "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "start": 36,
+        "end": 37,
+        "text": "]",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_expression"
         ]
@@ -4705,8 +4917,17 @@
     "targets": [
       {
         "start": 21,
+        "end": 22,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "start": 22,
         "end": 23,
-        "text": "[*",
+        "text": "*",
         "kind": "operator.user",
         "owners": [
           "variadic_head"
@@ -4718,14 +4939,23 @@
         "text": "// head",
         "kind": "comment.line",
         "owners": [
-          "variadic_head_gap"
+          "variadic_head"
         ]
       },
       {
         "start": 31,
-        "end": 33,
-        "text": "*]",
+        "end": 32,
+        "text": "*",
         "kind": "operator.user",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "start": 32,
+        "end": 33,
+        "text": "]",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -4735,31 +4965,31 @@
   },
   {
     "name": "head_doc_gap",
-    "source": "module source; import ops(varop [[/// head\n]]);",
+    "source": "module source; import ops(varop [/// head\n]);",
     "targets": [
       {
         "start": 32,
-        "end": 34,
-        "text": "[[",
-        "kind": "operator.user",
+        "end": 33,
+        "text": "[",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
       },
       {
-        "start": 34,
-        "end": 42,
+        "start": 33,
+        "end": 41,
         "text": "/// head",
         "kind": "comment.doc",
         "owners": [
-          "variadic_head_gap"
+          "variadic_head"
         ]
       },
       {
-        "start": 43,
-        "end": 45,
-        "text": "]]",
-        "kind": "operator.user",
+        "start": 42,
+        "end": 43,
+        "text": "]",
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -4932,7 +5162,7 @@
   },
   {
     "name": "ordinary_callable_keywords",
-    "source": "module source; op _ + _ { impl if; }; varop [[ ]] { foldl let do; finalize else; };",
+    "source": "module source; op _ + _ { impl if; }; varop [ ] { foldl let do; finalize else; };",
     "targets": [
       {
         "text": "if",
@@ -4945,8 +5175,8 @@
       },
       {
         "text": "let",
-        "start": 58,
-        "end": 61,
+        "start": 56,
+        "end": 59,
         "kind": "entity.name.function",
         "owners": [
           "callable_path"
@@ -4954,8 +5184,8 @@
       },
       {
         "text": "do",
-        "start": 62,
-        "end": 64,
+        "start": 60,
+        "end": 62,
         "kind": "entity.name.function",
         "owners": [
           "callable_path"
@@ -4963,8 +5193,8 @@
       },
       {
         "text": "else",
-        "start": 75,
-        "end": 79,
+        "start": 73,
+        "end": 77,
         "kind": "entity.name.function",
         "owners": [
           "callable_path"
@@ -5064,8 +5294,17 @@
         ]
       },
       {
-        "text": ".#",
+        "text": ".",
         "start": 12,
+        "end": 13,
+        "kind": "punctuation.separator",
+        "owners": [
+          "source_file"
+        ]
+      },
+      {
+        "text": "#",
+        "start": 13,
         "end": 14,
         "kind": "operator.user",
         "owners": [
@@ -5103,12 +5342,12 @@
   },
   {
     "name": "comment_frontiers_inside_variadic_elements",
-    "source": "module source; op _ + { impl bump; }; fn run() { [[ x +// operator\n, .x.// marker\n{ x1 }, let(x) ]] }",
+    "source": "module source; op _ + { impl bump; }; fn run() { [ x +// operator\n, .x.// marker\n{ x1 }, let(x) ] }",
     "targets": [
       {
         "text": "+",
-        "start": 54,
-        "end": 55,
+        "start": 53,
+        "end": 54,
         "kind": "operator.user",
         "owners": [
           "operator_expression"
@@ -5116,8 +5355,8 @@
       },
       {
         "text": "// operator",
-        "start": 55,
-        "end": 66,
+        "start": 54,
+        "end": 65,
         "kind": "comment.line",
         "owners": [
           "variadic_expression"
@@ -5125,8 +5364,8 @@
       },
       {
         "text": "x",
-        "start": 70,
-        "end": 71,
+        "start": 69,
+        "end": 70,
         "kind": "variable.parameter",
         "owners": [
           "placeholder_expression"
@@ -5134,8 +5373,8 @@
       },
       {
         "text": "// marker",
-        "start": 72,
-        "end": 81,
+        "start": 71,
+        "end": 80,
         "kind": "comment.line",
         "owners": [
           "placeholder_expression"
@@ -5143,8 +5382,8 @@
       },
       {
         "text": "let",
-        "start": 90,
-        "end": 93,
+        "start": 89,
+        "end": 92,
         "kind": "entity.name.function",
         "owners": [
           "variadic_element"
@@ -5438,8 +5677,17 @@
         ]
       },
       {
-        "text": "]-",
+        "text": "]",
         "start": 29,
+        "end": 30,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_file"
+        ]
+      },
+      {
+        "text": "-",
+        "start": 30,
         "end": 31,
         "kind": "operator.user",
         "owners": [
@@ -5926,13 +6174,13 @@
   },
   {
     "name": "review_ufcs_varop_elements",
-    "source": "module app; import ops(varop [[ ]]); fn run() { [[ (value) .> if, if .< .t ]] }",
+    "source": "module app; import ops(varop [ ]); fn run() { [ (value) .> if, if .< .t ] }",
     "partial": false,
     "targets": [
       {
         "text": "if",
-        "start": 62,
-        "end": 64,
+        "start": 59,
+        "end": 61,
         "kind": "entity.name.function",
         "owners": [
           "ufcs_expr",
@@ -5941,8 +6189,8 @@
       },
       {
         "text": "if",
-        "start": 66,
-        "end": 68,
+        "start": 63,
+        "end": 65,
         "kind": "entity.name.function",
         "owners": [
           "ufcs_expr",
@@ -5951,8 +6199,8 @@
       },
       {
         "text": ".t",
-        "start": 72,
-        "end": 74,
+        "start": 69,
+        "end": 71,
         "kind": "literal.bool",
         "owners": [
           "ufcs_expr",
@@ -5964,13 +6212,13 @@
   },
   {
     "name": "review_label_unit_payload",
-    "source": "module app; import ops(varop [[ ]]); fn run() { [[ { tag= }, { if=value } ]] }",
+    "source": "module app; import ops(varop [ ]); fn run() { [ { tag= }, { if=value } ] }",
     "partial": false,
     "targets": [
       {
         "text": "tag",
-        "start": 53,
-        "end": 56,
+        "start": 50,
+        "end": 53,
         "kind": "entity.name.label",
         "owners": [
           "label_value_label",
@@ -5979,8 +6227,8 @@
       },
       {
         "text": "if",
-        "start": 63,
-        "end": 65,
+        "start": 60,
+        "end": 62,
         "kind": "entity.name.label",
         "owners": [
           "label_value_label",
@@ -5989,8 +6237,8 @@
       },
       {
         "text": "value",
-        "start": 66,
-        "end": 71,
+        "start": 63,
+        "end": 68,
         "kind": "identifier",
         "owners": [
           "expression_path"
@@ -6358,7 +6606,7 @@
   {
     "name": "review_head_compact",
     "source": "module m;\nvarop [++] { foldl join empty; };\nfn after() { let(x) }",
-    "partial": true,
+    "partial": false,
     "targets": [
       {
         "text": "varop",
@@ -6371,8 +6619,10 @@
         "text": "foldl",
         "start": 23,
         "end": 28,
-        "kind": "identifier",
-        "owners": []
+        "kind": "keyword.declaration",
+        "owners": [
+          "variadic_callable_block"
+        ]
       },
       {
         "text": "after",
@@ -6485,8 +6735,17 @@
     "partial": false,
     "targets": [
       {
-        "text": "[+",
+        "text": "[",
         "start": 16,
+        "end": 17,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "+",
+        "start": 17,
         "end": 18,
         "kind": "operator.user",
         "owners": [
@@ -6494,10 +6753,19 @@
         ]
       },
       {
-        "text": "+]",
+        "text": "+",
         "start": 22,
-        "end": 24,
+        "end": 23,
         "kind": "operator.user",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "]",
+        "start": 23,
+        "end": 24,
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -6529,8 +6797,17 @@
     "partial": false,
     "targets": [
       {
-        "text": "[+",
+        "text": "[",
         "start": 16,
+        "end": 17,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "+",
+        "start": 17,
         "end": 18,
         "kind": "operator.user",
         "owners": [
@@ -6538,10 +6815,19 @@
         ]
       },
       {
-        "text": "+]",
+        "text": "+",
         "start": 25,
-        "end": 27,
+        "end": 26,
         "kind": "operator.user",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "]",
+        "start": 26,
+        "end": 27,
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -6573,8 +6859,17 @@
     "partial": false,
     "targets": [
       {
-        "text": "[+",
+        "text": "[",
         "start": 16,
+        "end": 17,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "+",
+        "start": 17,
         "end": 18,
         "kind": "operator.user",
         "owners": [
@@ -6582,10 +6877,19 @@
         ]
       },
       {
-        "text": "+]",
+        "text": "+",
         "start": 26,
-        "end": 28,
+        "end": 27,
         "kind": "operator.user",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "]",
+        "start": 27,
+        "end": 28,
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -6617,8 +6921,17 @@
     "partial": false,
     "targets": [
       {
-        "text": "[+",
+        "text": "[",
         "start": 16,
+        "end": 17,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "+",
+        "start": 17,
         "end": 18,
         "kind": "operator.user",
         "owners": [
@@ -6626,10 +6939,19 @@
         ]
       },
       {
-        "text": "+]",
+        "text": "+",
         "start": 37,
-        "end": 39,
+        "end": 38,
         "kind": "operator.user",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "]",
+        "start": 38,
+        "end": 39,
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -6670,8 +6992,15 @@
         ]
       },
       {
-        "text": "[+",
+        "text": "[",
         "start": 16,
+        "end": 17,
+        "kind": "punctuation.bracket",
+        "owners": []
+      },
+      {
+        "text": "+",
+        "start": 17,
         "end": 18,
         "kind": "operator.user",
         "owners": []
@@ -6729,8 +7058,17 @@
     "partial": false,
     "targets": [
       {
-        "text": "[++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++",
+        "text": "[",
         "start": 16,
+        "end": 17,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++",
+        "start": 17,
         "end": 113,
         "kind": "operator.user",
         "owners": [
@@ -6738,10 +7076,19 @@
         ]
       },
       {
-        "text": "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++]",
+        "text": "++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++",
         "start": 114,
-        "end": 211,
+        "end": 210,
         "kind": "operator.user",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "]",
+        "start": 210,
+        "end": 211,
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -6764,8 +7111,17 @@
     "partial": false,
     "targets": [
       {
-        "text": "[************************************************************************************************",
+        "text": "[",
         "start": 16,
+        "end": 17,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "************************************************************************************************",
+        "start": 17,
         "end": 113,
         "kind": "operator.user",
         "owners": [
@@ -6773,10 +7129,19 @@
         ]
       },
       {
-        "text": "************************************************************************************************]",
+        "text": "************************************************************************************************",
         "start": 114,
-        "end": 211,
+        "end": 210,
         "kind": "operator.user",
+        "owners": [
+          "variadic_head"
+        ]
+      },
+      {
+        "text": "]",
+        "start": 210,
+        "end": 211,
+        "kind": "punctuation.bracket",
         "owners": [
           "variadic_head"
         ]
@@ -6796,37 +7161,57 @@
   {
     "name": "review_head_long_multiple_brackets",
     "source": "module m;\nvarop [+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+ +]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+] { foldl join empty; };\nfn after() { let(x) }",
-    "partial": false,
+    "partial": true,
     "targets": [
       {
-        "text": "[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+[+",
+        "text": "[",
         "start": 16,
-        "end": 176,
-        "kind": "operator.user",
+        "end": 17,
+        "kind": "punctuation.bracket",
         "owners": [
-          "variadic_head"
+          "source_file"
         ]
       },
       {
-        "text": "+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]+]",
-        "start": 177,
-        "end": 337,
+        "text": "+",
+        "start": 17,
+        "end": 18,
         "kind": "operator.user",
         "owners": [
-          "variadic_head"
+          "source_file"
+        ]
+      },
+      {
+        "text": "+",
+        "start": 177,
+        "end": 178,
+        "kind": "operator.user",
+        "owners": [
+          "source_file"
+        ]
+      },
+      {
+        "text": "]",
+        "start": 178,
+        "end": 179,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "source_file"
         ]
       },
       {
         "text": "foldl",
         "start": 340,
         "end": 345,
-        "kind": "keyword.declaration",
+        "kind": "identifier",
         "owners": [
-          "variadic_callable_block"
+          "source_file"
         ]
       }
     ],
-    "absent": []
+    "absent": [
+      "variadic_head"
+    ]
   },
   {
     "name": "review_adjacent_function_type_groups",
@@ -14607,5 +14992,265 @@
         ]
       }
     ]
+  },
+  {
+    "name": "closed_operator_results_accept_native_suffixes",
+    "source": "module m; import ops(op <| _ |>, op _ < _ >); fn run() { <|x|>.>keep; row<key>(arg) }\n",
+    "targets": [
+      {
+        "text": ".>",
+        "start": 62,
+        "end": 64,
+        "kind": "operator.builtin",
+        "owners": [
+          "ufcs_expr"
+        ]
+      },
+      {
+        "text": "keep",
+        "start": 64,
+        "end": 68,
+        "kind": "entity.name.function",
+        "owners": [
+          "ufcs_expr"
+        ]
+      },
+      {
+        "text": "arg",
+        "start": 79,
+        "end": 82,
+        "kind": "identifier",
+        "owners": [
+          "call_expr"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "structural_compact_frames_and_minus",
+    "source": "module m; import ops(varop [], varop [* *], varop [** **]); fn run() { [*[**]*]; [****]; []-1; [-1]; [*(-1)*] }\n",
+    "targets": [
+      {
+        "text": "[",
+        "start": 71,
+        "end": 72,
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "text": "**",
+        "start": 74,
+        "end": 76,
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "text": "****",
+        "start": 82,
+        "end": 86,
+        "kind": "operator.user",
+        "owners": [
+          "variadic_expression"
+        ]
+      },
+      {
+        "text": "-",
+        "start": 91,
+        "end": 92,
+        "kind": "operator.user",
+        "owners": [
+          "operator_expression"
+        ]
+      },
+      {
+        "text": "-1",
+        "start": 96,
+        "end": 98,
+        "kind": "literal.number",
+        "owners": [
+          "variadic_element"
+        ]
+      },
+      {
+        "text": "-1",
+        "start": 104,
+        "end": 106,
+        "kind": "literal.number",
+        "owners": [
+          "grouped_expression"
+        ]
+      }
+    ]
+  },
+{
+    "name": "bang_marker_edges_preserve_native_suffixes",
+    "source": "module bang_frames;\nimport ops(varop [! !], varop []);\nfn run(x: .) {\n  [!x!];\n  [! x, x!];\n  [![!x!]!];\n  ([!x!]);\n  [!x.>tail!];\n  [x.>helper!];\n  [,x.>helper!];\n  [!helper!(x)!];\n  [!x!\n  ];\n  [!x! // closing marker\n  ];\n  helper!(x);\n  varop!(x);\n  foldl!(x);\n  varop;\n  foldl\n}\n",
+    "targets": [
+      {
+        "text": "x",
+        "start": 74,
+        "end": 75,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "x",
+        "start": 87,
+        "end": 88,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "x",
+        "start": 98,
+        "end": 99,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "x",
+        "start": 110,
+        "end": 111,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "tail",
+        "start": 123,
+        "end": 127,
+        "kind": "entity.name.function",
+        "owners": []
+      },
+      {
+        "text": "helper!",
+        "start": 137,
+        "end": 144,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "helper!",
+        "start": 154,
+        "end": 161,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "helper!",
+        "start": 168,
+        "end": 175,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "helper!",
+        "start": 226,
+        "end": 233,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "varop!",
+        "start": 240,
+        "end": 246,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "foldl!",
+        "start": 253,
+        "end": 259,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "varop",
+        "start": 266,
+        "end": 271,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "foldl",
+        "start": 275,
+        "end": 280,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "x",
+        "start": 186,
+        "end": 187,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "x",
+        "start": 198,
+        "end": 199,
+        "kind": "identifier",
+        "owners": []
+      }
+    ]
+  },
+  {
+    "name": "bang_words_require_adjacency_and_maximal_symbols",
+    "source": "x !\nx // gap\n!\nx!? y\nvarop!\nfoldl!\nvarop\nfoldl\n",
+    "targets": [
+      {
+        "text": "x",
+        "start": 0,
+        "end": 1,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "x",
+        "start": 4,
+        "end": 5,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "!?",
+        "start": 16,
+        "end": 18,
+        "kind": "operator.user",
+        "owners": []
+      },
+      {
+        "text": "varop!",
+        "start": 21,
+        "end": 27,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "foldl!",
+        "start": 28,
+        "end": 34,
+        "kind": "keyword.elaborator",
+        "owners": []
+      },
+      {
+        "text": "varop",
+        "start": 35,
+        "end": 40,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "foldl",
+        "start": 41,
+        "end": 46,
+        "kind": "identifier",
+        "owners": []
+      }
+    ],
+    "partial": true
   }
 ]

@@ -68,7 +68,7 @@ fn op_delete(d: Dict(I32, I32), k: I32) -> Dict(I32, I32) { delete(cmp_i32, d, k
 
 fn op_union(d1: Dict(I32, I32), d2: Dict(I32, I32)) -> Dict(I32, I32) { union(cmp_i32, d1, d2) }
 
-op _ <| __ |> { impl op_get }
+op _ <| _ |> { impl op_get }
 
 op _ +> _ { impl op_insert }
 

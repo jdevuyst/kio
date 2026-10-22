@@ -295,17 +295,23 @@ mod tests {
     }
 
     #[test]
-    fn item_signature_keeps_square_bracket_operator_runs_ordinary() {
-        let signature = "pub varop [* *] { foldl join empty; };";
-        assert!(
-            crate::pass::parser::parse(&format!("module kio_doc;\n{signature}")).is_ok(),
-            "negative control must exercise the parser-backed path"
-        );
-        let html = highlight_kio_item_signature(signature);
-        assert!(html.contains("<span class=\"kio-operator-user\">[*</span>"));
-        assert!(html.contains("<span class=\"kio-operator-user\">*]</span>"));
-        assert!(!html.contains("<span class=\"kio-punctuation-bracket\">[</span>"));
-        assert!(!html.contains("<span class=\"kio-punctuation-bracket\">]</span>"));
+    fn item_signature_separates_structural_brackets_from_marker_words() {
+        for (head, marker, count) in [("[]", "", 0), ("[* *]", "*", 2), ("[**]", "**", 1)] {
+            let signature = format!("pub varop {head} {{ foldl join empty; }};");
+            crate::pass::parser::parse(&format!("module kio_doc;\n{signature}"))
+                .expect("signature exercises the parser-backed path");
+            let html = highlight_kio_item_signature(&signature);
+            assert!(html.contains("<span class=\"kio-punctuation-bracket\">[</span>"));
+            assert!(html.contains("<span class=\"kio-punctuation-bracket\">]</span>"));
+            assert_eq!(
+                html.matches(&format!(
+                    "<span class=\"kio-operator-user\">{marker}</span>"
+                ))
+                .count(),
+                count,
+                "{html}"
+            );
+        }
     }
 
     #[test]

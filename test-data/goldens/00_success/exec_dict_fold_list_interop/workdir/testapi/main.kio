@@ -5,7 +5,7 @@ import dict/elab/match(match);
 import elab/control(if);
 import list/core as lc;
 import list/list as ls;
-import list/list(varop [* *]);
+import list/list(varop [] as [* *]);
 import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;

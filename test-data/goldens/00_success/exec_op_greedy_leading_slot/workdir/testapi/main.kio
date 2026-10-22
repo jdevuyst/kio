@@ -1,0 +1,16 @@
+module testapi/main;
+
+import testapi(Int);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn first(a: Int, b: Int) -> Int { a }
+
+fn second(a: Int, b: Int) -> Int { b }
+
+op _ + _ { impl first }
+
+// The greedy first slot captures `1 + 2` before applying the outer operator.
+op ___ < _ > { impl second }
+
+pub fn main() { print(int_to_string(1 + 2 < 3 >)); print("\n") }

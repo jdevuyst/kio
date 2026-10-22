@@ -4,13 +4,16 @@ Tree-sitter grammar for Kio. One of the three grammar-derived highlighters descr
 
 ## What this grammar does
 
-Lexical-layer tokenization of Kio source plus a permissive structural skeleton for the forms that affect highlighting: Kio-family file headers, package blocks, module-first imports, declaration heads, signatures, label entries, calls, UFCS, and simple block forms. The token-kind vocabulary is the [`TokenKind`](../../kio-rs/src/tokens.rs) enum (the source of truth, written out by `kio debug tokens`); the agreement check at [`ci/checks/orchestrators/highlight-agreement.sh`](../../ci/checks/orchestrators/highlight-agreement.sh) verifies — over the curated fixtures at [`test-data/highlight-corpus/`](../../test-data/highlight-corpus/) — that every positive tree-sitter classification matches `kio debug tokens`. Bracket-bearing runs and bracket-led call arguments whose roles require expression detail beyond this skeleton are left unhighlighted under an exact aggregate source span.
+Lexical-layer tokenization of Kio source plus a permissive structural skeleton for the forms that affect highlighting: Kio-family file headers, package blocks, module-first imports, declaration heads, signatures, label entries, calls, UFCS, and simple block forms. The token-kind vocabulary is the [`TokenKind`](../../kio-rs/src/tokens.rs) enum (the source of truth, written out by `kio debug tokens`); the agreement check at [`ci/checks/orchestrators/highlight-agreement.sh`](../../ci/checks/orchestrators/highlight-agreement.sh) verifies — over the curated fixtures at [`test-data/highlight-corpus/`](../../test-data/highlight-corpus/) — that every positive tree-sitter classification matches `kio debug tokens`. Square brackets are structural leaves; adjacent ordinary symbol words retain their own lexical spans.
 
 Imports carry their own complete operator grammar; highlighting never reads a
-provider to recover it. Selective lists retain fixed-pattern groups and
+provider to recover it. Selective lists retain token quotation and
 variadic separators. Fixed and variadic declarations classify their grammar
 tags, and the four variadic modes plus optional finalizer classify their clause
 heads; the same words remain ordinary identifiers outside those positions.
+The structural skeleton accepts operator expressions without reconstructing
+their imported grammar. Exact association, slot permissions and result
+boundaries remain compiler responsibilities.
 
 Highlight queries live in [`queries/highlights.scm`](queries/highlights.scm); editor integrations (Neovim, Helix, Zed, …) consume them directly.
 

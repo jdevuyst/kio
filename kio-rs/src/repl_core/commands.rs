@@ -3839,15 +3839,19 @@ mod tests {
             "{field}",
             "demo/ops.{field}",
             "op _ + _",
-            "op (_) ? __",
+            "op _ ? __ : ___",
             "demo/ops.(op _ (=) _)",
-            "demo/ops.(op (_) ? __)",
-            "demo/ops.(op _ .. _)",
+            "demo/ops.(op _ ? __ : ___)",
+            "demo/ops.(varop [])",
+            "demo/ops.(varop [**])",
             "demo/ops.(varop [* *])",
         ] {
             assert!(parse_declaration_query(query).is_ok(), "{query}");
         }
         for query in [
+            "op (_) ? __",
+            "demo/ops.(op (_) ? __)",
+            "demo/ops.(op _ .. _)",
             "demo/ops.op _ + _",
             "demo/ops.varop [* *]",
             "demo/ops.(op)",
@@ -3873,6 +3877,10 @@ mod tests {
             ("arithmetic.(op _ (=) _)", "pub op _ (=) _ { impl choose }"),
             (
                 "arithmetic.(varop [* *])",
+                "pub varop [* *] { foldr choose empty }",
+            ),
+            (
+                "arithmetic.(varop [**])",
                 "pub varop [* *] { foldr choose empty }",
             ),
             ("arithmetic.{field}", "pub type {field} = {original};"),
@@ -5114,7 +5122,7 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
                     "pub fn choose",
                     "pub op _ + _",
                     "pub varop [* *]",
-                    "pub(demo) op _ .. _",
+                    "pub(demo) op _ ++ _",
                     "pub(demo) varop [! !]",
                     "op _ - _",
                     "varop [% %]",
@@ -5129,7 +5137,7 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
                 for (prefix, grammar, keyword) in [
                     ("pub ", "op _ + _", "op"),
                     ("pub ", "varop [* *]", "varop"),
-                    ("pub(demo) ", "op _ .. _", "op"),
+                    ("pub(demo) ", "op _ ++ _", "op"),
                     ("pub(demo) ", "varop [! !]", "varop"),
                 ] {
                     let expected = highlight(&format!("{prefix}{grammar}"), Palette::truecolor());
@@ -6182,11 +6190,11 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
     #[test]
     fn invalid_prompt_reports_parser_cause_in_every_expression_view() {
         let (_root, mut session) = session_with_analysis("demo/main", "module demo/main;\n");
-        for input in ["index([1], 0)", "index(\r\n\t\"é\", [1])"] {
+        for input in ["index(x., 0)", "index(\r\n\t\"é\", x.)"] {
             for prefix in ["", ":t ", ":pure ", ":normalize "] {
                 let command = parse_command(&format!("{prefix}{input}")).expect("command parses");
                 let output = command.run(&mut session, Palette::Plain).output;
-                let location = if input.contains('\n') { "2:8" } else { "1:8" };
+                let location = if input.contains('\n') { "2:9" } else { "1:9" };
                 assert!(
                     output.contains("not a name or a Kio expression"),
                     "{output}"

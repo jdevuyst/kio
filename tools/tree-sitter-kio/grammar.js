@@ -2,7 +2,7 @@
 // @ts-check
 
 // Keyword captures follow structural owners. The lexical scanner classifies
-// local delimiter runs; provider lookup and operator association belong to Kio.
+// local frame heads; provider lookup and operator association belong to Kio.
 function sep1(rule, sep) {
   return seq(repeat(sep), rule, repeat(seq(repeat1(sep), rule)), repeat(sep));
 }
@@ -53,7 +53,6 @@ function configField($, keywords) {
 }
 
 const NUMBER = /[0-9][0-9_]*(\.[0-9_]+)?([eE][+\-]?[0-9_]+)?/;
-const VALUE_REFERENCE_NAME = /_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*/;
 const TYPE_REFERENCE_NAME = /_*[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*/;
 const LABEL_NAME = /[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*/;
 const PLACEHOLDER_STEM = /_?[a-z]+(?:[0-9]*_[a-z]+)*/;
@@ -82,6 +81,7 @@ module.exports = grammar({
     $.comment_doc, $.doc_fence, $.doc_code, $.doc_reference, $.doc_directive,
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
     $.doc_literal_fallback, $._doc_line_end,
+    $._elaborator_word,
   ],
   extras: ($) => [/[ \t\r\n]+/, $.comment_doc, $.doc_fence, $.doc_code,
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
@@ -89,6 +89,11 @@ module.exports = grammar({
 
   inline: ($) => [$._identifier_like, $._value_identifier_like, $._expression_name, $._callable_path_segment, $._type_atom, $._type_chain_operator, $._local_binding_name, $._host_type_body, $._host_fn_body],
   conflicts: ($) => [
+    [$.variadic_open, $.type_param_group],
+    [$.variadic_elements, $.operator_builtin],
+    [$.elaborator_name, $.expression_path],
+    [$.elaborator_name, $.call_callee],
+    [$._raw_unit, $._raw_call_expr],
     [$._local_let_pattern, $.incomplete_numbered_binding],
     [$.build_block],
     [$.elaborator_body],
@@ -166,8 +171,8 @@ module.exports = grammar({
         $.incomplete_variadic_expression,
         $.fn_lambda_expr,
         $.body_block,
-        $.ufcs_expr,
-        $.call_expr,
+        alias($._raw_ufcs_expr, $.ufcs_expr),
+        alias($._raw_call_expr, $.call_expr),
         $.recursive_call_expression,
         $.incomplete_recursive_call_expression,
         $._token,
@@ -180,6 +185,7 @@ module.exports = grammar({
       $.string_literal, $.slot, $.operator_arrow_type, $.operator_arrow_ufcs,
       $.operator_row_suffix, $.operator_builtin, $.module_path_sep, $.operator_run,
       $.bracket_lparen, $.bracket_rparen, $.bracket_lbrace, $.bracket_rbrace,
+      $.bracket_lbracket, $.bracket_rbracket,
       $.separator_semicolon, $.separator_comma, $.separator_dot,
     )),
 
@@ -517,12 +523,12 @@ module.exports = grammar({
       ),
 
     _import_pattern_token: ($) =>
-      choice($._import_pattern_leaf, $.string_literal, $.import_pattern_group),
+      choice($._import_pattern_leaf, $.import_pattern_group),
 
     import_pattern_group: ($) =>
       seq(
         $.bracket_lparen,
-        repeat1($._import_pattern_token),
+        $._expression_operator,
         $.bracket_rparen,
       ),
 
@@ -531,8 +537,6 @@ module.exports = grammar({
         $.slot,
         $.operator_builtin,
         $.operator_arrow_type,
-        $.operator_arrow_ufcs,
-        $.operator_row_suffix,
         $._operator_run,
       ),
     import_label_item: ($) =>
@@ -679,13 +683,15 @@ module.exports = grammar({
     pattern_tuple: ($) => seq($.bracket_lparen, optional(sep1($.binding_pattern, $.separator_comma)), $.bracket_rparen),
     _expression: ($) => choice($.operator_expression, $._expression_atom),
     _expression_atom: ($) => choice(ordinaryAtoms($), $.block_call),
-    block_call: ($) => prec.right(seq(
+    // A complete native block call owns its body before the competing
+    // name/operator/label interpretation of the same words.
+    block_call: ($) => prec.dynamic(30, prec.right(seq(
       field('head', alias($.elaborator_name, $.block_head)),
       optional(field('prefix', choice($.block_value_arguments, $._block_bare_prefix))),
       field('first', $.neutral_block),
       repeat(field('labelled', $.labelled_block)),
       optional(field('elided', $.elided_block)),
-    )),
+    ))),
     block_value_arguments: ($) => prec(1, seq(
       $.bracket_lparen,
       repeat($.separator_comma),
@@ -731,9 +737,10 @@ module.exports = grammar({
       alias('<-', $.operator_run), $._expression),
     operator_expression: ($) => choice(
       prec.right(3, seq($._expression_operator, $._expression)),
-      prec.left(2, seq($._expression, $._expression_operator)),
+      $._closed_operator_expression,
       prec.left(1, seq($._expression, $._expression_operator, $._expression)),
     ),
+    _closed_operator_expression: ($) => prec.left(2, seq($._expression, $._expression_operator)),
     _expression_operator: ($) => choice($.operator_run, $.operator_builtin, $.operator_arrow_type),
     placeholder_expression: ($) => seq(
       alias($._placeholder_open, $.separator_dot),
@@ -741,24 +748,35 @@ module.exports = grammar({
       alias(token.immediate("."), $.separator_dot),
       $.expression_block,
     ),
-    variadic_expression: ($) => prec.dynamic(60, choice(
-      seq($.ambiguous_lbracket_star, optional($.variadic_elements), $.variadic_star_close),
-      seq($.variadic_open, optional($.variadic_elements), $.variadic_close),
-    )),
+    variadic_expression: ($) => prec.dynamic(60, seq(
+      choice($.variadic_open, $.ambiguous_lbracket_star),
+      optional($.variadic_elements), $.variadic_close)),
     incomplete_variadic_expression: ($) => prec.dynamic(30, prec.right(seq(
-      choice($.ambiguous_lbracket_star, $.variadic_open), optional($.variadic_elements), $._editor_boundary,
+      choice($.variadic_open, $.ambiguous_lbracket_star), optional($.variadic_elements), $._editor_boundary,
     ))),
     variadic_head: ($) => seq(
-      alias($._varop_head_open, $.variadic_open), $.variadic_head_gap,
-      choice($.variadic_star_close, $.variadic_close),
+      alias($._varop_head_open, $.bracket_lbracket),
+      optional(seq($._expression_operator, optional($._expression_operator))),
+      $.bracket_rbracket,
     ),
     variadic_head_gap: ($) => choice($.head_whitespace, $.comment_doc, $.comment_line),
     head_whitespace: ($) => token.immediate(/[ \t\r\n]+/),
-    variadic_elements: ($) => choice(repeat1($.separator_comma), sep1($.variadic_element, $.separator_comma)),
+    // Imported patterns determine association in the compiler. The editor owns
+    // the structural frame and the lexical words inside its value region.
+    variadic_elements: ($) => choice(
+      // With a written ! marker, the final ! belongs to the frame, not the
+      // preceding value name's native elaborator suffix.
+      prec.dynamic(20, seq(alias("!", $.operator_builtin),
+        sep1(alias($._bang_frame_element, $.variadic_element), $.separator_comma), alias("!", $.operator_builtin))),
+      repeat1($._expression_operator),
+      seq(repeat($._expression_operator), repeat1($.separator_comma), repeat($._expression_operator)),
+      seq(repeat($._expression_operator), sep1($.variadic_element, $.separator_comma), repeat($._expression_operator)),
+    ),
     variadic_element: ($) => $._expression,
+    _bang_frame_element: ($) => prec(3, $._expression),
     variadic_star_close: ($) => $._varop_star_close,
-    variadic_open: ($) => $._varop_open,
-    variadic_close: ($) => $._varop_close,
+    variadic_open: ($) => $.bracket_lbracket,
+    variadic_close: ($) => $.bracket_rbracket,
     forall_type: ($) => prec.dynamic(65, seq($.type_param_list, $._type)),
     incomplete_forall_type: ($) => seq(
       $.type_param_list, optional($.operator_arrow_type), $._editor_boundary,
@@ -794,10 +812,16 @@ module.exports = grammar({
       $._identifier_like,
 
     expression_path: ($) =>
-      prec.right(seq(
-        alias($._identifier_like, $.identifier),
-        repeat(seq($.separator_dot, alias($._expression_name, $.identifier))),
-      )),
+      choice(
+        prec.right(seq(
+          alias($._identifier_like, $.identifier),
+          repeat(seq($.separator_dot, alias($._expression_name, $.identifier))),
+        )),
+        alias($._elaborator_word, $.identifier),
+        seq(alias($._identifier_like, $.identifier),
+          repeat(seq($.separator_dot, alias($._expression_name, $.identifier))),
+          $.separator_dot, alias($._elaborator_word, $.identifier)),
+      ),
 
     expression_arguments: ($) => seq(
       $.bracket_lparen,
@@ -848,9 +872,8 @@ module.exports = grammar({
     recursive_recovery_group: ($) => choice(
       seq($.bracket_lparen, repeat(choice($._recursive_annotation_tail, $.separator_comma)), $.bracket_rparen),
       seq($.bracket_lbrace, repeat(choice($._recursive_annotation_tail, $.separator_comma)), $.bracket_rbrace),
-      seq($.ambiguous_lbracket_star, repeat(choice($._recursive_annotation_tail, $.separator_comma)), $.variadic_star_close),
       seq($.variadic_open, repeat(choice($._recursive_annotation_tail, $.separator_comma)), $.variadic_close),
-      seq(choice($.ambiguous_lbracket_star, $.variadic_open),
+      seq($.variadic_open,
         repeat(choice($._recursive_annotation_tail, $.separator_comma)), $._editor_boundary),
     ),
 
@@ -932,16 +955,40 @@ module.exports = grammar({
 
     body_block: ($) => $.expression_block,
 
+    _raw_call_expr: ($) => prec.left(seq(
+      choice($.call_callee, $.elaborator_name, alias($._raw_call_expr, $.call_expr),
+        $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal),
+      $.expression_arguments,
+    )),
+    _raw_native_atom: ($) => choice(
+      $.variadic_expression, $.incomplete_variadic_expression,
+      $.recursive_call_expression, $.incomplete_recursive_call_expression,
+      alias($._raw_call_expr, $.call_expr), alias($._raw_ufcs_expr, $.ufcs_expr),
+      $.expression_path, $.grouped_expression, $.unit_expression,
+      $.bool_literal, $.number_literal, $.string_literal, $.fn_lambda_expr,
+      $.label_value_expr, $.placeholder_expression, $.elaborator_name,
+    ),
+    _raw_ufcs_expr: ($) => choice(
+      prec.right(20, seq($._raw_native_atom,
+        alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
+        choice($._ufcs_callable, $.elaborator_name), optional($._call_args_group))),
+      prec.left(20, seq(choice($.call_callee, $.elaborator_name), optional($._call_args_group),
+        alias($._left_ufcs_arrow, $.operator_arrow_ufcs), $._expression_atom)),
+    ),
     call_expr: ($) => prec.left(seq(
       choice($.call_callee, $.elaborator_name, $.call_expr,
-        $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal),
+        $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal,
+        $.variadic_expression, alias($._closed_operator_expression, $.operator_expression)),
       $.expression_arguments,
     )),
     call_callee: ($) => choice(
       alias($._value_identifier_like, $.entity_name_function),
+      alias($._elaborator_word, $.entity_name_function),
       seq(alias($._identifier_like, $.identifier), $.separator_dot,
         repeat(seq(alias($._expression_name, $.identifier), $.separator_dot)),
         alias($._expression_name, $.entity_name_function)),
+      seq(repeat1(seq(alias($._identifier_like, $.identifier), $.separator_dot)),
+        alias($._elaborator_word, $.entity_name_function)),
     ),
 
     ufcs_expr: ($) =>
@@ -949,7 +996,7 @@ module.exports = grammar({
         prec.right(
           20,
           seq(
-            $._expression_atom,
+            choice($._expression_atom, alias($._closed_operator_expression, $.operator_expression)),
             alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
             choice($._ufcs_callable, $.elaborator_name),
             optional($._call_args_group),
@@ -1135,15 +1182,11 @@ module.exports = grammar({
       choice(
         $.comment_doc,
         $.comment_line,
-        $.string_literal,
         $.slot,
         $.operator_builtin,
         $.operator_arrow_type,
-        $.operator_arrow_ufcs,
-        $.operator_row_suffix,
         $._operator_run,
-        $.bracket_lparen,
-        $.bracket_rparen,
+        $.import_pattern_group,
       ),
 
     callable_impl_block: ($) =>
@@ -1164,7 +1207,7 @@ module.exports = grammar({
         ),
       ),
     incomplete_variadic_decl: ($) => prec.dynamic(10, prec.right(seq(
-      $.keyword_varop, alias($._malformed_varop_head_open, $.variadic_open),
+      $.keyword_varop, alias($._malformed_varop_head_open, $.bracket_lbracket),
     ))),
 
     variadic_callable_block: ($) =>
@@ -1312,13 +1355,9 @@ module.exports = grammar({
     separator_comma: ($) => ",",
     separator_dot: ($) => ".",
     keyword_declaration: ($) => kw("elab"),
-    elaborator_name: ($) =>
-      token(
-        prec(2, seq(
-          VALUE_REFERENCE_NAME,
-          "!",
-        )),
-      ),
+    // The external word token already authenticates adjacency and the maximal
+    // ordinary symbol word; sharing the ! terminal preserves frame ambiguity.
+    elaborator_name: ($) => prec.dynamic(10, seq($._elaborator_word, "!")),
     slot: ($) => choice("___", "__", "_"),
 
     bool_literal: ($) => seq(alias($.separator_dot, $.bool_prefix), $.bool_value),
@@ -1329,7 +1368,8 @@ module.exports = grammar({
     lexical_binary_number: ($) => prec.dynamic(2, prec.left(2, seq(
       choice(alias($._identifier_like, $.identifier), $.number_literal, $.string_literal,
         $.bracket_rparen, $.bracket_rbrace, $.grouped_expression, $.unit_expression,
-        $.call_expr, $.body_block, $.bool_literal, $.lexical_binary_number),
+        alias($._raw_call_expr, $.call_expr), $.body_block, $.bool_literal,
+        $.variadic_expression, $.bracket_rbracket, $.lexical_binary_number),
       alias($._minus, $.operator_run), alias(token(NUMBER), $.number_literal),
     ))),
     string_literal: ($) =>

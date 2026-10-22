@@ -1139,21 +1139,7 @@ fn doc_op(d: &Op) -> Doc {
     parts.push(text("op"));
     match &d.body {
         OpBody::Normal { pattern, function } => {
-            // Emit `( … )` around maximal runs of `lenient = true`
-            // parts so the declaration-only slot-grouping marker
-            // round-trips through `kio fmt`. Per-token `quoted =
-            // true` (operator-token quotation `(tok)`) is emitted
-            // inline as `(tok)` instead.
-            let mut in_group = false;
             for part in pattern {
-                let part_lenient = part.is_lenient();
-                if part_lenient && !in_group {
-                    parts.push(text(" ("));
-                    in_group = true;
-                } else if !part_lenient && in_group {
-                    parts.push(text(" )"));
-                    in_group = false;
-                }
                 parts.push(text(" "));
                 match part {
                     OpPart::SlotPlain { .. } => parts.push(text("_")),
@@ -1169,9 +1155,6 @@ fn doc_op(d: &Op) -> Doc {
                         }
                     }
                 }
-            }
-            if in_group {
-                parts.push(text(" )"));
             }
             parts.push(doc_compact_declaration_body(
                 &d.body_trivia,
@@ -1206,14 +1189,12 @@ fn doc_fold_pattern_and_body(
     body_trivia: &[Trivia],
     explicit_finalizer: bool,
 ) {
-    for tok in open {
-        parts.push(text(" "));
-        parts.push(text(tok.clone()));
-    }
-    for tok in &spec.close {
-        parts.push(text(" "));
-        parts.push(text(tok.clone()));
-    }
+    parts.push(text(" "));
+    parts.push(text(if open == ["["] && spec.close == ["]"] {
+        "[]".to_owned()
+    } else {
+        format!("{} {}", open.join(" "), spec.close.join(" "))
+    }));
     let mode = spec.mode.keyword();
     let mut body = vec![
         text(format!("{mode} ")),
@@ -2393,7 +2374,7 @@ fn block_prefix_starts_bare(expr: &Expr) -> bool {
         } => {
             !matches!(pattern.first(), Some(OpPart::Token { .. }))
                 && slots.first().is_some_and(|first| {
-                    !op_chain_slot_needs_parens(first, &pattern[0], pattern)
+                    !op_chain_slot_needs_parens(first, 0, pattern)
                         && !expr_boundary_has_comments(
                             first,
                             true,
@@ -2444,7 +2425,7 @@ fn block_prefix_has_exposed_block(expr: &Expr) -> bool {
                 }
                 let slot = slots.next().expect("operator slot expression");
                 !matches!(pattern.get(index + 1), Some(OpPart::Token { .. }))
-                    && !op_chain_slot_needs_parens(slot, part, pattern)
+                    && !op_chain_slot_needs_parens(slot, index, pattern)
                     && block_prefix_has_exposed_block(slot)
             })
         }
@@ -2552,27 +2533,16 @@ fn call_callee_needs_parens(callee: &Expr) -> bool {
         }
     );
     let splice = matches!(callee, Expr::Ufcs { .. });
-    let normal_operator = matches!(
-        callee,
-        Expr::OpChain {
-            kind: crate::ast::OpChainKind::Normal { .. },
-            ..
-        }
-    );
+    let normal_operator = operator_expr_needs_grouping(callee);
     bare_literal || splice || normal_operator
 }
 
 /// Render an expression that owns a following postfix receiver suffix.
-/// Operator chains need grouping here: without it, the suffix becomes part of
-/// the chain's final operand when reparsed. This boundary is shared by field
+/// Operand-ending chains need grouping here so the suffix does not attach to
+/// the chain's final operand. This boundary is shared by field
 /// access/update. UFCS consumes its receiver tail at the splice instead.
 fn doc_expr_for_postfix_receiver(receiver: &Expr) -> Doc {
-    doc_expr_grouped_boundary(
-        receiver,
-        matches!(receiver, Expr::OpChain { .. }),
-        true,
-        true,
-    )
+    doc_expr_grouped_boundary(receiver, operator_expr_needs_grouping(receiver), true, true)
 }
 
 /// Render an operator-chain placeholder back to its source-level
@@ -2595,7 +2565,8 @@ fn doc_op_chain(kind: &crate::ast::OpChainKind) -> Doc {
 
 fn doc_normal_op_chain(pattern: &[OpPart], slots: &[Expr]) -> Doc {
     let mut segments = Vec::new();
-    append_normal_op_segments(pattern, slots, &mut segments);
+    let mut boundary_cache = OperatorBoundaryCache::default();
+    append_normal_op_segments(pattern, slots, &mut segments, &mut boundary_cache);
     let flat = join(text(" "), segments.clone());
     if segments.len() <= 1 {
         return flat;
@@ -2614,7 +2585,12 @@ fn doc_normal_op_chain(pattern: &[OpPart], slots: &[Expr]) -> Doc {
     align(group(flat_alt(flat, broken)))
 }
 
-fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut Vec<Doc>) {
+fn append_normal_op_segments<'a>(
+    pattern: &'a [OpPart],
+    slots: &'a [Expr],
+    segments: &mut Vec<Doc>,
+    boundary_cache: &mut OperatorBoundaryCache<'a>,
+) {
     let pattern_slots = pattern
         .iter()
         .filter(|part| {
@@ -2639,6 +2615,7 @@ fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut 
                 let slot = &slots[slot_idx];
                 let followed_by_token =
                     matches!(pattern.get(part_idx + 1), Some(OpPart::Token { .. }));
+                let needs_parens = operator_slot_grouping(slot, part_idx, pattern, boundary_cache);
                 let same_pattern_child = match (part, slot) {
                     (
                         OpPart::SlotRecursive { .. } | OpPart::SlotGreedy { .. },
@@ -2651,6 +2628,7 @@ fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut 
                             ..
                         },
                     ) if op_patterns_equal(pattern, child_pattern)
+                        && !needs_parens
                         && !expr_boundary_has_comments(slot, true, !followed_by_token) =>
                     {
                         Some((child_pattern.as_slice(), child_slots.as_slice()))
@@ -2661,17 +2639,32 @@ fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut 
                 if let Some((child_pattern, child_slots)) = same_pattern_child {
                     let tokens = std::mem::take(&mut pending_tokens);
                     if tokens.is_empty() {
-                        append_normal_op_segments(child_pattern, child_slots, segments);
+                        append_normal_op_segments(
+                            child_pattern,
+                            child_slots,
+                            segments,
+                            boundary_cache,
+                        );
                     } else if slot_idx == 0 {
                         // A recursive prefix application contributes one leading
                         // operator segment before the child application; joining
                         // the run to the child's first segment would hide that
                         // application boundary in the broken layout.
                         segments.push(doc_op_segment(tokens, None));
-                        append_normal_op_segments(child_pattern, child_slots, segments);
+                        append_normal_op_segments(
+                            child_pattern,
+                            child_slots,
+                            segments,
+                            boundary_cache,
+                        );
                     } else {
                         let child_start = segments.len();
-                        append_normal_op_segments(child_pattern, child_slots, segments);
+                        append_normal_op_segments(
+                            child_pattern,
+                            child_slots,
+                            segments,
+                            boundary_cache,
+                        );
                         if let Some(child_first) = segments.get(child_start).cloned() {
                             segments[child_start] = doc_op_segment(tokens, Some(child_first));
                         } else {
@@ -2679,7 +2672,7 @@ fn append_normal_op_segments(pattern: &[OpPart], slots: &[Expr], segments: &mut 
                         }
                     }
                 } else {
-                    let slot_doc = doc_op_chain_slot(slot, part, pattern, !followed_by_token);
+                    let slot_doc = doc_op_chain_slot(slot, needs_parens, !followed_by_token);
                     segments.push(doc_op_segment(
                         std::mem::take(&mut pending_tokens),
                         Some(slot_doc),
@@ -2720,7 +2713,22 @@ fn doc_variadic_op_chain(
     elements: &[Expr],
     empty_trivia: &[Trivia],
 ) -> Doc {
-    let item_docs = elements.iter().map(doc_expr).collect();
+    let marked = open_tokens != ["["];
+    let item_docs = elements
+        .iter()
+        .enumerate()
+        .map(|(index, element)| {
+            let at_first_edge = index == 0;
+            let at_last_edge = index + 1 == elements.len();
+            let (starts_word, ends_word) = expr_symbol_edges(element);
+            let grouped = (at_first_edge && starts_word) || (marked && at_last_edge && ends_word);
+            if grouped {
+                doc_expr_grouped_boundary(element, true, false, false)
+            } else {
+                doc_expr(element)
+            }
+        })
+        .collect();
     let item_trivia: Vec<_> = elements
         .iter()
         .map(|item| item.meta().leading_trivia.clone())
@@ -2735,43 +2743,157 @@ fn doc_variadic_op_chain(
         &item_trivia,
         last_trailing,
         text(close_tokens.join(" ")),
-        true,
+        marked,
     )
+}
+
+fn expr_symbol_edges(expr: &Expr) -> (bool, bool) {
+    match expr {
+        Expr::OpChain {
+            kind: crate::ast::OpChainKind::Normal { pattern, slots },
+            ..
+        } => {
+            let starts = matches!(pattern.first(), Some(OpPart::Token { .. }))
+                || slots.first().is_some_and(|slot| expr_symbol_edges(slot).0);
+            let ends = matches!(pattern.last(), Some(OpPart::Token { .. }))
+                || slots.last().is_some_and(|slot| expr_symbol_edges(slot).1);
+            (starts, ends)
+        }
+        Expr::Call { callee, .. } if !call_callee_needs_parens(callee) => {
+            (expr_symbol_edges(callee).0, false)
+        }
+        Expr::Ufcs { receiver, .. } if !operator_expr_needs_grouping(receiver) => {
+            (expr_symbol_edges(receiver).0, false)
+        }
+        Expr::Elaborator { call, .. } => {
+            let receiver = match call {
+                ElaboratorCall::FieldAccess { receiver, .. }
+                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
+            };
+            (
+                !operator_expr_needs_grouping(receiver) && expr_symbol_edges(receiver).0,
+                false,
+            )
+        }
+        _ => (false, false),
+    }
+}
+
+fn operator_expr_needs_grouping(expr: &Expr) -> bool {
+    matches!(expr,
+        Expr::OpChain { kind: crate::ast::OpChainKind::Normal { pattern, .. }, .. }
+            if !matches!(pattern.last(), Some(OpPart::Token { .. })))
 }
 
 /// Render an op-chain slot. Wrap in load-bearing parens when the slot
 /// is itself an op-chain that the surrounding slot position wouldn't
 /// otherwise admit, per `specs/language.md` § Operators:
 ///
-/// - `SlotPlain` (non-lenient `_`): atom or paren-expr only — any
-///   inner op-chain needs outer parens.
-/// - `SlotPlain` lenient (declared inside `( … )`): admits a
-///   single-op chain at the use site — no outer parens needed.
+/// - `SlotPlain` (`_`): atoms, including fixed-word-ending operators.
 /// - `SlotRecursive` (`__`): drives same-op chain continuation on
-///   re-parse. Same pattern as parent ⇒ no parens; different
-///   pattern ⇒ needs parens (recursion can't span). Lenient widens
-///   to admit any single-op chain — no parens.
-/// - `SlotGreedy` (`___`): admits any single-op chain — no parens.
-fn doc_op_chain_slot(
-    slot: &Expr,
-    slot_part: &crate::ast::OpPart,
-    parent_pattern: &[crate::ast::OpPart],
-    trailing: bool,
-) -> Doc {
-    doc_expr_grouped_boundary(
-        slot,
-        op_chain_slot_needs_parens(slot, slot_part, parent_pattern),
-        true,
-        trailing,
-    )
+///   re-parse. A non-atomic child of another pattern needs parentheses.
+/// - `SlotGreedy` (`___`): admits an operator chain of any pattern.
+///
+/// Slot admission does not erase grouping needed to protect exposed chain
+/// claims or a containing frame's pending operator word.
+fn doc_op_chain_slot(slot: &Expr, needs_parens: bool, trailing: bool) -> Doc {
+    doc_expr_grouped_boundary(slot, needs_parens, true, trailing)
 }
 
 fn op_chain_slot_needs_parens(
     slot: &Expr,
-    slot_part: &crate::ast::OpPart,
+    slot_index: usize,
     parent_pattern: &[crate::ast::OpPart],
 ) -> bool {
+    operator_slot_grouping(
+        slot,
+        slot_index,
+        parent_pattern,
+        &mut OperatorBoundaryCache::default(),
+    )
+}
+
+#[derive(Default)]
+struct OperatorBoundaryCache<'a> {
+    slots: std::collections::HashMap<(usize, usize, usize), bool>,
+    edges: std::collections::HashMap<(usize, u8, OperatorBoundaryTarget<'a>), bool>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum OperatorBoundaryTarget<'a> {
+    GreedyOnly,
+    Pattern(OperatorPatternShape<'a>),
+    Word(&'a str),
+}
+
+#[derive(Clone, Copy)]
+struct OperatorPatternShape<'a>(&'a [OpPart]);
+
+impl PartialEq for OperatorPatternShape<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        op_patterns_equal(self.0, other.0)
+    }
+}
+
+impl Eq for OperatorPatternShape<'_> {}
+
+impl std::hash::Hash for OperatorPatternShape<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.len().hash(state);
+        for part in self.0 {
+            match part {
+                OpPart::SlotPlain { .. } => 0u8.hash(state),
+                OpPart::SlotRecursive { .. } => 1u8.hash(state),
+                OpPart::SlotGreedy { .. } => 2u8.hash(state),
+                OpPart::Token { content, .. } => {
+                    3u8.hash(state);
+                    content.hash(state);
+                }
+            }
+        }
+    }
+}
+
+fn operator_slot_grouping<'a>(
+    slot: &'a Expr,
+    slot_index: usize,
+    parent_pattern: &'a [OpPart],
+    cache: &mut OperatorBoundaryCache<'a>,
+) -> bool {
+    let key = (
+        slot as *const Expr as usize,
+        parent_pattern.as_ptr() as usize,
+        slot_index,
+    );
+    if let Some(result) = cache.slots.get(&key) {
+        return *result;
+    }
+    let result = operator_slot_grouping_inner(slot, slot_index, parent_pattern, cache);
+    cache.slots.insert(key, result);
+    result
+}
+
+fn operator_slot_grouping_inner<'a>(
+    slot: &'a Expr,
+    slot_index: usize,
+    parent_pattern: &'a [OpPart],
+    cache: &mut OperatorBoundaryCache<'a>,
+) -> bool {
     use crate::ast::OpPart;
+    let slot_part = &parent_pattern[slot_index];
+    if (slot_index == 0
+        && exposes_operator_boundary(slot, OperatorBoundary::RightClaim(parent_pattern), cache))
+        || (slot_index + 1 == parent_pattern.len()
+            && exposes_operator_boundary(slot, OperatorBoundary::LeftClaim(parent_pattern), cache))
+    {
+        return true;
+    }
+    if slot_index != 0
+        && let Some(OpPart::Token { content, .. }) = parent_pattern.get(slot_index + 1)
+        && exposes_operator_boundary(slot, OperatorBoundary::FollowingWord(content), cache)
+    {
+        return true;
+    }
     let inner_pattern = match slot {
         Expr::OpChain {
             kind: crate::ast::OpChainKind::Normal { pattern, .. },
@@ -2779,22 +2901,137 @@ fn op_chain_slot_needs_parens(
         } => Some(pattern),
         _ => None,
     };
+    if !operator_expr_needs_grouping(slot) {
+        return false;
+    }
     match (slot_part, inner_pattern) {
         (_, None) => false,
         (OpPart::SlotGreedy { .. }, _) => false,
-        (OpPart::SlotPlain { lenient: true, .. }, _)
-        | (OpPart::SlotRecursive { lenient: true, .. }, _) => false,
-        (OpPart::SlotPlain { lenient: false, .. }, _) => true,
-        (OpPart::SlotRecursive { lenient: false, .. }, Some(inner)) => {
-            !op_patterns_equal(inner, parent_pattern)
-        }
+        (OpPart::SlotPlain { .. }, _) => true,
+        (OpPart::SlotRecursive { .. }, Some(inner)) => !op_patterns_equal(inner, parent_pattern),
         (OpPart::Token { .. }, _) => false,
     }
 }
 
+#[derive(Clone, Copy)]
+enum OperatorBoundary<'a> {
+    LeftClaim(&'a [OpPart]),
+    RightClaim(&'a [OpPart]),
+    FollowingWord(&'a str),
+}
+
+fn exposes_operator_boundary<'a>(
+    expr: &'a Expr,
+    boundary: OperatorBoundary<'a>,
+    cache: &mut OperatorBoundaryCache<'a>,
+) -> bool {
+    use OperatorBoundaryTarget::{GreedyOnly, Pattern, Word};
+    let (kind, target) = match boundary {
+        // A same-chain claim requires the target's corresponding slot
+        // to be recursive too. All other targets admit only greedy claims,
+        // independent of their words. Keep traversal and grouping unchanged.
+        OperatorBoundary::LeftClaim(pattern) => (
+            0,
+            if matches!(pattern.first(), Some(OpPart::SlotRecursive { .. })) {
+                Pattern(OperatorPatternShape(pattern))
+            } else {
+                GreedyOnly
+            },
+        ),
+        OperatorBoundary::RightClaim(pattern) => (
+            1,
+            if matches!(pattern.last(), Some(OpPart::SlotRecursive { .. })) {
+                Pattern(OperatorPatternShape(pattern))
+            } else {
+                GreedyOnly
+            },
+        ),
+        OperatorBoundary::FollowingWord(word) => (2, Word(word)),
+    };
+    let key = (expr as *const Expr as usize, kind, target);
+    if let Some(result) = cache.edges.get(&key) {
+        return *result;
+    }
+    let result = exposes_operator_boundary_inner(expr, boundary, cache);
+    cache.edges.insert(key, result);
+    result
+}
+
+fn exposes_operator_boundary_inner<'a>(
+    expr: &'a Expr,
+    boundary: OperatorBoundary<'a>,
+    cache: &mut OperatorBoundaryCache<'a>,
+) -> bool {
+    match expr {
+        Expr::Call { callee, .. }
+            if !matches!(boundary, OperatorBoundary::RightClaim(_))
+                && !call_callee_needs_parens(callee)
+                && !expr_boundary_has_comments(callee, true, true) =>
+        {
+            exposes_operator_boundary(callee, boundary, cache)
+        }
+        Expr::Ufcs {
+            receiver, flavor, ..
+        } if !matches!(boundary, OperatorBoundary::RightClaim(_))
+            && flavor.callee_on_right()
+            && !operator_expr_needs_grouping(receiver)
+            && !expr_boundary_has_comments(receiver, true, false) =>
+        {
+            exposes_operator_boundary(receiver, boundary, cache)
+        }
+        Expr::Elaborator { call, .. } if !matches!(boundary, OperatorBoundary::RightClaim(_)) => {
+            let receiver = match call {
+                ElaboratorCall::FieldAccess { receiver, .. }
+                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
+            };
+            !operator_expr_needs_grouping(receiver)
+                && !expr_boundary_has_comments(receiver, true, true)
+                && exposes_operator_boundary(receiver, boundary, cache)
+        }
+        Expr::OpChain {
+            kind: crate::ast::OpChainKind::Normal { pattern, slots },
+            ..
+        } => {
+            let is_slot = |part: Option<&OpPart>| {
+                part.is_some_and(|part| !matches!(part, OpPart::Token { .. }))
+            };
+            let claims = |part: Option<&OpPart>, target: &[OpPart]| match part {
+                Some(OpPart::SlotGreedy { .. }) => true,
+                Some(OpPart::SlotRecursive { .. }) => op_patterns_equal(pattern, target),
+                _ => false,
+            };
+            let direct = match boundary {
+                OperatorBoundary::LeftClaim(target) => claims(pattern.first(), target),
+                OperatorBoundary::RightClaim(target) => claims(pattern.last(), target),
+                OperatorBoundary::FollowingWord(word) => {
+                    is_slot(pattern.first())
+                        && matches!(pattern.get(1), Some(OpPart::Token { content, .. }) if content == word)
+                }
+            };
+            if direct {
+                return true;
+            }
+            let mut exposed_slot = |slot: &'a Expr, index| {
+                !operator_slot_grouping(slot, index, pattern, cache)
+                    && !expr_boundary_has_comments(slot, true, index + 1 == pattern.len())
+                    && exposes_operator_boundary(slot, boundary, cache)
+            };
+            (!matches!(boundary, OperatorBoundary::RightClaim(_))
+                && is_slot(pattern.first())
+                && exposed_slot(&slots[0], 0))
+                || (is_slot(pattern.last())
+                    && exposed_slot(
+                        slots.last().expect("fixed operator has a value slot"),
+                        pattern.len() - 1,
+                    ))
+        }
+        _ => false,
+    }
+}
+
 /// Two op-patterns are equal for round-trip purposes when their
-/// shape (token contents, slot kinds in order) matches. `lenient`
-/// and `quoted` flags affect declaration-side round-trip but not
+/// shape (token contents, slot kinds in order) matches. The `quoted`
+/// flag affects declaration-side round-trip but not
 /// use-site shape, so they're not compared.
 fn op_patterns_equal(a: &[crate::ast::OpPart], b: &[crate::ast::OpPart]) -> bool {
     use crate::ast::OpPart;
@@ -2911,7 +3148,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
     };
     let receiver_doc = doc_expr_grouped_boundary(
         innermost,
-        matches!(innermost, Expr::OpChain { .. }),
+        operator_expr_needs_grouping(innermost),
         true,
         false,
     );
@@ -4619,10 +4856,10 @@ mod tests {
     #[test]
     fn import_grammar_quotation_and_run_boundaries() {
         for signature in [
-            "op _ (=) (_)",
-            "op _ && ++ _",
-            "varop [<... ...<]",
-            "op _ ? (_ : _)",
+            "op _ (=) _",
+            "op _ &&++ _",
+            "varop [<** **<]",
+            "op _ ? ___ : _",
         ] {
             let source = format!("module c; import p({signature});");
             let parsed = crate::pass::parser::parse(&source).expect("signature");
@@ -4748,7 +4985,7 @@ import p( // opening selection
 
     #[test]
     fn variadic_import_delimiter_comments_belong_to_one_selection() {
-        for (open, close) in [("[%", "%]"), ("[<...", "...<]")] {
+        for (open, close) in [("[%", "%]"), ("[<**", "**<]")] {
             let source = format!("module c; import p(varop {open} // delimiter\n {close}, beta);");
             let module = parse(&source).unwrap();
             let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
@@ -4791,6 +5028,157 @@ import p( // opening selection
             "pretty-printer is not idempotent under parse for input:\n{src}"
         );
         pp1
+    }
+
+    #[test]
+    fn fixed_operator_grouping_survives_native_suffixes_and_pending_words() {
+        for (imports, expression, expected) in [
+            ("op _ $ ___, op ___ < _ >", "a $ (b < k >)", "a $ (b < k >)"),
+            ("op _ $ ___, op ___ < _ >", "(a $ b) < k >", "(a $ b) < k >"),
+            (
+                "op _ + _, op ___ < _ >",
+                "a + ((b < k >)(arg))",
+                "a + (b < k >(arg))",
+            ),
+            (
+                "op _ + _, op ___ < _ >",
+                "a + ((b < k >).>f)",
+                "a + (b < k >.>f)",
+            ),
+            (
+                "op _ + _, op ___ < _ >",
+                "a + ((b < k >).?{field})",
+                "a + (b < k >.?{field})",
+            ),
+            (
+                "op _ + ___, op ___ < _ >, op _ * _",
+                "a + ((b < k >) * c)",
+                "a + (b < k > * c)",
+            ),
+            (
+                "op _ ? ___ : _, op ! ___, op _ : _",
+                "a ? (! (b : c)) : d",
+                "a ? (! b : c) : d",
+            ),
+            (
+                "op _ ? ___ ? _",
+                "a ? (b ? c ? d) ? e",
+                "a ? (b ? c ? d) ? e",
+            ),
+            ("op _ ?", "a ? ?", "a ? ?"),
+            ("op __ + _", "a + b + c", "a + b + c"),
+        ] {
+            let source = format!("module m; import ops({imports}); fn run() {{ {expression} }}");
+            let formatted = roundtrip(&source);
+            assert!(formatted.contains(expected), "{expression}: {formatted}");
+            assert_eq!(
+                parsed_structure(&source)["items"],
+                parsed_structure(&formatted)["items"],
+                "{expression}: {formatted}"
+            );
+        }
+    }
+
+    #[test]
+    fn operator_boundary_cache_uses_semantic_contexts() {
+        let module = parse("module m; import ops(op _ + __); fn run() { a + b + c }").unwrap();
+        let expr = function_body(&module, "run");
+        let Expr::OpChain {
+            kind: crate::ast::OpChainKind::Normal { pattern, .. },
+            ..
+        } = expr
+        else {
+            panic!("operator");
+        };
+        let cloned_pattern = pattern.clone();
+        let first_word = String::from("+");
+        let second_word = String::from("+");
+        let mut cache = OperatorBoundaryCache::default();
+        assert!(exposes_operator_boundary(
+            expr,
+            OperatorBoundary::RightClaim(pattern),
+            &mut cache
+        ));
+        let entries = cache.edges.len();
+        assert!(exposes_operator_boundary(
+            expr,
+            OperatorBoundary::RightClaim(&cloned_pattern),
+            &mut cache
+        ));
+        assert_eq!(cache.edges.len(), entries);
+        assert!(exposes_operator_boundary(
+            expr,
+            OperatorBoundary::FollowingWord(&first_word),
+            &mut cache
+        ));
+        let entries = cache.edges.len();
+        assert!(exposes_operator_boundary(
+            expr,
+            OperatorBoundary::FollowingWord(&second_word),
+            &mut cache
+        ));
+        assert_eq!(cache.edges.len(), entries);
+
+        for size in [32, 64, 128] {
+            for (imports, expression) in [
+                ("op ! ___".to_owned(), format!("{}value", "! ".repeat(size))),
+                ("op _ + __".to_owned(), vec!["value"; size + 1].join(" + ")),
+                (
+                    (0..size)
+                        .map(|index| format!("op ~{} ___", "!".repeat(index + 1)))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    format!(
+                        "{} value",
+                        (0..size)
+                            .map(|index| format!("~{}", "!".repeat(index + 1)))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
+                ),
+                (
+                    (0..size)
+                        .map(|index| format!("op _ ~{} ___", "!".repeat(index + 1)))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    format!(
+                        "value{}",
+                        (0..size)
+                            .map(|index| format!(" ~{} value", "!".repeat(index + 1)))
+                            .collect::<String>()
+                    ),
+                ),
+            ] {
+                let module = parse(&format!(
+                    "module m; import ops({imports}); fn run() {{ {expression} }}"
+                ))
+                .unwrap();
+                let Expr::OpChain {
+                    kind: crate::ast::OpChainKind::Normal { pattern, slots },
+                    ..
+                } = function_body(&module, "run")
+                else {
+                    panic!("operator");
+                };
+                let mut cache = OperatorBoundaryCache::default();
+                assert!(!operator_slot_grouping(
+                    slots.last().unwrap(),
+                    pattern.len() - 1,
+                    pattern,
+                    &mut cache
+                ));
+                assert!(
+                    cache.edges.len() <= 6 * size,
+                    "size={size}, edge queries={}",
+                    cache.edges.len()
+                );
+                assert!(
+                    cache.slots.len() <= 2 * size,
+                    "size={size}, slot queries={}",
+                    cache.slots.len()
+                );
+            }
+        }
     }
 
     #[test]
@@ -5364,8 +5752,8 @@ import p( // opening selection
             ("_ + _", "left // marker1\n + right"),
             ("__ + _", "left // marker1\n + middle // marker2\n + right"),
             ("_ + __", "left // marker1\n + middle // marker2\n + right"),
-            ("__ ++", "left // marker1\n ++ // marker2\n ++"),
-            ("_ + ~ _", "left // marker1\n + // marker2\n ~ right"),
+            ("_ ++", "left // marker1\n ++ // marker2\n ++"),
+            ("_ +~ _", "left // marker1\n +~ // marker2\n right"),
             ("_ + _", "(left // marker1\n) // marker2\n + right"),
             ("_ + _", "call( // marker1\n left) // marker2\n + right"),
             ("_ + _", "(left + middle) // marker1\n + right"),
@@ -5793,32 +6181,34 @@ elab demo : Box(
     }
 
     #[test]
-    fn op_call_multi_token_run_keeps_token_separator() {
-        roundtrip(
+    fn op_call_symbol_word_keeps_internal_punctuation() {
+        let output = roundtrip(
             "module x; newtype A : . { constructor mk_a; projector un_a; }; \
              fn cat(a: A, b: A) -> A { a } \
-             op _ && ++ _ { impl cat; }; \
-             fn main(x: A, y: A) -> A { x && ++ y }",
+             op _ &&++ _ { impl cat; }; \
+             fn main(x: A, y: A) -> A { x&&++y }",
         );
+        assert!(output.contains("x &&++ y"), "{output}");
     }
 
     #[test]
     fn operator_forms_round_trip_with_run_boundaries() {
         let fused = roundtrip(
             "module fused; fn pick(a: A, b: A) -> A { a } \
-             op _ <! __ !> { impl pick; }; \
+             op _ <! _ !> { impl pick; }; \
              fn run(a: A, b: A) -> A { a <! b !> }",
         );
-        assert!(fused.contains("op _ <! __ !> { impl pick }"));
+        assert!(fused.contains("op _ <! _ !> { impl pick }"));
         assert!(fused.contains("a <! b !>"));
 
-        let separated = roundtrip(
+        let compact = roundtrip(
             "module separated; fn pick(a: A, b: A) -> A { a } \
-             op _ < ! __ ! > { impl pick; }; \
-             fn run(a: A, b: A) -> A { a < ! b ! > }",
+             op _ <! _ !> { impl pick; }; \
+             fn run(a: A, b: A) -> A { a<!b !> }",
         );
-        assert!(separated.contains("op _ < ! __ ! > { impl pick }"));
-        assert!(separated.contains("a < ! b ! >"));
+        assert!(compact.contains("op _ <! _ !> { impl pick }"));
+        assert!(compact.contains("a <! b !>"));
+        assert!(parse("module separated; import syntax(op _ < ! _ ! >);").is_err());
 
         let fold = roundtrip(
             "module folded; fn empty() -> A { value } \
@@ -5829,11 +6219,11 @@ elab demo : Box(
         assert!(fold.contains("varop [! !] { foldr push empty }"));
         assert!(fold.contains("[! a, b !]"));
 
-        let import_source = "module imported; import syntax(op _ < !, op _ <!, op < ! _, op <! _);";
+        let import_source = "module imported; import syntax(op _ <, op _ <!, op < _, op <! _);";
         let first =
             crate::pass::parser::parse_lazy(import_source).expect("operator-import header parses");
         let rendered = pretty_module(first.module());
-        assert!(rendered.contains("import syntax(op < ! _, op <! _, op _ < !, op _ <!);"));
+        assert!(rendered.contains("import syntax(op < _, op <! _, op _ <, op _ <!);"));
         crate::pass::parser::parse_lazy(&rendered)
             .expect("formatted operator-import header reparses");
     }
@@ -5868,7 +6258,7 @@ elab demo : Box(
     fn op_chain_layout_preserves_prefix_and_postfix_topology() {
         for (pattern, expression, expected) in [
             ("~ __", "~ ~ ~ value", "~\n  ~\n  ~ value"),
-            ("__ ~", "value ~ ~ ~", "value\n  ~\n  ~\n  ~"),
+            ("_ ~", "value ~ ~ ~", "value ~ ~\n  ~"),
         ] {
             let module_prefix = format!(
                 "module x; fn unary(value: A) -> A {{ value }} \
@@ -5899,18 +6289,18 @@ elab demo : Box(
             (
                 "fn index(a: A, b: A) -> A { a }",
                 "index",
-                "_ < __ >",
+                "_ < _ >",
                 "a < b < c > >",
                 10,
-                "a\n  < b\n  < c\n  >\n  >",
+                "a\n  < b\n      < c\n      >\n  >",
             ),
             (
                 "fn combine(a: A, b: A) -> A { a }",
                 "combine",
-                "_ && ++ __",
-                "a && ++ b && ++ c",
+                "_ &&++ __",
+                "a &&++ b &&++ c",
                 12,
-                "a\n  && ++ b\n  && ++ c",
+                "a\n  &&++ b\n  &&++ c",
             ),
         ] {
             let module_prefix = format!(
@@ -5932,16 +6322,16 @@ elab demo : Box(
     fn op_chain_layout_keeps_different_pattern_parentheses() {
         let module_prefix = "module x; \
              fn add(a: A, b: A) -> A { a } \
-             fn maybe(a: A) -> A { a } \
+             fn maybe(a: A, b: A) -> A { a } \
              op _ + __ { impl add; }; \
-             op __ ? { impl maybe; };";
+             op _ ? _ { impl maybe; };";
         assert_op_expr_layout_and_topology(
             module_prefix,
             "fn use_op() -> A",
             "use_op",
-            "(a ?) + b + c",
+            "(a ? z) + b + c",
             12,
-            "(a ?)\n  + b\n  + c",
+            "(a ? z)\n  + b\n  + c",
         );
     }
 
@@ -7553,7 +7943,7 @@ elab demo : Box(
             let source = format!(
                 "module x; op _ + _ {{ impl add; }}; op _ :: __ {{ impl cons; }}; \
                  op __ ++ _ {{ impl append; }}; op _ %% {{ impl finish; }}; \
-                 op _ ?? ___ {{ impl select; }}; op _ @@ (_) {{ impl pick; }}; \
+                 op _ ?? ___ {{ impl select; }}; op _ @@ ___ {{ impl pick; }}; \
                  fn f() {{ {expression} }}"
             );
             let output = roundtrip(&source);
@@ -7692,8 +8082,8 @@ elab demo : Box(
             "normal-operator receiver lost its disambiguating parentheses:\n{output}"
         );
         assert!(
-            output.contains("([% form_left, form_right %]).>context_callee"),
-            "variadic-operator receiver lost its disambiguating parentheses:\n{output}"
+            output.contains("[% form_left, form_right %].>context_callee"),
+            "structural variadic receiver retained unnecessary parentheses:\n{output}"
         );
     }
 
@@ -7712,12 +8102,12 @@ elab demo : Box(
         for expected in [
             "(- form_value).?{form_field}",
             "(- form_value).!{form_field = form_replacement}",
-            "([% form_left, form_right %]).?{form_field}",
-            "([% form_left, form_right %]).!{form_field = form_replacement}",
+            "[% form_left, form_right %].?{form_field}",
+            "[% form_left, form_right %].!{form_field = form_replacement}",
         ] {
             assert!(
                 output.contains(expected),
-                "operator field receiver lost its disambiguating parentheses around `{expected}`:\n{output}"
+                "operator field receiver has incorrect grouping for `{expected}`:\n{output}"
             );
         }
     }

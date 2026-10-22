@@ -136,14 +136,8 @@
 (operator_run)            @operator.user
 (unowned_symbol_run)      @operator.user
 (module_path_sep)         @operator.user
-(variadic_open)           @operator.user
-(variadic_close)          @operator.user
-(variadic_star_close)     @operator.user
-(variadic_expression (ambiguous_lbracket_star) @operator.user)
-(incomplete_variadic_expression (ambiguous_lbracket_star) @operator.user)
-(type_param_group (ambiguous_lbracket_star
-  (star_open_prefix) @punctuation.bracket
-  (kind_annotation) @operator.user))
+(star_open_prefix)        @punctuation.bracket
+(kind_annotation)         @operator.user
 (import_operator_item (keyword_varop) @keyword.declaration)
 
 (string_literal)          @literal.string

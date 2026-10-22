@@ -77,9 +77,9 @@ fn lsp_grouped_reference_prefixes_keep_callable_completion() {
         "elab inspect : . { impl(fills) ((hel|",
         "elab inspect : . { impl ((|",
         "elab inspect : . { captures ((hel|",
-        "varop [[ ]] { foldl ((hel|",
-        "varop [[ ]] { foldl ((helper)) ((hel|",
-        "varop [[ ]] { foldl helper helper; finalize ((hel|",
+        "varop [] { foldl ((hel|",
+        "varop [] { foldl ((helper)) ((hel|",
+        "varop [] { foldl helper helper; finalize ((hel|",
         "rec((hel|",
         "fn run(x: .) { x.>((hel|",
     ] {

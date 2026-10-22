@@ -11,7 +11,7 @@ enum {
   PLACEHOLDER_OPEN, EDITOR_EOF,
   DOC_TEXT, DOC_FENCE, DOC_CODE, DOC_REFERENCE, DOC_DIRECTIVE,
   DOC_HEADING, DOC_EMPHASIS, DOC_STRONG, DOC_MARKER, DOC_LINK, DOC_ATTRIBUTE, DOC_KIO_CODE, DOC_KIO_SELF_CODE,
-  DOC_LITERAL_FALLBACK, DOC_LINE_END, TOKEN_COUNT,
+  DOC_LITERAL_FALLBACK, DOC_LINE_END, ELABORATOR_WORD, TOKEN_COUNT,
 };
 
 typedef struct { uint64_t length; uint8_t kind; } DocSegment;
@@ -448,20 +448,57 @@ static bool symbol(int32_t c) {
   switch (c) {
     case '+': case '-': case '*': case '/': case '%': case '^': case '~':
     case '?': case '@': case '#': case '$': case '\\': case '\'': case '`':
-    case '<': case '>': case '=': case '!': case '&': case '|': case ':':
-    case '.': case '[': case ']': return true;
+    case '<': case '>': case '=': case '!': case '&': case '|': case ':': return true;
     default: return false;
   }
 }
 
 typedef struct {
-  size_t count, opens, closes, stars, dots, slashes;
-  int32_t first, second, last;
+  size_t count, slashes;
+  int32_t first, last;
   bool comment_started;
 } SymbolRun;
 
 static bool trivia(int32_t c) {
   return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+// Leave the bang separate so a surrounding marked frame can own it. A
+// successful scan still authenticates the exact native name-and-word boundary.
+static bool scan_elaborator_word(TSLexer *lexer) {
+  bool letter = false, digits = false, valid = true;
+  size_t underscores = 0;
+  while ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+         (lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
+         (lexer->lookahead >= '0' && lexer->lookahead <= '9') || lexer->lookahead == '_') {
+    int32_t c = lexer->lookahead;
+    if (c == '_') {
+      if (letter) underscores++;
+      digits = false;
+    } else if (c >= 'a' && c <= 'z') {
+      if ((digits && !underscores) || underscores > 1) valid = false;
+      letter = true;
+      digits = false;
+      underscores = 0;
+    } else if (c >= '0' && c <= '9') {
+      if (!letter || underscores) valid = false;
+      digits = true;
+    } else {
+      valid = false;
+    }
+    lexer->advance(lexer, false);
+  }
+  if (!valid || !letter || lexer->lookahead != '!') return false;
+  lexer->mark_end(lexer);
+  lexer->advance(lexer, false);
+  if (lexer->lookahead == '/') {
+    lexer->advance(lexer, false);
+    if (lexer->lookahead != '/') return false;
+  } else if (symbol(lexer->lookahead)) {
+    return false;
+  }
+  lexer->result_symbol = ELABORATOR_WORD;
+  return true;
 }
 
 // A stopped comment leaves lookahead on its second slash; mark_end remains
@@ -476,9 +513,7 @@ static bool next_symbol(TSLexer *lexer, SymbolRun *run) {
   }
   run->count++;
   if (run->count == 1) run->first = c;
-  if (run->count == 2) run->second = c;
-  run->opens += c == '['; run->closes += c == ']'; run->stars += c == '*';
-  run->dots += c == '.'; run->slashes += c == '/'; run->last = c;
+  run->slashes += c == '/'; run->last = c;
   return true;
 }
 
@@ -549,68 +584,51 @@ static bool fn_head_follows(TSLexer *lexer) {
   return lexer->lookahead == '(' || lexer->lookahead == '[';
 }
 
-static bool delimiter(const SymbolRun *run, bool opening) {
-  return run->count >= 2 && !(run->first == '.' && run->dots == 1) &&
-    (opening ? run->opens && !run->closes : run->closes && !run->opens);
-}
-
-// Header lookahead authenticates only the written split pair. Storage is local
-// to this call; long openers grow without a language-level length limit.
+// A header is an empty source-local square frame. Its marker words are checked
+// before the parser can attach the following callable block.
 static bool scan_head(Scanner *state, TSLexer *lexer, const bool *valid) {
-  uint8_t inline_open[64], *open = inline_open;
-  size_t capacity = sizeof(inline_open);
-  SymbolRun opener = {0};
-  bool result = false, matches = false;
-  while (next_symbol(lexer, &opener)) {
-    if (opener.count > capacity) {
-      if (capacity > SIZE_MAX / 2) goto done;
-      size_t grown = capacity * 2;
-      uint8_t *buffer;
-      if (open == inline_open) {
-        buffer = malloc(grown);
-        if (buffer) memcpy(buffer, inline_open, capacity);
-      } else {
-        buffer = realloc(open, grown);
-      }
-      if (!buffer) goto done;
-      open = buffer;
-      capacity = grown;
-    }
-    open[opener.count - 1] = (uint8_t)opener.last;
-    lexer->mark_end(lexer);
-  }
-  if (!opener.count) {
-    if (opener.comment_started) result = doc_start(state, lexer, valid);
-    goto done;
-  }
-  if (!delimiter(&opener, true)) goto classified;
-  bool separated = opener.comment_started;
-  if (opener.comment_started && !skip_comment(lexer)) goto classified;
+  (void)state;
+  if (lexer->lookahead != '[') return false;
+  lexer->advance(lexer, false);
+  lexer->mark_end(lexer);
+  DocLine words[2] = {{0}, {0}};
+  size_t count = 0;
+  bool result = false, matches = false, separated = true;
   for (;;) {
     while (trivia(lexer->lookahead)) {
       separated = true;
       lexer->advance(lexer, false);
     }
-    SymbolRun closer = {0};
-    bool equal = true;
-    while (next_symbol(lexer, &closer)) {
-      if (closer.count > opener.count) {
-        equal = false;
-      } else {
-        uint8_t expected = open[opener.count - closer.count];
-        if (expected == '[') expected = ']';
-        if (closer.last != expected) equal = false;
+    if (lexer->lookahead == ']') {
+      if (!count) {
+        matches = true;
+      } else if (count == 1 && words[0].length % 2 == 0) {
+        matches = true;
+        for (size_t i = 0; i < words[0].length / 2; i++) {
+          if (words[0].data[i] != words[0].data[words[0].length - 1 - i]) matches = false;
+        }
+      } else if (count == 2 && words[0].length == words[1].length) {
+        matches = true;
+        for (size_t i = 0; i < words[0].length; i++) {
+          if (words[0].data[i] != words[1].data[words[1].length - 1 - i]) matches = false;
+        }
       }
+      break;
     }
-    if (!closer.count && closer.comment_started) {
+    if (count == 2 || !separated) break;
+    SymbolRun word = {0};
+    while (next_symbol(lexer, &word)) {
+      if (!doc_push(&words[count], (uint32_t)word.last)) goto done;
+    }
+    if (word.count) count++;
+    if (word.comment_started) {
+      if (!skip_comment(lexer)) break;
       separated = true;
-      if (!skip_comment(lexer)) goto classified;
-      continue;
+    } else {
+      if (!word.count) break;
+      separated = false;
     }
-    matches = separated && delimiter(&closer, false) && equal && closer.count == opener.count;
-    break;
   }
-classified:
   if (matches && valid[HEAD_OPEN]) {
     lexer->result_symbol = HEAD_OPEN;
     result = true;
@@ -619,7 +637,8 @@ classified:
     result = true;
   }
 done:
-  if (open != inline_open) free(open);
+  free(words[0].data);
+  free(words[1].data);
   return result;
 }
 
@@ -740,11 +759,15 @@ static bool scan(Scanner *state, TSLexer *lexer, const bool *valid) {
   while (trivia(lexer->lookahead)) {
     lexer->advance(lexer, true);
   }
+  if (valid[ELABORATOR_WORD] &&
+      ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') || lexer->lookahead == '_')) {
+    return scan_elaborator_word(lexer);
+  }
   if (valid[EDITOR_EOF] && !(valid[STAR_OPEN] && valid[OPEN] && valid[STAR_CLOSE] && valid[CLOSE]) && lexer->eof(lexer)) {
     lexer->result_symbol = EDITOR_EOF;
     return true;
   }
-  if ((valid[HEAD_OPEN] || valid[MALFORMED_HEAD_OPEN]) &&
+  if (lexer->lookahead == '[' && (valid[HEAD_OPEN] || valid[MALFORMED_HEAD_OPEN]) &&
       !(valid[STAR_OPEN] && valid[OPEN] && valid[STAR_CLOSE] && valid[CLOSE])) {
     return scan_head(state, lexer, valid);
   }
@@ -760,77 +783,76 @@ static bool scan(Scanner *state, TSLexer *lexer, const bool *valid) {
   }
   if (!valid[STAR_OPEN] && !valid[OPEN] && !valid[STAR_CLOSE] && !valid[CLOSE] &&
       !valid[FIXED_RUN] && !valid[MINUS] && !valid[UNOWNED_BRACKET_RUN] && !valid[PLACEHOLDER_OPEN] && !valid[DOC_TEXT]) return false;
+  if (lexer->lookahead == '[') {
+    lexer->advance(lexer, false);
+    lexer->mark_end(lexer);
+    if (lexer->lookahead == '*' && valid[STAR_OPEN]) {
+      lexer->result_symbol = STAR_OPEN;
+      return true;
+    }
+    return false;
+  }
   SymbolRun run = {0};
   lexer->mark_end(lexer);
-  while (next_symbol(lexer, &run)) {
-    if (run.first != '[' || run.opens != 1 || run.stars + 1 != run.count || run.count == 1 || !valid[STAR_OPEN]) {
+  if (lexer->lookahead == '.') {
+    lexer->advance(lexer, false);
+    lexer->mark_end(lexer);
+    run = (SymbolRun){.count = 1, .first = '.', .last = '.'};
+  } else {
+    while (next_symbol(lexer, &run)) {
       lexer->mark_end(lexer);
     }
   }
   if (!run.count && run.comment_started) return doc_start(state, lexer, valid);
-  size_t count = run.count, opens = run.opens, closes = run.closes, stars = run.stars, dots = run.dots;
-  int32_t first = run.first, second = run.second, last = run.last;
-  if (!opens && !closes) {
-    if (!count) return false;
-    if (valid[PLACEHOLDER_OPEN] && count == 1 && first == '.') {
-      if (lexer->lookahead == '_') lexer->advance(lexer, false);
-      bool word_start = true, after_digit = false;
-      while ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
-             (lexer->lookahead >= '0' && lexer->lookahead <= '9') || lexer->lookahead == '_') {
-        int32_t c = lexer->lookahead;
-        if (c == '_') {
-          if (word_start) return false;
-          word_start = true;
-          after_digit = false;
-        } else if (c >= '0' && c <= '9') {
-          if (word_start) return false;
-          after_digit = true;
-        } else {
-          if (after_digit) return false;
-          word_start = false;
-        }
-        lexer->advance(lexer, false);
+  size_t count = run.count;
+  int32_t first = run.first, last = run.last;
+  if (!count) return false;
+  if (valid[PLACEHOLDER_OPEN] && count == 1 && first == '.') {
+    if (lexer->lookahead == '_') lexer->advance(lexer, false);
+    bool word_start = true, after_digit = false;
+    while ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+           (lexer->lookahead >= '0' && lexer->lookahead <= '9') || lexer->lookahead == '_') {
+      int32_t c = lexer->lookahead;
+      if (c == '_') {
+        if (word_start) return false;
+        word_start = true;
+        after_digit = false;
+      } else if (c >= '0' && c <= '9') {
+        if (word_start) return false;
+        after_digit = true;
+      } else {
+        if (after_digit) return false;
+        word_start = false;
       }
-      if (!word_start && !after_digit && lexer->lookahead == '.') {
-        SymbolRun close = {0};
-        while (next_symbol(lexer, &close)) {}
-        if (close.count != 1 || (close.comment_started && !skip_comment(lexer))) return false;
-        if (!skip_trivia_comments(lexer)) return false;
-        // A following name continues a qualified path such as `let.x.y`.
-        if ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
-            (lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
-            lexer->lookahead == '_') {
-          if (!fn_head_follows(lexer)) return false;
-        }
-        lexer->result_symbol = PLACEHOLDER_OPEN;
-        return true;
+      lexer->advance(lexer, false);
+    }
+    if (!word_start && !after_digit && lexer->lookahead == '.') {
+      lexer->advance(lexer, false);
+      if (lexer->lookahead == '>' || lexer->lookahead == '<' ||
+          lexer->lookahead == '?' || lexer->lookahead == '!') return false;
+      if (!skip_trivia_comments(lexer)) return false;
+      // A following name continues a qualified path such as `let.x.y`.
+      if ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
+          (lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
+          lexer->lookahead == '_') {
+        if (!fn_head_follows(lexer)) return false;
       }
-      return false;
+      lexer->result_symbol = PLACEHOLDER_OPEN;
+      return true;
     }
-    // Builtin punctuation and UFCS/row arrows retain their grammar tokens.
-    // Minus is shared by signed literals and ordinary operator expressions.
-    if (count == 1 && (first == '/' || first == '.' ||
-        first == '=' || first == '!' || first == '&' || first == '|' || first == ':')) return false;
-    if (count == 1 && first == '-' && valid[MINUS]) { lexer->result_symbol = MINUS; return true; }
-    if (count == 2 && first == '-' && last == '>') return false;
-    if (first == '.' && dots == 1) {
-      if ((count == 2 && (last == '>' || last == '<' || last == '?' || last == '!')) ||
-          (count == 3 && (second == '>' || second == '<') && second == last)) return false;
-    }
-    if (valid[FIXED_RUN]) { lexer->result_symbol = FIXED_RUN; return true; }
     return false;
   }
-  if (count >= 2 && !(first == '.' && dots < 2) && opens && !closes) {
-    bool star = first == '[' && opens == 1 && stars + 1 == count;
-    if (star && valid[STAR_OPEN]) { lexer->result_symbol = STAR_OPEN; return true; }
-    if (!star && valid[OPEN]) { lexer->result_symbol = OPEN; return true; }
+  // Builtin punctuation and UFCS/row arrows retain their grammar tokens.
+  // Minus is shared by signed literals and ordinary operator expressions.
+  if (count == 1 && (first == '/' || first == '.' ||
+      first == '=' || first == '!' || first == '&' || first == '|' || first == ':')) return false;
+  if (count == 1 && first == '-' && valid[MINUS] &&
+      lexer->lookahead >= '0' && lexer->lookahead <= '9') {
+    lexer->result_symbol = MINUS;
+    return true;
   }
-  if (count >= 2 && !(first == '.' && dots < 2) && closes && !opens) {
-    bool star = last == ']' && closes == 1 && stars + 1 == count;
-    if (star && valid[STAR_CLOSE]) { lexer->result_symbol = STAR_CLOSE; return true; }
-    if (!star && valid[CLOSE]) { lexer->result_symbol = CLOSE; return true; }
-  }
-  if (count && valid[UNOWNED_BRACKET_RUN]) { lexer->result_symbol = UNOWNED_BRACKET_RUN; return true; }
+  if (count == 2 && first == '-' && last == '>') return false;
+  if (valid[FIXED_RUN]) { lexer->result_symbol = FIXED_RUN; return true; }
   return false;
 }
 
