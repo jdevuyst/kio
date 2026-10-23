@@ -19,7 +19,7 @@ import diff3/scan as scan;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, lt_i32);
 import testapi/iter(loop);
 import testapi/text(string_eq);

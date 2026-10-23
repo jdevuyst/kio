@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/control(if);
 import elaborators(choose_callbacks);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(leq_i32, sub_i32);
 import testapi/io(print);
 import testapi/iter(loop);

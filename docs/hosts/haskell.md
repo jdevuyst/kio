@@ -348,6 +348,14 @@ therefore require the selected type in that position to be `Bool`. These
 are use-site requirements, not alternative representation choices made by
 the backend. `()` is native Haskell `()`.
 
+Kio checks integer bounds and rounds floating literals to their selected
+IEEE role before emission. A floating carrier must preserve that value,
+including signed zero and subnormals: use `Float` for `f32`, `Double` for
+`f64`, or a faithful wrapper. A `Fractional` instance is not enough to prove
+this property; `Rational`, for example, cannot preserve negative zero.
+Your host operations still determine arithmetic behavior. See the
+[shared literal contract](../../specs/language.md#literals).
+
 ## Newtypes and function values
 
 Every public newtype in a bridged module has its own host-facing surface. Even when it exports no

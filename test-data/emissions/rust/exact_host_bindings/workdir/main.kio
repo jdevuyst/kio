@@ -8,7 +8,7 @@ host type Owned_text role(str) { owned };
 
 host type Token;
 
-host type Unused role(bool);
+default host type Unused role(bool);
 
 host fn borrow_text(value: Text) -> Text;
 

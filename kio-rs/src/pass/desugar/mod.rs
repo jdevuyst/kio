@@ -87,6 +87,7 @@ pub type PackageLiteralAliases =
 #[derive(Debug, Clone)]
 pub struct LiteralAliasDef {
     pub value: LiteralAliasValue,
+    pub definition_file: Option<std::path::PathBuf>,
 }
 
 /// Walk a parsed Surface package and collect every `pub literal`
@@ -97,7 +98,7 @@ pub fn collect_package_literal_aliases(
     _package_name: Option<&str>,
 ) -> PackageLiteralAliases {
     let mut tables: PackageLiteralAliases = std::collections::HashMap::new();
-    for (_, module) in modules {
+    for (file, module) in modules {
         let declared: String = module
             .path
             .segments
@@ -115,6 +116,7 @@ pub fn collect_package_literal_aliases(
                     lit.name.clone(),
                     LiteralAliasDef {
                         value: lit.value.clone(),
+                        definition_file: Some(file.clone()),
                     },
                 );
             }
@@ -391,6 +393,7 @@ pub fn desugar_module_with_imports(
                 lit.name.clone(),
                 LiteralAliasDef {
                     value: lit.value.clone(),
+                    definition_file: None,
                 },
             );
         }
@@ -5432,8 +5435,16 @@ impl DesugarVisitor {
         def: &LiteralAliasDef,
         annotation: Option<Type<Surface>>,
         use_span: Span,
+        use_name: Span,
     ) -> Result<Expr<Desugared>, Error> {
         let mut expr = def.value.to_expr::<Surface>();
+        if let Expr::IntLit { diagnostic, .. } = &mut expr {
+            diagnostic.alias = Some(std::sync::Arc::new(crate::ast::IntegerLiteralAliasSource {
+                use_span: use_name,
+                definition_span: def.value.span(),
+                definition_file: def.definition_file.clone(),
+            }));
+        }
         match &mut expr {
             Expr::StrLit {
                 annotation: a,
@@ -5678,7 +5689,7 @@ impl SurfaceToDesugared for DesugarVisitor {
                 .get(segments[0].as_str())
                 .cloned()
         {
-            return self.expand_literal(&def, None, span);
+            return self.expand_literal(&def, None, span, segments[0].span);
         }
         Ok(Expr::Path {
             occurrence: Default::default(),
@@ -5736,7 +5747,7 @@ impl SurfaceToDesugared for DesugarVisitor {
                 unreachable!()
             };
             let annotation = self.literal_call_annotation(&segments[0], args, span)?;
-            return self.expand_literal(&def, Some(annotation), span);
+            return self.expand_literal(&def, Some(annotation), span, segments[0].span);
         }
         let callee = self.walk_expr(*callee)?;
         let args: Vec<CallArg<Desugared>> = args
@@ -7675,11 +7686,13 @@ fn rename_paths(
         },
         Expr::IntLit {
             occurrence: _,
+            diagnostic: _,
             digits,
             annotation,
             meta,
         } => Expr::IntLit {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             digits,
             annotation,
             meta,

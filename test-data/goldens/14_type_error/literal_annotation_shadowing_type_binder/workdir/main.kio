@@ -1,0 +1,5 @@
+module main;
+
+default host type Int role(i64);
+
+fn wrong[Int]() -> Int { 42(Int) }

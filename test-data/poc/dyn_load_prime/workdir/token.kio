@@ -3,7 +3,7 @@ module token;
 
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(I32, String);
+import testapi(default I32, default String);
 
 // `token.kio` — the token alphabet for the Kio' term-subset grammar.
 //

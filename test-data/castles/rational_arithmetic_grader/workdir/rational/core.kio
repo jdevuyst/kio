@@ -4,7 +4,7 @@ module rational/core;
 
 import elab/control(if);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
 

@@ -2742,6 +2742,94 @@ where
     })
 }
 
+/// Resolve a closed nominal frontier while retaining its lexical owner.
+/// Formal arguments and applied aliases follow the ordinary virtual cursor;
+/// rigid binders are excluded. The caller validates the terminal declaration's
+/// kind and role, including whether a nominal constructor is fully applied.
+pub(crate) fn terminal_nominal_in_scope<'m, P>(
+    ty: &crate::ast::Type<P>,
+    ctx: &AliasCtx<'_, 'm, P>,
+    identity_canonical: bool,
+) -> Option<(
+    Vec<crate::ast::PathSegment>,
+    Option<&'m crate::ast::Module<P>>,
+)>
+where
+    P: crate::pass::resolve::ExportContractPhase + Clone,
+{
+    let provider = NominalProvider::new(ctx.source_module, ctx.package);
+    let ambient = ctx
+        .binder_locals
+        .map_or(AliasAmbientProtected::None, |binders| {
+            AliasAmbientProtected::Lookup(binders)
+        });
+    let (mut materializer, mut view) = AliasMaterializer::for_caller(
+        ty,
+        *ctx,
+        provider.root(),
+        &provider,
+        ambient,
+        identity_canonical,
+    );
+    loop {
+        let crate::ast::Type::Path { segments, args, .. } = view.ty else {
+            return None;
+        };
+        let context = materializer.context(view.context);
+        if !context.identity_canonical
+            && let crate::pass::resolve::NominalSelection::Selected(selected) =
+                provider.select(context.scope.nominal(), segments, false)
+            && let Some(alias) = selected.declaration.type_alias()
+            && let (Some(source), Some(owner)) =
+                (context.scope.nominal().module(), selected.owner.module())
+            && source.path != owner.path
+            && !crate::pass::resolve::is_visible(&alias.vis, &source.path)
+        {
+            return None;
+        }
+        match materializer.redirect_path(view, segments, args) {
+            Some(AliasPathRedirect::Formal { selected, .. }) => {
+                view = selected;
+                continue;
+            }
+            Some(AliasPathRedirect::Alias { body, .. }) => {
+                view = body;
+                continue;
+            }
+            None => {}
+        }
+        if !args.is_empty() || materializer.arg_rope_len(view.appended) != 0 {
+            return None;
+        }
+        let context = materializer.context(view.context);
+        if let [name] = segments.as_slice()
+            && (context
+                .protected
+                .get(&AliasBorrowedName(name.as_str()))
+                .is_some()
+                || context.ambient_protected.contains(name.as_str()))
+        {
+            return None;
+        }
+        if !matches!(
+            provider.select(
+                context.scope.nominal(),
+                segments,
+                context.identity_canonical
+            ),
+            crate::pass::resolve::NominalSelection::Selected(_)
+        ) {
+            // A builtin may be a bare terminal under its defining owner's
+            // explicit import. Missing qualified members are never imports
+            // of imports, even when canonicalization can follow that chain.
+            return (segments.len() == 1)
+                .then(|| (segments.to_vec(), context.scope.nominal().module()));
+        }
+        let (segments, _) = materializer.qualify_nominal_segments(segments, context);
+        return Some((segments, context.scope.nominal().module()));
+    }
+}
+
 /// Materialize every transparent-alias frontier in `ty` through one exact
 /// source-module/package scope.
 ///

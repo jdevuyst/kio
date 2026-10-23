@@ -251,6 +251,7 @@ pub(super) trait LoweredToPrePrime {
     fn visit_expr_int_lit(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
         let Expr::IntLit {
             occurrence: _,
+            diagnostic: _,
             digits,
             annotation,
             meta,
@@ -260,6 +261,7 @@ pub(super) trait LoweredToPrePrime {
         };
         Ok(Expr::IntLit {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             digits: digits.clone(),
             annotation: self.walk_literal_annotation(
                 annotation,
@@ -567,6 +569,7 @@ pub(super) trait LoweredToPrePrime {
     /// Walk an `TypeAlias` Lowered → PrePrime.
     fn walk_alias(&mut self, a: &TypeAlias<Lowered>) -> Result<TypeAlias<PrePrime>, Error> {
         Ok(TypeAlias {
+            default_span: a.default_span,
             vis: a.vis.clone(),
             name: a.name.clone(),
             name_span: a.name_span,
@@ -601,6 +604,7 @@ pub(super) trait LoweredToPrePrime {
 
     fn walk_host_type(&mut self, h: &HostType<Lowered>) -> Result<HostType<PrePrime>, Error> {
         Ok(HostType {
+            default_span: h.default_span,
             name: h.name.clone(),
             type_params: h.type_params.clone(),
             role: h.role,

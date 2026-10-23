@@ -595,11 +595,13 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
             },
             Expr::IntLit {
                 occurrence: _,
+                diagnostic: _,
                 digits,
                 annotation,
                 meta,
             } => Expr::IntLit {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 digits: digits.clone(),
                 annotation: ty(annotation),
                 meta: meta.clone(),

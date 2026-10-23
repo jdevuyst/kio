@@ -3,7 +3,7 @@ module api;
 import elab/control(if);
 import elab/match(match);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 host fn sink(value: Bool);
 

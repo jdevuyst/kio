@@ -18,7 +18,7 @@ import justify/cost as cost;
 import justify/list as list;
 import justify/list(List);
 import justify/word(Word, Words, word_width);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 

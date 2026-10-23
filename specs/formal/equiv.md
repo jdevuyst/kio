@@ -186,6 +186,13 @@ value group; later curry groups remain distinct and are compared in turn.
 
 ### 4.3. Atom equality
 
+Numeric literal atoms compare their exact resolved host-type identities and
+their checked values, independently of source spelling. Integer `010(I)`
+equals `10(I)`, and integer `-0(I)` equals `0(I)`. Float atoms compare the
+selected role's IEEE value, including its zero sign: decimal spellings that
+round to the same value are equal, while `-0.0(F)` and `0.0(F)` differ.
+See [literal admission and rounding](../language.md#literals).
+
 Two `Atom(name)` residuals are equal iff `name` is byte-identical. The atom's name is the term's fully-qualified path: parameter names are plain identifiers (`p0`, `acc`, …), unbound names are plain identifiers, host items are their fully-qualified paths (`print`, `io.println`, `pdt.int_to_string`).
 
 Two `Stuck(callee, args)` residuals are equal iff `callee₁ ≃ callee₂` and

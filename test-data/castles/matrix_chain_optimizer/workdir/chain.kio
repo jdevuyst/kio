@@ -2,7 +2,7 @@ module chain;
 
 import elab/control(if);
 import elab/spine_elaborators(widen_sum);
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith as math;
 import testapi/array as arrays;
 import testapi/fmt as fmt;

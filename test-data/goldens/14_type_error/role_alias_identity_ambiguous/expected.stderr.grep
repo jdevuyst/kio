@@ -1,1 +1,3 @@
-more than one `role\(bool\)` type is in unqualified lexical scope
+conflicting default boolean types
+First_bool
+Second_bool

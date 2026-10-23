@@ -1,0 +1,5 @@
+module main;
+
+host type Int role(i32);
+
+fn value() -> Int { 42e-0(Int) }

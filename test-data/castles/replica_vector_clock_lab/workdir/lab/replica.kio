@@ -8,7 +8,7 @@ import lab/clock as clock;
 import list/core as core;
 import list/list as lists;
 import result/result as result;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
 

@@ -1,0 +1,15 @@
+module app;
+
+import __intrinsics__;
+
+import provider(Narrow, default Bool, default Float, default Int);
+
+pub fn default() -> Int { 42 }
+
+pub fn floating() -> Float { 42.0 }
+
+pub fn same[A](left: A, _right: A) -> A { left }
+
+pub fn choose(flag: Bool) -> Int {
+  __if_then_else__(Int, flag, .() { 42 }, .() { 0 })
+}

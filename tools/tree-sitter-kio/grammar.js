@@ -52,6 +52,8 @@ function configField($, keywords) {
   return seq(choice(...keywords.map((word) => alias(kw(word), $.keyword_declaration)), $.identifier), $._field_value);
 }
 
+// Keep malformed point-free exponents whole for editor recovery;
+// the compiler diagnoses their spelling and offers insertion of `.0`.
 const NUMBER = /[0-9][0-9_]*(\.[0-9_]+)?([eE][+\-]?[0-9_]+)?/;
 const TYPE_REFERENCE_NAME = /_*[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*/;
 const LABEL_NAME = /[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*/;
@@ -354,9 +356,11 @@ module.exports = grammar({
       alias(token(/\/\*\*?/), $.operator_run),
     ))),
     _bridge_segment: ($) => choice(alias($._identifier_like, $.identifier), alias(token(/\*\*?/), $.operator_run)),
-    host_decl: ($) => seq(
-      optional($._visibility_modifier), $.keyword_host, optional($._visibility_modifier),
-      choice($.host_type_head, alias($._incomplete_host_type_head, $.host_type_head), $.host_fn_head),
+    host_decl: ($) => choice(
+      seq(optional(alias($.keyword_default, $.keyword_declaration)),
+        optional($._visibility_modifier), $.keyword_host, optional($._visibility_modifier),
+        choice($.host_type_head, alias($._incomplete_host_type_head, $.host_type_head))),
+      seq(optional($._visibility_modifier), $.keyword_host, optional($._visibility_modifier), $.host_fn_head),
     ),
     _variant_host_decl: ($) => seq(
       optional($._visibility_modifier), $.keyword_host, optional($._visibility_modifier),
@@ -408,6 +412,7 @@ module.exports = grammar({
     _identifier_like: ($) => choice($.uppercase_identifier, $._value_identifier_like),
     _value_identifier_like: ($) =>
       choice(
+        $.keyword_default,
         $.keyword_varop,
         $.keyword_let, $.keyword_rec, $.keyword_recur,
         "poly", "cont", "escape",
@@ -476,6 +481,7 @@ module.exports = grammar({
     _keyword_variadic: ($) => token(prec(3, "variadic")),
     keyword_as: ($) => kw("as"),
     keyword_type: ($) => kw("type"),
+    keyword_default: ($) => kw("default"),
     keyword_pure: ($) => kw("pure"),
 
     _import_intrinsics_tail: ($) =>
@@ -509,9 +515,12 @@ module.exports = grammar({
         ),
       ),
 
-    _import_named_item: ($) => prec.right(1, seq(
-      alias($._identifier_like, $.identifier),
-      optional(seq(alias($.keyword_as, $.keyword_declaration), alias($._identifier_like, $.identifier))),
+    _import_named_item: ($) => prec.right(1, choice(
+      seq(alias($.keyword_default, $.keyword_declaration),
+        alias($.uppercase_identifier, $.identifier),
+        optional(seq(alias($.keyword_as, $.keyword_declaration), alias($.uppercase_identifier, $.identifier)))),
+      seq(alias($._identifier_like, $.identifier),
+        optional(seq(alias($.keyword_as, $.keyword_declaration), alias($._identifier_like, $.identifier)))),
     )),
 
     import_operator_item: ($) =>
@@ -931,6 +940,7 @@ module.exports = grammar({
     _type_alias_decl_body: ($) =>
       prec.dynamic(20, prec.right(
         seq(
+          optional(alias($.keyword_default, $.keyword_declaration)),
           optional($._visibility_modifier),
           $.keyword_type,
           alias($.uppercase_identifier, $.entity_name_type),

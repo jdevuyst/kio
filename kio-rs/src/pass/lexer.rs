@@ -29,7 +29,7 @@
 //! otherwise-unowned internal comments; expression/container positions retain
 //! their own explicitly captured trivia.
 
-use crate::error::Error;
+use crate::error::{Error, Fix, FixEdit};
 use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,7 +103,7 @@ pub enum TokenKind {
     StrLit(String), // post-escape value
     IntLit {
         digits: String,
-    }, // digit separators stripped
+    }, // original numeric spelling; the parser strips digit separators
     FloatLit {
         digits: String,
     }, // digit separators stripped; includes the `.` and exponent
@@ -443,8 +443,7 @@ impl<'a> Lexer<'a> {
             self.bump(); // consume the leading `-`
             let mut tok = self.lex_number(start)?;
             // The lexed number's `digits` doesn't see the leading `-`
-            // we already consumed; prepend it so JS / Rust emission
-            // (which prints `digits` verbatim) gets `-40` / `-3.14e9`.
+            // we already consumed; retain it in the token's numeric spelling.
             match &mut tok.kind {
                 TokenKind::IntLit { digits } | TokenKind::FloatLit { digits } => {
                     digits.insert(0, '-');
@@ -708,9 +707,8 @@ impl<'a> Lexer<'a> {
         let mut digits = String::new();
         self.consume_digit_run(&mut digits);
 
-        // A fractional part or an exponent makes the token a float.
-        let mut is_float =
-            self.peek() == Some(b'.') && matches!(self.peek_at(1), Some(b'0'..=b'9'));
+        // The decimal point determines the literal's numeric category.
+        let is_float = self.peek() == Some(b'.') && matches!(self.peek_at(1), Some(b'0'..=b'9'));
 
         if is_float {
             digits.push('.');
@@ -720,7 +718,6 @@ impl<'a> Lexer<'a> {
 
         // Optional exponent: e/E, optional sign, then digits.
         if matches!(self.peek(), Some(b'e' | b'E')) {
-            is_float = true;
             let exp_start = self.pos;
             let exp_marker = self.peek().unwrap();
             self.bump();
@@ -741,9 +738,27 @@ impl<'a> Lexer<'a> {
                 digits.push(s as char);
             }
             self.consume_digit_run(&mut digits);
+            if !is_float {
+                let error = Error::parse(
+                    self.span(start),
+                    "exponent notation is not supported for integer literals",
+                )
+                .with_help("floating-point literals require a decimal point; insert `.0` before the exponent if you intended a float");
+                if self.peek() == Some(b'_') {
+                    return Err(error);
+                }
+                return Err(error.with_fix(Fix::maybe_incorrect(
+                    "Use floating-point spelling",
+                    vec![FixEdit::new(
+                        Span::new(exp_start as u32, exp_start as u32),
+                        ".0",
+                    )],
+                )));
+            }
         }
 
         if is_float {
+            digits.retain(|character| character != '_');
             return Ok(Token {
                 kind: TokenKind::FloatLit { digits },
                 span: self.span(start),
@@ -765,7 +780,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Consumes a run of digits, allowing single `_` separators between them,
-    /// appending the digits (without `_`) to `out`.
+    /// appending the original numeric spelling to `out`.
     fn consume_digit_run(&mut self, out: &mut String) {
         while let Some(b) = self.peek() {
             match b {
@@ -774,6 +789,7 @@ impl<'a> Lexer<'a> {
                     self.bump();
                 }
                 b'_' if matches!(self.peek_at(1), Some(b'0'..=b'9')) => {
+                    out.push('_');
                     self.bump();
                 }
                 _ => break,
@@ -893,23 +909,31 @@ mod tests {
     }
 
     #[test]
-    fn exponent_only_floats_use_the_shared_numeric_token() {
-        for (source, digits) in [
-            ("2e3", "2e3"),
-            ("2E+3", "2E+3"),
-            ("2e-3", "2e-3"),
-            ("2_0e1_0", "20e10"),
-            ("2.0e1_0", "2.0e10"),
-        ] {
-            let tokens = lex(source).expect("valid float");
+    fn integers_and_decimal_floats_keep_distinct_token_categories() {
+        for (source, digits) in [("2", "2"), ("-2", "-2"), ("2_0", "2_0")] {
+            let tokens = lex(source).expect("valid integer");
             assert_eq!(tokens.len(), 1, "{source}");
             assert_eq!(
                 tokens[0].kind,
-                TokenKind::FloatLit {
-                    digits: digits.into()
+                TokenKind::IntLit {
+                    digits: digits.into(),
                 }
             );
             assert_eq!(tokens[0].span, Span::new(0, source.len() as u32));
+        }
+        for (source, digits) in [
+            ("2.0", "2.0"),
+            ("2.0e3", "2.0e3"),
+            ("2.0e-3", "2.0e-3"),
+            ("-2.0E-0", "-2.0E-0"),
+            ("2.0e1_0", "2.0e10"),
+        ] {
+            assert_eq!(
+                kinds(source),
+                [TokenKind::FloatLit {
+                    digits: digits.into()
+                }]
+            );
         }
         for source in ["2e", "2E+", "2e-", "2e_3", "2.0e"] {
             let error = lex(source).expect_err("an exponent needs digits");
@@ -917,6 +941,83 @@ mod tests {
                 error.diag().1.contains("exponent has no digits"),
                 "{source}"
             );
+            assert!(error.diagnostic().fixes().is_empty(), "{source}");
+        }
+    }
+
+    #[test]
+    fn integer_tokens_preserve_original_source_spelling() {
+        for number in ["42", "-4_2", "0_0", "-0"] {
+            let source = format!("let value = (({number}))(Float);");
+            let tokens = lex(&source).unwrap();
+            let token = tokens
+                .iter()
+                .find(|token| matches!(token.kind, TokenKind::IntLit { .. }))
+                .unwrap();
+            let TokenKind::IntLit { digits } = &token.kind else {
+                unreachable!()
+            };
+            assert_eq!(digits, number);
+            assert_eq!(
+                &source[token.span.start as usize..token.span.end as usize],
+                number
+            );
+        }
+    }
+
+    #[test]
+    fn point_free_exponent_fix_inserts_only_the_missing_decimal_point() {
+        for (number, floating) in [
+            ("1e12", "1.0e12"),
+            ("42e0", "42.0e0"),
+            ("42E+3", "42.0E+3"),
+            ("42e-3", "42.0e-3"),
+            ("42e-0", "42.0e-0"),
+            ("-4_2E+0_3", "-4_2.0E+0_3"),
+            ("-4_2E-0_3", "-4_2.0E-0_3"),
+            (
+                "0e999999999999999999999999999",
+                "0.0e999999999999999999999999999",
+            ),
+        ] {
+            let source = format!("let value = {number}(Float); // retained\n");
+            let error = lex(&source).expect_err("exponent needs a decimal point");
+            assert_eq!(
+                error.diag().1,
+                "exponent notation is not supported for integer literals"
+            );
+            let span = error.diag().0;
+            assert_eq!(&source[span.start as usize..span.end as usize], number);
+            let fixes = error.diagnostic().fixes();
+            assert_eq!(fixes.len(), 1);
+            assert_eq!(
+                fixes[0].applicability,
+                crate::error::Applicability::MaybeIncorrect
+            );
+            assert_eq!(fixes[0].edits.len(), 1);
+            let edit = &fixes[0].edits[0];
+            let exponent = source.find(number).unwrap() + number.find(['e', 'E']).unwrap();
+            assert_eq!(edit.span, Span::new(exponent as u32, exponent as u32));
+            assert_eq!(edit.replacement, ".0");
+            let mut fixed = source.clone();
+            fixed.insert_str(exponent, &edit.replacement);
+            assert_eq!(fixed, source.replace(number, floating));
+            let tokens = lex(&fixed).expect("fix produces floating syntax");
+            assert!(
+                tokens
+                    .iter()
+                    .any(|token| matches!(token.kind, TokenKind::FloatLit { .. }))
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_point_free_exponents_do_not_offer_a_decimal_point_fix() {
+        for source in [
+            "1e", "1E+", "1e-", "1e_2", "1e+_2", "1e1_", "1E+1__2", "-1_0e-1_",
+        ] {
+            let error = lex(source).expect_err("malformed exponent");
+            assert!(error.diagnostic().fixes().is_empty(), "{source}: {error:?}");
         }
     }
 
@@ -1001,11 +1102,11 @@ mod tests {
                 TokenKind::IntLit { digits: "1".into() },
                 TokenKind::sym("#"),
                 TokenKind::IntLit {
-                    digits: "42".into()
+                    digits: "42".into(),
                 },
                 TokenKind::sym("#"),
                 TokenKind::IntLit {
-                    digits: "1234".into()
+                    digits: "1234".into(),
                 },
             ]
         );
@@ -1197,12 +1298,14 @@ mod tests {
     #[test]
     fn integer_literal_lexes_bare() {
         // Literals carry no type suffix — `42` lexes as a bare
-        // `IntLit`. Digit separators are stripped.
-        for (src, digits) in [("0", "0"), ("42", "42"), ("1_000_000", "1000000")] {
+        // `IntLit`. Digit separators remain available for source fixes.
+        for (src, digits) in [("0", "0"), ("42", "42"), ("1_000_000", "1_000_000")] {
             let toks = lex(src).unwrap();
             assert_eq!(toks.len(), 1, "for {src}");
             match &toks[0].kind {
-                TokenKind::IntLit { digits: d } => assert_eq!(d, digits),
+                TokenKind::IntLit { digits: d } => {
+                    assert_eq!(d, digits);
+                }
                 k => panic!("expected IntLit, got {k:?} for {src}"),
             }
         }

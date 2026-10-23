@@ -118,6 +118,7 @@ fn module_path_string(path: &ModulePath) -> String {
 
 fn dummy_alias(name: String, vis: Visibility, span: Span) -> Item<Lowered> {
     Item::TypeAlias(TypeAlias {
+        default_span: None,
         vis,
         name,
         name_span: span,

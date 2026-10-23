@@ -1,9 +1,11 @@
-same:same@origin
-local:source@origin
-raw:source@origin
+same:same@origin:unselected
+local:source@origin:unselected
+Selected:Number@origin:selected
+raw:source@origin:selected
 raw
 source
 origin
+selected
 ok
 ok
 rejected

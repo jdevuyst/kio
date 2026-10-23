@@ -5,7 +5,7 @@ import elab/match(match);
 import elab/spine_elaborators(widen_sum);
 import list/core as cells;
 import list/list as lists;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;

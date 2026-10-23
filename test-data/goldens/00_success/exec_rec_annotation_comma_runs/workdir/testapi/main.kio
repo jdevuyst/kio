@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/control(if);
 import testapi as host;
-import testapi(Bool);
+import testapi(default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

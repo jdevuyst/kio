@@ -3,7 +3,7 @@ module api;
 import decoy as other;
 import elab/control(if);
 import selected as chosen;
-import testapi(Bool);
+import testapi(default Bool);
 
 pub fn choose(card: chosen.Card) -> Bool {
   if! card.?{chosen.flag} { .t } else { .f }

@@ -1037,7 +1037,15 @@ fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) 
             // references in expressions.
             for item in items {
                 match item {
-                    ast::ImportItem::Name { span, alias, .. } => {
+                    ast::ImportItem::Name {
+                        span,
+                        alias,
+                        default_span,
+                        ..
+                    } => {
+                        if let Some(span) = default_span {
+                            overrides.insert(span.start, TokenKind::KeywordDeclaration);
+                        }
                         overrides.insert(span.start, TokenKind::Identifier);
                         if let Some(alias) = alias {
                             overrides.insert(alias.span.start, TokenKind::Identifier);
@@ -1240,6 +1248,9 @@ fn walk_type_rec_group(group: &ast::TypeRecGroup, raw: &[LexToken], overrides: &
 }
 
 fn walk_host_type(h: &ast::HostType<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
+    if let Some(span) = h.default_span {
+        overrides.insert(span.start, TokenKind::KeywordDeclaration);
+    }
     mark_declaration_keyword(raw, h.meta.span, "type", overrides);
     if let Some(role) = h.role {
         mark_keyword(
@@ -1306,6 +1317,9 @@ fn walk_fn_def<PurityField>(
 }
 
 fn walk_alias(a: &ast::TypeAlias<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
+    if let Some(span) = a.default_span {
+        overrides.insert(span.start, TokenKind::KeywordDeclaration);
+    }
     mark_declaration_keyword(raw, a.meta.span, "type", overrides);
     if let Some(s) = find_name_after_kw(raw, a.meta.span, "type", &a.name) {
         overrides.insert(s.start, TokenKind::EntityNameType);
@@ -3745,12 +3759,50 @@ mod tests {
     }
 
     #[test]
+    fn default_modifiers_follow_their_type_owners_without_reserving_names() {
+        let source = concat!(
+            "module source; import provider(default Int as Number, default as ordinary);\n",
+            "default pub host type Bool role(bool);\n",
+            "default pub(source) type Alias = Number;\n",
+            "pub fn default(default: .) -> . { default }\n",
+        );
+        let actual = dumped_text(source)
+            .into_iter()
+            .filter_map(|(text, kind)| (text == "default").then_some(kind))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual,
+            [
+                "keyword.declaration",
+                "identifier",
+                "keyword.declaration",
+                "keyword.declaration",
+                "entity.name.function",
+                "variable.parameter",
+                "identifier",
+            ]
+        );
+        let source = concat!(
+            "module source; import provider(default // import policy\n Int);\n",
+            "default // declaration policy\n pub host type Bool role(bool);\n",
+            "default // alias policy\n type Alias = Int;\n",
+        );
+        let actual = dumped_text(source)
+            .into_iter()
+            .filter_map(|(text, kind)| (text == "default").then_some(kind))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, ["keyword.declaration"; 3]);
+    }
+
+    #[test]
     fn number_literals_classify_as_literal_number() {
-        let got = dumped("0 42 3.14 1.0e-9");
+        let got = dumped("0 42 42.0e0 42.0E+3 3.14 1.0e-9");
         let kinds: Vec<&str> = got.iter().map(|(_, _, k)| *k).collect();
         assert_eq!(
             kinds,
             vec![
+                "literal.number",
+                "literal.number",
                 "literal.number",
                 "literal.number",
                 "literal.number",

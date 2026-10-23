@@ -2,7 +2,7 @@ module testapi/main;
 
 import __intrinsics__;
 
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 
 // Polymorphic CPS-projector apply: a newtype whose header declares

@@ -6,9 +6,9 @@ import elab/control(if);
 import other as types;
 import types as real;
 
-type Actual = types.Other;
+default type Actual = types.Other;
 
-type Bool = real.Bool;
+default type Bool = real.Bool;
 
 newtype Box[A] : A { constructor mk_box; projector un_box }
 

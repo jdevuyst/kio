@@ -3,7 +3,7 @@ module testapi/main;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32);
+import testapi(default Bool, default I32);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);

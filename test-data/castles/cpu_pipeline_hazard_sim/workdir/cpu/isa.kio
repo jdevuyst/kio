@@ -20,7 +20,7 @@ import cpu/num(and, cat, cat3, int_eq, or);
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt(int_to_string);
 
 pub labels Opcode =

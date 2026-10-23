@@ -11,7 +11,7 @@ module cellar/command;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/text(string_eq);
 
 pub labels Verb =

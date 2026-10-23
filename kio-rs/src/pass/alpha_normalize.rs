@@ -340,7 +340,10 @@ impl<'a> BinderNormalizer<'a> {
 impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for BinderNormalizer<'_> {
     fn enter_type_binder(&mut self, param: &mut TypeParam, _scope: Span) {
         let source = param.name.clone();
-        let normalized = if self.type_bindings.contains_key(&source) {
+        let normalized = if self.type_bindings.contains_key(&source)
+            || crate::comptime::ComptimeBuiltin::from_public_name(&source)
+                .is_some_and(crate::comptime::ComptimeBuiltin::is_type_name)
+        {
             self.fresh_shadow(&source)
         } else {
             source.clone()

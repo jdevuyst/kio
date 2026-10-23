@@ -7,7 +7,7 @@ import petri/model as model;
 import petri/search as search;
 import queue/list/core as lists;
 import queue/list/list as traversal;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as arithmetic;
 import testapi/fmt as fmt;
 import testapi/io as io;

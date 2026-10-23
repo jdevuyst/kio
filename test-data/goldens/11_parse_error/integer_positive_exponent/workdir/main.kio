@@ -1,0 +1,5 @@
+module main;
+
+host type Float role(f64);
+
+fn value() -> Float { -42E+3(Float) }

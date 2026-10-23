@@ -19,11 +19,11 @@ import docs_loader/list/elab/match(match);
 import docs_loader/list/elab/spine_elaborators(widen_sum);
 import docs_loader/list_host as _rehost_gmgjhdhefpgigphdhe;
 
-pub type Bool = _rehost_gmgjhdhefpgigphdhe.Bool;
+default pub type Bool = _rehost_gmgjhdhefpgigphdhe.Bool;
 
-pub type I32 = _rehost_gmgjhdhefpgigphdhe.I32;
+default pub type I32 = _rehost_gmgjhdhefpgigphdhe.I32;
 
-pub type String = _rehost_gmgjhdhefpgigphdhe.String;
+default pub type String = _rehost_gmgjhdhefpgigphdhe.String;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_gmgjhdhefpgigphdhe.add_i32(p0, p1) }
 
@@ -396,7 +396,7 @@ pub op _ <| _ |> { impl index }
 pub op _ |> _ { impl map_with }
 
 /// Builds lists with bracket syntax.
-pub varop [* *] { foldr prepend empty }
+pub varop [] { foldr prepend empty }
 
 // =====================================================================
 // equiv-law battery

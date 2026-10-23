@@ -27,7 +27,7 @@ import library/dict(
 import library/elab/control(if);
 import library/elab/match(match);
 import library/elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(default Bool, default I32, default String);
 import testapi/arith(add, eq_i32, lt_i32);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);

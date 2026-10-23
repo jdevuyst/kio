@@ -340,7 +340,12 @@ impl Parser {
         Ok(())
     }
 
-    fn decl_modifiers(&mut self) -> Result<(bool, bool, Option<Span>), ParseError> {
+    fn decl_modifiers(&mut self) -> Result<(bool, bool, Option<Span>, Option<Span>), ParseError> {
+        let default = if self.ident_named("default") {
+            Some(self.advance().expect("peeked modifier").span)
+        } else {
+            None
+        };
         let mut saw_vis = false;
         let mut saw_pure = false;
         let mut scoped_vis = None;
@@ -366,7 +371,7 @@ impl Parser {
                 break;
             }
         }
-        Ok((saw_vis, saw_pure, scoped_vis))
+        Ok((saw_vis, saw_pure, scoped_vis, default))
     }
 
     fn expect_ident_named(&mut self, name: &str) -> Result<(), ParseError> {
@@ -830,6 +835,11 @@ impl Parser {
                 {
                     return self.err("operator imports are surface syntax — not in Kio'");
                 }
+                if self.ident_named("default")
+                    && matches!(self.peek_kind_at(1), Some(TokenKind::Ident(name)) if Self::is_type_name(name))
+                {
+                    self.advance();
+                }
                 let (name, span) = self.expect_ident_with_span("imported identifier")?;
                 Self::validate_value_or_type_name(&name, span)?;
                 if self.eat_ident_named("as") {
@@ -865,8 +875,15 @@ impl Parser {
     /// ordinary identifier. See `kio-rs`'s `item_modifiers` /
     /// `host_decl_follows`.
     fn item(&mut self) -> Result<(), ParseError> {
-        let (vis, pure, scoped_vis) = self.decl_modifiers()?;
+        let (vis, pure, scoped_vis, default) = self.decl_modifiers()?;
         if self.ident_named("host") && self.host_decl_follows() {
+            if let Some(span) = default {
+                let host_fn = self.ident_named_at(1, "fn")
+                    || (self.ident_named_at(1, "pub") && self.ident_named_at(2, "fn"));
+                if host_fn {
+                    return self.err_at(span, "`default` is valid only on type declarations");
+                }
+            }
             if let Some(span) = scoped_vis {
                 return self.err_at(span, "host declarations cannot use `pub(path)` visibility");
             }
@@ -884,6 +901,12 @@ impl Parser {
             self.advance();
             let _ = self.eat_ident_named("pub");
             return self.host_item_after_keyword();
+        }
+
+        if let Some(span) = default
+            && !self.ident_named("type")
+        {
+            return self.err_at(span, "`default` is valid only on type declarations");
         }
 
         if self.ident_named("rec") {
@@ -966,7 +989,7 @@ impl Parser {
         }
         let mut members = 0usize;
         while !matches!(self.peek_kind(), Some(TokenKind::RBrace)) {
-            let (_, pure, _) = self.decl_modifiers()?;
+            let (_, pure, _, default) = self.decl_modifiers()?;
             if pure {
                 return self.err(
                     "a bare `rec { ... }` type group admits only `type` and `newtype` declarations",
@@ -975,6 +998,12 @@ impl Parser {
             if self.eat_ident_named("type") {
                 self.type_alias_body()?;
             } else if self.eat_ident_named("newtype") {
+                if let Some(span) = default {
+                    return self.err_at(
+                        span,
+                        "`default` is valid only on type aliases and host types",
+                    );
+                }
                 self.newtype_after_keyword()?;
             } else if self.ident_named("labels") {
                 return self.err("`labels` is surface sugar — not in Kio'");
@@ -1945,6 +1974,32 @@ mod tests {
     }
 
     #[test]
+    fn default_modifiers_and_contextual_import_names() {
+        for source in [
+            "module m; default host type Int role(i32);",
+            "module m; default pub host type Int role(i32);",
+            "module m; default pub type Number = numbers.Int;",
+            "module m; default type Number = Identity(numbers.Int);",
+            "module m; import numbers(default Int as Number, default Bool);",
+            "module m; import helpers(default as d, default); fn default() { () }",
+            "module m; rec { default type Number = Int; newtype Box : Int { constructor box; projector unbox; } }",
+        ] {
+            ok(source);
+        }
+        for source in [
+            "module m; pub default host type Int role(i32);",
+            "module m; default default host type Int role(i32);",
+            "module m; default host fn value();",
+            "module m; default fn value() {}",
+            "module m; default newtype Int : . {}",
+            "module m; import numbers(default value);",
+            "module m; import numbers(default Int as value);",
+        ] {
+            assert!(parse_module(source).is_err(), "{source}");
+        }
+    }
+
+    #[test]
     fn host_roles_use_the_closed_grammar_vocabulary() {
         for role in [
             "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "f32", "f64",
@@ -1981,10 +2036,10 @@ mod tests {
 
     #[test]
     fn numeric_separators_stay_between_digits() {
-        for literal in ["1__0", "1_", "1.0__1", "1.0e1__0", "1e1_"] {
+        for literal in ["1__0", "1_", "1.0__1", "1.0e1__0", "1e1_", "2e3", "2E-3"] {
             let _ = err(&format!("module x; fn f() {{ {literal}(Number) }}"));
         }
-        for literal in ["1_0", "1.0_1", "1.0e1_0", "2e3", "2E-3"] {
+        for literal in ["1_0", "1.0_1", "1.0e1_0", "2.0e3", "2.0E-3"] {
             ok(&format!("module x; fn f() {{ {literal}(Number) }}"));
         }
     }

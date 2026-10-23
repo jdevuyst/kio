@@ -269,6 +269,7 @@ pub trait SurfaceToDesugared {
     fn visit_expr_int_lit(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::IntLit {
             occurrence: _,
+            diagnostic,
             digits,
             annotation,
             meta: Meta { span, .. },
@@ -278,6 +279,7 @@ pub trait SurfaceToDesugared {
         };
         Ok(Expr::IntLit {
             occurrence: Default::default(),
+            diagnostic,
             digits,
             annotation: annotation.map(|t| self.walk_type(t)).transpose()?,
             meta: Meta::new(span),
@@ -826,6 +828,7 @@ pub trait SurfaceToDesugared {
     /// Walk a `type` Surface → Desugared.
     fn walk_type_alias(&mut self, a: TypeAlias<Surface>) -> Result<TypeAlias<Desugared>, Error> {
         let TypeAlias {
+            default_span,
             vis,
             name,
             name_span,
@@ -836,6 +839,7 @@ pub trait SurfaceToDesugared {
             doc,
         } = a;
         Ok(TypeAlias {
+            default_span,
             vis,
             name,
             name_span,
@@ -985,6 +989,7 @@ pub trait SurfaceToDesugared {
 
     fn walk_host_type(&mut self, h: HostType<Surface>) -> Result<HostType<Desugared>, Error> {
         let HostType {
+            default_span,
             name,
             type_params,
             role,
@@ -993,6 +998,7 @@ pub trait SurfaceToDesugared {
             doc,
         } = h;
         Ok(HostType {
+            default_span,
             name,
             type_params,
             role,

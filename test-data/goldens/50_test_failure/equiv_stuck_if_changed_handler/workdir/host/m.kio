@@ -1,7 +1,7 @@
 module host/m;
 
 import elab/control(if);
-import host(Bool, Input, bar, baz, condition, foo);
+import host(Input, bar, baz, condition, default Bool, foo);
 
 equiv stuck_if_ne(x: Input) {
   if! condition(x) { foo() } else { bar() };

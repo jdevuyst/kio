@@ -1,7 +1,7 @@
 module testapi/main;
 
 import elab/control(if);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io(print);
 
 fn pick(c: Bool, t: String, e: String) -> String {

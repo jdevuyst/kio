@@ -4,7 +4,7 @@ import earley/fixtures as fixtures;
 import earley/model as model;
 import earley/recognize as recognize;
 import elab/control(if);
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as arrays;
 import testapi/fmt as fmt;

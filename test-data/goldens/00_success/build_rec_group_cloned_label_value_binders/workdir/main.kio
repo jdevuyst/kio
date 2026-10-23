@@ -1,6 +1,6 @@
 module main;
 
-import build_rec_group_cloned_label_value_binders(Bool, I32, String, done, empty, loop);
+import build_rec_group_cloned_label_value_binders(I32, String, default Bool, done, empty, loop);
 import elab/control(if);
 
 labels { text: String };

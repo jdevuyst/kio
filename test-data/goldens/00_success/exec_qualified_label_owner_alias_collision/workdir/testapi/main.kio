@@ -3,7 +3,7 @@ module testapi/main;
 import decoy as selected;
 import elab/control(if);
 import selected as chosen;
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io(print);
 
 pub fn main() {

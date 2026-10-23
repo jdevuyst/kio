@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/match(match);
 import elab/spine_elaborators(fit);
-import testapi(Bool, I32, String);
+import testapi(Bool, I32, default String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 

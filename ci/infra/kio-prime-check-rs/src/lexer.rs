@@ -2,7 +2,7 @@
 //!
 //! Whitespace and `// …` line comments are trivia and dropped during
 //! lexing. Every keyword-shaped word — `module`, `import`, `as`,
-//! `pub`, `pure`, `type`, `host`, `bridge`, `package`, `fn`, `newtype`, `let`,
+//! `default`, `pub`, `pure`, `type`, `host`, `bridge`, `package`, `fn`, `newtype`, `let`,
 //! `constructor`, `projector`, and the magic `__...__` import targets —
 //! is emitted as `Ident(text)` and disambiguated by the parser based on
 //! grammatical position.
@@ -383,7 +383,6 @@ fn lex_numeric_literal(bytes: &[u8], i: &mut usize, start: usize) -> Result<Toke
     }
     // Exponent.
     if *i < bytes.len() && (bytes[*i] == b'e' || bytes[*i] == b'E') {
-        is_float = true;
         let exponent_start = *i;
         *i += 1;
         if *i < bytes.len() && (bytes[*i] == b'+' || bytes[*i] == b'-') {
@@ -393,6 +392,12 @@ fn lex_numeric_literal(bytes: &[u8], i: &mut usize, start: usize) -> Result<Toke
             return Err(LexError {
                 offset: exponent_start,
                 message: "exponent has no digits".into(),
+            });
+        }
+        if !is_float {
+            return Err(LexError {
+                offset: exponent_start,
+                message: "exponent notation is not supported for integer literals".into(),
             });
         }
         lex_digit_run(bytes, i);
@@ -455,7 +460,7 @@ mod tests {
 
     #[test]
     fn exponent_digits_and_separators_are_validated() {
-        for source in ["2e3", "2E+3", "2e-3", "2_0e1_0", "2.0e1_0"] {
+        for source in ["2.0e3", "2.0E+3", "2.0e-3", "2_0.0e1_0"] {
             let tokens = lex(source).expect("valid float");
             assert_eq!(tokens.len(), 1, "{source}");
             assert_eq!(tokens[0].kind, TokenKind::FloatLit, "{source}");
@@ -465,6 +470,15 @@ mod tests {
                     start: 0,
                     end: source.len()
                 }
+            );
+        }
+        for source in ["2e3", "2E+3", "2_0e1_0", "-42e0", "2e-3", "2e-0", "-42E-0"] {
+            assert!(
+                lex(source)
+                    .expect_err("unsupported integer exponent")
+                    .message
+                    .contains("not supported for integer literals"),
+                "{source}"
             );
         }
         for source in ["2e", "2E+", "2e-", "2e_3", "2.0e"] {

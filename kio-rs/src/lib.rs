@@ -144,6 +144,7 @@ pub mod file_kind;
 pub mod git_dep;
 pub mod host_descriptor;
 mod naming;
+mod numeric_literal;
 pub mod pass;
 pub mod path_display;
 // The `Pipeline` trait the two binaries' front-ends impl. Pure — it

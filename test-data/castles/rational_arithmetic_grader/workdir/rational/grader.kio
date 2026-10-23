@@ -9,7 +9,7 @@ import rational/core(Division_by_zero, Eval, Fraction, Rational);
 import rational/expr(Expr);
 import rational/render as render;
 import rational/text as text;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 
 /// `Exact` and `Equivalent` are both accepted answers; they differ only in

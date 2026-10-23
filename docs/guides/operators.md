@@ -14,7 +14,7 @@ module kiodoc;
 import control(if);
 
 host type Int role(i32);
-host type Bool role(bool);
+default host type Bool role(bool);
 host fn add(a: Int, b: Int) -> Int;
 
 __INSERT_CODE_HERE__
@@ -99,7 +99,7 @@ The [specification](../../specs/language.md#operators) gives the full rule.
 ## Multi-token patterns
 
 A pattern can contain several symbols and operands. This example also uses a
-host `Bool` with `role(bool)` and `if!` from the
+host `Bool` with `role(bool)`, selected as the module's Boolean default, and `if!` from the
 [elab library](using-libraries.md#the-elaborator-library); with that
 dependency named `elab`, import it as `import elab/control(if);`:
 

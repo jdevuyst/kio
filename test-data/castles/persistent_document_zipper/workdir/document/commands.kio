@@ -5,7 +5,7 @@ import document/zipper as zipper;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io as io;
 import testapi/text as text;
 

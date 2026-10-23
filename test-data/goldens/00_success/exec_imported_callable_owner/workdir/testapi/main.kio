@@ -1,6 +1,6 @@
 module testapi/main;
 
-import testapi(I32, String);
+import testapi(String, default I32);
 import testapi/definitions as definitions;
 import testapi/fmt(i32_to_string);
 import testapi/io(print);

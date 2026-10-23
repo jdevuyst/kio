@@ -1,7 +1,7 @@
 module continuations/testapi/main;
 
 import continuations/elab/control(if);
-import continuations/testapi(Bool, I32, String);
+import continuations/testapi(I32, String, default Bool);
 import continuations/testapi/arith as arith;
 import continuations/testapi/io as io;
 import continuations/testapi/iter(loop);

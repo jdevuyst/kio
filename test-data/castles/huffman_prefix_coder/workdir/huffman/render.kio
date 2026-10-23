@@ -13,7 +13,7 @@ import huffman/report({milli_bits_each}, {saved_bits}, {saved_permille}, {symbol
 import huffman/text(cat, cat3, cat4, line, num, pad_num, pad_text);
 import huffman/tree(Node, Step, is_leaf, key, symbol_or, weight);
 import huffman/tree({step_left}, {step_merged}, {step_right});
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32);
 import testapi/io(print);
 import testapi/iter(loop);

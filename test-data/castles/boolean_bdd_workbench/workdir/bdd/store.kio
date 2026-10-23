@@ -6,7 +6,7 @@ import elab/match(match);
 import elab/spine_elaborators(reorder_prod, widen_sum);
 import list/core as lists;
 import list/list as walk;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 
 pub newtype Node_id : I32 { pub constructor from_int; pub projector to_int }

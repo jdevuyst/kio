@@ -98,7 +98,8 @@ use host_api::{
 use opt_profile::OptProfile;
 use protocol::{
     ExportDriver, HostFnBinding, HostFnBodyKind, HostRoleRef, HostTypeBinding, HostTypeFixture,
-    HostTypeIdentity, ProtocolExecution, RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
+    HostTypeIdentity, NUMERIC_LITERAL_SAMPLES, NumericLiteralExpected, ProtocolExecution,
+    RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
 };
 use runner::{EXIT_RUNTIME_FAILURE, EXIT_USAGE, TestRunner};
 use runner_cache_env::RunnerCacheConfig;
@@ -1495,6 +1496,21 @@ for viaCallback in [false, true] {{
              precondition(productCalls == 2 && sumCalls == 2)\n\
              print(\"callable slots ok\")\n"
         ),
+        ExportDriver::NumericLiteralValues => {
+            let mut script = String::new();
+            for (leaf, expected) in NUMERIC_LITERAL_SAMPLES {
+                        let member = host_api::host_name_core(leaf);
+                let call = format!("{main_ns}.{member}()");
+                let check = match expected {
+                    NumericLiteralExpected::Integer(_, value) => format!("{call} == {value}"),
+                    NumericLiteralExpected::F32(bits) => format!("{call}.bitPattern == 0x{bits:08x}"),
+                    NumericLiteralExpected::F64(bits) => format!("{call}.bitPattern == 0x{bits:016x}"),
+                };
+                script.push_str(&format!("precondition({check}, \"{leaf}\")\n"));
+            }
+            script.push_str("print(\"numeric literals ok\")\n");
+            script
+        }
         ExportDriver::ScalarRoundtrip => format!(
             "let signed: Int128 = -1208925819614629174706299\n\
              let unsigned: UInt128 = 2417851639229258349412391\n\

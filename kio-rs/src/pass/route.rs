@@ -1478,11 +1478,13 @@ impl<'a> Lowerer<'a> {
             },
             Expr::IntLit {
                 occurrence: _,
+                diagnostic: _,
                 digits,
                 annotation,
                 meta,
             } => Expr::IntLit {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 digits: digits.clone(),
                 annotation: self.routed_type(annotation),
                 meta: convert_meta(meta),

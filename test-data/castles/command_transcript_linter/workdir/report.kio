@@ -3,7 +3,7 @@ module report;
 import elab/control(if);
 import rules as rules;
 import scanner as scan;
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/fmt as fmt;
 import testapi/text as text;
 

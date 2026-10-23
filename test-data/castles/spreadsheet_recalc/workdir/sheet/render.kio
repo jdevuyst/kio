@@ -14,7 +14,7 @@ import sheet/cells(fold_value, value_at);
 import sheet/formula(Expr, render_expr);
 import sheet/list(List, is_empty);
 import sheet/recalc(Edit, edit_addr, fold_edit);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);

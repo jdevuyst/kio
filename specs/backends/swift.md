@@ -336,6 +336,12 @@ expected type selects the exact declaration; it does not bypass the role
 check. A roleless host type therefore accepts no lexical literal, and a
 mismatched literal is rejected before Swift emission.
 
+Numeric values follow the shared [literal contract](../language.md#literals).
+An associated type's literal initializer must preserve the checked integer
+or selected IEEE float value, including signed zero and subnormals. Protocol
+conformance alone does not establish this value-preservation obligation for
+a custom carrier.
+
 `Equatable` is required only because emitted `if` / `else` code compares an
 exact Boolean value with that associated type's `true` literal. A host chooses
 the concrete type in its conformance—for example

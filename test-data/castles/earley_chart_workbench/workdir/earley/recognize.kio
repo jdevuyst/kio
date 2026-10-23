@@ -5,7 +5,7 @@ import earley/chart as chart;
 import earley/closure as closure;
 import earley/model as model;
 import elab/control(if);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
 import testapi/array as arrays;
 import testapi/iter(loop);

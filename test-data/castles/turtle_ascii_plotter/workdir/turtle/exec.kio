@@ -14,7 +14,7 @@ module turtle/exec;
 import elab/control(if);
 import elab/match(match);
 import list/core as list;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 import turtle/canvas as canvas;

@@ -53,7 +53,7 @@ import forge/program(
 , Undefined_label
 , Unknown_macro
 );
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32);
 import testapi/iter(loop);
 

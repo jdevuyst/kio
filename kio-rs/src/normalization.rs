@@ -3912,16 +3912,31 @@ fn compile_eval_expr(
         Expr::BoolLit { value, .. } => EvalExpr::Bool(*value),
         Expr::IntLit {
             digits, annotation, ..
-        } => EvalExpr::IntAtom(
-            digits.clone(),
-            literal_annotation_identity(annotation.as_ref(), state),
-        ),
+        } => {
+            let value = crate::numeric_literal::Integer::parse(digits)?;
+            let annotation = canonical_literal_annotation(annotation.as_ref(), state);
+            if literal_annotation_role(annotation.as_ref(), state)
+                .is_some_and(|role| !value.fits(role))
+            {
+                return None;
+            }
+            EvalExpr::IntAtom(
+                value.decimal(),
+                literal_annotation_name(annotation.as_ref()),
+            )
+        }
         Expr::FloatLit {
             digits, annotation, ..
-        } => EvalExpr::FloatAtom(
-            digits.clone(),
-            literal_annotation_identity(annotation.as_ref(), state),
-        ),
+        } => {
+            let annotation = canonical_literal_annotation(annotation.as_ref(), state);
+            let digits = match literal_annotation_role(annotation.as_ref(), state) {
+                Some(role) => crate::numeric_literal::float_decimal(role, digits)?,
+                // Unchecked terms can retain an unresolved annotation. Such an atom
+                // has no selected IEEE width and cannot acquire a default here.
+                None => digits.clone(),
+            };
+            EvalExpr::FloatAtom(digits, literal_annotation_name(annotation.as_ref()))
+        }
         Expr::StrLit {
             value, annotation, ..
         } if literal_is_primitive_type(
@@ -9290,32 +9305,68 @@ fn literal_annotation_name<P: crate::ast::Phase>(annotation: Option<&Type<P>>) -
     }
 }
 
-fn literal_annotation_identity(
+fn canonical_literal_annotation(
     annotation: Option<&EvalAstType>,
     state: &EvalCompileState<'_, '_>,
-) -> Option<String> {
-    let annotation = match annotation {
-        Some(Type::Path {
-            segments,
-            args,
-            meta,
-        }) if segments.len() == 1 && args.is_empty() => {
-            let segments = state.module.map_or_else(
-                || segments.clone(),
-                |module| {
-                    crate::pass::resolve::qualify_type_segments_in_module(
-                        segments,
-                        module,
-                        &state.type_binders,
-                    )
-                },
-            );
-            Some(Type::synth_path_segments(segments, Vec::new(), meta.span))
-        }
-        Some(annotation) => Some(annotation.clone()),
-        None => None,
+) -> Option<EvalAstType> {
+    let annotation = annotation?;
+    let bound = state.type_binders.keys().cloned().collect();
+    Some(crate::pass::typecheck_core::materialize_aliases_in_scope(
+        annotation,
+        state.module,
+        state.ctx.package,
+        Some(&bound),
+        false,
+    ))
+}
+
+fn literal_annotation_role(
+    annotation: Option<&EvalAstType>,
+    state: &EvalCompileState<'_, '_>,
+) -> Option<crate::ast::Role> {
+    let Type::Path { segments, args, .. } = annotation? else {
+        return None;
     };
-    literal_annotation_name(annotation.as_ref())
+    if !args.is_empty() {
+        return None;
+    }
+    let (name, owner) = segments.split_last()?;
+    if owner.is_empty() && state.type_binders.contains_key(name.as_str()) {
+        return None;
+    }
+    let module_path = if owner.is_empty() {
+        state.module_path.clone()
+    } else {
+        owner
+            .iter()
+            .map(PathSegment::as_str)
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    if let Some(entry) = state
+        .ctx
+        .package
+        .and_then(|package| package.module(&module_path))
+    {
+        return crate::pass::resolve::declaration_by_id(
+            &entry.module,
+            entry.scope.lookup(name.as_str())?,
+        )?
+        .host_type()?
+        .role
+        .map(|annotation| annotation.role);
+    }
+    // Flat evaluator clients already supply their lexical module; package-backed
+    // evaluation uses the declaration index above.
+    let module = state
+        .module
+        .filter(|module| module_path_string(module) == module_path)?;
+    module.items.iter().find_map(|item| match item {
+        Item::HostType(host) if host.name == name.as_str() => {
+            host.role.map(|annotation| annotation.role)
+        }
+        _ => None,
+    })
 }
 
 fn literal_is_primitive_type(
@@ -17167,13 +17218,55 @@ mod tests {
     }
 
     #[test]
-    fn float_residuals_keep_source_spelling_before_native_emission() {
+    fn unresolved_float_residuals_do_not_guess_a_width() {
         let original = eval_one("1.5E+2");
         let canonical = eval_one("1.5e2");
         assert!(matches!(&original, Value::FloatAtom(digits, _) if digits == "1.5E+2"));
         assert!(matches!(&canonical, Value::FloatAtom(digits, _) if digits == "1.5e2"));
         assert!(!nf_eq(&original, &canonical, &EvalCtx::new()));
         assert!(nf_eq(&original, &eval_one("1.5E+2"), &EvalCtx::new()));
+    }
+
+    #[test]
+    fn raw_numeric_artifact_values_use_their_explicit_roles() {
+        for (first, second, equal) in [
+            ("010(I)", "10(I)", true),
+            ("-0(U)", "0(U)", true),
+            ("1.5E+2(F32)", "150.0(F32)", true),
+            ("0.1(Alias(.))", "0.10000000149011612(F32)", true),
+            ("16777217.0(F32)", "16777216.0(F32)", true),
+            ("1.0000000596046448(F32)", "1.0(F32)", false),
+            ("0.1(F64)", "0.10000000149011612(F64)", false),
+            ("-0.0(F32)", "0.0(F32)", false),
+            ("-1.0e-9999(F64)", "-0.0(F64)", true),
+        ] {
+            let source = format!(
+                "module x; host type I role(i8); host type U role(u8); host type F32 role(f32); host type F64 role(f64); type Alias[A] = F32; equiv probe {{ {first}; {second} }}"
+            );
+            let pkg = lowered_package(&[("x.kio", &source)]);
+            let module = &pkg.module("x").unwrap().module;
+            let ctx = EvalCtx::new()
+                .with_package(Some(&pkg))
+                .with_root_module(module);
+            let parsed = parse_module(&source);
+            let terms = equiv_terms(&parsed);
+            let values = terms
+                .iter()
+                .map(|expr| eval(expr, &Env::new(), &ctx))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                nf_eq(&values[0], &values[1], &ctx),
+                equal,
+                "{first} vs {second}"
+            );
+        }
+        for value in ["128(I)", "1.0e9999(F32)"] {
+            let module = parse_module(&format!(
+                "module x; host type I role(i8); host type F32 role(f32); equiv probe {{ {value}; () }}"
+            ));
+            let ctx = EvalCtx::new().with_root_module(&module);
+            assert!(compile_eval_root(equiv_terms(&module)[0], &ctx, Vec::new()).is_none());
+        }
     }
 
     #[test]
@@ -19051,13 +19144,20 @@ mod tests {
             zero_span(),
         );
         assert_eq!(
-            literal_annotation_identity(Some(&bare), &state),
+            literal_annotation_name(canonical_literal_annotation(Some(&bare), &state).as_ref()),
             Some("vec.I32".to_owned())
         );
         assert_eq!(
-            literal_annotation_identity(Some(&canonical), &state),
+            literal_annotation_name(Some(&canonical)),
             Some("vec.I32".to_owned()),
             "a canonical path must not be reinterpreted through a caller alias"
+        );
+        assert_eq!(
+            literal_annotation_name(
+                canonical_literal_annotation(Some(&canonical), &state).as_ref()
+            ),
+            Some("other.I32".to_owned()),
+            "an artifact annotation follows its lexical module import"
         );
 
         assert!(literal_is_primitive_type(
@@ -23915,6 +24015,19 @@ mod tests {
     fn raw_comptime_spellings_have_no_evaluator_authority() {
         let ctx = EvalCtx::new();
         let direct = eval(&type_unit_call(), &Env::new(), &ctx);
+        assert!(matches!(direct, Value::Atom(name) if name == "__type_unit__"));
+
+        let imported = parse_module("module imported; import __comptime__;");
+        assert!(
+            imported
+                .imports
+                .iter()
+                .any(|import_| matches!(import_.kind, ImportKind::Comptime))
+        );
+        let without_grants = EvalCtx::new()
+            .with_module_path("imported")
+            .with_root_module(&imported);
+        let direct = eval(&type_unit_call(), &Env::new(), &without_grants);
         assert!(matches!(direct, Value::Atom(name) if name == "__type_unit__"));
 
         let indirect = Expr::Let {

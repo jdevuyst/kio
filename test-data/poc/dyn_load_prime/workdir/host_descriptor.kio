@@ -5,7 +5,7 @@ import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
 import list/core(List, cons, nil, uncons);
-import testapi(Bool, String);
+import testapi(default Bool, default String);
 import testapi/iter(loop);
 import testapi/text(string_concat, string_eq);
 

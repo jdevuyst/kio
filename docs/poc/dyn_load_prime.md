@@ -145,21 +145,43 @@ redundant following semicolon. Canonical emitted Kio' omits those edge tokens,
 as specified in the [grammar](../../specs/grammar.md) and [style
 contract](../../specs/style.md#semicolon-clause-blocks).
 
-The public `Import` record stores `(local-name, original-name, provider-module)`.
+The public `Import` record stores
+`(local-name, original-name, provider-module, is-default)`.
 `mk_import(name, provider)` constructs an unrenamed selection;
 `mk_import_as(local, original, provider)` constructs a renamed one.
+Both leave the default flag false. Use
+`mk_import_selected(local, original, provider, selected)` to supply that Boolean
+explicitly, and `import_is_default(entry)` to read it.
 `un_import(entry)` returns `(local-name, provider-module)`, and
 `import_source(entry)` reads the original declaration name. Raw `Import.get`
-and the `{import = ...}` constructor expose the three fields. The loader uses
+and the `{import = ...}` constructor expose all four fields. The loader uses
 the local name for scope and duplicate checks and the original name for exact
 provider lookup and visibility validation. Distinct local aliases are allowed;
 repeated local introductions are errors.
+
+The retained `Alias_decl` payload is
+`(name, binders, body, visibility, decl-pos, recursive-scope, is-default)`;
+`Host_header` stores `(is-fn, name, header, decl-pos, is-default)`.
+Their raw constructors/projectors therefore expose seven and five fields
+respectively. `mk_alias_decl_selected` and `mk_host_header_selected` take the
+existing constructor arguments followed by the selection Boolean;
+`tyalias_is_default` and `host_header_is_default` read it. The existing
+`mk_alias_decl` and `mk_host_header` signatures stay unchanged and construct
+unselected records.
+
+Default markers describe ordinary module-local selections, not provider
+exports. Loading resolves every selected header through ordinary alias
+normalization, including applied aliases, and requires a saturated role-bearing
+host identity. Same-identity selections agree; distinct defaults in one category
+reject even when unused. Import/header selections and local source-order scope
+also determine the Boolean intrinsic's identity. These structural checks do
+not typecheck function bodies or infer selections from unmarked declarations.
 
 ## The trust model
 
 Loading **trusts the image's function bodies**, exactly as build-time
 linking trusts a compiled artifact — deliberately, so loading is a single
-pass over the text. The loader re-typechecks nothing at load time and does
+pass over the text. The loader does not re-typecheck function bodies and does
 not read the package's `.sig.kio` versioning changelog. Use it only with
 precompiled output whose producer and build process you trust: `kio build
 kio-prime` typechecks the package before emitting the image, but `load_package`

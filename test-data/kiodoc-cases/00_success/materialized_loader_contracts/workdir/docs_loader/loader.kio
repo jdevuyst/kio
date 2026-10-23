@@ -46,13 +46,13 @@ import docs_loader/host_descriptor(
 , param_kinds_cons
 , param_kinds_nil
 );
-import docs_loader/host_descriptor(bool_role, role_eq);
 import docs_loader/host_descriptor(host_fn_signature);
 import docs_loader/host_descriptor(host_id_render, mk_host_fn, mk_host_id);
 import docs_loader/host_descriptor(host_type_eq, host_type_id, un_host_types);
 import docs_loader/host_descriptor(host_type_shape, param_kind_eq, un_param_kind, un_param_kinds);
 import docs_loader/host_descriptor(host_types_cons, host_types_nil);
 import docs_loader/host_descriptor(role_from_name);
+import docs_loader/host_descriptor(role_name);
 import docs_loader/lex(Lex_err, ascii_char, lex, lex_err_message, lex_err_pos);
 import docs_loader/list/core(List, cons, nil, uncons);
 import docs_loader/list/list(append, elem, length, reverse);
@@ -65,7 +65,7 @@ import docs_loader/parse(pnl_cons, pnl_nil, pnl_one, scope_push_names);
 import docs_loader/prime(Group_slots, Nat, Term, app, fst, lam, let_, ns, nz, snd, var);
 import docs_loader/prime(group_slots_cons, group_slots_nil, hostfn_ref, un_group_slots);
 import docs_loader/result(Call_result, Ev_done, Ev_stuck, Eval_result, stuck_reason);
-import docs_loader/testapi(Bool, F64, I32, Scalar, String);
+import docs_loader/testapi(Scalar, default Bool, default F64, default I32, default String);
 import docs_loader/testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
 import docs_loader/testapi/fmt(int_to_string);
 import docs_loader/testapi/iter(loop);
@@ -73,7 +73,7 @@ import docs_loader/testapi/scalar(scalar_as_bool, scalar_as_f64, scalar_as_i32, 
 import docs_loader/testapi/scalar(scalar_of_bool, scalar_of_f64, scalar_of_i32, scalar_of_str);
 import docs_loader/testapi/text(string_code_at, string_concat, string_eq, string_len, string_slice);
 import docs_loader/token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
-import docs_loader/token(tk_punct, toks_cons, toks_nil);
+import docs_loader/token(tk_punct, tk_word, toks_cons, toks_nil);
 import docs_loader/token(un_token, un_toks);
 import docs_loader/value(Env, Side, V_closure, V_host, V_hostfn, V_product, V_sum, V_unit);
 import docs_loader/value(Value, side_select, value_to_scalar, vhost, vproduct);
@@ -498,30 +498,43 @@ fn decls_find(ds: Decls, name: String) -> . | Decl {
 // module alias `import m as a;`, is recorded separately (`Aliases` below); it
 // provides `a.name` spellings subject to the same visibility gate rather than
 // importing names one by one.
-/// A selective import's local spelling, original declaration name, and provider module.
-pub labels { import: String & String & String };
+/// A selective import's local spelling, original declaration name, provider module,
+/// and explicit module-local default selection.
+pub labels { import: String & String & String & Bool };
+
+/// Builds an import with its explicit module-local default selection.
+pub fn mk_import_selected(local: String, original: String, from_module: String, selected: Bool) -> Import {
+  {import = (local, original, from_module, selected)}
+}
 
 /// Builds an import entry (local name, source module).
 pub fn mk_import(name: String, from_module: String) -> Import {
-  {import = (name, name, from_module)}
+  mk_import_selected(name, name, from_module, .f(Bool))
 }
 
 /// Construct a selective import with an explicit local spelling and source name.
 pub fn mk_import_as(local: String, original: String, from_module: String) -> Import {
-  {import = (local, original, from_module)}
+  mk_import_selected(local, original, from_module, .f(Bool))
+}
+
+/// Whether this import explicitly selects its type as a local default.
+pub fn import_is_default(i: Import) -> Bool {
+  match! Import.get(i) {
+    .(_local: String, _original: String, _provider: String, selected: Bool) { selected }
+  }
 }
 
 /// Return an import's local spelling and provider module.
 pub fn un_import(i: Import) -> String & String {
   match! Import.get(i) {
-    .(local: String, _original: String, provider: String) { (local, provider) }
+    .(local: String, _original: String, provider: String, _selected: Bool) { (local, provider) }
   }
 }
 
 /// Return the declaration name selected in the provider module.
 pub fn import_source(i: Import) -> String {
   match! Import.get(i) {
-    .(_local: String, original: String, _provider: String) { original }
+    .(_local: String, original: String, _provider: String, _selected: Bool) { original }
   }
 }
 
@@ -873,8 +886,28 @@ pub fn binders_reverse(binders: Binders) -> Binders {
 
 /// One retained `type` alias declaration: name, positional binders, body
 /// token-run (the text after `=`, semicolon excluded), visibility, and
-/// declaration byte offset, plus its exact recursive group when present.
-pub labels { alias_decl: String & Binders & Toks & Visibility & I32 & (. | Recursive_type_scope) };
+/// declaration byte offset, exact recursive group when present, and explicit
+/// module-local default selection.
+pub labels { alias_decl: & String
+& Binders
+& Toks
+& Visibility
+& I32
+& (. | Recursive_type_scope)
+& Bool };
+
+/// Builds an alias with its explicit module-local default selection.
+pub fn mk_alias_decl_selected(
+, name: String
+, binders: Binders
+, body: Toks
+, visibility: Visibility
+, decl_pos: I32
+, recursive_scope: . | Recursive_type_scope
+, selected: Bool
+) -> Alias_decl {
+  {alias_decl = (name, binders, body, visibility, decl_pos, recursive_scope, selected)}
+}
 
 /// Builds a retained alias record.
 pub fn mk_alias_decl(
@@ -884,23 +917,52 @@ pub fn mk_alias_decl(
 , visibility: Visibility
 , decl_pos: I32
 , recursive_scope: . | Recursive_type_scope
-) -> Alias_decl { {alias_decl = (name, binders, body, visibility, decl_pos, recursive_scope)} }
+) -> Alias_decl {
+  mk_alias_decl_selected(name, binders, body, visibility, decl_pos, recursive_scope, .f(Bool))
+}
+
+/// Whether this alias explicitly selects its terminal type as a local default.
+pub fn tyalias_is_default(a: Alias_decl) -> Bool {
+  match! Alias_decl.get(a) {
+    .(
+    , _n: String
+    , _b: Binders
+    , _t: Toks
+    , _v: Visibility
+    , _p: I32
+    , _scope: . | Recursive_type_scope
+    , selected: Bool
+    ) { selected }
+  }
+}
 
 /// The alias's name.
 pub fn tyalias_name(a: Alias_decl) -> String {
   match! Alias_decl.get(a) {
-    .(n: String, _b: Binders, _t: Toks, _v: Visibility, _p: I32, _scope: . | Recursive_type_scope) {
-      n
-    }
+    .(
+    , n: String
+    , _b: Binders
+    , _t: Toks
+    , _v: Visibility
+    , _p: I32
+    , _scope: . | Recursive_type_scope
+    , _selected: Bool
+    ) { n }
   }
 }
 
 /// The alias's binder names, declaration order.
 pub fn tyalias_binders(a: Alias_decl) -> Binders {
   match! Alias_decl.get(a) {
-    .(_n: String, b: Binders, _t: Toks, _v: Visibility, _p: I32, _scope: . | Recursive_type_scope) {
-      b
-    }
+    .(
+    , _n: String
+    , b: Binders
+    , _t: Toks
+    , _v: Visibility
+    , _p: I32
+    , _scope: . | Recursive_type_scope
+    , _selected: Bool
+    ) { b }
   }
 }
 
@@ -936,9 +998,15 @@ fn tyalias_binder_names(a: Alias_decl) -> Pnames {
 /// The alias's body token-run.
 pub fn tyalias_body(a: Alias_decl) -> Toks {
   match! Alias_decl.get(a) {
-    .(_n: String, _b: Binders, t: Toks, _v: Visibility, _p: I32, _scope: . | Recursive_type_scope) {
-      t
-    }
+    .(
+    , _n: String
+    , _b: Binders
+    , t: Toks
+    , _v: Visibility
+    , _p: I32
+    , _scope: . | Recursive_type_scope
+    , _selected: Bool
+    ) { t }
   }
 }
 
@@ -952,6 +1020,7 @@ pub fn tyalias_visibility(a: Alias_decl) -> Visibility {
     , visibility: Visibility
     , _p: I32
     , _scope: . | Recursive_type_scope
+    , _selected: Bool
     ) { visibility }
   }
 }
@@ -959,18 +1028,30 @@ pub fn tyalias_visibility(a: Alias_decl) -> Visibility {
 /// The declaration-name byte offset within the source image.
 pub fn tyalias_decl_pos(a: Alias_decl) -> I32 {
   match! Alias_decl.get(a) {
-    .(_n: String, _b: Binders, _t: Toks, _v: Visibility, p: I32, _scope: . | Recursive_type_scope) {
-      p
-    }
+    .(
+    , _n: String
+    , _b: Binders
+    , _t: Toks
+    , _v: Visibility
+    , p: I32
+    , _scope: . | Recursive_type_scope
+    , _selected: Bool
+    ) { p }
   }
 }
 
 /// The alias's exact recursive group, when present.
 pub fn tyalias_recursive_scope(a: Alias_decl) -> . | Recursive_type_scope {
   match! Alias_decl.get(a) {
-    .(_n: String, _b: Binders, _t: Toks, _v: Visibility, _p: I32, scope: . | Recursive_type_scope) {
-      scope
-    }
+    .(
+    , _n: String
+    , _b: Binders
+    , _t: Toks
+    , _v: Visibility
+    , _p: I32
+    , scope: . | Recursive_type_scope
+    , _selected: Bool
+    ) { scope }
   }
 }
 
@@ -1041,39 +1122,56 @@ fn tyaliases_find(aliases: Tyaliases, name: String) -> . | Alias_decl {
 
 /// One retained host declaration header: whether it is a function, its
 /// declaration-local name, the tokens after that name through the terminating
-/// semicolon (with the semicolon excluded), and its declaration byte offset.
-pub labels { host_header: Bool & String & Toks & I32 };
+/// semicolon (with the semicolon excluded), declaration byte offset, and explicit
+/// module-local default selection.
+pub labels { host_header: Bool & String & Toks & I32 & Bool };
+
+/// Builds a retained host declaration with its local default selection.
+pub fn mk_host_header_selected(
+, is_fn: Bool
+, name: String
+, header: Toks
+, decl_pos: I32
+, selected: Bool
+) -> Host_header { {host_header = (is_fn, name, header, decl_pos, selected)} }
 
 /// Builds one retained host declaration header.
 pub fn mk_host_header(is_fn: Bool, name: String, header: Toks, decl_pos: I32) -> Host_header {
-  {host_header = (is_fn, name, header, decl_pos)}
+  mk_host_header_selected(is_fn, name, header, decl_pos, .f(Bool))
+}
+
+/// Whether this host type explicitly selects itself as a local default.
+pub fn host_header_is_default(header: Host_header) -> Bool {
+  match! Host_header.get(header) {
+    .(_is_fn: Bool, _name: String, _tokens: Toks, _decl_pos: I32, selected: Bool) { selected }
+  }
 }
 
 /// Whether the retained declaration is a host function rather than a host type.
 pub fn host_header_is_fn(header: Host_header) -> Bool {
   match! Host_header.get(header) {
-    .(is_fn: Bool, _name: String, _tokens: Toks, _decl_pos: I32) { is_fn }
+    .(is_fn: Bool, _name: String, _tokens: Toks, _decl_pos: I32, _selected: Bool) { is_fn }
   }
 }
 
 /// The declaration-local name of a retained host declaration.
 pub fn host_header_name(header: Host_header) -> String {
   match! Host_header.get(header) {
-    .(_is_fn: Bool, name: String, _tokens: Toks, _decl_pos: I32) { name }
+    .(_is_fn: Bool, name: String, _tokens: Toks, _decl_pos: I32, _selected: Bool) { name }
   }
 }
 
 /// The retained tokens following a host declaration's local name.
 pub fn host_header_tokens(header: Host_header) -> Toks {
   match! Host_header.get(header) {
-    .(_is_fn: Bool, _name: String, tokens: Toks, _decl_pos: I32) { tokens }
+    .(_is_fn: Bool, _name: String, tokens: Toks, _decl_pos: I32, _selected: Bool) { tokens }
   }
 }
 
 /// The declaration-name byte offset within the source image.
 pub fn host_header_decl_pos(header: Host_header) -> I32 {
   match! Host_header.get(header) {
-    .(_is_fn: Bool, _name: String, _tokens: Toks, decl_pos: I32) { decl_pos }
+    .(_is_fn: Bool, _name: String, _tokens: Toks, decl_pos: I32, _selected: Bool) { decl_pos }
   }
 }
 
@@ -11702,6 +11800,36 @@ fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Modul
   )
 }
 
+fn exact_alias_host_type_for_literal(spelling: String, env: Type_env) -> Host_type | String {
+  let subject =
+    string_concat(
+    , "dyn_load_prime: literal annotation `"(String)
+    , string_concat(spelling, "`"(String))
+    );
+  match! parse_result_contract_payload(
+  , subject
+  , toks_cons(tk_word(spelling), 0(I32), toks_nil())
+  , env
+  ) {
+    (
+    , .(canonical: Canonical_type) {
+        match! Terminal_host_type.get(canonical_type_terminal(canonical)) {
+          (
+          , .(descriptor: Host_type) { widen_sum!(descriptor, Host_type | String) }
+          , .(_not_host: .) {
+              widen_sum!(
+              , string_concat(subject, " does not resolve to one exact host type"(String))
+              , Host_type | String
+              )
+            }
+          )
+        }
+      }
+    , .(diag: Diag) { widen_sum!(diag_message(diag), Host_type | String) }
+    )
+  }
+}
+
 fn exact_host_type_for_spelling(context: Type_context, spelling: String) -> Host_type | String {
   let env = mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32));
   match! resolve_exact_type_head(spelling, env) {
@@ -11719,15 +11847,7 @@ fn exact_host_type_for_spelling(context: Type_context, spelling: String) -> Host
               , Host_type | String
               )
             }
-          , .(_alias: Exact_head_alias) {
-              widen_sum!(
-              , string_concat(
-                , "dyn_load_prime: literal annotation `"(String)
-                , string_concat(spelling, "` does not resolve to one exact host type"(String))
-                )
-              , Host_type | String
-              )
-            }
+          , .(_alias: Exact_head_alias) { exact_alias_host_type_for_literal(spelling, env) }
           )
         }
       }
@@ -11735,23 +11855,6 @@ fn exact_host_type_for_spelling(context: Type_context, spelling: String) -> Host
         widen_sum!(diag_message(Exact_type_head_bad.get(bad)), Host_type | String)
       }
     )
-  }
-}
-
-fn host_type_has_bool_role(descriptor: Host_type) -> Bool {
-  match! host_type_shape(descriptor) {
-    (
-    , .(_roleless: Roleless_host_type) { .f(Bool) }
-    , .(role: Role_host_type) { role_eq(Role_host_type.get(role), bool_role()) }
-    )
-  }
-}
-
-fn insert_bool_descriptor(found: Host_types, descriptor: Host_type) -> Host_types {
-  if! host_type_has_bool_role(descriptor) {
-    host_types_insert_exact(found, descriptor)
-  } else {
-    found
   }
 }
 
@@ -11769,264 +11872,249 @@ fn direct_host_type_at(context: Type_context, owner: String, name: String) -> Di
   }
 }
 
-fn collect_local_direct_bool(context: Type_context, initial: Host_types) -> Host_types | Diag {
-  let module = type_context_module(context);
-  loop(
-  , .(state: Host_headers & Host_types) {
-      match! state {
-        .(remaining: Host_headers, found: Host_types) {
-          match! un_host_headers(remaining) {
-            (
-            , .(header: Host_header, rest: Host_headers) {
-                if! host_header_is_fn(header) {
-                  widen_sum!((rest, found), (Host_headers & Host_types) | Host_types | Diag)
-                } else if! lt_i32(host_header_decl_pos(header), type_context_alias_cutoff(context)) {
-                  match! direct_host_type_at(context, module_name(module), host_header_name(header)) {
-                    (
-                    , .(descriptor: Host_type) {
-                        widen_sum!(
-                        , (rest, insert_bool_descriptor(found, descriptor))
-                        , (Host_headers & Host_types) | Host_types | Diag
-                        )
-                      }
-                    , .(diag: Diag) {
-                        widen_sum!(diag, (Host_headers & Host_types) | Host_types | Diag)
-                      }
-                    , .(_missing: .) {
-                        widen_sum!((rest, found), (Host_headers & Host_types) | Host_types | Diag)
-                      }
-                    )
-                  }
-                } else {
-                  widen_sum!((rest, found), (Host_headers & Host_types) | Host_types | Diag)
-                }
-              }
-            , .(_empty: .) { widen_sum!(found, (Host_headers & Host_types) | Host_types | Diag) }
-            )
-          }
-        }
-      }
-    }
-  , (module_host_headers(module), initial)
-  )
-}
-
-fn import_names_direct_host_type(context: Type_context, provider_name: String, name: String) -> Bool {
-  match! find_module(type_context_modules(context), provider_name) {
-    (.(provider: Module) { module_declares_host_type(provider, name) }, .(_missing: .) { .f(Bool) })
-  }
-}
-
-fn collect_imported_direct_bool(context: Type_context, initial: Host_types) -> Host_types | Diag {
-  loop(
-  , .(state: Imports & Host_types) {
-      match! state {
-        .(remaining: Imports, found: Host_types) {
-          match! un_imports(remaining) {
-            (
-            , .(import: Import, rest: Imports) {
-                match! un_import(import) {
-                  .(name: String, provider: String) {
-                    let original = import_source(import);
-                    if! import_names_direct_host_type(context, provider, original) {
-                      match! direct_host_type_at(context, provider, original) {
-                        (
-                        , .(descriptor: Host_type) {
-                            widen_sum!(
-                            , (rest, insert_bool_descriptor(found, descriptor))
-                            , (Imports & Host_types) | Host_types | Diag
-                            )
-                          }
-                        , .(diag: Diag) {
-                            widen_sum!(diag, (Imports & Host_types) | Host_types | Diag)
-                          }
-                        , .(_missing: .) {
-                            widen_sum!((rest, found), (Imports & Host_types) | Host_types | Diag)
-                          }
-                        )
-                      }
-                    } else {
-                      widen_sum!((rest, found), (Imports & Host_types) | Host_types | Diag)
-                    }
-                  }
-                }
-              }
-            , .(_empty: .) { widen_sum!(found, (Imports & Host_types) | Host_types | Diag) }
-            )
-          }
-        }
-      }
-    }
-  , (module_imports(type_context_module(context)), initial)
-  )
-}
-
-fn alias_bool_descriptor(name: String, env: Type_env) -> . | Host_type {
-  match! resolve_exact_type_head(name, env) {
+fn default_category(descriptor: Host_type) -> String {
+  match! host_type_shape(descriptor) {
     (
-    , .(ok: Exact_type_head_ok) {
-        match! exact_type_head_ok_head(ok) {
+    , .(_roleless: Roleless_host_type) { ""(String) }
+    , .(role: Role_host_type) {
+        let name = role_name(Role_host_type.get(role));
+        if! string_eq(name, "bool"(String)) {
+          "Boolean"(String)
+        } else if! string_eq(name, "str"(String)) {
+          "string"(String)
+        } else match! string_code_at(name, 0(I32)) {
           (
-          , .(host: Exact_head_host) {
-              let descriptor = Exact_head_host.get(host);
-              if! host_type_has_bool_role(descriptor) {
-                widen_sum!(descriptor, . | Host_type)
+          , .(first: I32) {
+              if! eq_i32(first, 102(I32)) {
+                "float"(String)
+              } else if! eq_i32(first, 105(I32)) {
+                "integer"(String)
+              } else if! eq_i32(first, 117(I32)) {
+                "integer"(String)
               } else {
-                widen_sum!((), . | Host_type)
+                ""(String)
               }
             }
-          , .(_nominal: Exact_head_nominal) { widen_sum!((), . | Host_type) }
-          , .(_alias: Exact_head_alias) { widen_sum!((), . | Host_type) }
+          , .(_empty: .) { ""(String) }
           )
         }
       }
-    , .(_bad: Exact_type_head_bad) { widen_sum!((), . | Host_type) }
     )
   }
 }
 
-fn collect_local_alias_bool(context: Type_context, initial: Host_types) -> Host_types {
-  let env = mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32));
+fn default_decl_visible(context: Type_context, position: I32, whole_module: Bool) -> Bool {
+  if! whole_module { .t(Bool) } else { lt_i32(position, type_context_alias_cutoff(context)) }
+}
+
+fn selected_import_names(imports: Imports, initial: Pnames) -> Pnames {
   loop(
-  , .(state: Tyaliases & Host_types) {
-      match! state {
-        .(remaining: Tyaliases, found: Host_types) {
-          match! un_tyaliases(remaining) {
-            (
-            , .(alias: Alias_decl, rest: Tyaliases) {
-                if! lt_i32(tyalias_decl_pos(alias), type_context_alias_cutoff(context)) {
-                  match! alias_bool_descriptor(tyalias_name(alias), env) {
-                    (
-                    , .(descriptor: Host_type) {
-                        widen_sum!(
-                        , (rest, host_types_insert_exact(found, descriptor))
-                        , (Tyaliases & Host_types) | Host_types
-                        )
-                      }
-                    , .(_not_bool: .) {
-                        widen_sum!((rest, found), (Tyaliases & Host_types) | Host_types)
-                      }
-                    )
-                  }
-                } else {
-                  widen_sum!((rest, found), (Tyaliases & Host_types) | Host_types)
-                }
-              }
-            , .(_empty: .) { widen_sum!(found, (Tyaliases & Host_types) | Host_types) }
+  , .(state: Imports & Pnames) {
+      let .(remaining, names) = state;
+      match! un_imports(remaining) {
+        (
+        , .(entry: Import, tail: Imports) {
+            let .(name, _provider) = un_import(entry);
+            widen_sum!(
+            , (tail, if! import_is_default(entry) { pnames_cons(name, names) } else { names })
+            , (Imports & Pnames) | Pnames
             )
           }
-        }
+        , .(_end: .) { widen_sum!(names, (Imports & Pnames) | Pnames) }
+        )
+      }
+    }
+  , (imports, initial)
+  )
+}
+
+fn selected_alias_names(context: Type_context, whole_module: Bool, initial: Pnames) -> Pnames {
+  loop(
+  , .(state: Tyaliases & Pnames) {
+      let .(remaining, names) = state;
+      match! un_tyaliases(remaining) {
+        (
+        , .(entry: Alias_decl, tail: Tyaliases) {
+            let selected =
+              if! tyalias_is_default(entry) {
+                default_decl_visible(context, tyalias_decl_pos(entry), whole_module)
+              } else {
+                .f(Bool)
+              };
+            widen_sum!(
+            , (tail, if! selected { pnames_cons(tyalias_name(entry), names) } else { names })
+            , (Tyaliases & Pnames) | Pnames
+            )
+          }
+        , .(_end: .) { widen_sum!(names, (Tyaliases & Pnames) | Pnames) }
+        )
       }
     }
   , (module_tyaliases(type_context_module(context)), initial)
   )
 }
 
-fn collect_imported_alias_bool(context: Type_context, initial: Host_types) -> Host_types {
-  let env = mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32));
+fn selected_host_names(context: Type_context, whole_module: Bool, initial: Pnames) -> Pnames {
   loop(
-  , .(state: Imports & Host_types) {
-      match! state {
-        .(remaining: Imports, found: Host_types) {
-          match! un_imports(remaining) {
-            (
-            , .(import: Import, rest: Imports) {
-                match! un_import(import) {
-                  .(name: String, provider_name: String) {
-                    match! find_module(type_context_modules(context), provider_name) {
-                      (
-                      , .(provider: Module) {
-                          match! tyaliases_find(module_tyaliases(provider), import_source(import)) {
-                            (
-                            , .(_alias: Alias_decl) {
-                                match! alias_bool_descriptor(name, env) {
-                                  (
-                                  , .(descriptor: Host_type) {
-                                      widen_sum!(
-                                      , (rest, host_types_insert_exact(found, descriptor))
-                                      , (Imports & Host_types) | Host_types
-                                      )
-                                    }
-                                  , .(_not_bool: .) {
-                                      widen_sum!((rest, found), (Imports & Host_types) | Host_types)
-                                    }
-                                  )
-                                }
-                              }
-                            , .(_not_alias: .) {
-                                widen_sum!((rest, found), (Imports & Host_types) | Host_types)
-                              }
-                            )
-                          }
-                        }
-                      , .(_missing: .) {
-                          widen_sum!((rest, found), (Imports & Host_types) | Host_types)
-                        }
-                      )
-                    }
-                  }
-                }
-              }
-            , .(_empty: .) { widen_sum!(found, (Imports & Host_types) | Host_types) }
+  , .(state: Host_headers & Pnames) {
+      let .(remaining, names) = state;
+      match! un_host_headers(remaining) {
+        (
+        , .(entry: Host_header, tail: Host_headers) {
+            let selected =
+              if! host_header_is_default(entry) {
+                default_decl_visible(context, host_header_decl_pos(entry), whole_module)
+              } else {
+                .f(Bool)
+              };
+            widen_sum!(
+            , (tail, if! selected { pnames_cons(host_header_name(entry), names) } else { names })
+            , (Host_headers & Pnames) | Pnames
             )
           }
-        }
+        , .(_end: .) { widen_sum!(names, (Host_headers & Pnames) | Pnames) }
+        )
       }
     }
-  , (module_imports(type_context_module(context)), initial)
+  , (module_host_headers(type_context_module(context)), initial)
   )
 }
 
-fn unique_bool_descriptor(candidates: Host_types) -> Host_type | String {
-  match! un_host_types(candidates) {
+fn selected_default_descriptor(context: Type_context, name: String) -> Host_type | Diag {
+  let subject =
+    string_concat("dyn_load_prime: default type `"(String), string_concat(name, "`"(String)));
+  let env = mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32));
+  match! parse_result_contract_payload(subject, toks_cons(tk_word(name), 0(I32), toks_nil()), env) {
     (
-    , .(first: Host_type, rest: Host_types) {
-        match! un_host_types(rest) {
+    , .(canonical: Canonical_type) {
+        match! Terminal_host_type.get(canonical_type_terminal(canonical)) {
           (
-          , .(_second: Host_type, _tail: Host_types) {
+          , .(descriptor: Host_type) {
+              if! string_eq(default_category(descriptor), ""(String)) {
+                widen_sum!(
+                , signature_diag(subject, "requires a literal role"(String))
+                , Host_type | Diag
+                )
+              } else {
+                widen_sum!(descriptor, Host_type | Diag)
+              }
+            }
+          , .(_not_host: .) {
               widen_sum!(
-              , "dyn_load_prime: more than one `role(bool)` type is in unqualified "
-                "lexical scope"(String)
-              , Host_type | String
+              , signature_diag(subject, "must resolve to one role-bearing host type"(String))
+              , Host_type | Diag
               )
             }
-          , .(_end: .) { widen_sum!(first, Host_type | String) }
           )
         }
       }
-    , .(_empty: .) {
-        widen_sum!(
-        , "dyn_load_prime: no `role(bool)` host type is in unqualified lexical "
-          "scope"(String)
-        , Host_type | String
-        )
-      }
+    , .(diag: Diag) { widen_sum!(diag, Host_type | Diag) }
     )
   }
 }
 
-fn exact_bool_type_for_context(context: Type_context) -> Host_type | String {
-  match! collect_local_direct_bool(context, host_types_nil()) {
-    (
-    , .(local: Host_types) {
-        match! collect_imported_direct_bool(context, local) {
-          (
-          , .(direct: Host_types) {
-              match! un_host_types(direct) {
-                (
-                , .(_head: Host_type, _tail: Host_types) { unique_bool_descriptor(direct) }
-                , .(_none: .) {
-                    unique_bool_descriptor(collect_imported_alias_bool(
-                    , context
-                    , collect_local_alias_bool(context, host_types_nil())
-                    ))
-                  }
+labels { default_search: Host_types };
+
+fn insert_default_descriptor(found: Host_types, descriptor: Host_type) -> Host_types | Diag {
+  let category = default_category(descriptor);
+  loop(
+  , .(state: Default_search) {
+      match! un_host_types(Default_search.get(state)) {
+        (
+        , .(prior: Host_type, tail: Host_types) {
+            if! string_eq(default_category(prior), category) {
+              if! host_type_eq(prior, descriptor) {
+                widen_sum!(found, Default_search | Host_types | Diag)
+              } else {
+                widen_sum!(
+                , mk_diag(string_concat(
+                  , "dyn_load_prime: conflicting default "(String)
+                  , string_concat(category, " types"(String))
+                  ))
+                , Default_search | Host_types | Diag
                 )
               }
+            } else {
+              widen_sum!({default_search = tail}, Default_search | Host_types | Diag)
             }
-          , .(diag: Diag) { widen_sum!(diag_message(diag), Host_type | String) }
-          )
-        }
+          }
+        , .(_end: .) {
+            widen_sum!(host_types_cons(descriptor, found), Default_search | Host_types | Diag)
+          }
+        )
+      }
+    }
+  , {default_search = found}
+  )
+}
+
+fn selected_default_types(context: Type_context, whole_module: Bool) -> Host_types | Diag {
+  let names =
+    selected_host_names(
+    , context
+    , whole_module
+    , selected_alias_names(
+      , context
+      , whole_module
+      , selected_import_names(module_imports(type_context_module(context)), pnames_nil())
+      )
+    );
+  loop(
+  , .(state: Pnames & Host_types) {
+      let .(remaining, found) = state;
+      match! un_pnames(remaining) {
+        (
+        , .(name: String, tail: Pnames) {
+            match! selected_default_descriptor(context, name) {
+              (
+              , .(descriptor: Host_type) {
+                  match! insert_default_descriptor(found, descriptor) {
+                    (
+                    , .(updated: Host_types) {
+                        widen_sum!((tail, updated), (Pnames & Host_types) | Host_types | Diag)
+                      }
+                    , .(diag: Diag) { widen_sum!(diag, (Pnames & Host_types) | Host_types | Diag) }
+                    )
+                  }
+                }
+              , .(diag: Diag) { widen_sum!(diag, (Pnames & Host_types) | Host_types | Diag) }
+              )
+            }
+          }
+        , .(_end: .) { widen_sum!(found, (Pnames & Host_types) | Host_types | Diag) }
+        )
+      }
+    }
+  , (names, host_types_nil())
+  )
+}
+
+fn exact_bool_type_for_context(context: Type_context) -> Host_type | String {
+  match! selected_default_types(context, .f(Bool)) {
+    (
+    , .(selected: Host_types) {
+        loop(
+        , .(remaining: Host_types) {
+            match! un_host_types(remaining) {
+              (
+              , .(descriptor: Host_type, tail: Host_types) {
+                  if! string_eq(default_category(descriptor), "Boolean"(String)) {
+                    widen_sum!(descriptor, Host_types | Host_type | String)
+                  } else {
+                    widen_sum!(tail, Host_types | Host_type | String)
+                  }
+                }
+              , .(_end: .) {
+                  widen_sum!(
+                  , "dyn_load_prime: no type is selected as the default Boolean type"(String)
+                  , Host_types | Host_type | String
+                  )
+                }
+              )
+            }
+          }
+        , selected
+        )
       }
     , .(diag: Diag) { widen_sum!(diag_message(diag), Host_type | String) }
     )
@@ -15517,6 +15605,38 @@ fn ntab_for_module_with_exact_type_origins(
   }
 }
 
+fn validate_package_default_types(modules: Modules, types: Host_types) -> Imports_validation {
+  loop(
+  , .(remaining: Modules) {
+      match! un_modules(remaining) {
+        (
+        , .(module: Module, tail: Modules) {
+            let context =
+              mk_type_context(modules, types, module, 2147483647(I32), no_recursive_type_scope());
+            match! selected_default_types(context, .t(Bool)) {
+              (
+              , .(_selected: Host_types) { widen_sum!(tail, Modules | Imports_validation) }
+              , .(diag: Diag) { widen_sum!(diag, Modules | Imports_validation) }
+              )
+            }
+          }
+        , .(_end: .) { widen_sum!({imports_valid=}, Modules | Imports_validation) }
+        )
+      }
+    }
+  , modules
+  )
+}
+
+fn validate_package_declarations(modules: Modules, types: Host_types) -> Imports_validation {
+  match! validate_package_binding_origins(modules) {
+    (
+    , .(_valid: Imports_valid) { validate_package_default_types(modules, types) }
+    , .(diag: Diag) { widen_sum!(diag, Imports_validation) }
+    )
+  }
+}
+
 /// Resolves a whole package (topo-sorted, per-module-scoped, host fns
 /// derived from the modules' declarations) to a resolved image, or a
 /// diagnostic naming malformed host declarations, imports, cycles, or
@@ -15525,7 +15645,7 @@ pub(docs_loader/loader) fn resolve_package(ms: Modules, bridge: Bridge) -> Load_
   match! collect_host_types(ms) {
     (
     , .(types: Host_types) {
-        match! validate_package_binding_origins(ms) {
+        match! validate_package_declarations(ms, types) {
           (
           , .(_imports_valid: Imports_valid) {
               match! validate_package_bridge(ms, bridge) {

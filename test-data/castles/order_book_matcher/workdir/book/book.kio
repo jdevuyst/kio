@@ -15,7 +15,7 @@ import book/order(Order, Side, Trade, id_of, is_buy, price_of, ranks_ahead, rema
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(
 , array_get

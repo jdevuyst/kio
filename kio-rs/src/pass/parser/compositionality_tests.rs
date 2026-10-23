@@ -983,6 +983,11 @@ const TYPE_CONTEXTS: &[TypeContext] = &[
         item: "type Subjecttype = __TYPE_HOLE__;",
     },
     TypeContext {
+        id: "default-type-alias",
+        grammar: "TypeAliasBody",
+        item: "default type Subjecttype = __TYPE_HOLE__;",
+    },
+    TypeContext {
         id: "newtype-payload",
         grammar: "NewtypeAfterVis",
         item: "newtype Subjecttype : __TYPE_HOLE__ { constructor make_subject; projector un_subject; };",
@@ -1804,7 +1809,7 @@ const NON_MATRIX_TYPE_OWNERS: &[(&str, &str)] = &[
 ];
 
 const EXPECTED_EXPRESSION_GRAMMAR: &str = r#"TypeAlias ::= TypeAliasBody ';'
-TypeAliasBody ::= Vis? 'type' IDENT TypeParamList? '=' Type
+TypeAliasBody ::= 'default'? Vis? 'type' IDENT TypeParamList? '=' Type
 NewtypeAfterVis ::= 'newtype' IDENT TypeParamList? ExistsBinder* ':' Type NewtypeBody
 FnDef ::= FnDeclModifiers 'fn' IDENT Signature ('->' Type)? Block
 TypeBinderGroup ::= '[' TypeBinder (',' TypeBinder)* ']'

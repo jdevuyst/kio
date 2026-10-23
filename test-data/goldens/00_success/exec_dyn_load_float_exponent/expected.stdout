@@ -1,1 +1,13 @@
-tiny = 250.0015
+emitted exponent = 0
+raw exponent = 0
+f32 tenth = 0
+f32 above midpoint = 0
+f32 subnormal = 0
+payload = -0.0
+f32 negative zero = 0
+payload = -0.0
+f32 negative underflow = 0
+payload = 0.0
+f32 positive underflow = 0
+payload = -0.0
+f64 negative underflow = 0

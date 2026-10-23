@@ -76,13 +76,9 @@ type Expr = crate::ast::Expr<Lowered>;
 
 use crate::error::Error;
 
-#[cfg(feature = "surface")]
-pub(crate) mod capability_signature;
 #[cfg(all(test, feature = "surface"))]
 mod contract_tests;
 pub(crate) mod declarations;
-#[cfg(feature = "surface")]
-pub(crate) use declarations::CapabilitySignatureCheck;
 pub(crate) use declarations::{AuxiliaryItemChecks, BodyItemChecks, NoHeaderRecording};
 pub use declarations::{DeclarationPhase, HeaderRecording};
 
@@ -227,6 +223,8 @@ pub(crate) mod apply;
 pub use apply::{apply_mono, check_call_against, synth_call};
 
 mod synth;
+#[cfg(feature = "surface")]
+pub(crate) use synth::literal_resolution_error;
 pub(crate) use synth::newtype_member_scheme_in_routed_module;
 #[cfg(feature = "surface")]
 pub(crate) use synth::synth_value_arg_interned;
@@ -236,8 +234,8 @@ pub(crate) use synth::unify_pattern_with_holes_state;
 pub(crate) use synth::unique_role_admitted_type_at;
 pub use synth::{
     check_literal_annotation, comptime_scheme, intrinsic_scheme, newtype_member_scheme,
-    synth_env_fn_def, synth_literal, synth_path, synth_seq, synth_top_fn_def, synth_value_arg,
-    unify_pattern, unique_role_admitted_type,
+    numeric_literal_diagnostic, synth_env_fn_def, synth_literal, synth_path, synth_seq,
+    synth_top_fn_def, synth_value_arg, unify_pattern, unique_role_admitted_type,
 };
 pub(crate) use synth::{check_prime_fn_against, synth_closed_fn_with_source_plan};
 #[cfg(all(feature = "surface", feature = "lsp"))]
@@ -368,7 +366,6 @@ where
         Self::scheme(ty).with_complete_scheme()
     }
 
-    #[cfg(feature = "surface")]
     pub(crate) fn complete_scheme_interned(ty: InternedType<P>) -> Self {
         Self::scheme_interned(ty).with_complete_scheme()
     }
@@ -444,6 +441,8 @@ pub trait TyperPhase:
 /// role fallback. An explicit annotation or expected type consumes no fallback.
 pub struct LiteralResolution<P: crate::ast::Phase> {
     pub(crate) ty: InternedType<P>,
+    pub(crate) runtime_erases: bool,
+    pub(crate) numeric_value: Option<String>,
     #[cfg(feature = "lsp")]
     pub(crate) lexical_role: Option<String>,
 }
@@ -452,9 +451,21 @@ impl<P: crate::ast::Phase> LiteralResolution<P> {
     pub(crate) fn contextual(ty: InternedType<P>) -> Self {
         Self {
             ty,
+            runtime_erases: false,
+            numeric_value: None,
             #[cfg(feature = "lsp")]
             lexical_role: None,
         }
+    }
+
+    pub(crate) fn with_runtime_erasure(mut self, erases: bool) -> Self {
+        self.runtime_erases = erases;
+        self
+    }
+
+    pub(crate) fn with_numeric_value(mut self, value: Option<String>) -> Self {
+        self.numeric_value = value;
+        self
     }
 }
 
@@ -650,10 +661,9 @@ where
     /// Publish the typer's three-tier-resolved host type for the literal at
     /// `literal_site`. Lowered records the resolution in
     /// `typecheck_full::Elaborations` for substitution. Kio' literals already
-    /// carry their mandatory annotation: Prime synthesis bypasses this hook,
-    /// and Prime checking may invoke it but deliberately records nothing. The
-    /// validated annotation remains on Prime and later backend IR; emission
-    /// does not rerun front-end literal resolution.
+    /// carry their mandatory annotation; Prime records checked numeric values
+    /// for its bake pass. The selected type and canonical value remain on Prime
+    /// and later backend IR; emission does not rerun literal resolution.
     fn record_literal_resolution<'m>(
         literal_site: crate::ast::ExpressionSite,
         resolved: LiteralResolution<P>,
@@ -845,11 +855,18 @@ where
     // Literal in check mode — three-tier resolution with `expected`
     // supplying tier 2 (an expected type from the surrounding
     // position). `resolve_literal_against` invokes the phase publication hook:
-    // Lowered records the selected type for substitution, while Prime's hook
-    // is a no-op because Kio' already requires the annotation. The equiv-check
+    // Lowered records the selected type and numeric value for substitution;
+    // Prime records its checked numeric value for baking. The equiv-check
     // then catches a tier-1 annotation that disagrees with `expected`.
     if let Some((shape, annotation, span)) = literal_check_parts(e) {
-        let resolved = synth::resolve_literal_against(shape, annotation, expected, e.site(), tcx)?;
+        let resolved = synth::resolve_literal_against(
+            shape,
+            annotation,
+            expected,
+            e.site(),
+            synth::numeric_literal_diagnostic(e),
+            tcx,
+        )?;
         // Checking positions never reach the synthesis dispatch that records
         // position types, so a literal checked against an expected type — an
         // argument to a monomorphic callee, an annotated `let` initializer, a

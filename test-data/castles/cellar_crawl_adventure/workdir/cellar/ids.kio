@@ -10,7 +10,7 @@ module cellar/ids;
 
 import elab/control(if);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt(int_to_string);
 import testapi/text(string_eq);
 

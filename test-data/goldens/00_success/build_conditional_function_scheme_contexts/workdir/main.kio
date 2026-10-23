@@ -2,7 +2,7 @@ module main;
 
 import elab/control(if);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 fn identity_a[A](value: A) -> A { value }
 

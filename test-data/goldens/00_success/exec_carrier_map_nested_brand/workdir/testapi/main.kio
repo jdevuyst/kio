@@ -11,7 +11,7 @@ import elab/match(match);
 // alias indirection + structured sum payload) that an erased carrier
 // must round-trip transparently across the loop.
 import elab/spine_elaborators(widen_sum);
-import testapi(I32);
+import testapi(default I32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/iter(loop);

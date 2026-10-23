@@ -4,7 +4,7 @@ module docs_loader/marshal;
 import __intrinsics__;
 
 import docs_loader/result(Call_result, call_fold, call_stuck);
-import docs_loader/testapi(String);
+import docs_loader/testapi(default String);
 import docs_loader/value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value);
 
 /// `loop` is a regular host fn with signature

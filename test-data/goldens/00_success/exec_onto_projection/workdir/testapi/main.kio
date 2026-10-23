@@ -1,7 +1,7 @@
 module testapi/main;
 
 import elab/algebraic_elaborators(onto);
-import testapi(I32, String);
+import testapi(default I32, default String);
 import testapi/io(print);
 
 // `onto!` drops source factors that aren't in the target. Here

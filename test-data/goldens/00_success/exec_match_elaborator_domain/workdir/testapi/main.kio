@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(I32, String);
+import testapi(I32, default String);
 import testapi/io(print);
 
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }

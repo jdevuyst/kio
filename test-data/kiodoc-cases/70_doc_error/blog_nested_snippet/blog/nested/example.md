@@ -10,7 +10,7 @@ bridge {
 module kiodoc;
 
 host type S role(str);
-host type I role(i32);
+default host type I role(i32);
 
 __INSERT_CODE_HERE__
 -->

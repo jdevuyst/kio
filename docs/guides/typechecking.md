@@ -39,7 +39,7 @@ import spine_elaborators(widen_sum);
 
 host type Int role(i32);
 host type String role(str);
-host type Bool role(bool);
+default host type Bool role(bool);
 
 __EXAMPLE__
 -->
@@ -428,6 +428,146 @@ Kio makes structural rearrangement explicit with elabs such as
 type comparison. This keeps ordinary checking predictable and makes the
 adaptation visible. Read [products](products.md), [sums](sums.md), and
 [declarations](declarations.md) for the relevant constructions.
+
+## Literal types and module-local defaults
+
+Numeric values are checked after their exact host type is selected. Integer
+literals must fit the selected signed or unsigned width; floating literals
+round directly to the selected IEEE `f32` or `f64` value. Overflow is a type
+error, and a wider default cannot rescue a value rejected by its expected
+type. See the [literal value rules](../../specs/language.md#literals), including
+subnormals and signed zero.
+
+`role(...)` and `default` answer different questions. A role says which
+literal category a host type accepts. A default says which type this module
+uses when neither an explicit annotation nor an expected type has chosen one.
+Merely declaring or importing a role-bearing type does not select it.
+
+```kio {}
+module literal_choices;
+
+default host type Int role(i32);
+
+host type Small role(i8);
+
+default host type Float role(f64);
+
+host type String role(str);
+
+fn chosen_number() -> Int { let number = 42; number }
+
+fn small_number() -> Small { 42(Small) }
+
+fn greeting() -> String { "hello" }
+
+fn fraction() -> Float { 42.0 }
+```
+
+The untyped `let` initializer uses the integer default. `Small` needs no
+default because `42(Small)` names it explicitly. The `String` return type
+checks `"hello"` without a string default. The float result also supplies an
+expected type, but its literal must still have floating-point spelling.
+
+There are four independent categories:
+
+| Category | Roles | Example literal |
+| --- | --- | --- |
+| Integer | All signed and unsigned integer widths | `42`, `1000` |
+| Float | `f32`, `f64` | `42.0`, `42.0e-3` |
+| Boolean | `bool` | `.t`, `.f` |
+| String | `str` | `"hello"` |
+
+Floating-point syntax requires a decimal point, whatever the expected type.
+Integers have no exponent notation: `42e0`, `42E+3`, `42e-3` and `42e-0`
+all reject. Write `1000` for an integer, or `1.0e3` for a float. Digits are
+required on both sides of the point: `.5` and `1.` are not shorthand literals.
+
+An integer-shaped literal cannot inhabit a float role, even as `42(Float)`
+or in a function returning `Float`. Write `42.0` instead. Nor does
+`42.0(Int)` turn a float into an integer. For a generic function requiring
+two arguments of the same type, both `same(42, 42.0)` and `same(42.0, 42)`
+are errors; argument order does not create a conversion.
+
+Select imported types explicitly, for example
+`import numbers(default Int as Integer, Float);`. This imports both types
+but selects only the integer default. The provider's own `default` markers
+do not propagate through an ordinary import or a qualified module alias.
+A local `default type Integer = numbers.Int;` selects that existing host
+identity without creating another type or assigning it a role.
+
+For a concrete two-module example, the provider defines capabilities but
+chooses no defaults:
+
+```kio {file}
+module literal_provider;
+
+host type Int role(i64);
+
+host type Float role(f64);
+```
+
+The consumer selects `Int` explicitly. Its alias `Count` selects the same
+identity through an applied alias, which agrees with the import. Its floating
+result needs no float default because the return type supplies it:
+
+<!--kio {harness=literal_consumer file placeholder="__EXAMPLE__"}
+module literal_consumer;
+
+__EXAMPLE__
+-->
+
+```kio {@literal_consumer}
+import literal_provider as numbers;
+import literal_provider(default Int as Integer);
+
+type Ignore[A] = numbers.Int;
+
+default type Count = Ignore(.);
+
+fn count() -> Integer { let value = 42; value }
+
+fn fraction() -> numbers.Float { 42.0 }
+```
+
+Aliases follow ordinary type substitution, not a path-only shortcut.
+For example, `type Ignore[A] = numbers.Int;` followed by
+`default type Integer = Ignore(.);` selects `numbers.Int`. A selected type
+must finish as one role-bearing host type: an unsaturated type constructor,
+structural product or newtype wrapper is not eligible. Two selected aliases
+of the same host identity agree; equal leaf names from different modules do
+not make two types identical.
+
+Each module can select only one distinct identity per category. Selecting
+both `i32` and `i64` types as integer defaults is an error even when neither
+is used. An integer and a float default can coexist. There is no “last one
+wins” rule and no preference for a direct host declaration over an alias.
+Unselected types can coexist freely and remain usable with expected or
+explicit types. Ordinary duplicate-name and import rules still apply.
+
+Defaults obey source scope. Imports select from the header; a local modifier
+applies after its declaration, or after its complete recursive type group.
+A later declaration does not supply an earlier function's missing default.
+Conflicting selections are nevertheless rejected across the whole module,
+independently of function bodies. Keep the modifier before visibility, as in
+`default pub type Integer = numbers.Int;`.
+
+The Boolean default also determines the condition type of the core branching
+intrinsic and the reference `if!` elab's generated branch operation. A condition
+annotated at a different Boolean type does not override that selection.
+See [the builtin reference](builtin-modules.md).
+
+The fixed `import __comptime__;` used by elab implementations supplies its
+own compile-time Boolean and string defaults. They participate in the same
+conflict checks; this is not inheritance of defaults from an ordinary library.
+
+When a default is missing, annotate the literal, provide an expected type,
+or select a type deliberately. Diagnostic-linked editor actions can mark an
+eligible local declaration or import item; they do not select or modify a
+provider automatically. Missing-dot actions offer an explicit spelling change,
+not an implicit conversion or a formatter rewrite.
+At a literal-alias use, the action expands only that use to the floating-point
+literal, retaining its annotation and leaving the shared definition and other
+integer uses unchanged. The diagnostic identifies the definition it used.
 
 ## When Kio asks for more information
 

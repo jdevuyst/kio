@@ -2,7 +2,7 @@ module grid_firebreak_search/store;
 
 import elab/control(if);
 import grid_firebreak_search/grid as grid;
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter as iter;

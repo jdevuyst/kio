@@ -1,4 +1,4 @@
-use crate::ast::{Equiv, ExpressionOccurrence, FnDef, Never, Phase, UserElaboratorDef};
+use crate::ast::{Equiv, ExpressionOccurrence, Never, Phase, UserElaboratorDef};
 use crate::error::Error;
 use crate::pass::resolve::ResolvePhase;
 use crate::span::Span;
@@ -18,12 +18,7 @@ pub trait DeclarationPhase:
     }
 
     fn merge_elaborations(target: &mut Self::Elaborations, source: Self::Elaborations);
-
-    const CAPABILITY_SIGNATURE: Option<CapabilitySignatureCheck<Self>> = None;
 }
-
-pub type CapabilitySignatureCheck<P> =
-    for<'m, 'e> fn(&'m FnDef<P>, &TypeCtx<'m, 'e, P>) -> Result<(), Error>;
 
 /// Optional editor publication shared by declaration and expression checking.
 pub trait HeaderRecording<P: DeclarationPhase> {

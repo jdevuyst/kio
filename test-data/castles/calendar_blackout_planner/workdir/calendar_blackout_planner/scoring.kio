@@ -2,7 +2,7 @@ module calendar_blackout_planner/scoring;
 
 import calendar_blackout_planner/model(Window, {frozen}, {priority}, {support_load});
 import elab/control(if);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 
 pub fn score(window: Window) -> I32 {

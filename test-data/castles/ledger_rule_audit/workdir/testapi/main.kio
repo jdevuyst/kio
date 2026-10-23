@@ -18,7 +18,7 @@ import ledger_rule_audit/state(
 , invalid
 , invalid_count_value
 );
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);

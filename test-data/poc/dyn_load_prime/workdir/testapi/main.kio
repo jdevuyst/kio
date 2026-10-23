@@ -35,7 +35,7 @@ import loader({str_in}, {str_out}, {sum_is_left}, {sum_payload}, {unit_in});
 import loader/scan(load_package);
 import prime(group_slots_cons, group_slots_nil);
 import result(Call_result, call_done, call_stuck);
-import testapi(Bool, F64, I32, Scalar, String);
+import testapi(Scalar, default Bool, default F64, default I32, default String);
 import testapi/arith(add_i32);
 import testapi/arith(eq_i32);
 import testapi/fmt(f64_to_string, int_to_string);
@@ -78,22 +78,22 @@ fn guest_image() -> String {
   "/// A worked-example guest package: greeting, cross-fn arithmetic, a "
   "polymorphic id, multi-param sums, branching, floats, products, sums, and "
   "an exported newtype.\nmodule guest;\n\nimport __intrinsics__;\n\nimport "
-  "hostapi(Bool, F64, I32, String);\nimport hostapi(add_i32, div_i32, "
-  "leq_i32, mod_i32, mul_f64, string_concat);\n\n/// A tagged value: the "
-  "newtype and both members are `pub` in a\n/// bridge-matched module, so "
-  "the constructor and projector are loadable\n/// entries (a member-export "
-  "demo).\npub newtype Tag[A] : A { pub constructor mk_tag; pub projector "
-  "un_tag; };\n\n/// Greets by name.\npub fn greet(name: String) -> String { "
-  "string_concat(\"Hello, \"(String), name) }\n\n/// Doubles an integer.\npub fn "
-  "double(x: I32) -> I32 { add_i32(x, x) }\n\n/// Quadruples via a cross-fn "
-  "call.\npub fn quad(x: I32) -> I32 { double(double(x)) }\n\n/// The "
-  "polymorphic identity.\npub fn id_poly[A](x: A) -> A { x }\n\n/// Applies "
-  "the polymorphic identity at I32.\npub fn use_poly(n: I32) -> I32 { "
-  "id_poly(I32, n) }\n\n/// Sums three integers (a multi-value-param export, "
-  "N=3).\npub fn add3(a: I32, b: I32, c: I32) -> I32 { add_i32(add_i32(a, "
-  "b), c) }\n\n/// Calls the multi-param add3 (a cross-fn multi-arg call).\n"
-  "pub fn use_add3(x: I32) -> I32 { add3(x, x, x) }\n\n/// Picks x when b, "
-  "else y.\npub fn pick(b: Bool, x: I32, y: I32) -> I32 { "
+  "hostapi(default Bool, F64, I32, String);\nimport hostapi(add_i32, "
+  "div_i32, leq_i32, mod_i32, mul_f64, string_concat);\n\n/// A tagged value: "
+  "the newtype and both members are `pub` in a\n/// bridge-matched module, "
+  "so the constructor and projector are loadable\n/// entries (a "
+  "member-export demo).\npub newtype Tag[A] : A { pub constructor mk_tag; "
+  "pub projector un_tag; };\n\n/// Greets by name.\npub fn greet(name: String) "
+  "-> String { string_concat(\"Hello, \"(String), name) }\n\n/// Doubles an "
+  "integer.\npub fn double(x: I32) -> I32 { add_i32(x, x) }\n\n/// Quadruples "
+  "via a cross-fn call.\npub fn quad(x: I32) -> I32 { double(double(x)) }\n\n"
+  "/// The polymorphic identity.\npub fn id_poly[A](x: A) -> A { x }\n\n/// "
+  "Applies the polymorphic identity at I32.\npub fn use_poly(n: I32) -> I32 "
+  "{ id_poly(I32, n) }\n\n/// Sums three integers (a multi-value-param "
+  "export, N=3).\npub fn add3(a: I32, b: I32, c: I32) -> I32 { "
+  "add_i32(add_i32(a, b), c) }\n\n/// Calls the multi-param add3 (a cross-fn "
+  "multi-arg call).\npub fn use_add3(x: I32) -> I32 { add3(x, x, x) }\n\n/// "
+  "Picks x when b, else y.\npub fn pick(b: Bool, x: I32, y: I32) -> I32 { "
   "__if_then_else__(I32, b, .() { x }, .() { y }) }\n\n/// The default gain "
   "(a zero-parameter float export).\npub fn default_gain() -> F64 { "
   "1.5e-1(F64) }\n\n/// Scales a float measurement.\npub fn scale(x: F64) -> "

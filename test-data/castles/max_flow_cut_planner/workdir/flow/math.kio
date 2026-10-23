@@ -1,7 +1,7 @@
 module flow/math;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as a;
 
 pub fn equal(x: I32, y: I32) -> Bool {

@@ -19,7 +19,7 @@ import graph_routes/model(
 , {round}
 , {visited}
 );
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32);
 import testapi/iter(loop);
 

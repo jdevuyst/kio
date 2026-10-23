@@ -45,6 +45,12 @@ lets libraries grow without changing choices that consumers already made.
 Changing a dependency's implementation or public contract is a separate matter;
 the guarantee applies to extension of module bodies.
 
+An accepted addition to a module's imports must preserve the validity and
+meaning of its existing function bodies. Compatibility is checked against
+the module's imports and declarations, including names, operator syntax and
+default selections, without inspecting function bodies to see whether
+conflicts are used.
+
 ### Self-contained operator syntax
 
 [Operator imports](specs/language.md#operators) state the complete grammar, so

@@ -3163,11 +3163,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                         |binding| selected_role = Some(binding.to_owned()),
                     )?;
                     let (store, owner, _delta, _publication) = self.frontier.parts_mut();
-                    store.scoped_type(
-                        owner,
-                        crate::pass::typecheck_core::InternedType::fresh(ty),
-                        span,
-                    )?
+                    store.scoped_type(owner, ty, span)?
                 };
                 let bool_type = self.close_type(bool_type)?;
                 self.relation(
@@ -11720,7 +11716,7 @@ mod tests {
         let package = fixture(
             "module certificate_catalogue; \
              import __intrinsics__; \
-             host type Bool role(bool);",
+             default host type Bool role(bool);",
             "certificate_catalogue",
         );
         let module = &package
@@ -13999,7 +13995,7 @@ mod tests {
     fn projected_literal_prepares_a_closed_header_before_its_single_physical_close() {
         let package = fixture(
             "module projected_literal_header; \
-             host type String role(str); \
+             default host type String role(str); \
              fn witness() -> String { \"ignored\" }",
             "projected_literal_header",
         );
@@ -14906,7 +14902,7 @@ mod tests {
     fn projected_scalar_call_retries_only_when_literals_contribute_every_result_goal() {
         let package = fixture(
             "module projected_scalar_call_header; \
-             host type String role(str); \
+             default host type String role(str); \
              host type Box[A]; \
              type Identity[A] = A; \
              type Keep[A][B] = A; \
@@ -15792,7 +15788,7 @@ mod tests {
     fn projected_nested_pair_scalar_call_closes_in_its_lexical_pass() {
         let package = fixture(
             "module projected_nested_scalar_call; \
-             host type String role(str); \
+             default host type String role(str); \
              host fn identity[A](value: A) -> A; \
              fn witness() -> . & . { (\"value\".>identity, ()) }",
             "projected_nested_scalar_call",

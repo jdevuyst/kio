@@ -3,7 +3,7 @@ module robot_vacuum_replay/model;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, lt_i32, sub_i32);
 
 pub labels Direction = { north: . } | { east: . } | { south: . } | { west: . };

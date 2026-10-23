@@ -25,7 +25,7 @@ import elab/match(match);
 import elab/spine_elaborators(flatten_sum, narrow_sum, widen_sum);
 import list/core(List, uncons);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 host type String role(str);
 

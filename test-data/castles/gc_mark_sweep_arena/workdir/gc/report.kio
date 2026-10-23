@@ -29,7 +29,7 @@ import gc/verify(
 , {verified}
 );
 import gc/verify(Audit, Broken, Verdict, Verified);
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, sub_i32);
 import testapi/array(array_get, array_len);
 import testapi/fmt(int_to_string);

@@ -1,7 +1,7 @@
 module queue_backlog_sim/schedule;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32);
 
 pub fn total_ticks() -> I32 { 7 }

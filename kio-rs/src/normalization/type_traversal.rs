@@ -446,6 +446,7 @@ mod tests {
                     kind: ImportKind::Selective {
                         from: module_path("selected"),
                         items: vec![ImportItem::Name {
+                            default_span: None,
                             name: "S".to_owned(),
                             span,
                             alias: None,
@@ -458,6 +459,7 @@ mod tests {
                 },
             ],
             items: vec![Item::HostType(HostType {
+                default_span: None,
                 name: "Local".to_owned(),
                 type_params: vec![binder("P")],
                 role: None,

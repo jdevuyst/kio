@@ -4,7 +4,7 @@ import certificate as certificate;
 import distance as distance;
 import elab/control(if);
 import forest as forest;
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/fmt as fmt;

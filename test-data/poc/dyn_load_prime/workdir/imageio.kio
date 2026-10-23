@@ -4,7 +4,7 @@ module imageio;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(default Bool, default I32, default String);
 import testapi/arith(eq_i32);
 import testapi/io(read_ascii_line);
 import testapi/iter(loop);

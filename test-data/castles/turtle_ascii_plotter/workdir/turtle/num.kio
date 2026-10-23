@@ -7,7 +7,7 @@
 module turtle/num;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(leq_i32);
 
 pub fn and(a: Bool, b: Bool) -> Bool {

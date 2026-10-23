@@ -1,0 +1,8 @@
+package integer_literal_out_of_range;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

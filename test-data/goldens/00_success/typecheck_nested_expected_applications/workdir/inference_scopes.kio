@@ -1,6 +1,6 @@
 module inference_scopes;
 
-host type I32 role(i32);
+default host type I32 role(i32);
 
 fn choose[A](left: A, _right: A) -> A { left }
 

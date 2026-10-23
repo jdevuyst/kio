@@ -935,7 +935,8 @@ mod tests {
             ("pub fn run() -> . { let _value = 1; () }", false),
             ("pub fn run() -> r.Number { 1 }", true),
         ] {
-            let main = format!("module main; import roles as r; type Fallback = r.Number; {body}");
+            let main =
+                format!("module main; import roles as r; default type Fallback = r.Number; {body}");
             let analysis = analyze_sources(&[
                 ("roles", "module roles; pub host type Number role(i32);"),
                 ("main", &main),

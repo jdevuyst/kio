@@ -1,0 +1,2 @@
+exponent notation is not supported for integer literals
+floating-point literals require a decimal point; insert `.0` before the exponent if you intended a float

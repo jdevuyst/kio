@@ -18,7 +18,7 @@ import forge/program(Duplicate_label, Image, Items, Macros, Undefined_label, Unk
 import forge/text as t;
 import forge/vm as vm;
 import forge/vm(Faulted, Halted, Out_of_fuel, Ran_off, Stop, Vm, Words);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, sub_i32);
 import testapi/iter(loop);
 

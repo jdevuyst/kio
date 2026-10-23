@@ -1,0 +1,5 @@
+module main;
+
+host type Number role(u8);
+
+fn value() -> Number { -1 }

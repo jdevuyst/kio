@@ -36,7 +36,7 @@ import loader/scan(load_package);
 import prime(Group_slots, group_slots_cons, group_slots_nil, un_group_slots);
 import result(Call_result, call_done, call_stuck);
 import result(call_apply, call_apply_then, call_fold);
-import testapi(Bool, I32, Scalar, String);
+import testapi(Scalar, default Bool, default I32, default String);
 import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -835,7 +835,17 @@ fn arm_exit(dom: Value) -> Call_result {
 // handle.
 fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
   let identity = host_id_local(host_fn_id(descriptor));
-  if! host_fn_eq(descriptor, loop_reentry_descriptor()) {
+  if! host_fn_eq(
+  , descriptor
+  , mk_host_fn(mk_host_id("prog"(String), "print_i32"(String)), "(h{prog.I32}) -> ."(String))
+  ) {
+    match! as_i32(dom) {
+      (
+      , .(n: I32) { print(int_to_string(n)); call_done(vunit()) }
+      , .(_other: .) { call_stuck("prog.print_i32 expected an i32"(String)) }
+      )
+    }
+  } else if! host_fn_eq(descriptor, loop_reentry_descriptor()) {
     arm_loop_reentry(dom)
   } else if! host_fn_eq(descriptor, reentry_run_descriptor()) {
     arm_loop_reentry(dom)

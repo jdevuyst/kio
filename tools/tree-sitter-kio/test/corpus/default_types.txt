@@ -1,0 +1,78 @@
+================================================================================
+default host and alias declarations own their contextual modifiers
+================================================================================
+default host type Int role(i64);
+default type Integer = Int;
+--------------------------------------------------------------------------------
+
+(source_file
+  (host_decl
+    (keyword_declaration)
+    (keyword_host)
+    (host_type_head
+      (keyword_type)
+      (entity_name_type)
+      (role_annotation
+        (keyword_declaration)
+        (bracket_lparen)
+        (keyword_declaration)
+        (bracket_rparen))
+      (separator_semicolon)))
+  (type_alias_decl_head
+    (keyword_declaration)
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (type_path (entity_name_type))
+    (separator_semicolon)))
+
+================================================================================
+selective defaults preserve ordinary default value imports
+================================================================================
+import types(default Int as Integer, default Bool, default as ordinary);
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_decl
+    (keyword_import)
+    (module_path (entity_name_module))
+    (bracket_lparen)
+    (keyword_declaration)
+    (identifier)
+    (keyword_declaration)
+    (identifier)
+    (separator_comma)
+    (keyword_declaration)
+    (identifier)
+    (separator_comma)
+    (identifier)
+    (keyword_declaration)
+    (identifier)
+    (bracket_rparen)
+    (separator_semicolon)))
+
+================================================================================
+integer and decimal-point floating literals retain number roles
+================================================================================
+42 42.0e0 42.0E+3 42.0 42.0e-3
+--------------------------------------------------------------------------------
+
+(source_file
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal))
+
+================================================================================
+point-free exponents stay whole during spelling-error recovery
+================================================================================
+1e12 42e0 42E+3 42e-3 42E-0
+--------------------------------------------------------------------------------
+
+(source_file
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal))

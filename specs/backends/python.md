@@ -341,6 +341,10 @@ selected type to and from the following private runtime representation:
 | `role(u8)` … `role(u128)` | non-negative `int` |
 | `role(f32)`, `role(f64)` | `float` |
 
+Kio establishes [numeric literal values](../language.md#literals) before
+emission. An `f32` literal's binary32 value is widened exactly to the
+private Python `float`; its original decimal spelling is not rounded anew.
+
 Ensuring an adapter result satisfies this backend's range requirements for the
 declared role is the host's responsibility. The package does not defensively coerce out-of-range or
 wrong-shaped private role values. A roleless nullary declaration uses its

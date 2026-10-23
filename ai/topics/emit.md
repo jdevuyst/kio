@@ -4,6 +4,12 @@ Trigger: editing under `kio-rs/src/backends/`.
 
 A backend emitter ("lowering") translates the post-typecheck IR into idiomatic source for one host language. This page is the map: where the emitters live, where emission sits in the pipeline, the runtime model a new emitter reproduces, and the disciplines that govern backend work. It does **not** restate the FFI contract — that's [`specs/backends/`](../../specs/backends/) — or the general kio-rs front-end — that's [`ai/topics/implementation.md`](implementation.md).
 
+Numeric emission constructs the compiler's selected value; it does not parse
+Kio source spelling or decide range and rounding policy. Follow
+[Numeric literal values](implementation.md#numeric-literal-values), and verify
+native construction preserves that value, including signed zero and conversions
+through a wider intermediate type.
+
 ## Where the code lives
 
 - [`kio-rs/src/backends/mod.rs`](../../kio-rs/src/backends/mod.rs) — the framework coordinator. Read its module docstring first: it defines the `Profile` descriptor (what the host language natively expresses — named records, sums-with-payload, pattern matching, GC, …), the `RuntimeSupport` convention (`None` vs `EmbeddedFile`), the **per-module `par_iter` fan-out** every `lower_package_*` entry point must follow (modules lower in parallel, concatenated in deterministic `BTreeMap`-order for byte-stable output), and the runtime-support-library convention.

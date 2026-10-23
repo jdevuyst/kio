@@ -268,6 +268,34 @@ pub struct NodeId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ExpressionOccurrenceId(std::num::NonZeroU64);
 
+#[derive(Clone, Default)]
+pub struct IntegerLiteralDiagnostic {
+    pub token: Option<Span>,
+    pub spelling: Option<std::sync::Arc<str>>,
+    pub alias: Option<std::sync::Arc<IntegerLiteralAliasSource>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct IntegerLiteralAliasSource {
+    pub use_span: Span,
+    pub definition_span: Span,
+    pub definition_file: Option<std::path::PathBuf>,
+}
+
+impl std::fmt::Debug for IntegerLiteralDiagnostic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("IntegerLiteralDiagnostic")
+    }
+}
+
+impl PartialEq for IntegerLiteralDiagnostic {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for IntegerLiteralDiagnostic {}
+
 /// Transient correspondence between a checked expression and its completed facts.
 /// Structural AST comparisons and artifacts do not observe this correspondence.
 #[derive(Clone, Copy, Default)]
@@ -2509,6 +2537,7 @@ impl OpPart {
 /// synonym. The typer unfolds aliases structurally.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeAlias<P: Phase = Surface> {
+    pub default_span: Option<Span>,
     pub vis: Visibility,
     pub name: String,
     /// Exact span of the declared type name. Kept separately from `meta`
@@ -2548,10 +2577,24 @@ pub struct LiteralAlias<P: Phase = Surface> {
 /// The literal token stored by a [`LiteralAlias`].
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LiteralAliasValue {
-    Str { value: String, span: Span },
-    Int { digits: String, span: Span },
-    Float { digits: String, span: Span },
-    Bool { value: bool, span: Span },
+    Str {
+        value: String,
+        span: Span,
+    },
+    Int {
+        digits: String,
+        span: Span,
+        #[serde(skip)]
+        diagnostic: IntegerLiteralDiagnostic,
+    },
+    Float {
+        digits: String,
+        span: Span,
+    },
+    Bool {
+        value: bool,
+        span: Span,
+    },
 }
 
 impl LiteralAliasValue {
@@ -2576,8 +2619,13 @@ impl LiteralAliasValue {
                 annotation: None,
                 meta: Meta::new(*span),
             },
-            LiteralAliasValue::Int { digits, span } => Expr::IntLit {
+            LiteralAliasValue::Int {
+                digits,
+                span,
+                diagnostic,
+            } => Expr::IntLit {
                 occurrence: Default::default(),
+                diagnostic: diagnostic.clone(),
                 digits: digits.clone(),
                 annotation: None,
                 meta: Meta::new(*span),
@@ -2640,6 +2688,7 @@ pub enum ImportKind {
 pub enum ImportItem {
     /// `foo`, `Bar` — regular identifier import (function or type).
     Name {
+        default_span: Option<Span>,
         name: String,
         span: Span,
         alias: Option<ImportAlias<String>>,
@@ -4237,6 +4286,7 @@ pub struct LockFile<P: Phase = Surface> {
 /// public — host items have no private form.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HostType<P: Phase = Surface> {
+    pub default_span: Option<Span>,
     pub name: String,
     pub type_params: Vec<TypeParam>,
     pub role: Option<RoleAnnotation>,
@@ -4387,15 +4437,9 @@ pub enum RoleShape {
 }
 
 impl RoleShape {
-    /// Whether a literal of `self`'s shape may be typed against a host
-    /// type carrying a role of shape `role_shape`. An integer literal
-    /// admits int-shaped *and* float-shaped roles; every other literal
-    /// shape admits only its own.
+    /// Literal spelling and receiving role must belong to the same category.
     pub fn admits(self, role_shape: RoleShape) -> bool {
-        match self {
-            RoleShape::Int => matches!(role_shape, RoleShape::Int | RoleShape::Float),
-            other => other == role_shape,
-        }
+        self == role_shape
     }
 }
 
@@ -5047,11 +5091,13 @@ pub enum Expr<P: Phase = Surface> {
     IntLit {
         #[serde(skip)]
         occurrence: P::ExpressionOccurrence,
+        #[serde(skip)]
+        diagnostic: IntegerLiteralDiagnostic,
         digits: String,
         annotation: P::LitAnnotation,
         meta: Meta<P>,
     },
-    /// Float literal — has a decimal point and/or exponent. See
+    /// Float literal — has a decimal point. See
     /// [`Expr::StrLit`] on the `annotation` field.
     FloatLit {
         #[serde(skip)]
@@ -6930,11 +6976,13 @@ where
         },
         Expr::IntLit {
             occurrence: _,
+            diagnostic: _,
             digits,
             annotation,
             meta,
         } => Expr::IntLit {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             digits: digits.clone(),
             annotation: convert_lit_annotation::<P, Q>(annotation, meta.span),
             meta: convert_meta(meta),
@@ -7088,6 +7136,7 @@ where
     Q: Phase,
 {
     TypeAlias {
+        default_span: a.default_span,
         vis: a.vis.clone(),
         name: a.name.clone(),
         name_span: a.name_span,
@@ -7162,6 +7211,7 @@ where
     Q: Phase,
 {
     HostType {
+        default_span: h.default_span,
         name: h.name.clone(),
         type_params: h.type_params.clone(),
         role: h.role,

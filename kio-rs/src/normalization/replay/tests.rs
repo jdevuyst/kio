@@ -187,6 +187,7 @@ fn replay_unwind_releases_pending_deep_results_and_fallback_packets() {
 fn replay_copies_deep_template_inputs_without_changing_metadata() {
     let mut input = Expr::IntLit {
         occurrence: Default::default(),
+        diagnostic: Default::default(),
         digits: "17".to_owned(),
         annotation: convert_type::<EvalPhase, PrePrime>(&typ("I32")),
         meta: Meta::new(Span::new(40, 50)),

@@ -1,0 +1,19 @@
+module numbers;
+
+default host type Int role(i64);
+
+default host type Float role(f64);
+
+default host type Bool role(bool);
+
+default host type String role(str);
+
+host type Other_int role(i32);
+
+host type Other_float role(f32);
+
+host type Other_bool role(bool);
+
+host type Other_string role(str);
+
+pub type Identity[A] = A;

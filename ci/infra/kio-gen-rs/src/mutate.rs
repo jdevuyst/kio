@@ -214,6 +214,10 @@ fn corrupt_elaborator(files: &mut Vec<(String, String)>) {
     // other elaborator modules carry no host items and need no glob.
     admit_root_module(files, "testapi");
     let source = prog_kio_mut(files);
+    let string_declaration = source
+        .find("\nhost type String role(str);")
+        .expect("generated root declares String");
+    source.insert_str(string_declaration + 1, "default ");
     if !source.contains("import algebraic_elaborators(") {
         // Insert the import right after the `import __intrinsics__;` line.
         let anchor = "import __intrinsics__;\n";
@@ -360,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn elaborator_mutation_injects_only_a_missing_canonical_import() {
+    fn elaborator_mutation_prepares_its_failure_inputs() {
         for surface_mode in [false, true] {
             let prog = shrink::minimize_body(&program(surface_mode));
             let (files, exit, category) = apply(&prog, Mutation::Elaborator);
@@ -373,6 +377,12 @@ mod tests {
                     source.contains("import __intrinsics__;\nimport algebraic_elaborators(into);")
                 );
             }
+            assert_eq!(
+                source
+                    .matches("default host type String role(str);")
+                    .count(),
+                1
+            );
             assert!(source.contains("into!(\"kio_gen_elaborator_bug\")"));
         }
     }

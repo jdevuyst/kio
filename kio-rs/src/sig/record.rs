@@ -19,7 +19,7 @@
 
 use super::{ContractSide, QualifiedName};
 use crate::ast::{
-    Import, ImportKind, Phase, Purity, SigItem, SigItemRef, SigModuleSection, Surface,
+    Import, ImportItem, ImportKind, Phase, Purity, SigItem, SigItemRef, SigModuleSection, Surface,
     TypeRecMember,
 };
 use crate::pass::resolve::{ExportContractPhase, Package};
@@ -250,6 +250,11 @@ pub(super) fn imports_needed_by(items: &[SigItem<Surface>], imports: Vec<Import>
                     item.as_local_name()
                         .is_some_and(|name| referenced.bare.contains(name))
                 });
+                for item in items.iter_mut() {
+                    if let ImportItem::Name { default_span, .. } = item {
+                        *default_span = None;
+                    }
+                }
                 (!items.is_empty()).then_some(usage)
             }
             ImportKind::Qualified { alias, .. } => {
@@ -400,4 +405,34 @@ fn module_path_string(path: &crate::ast::ModulePath) -> String {
         .map(|segment| segment.name.as_str())
         .collect::<Vec<_>>()
         .join("/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recorded_imports_keep_names_but_drop_default_selections() {
+        let module = crate::pass::parser::parse(
+            "module consumer; import numbers(default Int as I, default Text, Other); \
+             import extra as extra_api; pub type Result = I & extra_api.Value;",
+        )
+        .expect("parse source module");
+        let crate::ast::Item::TypeAlias(alias) = module.items.into_iter().next().unwrap() else {
+            panic!("expected the source alias");
+        };
+        let projected = imports_needed_by(&[SigItem::TypeAlias(alias)], module.imports);
+        let rendered: Vec<_> = projected.iter().map(crate::pretty::pretty_import).collect();
+        assert_eq!(
+            rendered,
+            ["import numbers(Int as I);", "import extra as extra_api;"]
+        );
+        let signature = format!(
+            "signature app v(1); v(1) {{ nonbreaking {{ add {{ module consumer {{ \
+             {} pub type Result = I & extra_api.Value; }} }} }} }}",
+            rendered.join(" "),
+        );
+        crate::pass::parser::parse_signature_file(&signature, Some("app"))
+            .expect("recorded imports contain only contract metadata");
+    }
 }

@@ -344,11 +344,16 @@ in [`js.md` § Atomic types](js.md#atomic-types-governed-by-role):
 | `role(u64)`, `role(u128)`  | `bigint`        |
 | `role(f32)`, `role(f64)`   | `number`        |
 
+The JS constructor preserves the [value selected by Kio](../language.md#literals).
+An `f32` literal is represented by its exact binary32 value widened to
+`number`, including signed zero and subnormals.
+
 `number` and `bigint` are distinct in TypeScript and in JS arithmetic (`1 + 1n`
 throws at runtime), so the wide-integer roles type as `bigint` exactly because
 the JS `.js` carries them as `BigInt` ([`js.md` § Atomic types](js.md#atomic-types-governed-by-role)).
 A host passing a value outside the JS backend's range for its declared host type gets the JS backend's
-implementation-defined behavior; the type is a contract on shape, not on range.
+implementation-defined behavior; TypeScript's `number` type does not enforce
+those host-supplied value ranges. Kio source literals are checked before emission.
 
 ### Non-atomic host types
 

@@ -4,7 +4,7 @@ import egraph/numbers as n;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith as num;
 import testapi/array as arr;
 import testapi/iter(loop);

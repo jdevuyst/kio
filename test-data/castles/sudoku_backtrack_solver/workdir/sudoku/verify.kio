@@ -9,7 +9,7 @@ module sudoku/verify;
 import elab/control(if);
 import sudoku/geometry as geo;
 import sudoku/num as num;
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_make_filled, array_set);
 import testapi/iter(loop);

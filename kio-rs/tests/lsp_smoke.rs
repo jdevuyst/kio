@@ -1240,7 +1240,7 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         "import pkg/common(common);\n",
         "import control(if);\n",
         "\n",
-        "host type Bool role(bool);\n",
+        "default host type Bool role(bool);\n",
         "host type I32 role(i32);\n",
         "host type String role(str);\n",
         "host fn make[A]() -> A;\n",
@@ -4060,6 +4060,9 @@ mod doc_completion;
 
 #[path = "lsp_smoke/block_calls.rs"]
 mod block_calls;
+
+#[path = "lsp_smoke/default_types.rs"]
+mod default_types;
 
 #[path = "lsp_smoke/completion_closed.rs"]
 mod completion_closed;
@@ -8045,7 +8048,7 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "import pkg(Bool, I32, add_i32, leq_i32, loop);\n",
+        "import pkg(default Bool, I32, add_i32, leq_i32, loop);\n",
         "import control(if);\n",
         "\n",
         // Three value params: the lowering unpacks the rec state tuple with a

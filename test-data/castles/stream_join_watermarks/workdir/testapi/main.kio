@@ -7,7 +7,7 @@ import join/engine as engine;
 import join/input as input;
 import join/model as m;
 import join/report as report;
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;

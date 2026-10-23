@@ -2526,6 +2526,10 @@
           "named": true
         },
         {
+          "type": "keyword_declaration",
+          "named": true
+        },
+        {
           "type": "keyword_host",
           "named": true
         },
@@ -6342,6 +6346,10 @@
           "named": true
         },
         {
+          "type": "keyword_declaration",
+          "named": true
+        },
+        {
           "type": "keyword_pub",
           "named": true
         },
@@ -7546,6 +7554,10 @@
   },
   {
     "type": "keyword_declaration",
+    "named": true
+  },
+  {
+    "type": "keyword_default",
     "named": true
   },
   {

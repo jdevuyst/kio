@@ -1,7 +1,7 @@
 module testapi/main;
 
 import forms(arrange, block_pair, discard, last_blocks, outer, packet, pair_prefix, run_sequence);
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 import testapi/text(string_concat);
 

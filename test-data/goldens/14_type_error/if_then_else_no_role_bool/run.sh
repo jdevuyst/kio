@@ -1,6 +1,6 @@
 #!/bin/sh
-# A qualified module import alone does not place its `role(bool)` member in the
-# consumer's unqualified candidate pool, so the intrinsic has no scheme there.
+# A qualified module import does not select its Boolean type as a local default,
+# so the conditional intrinsic has no selected Boolean slot.
 set -u
 cd workdir || exit
 "$KIO_BIN" check

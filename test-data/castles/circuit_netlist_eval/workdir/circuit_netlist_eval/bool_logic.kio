@@ -1,7 +1,7 @@
 module circuit_netlist_eval/bool_logic;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 
 pub fn b_not(v: Bool) -> Bool {
   if! v { .f } else { .t }

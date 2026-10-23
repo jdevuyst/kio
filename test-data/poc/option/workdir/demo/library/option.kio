@@ -27,7 +27,7 @@ import library/list/core(uncons);
 import list/core(List);
 import option_host as _rehost_gphahegjgpgofpgigphdhe;
 
-pub type Bool = _rehost_gphahegjgpgofpgigphdhe.Bool;
+default pub type Bool = _rehost_gphahegjgpgofpgigphdhe.Bool;
 
 pub type String = _rehost_gphahegjgpgofpgigphdhe.String;
 

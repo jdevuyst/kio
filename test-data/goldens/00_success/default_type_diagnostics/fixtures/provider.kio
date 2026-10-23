@@ -1,0 +1,9 @@
+module provider;
+
+host type Other_int role(i32);
+
+host type Other_float role(f32);
+
+host type Other_bool role(bool);
+
+host type Other_string role(str);

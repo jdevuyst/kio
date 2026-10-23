@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/match(match);
 import elab/spine_elaborators(one_sum, widen_sum);
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat);

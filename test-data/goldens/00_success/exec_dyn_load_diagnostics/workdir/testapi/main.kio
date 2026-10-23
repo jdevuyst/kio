@@ -11,7 +11,7 @@ import loader(diag_message, un_load_outcome);
 import loader/scan(load_package);
 import parse(P_err, P_ok);
 import parse(parse_toks_scope_fuel, perr_message, scope_nil, scope_push);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/io(print);
 import testapi/text(string_concat, string_eq);
 import token(Toks);

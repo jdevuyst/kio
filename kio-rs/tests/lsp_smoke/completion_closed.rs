@@ -422,6 +422,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     };
     // Grammar sections: module declarations, host declarations, and surface items.
     let declarations = [
+        ("default", " host type A role(i64);"),
         ("elab", " make: . { impl run; };"),
         ("equiv", " same() { (); () }"),
         ("fn", " run() { () }"),
@@ -445,7 +446,7 @@ fn closed_cases() -> Vec<ClosedCase> {
         &declarations
             .iter()
             .copied()
-            .filter(|(name, _)| !["pub", "equiv", "import"].contains(name))
+            .filter(|(name, _)| !["default", "pub", "equiv", "import"].contains(name))
             .collect::<Vec<_>>(),
     );
     add(
@@ -493,6 +494,10 @@ fn closed_cases() -> Vec<ClosedCase> {
         "",
         "module app; rec { ",
         &[
+            (
+                "default",
+                " type A = B; newtype B : A { constructor make; projector read; }; }",
+            ),
             (
                 "labels",
                 " A = { next: B }; newtype B : A { constructor make; projector read; }; }",
@@ -1020,6 +1025,24 @@ fn closed_cases() -> Vec<ClosedCase> {
             "module",
             " api { pub type A = .; } }; nonbreaking { add { api.A; } } }",
         )],
+    );
+    add(
+        ".sig",
+        "signature app v(1); v(1) { with { module api { rec { ",
+        &[
+            (
+                "pub",
+                " type A = B; newtype B : A { constructor make; projector read; }; } } }; nonbreaking { add { api.A; } } }",
+            ),
+            (
+                "type",
+                " A = B; newtype B : A { constructor make; projector read; }; } } }; nonbreaking { add { api.A; } } }",
+            ),
+            (
+                "newtype",
+                " A : B { constructor make; projector read; }; type B = A; } } }; nonbreaking { add { api.A; } } }",
+            ),
+        ],
     );
     add(
         ".sig",

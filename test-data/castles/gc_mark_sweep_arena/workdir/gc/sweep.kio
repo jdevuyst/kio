@@ -7,7 +7,7 @@ module gc/sweep;
 
 import elab/control(if);
 import gc/heap(fold_objects, object_size);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32);
 import testapi/array(array_get);
 

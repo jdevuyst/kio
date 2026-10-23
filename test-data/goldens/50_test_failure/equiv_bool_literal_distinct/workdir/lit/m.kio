@@ -1,6 +1,6 @@
 module lit/m;
 
-import lit(Bool);
+import lit(default Bool);
 
 equiv bool_lit() {
   .t;

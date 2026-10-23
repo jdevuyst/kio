@@ -1,0 +1,10 @@
+module main;
+
+default host type Integer role(i64);
+
+pure fn selected() -> Integer { let value = 42; value }
+
+equiv selection() {
+  selected();
+  42(Integer)
+}

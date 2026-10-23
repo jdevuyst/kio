@@ -556,6 +556,11 @@ mod block_call_tests;
 mod diagnostic_repair_tests;
 
 #[cfg(test)]
+mod default_tests;
+#[cfg(test)]
+mod numeric_tests;
+
+#[cfg(test)]
 mod operator_suffix_tests;
 
 #[cfg(test)]
@@ -1167,7 +1172,7 @@ mod tests {
         let mut cases = vec![
             (Module, "module app; rec ".to_owned(), vec!["labels", "newtype"]),
             (Module, "module app; pub rec ".to_owned(), vec!["labels", "newtype"]),
-            (Module, "module app; rec { ".to_owned(), vec!["labels", "newtype", "pub", "type"]),
+            (Module, "module app; rec { ".to_owned(), vec!["default", "labels", "newtype", "pub", "type"]),
             (Module, "module app; rec { pub ".to_owned(), vec!["labels", "newtype", "type"]),
             (Module, "module app; rec(loop) { pub ".to_owned(), vec!["fn"]),
             (Module, "module app; host type A role(str) { owned ".to_owned(), vec![]),
@@ -2079,7 +2084,7 @@ mod tests {
             (
                 "module app; rec { ",
                 KioFileKind::Module,
-                vec!["pub", "type", "newtype", "labels"],
+                vec!["default", "pub", "type", "newtype", "labels"],
             ),
             (
                 "signature app v(1); v(1) { with { module api { rec { ",

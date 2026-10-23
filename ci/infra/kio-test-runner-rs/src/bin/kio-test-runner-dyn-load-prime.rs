@@ -265,6 +265,7 @@ fn export_driver_execution_mode(driver: ExportDriver) -> Result<&'static str, &'
         | ExportDriver::TypeOnlyRoundtrip
         | ExportDriver::StructuralRoundtrip
         | ExportDriver::ScalarRoundtrip
+        | ExportDriver::NumericLiteralValues
         | ExportDriver::HostOwnedRoundtrip
         | ExportDriver::SameArtifactExchange
         | ExportDriver::DirectSumForallBoundary
@@ -1139,6 +1140,7 @@ mod tests {
             ExportDriver::TypeOnlyRoundtrip,
             ExportDriver::StructuralRoundtrip,
             ExportDriver::ScalarRoundtrip,
+            ExportDriver::NumericLiteralValues,
             ExportDriver::HostOwnedRoundtrip,
             ExportDriver::SameArtifactExchange,
             ExportDriver::DirectSumForallBoundary,

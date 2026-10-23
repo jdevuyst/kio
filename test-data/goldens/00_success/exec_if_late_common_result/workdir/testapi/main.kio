@@ -3,7 +3,7 @@ module testapi/main;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io as io;
 
 labels Choice = { left: . } | { right: . };

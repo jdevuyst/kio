@@ -3,7 +3,7 @@ module testapi/main;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(one_prod, widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, default Bool, default String);
 import testapi/io(print);
 
 // Compound *product* slot: `pair` binds the `(I32 & String)`

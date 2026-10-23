@@ -4,7 +4,7 @@ module docs_loader/imageio;
 import docs_loader/elab/control(if);
 import docs_loader/elab/match(match);
 import docs_loader/elab/spine_elaborators(widen_sum);
-import docs_loader/testapi(Bool, I32, String);
+import docs_loader/testapi(default Bool, default I32, default String);
 import docs_loader/testapi/arith(eq_i32);
 import docs_loader/testapi/io(read_ascii_line);
 import docs_loader/testapi/iter(loop);

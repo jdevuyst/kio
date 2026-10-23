@@ -4,7 +4,7 @@ import elab/control(if);
 import index/analysis as analysis;
 import index/automaton as sam;
 import index/numbers as num;
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith as n;
 import testapi/array as a;
 import testapi/iter(loop);

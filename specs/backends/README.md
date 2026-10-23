@@ -351,7 +351,7 @@ The contract has three layers:
 - **Syntax-admission layer.** A `host type X role(r);` declaration records
   which role-governed surface syntax may be used at `X`: the corresponding
   literals, or Boolean values and conditionals for `role(bool)`. A role does
-  not choose, infer, or constrain the host-language representation of `X`.
+  not choose or infer the host-language representation of `X`.
   An annotation or expected type may select the exact declaration, but the
   literal's lexical role must still match that declaration's role. A roleless
   host type admits no lexical literal, and a mismatch is a type error before
@@ -359,6 +359,14 @@ The contract has three layers:
   Each backend separately specifies how the exact host-type declaration is
   represented or bound. The role never implies extra host functions or
   ambient runtime items.
+  Numeric literals are checked and assigned their values by Kio before
+  emission: fixed-width integer bounds and direct IEEE binary32/binary64
+  rounding follow [the shared literal contract](../language.md#literals).
+  Every backend constructor preserves the selected value, including float
+  signed zero and subnormals, without reinterpreting source spelling.
+  A host-selected custom carrier must honor those literal values. These
+  obligations neither prescribe host arithmetic nor add runtime checks on
+  custom carriers.
 - **Intent layer.** For each `host type`, the contract carries a
   set of *bound intents* — purposes the type's bound surface must
   discharge so the emitter's later uses (closure capture,

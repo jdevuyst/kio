@@ -125,7 +125,7 @@ host type U128   role(u128);
 host type F32    role(f32);
 host type F64    role(f64);
 host type String role(str);
-host type Bool   role(bool);
+default host type Bool role(bool);
 host fn print_i32(value: I32);
 ";
 
@@ -893,6 +893,15 @@ build {
             "bridge {\n  testapi\n}\n",
             "prog"
         ));
+    }
+
+    #[test]
+    fn generated_base_defaults_select_only_the_conditional_boolean_identity() {
+        assert_eq!(HOST_ENV_KIO.matches("default ").count(), 1);
+        assert!(HOST_ENV_KIO.contains("default host type Bool role(bool);"));
+        for base in ["I8", "I32", "U64", "F32", "F64", "String"] {
+            assert!(!HOST_ENV_KIO.contains(&format!("default host type {base} ")));
+        }
     }
 
     #[test]

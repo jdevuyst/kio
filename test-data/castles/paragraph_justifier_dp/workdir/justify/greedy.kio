@@ -11,7 +11,7 @@ import elab/match(match);
 import justify/list as list;
 import justify/list(List);
 import justify/word(Word, Words, word_width);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/iter(loop);
 

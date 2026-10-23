@@ -1,0 +1,8 @@
+package integer_literal_u128_overflow;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

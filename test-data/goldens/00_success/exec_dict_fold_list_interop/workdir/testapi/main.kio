@@ -6,7 +6,7 @@ import elab/control(if);
 import list/core as lc;
 import list/list as ls;
 import list/list(varop [] as [* *]);
-import testapi(Bool, I32, String);
+import testapi(String, default Bool, default I32);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

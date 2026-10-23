@@ -1189,11 +1189,13 @@ where
         },
         Expr::IntLit {
             occurrence: _,
+            diagnostic: _,
             digits,
             annotation,
             meta,
         } => Expr::IntLit {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             digits: digits.clone(),
             annotation: go_t(annotation),
             meta: meta.clone(),
@@ -12106,10 +12108,10 @@ mod tests {
             krate.ffi_rs.contains("pub mod api__keepBinder {")
                 && krate
                     .ffi_rs
-                    .contains("pub type arg0<ComptimeBool: crate::shapes::KioType> = <ComptimeBool as crate::shapes::KioType>::Facade;")
+                    .contains("pub type arg0<ComptimeBoolN2: crate::shapes::KioType> = <ComptimeBoolN2 as crate::shapes::KioType>::Facade;")
                 && krate
                     .ffi_rs
-                    .contains("pub type ret<ComptimeBool: crate::shapes::KioType> = <ComptimeBool as crate::shapes::KioType>::Facade;"),
+                    .contains("pub type ret<ComptimeBoolN2: crate::shapes::KioType> = <ComptimeBoolN2 as crate::shapes::KioType>::Facade;"),
             "{}",
             krate.ffi_rs
         );
@@ -14015,7 +14017,7 @@ mod tests {
             &[
                 "module main; import control(if); \
              host type Array[A]; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              labels Array_state = { cells: Array(I32) }; \

@@ -3,7 +3,7 @@ module docs_loader/result;
 
 import docs_loader/elab/spine_elaborators(widen_sum);
 import docs_loader/host_descriptor(Host_fn);
-import docs_loader/testapi(String);
+import docs_loader/testapi(default String);
 import docs_loader/value(Value);
 
 // `result.kio` — the evaluator outcome types, factored out of `eval.kio`.

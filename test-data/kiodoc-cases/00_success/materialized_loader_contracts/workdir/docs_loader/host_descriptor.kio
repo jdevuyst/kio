@@ -5,7 +5,7 @@ import docs_loader/elab/control(if);
 import docs_loader/elab/match(match);
 import docs_loader/elab/spine_elaborators(widen_sum);
 import docs_loader/list/core(List, cons, nil, uncons);
-import docs_loader/testapi(Bool, String);
+import docs_loader/testapi(default Bool, default String);
 import docs_loader/testapi/iter(loop);
 import docs_loader/testapi/text(string_concat, string_eq);
 

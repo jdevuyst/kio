@@ -19,11 +19,11 @@ import list/elab/match(match);
 import list/elab/spine_elaborators(widen_sum);
 import option_host as _rehost_gphahegjgpgofpgigphdhe;
 
-pub type Bool = _rehost_gphahegjgpgofpgigphdhe.Bool;
+default pub type Bool = _rehost_gphahegjgpgofpgigphdhe.Bool;
 
-pub type I32 = _rehost_gphahegjgpgofpgigphdhe.I32;
+default pub type I32 = _rehost_gphahegjgpgofpgigphdhe.I32;
 
-pub type String = _rehost_gphahegjgpgofpgigphdhe.String;
+default pub type String = _rehost_gphahegjgpgofpgigphdhe.String;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_gphahegjgpgofpgigphdhe.add_i32(p0, p1) }
 

@@ -71,6 +71,14 @@ import elab/match(match);
 import elab/spine_elaborators(widen_sum, one_prod);
 ```
 
+Type imports likewise distinguish capability from local choice. An ordinary
+type import retains its role but never inherits the provider's defaults.
+For example, `import numbers(default Int as Integer, Float);` selects only
+the integer default in this module. Unselected types still accept literals
+with an expected or explicit type. See
+[literal types and defaults](typechecking.md#literal-types-and-module-local-defaults)
+for the categories, aliases and eager conflict rules.
+
 The bang belongs only at the call site:
 
 <!--kio {harness=inject placeholder="__INSERT_CODE_HERE__"}

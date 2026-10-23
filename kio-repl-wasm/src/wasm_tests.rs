@@ -2,6 +2,51 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::wasm_bindgen_test;
 
 #[wasm_bindgen(inline_js = r#"
+export function exerciseLiteralDefaults(repl) {
+  const check = (ok, message) => { if (!ok) throw new Error(message); };
+  const turn = input => repl.eval(input).output.replace(/\x1b\[[0-9;]*m/g, '').trim();
+  try {
+    check(turn(':load app').includes('loaded app'), 'load selected defaults');
+    const ordinary = repl.complete('def', 3).candidates.find(item => item.label === 'default');
+    check(ordinary !== undefined && ordinary.kind === 'fn', 'ordinary default completion');
+    const queries = ['42', '42.0e0', '42.0E+3', '42.0', '42.0e-3', '.t', 'default()',
+      'same(42, default())', 'same(42.0, floating())', 'choose(.t)'];
+    for (const query of queries) {
+      const output = turn(':type ' + query);
+      check(output.startsWith(query + ' : '), `${query}: ${output}`);
+    }
+    for (const query of ['same(42.0, 42)', 'same(42, 42.0)', '42(Float)']) {
+      const output = turn(':type ' + query);
+      check(output.includes('the expression does not type-check'), `${query}: ${output}`);
+    }
+    for (const literal of ['1e12', '42e0', '42E+3', '-4_2E-0']) {
+      check(turn(':type ' + literal).includes('exponent notation is not supported for integer literals'), `integer exponent: ${literal}`);
+    }
+    check(turn(':normalize same(42, default())') === '42(Int)', 'integer literal category');
+    check(turn(':normalize same(42.0, floating())').startsWith('42.0'), 'floating literal point');
+    check(/^42(?:\(|$)/.test(turn(':normalize choose(.t)')), 'selected Boolean true branch');
+    check(/^0(?:\(|$)/.test(turn(':normalize choose(.f)')), 'selected Boolean false branch');
+    check(turn(':sig default').startsWith('pub fn default() -> Int'), 'ordinary default value name');
+    turn(':reset');
+    check(!repl.complete('def', 3).candidates.some(item => item.label === 'default'), 'reset ordinary default name');
+    return queries.length;
+  } finally { repl.free(); }
+}
+"#)]
+extern "C" {
+    #[wasm_bindgen(catch, js_name = exerciseLiteralDefaults)]
+    fn exercise_literal_defaults(repl: JsValue) -> Result<u32, JsValue>;
+}
+
+#[wasm_bindgen_test]
+pub fn literal_defaults_cross_the_public_javascript_boundary() {
+    assert_eq!(
+        exercise_literal_defaults(super::default_types_repl().into()).unwrap(),
+        10
+    );
+}
+
+#[wasm_bindgen(inline_js = r#"
 export function exerciseReferenceOwnership(repl) {
   const check = (ok, label) => { if (!ok) throw new Error(label); };
   const turn = input => repl.eval(input).output.replace(/\x1b\[[0-9;]*m/g, '').trim();

@@ -1,7 +1,7 @@
 module sensor_alarm_window/scanner;
 
 import elab/control(if);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/text as text;
 

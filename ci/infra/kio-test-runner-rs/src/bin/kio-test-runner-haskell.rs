@@ -109,7 +109,8 @@ use host_api::{AssocType, HostApi, TraitMethod};
 use opt_profile::OptProfile;
 use protocol::{
     ExportDriver, HostFnBinding, HostFnBodyKind, HostRoleRef, HostTypeBinding, HostTypeFixture,
-    HostTypeIdentity, ProtocolExecution, RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
+    HostTypeIdentity, NUMERIC_LITERAL_SAMPLES, NumericLiteralExpected, ProtocolExecution,
+    RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
 };
 use runner::{EXIT_RUNTIME_FAILURE, EXIT_USAGE, TestRunner};
 use runner_cache_env::RunnerCacheConfig;
@@ -1338,6 +1339,9 @@ fn build_driver(
         out.push_str("import qualified \"base\" Data.Kind\n");
     }
     out.push_str("import qualified \"base\" Data.Int\n");
+    if protocol == RunnerProtocol::NumericLiteralValues {
+        out.push_str("import qualified \"base\" GHC.Float\n");
+    }
     out.push_str("import qualified \"base\" Data.Word\n");
     out.push_str("import qualified \"base\" Data.Char\n");
     out.push_str("import qualified \"base\" Data.IORef\n");
@@ -1781,6 +1785,29 @@ fn render_export_driver(
                 make_sum_0 = sum_pattern("make_callable_sum", BoundaryRoot::Ret, 0),
                 make_sum_1 = sum_pattern("make_scalar_sum", BoundaryRoot::Ret, 1),
             )
+        }
+        ExportDriver::NumericLiteralValues => {
+            let mut script = String::new();
+            for (index, (leaf, expected)) in NUMERIC_LITERAL_SAMPLES.iter().enumerate() {
+                let function = pkg_export("testapi/main", leaf);
+                let value = format!("numeric{index}");
+                let check = match expected {
+                    NumericLiteralExpected::Integer(_, expected) => {
+                        format!("{value} == ({expected})")
+                    }
+                    NumericLiteralExpected::F32(bits) => {
+                        format!("GHC.Float.castFloatToWord32 {value} == 0x{bits:08x}")
+                    }
+                    NumericLiteralExpected::F64(bits) => {
+                        format!("GHC.Float.castDoubleToWord64 {value} == 0x{bits:016x}")
+                    }
+                };
+                script.push_str(&format!(
+                    "  {value} <- {function} pkg\n  if {check} then pure () else error \"{leaf}\"\n"
+                ));
+            }
+            script.push_str("  putStrLn \"numeric literals ok\"\n");
+            script
         }
         ExportDriver::ScalarRoundtrip => {
             let scalar_samples = [

@@ -2,7 +2,7 @@ module testapi/main;
 
 import lib(identity);
 import lib/ops as ops;
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 
 pub fn main() { let a = identity("root module import: ok\n"); print(ops.keep_first(a, "unused")) }

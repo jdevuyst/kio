@@ -3,7 +3,7 @@ module testapi/main;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, String);
+import testapi(default Bool, default String);
 import testapi/io as io;
 
 fn choose(condition: Bool, value: String | .) -> String {

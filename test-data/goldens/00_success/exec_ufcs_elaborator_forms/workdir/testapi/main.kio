@@ -3,7 +3,7 @@ module testapi/main;
 import elab/algebraic_elaborators(atom);
 import elab/match(match);
 import elab/spine_elaborators(narrow_prod, narrow_sum, widen_sum);
-import testapi(I32, String);
+import testapi(I32, default String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 

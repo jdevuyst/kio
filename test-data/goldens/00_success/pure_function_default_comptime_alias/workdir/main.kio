@@ -1,0 +1,10 @@
+module main;
+
+import provider(default Flag);
+
+pure fn value() -> Flag { let flag = .t; flag }
+
+equiv selected_boolean() {
+  value();
+  .t(Flag)
+}

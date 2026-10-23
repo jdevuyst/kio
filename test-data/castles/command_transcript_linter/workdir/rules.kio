@@ -2,7 +2,7 @@ module rules;
 
 import elab/control(if);
 import scanner as scan;
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/text as text;
 
 fn not(value: Bool) -> Bool {

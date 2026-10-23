@@ -14,7 +14,7 @@ import huffman/list(List, cons, is_empty, nil, rev_onto, reverse);
 import huffman/tree(Fork_key, Fork_left, Fork_right, Fork_weight);
 import huffman/tree(Leaf_symbol, Leaf_weight);
 import huffman/tree(Node, {fork_left}, {fork_right}, {leaf_symbol});
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 

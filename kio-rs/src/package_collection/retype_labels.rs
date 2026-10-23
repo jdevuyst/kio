@@ -65,6 +65,7 @@ pub(super) fn decompose_owner(
     reexports: &mut BTreeMap<String, TypeAlias<Surface>>,
 ) -> DecomposedLabels {
     let named_alias = owner.type_alias_name.as_ref().map(|name| TypeAlias {
+        default_span: None,
         vis: owner.vis.clone(),
         name: name.clone(),
         name_span: owner

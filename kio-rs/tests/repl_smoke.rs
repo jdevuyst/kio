@@ -81,6 +81,87 @@ impl Drop for TempPackage {
 }
 
 #[test]
+fn repl_defaults_keep_integer_float_categories_and_ordinary_default_names() {
+    let package = TempPackage::new("literal-defaults");
+    for (path, source) in [
+        (
+            "app.pkg.kio",
+            include_str!("fixtures/default-types/app.pkg.kio"),
+        ),
+        ("app.kio", include_str!("fixtures/default-types/app.kio")),
+        (
+            "provider.kio",
+            include_str!("fixtures/default-types/provider.kio"),
+        ),
+    ] {
+        package.write(path, source);
+    }
+    let queries = [
+        "42",
+        "42.0e0",
+        "42.0E+3",
+        "42.0",
+        "42.0e-3",
+        ".t",
+        "default()",
+        "same(42, default())",
+        "same(42.0, floating())",
+        "choose(.t)",
+    ];
+    let mut transcript = vec![":load app".to_owned()];
+    transcript.extend(queries.map(|query| format!(":type {query}")));
+    transcript.extend([
+        ":normalize same(42, default())".to_owned(),
+        ":normalize same(42.0, floating())".to_owned(),
+        ":sig default".to_owned(),
+        ":quit".to_owned(),
+    ]);
+    let output = run_repl(
+        package.path(),
+        &transcript.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    assert!(output.contains("loaded app"), "{output}");
+    assert!(!output.contains("does not type-check"), "{output}");
+    for query in queries {
+        assert!(
+            output
+                .lines()
+                .any(|line| line.starts_with(&format!("{query} : "))),
+            "{query}: {output}"
+        );
+    }
+    assert!(output.lines().any(|line| line == "42(Int)"), "{output}");
+    assert!(
+        output
+            .lines()
+            .any(|line| line.starts_with("42.0") && !line.contains(" : ")),
+        "{output}"
+    );
+    assert!(output.contains("pub fn default() -> Int"), "{output}");
+    for query in ["same(42.0, 42)", "same(42, 42.0)", "42(Float)"] {
+        let output = run_repl(
+            package.path(),
+            &[":load app", &format!(":type {query}"), ":quit"],
+        );
+        assert!(
+            output.contains("the expression does not type-check"),
+            "{query}: {output}"
+        );
+        assert!(!output.contains(&format!("{query} : ")), "{output}");
+    }
+    for literal in ["1e12", "42e0", "42E+3", "-4_2E-0"] {
+        let output = run_repl(
+            package.path(),
+            &[":load app", &format!(":type {literal}"), ":quit"],
+        );
+        assert!(
+            output.contains("exponent notation is not supported for integer literals"),
+            "{literal}: {output}"
+        );
+    }
+}
+
+#[test]
 fn repl_numbered_bindings_normalize_through_ordinary_patterns() {
     let pkg = TempPackage::new("numbered-bindings");
     pkg.write_demo_package();

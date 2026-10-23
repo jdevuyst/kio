@@ -19,7 +19,7 @@ import loader(instantiate, un_load_outcome);
 import loader/scan(load_package);
 import prime(group_slots_cons, group_slots_nil);
 import result(Call_result, call_done, call_stuck);
-import testapi(Bool, I32, Scalar, String);
+import testapi(I32, Scalar, String, default Bool);
 import testapi/arith(add_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);

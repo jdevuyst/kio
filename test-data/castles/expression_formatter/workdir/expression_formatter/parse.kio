@@ -47,7 +47,7 @@ import expression_formatter/types(
 , {token_text}
 , {valid_shape}
 );
-import testapi(Bool, Int, String);
+import testapi(Int, String, default Bool);
 import testapi/fmt(int_to_string);
 import testapi/text(string_concat, string_eq, string_len);
 

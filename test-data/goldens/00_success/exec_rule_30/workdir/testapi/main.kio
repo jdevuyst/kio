@@ -3,7 +3,7 @@ module testapi/main;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Array, Bool, I32, String);
+import testapi(Array, default Bool, default I32, default String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_clone, array_get, array_make_filled, array_set);
 import testapi/io(print);

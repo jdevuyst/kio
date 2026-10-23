@@ -2,7 +2,7 @@ module host/m;
 
 import elab/control(if);
 import elab/match(match);
-import host(Bool);
+import host(default Bool);
 
 equiv if_else_same_shape() {
   if! .t { () } else { () };

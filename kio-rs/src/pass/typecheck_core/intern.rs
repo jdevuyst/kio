@@ -433,6 +433,18 @@ where
             .expect("normalized package work requires a normalization-bearing scope")
     }
 
+    #[cfg(feature = "surface")]
+    pub(crate) fn source_type_binder_name(
+        &self,
+        module: &str,
+        span: crate::span::Span,
+        normalized: &str,
+    ) -> Option<&str> {
+        self.alpha_presentation
+            .as_ref()?
+            .source_name(module, span, normalized)
+    }
+
     pub(crate) fn assert_module(
         &self,
         module: &crate::ast::Module<P>,

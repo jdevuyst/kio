@@ -5,7 +5,7 @@
 module diff3/prim;
 
 import elab/control(if);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(leq_i32);
 import testapi/text(string_concat);
 

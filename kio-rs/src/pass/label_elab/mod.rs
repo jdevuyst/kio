@@ -2011,6 +2011,7 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
     /// same-named label in `visit_type_path`.
     fn walk_alias(&mut self, a: TypeAlias<Desugared>) -> Result<TypeAlias<Lowered>, Error> {
         let TypeAlias {
+            default_span,
             vis,
             name,
             name_span,
@@ -2027,6 +2028,7 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
         let body = self.walk_type(body)?;
         self.restore_bound(mark);
         Ok(TypeAlias {
+            default_span,
             vis,
             name,
             name_span,
@@ -2373,6 +2375,7 @@ impl LabelElabVisitor<'_> {
                 ]
             });
             out.push(Item::TypeAlias(TypeAlias {
+                default_span: None,
                 vis,
                 name,
                 name_span: type_alias_span.expect("named labels carry a type-name span"),

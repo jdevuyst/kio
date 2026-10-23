@@ -558,10 +558,22 @@ fn doc_import_entry(u: &Import) -> Doc {
 
 fn import_item_display(item: &crate::ast::ImportItem) -> String {
     match item {
-        ImportItem::Name { name, alias, .. } => alias.as_ref().map_or_else(
-            || name.clone(),
-            |alias| format!("{name} as {}", alias.local),
-        ),
+        ImportItem::Name {
+            default_span,
+            name,
+            alias,
+            ..
+        } => {
+            let prefix = if default_span.is_some() {
+                "default "
+            } else {
+                ""
+            };
+            alias.as_ref().map_or_else(
+                || format!("{prefix}{name}"),
+                |alias| format!("{prefix}{name} as {}", alias.local),
+            )
+        }
         ImportItem::Label { name, .. } => format!("{{{name}}}"),
         ImportItem::OperatorPattern { grammar, alias, .. } => {
             let mut rendered = grammar.render();
@@ -960,7 +972,15 @@ fn doc_type_alias(a: &TypeAlias) -> Doc {
 fn doc_type_alias_with_terminator(a: &TypeAlias, terminated: bool) -> Doc {
     let doc_prefix = a.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
     let pubword = doc_vis(&a.vis);
-    let head = concat_all([pubword, text(format!("type {}", a.name))]);
+    let head = concat_all([
+        text(if a.default_span.is_some() {
+            "default "
+        } else {
+            ""
+        }),
+        pubword,
+        text(format!("type {}", a.name)),
+    ]);
     let params = if a.type_params.is_empty() {
         empty()
     } else {
@@ -4365,7 +4385,18 @@ fn doc_host_type(h: &HostType) -> Doc {
         None => empty(),
     };
     let owned = if h.owned { text(" { owned }") } else { empty() };
-    concat_all([doc_prefix, head, params, role, owned])
+    concat_all([
+        doc_prefix,
+        text(if h.default_span.is_some() {
+            "default "
+        } else {
+            ""
+        }),
+        head,
+        params,
+        role,
+        owned,
+    ])
 }
 
 fn doc_host_fn(h: &HostFn) -> Doc {

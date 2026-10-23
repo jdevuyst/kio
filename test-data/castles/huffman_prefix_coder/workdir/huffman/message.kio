@@ -11,7 +11,7 @@ module huffman/message;
 import elab/control(if);
 import huffman/list(List, append, fold, of1, of3, of4, of5, of6);
 import huffman/text(cat);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32);
 
 /// Symbol codes are the alphabet's indices, assigned in glyph order. The

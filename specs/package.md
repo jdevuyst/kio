@@ -138,26 +138,22 @@ A role-bearing host type has no type parameters. Parameterized host types are
 roleless and their parameters have kind `*`; combining a type-parameter list
 with `role(...)` is a type error.
 
-Roles drive literal reception. Multiple `host type`s in one lexical scope may
-carry the same role. When neither an explicit annotation nor an expected type
-determines a literal's type, tier 3 resolves it only if exactly one in-scope
-role-bearing type is admitted for that literal; zero candidates are unresolved
-and multiple candidates are ambiguous. `role(bool)` additionally supplies the
-condition type for `__if_then_else__` and the reference `if!` elab's
-branching glue, but only when the
-identity-keyed candidate set is a singleton. Directly in-scope host types form
-the candidate set when any exist; only otherwise do transparent aliases supply
-the fallback set. Repeated paths to one host declaration contribute one
-candidate, while distinct declarations contribute distinct candidates even
-when their leaf names match. Zero or multiple
-candidates make those uses type errors without making the host-type
-declarations themselves invalid.
+Roles drive literal admission, independently of module-local default selection.
+Integer syntax admits only integer roles; float syntax requires a decimal
+point and admits only float roles. Boolean and string syntax admit their
+respective roles. Expected and explicitly annotated types need no default.
+Multiple unselected types may carry the same role.
 
-Here, “in scope” means the module's unqualified lexical namespace: local and
-selectively imported host types or aliases. A qualified module import alone
-does not contribute its members. An in-scope alias may name its terminal host
-identity through a qualified import, but only the alias contributes that
-identity to the fallback pool.
+Fallback literal typing instead uses a written `default` on a host-type or
+transparent-alias declaration, or on a named selective type import. There is
+at most one terminal identity per category (integer across all widths, float
+across all widths, Boolean and string). Distinct defaults in one category
+conflict eagerly even when unused; aliases of one normalized terminal host
+identity agree. Default selections are local to the module, are not exported,
+and are not inherited by ordinary or qualified imports. The selected Boolean
+default also supplies the scheme of `__if_then_else__` and the reference
+`if!` elab's branching glue. The shared scope, alias and conflict rules live
+in [`language.md`](language.md#host-declarations-and-the-bridge-block).
 
 Host types are opaque inside Kio code. Structural typing does not cross a host
 type boundary; values move in or out through host functions.
@@ -467,8 +463,10 @@ consumer module providing replacements. During materialization, the rewrite is
 **local to the named module**: every `host` item it declares is replaced in
 place by an ordinary item that forwards to the consumer module. A `host type` T
 becomes a transparent alias `pub type T = <consumer>.T` (the consumer type's
-`role(...)`, if any, is inherited by the alias, so a literal the host type
-received still resolves through it); a `host fn` f becomes a forwarding wrapper
+`role(...)`, if any, is inherited by the alias for literal admission). A
+written `default` on the replaced declaration stays on that alias, in the
+same source scope; the actual normalized target must still satisfy the
+selection rule. No other module inherits that local selection. A `host fn` f becomes a forwarding wrapper
 `pub fn f(..) -> R { <consumer>.f(..) }`. The rebound items stay exported, so a
 module that imports them keeps its import unchanged — the rewrite touches no
 other module. The consumer module must export an item of a compatible type for

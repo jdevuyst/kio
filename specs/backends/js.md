@@ -161,8 +161,8 @@ above), let `<name>` below denote its word-cased host leaf:
 - The host is responsible for honoring the item's declared semantics; the type system commits to type and arity, not to behavior.
 
 `host type` declarations carry no runtime obligation — types are erased at
-runtime. A `role(...)` annotation on a host type only governs how literal
-tokens that resolve to that role are encoded at the FFI boundary (see
+runtime. A `role(...)` annotation on a host type governs literal admission,
+checked numeric values, and their encoding at the FFI boundary (see
 below); it does not require the host to install any functions and does
 not create a canonical JS-side type object.
 
@@ -297,8 +297,9 @@ A `role(...)` annotation on a `host type` makes that type a receiver for
 source-level literal tokens whose shape its role admits (see
 [`specs/language.md` § Literals](../language.md#literals)). At the JS
 boundary, the JS backend represents host types carrying these roles with the
-following value shapes. The width and range requirements in this section are
-JS backend FFI policy, not additional source-language literal-typing rules.
+following value shapes. These FFI requirements also apply to host-supplied
+values; Kio checks source literal bounds and rounding under the shared
+[literal contract](../language.md#literals).
 
 | Role                       | JS shape                                        |
 | -------------------------- | ----------------------------------------------- |
@@ -309,6 +310,10 @@ JS backend FFI policy, not additional source-language literal-typing rules.
 | `role(i64)`, `role(i128)`  | JS `BigInt` (signed, two's-complement at width) |
 | `role(u64)`, `role(u128)`  | JS `BigInt` (non-negative)                      |
 | `role(f32)`, `role(f64)`   | JS `Number`                                     |
+
+An `f32` literal is represented by its exact binary32 value widened to
+`Number`, including signed zero and subnormals; source decimal spelling
+does not cause an independent binary64 rounding decision.
 
 `Number` and `BigInt` are not interchangeable in JS arithmetic — `1 + 1n`
 throws `TypeError` — so a `host fn` that takes a `role(i64)` argument

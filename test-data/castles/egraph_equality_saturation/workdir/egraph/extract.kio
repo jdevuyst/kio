@@ -4,7 +4,7 @@ import egraph/graph as graph;
 import egraph/numbers as n;
 import elab/control(if);
 import elab/match(match);
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith as num;
 import testapi/array as arr;
 import testapi/fmt as fmt;

@@ -1,0 +1,5 @@
+module main;
+
+default host type Int role(i64);
+
+default host type Narrow role(i32);

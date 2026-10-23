@@ -49,7 +49,8 @@
 //! Unlike the full pipeline's `typecheck_full::Elaborations`, this entry point's
 //! side-channel ([`PrimeElaborations`]) records only ordinary-core completions: type-arg
 //! and implicit-Unit slots on `Expr::Call`, checked `Expr::FnExpr`
-//! parameter types, and checked intrinsic-value schemes. There is no Lowered → Prime
+//! parameter types, canonical numeric values, and checked intrinsic-value schemes.
+//! There is no Lowered → Prime
 //! substitution because surface-form-bearing extension variants are
 //! statically uninhabited at Prime. The bake pass materializes only the
 //! Prime-local completions; the later canonicalizer normalizes the
@@ -245,16 +246,20 @@ impl Typer<Prime> for PrimeTyper {
                 <Self as Typer<Prime>>::synth_call(callee, args, e.site(), tcx)
             }
             crate::ast::Expr::StrLit { annotation, .. } => {
-                synth_prime_literal(crate::ast::RoleShape::Str, annotation, tcx).map(Synth::value)
+                synth_prime_literal(crate::ast::RoleShape::Str, annotation, e, tcx)
+                    .map(Synth::value)
             }
             crate::ast::Expr::IntLit { annotation, .. } => {
-                synth_prime_literal(crate::ast::RoleShape::Int, annotation, tcx).map(Synth::value)
+                synth_prime_literal(crate::ast::RoleShape::Int, annotation, e, tcx)
+                    .map(Synth::value)
             }
             crate::ast::Expr::FloatLit { annotation, .. } => {
-                synth_prime_literal(crate::ast::RoleShape::Float, annotation, tcx).map(Synth::value)
+                synth_prime_literal(crate::ast::RoleShape::Float, annotation, e, tcx)
+                    .map(Synth::value)
             }
             crate::ast::Expr::BoolLit { annotation, .. } => {
-                synth_prime_literal(crate::ast::RoleShape::Bool, annotation, tcx).map(Synth::value)
+                synth_prime_literal(crate::ast::RoleShape::Bool, annotation, e, tcx)
+                    .map(Synth::value)
             }
             // Surface-only variants — uninhabited at Prime per the
             // ResolvePhase bound.
@@ -409,18 +414,16 @@ impl Typer<Prime> for PrimeTyper {
     }
 
     fn record_literal_resolution<'m>(
-        _literal_site: crate::ast::ExpressionSite,
-        _resolved: crate::pass::typecheck_core::LiteralResolution<Prime>,
-        _tcx: &mut TypeCtx<'m, '_, Prime>,
+        literal_site: crate::ast::ExpressionSite,
+        resolved: crate::pass::typecheck_core::LiteralResolution<Prime>,
+        tcx: &mut TypeCtx<'m, '_, Prime>,
     ) {
-        // Kio' mandates the `(Type)` annotation on every literal (see
-        // `specs/grammar.md` § Kio' grammar and `specs/prime.md`) —
-        // Prime synthesis reads the type off the AST directly via
-        // [`synth_prime_literal`] and bypasses the shared `synth_literal`
-        // helper. Generic checking can still invoke this publication hook, but
-        // the mandatory annotation is already present, so Prime records
-        // nothing. Keeping this as an infallible no-op leaves trait dispatch
-        // total without a phase-conditional path.
+        if let Some(value) = resolved.numeric_value {
+            tcx.elaborations
+                .numeric_values
+                .get_or_insert_with(Default::default)
+                .insert(literal_site.id, value);
+        }
     }
 
     fn record_fn_param_type<'m>(
@@ -500,15 +503,25 @@ impl Typer<Prime> for PrimeTyper {
 /// This is the Prime counterpart of `synth_literal` in
 /// `typecheck_core::synth`, which carries the full surface's three-
 /// tier resolution logic. Kio' has only tier 1 (the annotation), so
-/// the Prime path is one-premise and side-table-free —
-/// matching `specs/formal/prime.md` § 2.2's T-True / T-False /
-/// T-Int / T-Float / T-Str rules.
+/// the Prime path checks that annotation and the numeric value directly,
+/// then records the canonical numeric value for baking, matching
+/// `specs/formal/prime.md` § 2.2's literal rules.
 fn synth_prime_literal<'m>(
     shape: crate::ast::RoleShape,
     annotation: &crate::ast::Type<Prime>,
+    source: &crate::ast::Expr<Prime>,
     tcx: &mut TypeCtx<'m, '_, Prime>,
 ) -> Result<crate::ast::Type<Prime>, Error> {
-    check_literal_annotation(shape, annotation, tcx.env)
+    let resolved = check_literal_annotation(
+        shape,
+        annotation,
+        source.span(),
+        crate::pass::typecheck_core::numeric_literal_diagnostic(source),
+        tcx,
+    )?;
+    let ty = resolved.ty.as_type().clone();
+    PrimeTyper::record_literal_resolution(source.site(), resolved, tcx);
+    Ok(ty)
 }
 
 /// The prime pipeline's typer side-channel — the `Prime`-phase
@@ -518,14 +531,18 @@ fn synth_prime_literal<'m>(
 /// AST (see `specs/grammar.md` § Kio' grammar — `LiteralCall`'s
 /// annotation slot is mandatory), so the only recording paths whose
 /// targets are inhabited at this phase are `Expr::Call` type-arg and
-/// implicit-Unit slots, checked `Expr::FnExpr` value-parameter types, and
-/// intrinsic-value schemes materialized as ordinary typed functions.
+/// implicit-Unit slots, checked `Expr::FnExpr` value-parameter types,
+/// canonical numeric literal values, and intrinsic-value schemes
+/// materialized as ordinary typed functions.
 /// [`bake_prime_elaborations`] drains the table into the AST after
 /// type-checking so downstream passes (structural recovery,
 /// `route::route_package`, the per-backend emitters) read the
 /// canonical shape directly off the AST.
 #[derive(Debug, Default)]
 pub struct PrimeElaborations {
+    #[allow(clippy::box_collection)]
+    numeric_values:
+        Option<Box<std::collections::HashMap<crate::ast::ExpressionOccurrenceId, String>>>,
     /// Checked value occurrences only. Saturated direct calls need no wrapper.
     /// Semantic occurrence IDs are globally fresh across the checked package.
     #[allow(clippy::box_collection)] // Keep the ordinary no-inventory layout to one pointer.
@@ -669,6 +686,11 @@ impl PrimeElaborations {
     }
 
     pub fn merge(&mut self, other: PrimeElaborations) {
+        if let Some(values) = other.numeric_values {
+            self.numeric_values
+                .get_or_insert_with(Default::default)
+                .extend(*values);
+        }
         if let Some(values) = other.intrinsic_values {
             self.intrinsic_values
                 .get_or_insert_with(Default::default)
@@ -925,6 +947,7 @@ fn prime_local_alias_items(
                 })
                 .collect();
             crate::ast::Item::TypeAlias(crate::ast::TypeAlias {
+                default_span: None,
                 vis: crate::ast::Visibility::Private,
                 name: plan.alias,
                 name_span: plan.span,
@@ -964,12 +987,28 @@ fn bake_expr(
     }
     match e {
         crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
-        // Literals already carry their annotation per the Kio' grammar;
-        // no rewrite needed at this phase.
-        Expr::StrLit { .. }
-        | Expr::IntLit { .. }
-        | Expr::FloatLit { .. }
-        | Expr::BoolLit { .. } => {}
+        Expr::IntLit {
+            diagnostic, digits, ..
+        } => {
+            *diagnostic = Default::default();
+            if let Some(value) = elabs
+                .numeric_values
+                .as_ref()
+                .and_then(|values| values.get(&site.id))
+            {
+                *digits = value.clone();
+            }
+        }
+        Expr::FloatLit { digits, .. } => {
+            if let Some(value) = elabs
+                .numeric_values
+                .as_ref()
+                .and_then(|values| values.get(&site.id))
+            {
+                *digits = value.clone();
+            }
+        }
+        Expr::StrLit { .. } | Expr::BoolLit { .. } => {}
         Expr::Call {
             callee, args, meta, ..
         } => {
@@ -1607,6 +1646,36 @@ mod tests {
     }
 
     #[test]
+    fn numeric_literals_are_independently_checked_and_canonicalized() {
+        let package = build_package(
+            "module x; host type I role(i128); host type U role(u128); host type F role(f32); fn integer() -> I { 00010(I) } fn minimum() -> I { -170141183460469231731687303715884105728(I) } fn maximum() -> U { 340282366920938463463374607431768211455(U) } fn zero() -> U { -0(U) } fn decimal() -> F { 0.1(F) } fn negative_zero() -> F { -1.0e-9999(F) }",
+        );
+        let checked = check_package(&package).expect("valid raw Prime numbers");
+        let emitted = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
+        assert!(emitted.contains("10("));
+        assert!(!emitted.contains("00010") && !emitted.contains("-0("));
+        assert!(emitted.contains("0.10000000149011612("));
+        assert!(emitted.contains("-0.0("));
+        let rechecked = check_package(&build_package(&emitted)).expect("canonical Prime rechecks");
+        assert_eq!(
+            crate::backends::kio_prime::emit_module(rechecked.module("x").unwrap()),
+            emitted
+        );
+        for (role, value) in [
+            ("i8", "128"),
+            ("u128", "340282366920938463463374607431768211456"),
+            ("u8", "-1"),
+            ("f32", "3.5e38"),
+            ("f64", "1.8e308"),
+        ] {
+            let package = build_package(&format!(
+                "module x; host type N role({role}); fn value() -> N {{ {value}(N) }}"
+            ));
+            assert!(check_package(&package).is_err(), "{role} {value}");
+        }
+    }
+
+    #[test]
     fn intrinsic_values_recheck_without_new_wrappers() {
         for source in [
             "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; p(I32, I32, x, y) }",
@@ -1614,7 +1683,7 @@ mod tests {
             "module x; import __intrinsics__; fn f() -> [A][B](A & B) -> (A & B) { __pair__ }",
             "module x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> (A & B), x: I32, y: I32) -> I32 & I32 { p(I32, I32, x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
             "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; let first = p(I32, I32, x, y); p(I32, I32, __fst__(I32, I32, first), y) }",
-            "module x; import __intrinsics__; host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__; choose(First, c, .() -> First { .t(First) }, .() -> First { .f(First) }) } host type Later role(bool);",
+            "module x; import __intrinsics__; default host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__; choose(First, c, .() -> First { .t(First) }, .() -> First { .f(First) }) } host type Later role(bool);",
         ] {
             let original = build_package(source);
             assert_eq!(intrinsic_value_record_count(&original), 1, "{source}");
@@ -1648,14 +1717,27 @@ mod tests {
     }
 
     #[test]
-    fn intrinsic_values_ambiguous_role_remains_rejected() {
-        let message = prime_type_error(
+    fn intrinsic_values_require_a_selected_default_among_role_types() {
+        let package = build_package(
             "module x; import __intrinsics__; host type First role(bool); host type Second role(bool); fn f() -> . { let choose = __if_then_else__; () }",
         );
+        let error =
+            check_package(&package).expect_err("ordinary role declarations select no default");
+        let diagnostic = error.error.diagnostic();
         assert!(
-            message.contains("more than one `role(bool)` type"),
-            "{message}"
+            diagnostic
+                .message
+                .contains("no type is selected as the default boolean type"),
+            "{diagnostic:?}"
         );
+        for name in ["First", "Second"] {
+            assert!(
+                diagnostic.secondary().iter().any(|label| label
+                    .text
+                    .contains(&format!("`{name}` is available but is not selected"))),
+                "{diagnostic:?}"
+            );
+        }
     }
 
     #[test]
@@ -1667,13 +1749,17 @@ mod tests {
             ),
             (
                 "x.kio",
-                "module x; import __intrinsics__; import provider as provider; type _Intrinsic_t0 = provider.Bool; fn choose(c: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__; pick(_Intrinsic_t0, c, .() -> _Intrinsic_t0 { c }, .() -> _Intrinsic_t0 { c }) }",
+                "module x; import __intrinsics__; import provider as provider; default type Selected = provider.Bool; fn choose[_Intrinsic_t0](c: Selected, value: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__; pick(_Intrinsic_t0, c, .() -> _Intrinsic_t0 { value }, .() -> _Intrinsic_t0 { value }) }",
             ),
         ]);
         assert_eq!(intrinsic_value_record_count(&package), 1);
         let checked = check_package(&package).expect("qualified role is selected once");
         let source = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
         assert!(source.contains(".[_Intrinsic_t1]"), "{source}");
+        assert!(
+            source.contains("_intrinsic_arg0: provider.Bool"),
+            "{source}"
+        );
         let provider = crate::backends::kio_prime::emit_module(checked.module("provider").unwrap());
         let reparsed = build_package_modules(&[("provider.kio", &provider), ("x.kio", &source)]);
         assert_eq!(intrinsic_value_record_count(&reparsed), 0);
@@ -1882,10 +1968,10 @@ mod tests {
     }
 
     #[test]
-    fn if_intrinsic_rejects_ambiguous_bool_role_standalone_in_both_orders() {
+    fn if_intrinsic_rejects_conflicting_bool_defaults_standalone_in_both_orders() {
         for declarations in [
-            "host type First role(bool); host type Second role(bool);",
-            "host type Second role(bool); host type First role(bool);",
+            "default host type First role(bool); default host type Second role(bool);",
+            "default host type Second role(bool); default host type First role(bool);",
         ] {
             let pkg = build_package(&format!(
                 "module x; import __intrinsics__; {declarations} \
@@ -1895,22 +1981,28 @@ mod tests {
                      .() -> First {{ .f(First) }}) \
                  }}"
             ));
-            let err = check_package(&pkg).expect_err("ambiguous bool role must reject intrinsic");
+            let err =
+                check_package(&pkg).expect_err("conflicting defaults reject the module eagerly");
             let Error::Type(diagnostic) = err.error else {
                 panic!("expected Type error, got {:?}", err.error);
             };
             assert!(
                 diagnostic
                     .message
-                    .contains("more than one `role(bool)` type"),
+                    .contains("conflicting default boolean types"),
                 "got: {}",
                 diagnostic.message
             );
             assert!(
-                diagnostic.message.contains("`x.First`")
-                    && diagnostic.message.contains("`x.Second`"),
+                diagnostic.message.contains("`First`") && diagnostic.message.contains("`Second`"),
                 "got: {}",
                 diagnostic.message
+            );
+            let second_selection = declarations.rfind("default").unwrap();
+            let module_prefix = "module x; import __intrinsics__; ".len();
+            assert_eq!(
+                diagnostic.span.start as usize,
+                module_prefix + second_selection
             );
         }
     }
@@ -1919,7 +2011,7 @@ mod tests {
     fn if_intrinsic_rejects_a_mismatched_repeated_result() {
         let package = build_package(
             "module x; import __intrinsics__; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              host type Left; \
              host type Right; \
              host fn left() -> Left; \
@@ -1939,10 +2031,10 @@ mod tests {
     }
 
     #[test]
-    fn if_intrinsic_ignores_bool_role_declared_later() {
+    fn if_intrinsic_keeps_selected_bool_with_another_role_declared_later() {
         let pkg = build_package(
             "module x; import __intrinsics__; \
-             host type First role(bool); \
+             default host type First role(bool); \
              fn pick(c: First) -> First { \
                __if_then_else__(First, c, \
                  .() -> First { .t(First) }, \
@@ -1950,7 +2042,8 @@ mod tests {
              } \
              host type Later role(bool);",
         );
-        check_package(&pkg).expect("a later Boolean-role declaration is not in scope");
+        check_package(&pkg)
+            .expect("a later ordinary Boolean-role declaration does not change selection");
     }
 
     /// A return-type-mismatch in a Kio' program is rejected by the

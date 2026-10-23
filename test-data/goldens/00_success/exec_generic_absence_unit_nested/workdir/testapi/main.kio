@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 
 fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }

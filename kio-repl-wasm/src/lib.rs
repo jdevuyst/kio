@@ -315,6 +315,34 @@ fn js_error(message: String) -> JsValue {
 }
 
 #[cfg(test)]
+fn default_types_repl() -> Repl {
+    let root = PathBuf::from("/kio-wasm-tests/default-types");
+    let files = [
+        (
+            "app.pkg.kio",
+            include_str!("../../kio-rs/tests/fixtures/default-types/app.pkg.kio"),
+        ),
+        (
+            "app.kio",
+            include_str!("../../kio-rs/tests/fixtures/default-types/app.kio"),
+        ),
+        (
+            "provider.kio",
+            include_str!("../../kio-rs/tests/fixtures/default-types/provider.kio"),
+        ),
+    ]
+    .into_iter()
+    .map(|(path, source)| (root.join(path), source.to_owned()))
+    .collect();
+    Repl {
+        poc_id: "default-types".to_owned(),
+        session: Session::new_in_memory(root, files),
+        init_banner: String::new(),
+        completion_names: OnceCell::new(),
+    }
+}
+
+#[cfg(test)]
 fn trailing_blocks_repl() -> Repl {
     let root = PathBuf::from("/kio-wasm-tests/trailing-blocks");
     let files = BTreeMap::from([
@@ -566,6 +594,82 @@ mod tests {
                 .candidates
                 .iter()
                 .any(|item| item.label == "arithmetic.(op _ + _)")
+        );
+    }
+
+    #[test]
+    fn browser_defaults_keep_integer_float_categories_and_ordinary_default_names() {
+        let mut repl = default_types_repl();
+        assert!(
+            repl.run_command(Command::Load("app".to_owned()))
+                .output
+                .contains("loaded app")
+        );
+        let completion = repl.complete_core("def", 3);
+        let ordinary = completion
+            .candidates
+            .iter()
+            .find(|candidate| candidate.label == "default")
+            .unwrap();
+        assert_eq!(ordinary.kind.tag(), "fn");
+        for expression in [
+            "42",
+            "42.0e0",
+            "42.0E+3",
+            "42.0",
+            "42.0e-3",
+            ".t",
+            "default()",
+            "same(42, default())",
+            "same(42.0, floating())",
+            "choose(.t)",
+        ] {
+            let output = strip_ansi(
+                &repl
+                    .run_command(Command::Type(expression.to_owned()))
+                    .output,
+            );
+            assert!(
+                output.starts_with(&format!("{expression} : ")),
+                "{expression}: {output}"
+            );
+        }
+        for expression in ["same(42.0, 42)", "same(42, 42.0)", "42(Float)"] {
+            let output = strip_ansi(
+                &repl
+                    .run_command(Command::Type(expression.to_owned()))
+                    .output,
+            );
+            assert!(
+                output.contains("the expression does not type-check"),
+                "{expression}: {output}"
+            );
+        }
+        for literal in ["1e12", "42e0", "42E+3", "-4_2E-0"] {
+            let output = repl.run_command(Command::Type(literal.to_owned())).output;
+            assert!(
+                output.contains("exponent notation is not supported for integer literals"),
+                "{literal}: {output}"
+            );
+        }
+        for (expression, expected) in [("choose(.t)", "42"), ("choose(.f)", "0")] {
+            let output = strip_ansi(
+                &repl
+                    .run_command(Command::Normalize(expression.to_owned()))
+                    .output,
+            );
+            assert!(
+                output == expected || output.starts_with(&format!("{expected}(")),
+                "{expression}: {output}"
+            );
+        }
+        repl.run_command(Command::Reset);
+        assert!(
+            !repl
+                .complete_core("def", 3)
+                .candidates
+                .iter()
+                .any(|candidate| candidate.label == "default")
         );
     }
 

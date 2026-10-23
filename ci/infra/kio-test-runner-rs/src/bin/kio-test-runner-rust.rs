@@ -125,8 +125,8 @@ use host_api::{AssocType, HostApi, TraitMethod};
 use opt_profile::OptProfile;
 use protocol::{
     ExportDriver, HostFnBinding, HostFnBodyKind, HostTypeBinding, HostTypeFixture,
-    HostTypeIdentity, ProtocolContract, ProtocolExecution, RoleFixture, RunnerProtocol,
-    WIDE_CALLABLE_SLOT_COUNT,
+    HostTypeIdentity, NUMERIC_LITERAL_SAMPLES, NumericLiteralExpected, ProtocolContract,
+    ProtocolExecution, RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
 };
 use rlib_cache::{
     BinInput, RlibCache, RlibInput, collect_crate_files, default_target_triple, rustc_identity,
@@ -1318,6 +1318,27 @@ fn build_driver_for_protocol(
                          \x20   assert_eq!(sum_calls.get(), 2);\n\
                          \x20   println!(\"callable slots ok\");\n"
                     )
+                }
+                ExportDriver::NumericLiteralValues => {
+                    let main = match &export_root {
+                        Some(r) => format!("pkg.{r}.main"),
+                        None => "pkg".to_owned(),
+                    };
+                    let mut script = String::new();
+                    for (leaf, expected) in NUMERIC_LITERAL_SAMPLES {
+                        let member = host_api::host_name_core(leaf);
+                        let check = match expected {
+                            NumericLiteralExpected::Integer(role, value) => format!(
+                                "assert_eq!({main}.{member}(), {value}_{});", role.role()),
+                            NumericLiteralExpected::F32(bits) => format!(
+                                "assert_eq!({main}.{member}().to_bits(), 0x{bits:08x});"),
+                            NumericLiteralExpected::F64(bits) => format!(
+                                "assert_eq!({main}.{member}().to_bits(), 0x{bits:016x});"),
+                        };
+                        script.push_str(&format!("    {check}\n"));
+                    }
+                    script.push_str("    println!(\"numeric literals ok\");\n");
+                    script
                 }
                 ExportDriver::ScalarRoundtrip => {
                     let main = match &export_root {

@@ -5,7 +5,7 @@ import elab/control(if);
 import elab/spine_elaborators(widen_sum);
 import list/core as lcore;
 import result/result as result;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32, lt_i32);
 import testapi/fmt(int_to_string);
 import testapi/text(string_concat);

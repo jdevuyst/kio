@@ -26,7 +26,7 @@ module kiodoc;
 
 import control(if);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 host type I32 role(i32);
 host type String role(str);
 host fn eq_i32(p0: I32, p1: I32) -> Bool;
@@ -46,6 +46,11 @@ return `I32`. Import the conditional elab with
 `import elab/control(if);` after following the
 [elab-library setup](using-libraries.md#the-elaborator-library) under
 the dependency name `elab`.
+
+Select `Bool` as this module's Boolean default for the generated branch
+operation, for example `default host type Bool role(bool);`. This is separate
+from the role's literal capability; see
+[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
 
 For a single function, put `rec(loop)` directly before the `fn` keyword:
 

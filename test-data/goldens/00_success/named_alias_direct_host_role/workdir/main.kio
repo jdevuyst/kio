@@ -2,7 +2,7 @@ module main;
 
 import __intrinsics__;
 
-import first(Bool as Flag, Bool as Same_flag);
+import first(default Bool as Flag, default Bool as Same_flag);
 import second as other;
 
 type Fallback = other.Bool;

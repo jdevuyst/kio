@@ -20,7 +20,7 @@ import gc/mark(mark_heap, {mark_bits});
 import gc/num(and, int_eq, int_lt);
 import gc/slot(Imm, Ptr, {ptr});
 import gc/sweep(sweep, {live_objects});
-import testapi(Array, Bool, I32);
+import testapi(Array, default Bool, I32);
 import testapi/arith(add_i32);
 import testapi/array(array_get, array_len);
 import testapi/iter(loop);

@@ -1,10 +1,8 @@
 #!/bin/sh
 #
-# Dyn-load regression (float exponent literals): a guest float written in
-# exponent form (`1.5e-3`, `2.5E+2` — the emitter preserves the source's
-# exponent spelling, lowercased with `+` dropped) lexes as one numeric
-# literal. The loader once split it at the `e` and recorded type name
-# `e`.
+# Numeric values cross the emitted Prime / loader / host-literal boundary.
+# A separate hand-authored Prime export preserves the loader's exponent-token
+# regression even when canonical numeric emission chooses decimal notation.
 #
 # The host vendors the live test-data/poc/dyn_load_prime/workdir/ package
 # (the single source of truth — no committed fork) alongside this case's
@@ -53,9 +51,16 @@ cp "$CASE_DIR/workdir/exec_dyn_load_float_exponent.pkg.kio" "$work/exec_dyn_load
 guestwork=$(mktemp -d)
 trap 'rm -rf "$work" "$guestwork"' EXIT INT TERM HUP
 cp -R "$CASE_DIR/workdir/guest/." "$guestwork/"
-( cd "$guestwork" && "$KIO_BIN" build kio-prime ) >&2
+( cd "$guestwork" && "$KIO_BIN" test && "$KIO_BIN" build kio-prime ) >&2
 
-( cd "$work" && "$KIO_BIN" build "$KIO_TARGET" ) >&2
+# Kio' artifact assembly is the subject here. This declaration is deliberately
+# not passed through the compiler, whose semantic rendering can remove `e`.
+cat >> "$guestwork/out/kio-prime/guest.kio" <<'PRIME'
+
+pub fn lexical() -> F64 { add_f64(1.5e-3(F64), 2.5E+2(F64)) }
+PRIME
+
+( cd "$work" && "$KIO_BIN" test && "$KIO_BIN" build "$KIO_TARGET" ) >&2
 
 find "$guestwork/out/kio-prime" -name '*.kio' | LC_ALL=C sort | xargs cat \
   | "$KIO_RUNNER" --package-name exec_dyn_load_float_exponent \

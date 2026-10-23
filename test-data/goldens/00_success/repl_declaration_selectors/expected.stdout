@@ -24,6 +24,7 @@ references to `op _ + _`:
   demo/ops:26:21  in fn local
 references to `varop [* *]`:
   demo/main:4:54  in module demo/main
+  demo/main:10:3  in fn use
   demo/ops:24:5  in varop [* *]
 pub type {field} = {original};
 pub fn field()

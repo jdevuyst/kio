@@ -1,7 +1,7 @@
 module testapi/main;
 
 import elab/spine_elaborators(one_prod);
-import testapi(I32, String);
+import testapi(default I32, default String);
 import testapi/io(print);
 import testapi/text(string_concat);
 

@@ -4,7 +4,7 @@ import elab/control(if);
 import elab/spine_elaborators(widen_sum);
 import flow/math as math;
 import flow/network as net;
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith as a;
 import testapi/array as ar;
 import testapi/iter(loop);

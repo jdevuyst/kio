@@ -15458,6 +15458,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 annotation,
                 ready.ty(),
                 span,
+                super::numeric_literal_diagnostic(self.source),
                 tcx,
             )?,
             None if mode == frontier::FrontierMode::ExpectedOnly
@@ -15465,8 +15466,20 @@ impl<'m> OrdinaryValueCursor<'m> {
             {
                 return Ok(OrdinaryValueAdvance::pending(self));
             }
-            None => super::synth::synth_literal_unrecorded(shape, annotation, span, tcx)?,
+            None => super::synth::synth_literal_unrecorded(
+                shape,
+                annotation,
+                span,
+                super::numeric_literal_diagnostic(self.source),
+                tcx,
+            )?,
         };
+        let (annotation, imports, aliases) =
+            crate::pass::typecheck_full::prepare_literal_annotation(
+                self.source.site(),
+                &resolved.ty,
+                tcx,
+            );
         let actual = store.scoped_type(owner, resolved.ty, span)?;
         if let Some(expected) = self.expected {
             let expected = expected.into_expected_equation_operand(owner, store, span)?;
@@ -15474,10 +15487,13 @@ impl<'m> OrdinaryValueCursor<'m> {
         }
         publication.record_literal_resolution(
             self.source.site(),
-            actual.clone(),
+            annotation,
+            resolved.runtime_erases,
+            resolved.numeric_value,
             #[cfg(feature = "lsp")]
             resolved.lexical_role,
         );
+        publication.record_prime_requalification_bindings(imports, aliases);
         publication.record_position_type(
             span,
             actual.clone(),
@@ -24131,7 +24147,7 @@ mod tests {
         let module = parse(
             "module main;
              import control(if);
-             host type Bool role(bool);
+             default host type Bool role(bool);
              host type I32;
              fn id[T](value: T) -> T { value }
              fn choose(flag: Bool, value: I32) -> I32 {
@@ -24264,7 +24280,7 @@ mod tests {
             .literal_resolution_for("main", literal_span.id)
             .expect("the accepted literal must publish its exact expected type");
         assert!(matches!(
-            &resolved.resolved,
+            &resolved.0.resolved,
             Type::Path { segments, args, .. }
                 if segments.last().is_some_and(|segment| segment.as_str() == "Second")
                     && args.is_empty()
@@ -24275,10 +24291,10 @@ mod tests {
     #[test]
     fn general_ordinary_root_literal_fallback_covers_all_scalar_families() {
         for (role_declaration, literal_source, expected_name) in [
-            ("host type Str role(str);", "\"text\"", "Str"),
-            ("host type I32 role(i32);", "42", "I32"),
-            ("host type F64 role(f64);", "1.5", "F64"),
-            ("host type Bool role(bool);", ".t", "Bool"),
+            ("default host type Str role(str);", "\"text\"", "Str"),
+            ("default host type I32 role(i32);", "42", "I32"),
+            ("default host type F64 role(f64);", "1.5", "F64"),
+            ("default host type Bool role(bool);", ".t", "Bool"),
         ] {
             let source = format!(
                 "module main;
@@ -24332,7 +24348,7 @@ mod tests {
                 .literal_resolution_for("main", literal_span.id)
                 .unwrap_or_else(|| panic!("`{expected_name}` must publish literal resolution"));
             assert!(matches!(
-                &resolved.resolved,
+                &resolved.0.resolved,
                 Type::Path { segments, args, .. }
                     if segments.last().is_some_and(|segment| segment.as_str() == expected_name)
                         && args.is_empty()
@@ -24352,8 +24368,8 @@ mod tests {
     fn general_ordinary_root_rolls_back_conflicting_literal_siblings() {
         let module = parse(
             "module main;
-             host type I32 role(i32);
-             host type Str role(str);
+             default host type I32 role(i32);
+             default host type Str role(str);
              fn same[T](first: T, _second: T) -> T { first }
              fn bad() -> I32 { same(42, \"wrong\") }
              fn good() -> I32 { same(42, 7) }",
@@ -24859,7 +24875,7 @@ mod tests {
         }
         for (label, declarations, bodies, actions, waiting) in cases {
             let main = format!(
-                "module main; import mechanisms(choose_lazy, enter_now, infer_unit); host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
+                "module main; import mechanisms(choose_lazy, enter_now, infer_unit); default host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
             );
             let (modules, _) = FullPipeline::lower_package(
                 vec![
@@ -24938,7 +24954,7 @@ mod tests {
         ] {
             let main = format!(
                 "module main; import mechanisms(choose_lazy, enter_now, infer_unit); \
-                 host type Caller_flag role(bool); host fn supply[A]() -> A; \
+                 default host type Caller_flag role(bool); host fn supply[A]() -> A; \
                  fn result() -> . {{ \
                    let chosen = choose_lazy!(.t, .() {{ {left} }}, .() {{ {right} }}); \
                    chosen \
@@ -25680,7 +25696,7 @@ mod tests {
     fn later_sibling_can_require_multiple_causal_result_equation_attempts() {
         let module = parse(
             "module main;
-             host type I32 role(i32);
+             default host type I32 role(i32);
              host fn make[A, B](value: A) -> B & .;
              fn same[T](_left: T, _right: T) -> . { () }
              fn witness() -> . { same(make(0), (1, ())) }",
@@ -25704,7 +25720,7 @@ mod tests {
     fn deferred_result_equation_is_not_replayed_across_pending_child_modes() {
         let module = parse(
             "module main;
-             host type I32 role(i32);
+             default host type I32 role(i32);
              fn literal() -> I32 { 0 }",
         )
         .expect("parse scheduler-state witness");
@@ -26797,7 +26813,7 @@ mod tests {
         fn prelude(extra: &str) -> String {
             format!(
                 "module main; \
-                 host type Bool role(bool); \
+                 default host type Bool role(bool); \
                  host fn make[A]() -> A; \
                  fn id[A](value: A) -> A {{ value }} \
                  fn same[A](_left: A, _right: A) -> . {{ () }} \
@@ -29787,7 +29803,7 @@ mod tests {
         let module = parse(
             "module main;
              import control(if);
-             host type Bool role(bool);
+             default host type Bool role(bool);
              host type I32;
              host type String;
              fn consume(_value: I32, _later: I32) -> . { () }
@@ -35235,7 +35251,7 @@ mod tests {
     fn check_retained_literal_scope(reconcile_sibling: bool) {
         let package = resolved_lowered_test_package(
             "module main;
-             host type Token role(i32);
+             default host type Token role(i32);
              fn literal() -> Token { 1 }",
         );
         let module = &package.module("main").expect("main module").module;

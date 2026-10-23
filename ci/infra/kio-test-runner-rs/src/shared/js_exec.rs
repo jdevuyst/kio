@@ -39,8 +39,8 @@ use rquickjs::{CatchResultExt, Context, Ctx, Function, Module, Object, Runtime, 
 use crate::artifact_identity::{ArtifactIdentity, pascal_case};
 use crate::host_api::{self, HostApi};
 use crate::protocol::{
-    ExportDriver, HostFnBinding, HostFnBodyKind, ProtocolExecution, RunnerProtocol,
-    WIDE_CALLABLE_SLOT_COUNT,
+    ExportDriver, HostFnBinding, HostFnBodyKind, NUMERIC_LITERAL_SAMPLES, NumericLiteralExpected,
+    ProtocolExecution, RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
 };
 use crate::runner::TestRunner;
 
@@ -359,6 +359,9 @@ fn run_js_protocol<'js>(
         }
         ProtocolExecution::Invoke(ExportDriver::PolyCallbackRoundtrip) => {
             run_export_poly_callback_roundtrip_js(ctx, pkg_obj, protocol)
+        }
+        ProtocolExecution::Invoke(ExportDriver::NumericLiteralValues) => {
+            run_numeric_literal_values_js(ctx, pkg_obj, protocol)
         }
         ProtocolExecution::Invoke(ExportDriver::StructuralRoundtrip) => {
             run_export_structural_roundtrip_js(ctx, pkg_obj, protocol)
@@ -1396,6 +1399,43 @@ fn run_same_artifact_exchange_js<'js>(
     ctx.eval::<(), _>(script.into_bytes())
         .catch(ctx)
         .map_err(|e| format!("running {}: {}", protocol.name(), format_caught(&e)))
+}
+
+fn run_numeric_literal_values_js<'js>(
+    ctx: &Ctx<'js>,
+    pkg_obj: &Object<'js>,
+    protocol: RunnerProtocol,
+) -> Result<(), String> {
+    ctx.globals()
+        .set("__kio_protocol_pkg__", pkg_obj.clone())
+        .map_err(|error| format!("installing protocol package binding: {error}"))?;
+    let base = export_base_js_expr(protocol, "main");
+    let mut script = format!("(() => {{ const main = {base};\n");
+    for (leaf, expected) in NUMERIC_LITERAL_SAMPLES {
+        let member = host_api::host_name_core(leaf);
+        let value = match expected {
+            NumericLiteralExpected::Integer(role, value) => {
+                let suffix = if matches!(
+                    role,
+                    RoleFixture::I64 | RoleFixture::I128 | RoleFixture::U64 | RoleFixture::U128
+                ) {
+                    "n"
+                } else {
+                    ""
+                };
+                format!("{value}{suffix}")
+            }
+            NumericLiteralExpected::F32(bits) => f64::from(f32::from_bits(*bits)).to_string(),
+            NumericLiteralExpected::F64(bits) => f64::from_bits(*bits).to_string(),
+        };
+        script.push_str(&format!(
+            "if (!Object.is(main.{member}(), {value})) throw new Error('{leaf}');\n"
+        ));
+    }
+    script.push_str("__kio_host_print__('numeric literals ok\\n'); })()");
+    ctx.eval::<(), _>(script.into_bytes())
+        .catch(ctx)
+        .map_err(|error| format!("running {}: {}", protocol.name(), format_caught(&error)))
 }
 
 fn run_export_native_payload_roundtrip_js<'js>(

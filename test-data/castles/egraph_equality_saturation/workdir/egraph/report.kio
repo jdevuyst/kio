@@ -6,7 +6,7 @@ import egraph/numbers as n;
 import egraph/rewrite as rewrite;
 import elab/control(if);
 import elab/match(match);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/array as arr;
 import testapi/fmt as fmt;
 import testapi/io as io;

@@ -1,7 +1,7 @@
 module testapi/main;
 
 import elab/sequence(Bind, do);
-import testapi(String);
+import testapi(default String);
 import testapi/io as io;
 
 newtype Box[A] : A { constructor box; projector un_box }

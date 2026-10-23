@@ -12,7 +12,7 @@ import query/row as rel;
 import query/schema as schema;
 import query/text as text;
 import query/value as value;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(sub_i32);
 import testapi/io(print);
 import testapi/iter(loop);

@@ -5,7 +5,7 @@ import csv_reconcile/model(State);
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);

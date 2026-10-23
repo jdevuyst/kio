@@ -58,7 +58,7 @@ import library/type_of(
 , rep_unit
 , type_of
 );
-import testapi(Bool, I32, String);
+import testapi(default Bool, default I32, default String);
 import testapi/fmt(bool_to_string, i32_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);

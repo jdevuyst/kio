@@ -4,7 +4,7 @@ import elab/control(if);
 import elab/match(match);
 import fold/bases as bases;
 import fold/numbers as numbers;
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter(loop);

@@ -1,6 +1,6 @@
 module lit/m;
 
-import lit(I32);
+import lit(default I32);
 
 equiv int_lit() {
   42;

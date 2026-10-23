@@ -2,7 +2,7 @@ module testapi/dict_ops;
 
 import dict/dict as dict;
 import elab/control(if);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32, lt_i32);
 
 fn compare_i32(target: I32, key: I32) -> dict.Ordering {

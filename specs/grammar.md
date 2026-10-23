@@ -55,8 +55,17 @@ The Kio' grammar covers the **regular-module** file shape — every `*.kio` file
 ### Lexical structure (Kio')
 
 - `IDENT` — `[A-Za-z_][A-Za-z0-9_]*`. Naming conventions distinguish *type names and type parameters* (`_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*`) and *value/parameter names* (`_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*`). Each word contains letters followed by optional digits; exactly one underscore separates internal words. Leading and trailing underscores are affixes, not empty words. User identifiers admit at most one leading underscore; two or more reserve the spelling for the compiler, without requiring a trailing underscore. Reserved names obey the same word and role rules. Parser sites validate the role-specific convention they require. `_Foo` and `_Foo123_bar4` are type-shaped, `_foo` is value-shaped, and `_1Foo`, `FooBar`, `foo_123`, `foo__bar`, and `a1b` match neither user role. Every name contains at least one ASCII letter. Bare `_` is the wildcard binder (`let _`, a discarded parameter or neutral-block binder) and, doubled/tripled, an operator slot token (`_` / `__` / `___`); it is admitted only at those binder/slot positions, never as a name. In type expressions, the final segment of a type path must be a type name or reserved compiler-internal type name; lowercase identifiers remain value syntax. Keyword-shaped words, including `true` and `false`, lex as `IDENT` unless another lexical rule for their surrounding punctuation applies.
-- `INT_LIT` — a digit sequence, optionally grouped with `_` digit separators. No width suffix: in Kio' the literal's type comes from its mandatory `LiteralCall` annotation (see [`language.md` § Literals](language.md#literals)). A digit sequence directly followed by an identifier character (`42i32`) is *not* one token — it lexes as `INT_LIT` then `IDENT`, which the parser cannot place.
-- `FLOAT_LIT` — a digit sequence with a `.`-fractional part and/or an exponent (`e`/`E`, optional sign), optionally grouped with `_` digit separators. No width suffix. A digit sequence with neither a fractional part nor an exponent is `INT_LIT`, not `FLOAT_LIT`.
+- `INT_LIT` — decimal digits, optionally grouped with `_` digit separators.
+  Integer literals have no exponent notation: `42e0`, `42E+3`, `42e-3`, and
+  `42e-0` are lexical errors. Use ordinary integer digits, or a decimal point
+  when a floating-point literal was intended.
+  There is no width suffix: in Kio' the mandatory `LiteralCall` annotation
+  supplies the type. `42i32` lexes as `INT_LIT` then `IDENT`, not one token.
+- `FLOAT_LIT` — decimal digits, a `.` followed by fractional digits, and an
+  optional `e`/`E` exponent with optional `+` or `-`. Digit separators are
+  admitted in the mantissa and exponent. A decimal point is required even
+  with an exponent: `42.0e3` is a float, while `42e3` is rejected.
+  Neither `.5` nor `1.` is a numeric literal. There is no width suffix.
 - **Negative-literal carve-out.** A leading `-` flush against the first digit of an integer or float is part of the literal only when the prior token is not expression-ending. Identifiers, literals, `)`, `}`, and `]` end expressions; start-of-file and ordinary symbol words do not. Thus `a-1`, `(x)-1`, and `[a, b]-1` have binary-subtraction shape, while `[-1]` and `[* -1 *]` contain signed literals. Whitespace in `- 40` always separates the sign. This shared rule applies in full Kio and Kio'.
 - `STR_LIT` — `"…"` with JSON-style escapes: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and `\uXXXX` for code points in the Basic Multilingual Plane.
 - Structural punctuation: `(` `)` `{` `}` `[` `]` `,` `;` and `.`. Dot-led native compounds `.>`, `.>>`, `.<`, `.<<`, `.?`, and `.!` retain their specified adjacent spelling; decimal dots are part of numeric tokens.
@@ -71,6 +80,18 @@ The Kio' grammar covers the **regular-module** file shape — every `*.kio` file
 **Doc-comment lines (`///`).** A line whose first non-whitespace characters are `///` followed by whitespace, end-of-line, or end-of-file is a doc-comment line. It is lexer trivia (like `//`) but carries its payload to the parser. Doc-comment lines attach to the immediately following top-level declaration (see the `DocBlock?` prefix of `Item` in [§ Productions (Kio')](#productions-kio)); a `///` block before an `import` clause is a parse error.
 
 ### Productions (Kio')
+
+`default` is contextual before a type declaration (before its visibility)
+or before a type name in a named selective import. It is not a standalone
+declaration or a role annotation; `import m(default as d);` still imports the
+ordinary value named `default`. A selection must normalize to a closed
+kind-`*` role-bearing host type. It can use an applied transparent alias, but
+not an unsaturated alias or a newtype wrapper. Declarations inside a recursive
+type group use the same per-alias modifier; `default rec` is not a group form.
+Defaults are module-local selections, not exports. The same explicit syntax
+is admitted in ordinary Kio and Kio' modules. Signature changelog sections
+exclude these non-contract modifiers, including on imports and recursive-group
+aliases; see [`versioning.md`](versioning.md).
 
 Imports precede module items. Selective lists are nonempty, including when the
 comma-list rule admits commas at their edges. In canonical formatting, the
@@ -94,7 +115,7 @@ Import            ::= ImportEntry ';'
 ImportEntry       ::= ImportIntrinsics | ImportSelective | ImportQualified
 ImportIntrinsics  ::= 'import' '__intrinsics__'
 ImportSelective   ::= 'import' ModulePath '(' NamedImport (',' NamedImport)* ')'
-NamedImport       ::= IDENT ('as' IDENT)?     (* destination preserves the source identifier class *)
+NamedImport       ::= 'default'? IDENT ('as' IDENT)? (* default selects a type; destination preserves identifier class *)
 ImportQualified   ::= 'import' ModulePath 'as' IDENT (* alias is a value name *)
 
 Item              ::= DocBlock? ((FnDef | Newtype | RecursiveNewtype | TypeRecGroup) ';'? | TypeAlias | HostType | HostFn)
@@ -106,7 +127,7 @@ FnDeclModifier    ::= Vis | 'pure'
 FnDeclModifiers   ::= FnDeclModifier*         (* at most one visibility and at most one `pure`; fmt emits `pub pure` *)
 FnDef             ::= FnDeclModifiers 'fn' IDENT Signature ('->' Type)? Block
 TypeAlias         ::= TypeAliasBody ';'
-TypeAliasBody     ::= Vis? 'type' IDENT TypeParamList? '=' Type
+TypeAliasBody     ::= 'default'? Vis? 'type' IDENT TypeParamList? '=' Type
 Newtype           ::= Vis? NewtypeAfterVis
 RecursiveNewtype  ::= Vis? 'rec' NewtypeAfterVis
 NewtypeAfterVis   ::= 'newtype' IDENT TypeParamList? ExistsBinder* ':' Type NewtypeBody
@@ -118,7 +139,7 @@ TypeRecGroup      ::= 'rec' '{' SemiEntries<TypeRecMember> '}'  (* at least two 
 TypeRecMember     ::= DocBlock? (TypeAliasBody | Newtype)
 
 HostType          ::= HostTypeBody ';'
-HostTypeBody      ::= 'pub'? 'host' 'pub'? 'type' IDENT TypeParamList? RoleAnnotation? OwnedBlock?
+HostTypeBody      ::= 'default'? 'pub'? 'host' 'pub'? 'type' IDENT TypeParamList? RoleAnnotation? OwnedBlock?
 HostFn            ::= HostFnBody ';'
 HostFnBody        ::= 'pub'? 'host' 'pub'? 'fn' IDENT ValueSignature ('->' Type)?
 RoleAnnotation    ::= 'role' '(' IDENT ')'    (* IDENT ∈ i8…i128 / u8…u128 / f32 / f64 / bool / str *)

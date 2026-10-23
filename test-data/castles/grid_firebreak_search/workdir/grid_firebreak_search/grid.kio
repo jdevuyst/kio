@@ -1,7 +1,7 @@
 module grid_firebreak_search/grid;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 
 pub fn width() -> I32 { 6 }

@@ -3,7 +3,7 @@ module testapi/main;
 import elab/algebraic_elaborators(align);
 import elab/control(if);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, String);
+import testapi(default Bool, default String);
 import testapi/io(print);
 
 // The branches explicitly construct `String | String`; `align!`

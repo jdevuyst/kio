@@ -12,7 +12,7 @@ import cellar/state as state;
 import cellar/world as world;
 import elab/control(if);
 import elab/match(match);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(div);
 import testapi/fmt(int_to_string);
 import testapi/text(string_concat, string_eq);

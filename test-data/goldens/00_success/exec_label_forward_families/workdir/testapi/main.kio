@@ -1,7 +1,7 @@
 module testapi/main;
 
 import origin(Item, Pack);
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 import view as field;
 import view({entry});

@@ -19,11 +19,11 @@ import list/elab/match(match);
 import list/elab/spine_elaborators(widen_sum);
 import turtle/list_host as _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe;
 
-pub type Bool = _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe.Bool;
+default pub type Bool = _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe.Bool;
 
-pub type I32 = _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe.I32;
+default pub type I32 = _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe.I32;
 
-pub type String = _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe.String;
+default pub type String = _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe.String;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_hehfhchegmgfcpgmgjhdhefpgigphdhe.add_i32(p0, p1) }
 

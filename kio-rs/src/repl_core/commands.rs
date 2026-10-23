@@ -3832,6 +3832,8 @@ mod tests {
     fn declaration_selector_parser_accepts_one_import_item() {
         use crate::pass::parser::parse_declaration_query;
         for query in [
+            "default",
+            "demo/ops.default",
             "op",
             "varop",
             "demo/ops.op",
@@ -3849,6 +3851,9 @@ mod tests {
             assert!(parse_declaration_query(query).is_ok(), "{query}");
         }
         for query in [
+            "default Int",
+            "demo/ops.default Int",
+            "demo/ops.(default Int)",
             "op (_) ? __",
             "demo/ops.(op (_) ? __)",
             "demo/ops.(op _ .. _)",

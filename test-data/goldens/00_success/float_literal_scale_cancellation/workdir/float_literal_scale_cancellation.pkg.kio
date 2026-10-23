@@ -1,0 +1,8 @@
+package float_literal_scale_cancellation;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

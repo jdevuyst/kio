@@ -768,8 +768,16 @@ where
     let type_param_kind = (bound_kind.is_none() && allow_ambient && segments.len() == 1)
         .then(|| tcx.type_param_kind(segments[0].as_str()))
         .flatten();
-    let selected = (bound_kind.is_none() && type_param_kind.is_none())
-        .then(|| provider.select(nominal_scope, segments, exact_identity));
+    let canonical_comptime_type = (bound_kind.is_none()
+        && type_param_kind.is_none()
+        && identity_canonical
+        && segments.len() == 1)
+        .then(|| crate::comptime::ComptimeBuiltin::from_public_name(segments[0].as_str()))
+        .flatten()
+        .filter(|builtin| builtin.is_type_name());
+    let selected =
+        (bound_kind.is_none() && type_param_kind.is_none() && canonical_comptime_type.is_none())
+            .then(|| provider.select(nominal_scope, segments, exact_identity));
     let selected_item = selected.and_then(|selection| match selection {
         NominalSelection::Selected(declaration) => Some(declaration),
         NominalSelection::Missing | NominalSelection::Opaque => None,
@@ -875,7 +883,7 @@ where
             .all(|param| param.effective_kind() == Kind::Star)
     }) {
         Kind::arrow_chain(host_type.type_params.len())
-    } else if comptime_type.is_some() {
+    } else if comptime_type.is_some() || canonical_comptime_type.is_some() {
         Kind::Star
     } else if !require_nominal {
         // A head without an ordinary host-parameter kind available to this

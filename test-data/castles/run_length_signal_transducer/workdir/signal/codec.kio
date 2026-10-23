@@ -6,7 +6,7 @@ import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import list/list as traversal;
 import list_host as numbers;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 
 pub labels Run = { sample: I32, count: I32 };

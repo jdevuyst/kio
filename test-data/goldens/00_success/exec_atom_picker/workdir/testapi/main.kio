@@ -1,7 +1,7 @@
 module testapi/main;
 
 import elab/algebraic_elaborators(atom, into);
-import testapi(I32, String);
+import testapi(default I32, default String);
 import testapi/io(print);
 
 // `atom!(e, T)` — pick a single value of type `T` from `e`.

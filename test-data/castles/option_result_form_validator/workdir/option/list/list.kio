@@ -18,11 +18,11 @@ import option/list/elab/control(if);
 import option/list/elab/match(match);
 import option/list/elab/spine_elaborators(widen_sum);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
-host type I32 role(i32);
+default host type I32 role(i32);
 
-host type String role(str);
+default host type String role(str);
 
 host fn add_i32(p0: I32, p1: I32) -> I32;
 

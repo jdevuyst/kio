@@ -13,7 +13,7 @@ import elab/spine_elaborators(widen_sum);
 import query/list as list;
 import query/schema as schema;
 import query/value as value;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/iter(loop);
 
 pub labels Cell = { cell_col: schema.Col, cell_val: value.Value };

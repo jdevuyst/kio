@@ -296,6 +296,13 @@ You may bind these to familiar standard-library types (`Int32`, `Int128`,
 associated-type member, but compatible members may select the same concrete
 Swift type.
 
+Kio checks integer bounds and rounds each float literal directly to its
+selected IEEE role before constructing the associated type. Custom literal
+initializers must preserve that value, including signed zero and subnormals;
+`ExpressibleByFloatLiteral` conformance alone does not prove this. Host
+arithmetic remains host-defined. See the
+[shared literal contract](../../specs/language.md#literals).
+
 A parameterized declaration such as `host type Box[A]` cannot be a Swift
 associated type constructor. Its exact public type is instead
 `KioHostType_<module-and-name><A>`, with a matching

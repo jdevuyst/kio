@@ -4,7 +4,7 @@ import __intrinsics__;
 
 import elab/control(if);
 import elab/match(match);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io(print);
 
 // Exercises the kio-prime round-trip: a tuple literal, a host function

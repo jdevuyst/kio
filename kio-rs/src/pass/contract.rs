@@ -180,12 +180,6 @@ impl DeclarationPhase for Contract<crate::ast::Lowered> {
     type AuxiliaryItems = Self;
 
     fn merge_elaborations(_: &mut (), _: ()) {}
-
-    const CAPABILITY_SIGNATURE: Option<
-        crate::pass::typecheck_core::CapabilitySignatureCheck<Self>,
-    > = Some(
-        crate::pass::typecheck_core::capability_signature::check_fn_capability_signature::<Self>,
-    );
 }
 
 impl DeclarationPhase for Contract<Prime> {

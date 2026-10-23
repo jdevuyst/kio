@@ -15,7 +15,7 @@ module os/memory;
 import elab/control(if);
 import os/config as config;
 import os/num as num;
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(array_get, array_make_filled, array_set);
 import testapi/iter(loop);

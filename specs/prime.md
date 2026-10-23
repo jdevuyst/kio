@@ -317,9 +317,36 @@ Same as [`language.md`](language.md#module-system).
 
 Same as [`language.md`](language.md#the-host-boundary): module-level `host type` / `host fn` declarations (opaque, signature-only, always public Kio' items) with `role(...)` markers on `host type`. A role-bearing host type is nullary; only a roleless host type may declare type parameters, those parameters must have kind `*`, and combining any parameters with a role is a type error. Higher-kinded binders remain exclusive to top-level `newtype` and `fn` parameter slots. Which modules' host items reach the host is selected by the package file's `bridge { … }` glob block. Kio' literals **always carry their `(Type)` host-type annotation** — the unannotated-literal form admitted by the full surface (see [`language.md` § Literals](language.md#literals) tier 2 and tier 3) is not part of Kio'. See [`grammar.md` § Kio' grammar](grammar.md#kio-grammar) — `LiteralCall`'s annotation slot is mandatory. Full-Kio checking records a tier-2 or tier-3 resolution on the Lowered tree, and the Lowered → Prime substitute pass materializes that annotation; every resulting Kio' literal is fully annotated.
 
+Standalone Kio' checking also validates integer bounds and assigns each float
+its selected IEEE value under the shared [literal contract](language.md#literals).
+Canonical numeric text preserves that value independently of source spelling;
+it does not replace validation of the explicit host-type annotation.
+
 ### Branching intrinsic
 
-A seventh intrinsic, `__if_then_else__ : [A] (Bool & (. -> A) & (. -> A)) -> A`, is also gated behind `import __intrinsics__;`. Here `Bool` is selected from the nonempty set of `role(bool)` host identities in unqualified lexical scope, or otherwise from the fallback set of terminal identities reached through transparent aliases in that scope; that selected set must be a singleton. A qualified module import alone contributes none of its members, though an in-scope alias may reach its terminal host identity through one. Identities are `(declaring module, host-type name)`, so repeated paths to one declaration count once. A file with zero or multiple selected Boolean-role identities cannot reference `__if_then_else__`. Given a condition `c` and arm-thunk expressions `t` and `e`, it evaluates `c`, `t`, and `e` exactly once from left to right, then invokes either the resulting `t` value or the resulting `e` value with `()` and returns that call's result. Constructing both thunk values is eager; invoking the selected thunk is branch-dependent. The reference library's `if!` elab constructs this ordinary Kio' branching operation. Multiple same-role declarations remain valid when no construct asks for this singleton scheme, and explicitly annotated `.t(B)` / `.f(B)` literals remain valid at any in-scope `role(bool)` type `B`.
+Kio' also admits and validates the explicit `default` modifiers described in
+the shared host/import contract. Fully annotated literals need no default,
+but the Boolean intrinsic's selected scheme remains part of the textual
+artifact's ordinary module context. Alias normalization, eager conflicts and
+source scope are the same in full Kio and Kio'. There is no producer-only
+exception for emitted or freshly reparsed Kio'.
+
+A seventh intrinsic, `__if_then_else__ : [A] (Bool & (. -> A) & (. -> A)) -> A`,
+is also gated behind `import __intrinsics__;`. `Bool` is the module's explicit
+Boolean `default` selection, resolved through ordinary transparent aliases to
+one terminal role-bearing host identity. Without that selection the intrinsic
+has no scheme. Merely declaring or importing a Boolean-role type does not
+select it, and annotating a condition at another Boolean type does not change
+the scheme. Conflicting distinct defaults are rejected eagerly, even if the
+intrinsic is unused; unselected Boolean-role types can coexist and still admit
+explicit `.t(B)` / `.f(B)` literals.
+
+Given a condition `c` and arm-thunk expressions `t` and `e`, the intrinsic
+evaluates `c`, `t`, and `e` exactly once from left to right, then invokes either
+the resulting `t` value or the resulting `e` value with `()` and returns its
+result. Constructing both thunk values is eager; invoking the selected thunk
+is branch-dependent. The reference library's `if!` elab constructs this
+ordinary Kio' operation.
 
 ### Bottom-elimination intrinsic
 
@@ -447,7 +474,13 @@ history.
 
 Structural typing (see [`language.md`](language.md#structural-typing)) governs products, sums, and type aliases; each `newtype` mints a nominally-distinct type at its declaration site; `host type` declarations remain opaque to the importing package. These rules are identical in Kio' and the full language — none of them depend on the elaborator.
 
-The **open-world property** — that adding definitions to a module body never breaks a package — holds trivially in Kio': with no `into!` / `onto!` coercion target, there is no implicit choice to disturb. As in the full language, this property is scoped to module bodies; a package file's contract surface is governed by versioning, not open-world.
+Kio' shares the full language's [open-world contracts](language.md#open-world-design):
+provider module-body extensions preserve dependent modules, and accepted
+consumer-import additions preserve existing function bodies. Import and
+declaration admission checks names and explicit default selections independently
+of body use. The argument also depends on ordinary lexical binding and
+application rules, not just the absence of surface coercions. A package's
+host/export contract remains governed by versioning.
 
 **Evaluation.** Kio' evaluates **call-by-value**. A term abstraction — value
 lambda or type lambda — is a value, so its body is not entered until the

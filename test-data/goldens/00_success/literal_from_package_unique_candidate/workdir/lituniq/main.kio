@@ -1,13 +1,9 @@
 module lituniq/main;
 
-import lituniq(Int, Str);
+import lituniq(default Int, default Str);
 
-// `100` is bound in a `let` right-hand side — a synthesis position
-// with no expected type — so tier 2 cannot apply. The package
-// declares exactly one int-shaped type, `Int`, so tier 3
-// resolves the literal to it.
+// These selections supply fallback types for the unannotated literals
+// in synthesis positions.
 fn pick_int() -> Int { let n = 100; n }
 
-// Same story for the string literal: `Str` is the package's unique
-// str-shaped type.
 fn pick_str() -> Str { let s = "hi"; s }

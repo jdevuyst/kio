@@ -97,6 +97,7 @@ pub enum ExportDriver {
     PolyCallbackRoundtrip,
     StructuralRoundtrip,
     ScalarRoundtrip,
+    NumericLiteralValues,
     HostOwnedRoundtrip,
     OpaqueProductRoundtrip,
     OpaqueCompoundRoundtrip,
@@ -163,6 +164,157 @@ pub enum RoleFixture {
     F64,
     String,
 }
+
+/// Independent native-value oracle for literal construction through exported scalars.
+/// Float expectations are IEEE bit patterns, not results from the compiler's parser.
+#[derive(Clone, Copy, Debug)]
+#[allow(dead_code)] // The dynamic loader has no adapter for this export protocol.
+pub enum NumericLiteralExpected {
+    Integer(RoleFixture, &'static str),
+    F32(u32),
+    F64(u64),
+}
+
+#[allow(dead_code)] // Shared protocol metadata is included by every runner binary.
+pub const NUMERIC_LITERAL_SAMPLES: &[(&str, NumericLiteralExpected)] = &[
+    (
+        "i8_min",
+        NumericLiteralExpected::Integer(RoleFixture::I8, "-128"),
+    ),
+    (
+        "i8_max",
+        NumericLiteralExpected::Integer(RoleFixture::I8, "127"),
+    ),
+    (
+        "i16_min",
+        NumericLiteralExpected::Integer(RoleFixture::I16, "-32768"),
+    ),
+    (
+        "i16_max",
+        NumericLiteralExpected::Integer(RoleFixture::I16, "32767"),
+    ),
+    (
+        "i32_min",
+        NumericLiteralExpected::Integer(RoleFixture::I32, "-2147483648"),
+    ),
+    (
+        "i32_max",
+        NumericLiteralExpected::Integer(RoleFixture::I32, "2147483647"),
+    ),
+    (
+        "i64_min",
+        NumericLiteralExpected::Integer(RoleFixture::I64, "-9223372036854775808"),
+    ),
+    (
+        "i64_max",
+        NumericLiteralExpected::Integer(RoleFixture::I64, "9223372036854775807"),
+    ),
+    (
+        "i128_min",
+        NumericLiteralExpected::Integer(
+            RoleFixture::I128,
+            "-170141183460469231731687303715884105728",
+        ),
+    ),
+    (
+        "i128_max",
+        NumericLiteralExpected::Integer(
+            RoleFixture::I128,
+            "170141183460469231731687303715884105727",
+        ),
+    ),
+    (
+        "u8_zero",
+        NumericLiteralExpected::Integer(RoleFixture::U8, "0"),
+    ),
+    (
+        "u8_max",
+        NumericLiteralExpected::Integer(RoleFixture::U8, "255"),
+    ),
+    (
+        "u16_zero",
+        NumericLiteralExpected::Integer(RoleFixture::U16, "0"),
+    ),
+    (
+        "u16_max",
+        NumericLiteralExpected::Integer(RoleFixture::U16, "65535"),
+    ),
+    (
+        "u32_zero",
+        NumericLiteralExpected::Integer(RoleFixture::U32, "0"),
+    ),
+    (
+        "u32_max",
+        NumericLiteralExpected::Integer(RoleFixture::U32, "4294967295"),
+    ),
+    (
+        "u64_zero",
+        NumericLiteralExpected::Integer(RoleFixture::U64, "0"),
+    ),
+    (
+        "u64_max",
+        NumericLiteralExpected::Integer(RoleFixture::U64, "18446744073709551615"),
+    ),
+    (
+        "u128_zero",
+        NumericLiteralExpected::Integer(RoleFixture::U128, "0"),
+    ),
+    (
+        "u128_max",
+        NumericLiteralExpected::Integer(
+            RoleFixture::U128,
+            "340282366920938463463374607431768211455",
+        ),
+    ),
+    (
+        "decimal",
+        NumericLiteralExpected::Integer(RoleFixture::I32, "10"),
+    ),
+    (
+        "negativezero",
+        NumericLiteralExpected::Integer(RoleFixture::U8, "0"),
+    ),
+    ("f32_tenth", NumericLiteralExpected::F32(0x3dcccccd)),
+    ("f32_half", NumericLiteralExpected::F32(0x3f800000)),
+    ("f32_above", NumericLiteralExpected::F32(0x3f800001)),
+    ("f32_oddhalf", NumericLiteralExpected::F32(0x3f800002)),
+    ("f32_large", NumericLiteralExpected::F32(0x4b800000)),
+    ("f32_subnormal", NumericLiteralExpected::F32(0x00000001)),
+    ("f32_maximum", NumericLiteralExpected::F32(0x7f7fffff)),
+    ("f32_negativezero", NumericLiteralExpected::F32(0x80000000)),
+    ("f32_underflow", NumericLiteralExpected::F32(0x00000000)),
+    (
+        "f32_negativeunderflow",
+        NumericLiteralExpected::F32(0x80000000),
+    ),
+    ("f64_tenth", NumericLiteralExpected::F64(0x3fb999999999999a)),
+    ("f64_half", NumericLiteralExpected::F64(0x3ff0000000000000)),
+    ("f64_above", NumericLiteralExpected::F64(0x3ff0000000000001)),
+    (
+        "f64_oddhalf",
+        NumericLiteralExpected::F64(0x3ff0000000000002),
+    ),
+    (
+        "f64_subnormal",
+        NumericLiteralExpected::F64(0x0000000000000001),
+    ),
+    (
+        "f64_maximum",
+        NumericLiteralExpected::F64(0x7fefffffffffffff),
+    ),
+    (
+        "f64_negativezero",
+        NumericLiteralExpected::F64(0x8000000000000000),
+    ),
+    (
+        "f64_underflow",
+        NumericLiteralExpected::F64(0x0000000000000000),
+    ),
+    (
+        "f64_negativeunderflow",
+        NumericLiteralExpected::F64(0x8000000000000000),
+    ),
+];
 
 impl RoleFixture {
     // This shared source is included independently by dynamic runner binaries,
@@ -1045,6 +1197,8 @@ pub const EXPORT_MULTILABEL_ROUNDTRIP_PROTOCOL_NAME: &str = "export-multi-label-
 pub const EXPORT_POLY_ROUNDTRIP_PROTOCOL_NAME: &str = "export-poly-roundtrip";
 pub const EXPORT_POLY_CALLBACK_ROUNDTRIP_PROTOCOL_NAME: &str = "export-poly-callback-roundtrip";
 pub const EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME: &str = "export-structural-roundtrip";
+pub const NUMERIC_LITERAL_VALUES_PROTOCOL_NAME: &str = "numeric-literal-values";
+
 pub const EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME: &str = "export-scalar-roundtrip";
 pub const EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME: &str = "export-host-owned-roundtrip";
 pub const OPAQUE_PRODUCT_ROUNDTRIP_PROTOCOL_NAME: &str = "opaque-product-roundtrip";
@@ -1201,6 +1355,7 @@ pub const DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES: &[&str] = &[
     EXPORT_TYPE_ONLY_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME,
+    NUMERIC_LITERAL_VALUES_PROTOCOL_NAME,
     EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME,
     EXPORT_CALLABLE_SLOTS_ROUNDTRIP_PROTOCOL_NAME,
     INCOMING_CALLABLE_VIEWS_PROTOCOL_NAME,
@@ -1288,6 +1443,7 @@ pub enum RunnerProtocol {
     ExportPolyCallbackRoundtrip,
     ExportStructuralRoundtrip,
     ExportScalarRoundtrip,
+    NumericLiteralValues,
     ExportHostOwnedRoundtrip,
     OpaqueProductRoundtrip,
     OpaqueCompoundRoundtrip,
@@ -2157,6 +2313,20 @@ const TYPES_EXPORT_STRUCTURAL: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "U32", RoleFixture::U32),
     HostTypeBinding::role("testapi", "U64", RoleFixture::U64),
     HostTypeBinding::role("testapi", "U8", RoleFixture::U8),
+];
+const TYPES_NUMERIC_LITERAL_VALUES: &[HostTypeBinding] = &[
+    HostTypeBinding::role("testapi", "I8", RoleFixture::I8),
+    HostTypeBinding::role("testapi", "I16", RoleFixture::I16),
+    HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("testapi", "I64", RoleFixture::I64),
+    HostTypeBinding::role("testapi", "I128", RoleFixture::I128),
+    HostTypeBinding::role("testapi", "U8", RoleFixture::U8),
+    HostTypeBinding::role("testapi", "U16", RoleFixture::U16),
+    HostTypeBinding::role("testapi", "U32", RoleFixture::U32),
+    HostTypeBinding::role("testapi", "U64", RoleFixture::U64),
+    HostTypeBinding::role("testapi", "U128", RoleFixture::U128),
+    HostTypeBinding::role("testapi", "F32", RoleFixture::F32),
+    HostTypeBinding::role("testapi", "F64", RoleFixture::F64),
 ];
 const TYPES_EXPORT_SCALAR: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "F32", RoleFixture::F32),
@@ -3737,6 +3907,7 @@ impl RunnerProtocol {
         Self::ExportPolyCallbackRoundtrip,
         Self::ExportStructuralRoundtrip,
         Self::ExportScalarRoundtrip,
+        Self::NumericLiteralValues,
         Self::ExportHostOwnedRoundtrip,
         Self::OpaqueProductRoundtrip,
         Self::OpaqueCompoundRoundtrip,
@@ -3878,6 +4049,7 @@ impl RunnerProtocol {
             Self::ExportPolyCallbackRoundtrip => EXPORT_POLY_CALLBACK_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportStructuralRoundtrip => EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME,
             Self::ExportScalarRoundtrip => EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME,
+            Self::NumericLiteralValues => NUMERIC_LITERAL_VALUES_PROTOCOL_NAME,
             Self::ExportHostOwnedRoundtrip => EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME,
             Self::OpaqueProductRoundtrip => OPAQUE_PRODUCT_ROUNDTRIP_PROTOCOL_NAME,
             Self::OpaqueCompoundRoundtrip => OPAQUE_COMPOUND_ROUNDTRIP_PROTOCOL_NAME,
@@ -4051,6 +4223,7 @@ impl RunnerProtocol {
             EXPORT_POLY_CALLBACK_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportPolyCallbackRoundtrip),
             EXPORT_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportStructuralRoundtrip),
             EXPORT_SCALAR_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportScalarRoundtrip),
+            NUMERIC_LITERAL_VALUES_PROTOCOL_NAME => Ok(Self::NumericLiteralValues),
             EXPORT_HOST_OWNED_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::ExportHostOwnedRoundtrip),
             OPAQUE_PRODUCT_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::OpaqueProductRoundtrip),
             OPAQUE_COMPOUND_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::OpaqueCompoundRoundtrip),
@@ -4319,6 +4492,12 @@ impl RunnerProtocol {
                 ExportDriver::StructuralRoundtrip,
                 TYPES_EXPORT_STRUCTURAL,
                 FNS_EXPORT_STRUCTURAL,
+                true,
+            ),
+            Self::NumericLiteralValues => invoke_contract(
+                ExportDriver::NumericLiteralValues,
+                TYPES_NUMERIC_LITERAL_VALUES,
+                NO_HOST_FNS,
                 true,
             ),
             Self::ExportScalarRoundtrip => invoke_contract(
@@ -5465,6 +5644,11 @@ mod tests {
                 RunnerProtocol::ExportScalarRoundtrip,
                 ExportDriver::ScalarRoundtrip,
                 TYPES_EXPORT_SCALAR,
+            ),
+            (
+                RunnerProtocol::NumericLiteralValues,
+                ExportDriver::NumericLiteralValues,
+                TYPES_NUMERIC_LITERAL_VALUES,
             ),
             (
                 RunnerProtocol::ExportHostOwnedRoundtrip,

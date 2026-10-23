@@ -6,7 +6,7 @@ import chars(is_digit, is_space, is_word_cont, is_word_start);
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(default Bool, default I32, default String);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32);
 import testapi/iter(loop);
 import testapi/text(string_code_at, string_concat, string_len, string_slice);
@@ -237,6 +237,8 @@ fn scan_word_end(src: String, start: I32, len: I32) -> I32 {
 // phases 0–1 with a digit following. A trailing `.` / `e` (no digit after)
 // stops the run instead, so `1.x`, `2e`, and `1.2.3` end at the offending
 // mark.
+// Point-free exponents remain one candidate run so `numeric_token` can reject
+// their integer spelling; only a written fractional point admits an exponent.
 
 // Whether the character `c` at `pos` is a `.` that continues the
 // fractional part: phase 0, and a digit immediately follows.
@@ -693,11 +695,45 @@ fn numeric_text(src: String, start: I32, endp: I32) -> String {
   if! has_sep(text) { drop_seps(text) } else { text }
 }
 
+fn integer_exponent(text: String) -> Bool {
+  loop(
+  , .(pos: I32) {
+      match! string_code_at(text, pos) {
+        (
+        , .(code: I32) {
+            if! eq_i32(code, 46(I32)) {
+              widen_sum!(.f(Bool), I32 | Bool)
+            } else if! or2(eq_i32(code, 101(I32)), eq_i32(code, 69(I32))) {
+              widen_sum!(.t(Bool), I32 | Bool)
+            } else {
+              widen_sum!(add_i32(pos, 1(I32)), I32 | Bool)
+            }
+          }
+        , .(_end: .) { widen_sum!(.f(Bool), I32 | Bool) }
+        )
+      }
+    }
+  , 0(I32)
+  )
+}
+
+fn numeric_token(src: String, start: I32, endp: I32, acc: Toks) -> Lex_step {
+  let text = numeric_text(src, start, endp);
+  if! integer_exponent(text) {
+    widen_sum!(
+    , mk_lex_err("exponent notation is not supported for integer literals"(String), start)
+    , Lex_step
+    )
+  } else {
+    widen_sum!((endp, toks_cons(tk_num(text), start, acc)), Lex_step)
+  }
+}
+
 // Emit a numeric-literal token starting at `pos`, carrying its
 // separator-free text.
 fn lex_number(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
   let endp = scan_number_end(src, pos, len);
-  widen_sum!((endp, toks_cons(tk_num(numeric_text(src, pos, endp)), pos, acc)), Lex_step)
+  numeric_token(src, pos, endp, acc)
 }
 
 // Handle a `-`: fuse a negative numeric literal when a digit follows (the
@@ -710,7 +746,7 @@ fn lex_minus(src: String, len: I32, pos: I32, acc: Toks) -> Lex_step {
     , .(c2: I32) {
         if! is_digit(c2) {
           let endp = scan_number_end(src, after, len);
-          widen_sum!((endp, toks_cons(tk_num(numeric_text(src, pos, endp)), pos, acc)), Lex_step)
+          numeric_token(src, pos, endp, acc)
         } else {
           widen_sum!((after, toks_cons(tk_punct(c_minus()), pos, acc)), Lex_step)
         }

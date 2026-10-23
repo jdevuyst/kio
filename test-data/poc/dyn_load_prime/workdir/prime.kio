@@ -5,7 +5,7 @@ import elab/match(match);
 import elab/spine_elaborators(widen_sum);
 import host_descriptor(Host_fn, Host_type);
 import list/core(List, cons, nil, uncons);
-import testapi(I32, String);
+import testapi(default I32, default String);
 
 // `prime.kio` — the term AST `prime_eval` evaluates.
 //

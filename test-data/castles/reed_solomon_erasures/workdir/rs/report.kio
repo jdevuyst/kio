@@ -9,7 +9,7 @@ import rs/input as input;
 import rs/polynomial as p;
 import rs/recover as recovery;
 import rs/symbols as s;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;

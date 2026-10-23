@@ -1,6 +1,6 @@
 module docs_loader/testapi/arith;
 
-import docs_loader/testapi(Bool, F64, I32);
+import docs_loader/testapi(default Bool, default F64, default I32);
 
 host fn add_i32(p0: I32, p1: I32) -> I32;
 

@@ -2,7 +2,7 @@ module testapi/main;
 
 import __intrinsics__;
 
-import testapi(Bool, I32, String);
+import testapi(String, default Bool, default I32);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

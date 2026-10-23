@@ -372,6 +372,9 @@ chooses the exact declaration; it does not change the literal's role. A
 roleless host type therefore has no matching lexical literal. After this
 compile-time check, Java constructs the value through that declaration's
 existing role-shaped private body type and exact adapter pair.
+The constructor preserves the shared [checked numeric value](../language.md#literals).
+In particular, an `f32` payload already denotes its binary32 value exactly
+when the private Java conversion narrows it from `double` to `float`.
 
 ### Structural and nominal types
 

@@ -1,0 +1,42 @@
+module main;
+
+import numbers as n;
+import numbers(default Int as Imported_int);
+
+default type Int = n.Identity(n.Int);
+
+default type Same_int = n.Identity(n.Int);
+
+default type Float = n.Identity(n.Float);
+
+default type Bool = n.Identity(n.Bool);
+
+default type String = n.Identity(n.String);
+
+pure fn integer() -> Int { let value = 42; value }
+
+pure fn float() -> Float { let value = 42.0; value }
+
+pure fn flag() -> Bool { let value = .t; value }
+
+pure fn text() -> String { let value = "alias"; value }
+
+equiv int_selected() {
+  integer();
+  42(Imported_int)
+}
+
+equiv float_selected() {
+  float();
+  42.0(n.Float)
+}
+
+equiv bool_selected() {
+  flag();
+  .t(n.Bool)
+}
+
+equiv string_selected() {
+  text();
+  "alias"(n.String)
+}

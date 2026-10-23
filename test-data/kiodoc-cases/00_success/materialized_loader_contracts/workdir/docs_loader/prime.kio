@@ -5,7 +5,7 @@ import docs_loader/elab/match(match);
 import docs_loader/elab/spine_elaborators(widen_sum);
 import docs_loader/host_descriptor(Host_fn, Host_type);
 import docs_loader/list/core(List, cons, nil, uncons);
-import docs_loader/testapi(I32, String);
+import docs_loader/testapi(default I32, default String);
 
 // `prime.kio` — the term AST `prime_eval` evaluates.
 //

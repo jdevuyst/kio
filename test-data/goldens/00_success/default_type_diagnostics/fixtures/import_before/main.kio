@@ -1,0 +1,10 @@
+module main;
+
+import numbers(default Int);
+
+pure fn value() -> Int { let selected = 42; selected }
+
+equiv selected() {
+  value();
+  42(Int)
+}

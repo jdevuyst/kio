@@ -140,11 +140,11 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         }
         runtime.push_str(" () }\n");
         *runtime = runtime.replace(
-            "import testapi(String);",
+            "import testapi(default String);",
             if selective_alias {
-                "import testapi(String);\nimport kio_gen_types(transform as selected_transform);"
+                "import testapi(default String);\nimport kio_gen_types(transform as selected_transform);"
             } else {
-                "import testapi(String);\nimport kio_gen_types as type_probe;"
+                "import testapi(default String);\nimport kio_gen_types as type_probe;"
             },
         );
         files.push(("workdir/kio_gen_types.kio".into(), type_probe(types)));
@@ -155,8 +155,8 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
                 .unwrap()
                 .1;
             *runtime = runtime.replace(
-                "import testapi(String);",
-                "import testapi(String);\nimport kio_gen_rows as row_probe;",
+                "import testapi(default String);",
+                "import testapi(default String);\nimport kio_gen_rows as row_probe;",
             );
             files.push(("workdir/kio_gen_rows.kio".into(), row_probe(probe)));
         }
@@ -167,8 +167,8 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
                 .unwrap()
                 .1;
             *runtime = runtime.replace(
-                "import testapi(String);",
-                "import testapi(String);\nimport kio_gen_recursion as recursion_probe;",
+                "import testapi(default String);",
+                "import testapi(default String);\nimport kio_gen_recursion as recursion_probe;",
             );
             files.push((
                 "workdir/kio_gen_recursion.kio".into(),
@@ -198,7 +198,7 @@ pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_
     );
     let mut runtime = String::from(
         r#"module kio_gen_control;
-import testapi(String);
+import testapi(default String);
 import testapi/io as io;
 import sequence(Bind, do);
 import kio_gen_control_blocks(probe, nested_probe);
@@ -292,7 +292,7 @@ fn row_probe(probe: &RowProbe) -> String {
     let labels = ["first", "middle", "last"];
     let types = ["First", "Middle", "Last"];
     let mut out = String::from(
-        "module kio_gen_rows;\nimport testapi(String);\nimport testapi/io as io;\nlabels { first: String, middle: String, last: String };\n",
+        "module kio_gen_rows;\nimport testapi(default String);\nimport testapi/io as io;\nlabels { first: String, middle: String, last: String };\n",
     );
     out.push_str(&format!(
         "type Row = {};\nfn source() -> Row {{ io.print(\"row-source\\n\"); {{ {} }} }}\n",
@@ -355,7 +355,7 @@ fn row_probe(probe: &RowProbe) -> String {
 
 fn type_probe(probe: &TypeProbe) -> String {
     let mut out = String::from(
-        "module kio_gen_types;\nimport __intrinsics__;\nimport testapi(String);\nimport testapi/io as io;\n\n",
+        "module kio_gen_types;\nimport __intrinsics__;\nimport testapi(default String);\nimport testapi/io as io;\n\n",
     );
     match probe {
         TypeProbe::Staged {
@@ -438,7 +438,7 @@ fn type_probe(probe: &TypeProbe) -> String {
 
 fn recursion_probe(probe: &RecursionProbe) -> String {
     let mut out = String::from(
-        "module kio_gen_recursion;\nimport __intrinsics__;\nimport match(match);\nimport testapi(String);\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec newtype Counter : . | Counter { constructor mk; projector get };\nfn identity(value: String) -> String { value }\n",
+        "module kio_gen_recursion;\nimport __intrinsics__;\nimport match(match);\nimport testapi(default String);\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec newtype Counter : . | Counter { constructor mk; projector get };\nfn identity(value: String) -> String { value }\n",
     );
     let poly = matches!(
         probe.mode,

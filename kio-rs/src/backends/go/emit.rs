@@ -163,6 +163,7 @@ mod facade_consumer_tests {
         let _ = emitter.emit_into(
             &Expr::IntLit {
                 occurrence: (),
+                diagnostic: Default::default(),
                 digits: "1".into(),
                 annotation: Type::Unit { meta: meta.clone() },
                 meta,
@@ -5194,7 +5195,14 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
     /// Render a float literal at its annotated role's Go type.
     fn emit_float_lit(&self, digits: &str, annotation: &Type<Routed>) -> Result<String, EmitError> {
         let role = self.literal_role(annotation)?;
-        Ok(format!("{}({digits})", role_to_go_type(role)))
+        let typ = role_to_go_type(role);
+        if digits == "-0.0" {
+            // Go's constant arithmetic discards a zero sign. Negating a typed
+            // variable constructs the selected IEEE value without an import.
+            Ok(format!("func() {typ} {{ var zero {typ}; return -zero }}()"))
+        } else {
+            Ok(format!("{typ}({digits})"))
+        }
     }
 
     /// The role a literal's annotation resolves to. The annotation is a

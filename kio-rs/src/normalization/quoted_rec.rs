@@ -965,7 +965,7 @@ mod tests {
             &mut crate::ast::convert_type::<EvalPhase, PrePrime>,
         );
         let source = "module witness; import __intrinsics__;
-        host type Bool role(bool);
+        default host type Bool role(bool);
         host fn finish(value: Bool) -> .;
         host fn suspend0(k: Bool -> .) -> .;
         host fn suspend1(k: Bool -> .) -> .;

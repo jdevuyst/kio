@@ -3133,7 +3133,9 @@ v(2) {
         );
         assert_eq!(
             error.diagnostic().span.start as usize,
-            source.rfind("type A").expect("version-local declaration")
+            source
+                .rfind("pub type A")
+                .expect("version-local declaration")
         );
         assert_eq!(
             error.diagnostic().help(),

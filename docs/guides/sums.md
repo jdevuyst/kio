@@ -20,6 +20,9 @@ Here `elab` is the configured dependency name. Follow
 that name or adjust the imports to the name you choose.
 
 Assumed setup: a module whose host supplies `Int`, `String`, `Bool`, `int_to_string`, `string_concat`, and `print`. Snippets are module bodies.
+`Int` and `String` are selected defaults for literal inputs whose source type
+must be determined before an elab expands; see
+[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
 
 <!--kio {harness=module placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -32,8 +35,8 @@ import match(match);
 import tuple_elaborators(concat);
 import spine_elaborators(widen_sum);
 
-host type Int role(i32);
-host type String role(str);
+default host type Int role(i32);
+default host type String role(str);
 host type Bool role(bool);
 host fn int_to_string(p0: Int) -> String;
 host fn string_concat(p0: String, p1: String) -> String;

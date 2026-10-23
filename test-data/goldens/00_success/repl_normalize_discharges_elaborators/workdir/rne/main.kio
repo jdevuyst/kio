@@ -2,7 +2,7 @@ module rne/main;
 
 import elab/lookup as lookup;
 import elab/lookup(Lookup_bool, contains);
-import elab/testapi(I32);
+import elab/testapi(default I32);
 import elab/type_of(rep_unit);
 import rne/closure(marker_fn);
 import rne/other(rep_of_unit);

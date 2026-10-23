@@ -6,7 +6,7 @@
 module forge/text;
 
 import elab/control(if);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(lt_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);

@@ -3,7 +3,7 @@ module rs/field;
 import elab/control(if);
 import elab/spine_elaborators(widen_sum);
 import list_host as integers;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as a;
 import testapi/iter(loop);
 

@@ -1,0 +1,7 @@
+module main;
+
+host type Int role(i64);
+
+fn earlier() { let n = 42; () }
+
+default type Selected = Int;

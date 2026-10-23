@@ -9,7 +9,7 @@ import list_host as integers;
 import systems/matrix as m;
 import systems/rational as q;
 import systems/reduce as reduction;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 
 pub labels Family = { particular: m.Row, directions: m.Matrix, free_columns: c.List(I32) };
 

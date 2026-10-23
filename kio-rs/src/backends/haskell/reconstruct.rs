@@ -598,7 +598,7 @@ mod tests {
             ("decoy.kio", "module decoy; pub labels Card = { flag: . };"),
             (
                 "consumer.kio",
-                "module consumer; import control(if); import testapi(Bool); import decoy as selected; \
+                "module consumer; import control(if); import testapi(default Bool); import decoy as selected; \
                  import selected as chosen; fn choose(card: chosen.Card) -> Bool { \
                  if! card.?{chosen.flag} { .t } else { .f } }",
             ),

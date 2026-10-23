@@ -5,7 +5,7 @@
 module tree/text;
 
 import elab/control(if);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/iter(loop);

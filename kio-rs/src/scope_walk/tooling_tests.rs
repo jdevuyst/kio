@@ -3,6 +3,35 @@ use crate::ast::KioFileKind;
 use crate::pass::parser::{CursorSlot, ToolingProbe, probe_tooling};
 
 #[test]
+fn default_keyword_completion_follows_module_type_owners() {
+    for (marked, kind, admitted) in [
+        ("module app; |", KioFileKind::Module, true),
+        (
+            "module app; rec { type A = .; | }",
+            KioFileKind::Module,
+            true,
+        ),
+        ("module app; default |", KioFileKind::Module, false),
+        ("module app; pub |", KioFileKind::Module, false),
+        ("module app; host |", KioFileKind::Module, false),
+        ("module app; fn run() { | }", KioFileKind::Module, false),
+        ("package app; |", KioFileKind::Package, false),
+        ("signature app v(1); |", KioFileKind::Signature, false),
+    ] {
+        let (source, offset) = probe(marked, Some(kind));
+        let probe = probe_tooling(&source, Some(kind), Some(offset), None);
+        assert_eq!(
+            tooling_keywords(&probe).contains(&"default"),
+            admitted,
+            "{marked}"
+        );
+    }
+    let (source, offset) = probe("module app; default |", Some(KioFileKind::Module));
+    let probe = probe_tooling(&source, Some(KioFileKind::Module), Some(offset), None);
+    assert_eq!(tooling_keywords(&probe), ["host", "pub", "type"]);
+}
+
+#[test]
 fn numbered_binding_completion_tracks_lexical_owners() {
     for (marked, expected, absent) in [
         (

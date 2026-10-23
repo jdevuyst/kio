@@ -6,7 +6,7 @@ import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import list/list as traversal;
 import list_host as numbers;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 
 pub labels Signal = { wire: I32, level: Bool };
 

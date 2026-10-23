@@ -1,1 +1,2 @@
-no `role\(bool\)` host type is in unqualified lexical scope
+no type is selected as the default boolean type in this module
+select a host type or equivalent alias with `default`

@@ -29,7 +29,7 @@ import elab/control(if);
 import elab/match(match);
 import list/list as list;
 import result/result as result;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(leq_i32, mul_i32);
 
 type Borrower = Member & Book;

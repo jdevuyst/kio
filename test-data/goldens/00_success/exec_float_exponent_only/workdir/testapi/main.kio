@@ -6,9 +6,9 @@ import testapi/fmt(f64_to_string);
 import testapi/io(print);
 
 pub fn main() {
-  print(f64_to_string(2e3(F64)));
+  print(f64_to_string(2.0e3(F64)));
   print("\n"(String));
-  print(f64_to_string(-2E+3(F64)));
+  print(f64_to_string(-2.0E+3(F64)));
   print("\n"(String));
   print(f64_to_string(1.0e0_2(F64)));
   print("\n"(String));

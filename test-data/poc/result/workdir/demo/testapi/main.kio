@@ -26,7 +26,7 @@ import library/result(
 // The reusable library surface is `result.kio`; this demo entry imports
 // it through `library.dep.kio`, renders `Result` / `Bool` values, and
 // exercises both the named API and the operator DSL.
-import testapi(I32, String);
+import testapi(default I32, default String);
 import testapi/arith(add_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);

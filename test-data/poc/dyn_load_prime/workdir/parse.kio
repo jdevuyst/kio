@@ -14,7 +14,7 @@ import prime(Nat, Term, Terms);
 import prime(absurd, app, either, fst);
 import prime(ite, lam, left, let_, lit, ns, nz, pair);
 import prime(right, snd, tcons, tnil, un_terms, unit, var, {terms});
-import testapi(Bool, I32, String);
+import testapi(default Bool, default I32, default String);
 import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);

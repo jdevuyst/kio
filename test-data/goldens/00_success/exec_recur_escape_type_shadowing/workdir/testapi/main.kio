@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/control(if);
 import shadow_elaborators(invoke);
-import testapi(Bool, I32, String);
+import testapi(I32, default Bool, default String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

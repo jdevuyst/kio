@@ -1564,9 +1564,6 @@ where
         let scheme = d.sig.signature_ty(d.ret.clone(), d.meta.span);
         super::types::compute_checked_kind(&scheme, d.meta.span, tcx)?;
     }
-    if let Some(check) = P::CAPABILITY_SIGNATURE {
-        check(d, tcx)?;
-    }
     Ok(())
 }
 
@@ -1992,7 +1989,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn compile_time_handles_require_direct_resolved_receivers() {
+    fn ordinary_function_signatures_do_not_impose_elaborator_receiver_layouts() {
         check_named_signature(
             "module main; host type Comptime_bool; \
              pure fn ordinary(value: Comptime_bool) -> Comptime_bool { value }",
@@ -2007,28 +2004,25 @@ mod tests {
         )
         .expect("transparent aliases preserve exact direct capability identities");
 
-        let return_only = check_named_signature(
+        check_named_signature(
             "module main; import __comptime__; pure fn bad() -> __Type__ { () }",
             "bad",
         )
-        .expect_err("a return type cannot hide the required proof receiver");
-        assert!(return_only.diag().1.contains("first value parameter"));
+        .expect("ordinary return types impose no capability receiver");
 
-        let nested = check_named_signature(
+        check_named_signature(
             "module main; import __comptime__; \
              pure fn bad(packet: __Comptime__ & .) -> . { () }",
             "bad",
         )
-        .expect_err("a nested proof is not the direct erasure receiver");
-        assert!(nested.diag().1.contains("first value parameter"));
+        .expect("ordinary signature checking does not assign an elaborator ABI");
 
-        let fill_late = check_named_signature(
+        check_named_signature(
             "module main; import __comptime__; \
              pure fn bad(ct: __Comptime__, value: ., fills: __Fill_ctx__) -> __Fill_ctx__ { fills }",
             "bad",
         )
-        .expect_err("FillCtx must be the direct second value parameter");
-        assert!(fill_late.diag().1.contains("second value parameter"));
+        .expect("a fill-context type does not impose an ordinary parameter position");
     }
 
     #[cfg(all(feature = "parallel", feature = "surface"))]

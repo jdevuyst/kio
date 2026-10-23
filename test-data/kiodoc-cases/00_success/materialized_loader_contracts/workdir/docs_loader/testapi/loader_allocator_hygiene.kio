@@ -6,7 +6,7 @@ import docs_loader/loader(Export_info, Export_infos, export_info_name, export_in
 import docs_loader/loader(Lr_diag, Lr_image, diag_bare_message, diag_message, image_exports);
 import docs_loader/loader(un_export_infos, un_load_outcome);
 import docs_loader/loader/scan(load_package);
-import docs_loader/testapi(Bool, String);
+import docs_loader/testapi(default Bool, default String);
 import docs_loader/testapi/text(string_concat, string_eq);
 
 fn probe_image() -> String {

@@ -330,6 +330,13 @@ and `Monad m`, so an unrelated function cannot constrain package creation or
 another export. Thus a role-bearing type used only at host boundaries need not
 be one of Haskell's built-in scalar types.
 
+Numeric constructors preserve Kio's [checked literal values](../language.md#literals).
+For floating roles the selected carrier must preserve the role's IEEE value,
+including subnormals and signed zero. `Float` and `Double`, or faithful
+wrappers, satisfy the corresponding roles; a `Fractional` instance alone
+does not prove that obligation. In particular, `Rational` cannot represent
+signed zero. Host arithmetic remains the host's choice.
+
 Each `host fn` declared in a bridged module becomes one field on the
 `<Handle>Host h m` record in `<Ns>.hs`. The host supplies a value whose
 fields are its implementations.

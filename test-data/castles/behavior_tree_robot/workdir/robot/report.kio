@@ -7,7 +7,7 @@ import list/list as traversal;
 import robot/engine as engine;
 import robot/memory as memory;
 import robot/model as model;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);

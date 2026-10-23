@@ -1810,7 +1810,7 @@ fn lsp_record_callable_declaration_positions(
         ResolvedBuiltinKind, ResolvedCallableTarget, ResolvedCallableTypeHead,
     };
     use crate::pass::typecheck_core::{
-        InternedType, ModuleEnv, RoleResolution, comptime_scheme, intrinsic_scheme_resolved,
+        InternedType, ModuleEnv, comptime_scheme, intrinsic_scheme_resolved,
         newtype_member_scheme_in_module, nominal_segments_in_module, synth_env_fn_def_in_module,
         synth_top_fn_def_in_module,
     };
@@ -2012,24 +2012,8 @@ fn lsp_record_callable_declaration_positions(
                                 crate::ast::Role::Bool,
                                 Some(lowered_item_cutoff),
                             );
-                            let ambiguity = match bool_role {
-                                RoleResolution::Ambiguous { first, second } => {
-                                    Some(source_env.describe_exact_role_ambiguity(
-                                        crate::ast::Role::Bool,
-                                        first,
-                                        second,
-                                        Some(lowered_item_cutoff),
-                                    ))
-                                }
-                                RoleResolution::Missing | RoleResolution::Unique(_) => None,
-                            };
-                            intrinsic_scheme_resolved::<Lowered>(
-                                name,
-                                leaf.span,
-                                bool_role,
-                                ambiguity.as_deref(),
-                            )
-                            .and_then(Result::ok)
+                            intrinsic_scheme_resolved::<Lowered>(name, leaf.span, bool_role)
+                                .and_then(Result::ok)
                         }
                         ResolvedBuiltinKind::Comptime => {
                             crate::comptime::ComptimeBuiltin::from_public_name(name).and_then(
@@ -4503,7 +4487,7 @@ mod tests {
             "import __intrinsics__;\n",
             "\n",
             "op _ ^ _ { impl __fst__; };\n",
-            "host type Early_bool role(bool);\n",
+            "default host type Early_bool role(bool);\n",
             "op _ %% _ { impl __if_then_else__; };\n",
             "host type Later_bool role(bool);\n",
             "op _ ** _ { impl __pair__; };\n",
@@ -4670,13 +4654,13 @@ mod tests {
         let conditional_ty = analysis
             .position_index
             .type_at("pkg/roles", conditional_span)
-            .expect("the role-sensitive intrinsic has a source-order hover type");
+            .expect("the role-sensitive intrinsic has its selected-default hover type");
         let mut rendered_conditional_ty = String::new();
         write_type(conditional_ty, &mut rendered_conditional_ty);
         assert!(
             rendered_conditional_ty.contains("Early_bool")
                 && !rendered_conditional_ty.contains("Later_bool"),
-            "the intrinsic target must use the exact role view at its declaration, got `{rendered_conditional_ty}`"
+            "the intrinsic target must use the exact default selected before its declaration, got `{rendered_conditional_ty}`"
         );
 
         let pair_start = role_source
@@ -4693,7 +4677,7 @@ mod tests {
                 .position_index
                 .type_at("pkg/roles", pair_span)
                 .is_some(),
-            "a role-independent intrinsic remains hoverable after role ambiguity"
+            "a role-independent intrinsic remains hoverable after another Boolean-role declaration"
         );
 
         for ((entry_module, span), binder) in analysis.position_index.binders_iter() {

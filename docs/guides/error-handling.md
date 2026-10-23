@@ -17,7 +17,7 @@ import spine_elaborators(widen_sum, narrow_sum, fit);
 
 host type Int role(i32);
 host type String role(str);
-host type Bool role(bool);
+default host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String);

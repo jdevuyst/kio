@@ -17,10 +17,9 @@
 //!
 //! One intrinsic scheme builder closes out the file:
 //! [`intrinsic_scheme`], which produces the canonical scheme
-//! [`Synth`] for the `__intrinsic__` family. Module typing retains the
-//! complete exact-role resolution so `__if_then_else__` can distinguish a
-//! missing Boolean role from an ambiguous one; callers that already selected
-//! singleton roles use the public map-based wrapper.
+//! [`Synth`] for the `__intrinsic__` family. Module typing retains the explicit
+//! default selection required by `__if_then_else__`; callers with a selected
+//! role table use the public map-based wrapper.
 //!
 //! Extracted from [`super::typecheck_core`] for navigability;
 //! depends on the rest of the umbrella for the apply / alias /
@@ -1948,19 +1947,23 @@ where
         }
         if tcx.env.intrinsics_in_scope {
             let bool_role = tcx.resolve_exact_role(crate::ast::Role::Bool);
-            let ambiguity = match bool_role {
-                super::RoleResolution::Ambiguous { first, second } => {
-                    Some(tcx.describe_exact_role_ambiguity(crate::ast::Role::Bool, first, second))
-                }
-                super::RoleResolution::Missing | super::RoleResolution::Unique(_) => None,
-            };
+            if head == "__if_then_else__" && matches!(bool_role, super::RoleResolution::Missing) {
+                return Err(literal_resolution_error(
+                    crate::ast::RoleShape::Bool,
+                    tcx.env,
+                    tcx.local_item_cutoff(),
+                    span,
+                ));
+            }
             #[cfg(feature = "lsp")]
             let mut selected_role = None;
             if let Some(scheme) = intrinsic_scheme_resolved_observed(
                 head,
                 span,
                 bool_role,
-                ambiguity.as_deref(),
+                tcx.env
+                    .selected_default(crate::ast::RoleShape::Bool, tcx.local_item_cutoff())
+                    .map(|candidate| candidate.ty(span)),
                 |binding| {
                     #[cfg(feature = "lsp")]
                     {
@@ -2445,16 +2448,122 @@ fn cross_module_newtype_member_not_found<P: crate::ast::Phase>(
 // Literal typing
 // =========================================================================
 
-/// Tier-3 literal resolution (`specs/language.md` § Literals): the
-/// unique role-bearing host type — or, when no host type carries the
-/// role, the unique role-inheriting `type` alias (the rehosted-module
-/// case) — whose role the literal's `shape` admits. Returns `None`
-/// when the candidate is not unique (zero candidates, or an ambiguous
-/// pool). Shared by [`synth_literal`]'s synthesis arm and the
-/// `substitute` pass's bare-literal annotation fill-in
-/// (`walk_literal_annotation`), so both derive the same host type for a
-/// bare Lowered literal; [`literal_resolution_error`] renders the
-/// diagnostic for the non-unique case.
+pub fn numeric_literal_diagnostic<P: crate::ast::Phase>(
+    expr: &crate::ast::Expr<P>,
+) -> Option<crate::numeric_literal::NumericLiteral<'_>> {
+    match expr {
+        crate::ast::Expr::IntLit {
+            diagnostic, digits, ..
+        } => Some(crate::numeric_literal::NumericLiteral {
+            digits,
+            integer: Some(diagnostic),
+        }),
+        crate::ast::Expr::FloatLit { digits, .. } => Some(crate::numeric_literal::NumericLiteral {
+            digits,
+            integer: None,
+        }),
+        _ => None,
+    }
+}
+
+fn check_numeric_value(
+    role: crate::ast::Role,
+    span: Span,
+    numeric: Option<crate::numeric_literal::NumericLiteral<'_>>,
+) -> Result<Option<String>, Error> {
+    let Some(crate::numeric_literal::NumericLiteral { integer, digits }) = numeric else {
+        return Ok(None);
+    };
+    let Some(source) = integer else {
+        return crate::numeric_literal::float_decimal(role, digits)
+            .map(Some)
+            .ok_or_else(|| {
+                Error::type_(
+                    span,
+                    format!(
+                        "floating-point literal overflows the finite range of `role({})`",
+                        role.as_str()
+                    ),
+                )
+            });
+    };
+    if let Some(value) = crate::numeric_literal::Integer::parse(digits)
+        && value.fits(role)
+    {
+        return Ok(Some(value.decimal()));
+    }
+    let mut error = Error::type_(
+        span,
+        format!(
+            "integer literal is outside the range of `role({})`",
+            role.as_str()
+        ),
+    );
+    if let Some(alias) = &source.alias {
+        error = if let Some(file) = &alias.definition_file {
+            error.with_secondary_in_file(
+                file,
+                alias.definition_span,
+                "this literal alias supplies the out-of-range value",
+            )
+        } else {
+            error.with_secondary(
+                alias.definition_span,
+                "this literal alias supplies the out-of-range value",
+            )
+        };
+    }
+    Err(error)
+}
+
+fn integer_requires_point(
+    span: Span,
+    numeric: Option<crate::numeric_literal::NumericLiteral<'_>>,
+) -> Error {
+    let mut error = Error::type_(span, "an integer literal cannot have a floating-point type; floating-point spelling requires a decimal point")
+        .with_help("insert `.0` after the integer digits");
+    if let Some(crate::numeric_literal::NumericLiteral {
+        integer: Some(source),
+        digits,
+    }) = numeric
+    {
+        if let Some(alias) = &source.alias {
+            let digits = source.spelling.as_deref().unwrap_or(digits);
+            let replacement = format!(
+                "{}{digits}.0",
+                if digits.starts_with('-') { " " } else { "" }
+            );
+            error = if let Some(file) = &alias.definition_file {
+                error.with_secondary_in_file(
+                    file,
+                    alias.definition_span,
+                    "this alias is defined with integer spelling",
+                )
+            } else {
+                error.with_secondary(
+                    alias.definition_span,
+                    "this alias is defined with integer spelling",
+                )
+            };
+            error = error.with_fix(crate::error::Fix::maybe_incorrect(
+                "Use floating-point spelling at this alias use",
+                vec![crate::error::FixEdit::new(alias.use_span, replacement)],
+            ));
+        } else if let Some(token) = source.token {
+            error = error.with_fix(crate::error::Fix::maybe_incorrect(
+                "Use floating-point spelling",
+                vec![crate::error::FixEdit::new(
+                    Span::new(token.end, token.end),
+                    ".0",
+                )],
+            ));
+        }
+    }
+    error
+}
+
+/// Resolve the explicit default for this literal category. The result names
+/// the selected terminal identity, independently of the visible alias spelling.
 pub fn unique_role_admitted_type<P: crate::ast::Phase>(
     shape: crate::ast::RoleShape,
     env: &ModuleEnv<'_, P>,
@@ -2469,27 +2578,8 @@ pub(crate) fn unique_role_admitted_type_at<P: crate::ast::Phase>(
     local_item_cutoff: Option<usize>,
     span: Span,
 ) -> Option<crate::ast::Type<P>> {
-    match env.resolve_direct_role_candidates(|role| shape.admits(role.shape()), local_item_cutoff) {
-        super::RoleResolution::Unique(name) => {
-            return Some(crate::ast::Type::synth_path(
-                vec![name.to_owned()],
-                Vec::new(),
-                span,
-            ));
-        }
-        // Two or more host types carry the role — ambiguous; an alias
-        // never enlarges a host type's candidate set, so stop here.
-        super::RoleResolution::Ambiguous { .. } => return None,
-        super::RoleResolution::Missing => {}
-    }
-    match env.resolve_alias_role_candidates(|role| shape.admits(role.shape()), local_item_cutoff) {
-        super::RoleResolution::Unique(name) => Some(crate::ast::Type::synth_path(
-            vec![name.to_owned()],
-            Vec::new(),
-            span,
-        )),
-        super::RoleResolution::Missing | super::RoleResolution::Ambiguous { .. } => None,
-    }
+    env.selected_default(shape, local_item_cutoff)
+        .map(|candidate| candidate.ty(span))
 }
 
 pub(crate) fn unique_role_admitted_resolution_at<P>(
@@ -2503,92 +2593,78 @@ where
     let resolved = unique_role_admitted_type_at(shape, tcx.env, tcx.local_item_cutoff(), span)?;
     #[cfg(feature = "lsp")]
     let lexical_role = if tcx.env.typecheck_scope.collects_source_dependencies() {
-        let crate::ast::Type::Path { segments, .. } = &resolved else {
-            unreachable!("a selected role is represented by its visible type binding")
-        };
-        Some(segments[0].name.clone())
+        Some(
+            tcx.env
+                .selected_default(shape, tcx.local_item_cutoff())?
+                .visible_name
+                .to_owned(),
+        )
     } else {
         None
     };
-    let resolved = match resolved {
-        crate::ast::Type::Path {
-            segments,
-            args,
-            meta,
-        } => crate::ast::Type::Path {
-            segments: tcx.env.qualify_nominal_segments(&segments),
-            args,
-            meta,
-        },
-        other => other,
-    };
     Some(super::LiteralResolution {
         ty: super::InternedType::fresh_with_identity(resolved, true),
+        runtime_erases: tcx
+            .env
+            .selected_default(shape, tcx.local_item_cutoff())?
+            .host_identity
+            .0
+            == "__comptime__",
+        numeric_value: None,
         #[cfg(feature = "lsp")]
         lexical_role,
     })
 }
 
-/// The tier-3 diagnostic for a literal whose host type
-/// [`unique_role_admitted_type`] could not uniquely resolve — a
-/// no-candidate "has no type" error or an ambiguous-pool error naming
-/// two candidates. Kept beside the resolver so the two stay in step.
-fn literal_resolution_error<P: crate::ast::Phase>(
+/// Explain a missing default and offer source-local selections of eligible
+/// types without changing the provider or an existing conflicting selection.
+pub(crate) fn literal_resolution_error<P: crate::ast::Phase>(
     shape: crate::ast::RoleShape,
     env: &ModuleEnv<'_, P>,
     local_item_cutoff: Option<usize>,
     span: Span,
 ) -> Error {
-    if let super::RoleResolution::Ambiguous {
-        first: a,
-        second: b,
-    } = env.resolve_direct_role_candidates(|role| shape.admits(role.shape()), local_item_cutoff)
-    {
-        let candidates = env
-            .describe_direct_role_ambiguity(|role| shape.admits(role.shape()), local_item_cutoff)
-            .unwrap_or_else(|| format!("`{a}`, `{b}`, …"));
-        return Error::type_(
-            span,
-            format!(
-                "this {} literal is ambiguous: the current host declares more \
-                 than one role-bearing host type its shape admits ({candidates}). \
-                 Annotate the literal with the intended host type — `<literal>(T)`",
-                literal_shape_noun(shape)
-            ),
-        );
-    }
-    if let super::RoleResolution::Ambiguous {
-        first: a,
-        second: b,
-    } = env.resolve_alias_role_candidates(|role| shape.admits(role.shape()), local_item_cutoff)
-    {
-        return Error::type_(
-            span,
-            format!(
-                "this {} literal is ambiguous: more than one type its shape \
-                 admits is in scope (`{a}`, `{b}`, …). Annotate the literal with \
-                 the intended type — `<literal>(T)`",
-                literal_shape_noun(shape)
-            ),
-        );
-    }
-    Error::type_(
+    let category = literal_shape_noun(shape);
+    let mut error = Error::type_(
         span,
-        format!(
-            "this {} literal has no type: the current host declares no \
-             role-bearing host type its shape admits. Annotate the literal \
-             with a host type — `<literal>(T)` — or declare a `role(...)` \
-             host type",
-            literal_shape_noun(shape)
-        ),
+        format!("no type is selected as the default {category} type in this module"),
     )
+    .with_help("select a host type or equivalent alias with `default`");
+    for candidate in &env.default_candidates {
+        if candidate.role.shape() != shape || !candidate.visible_at(local_item_cutoff) {
+            continue;
+        }
+        error = error.with_secondary(
+            candidate.insertion,
+            format!(
+                "`{}` is available but is not selected as the default {category} type",
+                candidate.visible_name
+            ),
+        );
+        if env
+            .selected_default(shape, None)
+            .is_none_or(|other| other.host_identity == candidate.host_identity)
+        {
+            error = error.with_fix(crate::error::Fix::maybe_incorrect(
+                format!(
+                    "Use {} as the default {category} type in this module",
+                    candidate.visible_name
+                ),
+                vec![crate::error::FixEdit::new(
+                    Span::new(candidate.insertion.start, candidate.insertion.start),
+                    "default ",
+                )],
+            ));
+        }
+    }
+    error
 }
 
 /// Type a literal expression against the current role-bearing
 /// host types, per the three-tier resolution of `specs/language.md`
 /// § Literals. This is the **synthesis-mode** entry — it covers
 /// tier 1 (an explicit `(Type)` annotation on the literal) and
-/// tier 3 (the unique role-admitted host type); tier 2
+/// tier 3 (the explicitly selected default type); tier 2
 /// (an expected type from the surrounding position) is reached only
 /// in check mode and handled by [`resolve_literal_against`].
 ///
@@ -2602,13 +2678,14 @@ pub fn synth_literal<'m, P>(
     shape: crate::ast::RoleShape,
     annotation: Option<&crate::ast::Type<P>>,
     site: crate::ast::ExpressionSite,
+    numeric: Option<crate::numeric_literal::NumericLiteral<'_>>,
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<super::InternedType<P>, Error>
 where
     P: TyperPhase + Clone,
 {
     let span = site.span;
-    let resolved = synth_literal_unrecorded(shape, annotation, span, tcx)?;
+    let resolved = synth_literal_unrecorded(shape, annotation, span, numeric, tcx)?;
     let ty = resolved.ty.clone();
     <P::Typer as Typer<P>>::record_literal_resolution(site, resolved, tcx);
     Ok(ty)
@@ -2621,6 +2698,7 @@ pub(crate) fn synth_literal_unrecorded<'m, P>(
     shape: crate::ast::RoleShape,
     annotation: Option<&crate::ast::Type<P>>,
     span: Span,
+    numeric: Option<crate::numeric_literal::NumericLiteral<'_>>,
     tcx: &TypeCtx<'m, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
@@ -2630,26 +2708,112 @@ where
     if let Some(annot) = annotation
         && !matches!(annot, crate::ast::Type::Infer { .. })
     {
-        let resolved = check_literal_annotation(shape, annot, tcx.env)?;
-        return Ok(super::LiteralResolution::contextual(
-            super::InternedType::fresh(resolved),
-        ));
+        return check_literal_annotation(shape, annot, span, numeric, tcx);
     }
-    // Tier 3 — the unique host type (or, in the rehosted-module case,
-    // the unique role-inheriting `type` alias) whose role the shape
-    // admits. Tier 2 (expected type) does not apply in synthesis mode;
-    // if tier 3 finds no unique candidate, the literal is a type error
-    // (tier 4). Shared with the `substitute` pass's bare-literal
-    // fill-in via [`unique_role_admitted_type`].
+    // Synthesis has no expected type, so an unannotated literal uses its
+    // category's explicit default selection.
     let Some(resolved) = unique_role_admitted_resolution_at(shape, span, tcx) else {
-        return Err(literal_resolution_error(
+        let mut error = literal_resolution_error(
             shape,
             tcx.env,
             tcx.local_item_cutoff(),
             span,
-        ));
+        ).with_help("select a default type with `default`, or annotate only this literal with `<literal>(T)`");
+        let bound = tcx.in_scope_type_param_binders();
+        #[cfg(feature = "surface")]
+        let bound = {
+            let mut bound = bound;
+            for local in &tcx.locals {
+                if let super::Local::TypeParam {
+                    name, decl_span, ..
+                } = local
+                    && let Some(source) = tcx.env.typecheck_scope.source_type_binder_name(
+                        &tcx.env.module_path,
+                        *decl_span,
+                        name,
+                    )
+                {
+                    bound.insert(source.to_owned());
+                }
+            }
+            bound
+        };
+        for candidate in &tcx.env.default_candidates {
+            if candidate.role.shape() != shape || !candidate.visible_at(tcx.local_item_cutoff()) {
+                continue;
+            }
+            let name = crate::ast::PathSegment::new(candidate.visible_name, candidate.insertion);
+            let identity = tcx.env.qualify_nominal_segments(&[name]);
+            let source = super::source_type_spelling_with_bound(
+                &crate::ast::Type::synth_path_segments(identity.clone(), Vec::new(), span),
+                tcx.env.module,
+                true,
+                &bound,
+            );
+            let crate::ast::Type::Path { segments, .. } = source else {
+                unreachable!("a nominal source spelling remains a path")
+            };
+            // The presentation helper leaves an unavailable canonical path
+            // unchanged. A source edit needs an actual lexical binding.
+            let available = match segments.as_slice() {
+                [name] => {
+                    !bound.contains(name.as_str())
+                        && tcx
+                            .env
+                            .qualify_nominal_segments(&segments)
+                            .iter()
+                            .map(crate::ast::PathSegment::as_str)
+                            .eq(identity.iter().map(crate::ast::PathSegment::as_str))
+                }
+                [alias, leaf] => {
+                    tcx.env
+                        .qualified_imports
+                        .get(alias.as_str())
+                        .is_some_and(|module| {
+                            let Some((name, owner)) = identity.split_last() else {
+                                return false;
+                            };
+                            leaf.as_str() == name.as_str()
+                                && module
+                                    .path
+                                    .segments
+                                    .iter()
+                                    .map(crate::ast::PathSegment::as_str)
+                                    .eq(owner.iter().map(crate::ast::PathSegment::as_str))
+                        })
+                }
+                _ => false,
+            };
+            if !available {
+                continue;
+            }
+            let source_type = segments
+                .iter()
+                .map(crate::ast::PathSegment::as_str)
+                .collect::<Vec<_>>()
+                .join(".");
+            let edit = annotation.map_or_else(
+                || {
+                    crate::error::FixEdit::new(
+                        Span::new(span.end, span.end),
+                        format!("({source_type})"),
+                    )
+                },
+                |annotation| crate::error::FixEdit::new(annotation.span(), source_type.clone()),
+            );
+            error = error.with_fix(crate::error::Fix::maybe_incorrect(
+                format!("Annotate this literal with {}", candidate.visible_name),
+                vec![edit],
+            ));
+        }
+        return Err(error);
     };
-    Ok(resolved)
+    let role = tcx
+        .env
+        .selected_default(shape, tcx.local_item_cutoff())
+        .expect("a resolved literal default retains its exact selection")
+        .role;
+    Ok(resolved.with_numeric_value(check_numeric_value(role, span, numeric)?))
 }
 
 /// Resolve a literal in **check mode**: tier 1 (an explicit `(Type)`
@@ -2657,8 +2821,8 @@ where
 /// host type whose role the literal's shape admits), then a tier 3 /
 /// 4 fallback to [`synth_literal`]. Returns the literal's resolved
 /// type and invokes [`Typer::record_literal_resolution`]. Lowered records the
-/// result for substitution; Prime's hook is a no-op because Kio' already
-/// carries the mandatory annotation. The caller equiv-checks the result against
+/// result for substitution; Prime records the checked numeric value alongside
+/// its mandatory annotation. The caller equiv-checks the result against
 /// `expected`, which rejects a tier-1 annotation that disagrees with the
 /// position.
 pub fn resolve_literal_against<'m, P>(
@@ -2666,13 +2830,15 @@ pub fn resolve_literal_against<'m, P>(
     annotation: Option<&crate::ast::Type<P>>,
     expected: &super::InternedType<P>,
     site: crate::ast::ExpressionSite,
+    numeric: Option<crate::numeric_literal::NumericLiteral<'_>>,
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<super::InternedType<P>, Error>
 where
     P: TyperPhase + Clone,
 {
     let span = site.span;
-    let resolved = resolve_literal_against_unrecorded(shape, annotation, expected, span, tcx)?;
+    let resolved =
+        resolve_literal_against_unrecorded(shape, annotation, expected, span, numeric, tcx)?;
     let ty = resolved.ty.clone();
     <P::Typer as Typer<P>>::record_literal_resolution(site, resolved, tcx);
     Ok(ty)
@@ -2686,6 +2852,7 @@ pub(crate) fn resolve_literal_against_unrecorded<'m, P>(
     annotation: Option<&crate::ast::Type<P>>,
     expected: &super::InternedType<P>,
     span: Span,
+    numeric: Option<crate::numeric_literal::NumericLiteral<'_>>,
     tcx: &TypeCtx<'m, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
@@ -2706,27 +2873,38 @@ where
     if let Some(annot) = annotation
         && !matches!(annot, crate::ast::Type::Infer { .. })
     {
-        let resolved = check_literal_annotation(shape, annot, tcx.env)?;
-        return Ok(super::LiteralResolution::contextual(
-            super::InternedType::fresh(resolved),
-        ));
+        return check_literal_annotation(shape, annot, span, numeric, tcx);
     }
     // Tier 2 — the expected type, when it is a role-bearing host type
     // (or a `type` alias that inherits a role from one) whose role the
     // literal's shape admits. The `tcx.env` borrow is confined to this
     // block so the recording call can reborrow `tcx`.
-    let tier2_hit = expected_host_type_admits(
-        shape,
-        expected.as_type(),
-        expected.identity_is_canonical(),
-        tcx.env,
-    );
-    if tier2_hit {
-        return Ok(super::LiteralResolution::contextual(expected.clone()));
+    let expected_role =
+        expected_host_role(expected.as_type(), expected.identity_is_canonical(), tcx);
+    if shape == crate::ast::RoleShape::Int
+        && expected_role
+            .as_ref()
+            .is_some_and(|(role, _)| role.shape() == crate::ast::RoleShape::Float)
+    {
+        let mut error = integer_requires_point(span, numeric);
+        if let Some(source) = expected.requirement_source() {
+            error = error.with_secondary_in_file(
+                &source.file,
+                source.span,
+                "a floating-point type is required here",
+            );
+        }
+        return Err(error);
+    }
+    if let Some((role, identity)) = expected_role
+        && shape.admits(role.shape())
+    {
+        return Ok(contextual_literal_resolution(expected.clone(), identity)
+            .with_numeric_value(check_numeric_value(role, span, numeric)?));
     }
     // Neither tier applies — fall back to unrecorded synthesis (tier 3 / 4).
     // The enclosing caller publishes the selected type exactly once.
-    synth_literal_unrecorded(shape, annotation, span, tcx)
+    synth_literal_unrecorded(shape, annotation, span, numeric, tcx)
 }
 
 /// Whether `expected` is a role-bearing host type (or a `type` alias that
@@ -2738,105 +2916,49 @@ where
 /// type's exact `(module, name)` identity through the consumer's imports and
 /// reads only the declaration at that identity. It never searches a growing
 /// candidate set, so unrelated declarations cannot redirect the match.
-fn expected_host_type_admits<P>(
-    shape: crate::ast::RoleShape,
+fn expected_host_role<P>(
     expected: &crate::ast::Type<P>,
     expected_is_canonical: bool,
-    env: &ModuleEnv<'_, P>,
-) -> bool
+    tcx: &TypeCtx<'_, '_, P>,
+) -> Option<(crate::ast::Role, (String, String))>
 where
-    P: crate::pass::resolve::ResolvePhase,
+    P: super::DeclarationPhase,
 {
-    let crate::ast::Type::Path { segments, args, .. } = expected else {
-        return false;
-    };
-    if !args.is_empty() {
-        return false;
-    }
-    // Bare form: match the single segment directly against the role
-    // table, or against a `type` alias that inherits a role from a host
-    // type (`type I32 = provider.I32` — the form a `rehost` materializes).
-    // An alias is always referenced by a single bare name, so the
-    // qualified branch below need not consult `alias_roles`.
-    if segments.len() == 1 {
-        let name = segments[0].as_str();
-        return env
-            .host_env_roles
-            .iter()
-            .any(|(role, n)| *n == name && shape.admits(role.shape()))
-            || env
-                .alias_roles
-                .get(name)
-                .is_some_and(|role| shape.admits(role.shape()));
-    }
-    // Qualified form: resolve the expected type's identity, then read the
-    // role from the host type or visible transparent alias declared at exactly
-    // that identity. Imports owned by the target module are not declarations
-    // in its qualified namespace.
-    let expected_identity = if expected_is_canonical {
-        canonical_nominal_identity(segments)
-    } else {
-        env.nominal_ref_identity(segments)
-    };
-    let Some(expected_identity) = expected_identity else {
-        return false;
-    };
-    env.declared_role_for_nominal_identity(&expected_identity.0, &expected_identity.1)
-        .is_some_and(|role| shape.admits(role.shape()))
+    let bound = tcx.in_scope_type_param_binders();
+    tcx.env.role_type_identity_in(
+        expected,
+        expected_is_canonical,
+        &tcx.binder_alias_ctx(&bound),
+    )
 }
 
-fn canonical_nominal_identity(segments: &[crate::ast::PathSegment]) -> Option<(String, String)> {
-    let (name, module_segments) = segments.split_last()?;
-    if module_segments.is_empty() {
-        return None;
-    }
-    Some((
-        module_segments
-            .iter()
-            .map(crate::ast::PathSegment::as_str)
-            .collect::<Vec<_>>()
-            .join("/"),
-        name.as_str().to_owned(),
-    ))
+fn contextual_literal_resolution<P: crate::ast::Phase>(
+    written: super::InternedType<P>,
+    (module, _): (String, String),
+) -> super::LiteralResolution<P> {
+    super::LiteralResolution::contextual(written).with_runtime_erasure(module == "__comptime__")
 }
 
 pub fn check_literal_annotation<P>(
     shape: crate::ast::RoleShape,
     annot: &crate::ast::Type<P>,
-    env: &ModuleEnv<'_, P>,
-) -> Result<crate::ast::Type<P>, Error>
+    span: Span,
+    numeric: Option<crate::numeric_literal::NumericLiteral<'_>>,
+    tcx: &TypeCtx<'_, '_, P>,
+) -> Result<super::LiteralResolution<P>, Error>
 where
-    P: crate::pass::resolve::ResolvePhase + Clone,
+    P: super::DeclarationPhase + Clone,
 {
-    let crate::ast::Type::Path { segments, args, .. } = annot else {
+    let crate::ast::Type::Path { segments, .. } = annot else {
         return Err(Error::type_(
             annot.span(),
             "a literal's `(Type)` annotation must be a host type name".to_owned(),
         ));
     };
-    if !args.is_empty() {
-        return Err(Error::type_(
-            annot.span(),
-            "a literal's `(Type)` annotation must be a host type name, \
-                      not a parametric type"
-                .to_owned(),
-        ));
-    }
-    // Bare annotations read the lexical role maps. Qualified annotations and
-    // identity-exact annotations inserted by tier 2 read only the declaration
-    // at the resolved identity, never a provider candidate set.
+    // Annotation admission follows the ordinary binder-aware alias path and
+    // reads only its terminal declaration, never a provider candidate set.
     let name = segments.last().map(|s| s.as_str()).unwrap_or_default();
-    let role = if segments.len() == 1 {
-        env.host_env_roles
-            .iter()
-            .find(|(_, n)| *n == name)
-            .map(|(role, _)| *role)
-            .or_else(|| env.alias_roles.get(name).copied())
-    } else {
-        env.nominal_ref_identity(segments)
-            .and_then(|identity| env.declared_role_for_nominal_identity(&identity.0, &identity.1))
-    };
-    let Some(role) = role else {
+    let Some((role, identity)) = expected_host_role(annot, false, tcx) else {
         return Err(Error::type_(
             annot.span(),
             format!(
@@ -2846,6 +2968,12 @@ where
         ));
     };
     if !shape.admits(role.shape()) {
+        if shape == crate::ast::RoleShape::Int && role.shape() == crate::ast::RoleShape::Float {
+            return Err(integer_requires_point(span, numeric).with_secondary(
+                annot.span(),
+                "this annotation selects a floating-point type",
+            ));
+        }
         return Err(Error::type_(
             annot.span(),
             format!(
@@ -2856,11 +2984,14 @@ where
             ),
         ));
     }
-    Ok(annot.clone())
+    Ok(
+        contextual_literal_resolution(super::InternedType::fresh(annot.clone()), identity)
+            .with_numeric_value(check_numeric_value(role, span, numeric)?),
+    )
 }
 
 /// English noun for a literal shape, for diagnostics.
-fn literal_shape_noun(shape: crate::ast::RoleShape) -> &'static str {
+pub(crate) fn literal_shape_noun(shape: crate::ast::RoleShape) -> &'static str {
     match shape {
         crate::ast::RoleShape::Int => "integer",
         crate::ast::RoleShape::Float => "float",
@@ -3423,9 +3554,9 @@ where
 /// `__either__`, `__pair__`, `__fst__`, `__snd__`, `__absurd__`,
 /// and `__if_then_else__`.
 ///
-/// `bool_role` is the consuming module's exact `role(bool)` resolution.
-/// Most entries ignore it; `__if_then_else__` requires a singleton and
-/// returns `Some(Err(...))` when it is missing or ambiguous.
+/// `bool_role` is the consuming module's explicit Boolean default selection.
+/// Most entries ignore it; `__if_then_else__` returns `Some(Err(...))` when
+/// it is missing.
 ///
 /// The outer `Option` distinguishes "name not an intrinsic" (`None`)
 /// from "name is an intrinsic but its scheme can't be built right
@@ -3439,24 +3570,24 @@ pub(crate) fn intrinsic_scheme_resolved<P>(
     name: &str,
     span: Span,
     bool_role: super::RoleResolution<'_>,
-    bool_role_ambiguity: Option<&str>,
 ) -> Option<Result<Synth<P>, Error>>
 where
     P: crate::ast::Phase + Clone,
 {
-    intrinsic_scheme_resolved_observed(name, span, bool_role, bool_role_ambiguity, |_| {})
+    intrinsic_scheme_resolved_observed(name, span, bool_role, None, |_| {})
 }
 
 fn intrinsic_scheme_resolved_observed<'r, P>(
     name: &str,
     span: Span,
     bool_role: super::RoleResolution<'r>,
-    bool_role_ambiguity: Option<&str>,
+    selected_bool_type: Option<crate::ast::Type<P>>,
     mut observe_role: impl FnMut(&'r str),
 ) -> Option<Result<Synth<P>, Error>>
 where
     P: crate::ast::Phase + Clone,
 {
+    let identity_canonical = name == "__if_then_else__" && selected_bool_type.is_some();
     let a = || ty_path::<P>("a", span);
     let b = || ty_path::<P>("b", span);
     let c = || ty_path::<P>("c", span);
@@ -3522,44 +3653,25 @@ where
         ),
         // __if_then_else__ : [A](c: Bool, t: . -> A, e: . -> A) -> A
         //
-        // The unique role-bound intrinsic: `Bool` is the singleton host
-        // type, or singleton role-inheriting alias fallback, carrying
-        // `role(bool)` in the consuming module. A missing or ambiguous
-        // binding leaves no single scheme for the intrinsic.
+        // This intrinsic's Boolean slot uses the consuming module's explicit
+        // selection, including when the intrinsic itself is a first-class value.
         "__if_then_else__" => {
             let bool_name = match bool_role {
                 super::RoleResolution::Unique(name) => name,
                 super::RoleResolution::Missing => {
                     return Some(Err(Error::type_(
                         span,
-                        "no `role(bool)` host type is in unqualified lexical scope; \
+                        "no type is selected as the default boolean type in this module; \
                          `__if_then_else__` requires one",
                     )
                     .with_help(
-                        "declare or selectively import a host type marked `role(bool)`, \
-                         or define a role-inheriting alias in unqualified lexical scope",
-                    )));
-                }
-                super::RoleResolution::Ambiguous { first, second } => {
-                    let candidates = bool_role_ambiguity
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| format!("`{first}`, `{second}`, …"));
-                    return Some(Err(Error::type_(
-                        span,
-                        format!(
-                            "more than one `role(bool)` type is in unqualified lexical scope \
-                             ({candidates}); \
-                             `__if_then_else__` requires exactly one"
-                        ),
-                    )
-                    .with_help(
-                        "leave exactly one `role(bool)` identity in unqualified lexical scope; \
-                         use qualified imports for the others",
+                        "select a Boolean host type or equivalent alias with `default`",
                     )));
                 }
             };
-            let bool_ty =
-                crate::ast::Type::synth_path(vec![bool_name.to_owned()], Vec::new(), span);
+            let bool_ty = selected_bool_type.unwrap_or_else(|| {
+                crate::ast::Type::synth_path(vec![bool_name.to_owned()], Vec::new(), span)
+            });
             observe_role(bool_name);
             let unit_to_a = || ty_func(vec![], a(), span);
             (
@@ -3574,14 +3686,15 @@ where
         }
         _ => return None,
     };
-    Some(Ok(Synth::complete_scheme(
-        crate::ast::Type::synth_scheme_from_signature_params(&params, ret, span),
+    Some(Ok(Synth::complete_scheme_interned(
+        super::InternedType::fresh_with_identity(
+            crate::ast::Type::synth_scheme_from_signature_params(&params, ret, span),
+            identity_canonical,
+        ),
     )))
 }
 
-/// Build an intrinsic scheme from a caller-supplied singleton role table.
-/// Module typing uses [`intrinsic_scheme_resolved`] so ambiguity remains
-/// observable; this entry point serves callers that already selected roles.
+/// Build an intrinsic scheme from a caller-supplied selected role table.
 pub fn intrinsic_scheme<P>(
     name: &str,
     span: Span,
@@ -3595,7 +3708,7 @@ where
         .copied()
         .map(super::RoleResolution::Unique)
         .unwrap_or(super::RoleResolution::Missing);
-    intrinsic_scheme_resolved(name, span, bool_role, None)
+    intrinsic_scheme_resolved(name, span, bool_role)
 }
 
 #[cfg(test)]

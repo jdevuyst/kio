@@ -1,7 +1,7 @@
 module host/m;
 
 import elab/control(if);
-import host(Bool, bar, foo);
+import host(bar, default Bool, foo);
 
 equiv if_true_takes_then_arm() {
   if! .t { foo() } else { bar() };

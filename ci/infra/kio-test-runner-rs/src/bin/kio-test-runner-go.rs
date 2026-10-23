@@ -93,8 +93,8 @@ use host_api::{
 use opt_profile::OptProfile;
 use protocol::{
     ExportDriver, HostFnBinding, HostFnBodyKind, HostRoleRef, HostTypeBinding, HostTypeFixture,
-    HostTypeIdentity, ProtocolContract, ProtocolExecution, RoleFixture, RunnerProtocol,
-    WIDE_CALLABLE_SLOT_COUNT,
+    HostTypeIdentity, NUMERIC_LITERAL_SAMPLES, NumericLiteralExpected, ProtocolContract,
+    ProtocolExecution, RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
 };
 use runner::{EXIT_RUNTIME_FAILURE, EXIT_USAGE, TestRunner};
 use runner_cache_env::RunnerCacheConfig;
@@ -1326,6 +1326,9 @@ fn build_driver(host: &HostApi, protocol: RunnerProtocol, ns: &str, qual: &str) 
     out.push_str("\t\"bufio\"\n");
     out.push_str("\t\"fmt\"\n");
     out.push_str("\t\"math/big\"\n");
+    if protocol == RunnerProtocol::NumericLiteralValues {
+        out.push_str("\t\"math\"\n");
+    }
     out.push_str("\t\"os\"\n");
     out.push_str("\t\"strconv\"\n");
     out.push_str("\t\"strings\"\n");
@@ -1685,6 +1688,35 @@ fn render_export_driver(
                  \tif productCalls != 2 || sumCalls != 2 {{ panic(\"callback count changed\") }}\n\
                  \tfmt.Println(\"callable slots ok\")\n"
             )
+        }
+        ExportDriver::NumericLiteralValues => {
+            let main = module("main");
+            let mut script = String::new();
+            for (leaf, expected) in NUMERIC_LITERAL_SAMPLES {
+                let projected = host_api::host_name_core(leaf);
+                let member = format!("{}{}", projected[..1].to_ascii_uppercase(), &projected[1..]);
+                let call = format!("{main}.{member}()");
+                let check = match expected {
+                    NumericLiteralExpected::Integer(
+                        RoleFixture::I128 | RoleFixture::U128,
+                        value,
+                    ) => format!(
+                        "{{ want, ok := new(big.Int).SetString(\"{value}\", 10); if !ok || {call}.Cmp(want) != 0 {{ panic(\"{leaf}\") }} }}"
+                    ),
+                    NumericLiteralExpected::Integer(_, value) => {
+                        format!("if {call} != {value} {{ panic(\"{leaf}\") }}")
+                    }
+                    NumericLiteralExpected::F32(bits) => format!(
+                        "if math.Float32bits({call}) != 0x{bits:08x} {{ panic(\"{leaf}\") }}"
+                    ),
+                    NumericLiteralExpected::F64(bits) => format!(
+                        "if math.Float64bits({call}) != 0x{bits:016x} {{ panic(\"{leaf}\") }}"
+                    ),
+                };
+                script.push_str(&format!("\t{check}\n"));
+            }
+            script.push_str("\tfmt.Println(\"numeric literals ok\")\n");
+            script
         }
         ExportDriver::ScalarRoundtrip => {
             let main = module("main");

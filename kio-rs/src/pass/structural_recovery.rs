@@ -513,11 +513,13 @@ impl<'a> Recoverer<'a> {
             },
             Expr::IntLit {
                 occurrence: _,
+                diagnostic: _,
                 digits,
                 annotation,
                 meta,
             } => Expr::IntLit {
                 occurrence: Default::default(),
+                diagnostic: Default::default(),
                 digits: digits.clone(),
                 annotation: convert_type::<Prime, Enriched>(annotation),
                 meta: convert_meta(meta),
@@ -2387,7 +2389,7 @@ mod tests {
 
     #[test]
     fn recovery_preserves_ordinary_comptime_spelled_type_parameters() {
-        let recovered = ["A", "Comptime_bool", "Comptime_str"].map(|name| {
+        for name in ["A", "Comptime_bool", "Comptime_str"] {
             let module = recover_one(
                 "x/main",
                 &format!(
@@ -2402,29 +2404,36 @@ mod tests {
             let Expr::EnrichedMatch { result_ty, .. } = fn_body(&module, "pick") else {
                 panic!("the intrinsic must recover as a match");
             };
-            match result_ty {
-                Type::Path { segments, args, .. } if args.is_empty() => Some(segments.join("/")),
-                _ => None,
-            }
-        });
-        assert_eq!(
-            recovered,
-            ["A", "Comptime_bool", "Comptime_str"].map(|name| Some(name.to_owned())),
-            "ordinary type parameters retain their resolved meaning regardless of spelling"
-        );
+            let definition = module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(definition) if definition.name == "pick" => Some(definition),
+                    _ => None,
+                })
+                .expect("pick function");
+            let crate::ast::SignatureParam::Type(binder) = &definition.sig.params[0] else {
+                panic!("pick retains its type binder");
+            };
+            assert!(
+                matches!(result_ty, Type::Path { segments, args, .. }
+                if args.is_empty() && segments.len() == 1 && segments[0].as_str() == binder.name),
+                "ordinary type parameters retain their binder identity regardless of spelling: {result_ty:?}"
+            );
+        }
     }
 
     #[test]
-    fn recovery_canonicalizes_float_emission_without_changing_prime_literals() {
+    fn recovery_preserves_checked_float_values() {
         let spellings = [
-            ("2E+3", "2e3"),
-            ("2e+3", "2e3"),
-            ("2E-3", "2e-3"),
-            ("-1.5E+2", "-1.5e2"),
-            ("1.5e-2", "1.5e-2"),
+            ("2.0E+3", "2000.0"),
+            ("2.0e+3", "2000.0"),
+            ("2.0E-3", "0.002"),
+            ("-1.5E+2", "-150.0"),
+            ("1.5e-2", "0.015"),
             ("1.5", "1.5"),
         ];
-        let recovered = spellings.map(|(source, _)| {
+        let recovered = spellings.map(|(source, canonical)| {
             let parsed = parse(&format!(
                 "module x; host type Number role(f64); fn f() -> Number {{ {source}(Number) }}"
             ))
@@ -2436,16 +2445,20 @@ mod tests {
             package.resolve_imports().expect("imports");
             package.check_in_body_resolution().expect("resolution");
             let prime = crate::prime::typer::check_package(&package).expect("Prime checking");
+            let Item::FnDef(input) = &package.module("x").unwrap().module.items[1] else {
+                panic!("function follows host type");
+            };
+            assert!(matches!(&input.body, Expr::FloatLit { digits, .. } if digits == source));
             let Item::FnDef(def) = &prime.module("x").unwrap().module().items[1] else {
                 panic!("function follows host type");
             };
-            assert!(matches!(&def.body, Expr::FloatLit { digits, .. } if digits == source));
+            assert!(matches!(&def.body, Expr::FloatLit { digits, .. } if digits == canonical));
             let enriched = recover_package(&prime);
             let Expr::FloatLit { digits, .. } = fn_body(&enriched.module("x").unwrap().module, "f")
             else {
                 panic!("recovered float literal");
             };
-            assert!(matches!(&def.body, Expr::FloatLit { digits, .. } if digits == source));
+            assert!(matches!(&def.body, Expr::FloatLit { digits, .. } if digits == canonical));
             digits.clone()
         });
         assert_eq!(
@@ -2513,7 +2526,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              pure fn factory() -> . -> . { .() { () } } \
              fn conditional(c: Bool) -> . { \
                __if_then_else__(., c, factory(), factory()) \
@@ -2542,7 +2555,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              host fn callback() -> .; \
              pure fn factory(f: . -> .) -> . -> . { f(); .() { () } } \
              fn conditional(c: Bool) -> . { \
@@ -2568,7 +2581,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              pure fn factory() -> . -> . { .() { () } } \
              fn conditional(c: Bool, factory: . -> (. -> .)) -> . { \
                __if_then_else__(., c, factory(), factory()) \
@@ -2780,7 +2793,7 @@ mod tests {
         let m = recover_one(
             "main",
             "module main; import control(if); \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              fn choose(c: Bool) -> . { if! c { () } else { () } }",
             None,
         );
@@ -2805,7 +2818,7 @@ mod tests {
         let m = recover_one(
             "main",
             "module main; import __intrinsics__; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              host fn condition() -> Bool; \
              host fn then_factory() -> . -> .; \
              host fn else_factory() -> . -> .; \
@@ -2848,7 +2861,7 @@ mod tests {
         let m = recover_one(
             "main",
             "module main; import __intrinsics__; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              host fn condition() -> Bool; \
              host fn then_factory() -> . -> .; \
              fn choose(otherwise: . -> .) -> . { \
@@ -3071,7 +3084,7 @@ mod tests {
             "main",
             "module main; \
              import __intrinsics__; \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              fn pick(c: Bool, t: . -> ., e: . -> .) -> . { \
                __if_then_else__(., c, t, e) \
              }",

@@ -175,7 +175,7 @@ case ._1:
 
 precondition(package.main.wideSignedMin().raw == Int128.min)
 precondition(package.main.wideUnsignedMax().raw == UInt128.max)
-precondition(package.main.floatFromInteger().raw == 16_777_217)
+precondition(package.main.floatRounded().raw.bitPattern == Double(Float(bitPattern: 0x4b80_0000)).bitPattern)
 precondition(package.main.floatLiteral().raw == 1.25)
 precondition(package.main.flagLiteral().raw)
 

@@ -1,0 +1,5 @@
+module main;
+
+import __comptime__;
+
+pure fn late(value: .)[A](ct: __Comptime__)(tail: A) -> __Type__ { __type_unit__(ct) }

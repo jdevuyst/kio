@@ -1,0 +1,19 @@
+module testapi/main;
+
+import testapi(String, default Int);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+literal ten = 0010;
+
+type Number = Int;
+
+fn show(value: Int) { print(int_to_string(value)); print("\n"(String)) }
+
+pub fn main() {
+  let decimal = ten;
+  show(decimal);
+  show(-0(Number));
+  show(-2147483648);
+  show(2147483647)
+}

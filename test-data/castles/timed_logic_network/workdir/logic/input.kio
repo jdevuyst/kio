@@ -6,7 +6,7 @@ import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import logic/model as model;
 import logic/queue as queue;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

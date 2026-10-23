@@ -6,7 +6,7 @@ import testapi/arith as arith;
 import testapi/iter as iter;
 import testapi/text as text;
 
-pub type Bool = host.Bool;
+default pub type Bool = host.Bool;
 
 pub type I32 = host.I32;
 

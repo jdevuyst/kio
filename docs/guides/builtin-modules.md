@@ -9,6 +9,8 @@ not a package or module starter.
 
 Import and signature blocks are reference fragments and are marked `{ignore}`. Worked examples use standalone checked fences. The first paragraph of each entry is the concise summary used by editor hover; the following text is the long-form reference.
 
+See [literal defaults](typechecking.md#literal-types-and-module-local-defaults) for module-local selection, scope and alias rules.
+
 ## `__intrinsics__`
 
 Compiler-provided module containing the Kio' core value intrinsics.
@@ -85,9 +87,9 @@ The value must have exactly the product type `A & B`; the result is its right co
 __if_then_else__ : [A](Bool & (. -> A) & (. -> A)) -> A
 ```
 
-Branches on the single in-scope `role(bool)` identity. The true and false branches are thunks so only the selected branch is evaluated.
+Branches on the module's explicit Boolean default. The true and false branches are thunks so only the selected branch is evaluated.
 
-The condition uses the unique selected `role(bool)` type identity from unqualified lexical scope. Direct host types are selected when present; aliases form the fallback pool otherwise, with repeated paths to one declaration counted once. A qualified module import alone does not add its members. Both branches are unit-domain functions returning the same `A`; the intrinsic calls only the chosen thunk. With no Boolean-role identity, more than one selected identity, a non-boolean condition, or disagreeing branch results, typechecking fails.
+The selected type comes from a written `default` on a local host type, type alias or named type import. Other Boolean-role types can remain in scope, but annotating the condition at one of them does not override the selection. With no Boolean default the intrinsic has no type scheme; distinct conflicting defaults are rejected even when unused. Both branches are unit-domain functions returning the same `A`; only the chosen thunk is invoked.
 
 #### `__absurd__`
 
@@ -185,7 +187,7 @@ Diagnostic text is the only message payload accepted by `__elab_error__` and `__
 type Comptime_bool
 ```
 
-Compile-time boolean type with `role(bool)`.
+Compile-time boolean type with `role(bool)`. The fixed `__comptime__` block import selects it as the importing module's Boolean default.
 
 The literals `.t` and `.f` form the compile-time predicate result used by reflection helpers and `if`/`else`. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type.
 
@@ -195,7 +197,7 @@ The literals `.t` and `.f` form the compile-time predicate result used by reflec
 type Comptime_str
 ```
 
-Compile-time string type with `role(str)`.
+Compile-time string type with `role(str)`. The fixed `__comptime__` block import selects it as the importing module's string default. These builtin selections participate in the ordinary eager conflict checks; another distinct default in either category is not an override.
 
 String literals in an elab implementation can inhabit this compile-time role string and flow into diagnostic text. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code.
 
@@ -881,7 +883,7 @@ __intrinsic_if_then_else__ : (__Comptime__ & __Type__ & __Checked_term__ & (. ->
 
 Constructs a checked term that calls the reflected role-boolean conditional intrinsic.
 
-Constructs a checked runtime `__if_then_else__` call. The condition must use the caller's single `role(bool)` identity and both zero-argument callbacks must return `result_type`. Missing or ambiguous Boolean-role information, or a branch mismatch, makes construction fail.
+Constructs a checked runtime `__if_then_else__` call. The condition must use the caller's explicitly selected Boolean default and both zero-argument callbacks must return `result_type`. A missing selection or branch mismatch makes construction fail; distinct conflicting defaults are rejected before use.
 
 ### Fill Relations
 

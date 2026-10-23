@@ -6,9 +6,9 @@ import elab/control(if);
 import other as other;
 import provider as provider;
 
-type First = provider.Bool;
+default type First = provider.Bool;
 
-type Second = provider.Bool;
+default type Second = provider.Bool;
 
 fn surface(condition: First) -> Second {
   if! condition { .t(Second) } else { .f(Second) }

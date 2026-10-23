@@ -38,7 +38,7 @@ or export the tree for browsing and searching with local tools. Run
   for tuples, labels, rows, branching, recursion, and imported elabs;
   raw intrinsics belong in investigations of the explicit core.
 - Default to qualified imports (`import path/to/module as p;`) and calls
-  through the alias. Selective imports are useful for elabs, operators,
+  through the alias. Selective imports are useful for elabs, operators, literal defaults,
   and names intentionally forming the module's local vocabulary. See
   [the language tutorial](docs/tutorials/language.md) and
   [UFCS spelling choices](docs/guides/ufcs.md#choosing-a-spelling).
@@ -49,6 +49,12 @@ or export the tree for browsing and searching with local tools. Run
   around a reverse-spliced call's own final labelled child.
 - Export deliberately: keep helpers private, adding `pub` when another module
   or a host-facing package surface needs the item.
+- Keep [literal roles and defaults](docs/guides/typechecking.md#literal-types-and-module-local-defaults)
+  separate. `role` admits a literal category; a written `default` selects a
+  module-local fallback and the Boolean intrinsic's condition type. Ordinary
+  imports do not inherit it. Prefer an expected or explicit type when that
+  already expresses the intent; neither turns integer syntax into a float.
+  Use a decimal point for floats, including exponent forms such as `2.0e3`.
 - Read a library's complete [operator pattern](docs/guides/operators.md)
   before composing it: `_`, `__`, and `___` have different operand permissions,
   and a final symbol completes an atom. Use parentheses where chain claims

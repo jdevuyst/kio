@@ -2,7 +2,7 @@ module inventory_cycle_counter/audit;
 
 import elab/control(if);
 import inventory_cycle_counter/model(Bin, {expected}, {observed});
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 
 pub fn delta(bin: Bin) -> I32 { arith.sub_i32(bin.?{observed}, bin.?{expected}) }

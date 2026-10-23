@@ -167,6 +167,21 @@ fn collect_names(e: &Expr<Prime>, out: &mut HashSet<String>) {
 
 fn canonicalize_expr(e: Expr<Prime>, names: &mut FreshNames) -> Expr<Prime> {
     match e {
+        Expr::IntLit {
+            occurrence,
+            diagnostic,
+            digits,
+            annotation,
+            meta,
+        } => Expr::IntLit {
+            occurrence,
+            diagnostic,
+            digits: crate::numeric_literal::Integer::parse(&digits)
+                .expect("Prime checking established a representable integer literal")
+                .decimal(),
+            annotation,
+            meta,
+        },
         Expr::FnExpr {
             occurrence: _,
             sig,

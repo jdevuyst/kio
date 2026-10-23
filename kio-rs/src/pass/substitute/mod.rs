@@ -1033,11 +1033,9 @@ fn proof_param_name(d: &FnDef<Lowered>) -> Option<&str> {
         match param {
             crate::ast::SignatureParam::Type(_) => {}
             crate::ast::SignatureParam::Value(value) => {
-                return value
-                    .ty
-                    .as_ref()
-                    .is_some_and(type_is_comptime_proof)
-                    .then_some(value.name.as_str());
+                if value.ty.as_ref().is_some_and(type_is_comptime_proof) {
+                    return Some(value.name.as_str());
+                }
             }
         }
     }
@@ -1213,7 +1211,11 @@ impl<'a> SubstituteVisitor<'a> {
 
     fn rewrite_prime_import(&self, u: &Import) -> Option<Import> {
         match &u.kind {
-            ImportKind::Comptime => None,
+            ImportKind::Comptime => matches!(
+                self.comptime_lowering_mode,
+                ComptimeLoweringMode::EvalPreserve
+            )
+            .then(|| u.clone()),
             ImportKind::Selective { items, .. } => {
                 let kept: Vec<ImportItem> = items
                     .iter()
@@ -1222,6 +1224,12 @@ impl<'a> SubstituteVisitor<'a> {
                         ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => true,
                     })
                     .cloned()
+                    .map(|mut item| {
+                        if let ImportItem::Name { default_span, .. } = &mut item {
+                            self.erase_runtime_default(default_span);
+                        }
+                        item
+                    })
                     .collect();
                 if kept.is_empty() {
                     return None;
@@ -1234,6 +1242,23 @@ impl<'a> SubstituteVisitor<'a> {
             }
             _ => Some(u.clone()),
         }
+    }
+
+    fn erase_runtime_default(&self, selection: &mut Option<Span>) {
+        if matches!(
+            self.comptime_lowering_mode,
+            ComptimeLoweringMode::RuntimeErase
+        ) && selection
+            .is_some_and(|span| self.elabs.default_selection_erases(&self.module_path, span))
+        {
+            *selection = None;
+        }
+    }
+
+    fn numeric_value(&self, expr: &Expr<Lowered>) -> Option<&str> {
+        self.semantic_occurrence(expr)
+            .and_then(|id| self.elabs.literal_resolution_for(&self.module_path, id))
+            .and_then(|(_, _, value)| value.as_deref())
     }
 
     fn rewrite_literal(
@@ -1402,7 +1427,20 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
                 _ => self.walk_item(item),
             };
             self.type_binders.truncate(binder_mark);
-            items.extend(walked?);
+            for mut item in walked? {
+                match &mut item {
+                    Item::TypeAlias(alias) => self.erase_runtime_default(&mut alias.default_span),
+                    Item::TypeRecGroup(group) => {
+                        for member in &mut group.members {
+                            if let crate::ast::TypeRecMember::TypeAlias(alias) = member {
+                                self.erase_runtime_default(&mut alias.default_span);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                items.push(item);
+            }
         }
         let mut imports: Vec<Import> = module
             .imports
@@ -1474,6 +1512,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
                         })
                         .collect();
                     let alias = Item::TypeAlias(crate::ast::TypeAlias {
+                        default_span: None,
                         vis: crate::ast::Visibility::Private,
                         name: plan.alias,
                         name_span: plan.span,
@@ -1531,6 +1570,11 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             .then(|| proof_param_name(d).map(str::to_owned))
             .flatten();
             let body = if let Some(proof_name) = proof_name {
+                assert!(
+                    sig.value_params().any(|param| param.name == proof_name
+                        && matches!(param.ty, Some(Type::Bottom { .. }))),
+                    "a direct compile-time proof parameter must erase to Bottom"
+                );
                 Expr::synth_call(
                     Expr::Path {
                         occurrence: Default::default(),
@@ -1766,10 +1810,8 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
     ) -> Result<Type<PrePrime>, Error> {
         // The typer records the resolved nominal identity for every typed
         // literal, including one with an explicit source annotation. Use that
-        // identity at the substitution boundary so explicit and inferred occurrences
-        // of the same host type cannot retain different spellings in the core
-        // term. The type requalifier supplies a valid module-local spelling
-        // when this term is serialized.
+        // identity's checked lexical spelling at the substitution boundary so
+        // explicit and inferred occurrences retain the same nominal type.
         if let Some(resolved) = self.resolved_literal(occurrence)? {
             return Ok(resolved);
         }
@@ -1782,8 +1824,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         // resolution, but a bare literal can still reach here from an
         // *untyped* Lowered module — a compile-time-eval term, an
         // elaborator body, an emitter test fixture. Resolve the
-        // unambiguous ones the same way the typer's tier 3 does: the
-        // unique role-admitted host type from the module env.
+        // explicitly selected defaults the same way the typer does.
         if let Some(resolved) = self.resolved_literal_by_role(shape, span)? {
             return Ok(resolved);
         }
@@ -1801,15 +1842,15 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             ComptimeLoweringMode::EvalPreserve => Ok(crate::ast::residual_literal_type_hole(span)),
             ComptimeLoweringMode::RuntimeErase => unreachable!(
                 "literal at {span:?} reached the Lowered → PrePrime substitution with no \
-                 recorded resolution, no `(Type)` annotation, and no unique role-admitted \
-                 host type in scope; the typer must pin every literal's host type before \
+                 recorded resolution, no `(Type)` annotation, and no explicit default \
+                 in scope; the typer must pin every literal's host type before \
                  substitution"
             ),
         }
     }
 
-    /// Resolve a bare literal's host type from the enclosing module's
-    /// env (tier 3): reuse [`unique_role_admitted_type`] so the fill-in
+    /// Resolve a bare literal's selected default from the enclosing module's
+    /// env: reuse [`unique_role_admitted_type`] so the fill-in
     /// matches the typer exactly. Consulted only when the elaboration
     /// table recorded nothing and the literal carried no annotation, so
     /// it costs an env build only on the untyped-module path, never on
@@ -1864,9 +1905,20 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
     ) -> Result<Option<Type<PrePrime>>, Error> {
         let recorded = occurrence
             .and_then(|id| self.elabs.literal_resolution_for(&self.module_path, id))
-            .cloned();
+            .map(|(ty, erases, _)| (ty.clone(), *erases));
         match recorded {
-            Some(ty) => Ok(Some(self.walk_recorded_type(&ty)?)),
+            Some((ty, erases))
+                if erases
+                    && matches!(
+                        self.comptime_lowering_mode,
+                        ComptimeLoweringMode::RuntimeErase
+                    ) =>
+            {
+                Ok(Some(Type::Unit {
+                    meta: Meta::new(ty.resolved.span()),
+                }))
+            }
+            Some((ty, _)) => Ok(Some(self.walk_recorded_type(&ty)?)),
             None => Ok(None),
         }
     }
@@ -1898,6 +1950,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
     fn visit_expr_int_lit(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
         let Expr::IntLit {
             occurrence: _,
+            diagnostic: _,
             digits,
             annotation,
             meta,
@@ -1905,6 +1958,10 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         else {
             unreachable!()
         };
+        let digits = self.numeric_value(e).map(str::to_owned).unwrap_or_else(|| {
+            crate::numeric_literal::Integer::parse(digits)
+                .map_or_else(|| digits.clone(), crate::numeric_literal::Integer::decimal)
+        });
         self.rewrite_literal(
             annotation,
             crate::ast::RoleShape::Int,
@@ -1912,7 +1969,8 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             self.semantic_occurrence(e),
             |annotation, meta| Expr::IntLit {
                 occurrence: Default::default(),
-                digits: digits.clone(),
+                diagnostic: Default::default(),
+                digits,
                 annotation,
                 meta,
             },
@@ -1929,6 +1987,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         else {
             unreachable!()
         };
+        let digits = self.numeric_value(e).unwrap_or(digits).to_owned();
         self.rewrite_literal(
             annotation,
             crate::ast::RoleShape::Float,
@@ -1936,7 +1995,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             self.semantic_occurrence(e),
             |annotation, meta| Expr::FloatLit {
                 occurrence: Default::default(),
-                digits: digits.clone(),
+                digits,
                 annotation,
                 meta,
             },
@@ -3449,6 +3508,7 @@ mod tests {
             [alias] if alias.alias == "Kioq1" && alias.params[0].name == "Qp0_s1"
         ));
         module.items.push(Item::TypeAlias(crate::ast::TypeAlias {
+            default_span: None,
             vis: crate::ast::Visibility::Private,
             name: "Uses_generated".to_owned(),
             name_span: span,
@@ -3709,9 +3769,9 @@ mod tests {
         let module = &package.module("x/main").expect("module present").module;
         let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
             .expect("ModuleEnv::build");
-        env.host_env_roles
+        env.default_candidates
             .iter()
-            .map(|(role, name)| (*role, (*name).to_owned()))
+            .map(|candidate| (candidate.role, candidate.visible_name.to_owned()))
             .collect()
     }
 
@@ -4034,6 +4094,237 @@ mod tests {
     }
 
     #[test]
+    fn numeric_literal_publication_keeps_lexical_aliases_and_canonical_values() {
+        let sources = [
+            ("other", "module other; pub host type Float role(f64);"),
+            (
+                "quoted",
+                "module quoted; import __comptime__; pure fn preserve_impl(ct: __Comptime__, fills: __Fill_ctx__, typ: __Type__, value: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } pub elab preserve : [A] A -> A { impl(fills) preserve_impl; };",
+            ),
+            (
+                "numbers",
+                "module numbers; import other as numbers; pub host type Float role(f64); pub type Identity[A] = A; pub pure fn value() -> Float { 42.0 }",
+            ),
+            (
+                "main",
+                "module main; import numbers as n; import other as numbers; import quoted(preserve); default type Float = n.Identity(n.Float); pure fn local() -> Float { let value = 42.0; value } pure fn id[A](value: A) -> A { value } equiv selected() { local(); n.value(); 42.0(n.Float); id(42.0(n.Float)); preserve!(n.Float, 42.0(n.Float)) }",
+            ),
+        ];
+        let parsed = sources
+            .into_iter()
+            .map(|(path, source)| (module_file_path(path), parse(source).expect("parse")))
+            .collect();
+        let (modules, _) = FullPipeline::lower_package(parsed, None).expect("lower");
+        let package = Package::build(Path::new(""), modules, None).expect("package");
+        package.resolve_imports().expect("imports");
+        let completed = check_package_preserving_normalization(&package)
+            .expect("check")
+            .complete()
+            .expect("validate ordinary runtime artifact");
+        let source = completed.into_source();
+        let checked = source.checked();
+        let artifact = source.eval_artifact().expect("evaluation artifact");
+        let ctx = crate::normalization::AuthenticatedEvalCtx::for_module(
+            artifact
+                .prepare_module("main")
+                .expect("main evaluation scope"),
+        );
+        let module = &checked
+            .package()
+            .module("main")
+            .expect("main source")
+            .module;
+        let equiv = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Equiv(equiv, _) => Some(equiv),
+                _ => None,
+            })
+            .expect("equiv");
+        for term in &equiv.terms {
+            let root = substitute_expr_for_eval(
+                &term.body,
+                checked.elaborations(),
+                "main",
+                Some(checked.package()),
+                Some(module),
+            );
+            let value = crate::normalization::eval_authenticated(
+                &root,
+                &crate::normalization::Env::new(),
+                &ctx,
+            );
+            assert!(
+                matches!(value, crate::normalization::Value::FloatAtom(ref digits, Some(ref identity))
+                    if digits == "42.0" && identity == "numbers.Float"),
+                "literal spelling changed its nominal identity: {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn numeric_literal_publication_shared_spans_keep_distinct_binding_targets() {
+        use crate::pass::typecheck_core::{InternedType, ModuleEnv, TypeCtx};
+
+        let sources = [
+            (
+                "provider",
+                "module provider; pub host type External role(f64);",
+            ),
+            ("other", "module other; pub host type External role(f64);"),
+            (
+                "main",
+                "module main; import provider(External); import other as provider; host type First role(f64); host type Second role(f32);",
+            ),
+        ];
+        let parsed = sources
+            .into_iter()
+            .map(|(path, source)| (module_file_path(path), parse(source).expect("parse")))
+            .collect();
+        let (modules, _) = FullPipeline::lower_package(parsed, None).expect("lower");
+        let package = Package::build(Path::new(""), modules, None).expect("package");
+        package.resolve_imports().expect("imports");
+        let module = &package.module("main").expect("main").module;
+        let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
+        let mut elaborations = Elaborations::new();
+        let mut tcx = TypeCtx::new(&env, &mut elaborations);
+        let span = Span::new(0, 1);
+        for name in ["First", "Second", "External"] {
+            tcx.push_type_param(name, span);
+        }
+        let site = crate::ast::ExpressionSite {
+            id: crate::ast::ExpressionOccurrence::fresh().key(),
+            span,
+        };
+        let mut local_names = Vec::new();
+        for name in ["First", "Second"] {
+            let resolved = InternedType::fresh_canonical(Type::synth_path(
+                vec!["main".to_owned(), name.to_owned()],
+                Vec::new(),
+                span,
+            ));
+            let (annotation, imports, aliases) =
+                crate::pass::typecheck_full::prepare_literal_annotation(site, &resolved, &tcx);
+            assert!(imports.is_empty());
+            let [alias] = aliases.as_slice() else {
+                panic!("shadowed local nominal needs one ordinary alias")
+            };
+            assert_eq!(alias.nominal, name);
+            assert!(alias.params.is_empty());
+            assert!(!annotation.identity_is_canonical());
+            assert_path_type(annotation.as_type(), &alias.alias);
+            local_names.push(alias.alias.clone());
+        }
+        assert_ne!(local_names[0], local_names[1]);
+        let resolved = InternedType::fresh_canonical(Type::synth_path(
+            vec!["provider".to_owned(), "External".to_owned()],
+            Vec::new(),
+            span,
+        ));
+        let (annotation, imports, aliases) =
+            crate::pass::typecheck_full::prepare_literal_annotation(site, &resolved, &tcx);
+        assert!(aliases.is_empty());
+        let [import] = imports.as_slice() else {
+            panic!("shadowed selective import needs one explicit module dependency")
+        };
+        assert_eq!(import.module_path, "provider");
+        assert_ne!(import.alias, "provider");
+        let Type::Path { segments, .. } = annotation.as_type() else {
+            panic!("nominal annotation")
+        };
+        assert_eq!(segments[0].as_str(), import.alias);
+        assert_eq!(segments[1].as_str(), "External");
+    }
+
+    #[test]
+    fn numeric_literal_publication_bindings_follow_retained_owner_commit() {
+        use crate::pass::typecheck_core::{ModuleEnv, TypeCtx, Typer};
+        use crate::pass::typecheck_full::LoweredTyper;
+
+        let module = lowered_one(
+            "main",
+            "module main; default host type Float role(f64); fn consume[T](value: T, later: .) -> . { () } fn good() -> . { consume(42.0, ()) } fn bad() -> . { consume(42.0, 0(Float)) }",
+        );
+        let package = Package::build(
+            Path::new(""),
+            vec![(module_file_path("main"), module)],
+            None,
+        )
+        .expect("package");
+        let package = crate::pass::alpha_normalize::normalize_package(&package)
+            .into_parts()
+            .0;
+        let module = &package.module("main").expect("main").module;
+        let env = ModuleEnv::build(module, None, None, Some(&package)).expect("environment");
+        for (name, succeeds) in [("good", true), ("bad", false)] {
+            let (index, def) = module
+                .items
+                .iter()
+                .enumerate()
+                .find_map(|(index, item)| match item {
+                    Item::FnDef(def) if def.name == name => Some((index, def)),
+                    _ => None,
+                })
+                .expect("witness function");
+            let mut elaborations = Elaborations::new();
+            let mut tcx = TypeCtx::new(&env, &mut elaborations).at_item(index);
+            tcx.push_type_param("Float", def.meta.span);
+            let result = <LoweredTyper as Typer<Lowered>>::synth_expr(&def.body, &mut tcx);
+            assert_eq!(result.is_ok(), succeeds, "{name}: {:?}", result.err());
+            let aliases = tcx.elaborations.generated_type_aliases_for("main");
+            assert_eq!(aliases.len(), usize::from(succeeds), "{name} publication");
+            if succeeds {
+                assert_eq!(aliases[0].nominal, "Float");
+            }
+            let Expr::Call { args, .. } = &def.body else {
+                panic!("call witness")
+            };
+            let CallArg::Value(literal) = &args[0] else {
+                panic!("literal argument")
+            };
+            let annotation = tcx
+                .elaborations
+                .literal_resolution_for("main", literal.site().id);
+            assert_eq!(annotation.is_some(), succeeds, "{name} literal publication");
+            if let Some((annotation, _, _)) = annotation {
+                assert!(!annotation.identity_canonical);
+                assert_path_type(&annotation.resolved, &aliases[0].alias);
+            }
+        }
+    }
+
+    #[test]
+    fn numeric_literal_publication_reuses_existing_spellings_without_module_scans() {
+        for count in [16, 64] {
+            let mut source = String::from(
+                "module numbers; host type Float role(f64); default type Selected = Float;",
+            );
+            for index in 0..count {
+                source.push_str(&format!(
+                    "fn value{index}() -> Float {{ let value = 42.0; value }}"
+                ));
+            }
+            let module = lowered_one("numbers", &source);
+            let package = Package::build(
+                Path::new(""),
+                vec![(module_file_path("numbers"), module)],
+                None,
+            )
+            .expect("package");
+            let before =
+                crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test();
+            check_package_preserving_normalization(&package).expect("check numeric declarations");
+            assert_eq!(
+                crate::pass::typecheck_core::PrimeTypeRequalifier::initialization_count_for_test()
+                    - before,
+                0,
+                "{count} ordinary literal annotations need no module-wide requalifier"
+            );
+        }
+    }
+
+    #[test]
     fn recorded_literal_identity_canonicalizes_explicit_annotation() {
         let span = Span::new(5, 6);
         let occurrence = crate::ast::ExpressionOccurrence::fresh();
@@ -4046,6 +4337,8 @@ mod tests {
                 Vec::new(),
                 span,
             )),
+            false,
+            None,
         );
         let mut visitor = SubstituteVisitor {
             elabs: &elabs,
@@ -4060,6 +4353,7 @@ mod tests {
         };
         let expr = Expr::IntLit {
             occurrence,
+            diagnostic: Default::default(),
             digits: "1".to_owned(),
             annotation: Some(Type::<Lowered>::synth_path(
                 vec!["I32".to_owned()],
@@ -4108,6 +4402,36 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "prime")]
+    #[test]
+    fn runtime_default_selections_follow_comptime_erasure_and_reparse() {
+        let source = "module main; import __comptime__; default host type Int role(i64); \
+            type Identity[A] = A; default type Flag = Identity(Comptime_bool); \
+            default type Text = Comptime_str; \
+            fn value() -> . { let flag = .t; let text = \"hello\"; let number = 42; () }";
+        let prime = substitute_one("main", source);
+        let emitted = crate::backends::kio_prime::emit_module_for_test(&prime);
+        assert!(
+            emitted.contains("default host type Int role(i64)"),
+            "{emitted}"
+        );
+        assert!(!emitted.contains("default type"), "{emitted}");
+        assert!(!emitted.contains("__comptime__"), "{emitted}");
+        let reparsed = parse(&emitted).expect("runtime default syntax reparses");
+        let (modules, _) = crate::prime::pipeline::PrimePipeline::lower_package(
+            vec![(module_file_path("main"), reparsed)],
+            None,
+        )
+        .expect("runtime defaults remain Prime-shaped");
+        let fresh = Package::build(Path::new(""), modules, None).expect("fresh package");
+        fresh.resolve_imports().expect("fresh imports");
+        fresh
+            .check_binding_origins()
+            .expect("fresh binding origins");
+        fresh.check_in_body_resolution().expect("fresh references");
+        crate::prime::pipeline::PrimePipeline::typecheck(&fresh).expect("fresh Prime validation");
+    }
+
     #[test]
     fn user_bindings_named_like_comptime_roles_do_not_runtime_erase() {
         let nominal = substitute_one(
@@ -4129,10 +4453,13 @@ mod tests {
              fn keep[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
         );
         let keep = prime_fn(&binder, "keep");
+        let crate::ast::SignatureParam::Type(bound) = &keep.sig.params[0] else {
+            panic!("keep retains its type binder");
+        };
         let params = value_param_tys(keep);
         assert_eq!(params.len(), 1);
-        assert_path_type(params[0], "Comptime_bool");
-        assert_path_type(&keep.ret, "Comptime_bool");
+        assert_path_type(params[0], &bound.name);
+        assert_path_type(&keep.ret, &bound.name);
 
         let declaration_binders = substitute_one(
             "x/main",
@@ -4158,7 +4485,7 @@ mod tests {
                 _ => None,
             })
             .expect("Keep_alias");
-        assert_path_type(&alias.body, "Comptime_bool");
+        assert_path_type(&alias.body, &alias.type_params[0].name);
         let newtype = declaration_binders
             .items
             .iter()
@@ -4167,7 +4494,7 @@ mod tests {
                 _ => None,
             })
             .expect("Keep_newtype");
-        assert_path_type(&newtype.payload, "Comptime_str");
+        assert_path_type(&newtype.payload, &newtype.type_params[0].name);
         let group = declaration_binders
             .items
             .iter()
@@ -4182,14 +4509,14 @@ mod tests {
         let Type::Path { args, .. } = &group_alias.body else {
             panic!("recursive alias must retain its nominal application")
         };
-        assert_path_type(&args[0], "Comptime_bool");
+        assert_path_type(&args[0], &group_alias.type_params[0].name);
         let crate::ast::TypeRecMember::Newtype(group_newtype) = &group.members[1] else {
             panic!("second recursive member must be the newtype")
         };
         let Type::Path { args, .. } = &group_newtype.payload else {
             panic!("recursive newtype must retain its alias application")
         };
-        assert_path_type(&args[0], "Comptime_str");
+        assert_path_type(&args[0], &group_newtype.type_params[0].name);
         let host = declaration_binders
             .items
             .iter()
@@ -4206,8 +4533,11 @@ mod tests {
                 crate::ast::HostFnParam::Type(_) => None,
             })
             .expect("keep_host value parameter");
-        assert_path_type(host_value_ty, "Comptime_bool");
-        assert_path_type(&host.ret, "Comptime_bool");
+        let crate::ast::HostFnParam::Type(bound) = &host.params[0] else {
+            panic!("keep_host retains its type binder");
+        };
+        assert_path_type(host_value_ty, &bound.name);
+        assert_path_type(&host.ret, &bound.name);
     }
 
     #[test]
@@ -4223,11 +4553,14 @@ mod tests {
         );
 
         let keep = prime_fn(&module, "keep_ordered");
+        let crate::ast::SignatureParam::Type(bound) = &keep.sig.params[1] else {
+            panic!("ordered function retains its type binder");
+        };
         let params = value_param_tys(keep);
         assert_eq!(params.len(), 2);
         assert_unit_type(params[0]);
-        assert_path_type(params[1], "Comptime_bool");
-        assert_path_type(&keep.ret, "Comptime_bool");
+        assert_path_type(params[1], &bound.name);
+        assert_path_type(&keep.ret, &bound.name);
 
         let host = module
             .items
@@ -4247,8 +4580,11 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(params.len(), 2);
         assert_unit_type(params[0]);
-        assert_path_type(params[1], "Comptime_bool");
-        assert_path_type(&host.ret, "Comptime_bool");
+        let crate::ast::HostFnParam::Type(bound) = &host.params[1] else {
+            panic!("ordered host function retains its type binder");
+        };
+        assert_path_type(params[1], &bound.name);
+        assert_path_type(&host.ret, &bound.name);
     }
 
     #[test]
@@ -4389,6 +4725,36 @@ mod tests {
             "eval substitution must not runtime-erase proof-gated bodies: {body:?}",
             body = proof_only.body
         );
+    }
+
+    #[test]
+    fn later_direct_proof_erases_only_runtime_body_and_retains_signature_order() {
+        let source = "module x/main; import __comptime__; pure fn late(value: .)[A](ct: __Comptime__)(tail: A) -> __Type__ { __type_unit__(ct) }";
+        let module = substitute_one("x/main", source);
+        let runtime = prime_fn(&module, "late");
+        let params = value_param_tys(runtime);
+        assert_eq!(params.len(), 3);
+        assert_unit_type(params[0]);
+        assert_bottom_type(params[1]);
+        assert_path_type(params[2], "A");
+        assert!(contains_call_to(&runtime.body, "__absurd__"));
+        assert!(!contains_call_to(&runtime.body, "__type_unit__"));
+        let preserved = substitute_eval_fn("x/main", source, "late");
+        assert_eq!(preserved.sig.groups, runtime.sig.groups);
+        let params = preserved.sig.value_params().collect::<Vec<_>>();
+        assert_eq!(
+            params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect::<Vec<_>>(),
+            ["value", "ct", "tail"]
+        );
+        assert_path_type(
+            params[1].ty.as_ref().expect("proof annotation"),
+            "__Comptime__",
+        );
+        assert!(contains_call_to(&preserved.body, "__type_unit__"));
+        assert!(!contains_call_to(&preserved.body, "__absurd__"));
     }
 
     #[test]
@@ -4899,7 +5265,7 @@ mod tests {
     fn imported_conditional_recipe_substitutes_to_an_ordinary_intrinsic() {
         let src = "module x; \
                    import control(if); \
-                   host type Bool role(bool); \
+                   default host type Bool role(bool); \
                    fn pick(c: Bool) -> Bool { if! c { .t } else { .f } } \
                    ";
         let parsed_module = parse(src).expect("parse module");

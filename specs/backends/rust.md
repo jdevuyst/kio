@@ -521,6 +521,8 @@ context. Selecting an exact type never bypasses that match: a mismatched role,
 or a roleless host type, is rejected before emission. An admitted literal is
 constructed as the selected associated type through that declaration's
 `From` implementation; Rust exposes no all-shape literal ingress. A
+numeric `From` input is the [value already selected by Kio](../language.md#literals),
+and the host implementation must preserve it. A
 conditional over a `role(bool)` type compares its exact value with the exact
 value constructed from `true`; it does not compare the host value directly
 with primitive `bool`.

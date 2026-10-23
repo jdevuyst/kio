@@ -11,7 +11,7 @@ import elab/match(match);
 import gc/heap(field_slot, fold_fields, top);
 import gc/num(int_lt);
 import gc/slot(Imm, Ptr, {ptr});
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32);
 import testapi/array(
 , array_get

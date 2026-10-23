@@ -118,6 +118,7 @@ where
             digits, annotation, ..
         } => crate::ast::Expr::IntLit {
             occurrence: Default::default(),
+            diagnostic: Default::default(),
             digits: digits.clone(),
             annotation: annotation.clone(),
             meta: crate::ast::Meta::new(node_span),

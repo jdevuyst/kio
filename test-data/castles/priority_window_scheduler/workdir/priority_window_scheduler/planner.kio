@@ -2,7 +2,7 @@ module priority_window_scheduler/planner;
 
 import elab/control(if);
 import priority_window_scheduler/model(Window, {handoff}, {impact}, {risk});
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 
 pub fn score(window: Window) -> I32 {

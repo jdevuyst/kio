@@ -65,7 +65,7 @@ import book/order(
 import book/report as report;
 import elab/control(if);
 import elab/match(match);
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/io(print);
 import testapi/iter(loop);

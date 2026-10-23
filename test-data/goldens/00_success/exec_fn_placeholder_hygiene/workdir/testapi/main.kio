@@ -1,6 +1,6 @@
 module testapi/main;
 
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 
 // The captured value stays distinct from the placeholder parameter.

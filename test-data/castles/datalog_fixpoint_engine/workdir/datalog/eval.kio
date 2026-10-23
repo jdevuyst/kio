@@ -18,7 +18,7 @@ import datalog/subst as subst;
 import datalog/unify as unify;
 import elab/control(if);
 import elab/match(match);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32);
 import testapi/iter(loop);
 

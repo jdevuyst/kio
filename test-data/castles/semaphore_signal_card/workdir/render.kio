@@ -5,7 +5,7 @@ import alphabet({crossed}, {glyph}, {high}, {left}, {mnemonic}, {right});
 import elab/control(if);
 import message(Facts, Message);
 import message({crossings_even}, {has_vowel}, {shapes_distinct});
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io(print);
 
 fn word(flag: Bool) -> String {

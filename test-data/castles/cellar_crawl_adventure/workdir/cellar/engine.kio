@@ -13,7 +13,7 @@ import cellar/state as state;
 import cellar/world as world;
 import elab/control(if);
 import elab/match(match);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 
 /// One turn's result: the state the cellar is left in, and what to tell the
 /// player about it.

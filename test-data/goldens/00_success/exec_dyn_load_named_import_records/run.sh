@@ -21,4 +21,4 @@ cp "$case_dir/workdir/testapi/main.kio" "$work/testapi/main.kio"
 cp "$case_dir/workdir/exec_dyn_load_named_import_records.pkg.kio" "$work/exec_dyn_load_named_import_records.pkg.kio"
 ( cd "$work" && "$KIO_BIN" test ) >&2
 ( cd "$work" && "$KIO_BIN" build "$KIO_TARGET" ) >&2
-"$KIO_RUNNER" --protocol testapi-dyn-load "$work/out/$KIO_TARGET" < /dev/null
+"$KIO_RUNNER" --package-name exec_dyn_load_named_import_records --protocol testapi-dyn-load "$work/out/$KIO_TARGET" < /dev/null

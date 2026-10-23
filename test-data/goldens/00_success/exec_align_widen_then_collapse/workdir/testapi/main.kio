@@ -4,7 +4,7 @@ import elab/algebraic_elaborators(align);
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, default Bool, default String);
 import testapi/io(print);
 
 // Source `String | String` (constructed explicitly in each branch).

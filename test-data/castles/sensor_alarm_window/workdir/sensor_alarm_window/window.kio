@@ -2,7 +2,7 @@ module sensor_alarm_window/window;
 
 import elab/control(if);
 import sensor_alarm_window/scanner as scanner;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/text as text;
 
 fn both(left: Bool, right: Bool) -> Bool {

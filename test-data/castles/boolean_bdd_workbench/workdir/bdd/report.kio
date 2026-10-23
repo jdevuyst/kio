@@ -10,7 +10,7 @@ import elab/control(if);
 import elab/match(match);
 import list/core as lists;
 import list/list as walk;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

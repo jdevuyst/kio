@@ -524,7 +524,11 @@ The plug-in points, in the order a new backend fills them:
 2. **`kio-rs/src/backends/<lang>/emit.rs`** — the BODY: `lower_package`, a
    `BodyEmitter` (term lowering / expression emission), exact host-type binding
    and literal emission appropriate to the target, and the exported-surface
-   walk. Keep independently justified regions in
+   walk. Construct the shared compiler's numeric values under
+   [the literal-value discipline](../../topics/implementation.md#numeric-literal-values);
+   demonstrate actual integer-boundary, float-rounding, subnormal and signed-zero
+   behavior through the runner. Native constant syntax and intermediate numeric
+   conversions must not change those values. Keep independently justified regions in
    dedicated files: Go separates `emit` / `facade` / `facade_skin`, Swift
    separates `emit` / `runtime` / `skin`, and Haskell separates `emit` /
    `skin` / `reconstruct`; JS and Rust keep their current monolithic banner

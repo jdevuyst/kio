@@ -1,0 +1,8 @@
+package integer_literal_unsigned_negative;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

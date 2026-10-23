@@ -1,7 +1,7 @@
 module edit_distance_audit/math;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 
 pub fn i32_eq(left: I32, right: I32) -> Bool {

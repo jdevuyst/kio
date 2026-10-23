@@ -1,7 +1,7 @@
 module testapi/main;
 
 import elab/spine_elaborators(narrow_prod);
-import testapi(I32, String);
+import testapi(default I32, default String);
 import testapi/io(print);
 
 // Spine equivalent of `exec_onto_projection`. The original used

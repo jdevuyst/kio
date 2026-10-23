@@ -3,7 +3,7 @@ module testapi/main;
 import __intrinsics__;
 
 import elaborators(Marker_bool, marker);
-import testapi(I32, String);
+import testapi(I32, default String);
 import testapi/io(print);
 import testapi/text(string_concat);
 

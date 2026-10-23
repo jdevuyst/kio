@@ -36,7 +36,7 @@ import forge/program as p;
 import forge/program(Prog, Symbol, Symbols);
 import forge/text as t;
 import forge/vm(int_eq);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32);
 import testapi/iter(loop);
 

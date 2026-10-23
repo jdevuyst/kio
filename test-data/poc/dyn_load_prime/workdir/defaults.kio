@@ -13,7 +13,7 @@ import loader(instantiate, instantiate_checked);
 import loader(mk_host_adapter, mk_host_fn_binding);
 import prime(Term, group_slots_cons, group_slots_nil);
 import result(Call_result, Eval_result);
-import testapi(I32, String);
+import testapi(default I32, default String);
 import value(Value);
 
 // `defaults.kio` — the convenience entry points that run the loader /

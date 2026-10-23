@@ -1,6 +1,6 @@
 module docs_loader/testapi/io;
 
-import docs_loader/testapi(String);
+import docs_loader/testapi(default String);
 
 host fn print(p0: String);
 

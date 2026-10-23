@@ -5,7 +5,7 @@
 module base32/bits;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(div_i32, leq_i32, mod_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 

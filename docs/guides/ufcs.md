@@ -281,7 +281,7 @@ module nested_block_splices;
 
 import control(if);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 fn outer_splice[A](value: A) -> A {
   if! {

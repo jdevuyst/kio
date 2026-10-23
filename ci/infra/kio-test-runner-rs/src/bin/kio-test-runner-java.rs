@@ -54,7 +54,8 @@ use host_api::{
 };
 use protocol::{
     ExportDriver, HostFnBinding, HostFnBodyKind, HostRoleRef, HostTypeBinding, HostTypeFixture,
-    ProtocolExecution, RoleFixture, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
+    NUMERIC_LITERAL_SAMPLES, NumericLiteralExpected, ProtocolExecution, RoleFixture,
+    RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
 };
 use runner::{EXIT_RUNTIME_FAILURE, EXIT_USAGE, TestRunner};
 
@@ -1680,6 +1681,25 @@ fn render_export_driver(
              \x20   if (echoedScalar != 97 || calls[0] != 2 || calls[1] != 2) throw new AssertionError(\"callable observations changed\");\n\
              \x20   System.out.println(\"callable slots ok\");\n"
         ),
+        ExportDriver::NumericLiteralValues => {
+            let mut script = String::new();
+            for (leaf, expected) in NUMERIC_LITERAL_SAMPLES {
+                        let member = host_api::host_name_core(leaf);
+                let call = format!("{main_ns}.{member}()");
+                let differs = match expected {
+                    NumericLiteralExpected::Integer(RoleFixture::I128 | RoleFixture::U128 | RoleFixture::U64, value) => format!(
+                        "!{call}.equals(new java.math.BigInteger(\"{value}\"))"),
+                    NumericLiteralExpected::Integer(_, value) => format!("{call} != {value}L"),
+                    NumericLiteralExpected::F32(bits) => format!(
+                        "Float.floatToRawIntBits({call}) != 0x{bits:08x}"),
+                    NumericLiteralExpected::F64(bits) => format!(
+                        "Double.doubleToRawLongBits({call}) != 0x{bits:016x}L"),
+                };
+                script.push_str(&format!("    if ({differs}) throw new AssertionError(\"{leaf}\");\n"));
+            }
+            script.push_str("    System.out.println(\"numeric literals ok\");\n");
+            script
+        }
         ExportDriver::ScalarRoundtrip => format!(
             "    var signed = new java.math.BigInteger(\"-1208925819614629174706299\");\n\
              \x20   var unsigned = new java.math.BigInteger(\"2417851639229258349412391\");\n\

@@ -1,0 +1,5 @@
+module main;
+
+host type Int role(i64);
+
+fn value() { let n = 42; () }

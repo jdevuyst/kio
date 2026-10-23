@@ -40,7 +40,7 @@ import cpu/machine(Cpu, Machine, stage_empty);
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/array(array_get);
 
 /// Where an operand value actually came from, which is the same thing as

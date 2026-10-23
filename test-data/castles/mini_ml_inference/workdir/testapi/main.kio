@@ -7,7 +7,7 @@ import ml/infer as infer;
 import ml/input as input;
 import ml/parser as parser;
 import ml/syntax as ast;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

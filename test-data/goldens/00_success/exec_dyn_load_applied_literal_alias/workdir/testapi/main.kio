@@ -1,0 +1,89 @@
+module testapi/main;
+
+import defaults(instantiate_default);
+import elab/match(match);
+import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
+import loader(diag_message, un_load_outcome, {apply}, {i32_out}, {lookup}, {unit_in});
+import loader/scan(load_package);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn call_value[P](surface: Surface(P)) -> String {
+  match! surface.?{lookup}("value"(String)) {
+    (
+    , .(callee: P) {
+        match! surface.?{apply}((callee, surface.?{unit_in})) {
+          (
+          , .(answer: P) {
+              match! surface.?{i32_out}(answer) {
+                (.(value: I32) { int_to_string(value) }, .(diag: Diag) { diag_message(diag) })
+              }
+            }
+          , .(diag: Diag) { diag_message(diag) }
+          )
+        }
+      }
+    , .(diag: Diag) { diag_message(diag) }
+    )
+  }
+}
+
+fn rejected(name: String, source: String) {
+  print(name);
+  print(": "(String));
+  match! un_load_outcome(load_package(source)) {
+    (
+    , .(_image: Lr_image) { print("unexpected acceptance"(String)) }
+    , .(_diag: Lr_diag) { print("rejected"(String)) }
+    )
+  };
+  print("\n"(String))
+}
+
+pub fn main() {
+  match! un_load_outcome(load_package("module hostapi; host type I32 role(i32); module guest; import "
+                                      "hostapi(I32); type Identity[A] = A; type Number = Identity(I32); pub fn "
+                                      "value() -> I32 { 73(Number) } package guest; bridge { guest; hostapi; }"(String))) {
+    (
+    , .(image: Lr_image) {
+        match! instantiate_default(Lr_image.get(image)) {
+          (
+          , .(loaded: Loaded) {
+              Loaded.get(loaded)(.[P](surface: Surface(P)) { print(call_value(surface)) })
+            }
+          , .(diag: Diag) { print(diag_message(diag)) }
+          )
+        }
+      }
+    , .(diag: Lr_diag) { print(diag_message(Lr_diag.get(diag))) }
+    )
+  };
+  print("\n"(String));
+  rejected(
+  , "underapplied"(String)
+  , "module hostapi; host type I32 role(i32); module guest; import "
+    "hostapi(I32); type Number[A] = A; pub fn value() -> I32 { 73(Number) } "
+    "package guest; bridge { guest; hostapi; }"(String)
+  );
+  rejected(
+  , "nonhost"(String)
+  , "module hostapi; host type I32 role(i32); module guest; import "
+    "hostapi(I32); type Number = I32 & I32; pub fn value() -> I32 { "
+    "73(Number) } package guest; bridge { guest; hostapi; }"(String)
+  );
+  rejected(
+  , "private"(String)
+  , "module hostapi; host type I32 role(i32); module secret; import "
+    "hostapi(I32); type Identity[A] = A; type Number = Identity(I32); module "
+    "guest; import hostapi(I32); import secret as hidden; pub fn value() -> "
+    "I32 { 73(hidden.Number) } package guest; bridge { guest; hostapi; "
+    "secret; }"(String)
+  );
+  rejected(
+  , "late"(String)
+  , "module hostapi; host type I32 role(i32); module guest; import "
+    "hostapi(I32); type Identity[A] = A; pub fn value() -> I32 { 73(Number) } "
+    "type Number = Identity(I32); package guest; bridge { guest; hostapi; }"(String)
+  )
+}

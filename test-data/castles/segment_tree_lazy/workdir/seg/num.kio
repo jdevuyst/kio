@@ -5,7 +5,7 @@
 module seg/num;
 
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 

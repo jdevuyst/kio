@@ -1,0 +1,4 @@
+  pass equiv `whole_scale` in main
+  pass equiv `fraction_scale` in main
+
+result: 2/2 equiv blocks passed

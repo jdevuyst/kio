@@ -9,7 +9,7 @@ module cellar/world;
 import cellar/ids as ids;
 import elab/control(if);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 
 pub labels Exit =
   { open_to: ids.Room_id }

@@ -2,7 +2,7 @@ module testapi/main;
 
 import __intrinsics__;
 
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io(print);
 
 fn condition() -> Bool { print("condition\n"(String)); .f(Bool) }

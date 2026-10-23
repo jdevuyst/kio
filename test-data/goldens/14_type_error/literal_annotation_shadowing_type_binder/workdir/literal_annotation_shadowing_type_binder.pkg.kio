@@ -1,0 +1,10 @@
+package literal_annotation_shadowing_type_binder;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

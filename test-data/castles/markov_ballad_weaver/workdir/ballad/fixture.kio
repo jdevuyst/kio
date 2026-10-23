@@ -10,7 +10,7 @@ module ballad/fixture;
 import ballad/list(List, cons, nil, reverse);
 import elab/control(if);
 import elab/match(match);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt(string_to_int);
 import testapi/io(read_ascii_line);
 import testapi/iter(loop);

@@ -6,7 +6,7 @@ import list/core as lists;
 import list/list as traversal;
 import list_host as numbers;
 import logic/model as model;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
 

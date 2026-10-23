@@ -2,7 +2,7 @@ module testapi/main;
 
 import elab/spine_elaborators(widen_sum);
 import observer(keep);
-import testapi(I32, String);
+import testapi(I32, default String);
 import testapi/io as io;
 import testapi/iter as iter;
 

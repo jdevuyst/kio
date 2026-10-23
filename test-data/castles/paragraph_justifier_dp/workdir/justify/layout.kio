@@ -18,7 +18,7 @@ import justify/dp(Table, table_back);
 import justify/list as list;
 import justify/list(List);
 import justify/word(Words, span_used);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(eq_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 

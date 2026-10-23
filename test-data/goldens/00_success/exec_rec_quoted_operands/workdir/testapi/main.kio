@@ -4,7 +4,7 @@ import elab/control(if);
 import elab/match(match);
 import quotation(duplicate, marked_duplicate, marked_swap, second, swap);
 import stack/testapi/main(deep);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/io as io;
 import testapi/iter(loop);

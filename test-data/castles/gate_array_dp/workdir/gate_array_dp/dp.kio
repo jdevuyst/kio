@@ -2,7 +2,7 @@ module gate_array_dp/dp;
 
 import elab/control(if);
 import gate_array_dp/constants(days, inf, max_age, states, table_size);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(array_get, array_make_filled, array_set);
 import testapi/iter(loop);

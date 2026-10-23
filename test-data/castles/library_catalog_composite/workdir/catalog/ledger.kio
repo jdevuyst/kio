@@ -9,7 +9,7 @@ import elab/control(if);
 import elab/match(match);
 import list/list as list;
 import result/result as result;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, mul_i32);
 
 pub type Member_result = result.Result(Member, Failure);

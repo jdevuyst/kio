@@ -2,7 +2,7 @@ module helper;
 
 import elab/control(if);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 host fn a();
 

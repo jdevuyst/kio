@@ -14,7 +14,7 @@ import skyline/events as events;
 import skyline/list as lst;
 import skyline/multiset as ms;
 import skyline/sweep as sweep;
-import testapi(Array, Bool, I32, String);
+import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_len);
 import testapi/fmt(bool_to_string, int_to_string);

@@ -16,7 +16,7 @@ import poly/division as division;
 import poly/division(Divided, Not_divisible, {divided}, {not_divisible});
 import poly/fixtures as fx;
 import poly/render as render;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32, mul_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);

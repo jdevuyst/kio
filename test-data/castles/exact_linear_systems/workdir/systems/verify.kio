@@ -4,7 +4,7 @@ import elab/control(if);
 import list/list as l;
 import systems/matrix as m;
 import systems/rational as q;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 
 pub fn residuals(original: m.Matrix, variables: I32, vector: m.Row, homogeneous: Bool) -> m.Row {
   l.map(

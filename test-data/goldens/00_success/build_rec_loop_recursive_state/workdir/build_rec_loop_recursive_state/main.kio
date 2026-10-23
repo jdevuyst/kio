@@ -1,6 +1,6 @@
 module build_rec_loop_recursive_state/main;
 
-import build_rec_loop_recursive_state(Bool, I32, leq_i32, loop, sub_i32);
+import build_rec_loop_recursive_state(I32, default Bool, leq_i32, loop, sub_i32);
 import elab/control(if);
 
 rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }

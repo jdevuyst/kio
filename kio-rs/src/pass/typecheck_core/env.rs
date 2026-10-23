@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::ast::FnPurityExt;
 use crate::error::Error;
-use crate::pass::resolve::{NominalProvider, NominalRoute, NominalSelection};
+use crate::pass::resolve::{NominalProvider, NominalRoute};
 use crate::span::Span;
 
 use super::{
@@ -68,35 +68,8 @@ where
     /// and ambiguous roles are absent. [`Self::resolve_exact_role`] is the
     /// authoritative query when a caller must distinguish those states.
     pub roles_in_scope: HashMap<crate::ast::Role, &'m str>,
-    /// Role-bearing types available to tier-3 literal resolution, as
-    /// `(role, env-type-name)`. This is also the authoritative direct
-    /// candidate set for uses, such as `if` / `else`, that require one
-    /// exact role binding in scope.
-    pub host_env_roles: Vec<(crate::ast::Role, &'m str)>,
-    /// Source position of every local role-bearing host declaration. Imported
-    /// candidates have no entry and are visible throughout the module through
-    /// its leading `import` clauses.
-    local_host_role_item_indices: HashMap<&'m str, usize>,
-    /// `type` aliases (local or imported) whose body resolves to a
-    /// role-bearing host type, mapped to that inherited role. Kept
-    /// **separate** from [`Self::host_env_roles`] on purpose: an alias is
-    /// a valid literal *annotation* (`42(I32)` where `type I32 =
-    /// provider.I32`) and a valid expected/fallback literal type, but it
-    /// must not enlarge the tier-3 *bare-literal* candidate set — an alias
-    /// and the host type it names are the same type, so counting both
-    /// would spuriously flag a bare literal as ambiguous. Tier 3 consults
-    /// this map only as a fallback when no host type carries the shape's
-    /// role (the rehosted-module case, where the host type was replaced by
-    /// the alias), grouping every alias spelling that reaches the same
-    /// module-qualified host identity into one candidate. Exact-role users
-    /// apply the same direct-candidate-first fallback through
-    /// [`Self::resolve_exact_role`]. See `synth.rs` literal resolution.
-    pub alias_roles: HashMap<&'m str, crate::ast::Role>,
-    /// Alias-role bindings retain their declaration origin independently from
-    /// the spelling-indexed annotation map above. A later local alias may share
-    /// an imported alias's visible name without making that import disappear at
-    /// earlier use sites.
-    alias_role_candidates: Vec<AliasRoleCandidate<'m>>,
+    pub(crate) default_candidates: Vec<DefaultTypeCandidate<'m>>,
+    selected_defaults: [Option<usize>; 4],
     pub env_type_names: HashSet<&'m str>,
     /// Env fn declarations available at call sites.
     pub env_fn_defs: HashMap<&'m str, &'m crate::ast::HostFn<P>>,
@@ -185,36 +158,41 @@ pub(crate) struct MemberNewtypeResolution<'m, P: crate::ast::Phase> {
     pub(crate) declaring_module: &'m crate::ast::Module<P>,
 }
 
-/// The exact-role candidates visible at one use site.
-///
-/// Same-role declarations are valid, so multiplicity is retained until a
-/// construct asks for a singleton. Keeping the ambiguous state explicit
-/// prevents source or map iteration order from selecting a declaration.
+/// The explicit default selection for an exact role at one use site.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RoleResolution<'m> {
     Missing,
     Unique(&'m str),
-    Ambiguous { first: &'m str, second: &'m str },
-}
-
-struct DirectRoleCandidate<'m> {
-    visible_name: &'m str,
-    identity: Option<(String, String)>,
 }
 
 #[derive(Clone)]
-struct AliasRoleCandidate<'m> {
-    visible_name: &'m str,
-    role: crate::ast::Role,
-    host_identity: (String, String),
-    local_item_index: Option<usize>,
+pub(crate) struct DefaultTypeCandidate<'m> {
+    pub(crate) visible_name: &'m str,
+    pub(crate) role: crate::ast::Role,
+    pub(crate) host_identity: (String, String),
+    reference: Vec<String>,
+    pub(crate) local_item_index: Option<usize>,
+    pub(crate) selected: Option<Span>,
+    pub(crate) insertion: Span,
 }
 
-fn direct_role_candidate_label(candidate: &DirectRoleCandidate<'_>) -> String {
-    match &candidate.identity {
-        Some((module, leaf)) if !module.is_empty() => format!("`{module}.{leaf}`"),
-        Some((_, leaf)) => format!("`{leaf}`"),
-        None => format!("`{}`", candidate.visible_name),
+impl DefaultTypeCandidate<'_> {
+    pub(crate) fn visible_at(&self, cutoff: Option<usize>) -> bool {
+        self.local_item_index
+            .is_none_or(|index| cutoff.is_none_or(|cutoff| index < cutoff))
+    }
+
+    pub(crate) fn ty<P: crate::ast::Phase>(&self, span: Span) -> crate::ast::Type<P> {
+        crate::ast::Type::synth_path(self.reference.clone(), Vec::new(), span)
+    }
+}
+
+fn default_category(shape: crate::ast::RoleShape) -> usize {
+    match shape {
+        crate::ast::RoleShape::Int => 0,
+        crate::ast::RoleShape::Float => 1,
+        crate::ast::RoleShape::Bool => 2,
+        crate::ast::RoleShape::Str => 3,
     }
 }
 
@@ -315,10 +293,8 @@ where
             user_elaborators: HashMap::new(),
             intrinsics_in_scope: false,
             roles_in_scope: HashMap::new(),
-            host_env_roles: Vec::new(),
-            local_host_role_item_indices: HashMap::new(),
-            alias_roles: HashMap::new(),
-            alias_role_candidates: Vec::new(),
+            default_candidates: Vec::new(),
+            selected_defaults: [None; 4],
             env_type_names: HashSet::new(),
             env_fn_defs: HashMap::new(),
             cross_module_fn_defs: HashMap::new(),
@@ -345,13 +321,9 @@ where
             }
             if matches!(u.kind, crate::ast::ImportKind::Comptime) {
                 env.comptime_in_scope = true;
-                env.host_env_roles
-                    .push((crate::ast::Role::Bool, "Comptime_bool"));
-                env.host_env_roles
-                    .push((crate::ast::Role::Str, "Comptime_str"));
             }
         }
-        for (item_index, item) in module.items.iter().enumerate() {
+        for item in &module.items {
             match item {
                 crate::ast::Item::FnDef(d) => {
                     env.fn_defs.insert(d.name.as_str(), d);
@@ -413,18 +385,8 @@ where
                         }
                     }
                 }
-                // Host items are ordinary scoped declarations (the
-                // former `env` block). A role-bearing `host type`
-                // contributes its role to lexical scope; ambiguity from
-                // two same-role types in scope surfaces at use sites
-                // (see `synth.rs` tier-3 literal selection), not here.
                 crate::ast::Item::HostType(h) => {
                     env.env_type_names.insert(h.name.as_str());
-                    if let Some(role) = h.role {
-                        env.local_host_role_item_indices
-                            .insert(h.name.as_str(), item_index);
-                        env.host_env_roles.push((role.role, h.name.as_str()));
-                    }
                 }
                 crate::ast::Item::HostFn(h) => {
                     env.env_fn_defs.insert(h.name.as_str(), h);
@@ -449,7 +411,7 @@ where
         if let Some(pkg) = package {
             populate_cross_module_imports(&mut env, &module.imports, pkg);
         }
-        register_alias_inherited_roles(&mut env, module);
+        env.register_default_types()?;
         rebuild_singleton_roles_in_scope(&mut env);
         Ok(env)
     }
@@ -461,13 +423,9 @@ impl<'m, P: crate::ast::Phase> ModuleEnv<'m, P> {
         self.typecheck_execution
     }
 
-    /// Resolve one exact `role(...)` in this lexical scope without
-    /// discarding multiplicity. Direct role types win over aliases; aliases
-    /// are the fallback only when there is no direct candidate, matching
-    /// tier-3 literal resolution. Candidates are sorted, and transparent
-    /// aliases are de-duplicated by the nominal identity of the host type they
-    /// name, so neither diagnostics nor the selected representative spelling
-    /// depend on declaration or hash-map iteration order.
+    /// Resolve an exact role from the module's explicit category selection.
+    /// Admission already rejects conflicting terminal identities; equivalent
+    /// selections share the earliest active spelling.
     pub fn resolve_exact_role(&self, role: crate::ast::Role) -> RoleResolution<'m> {
         self.resolve_exact_role_at(role, None)
     }
@@ -477,305 +435,21 @@ impl<'m, P: crate::ast::Phase> ModuleEnv<'m, P> {
         role: crate::ast::Role,
         local_item_cutoff: Option<usize>,
     ) -> RoleResolution<'m> {
-        match self.resolve_direct_role_candidates(
-            |candidate_role| candidate_role == role,
-            local_item_cutoff,
-        ) {
-            RoleResolution::Unique(name) => return RoleResolution::Unique(name),
-            RoleResolution::Ambiguous { first, second } => {
-                return RoleResolution::Ambiguous { first, second };
-            }
-            RoleResolution::Missing => {}
-        }
-
-        self.resolve_alias_role_candidates(
-            |candidate_role| candidate_role == role,
-            local_item_cutoff,
-        )
-    }
-
-    pub(crate) fn resolve_direct_role_candidates(
-        &self,
-        admits: impl Fn(crate::ast::Role) -> bool,
-        local_item_cutoff: Option<usize>,
-    ) -> RoleResolution<'m> {
-        let candidates = self.direct_role_candidates(admits, local_item_cutoff);
-        match candidates.as_slice() {
-            [] => RoleResolution::Missing,
-            [candidate] => RoleResolution::Unique(candidate.visible_name),
-            [first, second, ..] => RoleResolution::Ambiguous {
-                first: first.visible_name,
-                second: second.visible_name,
-            },
-        }
-    }
-
-    pub(crate) fn describe_direct_role_ambiguity(
-        &self,
-        admits: impl Fn(crate::ast::Role) -> bool,
-        local_item_cutoff: Option<usize>,
-    ) -> Option<String> {
-        let candidates = self.direct_role_candidates(admits, local_item_cutoff);
-        let [first, second, ..] = candidates.as_slice() else {
-            return None;
-        };
-        Some(format!(
-            "{}, {}, …",
-            direct_role_candidate_label(first),
-            direct_role_candidate_label(second)
-        ))
-    }
-
-    pub(crate) fn describe_exact_role_ambiguity(
-        &self,
-        role: crate::ast::Role,
-        first: &str,
-        second: &str,
-        local_item_cutoff: Option<usize>,
-    ) -> String {
-        let candidates =
-            self.direct_role_candidates(|candidate_role| candidate_role == role, local_item_cutoff);
-        let direct = match candidates.as_slice() {
-            [first, second, ..] => Some(format!(
-                "{}, {}, …",
-                direct_role_candidate_label(first),
-                direct_role_candidate_label(second)
-            )),
-            _ => None,
-        };
-        direct.unwrap_or_else(|| format!("`{first}`, `{second}`, …"))
-    }
-
-    fn direct_role_candidates(
-        &self,
-        admits: impl Fn(crate::ast::Role) -> bool,
-        local_item_cutoff: Option<usize>,
-    ) -> Vec<DirectRoleCandidate<'m>> {
-        let mut raw = self
-            .host_env_roles
-            .iter()
-            .filter_map(|(role, name)| {
-                (self.role_binding_is_visible(name, local_item_cutoff) && admits(*role))
-                    .then_some((*role, *name))
+        self.selected_default(role.shape(), local_item_cutoff)
+            .filter(|candidate| candidate.role == role)
+            .map_or(RoleResolution::Missing, |candidate| {
+                RoleResolution::Unique(candidate.visible_name)
             })
-            .collect::<Vec<_>>();
-        raw.sort_unstable_by(|(left_role, left_name), (right_role, right_name)| {
-            left_role
-                .as_str()
-                .cmp(right_role.as_str())
-                .then_with(|| left_name.cmp(right_name))
-        });
-
-        let mut recovered = self.recover_direct_role_candidates(local_item_cutoff);
-        recovered.retain(|(role, _, _)| admits(*role));
-
-        let mut keys = raw.clone();
-        keys.dedup();
-        let mut candidates = Vec::new();
-        for (role, name) in keys {
-            let raw_count = raw
-                .iter()
-                .filter(|(candidate_role, candidate_name)| {
-                    *candidate_role == role && *candidate_name == name
-                })
-                .count();
-            let known = recovered
-                .iter()
-                .filter(|(candidate_role, candidate_name, _)| {
-                    *candidate_role == role && *candidate_name == name
-                })
-                .collect::<Vec<_>>();
-            if !known.is_empty() && known.len() <= raw_count {
-                candidates.extend(known.into_iter().map(|(_, candidate_name, identity)| {
-                    DirectRoleCandidate {
-                        visible_name: candidate_name,
-                        identity: Some(identity.clone()),
-                    }
-                }));
-            } else {
-                candidates.push(DirectRoleCandidate {
-                    visible_name: name,
-                    identity: None,
-                });
-            }
-        }
-
-        candidates.sort_unstable_by(|left, right| {
-            left.visible_name
-                .cmp(right.visible_name)
-                .then_with(|| left.identity.cmp(&right.identity))
-        });
-        let mut unique: Vec<DirectRoleCandidate<'m>> = Vec::new();
-        for candidate in candidates {
-            let duplicate =
-                unique
-                    .iter()
-                    .any(|existing| match (&candidate.identity, &existing.identity) {
-                        (Some(left), Some(right)) => left == right,
-                        (None, None) => candidate.visible_name == existing.visible_name,
-                        (Some(_), None) | (None, Some(_)) => false,
-                    });
-            if !duplicate {
-                unique.push(candidate);
-            }
-        }
-        unique
     }
 
-    fn role_binding_is_visible(&self, name: &str, local_item_cutoff: Option<usize>) -> bool {
-        !local_item_cutoff.is_some_and(|cutoff| {
-            self.local_host_role_item_indices
-                .get(name)
-                .is_some_and(|item_index| *item_index >= cutoff)
-        })
-    }
-
-    fn recover_direct_role_candidates(
+    pub(crate) fn selected_default(
         &self,
-        local_item_cutoff: Option<usize>,
-    ) -> Vec<(crate::ast::Role, &'m str, (String, String))> {
-        let Some(module) = self.this_module_entry().map(|entry| &entry.module) else {
-            return Vec::new();
-        };
-        let mut candidates = Vec::new();
-        for usage in &module.imports {
-            if matches!(usage.kind, crate::ast::ImportKind::Comptime) {
-                candidates.push((
-                    crate::ast::Role::Bool,
-                    "Comptime_bool",
-                    ("__comptime__".to_owned(), "Comptime_bool".to_owned()),
-                ));
-                candidates.push((
-                    crate::ast::Role::Str,
-                    "Comptime_str",
-                    ("__comptime__".to_owned(), "Comptime_str".to_owned()),
-                ));
-            }
-        }
-        let local_path = module_path_key(module, None);
-        for (item_index, item) in module.items.iter().enumerate() {
-            if local_item_cutoff.is_some_and(|cutoff| item_index >= cutoff) {
-                continue;
-            }
-            if let crate::ast::Item::HostType(host) = item
-                && let Some(role) = host.role
-            {
-                candidates.push((
-                    role.role,
-                    host.name.as_str(),
-                    (local_path.clone(), host.name.clone()),
-                ));
-            }
-        }
-        let Some(package) = self.package else {
-            return candidates;
-        };
-        for usage in &module.imports {
-            let crate::ast::ImportKind::Selective { items, from } = &usage.kind else {
-                continue;
-            };
-            let from_path = from
-                .segments
-                .iter()
-                .map(crate::ast::PathSegment::as_str)
-                .collect::<Vec<_>>()
-                .join("/");
-            let Some(target) = package.module(&from_path) else {
-                continue;
-            };
-            let target_path = module_path_key(&target.module, None);
-            for item in items {
-                let Some(name) = item.as_name() else {
-                    continue;
-                };
-                let local = item.as_local_name().expect("named import has a local name");
-                #[cfg(all(test, feature = "surface"))]
-                record_nominal_provider_item_visit();
-                let Some(declaration) = target
-                    .scope
-                    .lookup(name)
-                    .and_then(|id| crate::pass::resolve::declaration_by_id(&target.module, id))
-                else {
-                    continue;
-                };
-                if let Some(host) = declaration.host_type()
-                    && host.name == name
-                    && let Some(role) = host.role
-                {
-                    candidates.push((role.role, local, (target_path.clone(), name.to_owned())));
-                }
-            }
-        }
-        candidates
-    }
-
-    pub(crate) fn resolve_alias_role_candidates(
-        &self,
-        admits: impl Fn(crate::ast::Role) -> bool,
-        local_item_cutoff: Option<usize>,
-    ) -> RoleResolution<'m> {
-        let mut candidates = self
-            .alias_role_candidates
-            .iter()
-            .filter(|candidate| {
-                let local_is_visible = candidate.local_item_index.is_none_or(|item_index| {
-                    local_item_cutoff.is_none_or(|cutoff| item_index < cutoff)
-                });
-                local_is_visible && admits(candidate.role)
-            })
-            .collect::<Vec<_>>();
-        candidates.sort_unstable_by(|left, right| {
-            left.visible_name
-                .cmp(right.visible_name)
-                .then_with(|| left.host_identity.cmp(&right.host_identity))
-        });
-        let mut aliases = Vec::with_capacity(candidates.len());
-        let mut identities = Vec::with_capacity(candidates.len());
-        for candidate in candidates {
-            if identities.contains(&candidate.host_identity) {
-                continue;
-            }
-            identities.push(candidate.host_identity.clone());
-            aliases.push(candidate.visible_name);
-        }
-        match aliases.as_slice() {
-            [] => RoleResolution::Missing,
-            [name] => RoleResolution::Unique(name),
-            [first, second, ..] => RoleResolution::Ambiguous { first, second },
-        }
-    }
-
-    /// Resolve the role of the host type or transparent alias declared at one
-    /// exact nominal identity. Imports owned by the target module do not become
-    /// declarations in its qualified namespace.
-    pub(crate) fn declared_role_for_nominal_identity(
-        &self,
-        module_path: &str,
-        name: &str,
-    ) -> Option<crate::ast::Role> {
-        let owner = self.module_for_identity(module_path)?;
-        let provider = NominalProvider::new(Some(self.module), self.package);
-        let scope = provider.scope_for_owner(Some(owner));
-        let declaration = provider.declaration(scope, name, NominalRoute::Exact)?;
-        if let Some(host) = declaration.declaration.host_type() {
-            host.role.map(|role| role.role)
-        } else if let Some(alias) = declaration.declaration.type_alias() {
-            if module_path != self.module_path
-                && !crate::pass::resolve::is_visible(&alias.vis, &self.module.path)
-            {
-                return None;
-            }
-            monomorphic_alias_inherited_role(
-                &alias.type_params,
-                alias.type_body(),
-                declaration.owner,
-                &provider,
-                &mut Vec::new(),
-            )
-            .map(|binding| binding.role)
-        } else {
-            None
-        }
+        shape: crate::ast::RoleShape,
+        cutoff: Option<usize>,
+    ) -> Option<&DefaultTypeCandidate<'m>> {
+        self.selected_defaults[default_category(shape)]
+            .map(|index| &self.default_candidates[index])
+            .filter(|candidate| candidate.visible_at(cutoff))
     }
 
     /// Resolve one exact module identity without requiring the source module
@@ -806,6 +480,176 @@ impl<'m, P> ModuleEnv<'m, P>
 where
     P: crate::pass::resolve::ResolvePhase,
 {
+    pub(crate) fn role_type_identity(
+        &self,
+        ty: &crate::ast::Type<P>,
+        canonical: bool,
+    ) -> Option<(crate::ast::Role, (String, String))> {
+        self.role_type_identity_in(ty, canonical, &self.alias_ctx())
+    }
+
+    pub(crate) fn role_type_identity_in(
+        &self,
+        ty: &crate::ast::Type<P>,
+        canonical: bool,
+        aliases: &AliasCtx<'_, '_, P>,
+    ) -> Option<(crate::ast::Role, (String, String))> {
+        let (segments, owner) = super::aliases::terminal_nominal_in_scope(ty, aliases, canonical)?;
+        if segments.len() == 1
+            && owner.is_some_and(|owner| {
+                owner
+                    .imports
+                    .iter()
+                    .any(|import| matches!(import.kind, crate::ast::ImportKind::Comptime))
+            })
+        {
+            let name = segments[0].as_str();
+            let role = match name {
+                "Comptime_bool" => Some(crate::ast::Role::Bool),
+                "Comptime_str" => Some(crate::ast::Role::Str),
+                _ => None,
+            };
+            if let Some(role) = role {
+                return Some((role, ("__comptime__".to_owned(), name.to_owned())));
+            }
+        }
+        let (name, path) = segments.split_last()?;
+        let module_path = path
+            .iter()
+            .map(crate::ast::PathSegment::as_str)
+            .collect::<Vec<_>>()
+            .join("/");
+        let owner = self.module_for_identity(&module_path)?;
+        let provider = NominalProvider::new(Some(self.module), self.package);
+        let declaration = provider.declaration(
+            provider.scope_for_owner(Some(owner)),
+            name.as_str(),
+            NominalRoute::Exact,
+        )?;
+        let host = declaration.declaration.host_type()?;
+        if !host.type_params.is_empty() {
+            return None;
+        }
+        Some((host.role?.role, (module_path, host.name.clone())))
+    }
+
+    fn register_default_types(&mut self) -> Result<(), Error> {
+        use crate::ast::{ImportItem, ImportKind, Item, TypeRecMember};
+        let mut candidates = Vec::new();
+        let mut add = |name: &'m str,
+                       insertion: Span,
+                       selected: Option<Span>,
+                       local_item_index|
+         -> Result<(), Error> {
+            let ty = crate::ast::Type::synth_path(vec![name.to_owned()], Vec::new(), insertion);
+            let Some((role, host_identity)) = self.role_type_identity(&ty, false) else {
+                if let Some(span) = selected {
+                    return Err(Error::type_(
+                        span,
+                        format!(
+                            "`{name}` cannot be selected as a default type: it must resolve to a closed role-bearing host type"
+                        ),
+                    ));
+                }
+                return Ok(());
+            };
+            let reference = if host_identity.0 == "__comptime__" {
+                self.qualify_nominal_segments(&[crate::ast::PathSegment::new(
+                    name.to_owned(),
+                    insertion,
+                )])
+                .into_iter()
+                .map(|segment| segment.name)
+                .collect()
+            } else {
+                host_identity
+                    .0
+                    .split('/')
+                    .map(str::to_owned)
+                    .chain(std::iter::once(host_identity.1.clone()))
+                    .collect()
+            };
+            candidates.push(DefaultTypeCandidate {
+                visible_name: name,
+                role,
+                host_identity,
+                reference,
+                local_item_index,
+                selected,
+                insertion,
+            });
+            Ok(())
+        };
+        for import in &self.module.imports {
+            match &import.kind {
+                ImportKind::Comptime => {
+                    add("Comptime_bool", import.span, Some(import.span), None)?;
+                    add("Comptime_str", import.span, Some(import.span), None)?;
+                }
+                ImportKind::Selective { items, .. } => {
+                    for item in items {
+                        if let ImportItem::Name {
+                            default_span, span, ..
+                        } = item
+                        {
+                            add(
+                                item.as_local_name().expect("named import has local name"),
+                                *span,
+                                *default_span,
+                                None,
+                            )?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for (index, item) in self.module.items.iter().enumerate() {
+            match item {
+                Item::HostType(host) => {
+                    add(&host.name, host.meta.span, host.default_span, Some(index))?
+                }
+                Item::TypeAlias(alias) => add(
+                    &alias.name,
+                    alias.meta.span,
+                    alias.default_span,
+                    Some(index),
+                )?,
+                Item::TypeRecGroup(group) => {
+                    for member in &group.members {
+                        if let TypeRecMember::TypeAlias(alias) = member {
+                            add(
+                                &alias.name,
+                                alias.meta.span,
+                                alias.default_span,
+                                Some(index),
+                            )?;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut selected: [Option<usize>; 4] = [None; 4];
+        for (index, candidate) in candidates.iter().enumerate() {
+            let Some(span) = candidate.selected else {
+                continue;
+            };
+            let slot = &mut selected[default_category(candidate.role.shape())];
+            if let Some(previous) = slot.map(|index| &candidates[index]) {
+                if previous.host_identity != candidate.host_identity {
+                    return Err(Error::type_(span, format!("conflicting default {} types: `{}` and `{}` select different host types", super::synth::literal_shape_noun(candidate.role.shape()), previous.visible_name, candidate.visible_name))
+                        .with_secondary(previous.selected.expect("selected candidate"), "the other default type is selected here"));
+                }
+            } else {
+                *slot = Some(index);
+            }
+        }
+        self.default_candidates = candidates;
+        self.selected_defaults = selected;
+        Ok(())
+    }
+
     /// Lift the env's two type-alias maps into the shared
     /// [`AliasCtx`] view consumed by [`unfold_top`] / [`type_equiv`] /
     /// [`require_type_equiv`]. Lets callers pass an env-shaped reference
@@ -1141,11 +985,8 @@ pub fn populate_cross_module_imports<'m, P>(
                         // recovered by module name-scan in `route`,
                         // so resolving the name here suffices. Mirrors the
                         // local items-loop handling above.
-                        } else if let Some(h) = declaration.host_type().filter(|h| h.name == name) {
+                        } else if declaration.host_type().is_some_and(|h| h.name == name) {
                             env.env_type_names.insert(local);
-                            if let Some(role) = h.role {
-                                env.host_env_roles.push((role.role, local));
-                            }
                         } else if let Some(h) = declaration.host_fn().filter(|h| h.name == name) {
                             env.env_fn_defs.insert(local, h);
                             env.cross_module_env_fn_modules
@@ -1171,192 +1012,12 @@ pub fn populate_cross_module_imports<'m, P>(
     rebuild_singleton_roles_in_scope(env);
 }
 
-/// Record every `type` alias (local or imported) whose body resolves —
-/// possibly through a chain of aliases — to a `role(...)`-bearing host type.
-/// The spelling-indexed [`ModuleEnv::alias_roles`] map serves exact bare
-/// annotation lookups; the origin-preserving candidate list serves fallback
-/// and singleton resolution at a particular source position. This
-/// is what makes a host type rebound onto an alias (`type I32 =
-/// provider.I32`, the local form a `rehost` materializes) usable as a
-/// literal annotation (`42(I32)`) and as an expected / fallback literal
-/// type, the same way the original `host type I32 role(i32)` was. Runs
-/// after every host type and every alias is registered, so the role lookup
-/// sees the complete scope.
-///
-/// Deliberately populates `alias_roles`, **not** `host_env_roles`: an
-/// alias and the host type it names are the same type, so adding the alias
-/// to the tier-3 bare-literal candidate pool alongside the host type would
-/// spuriously flag a bare literal as ambiguous (a `type Flag =
-/// Comptime_bool;` alongside `Comptime_bool` must not make `true` two-way
-/// ambiguous). Tier 3 falls back to this map only when no host type
-/// carries the role — see `synth.rs`.
-///
-/// Only an alias that genuinely resolves to a role-bearing host type is
-/// recorded: an alias to a compound, to a non-role host type, or to a type
-/// parameter contributes nothing, so a `type Pair = (A, B)` is never
-/// recorded.
-fn register_alias_inherited_roles<'m, P>(
-    env: &mut ModuleEnv<'m, P>,
-    module: &'m crate::ast::Module<P>,
-) where
-    P: crate::pass::resolve::ResolvePhase,
-{
-    let provider = NominalProvider::new(Some(module), env.package);
-    // Resolve each alias's role with the scope read-only, then record the
-    // hits — the resolution borrows the env's maps immutably, so the
-    // mutation is deferred to a second step.
-    let mut inherited = Vec::new();
-    for (item_index, item) in module.items.iter().enumerate() {
-        if let crate::ast::Item::TypeAlias(alias) = item
-            && let Some(binding) = monomorphic_alias_inherited_role(
-                &alias.type_params,
-                alias.type_body(),
-                provider.root(),
-                &provider,
-                &mut Vec::new(),
-            )
-        {
-            inherited.push(AliasRoleCandidate {
-                visible_name: alias.name.as_str(),
-                role: binding.role,
-                host_identity: binding.host_identity,
-                local_item_index: Some(item_index),
-            });
-        }
-    }
-    for (name, alias) in &env.cross_module_type_aliases {
-        // A cross-module alias resolves in its *owner* module — its body
-        // names the owner's imports / host types, not the consumer's.
-        let owner = provider.scope_for_owner(alias.owner_module.or(Some(module)));
-        if let Some(binding) = monomorphic_alias_inherited_role(
-            alias.type_params,
-            alias.body,
-            owner,
-            &provider,
-            &mut Vec::new(),
-        ) {
-            inherited.push(AliasRoleCandidate {
-                visible_name: name,
-                role: binding.role,
-                host_identity: binding.host_identity,
-                local_item_index: None,
-            });
-        }
-    }
-    for candidate in inherited {
-        env.alias_roles
-            .insert(candidate.visible_name, candidate.role);
-        env.alias_role_candidates.push(candidate);
-    }
-}
-
-fn rebuild_singleton_roles_in_scope<P>(env: &mut ModuleEnv<'_, P>)
-where
-    P: crate::ast::Phase,
-{
-    let mut roles = env
-        .host_env_roles
-        .iter()
-        .map(|(role, _)| *role)
-        .chain(
-            env.alias_role_candidates
-                .iter()
-                .map(|candidate| candidate.role),
-        )
-        .collect::<Vec<_>>();
-    roles.sort_unstable_by_key(|role| role.as_str());
-    roles.dedup();
-    let singletons = roles
-        .into_iter()
-        .filter_map(|role| match env.resolve_exact_role(role) {
-            RoleResolution::Unique(name) => Some((role, name)),
-            RoleResolution::Missing | RoleResolution::Ambiguous { .. } => None,
-        })
-        .collect::<Vec<_>>();
+fn rebuild_singleton_roles_in_scope<P: crate::ast::Phase>(env: &mut ModuleEnv<'_, P>) {
     env.roles_in_scope.clear();
-    env.roles_in_scope.extend(singletons);
-}
-
-/// Resolve a type-alias body to the [`crate::ast::Role`] it inherits, if
-/// any. `owner` is the module the body's names resolve in (the alias's
-/// declaring module). `seen` guards against an alias chain that re-enters
-/// itself by module/name identity (`type A = m.A`), terminating the walk
-/// with no role rather than looping.
-///
-/// Recognizes the shapes a rebound host type produces — a bare alias head
-/// (`type J = I32`) chaining to a role-bearing host type, and a
-/// qualified head (`type I32 = provider.I32`) naming a host type or
-/// role-inheriting alias through an `import <module> as provider;` qualified
-/// import — plus their transitive composition. A body that is a compound,
-/// carries type arguments, or resolves to a non-role host type yields
-/// `None`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct InheritedRole {
-    role: crate::ast::Role,
-    host_identity: (String, String),
-}
-
-fn monomorphic_alias_inherited_role<'m, P>(
-    type_params: &[crate::ast::TypeParam],
-    body: &crate::ast::Type<P>,
-    owner: crate::pass::resolve::NominalScope<'m, P>,
-    provider: &NominalProvider<'m, P>,
-    seen: &mut Vec<(usize, u64)>,
-) -> Option<InheritedRole>
-where
-    P: crate::ast::Phase,
-{
-    if !type_params.is_empty() {
-        return None;
-    }
-    alias_inherited_role(body, owner, provider, seen)
-}
-
-fn alias_inherited_role<'m, P>(
-    body: &crate::ast::Type<P>,
-    owner: crate::pass::resolve::NominalScope<'m, P>,
-    provider: &NominalProvider<'m, P>,
-    seen: &mut Vec<(usize, u64)>,
-) -> Option<InheritedRole>
-where
-    P: crate::ast::Phase,
-{
-    let crate::ast::Type::Path { segments, args, .. } = body else {
-        return None;
-    };
-    if !args.is_empty() {
-        return None;
-    }
-    let declaration = match provider.select(owner, segments, false) {
-        NominalSelection::Selected(declaration) => declaration,
-        NominalSelection::Missing | NominalSelection::Opaque => return None,
-    };
-    if let Some(host) = declaration.declaration.host_type() {
-        Some(InheritedRole {
-            role: host.role?.role,
-            host_identity: (
-                module_path_key(declaration.owner.module()?, None),
-                host.name.clone(),
-            ),
-        })
-    } else if let Some(alias) = declaration.declaration.type_alias() {
-        let owner_key = declaration.owner.module()? as *const crate::ast::Module<P> as usize;
-        let key = (owner_key, declaration.id.0);
-        if seen.contains(&key) {
-            return None;
-        }
-        seen.push(key);
-        let result = monomorphic_alias_inherited_role(
-            &alias.type_params,
-            alias.type_body(),
-            declaration.owner,
-            provider,
-            seen,
-        );
-        seen.pop();
-        result
-    } else {
-        None
+    for index in env.selected_defaults.iter().flatten() {
+        let candidate = &env.default_candidates[*index];
+        env.roles_in_scope
+            .insert(candidate.role, candidate.visible_name);
     }
 }
 
@@ -1750,16 +1411,6 @@ where
 
     pub fn resolve_exact_role(&self, role: crate::ast::Role) -> RoleResolution<'m> {
         self.env.resolve_exact_role_at(role, self.item_index)
-    }
-
-    pub fn describe_exact_role_ambiguity(
-        &self,
-        role: crate::ast::Role,
-        first: &str,
-        second: &str,
-    ) -> String {
-        self.env
-            .describe_exact_role_ambiguity(role, first, second, self.item_index)
     }
 
     pub fn require_pure_fn(
@@ -2719,7 +2370,7 @@ mod tests {
         let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
         assert_eq!(env.cross_module_type_aliases.len(), IMPORTS);
         assert!(
-            nominal_provider_item_visits() <= DECLARATIONS,
+            nominal_provider_item_visits() <= DECLARATIONS + 3 * IMPORTS,
             "one indexed target declaration provider must serve every selective type import in O(D + U), not scan all D declarations for each of U names: {} visits",
             nominal_provider_item_visits()
         );
@@ -2817,8 +2468,8 @@ mod tests {
 
         reset_nominal_provider_item_visits();
         assert!(matches!(
-            env.resolve_direct_role_candidates(|role| role == crate::ast::Role::Bool, None),
-            RoleResolution::Ambiguous { .. }
+            env.resolve_exact_role(crate::ast::Role::Bool),
+            RoleResolution::Missing
         ));
         assert!(
             nominal_provider_item_visits() <= DECLARATIONS,
@@ -2848,16 +2499,16 @@ mod tests {
 
         reset_nominal_provider_item_visits();
         let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
-        assert_eq!(env.alias_roles.len(), ALIASES);
+        assert_eq!(env.default_candidates.len(), ALIASES);
         assert!(
-            nominal_provider_item_visits() <= DECLARATIONS,
+            nominal_provider_item_visits() <= DECLARATIONS + 4 * ALIASES,
             "inherited-role lookup must project each exact provider declaration in O(D + K), not rescan all D declarations for every alias: {} visits",
             nominal_provider_item_visits()
         );
     }
 
     #[test]
-    fn exact_role_alias_fallback_deduplicates_terminal_host_identity() {
+    fn selected_aliases_deduplicate_terminal_host_identity() {
         let package = package(&[
             (
                 "pkg/provider.kio",
@@ -2871,7 +2522,7 @@ mod tests {
             (
                 "pkg/consumer.kio",
                 "module pkg/consumer; import pkg/adapter as adapter; \
-                 type Zeta = adapter.Rehost; type Alpha = adapter.Rehost;",
+                 default type Zeta = adapter.Rehost; default type Alpha = adapter.Rehost;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
@@ -2879,11 +2530,11 @@ mod tests {
 
         assert_eq!(
             env.resolve_exact_role(crate::ast::Role::Bool),
-            RoleResolution::Unique("Alpha")
+            RoleResolution::Unique("Zeta")
         );
         assert_eq!(
             env.roles_in_scope.get(&crate::ast::Role::Bool),
-            Some(&"Alpha")
+            Some(&"Zeta")
         );
     }
 
@@ -2897,7 +2548,15 @@ mod tests {
         let env = ModuleEnv::build(module, None, None, None).expect("standalone environment");
 
         assert_eq!(
-            env.declared_role_for_nominal_identity("standalone", "I32"),
+            env.role_type_identity(
+                &crate::ast::Type::synth_path(
+                    vec!["standalone".to_owned(), "I32".to_owned()],
+                    Vec::new(),
+                    Span::new(0, 0)
+                ),
+                true
+            )
+            .map(|(role, _)| role),
             Some(crate::ast::Role::I32),
             "a canonical same-source identity must resolve through the source module without a package entry"
         );
@@ -2915,7 +2574,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_role_alias_fallback_keeps_distinct_same_leaf_origins() {
+    fn selected_aliases_reject_distinct_same_leaf_origins_eagerly() {
         let package = package(&[
             (
                 "pkg/first.kio",
@@ -2928,24 +2587,18 @@ mod tests {
             (
                 "pkg/consumer.kio",
                 "module pkg/consumer; import pkg/first as first; import pkg/second as second; \
-                 type Zeta = second.Bool; type Alpha = first.Bool;",
+                 default type Zeta = second.Bool; default type Alpha = first.Bool;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
-        let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
-
-        assert_eq!(
-            env.resolve_exact_role(crate::ast::Role::Bool),
-            RoleResolution::Ambiguous {
-                first: "Alpha",
-                second: "Zeta",
-            }
-        );
-        assert!(!env.roles_in_scope.contains_key(&crate::ast::Role::Bool));
+        let error = ModuleEnv::build(consumer, None, None, Some(&package))
+            .err()
+            .expect("conflicting defaults");
+        assert!(error.diag().1.contains("conflicting default boolean types"));
     }
 
     #[test]
-    fn alias_role_cutoff_keeps_imported_origin_separate_from_later_local_origin() {
+    fn imported_default_is_active_before_local_aliases() {
         let package = package(&[
             (
                 "pkg/first.kio",
@@ -2962,9 +2615,9 @@ mod tests {
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/provider(Flag); \
+                "module pkg/consumer; import pkg/provider(default Flag); \
                  import pkg/second as second; fn earlier() -> . { () } \
-                 type Flag = second.Bool;",
+                 type Other = second.Bool;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
@@ -2976,15 +2629,12 @@ mod tests {
         );
         assert_eq!(
             env.resolve_exact_role(crate::ast::Role::Bool),
-            RoleResolution::Ambiguous {
-                first: "Flag",
-                second: "Flag",
-            }
+            RoleResolution::Unique("Flag")
         );
     }
 
     #[test]
-    fn repeated_direct_import_of_one_identity_remains_unique() {
+    fn differently_renamed_defaults_of_one_identity_remain_unique() {
         let package = package(&[
             (
                 "pkg/provider.kio",
@@ -2992,8 +2642,8 @@ mod tests {
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/provider(Bool); \
-                 import pkg/provider(Bool);",
+                "module pkg/consumer; import pkg/provider(default Bool); \
+                 import pkg/provider(default Bool as Flag);",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;

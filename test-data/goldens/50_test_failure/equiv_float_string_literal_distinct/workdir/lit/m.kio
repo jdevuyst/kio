@@ -1,6 +1,6 @@
 module lit/m;
 
-import lit(F64, Str);
+import lit(default F64, default Str);
 
 equiv float_lit() {
   1.5;

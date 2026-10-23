@@ -133,7 +133,22 @@ Variables in the local context synthesize their bound type. Three categories of 
 Γ ⊢ name ⇑ scheme(name, Γ_roles) ↪ name
 ```
 
-For each role, let `D_role` be the set of role-bearing host identities in unqualified lexical scope and `A_role` the terminal identities reached by transparent aliases in that scope. A qualified module import does not add its members to either set; an in-scope alias may nevertheless reach its terminal identity through one. A terminal identity is `(declaring module, host-type name)`; repeated imports and aliases reaching one identity are one member, while equal leaf names declared by different modules remain distinct. `Γ_roles(role) = D_role` when `D_role` is nonempty, and `Γ_roles(role) = A_role` otherwise. The scope parameter threads in because `__if_then_else__`'s scheme is `∀α. (B, . → α, . → α) → α` only when `Γ_roles(bool) = {B}`. A missing or non-singleton set is a type error. Most registry entries ignore `Γ_roles`; the `__if_then_else__` entry uses it to construct its scheme.
+For each literal category, `Γ_roles` records the explicit module-local
+`default` selection visible at this source position, or the empty set.
+Categories are integer, float, Boolean and string. Selections normalize
+ordinary saturated alias applications to terminal role-bearing host identities
+`(declaring module, name)`. Repeated selections of one identity agree;
+conflicting distinct defaults are rejected independently of body use.
+An ordinary import or unmarked type declaration adds no selection. Imports
+are header-active; local selections follow ordinary declaration/recursive-group
+scope. No direct-host-over-alias fallback applies. The scope parameter is
+needed because `__if_then_else__` has scheme `∀α. (B, . → α, . → α) → α`
+only when `Γ_roles(bool) = {B}`. Its absence is a type error; most registry
+entries ignore `Γ_roles`.
+
+The fixed full-Kio `__comptime__` block import supplies its specified
+compile-time Boolean/string selections and participates in the same conflict
+checks. Ordinary imports do not transfer provider selections.
 
 Each registry entry pairs a polytype scheme with an optional **side condition** that fires after the standard call-typing rule succeeds. For intrinsics, side conditions are trivial or absent.
 
@@ -615,13 +630,16 @@ Now `.[A](x) { x }` sits in a checking position (the value-arg slot of `identity
 
 ### 7.1. Unit, literals, and absurd
 
-Unit and the three literal forms (integers, floats, strings — admitted at the elaborator with the role-admission check from [`prime.md`](prime.md) § 2.2) synthesize their type from the literal's lexical shape and the role environment. The rules are inherited verbatim from [`prime.md`](prime.md):
+Unit and annotated integer, float, string and Boolean literals synthesize
+their type using the lexical-category admission check from [`prime.md`](prime.md)
+§ 2.2. An annotated literal does not need a default. The rules are inherited
+from that core typing relation:
 
 ```text
 ──────────────────  E-Unit
 Γ ⊢ () ⇑ . ↪ ()
 
-(B : role(bool) ∈ Γ_roles)
+(B is a role(bool) type in Γ)
 ─────────────────────────────  E-True/False
 Γ ⊢ .t(B) ⇑ B ↪ .t(B)
    etc.
@@ -1012,7 +1030,7 @@ across its binding boundary. A sequenced expression requires `F(.)`, whereas
 The reference `if!`, `scope!`, `do!`, and `match!` are ordinary library
 declarations using these projections. `if!` relates its two thunk results
 through the repeated result in its public type. Its condition synthesizes
-first and must have the singleton Boolean-role host type required by the
+first and must have the explicitly selected Boolean-default type required by the
 branching intrinsic; result information never flows backwards into it. A surrounding result checks
 both arms. Otherwise either independently determined arm may determine or
 refine the common result, with no source-order priority.
@@ -1072,7 +1090,7 @@ forms such as tuple sugar are rewritten earlier. Elaboration-bearing variants
 become statically uninhabited after substitution — see [`prime.md`](prime.md)
 for the phase-typed AST discipline.
 
-The `pure` marker on an ordinary top-level `fn` is Kio' syntax rather than a surface-only elab form, so it remains on the assembled package for standalone validation. Elab declarations, their ordinary-or-fills implementation mode, implementation-path selection, `__Comptime__`, `__Fill_ctx__`, provisional recipes, fill transcripts, and the compile-time primitive environment do not remain in that package. An implementation or helper remains an ordinary function declaration; before the persistent Kio' boundary, a body gated by a leading `__Comptime__` proof is replaced with an ordinary `__absurd__` body and compile-time-only types are erased. `__Fill_ctx__` is never an alternate erasure receiver.
+The `pure` marker on an ordinary top-level `fn` is Kio' syntax rather than a surface-only elab form, so it remains on the assembled package for standalone validation. Elab declarations, their ordinary-or-fills implementation mode, implementation-path selection, `__Comptime__`, `__Fill_ctx__`, provisional recipes, fill transcripts, and the compile-time primitive environment do not remain in that package. An implementation or helper remains an ordinary function declaration; before the persistent Kio' boundary, a body gated by a direct `__Comptime__` proof parameter in any value-parameter position is replaced with an ordinary `__absurd__` body and compile-time-only types are erased. `__Fill_ctx__` is never an alternate erasure receiver.
 
 **Proof sketch.** By induction over the syntactic forms admissible in Kio
 surface but not in Kio'. Each type-directed form records a Kio'-shaped

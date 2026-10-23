@@ -92,9 +92,7 @@ e ::=
                                   be a role(bool) type in scope)
   | n(N_k)                     (integer literal at type N_k;
                                   N_k must carry role(k) for some
-                                  k ∈ {i8, ..., u128, f32, f64} — an
-                                  integer literal admits float roles
-                                  too)
+                                  k ∈ {i8, ..., u128})
   | r(N_k)                     (float literal at type N_k; N_k
                                   must carry role(k) for some
                                   k ∈ {f32, f64})
@@ -236,11 +234,11 @@ Variables, units, and literals:
 ───────────────────────────────────  T-False
 Γ ⊢ .f(B) : B
 
-(N_k is a role(k) type in Γ; k ∈ {i8, ..., u128, f32, f64})
+(N_k is a role(k) type in Γ; k ∈ {i8, ..., u128}; n fits k)
 ─────────────────────────────────────────────────────────────────  T-Int
 Γ ⊢ n(N_k) : N_k
 
-(N_k is a role(k) type in Γ; k ∈ {f32, f64})
+(N_k is a role(k) type in Γ; k ∈ {f32, f64}; round_k(r) is finite)
 ───────────────────────────────────────────────────  T-Float
 Γ ⊢ r(N_k) : N_k
 
@@ -249,7 +247,7 @@ Variables, units, and literals:
 Γ ⊢ s(S) : S
 ```
 
-Each literal carries its host-type annotation as a syntactic slot of the term — Kio' admits no unannotated-literal form (see [`../grammar.md` § Kio' grammar](../grammar.md#kio-grammar)). The single premise on each rule is that the annotation matches the literal's lexical shape via the role-admission relation in [`../language.md` § Literals](../language.md#literals). Type-checking is local: there is no context-driven resolution, no candidate pool, no unification. The surface language's tier-2 and tier-3 resolution rules (see [`../language.md` § Literals](../language.md#literals)) elaborate every unannotated literal to one of the annotated forms above before the program reaches Kio'; that elaboration is part of the surface→Kio' bridge described in [`elaboration.md` § 7.1](elaboration.md#71-unit-literals-and-absurd), not part of the Kio' core.
+Each literal carries its host-type annotation as a syntactic slot of the term — Kio' admits no unannotated-literal form (see [`../grammar.md` § Kio' grammar](../grammar.md#kio-grammar)). Its annotation must match the literal's lexical shape via the role-admission relation in [`../language.md` § Literals](../language.md#literals). Integer values must lie in the role's signed or unsigned range; integer negative zero denotes zero. `round_k` rounds the exact decimal directly to IEEE binary32 or binary64 using round to nearest, ties to even, preserving subnormals and signed zero, including underflow to signed zero. Type-checking is local: there is no context-driven resolution, no candidate pool, no unification. The surface language's tier-2 and tier-3 resolution rules (see [`../language.md` § Literals](../language.md#literals)) elaborate every unannotated literal to one of the annotated forms above before the program reaches Kio'; that elaboration is part of the surface→Kio' bridge described in [`elaboration.md` § 7.1](elaboration.md#71-unit-literals-and-absurd), not part of the Kio' core. Standalone Kio' checking independently validates the numeric premises.
 
 `let` and functions:
 
@@ -373,7 +371,20 @@ __if_then_else__  : ∀α. (B, . → α, . → α) → α   (Γ_roles(bool) = {B
 __absurd__        : ∀α. ! → α
 ```
 
-`__if_then_else__` requires `Γ_roles(bool) = {B}`. The candidate set is the nonempty set of Boolean-role host identities in unqualified lexical scope, or otherwise the fallback set of terminal identities reached through transparent aliases in that scope. A qualified module import alone contributes no member, though an in-scope alias may reach its terminal identity through one. Identities are `(declaring module, host-type name)`: repeated paths to one declaration collapse to one member, while declarations from different modules remain distinct even when their leaves match. With zero or multiple candidates, the intrinsic has no scheme and referencing it is a type error. This is deliberately stricter than T-True / T-False: those literal terms carry `B` explicitly and remain well-typed at either of two same-role types. The literal forms `.t(B)` / `.f(B)` and the `__if_then_else__` intrinsic are the two places the language has built-in awareness of the `role(bool)` boundary.
+`Γ_roles(bool)` contains the module's explicit Boolean default, or is empty
+when none is selected. It is derived from the written `default` modifiers on
+imports and in-scope host-type or transparent-alias declarations, not from all
+visible role-bearing types. Normalize saturated aliases by ordinary type
+substitution and compare terminal host identities `(declaring module, name)`.
+Same-identity selections agree; distinct selections in one category are
+rejected before bodies are checked. The same selection syntax and scope rules
+apply in full Kio and Kio', including freshly reparsed artifacts.
+
+`__if_then_else__` requires `Γ_roles(bool) = {B}`; an empty set gives it no
+scheme. T-True / T-False instead carry `B` explicitly and need no default, so
+they can use any admitted Boolean-role type. Annotating a condition at another
+type does not override the intrinsic's selected `B`. The literal forms and
+the intrinsic are the places where typing observes Boolean role metadata.
 
 `__absurd__` is well-typed at every `α`; it is sound because the bottom type `!` has no introduction form (see § 4 — Type safety), so its precondition can never be discharged at runtime.
 
@@ -832,6 +843,20 @@ Kio' term.
 Therefore `P`-against-`M` typechecks identically before and after. □
 
 This is the "open-world by structural construction" claim from the prose pages, made formal. The proof is genuinely short because Kio takes deliberate care to avoid every mechanism that would make the property fragile.
+
+**Consumer import extension contract.** In addition to provider extension,
+an accepted addition to a consumer's imports preserves the validity and meaning
+of its existing function bodies. Header admission checks names, alias edges,
+operator syntax and default selections against that module's declarations,
+without inspecting bodies to see which conflicts are used. Preservation
+includes grouping, resolved identities and inferred types, modulo hygienic
+renaming; it does not fix diagnostic text, generated bytes or package contracts.
+Explicit defaults make each category's selection a partial identity map:
+accepted selections extend that map without replacing a successful lookup.
+That fact is only the default-selection part of the argument. The contract
+also requires namespace disjointness, lexical binding ownership, source-order
+visibility, syntax-local operator compatibility and the ordinary application
+rules; default-map uniqueness alone is not a proof for the whole language.
 
 ## 8. References
 

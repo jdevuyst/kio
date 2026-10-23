@@ -138,6 +138,7 @@ pub fn render_markdown_guide() -> String {
         "If you are trying to construct or inspect sums and products in a normal\nprogram, use the structural guides instead of this reference. The\n`import __intrinsics__;` snippet below is a reference entry for core-level code,\nnot a package or module starter.\n\n",
     );
     out.push_str("Import and signature blocks are reference fragments and are marked `{ignore}`. Worked examples use standalone checked fences. The first paragraph of each entry is the concise summary used by editor hover; the following text is the long-form reference.\n\n");
+    out.push_str("See [literal defaults](typechecking.md#literal-types-and-module-local-defaults) for module-local selection, scope and alias rules.\n\n");
     render_module_section(&mut out, BuiltinModule::Intrinsics);
     render_module_section(&mut out, BuiltinModule::Comptime);
     let trimmed_len = out.trim_end().len();
@@ -233,7 +234,7 @@ fn intrinsic_summary(name: &str) -> &'static str {
         "__fst__" => "Projects the first field from a product value.",
         "__snd__" => "Projects the second field from a product value.",
         "__if_then_else__" => {
-            "Branches on the single in-scope `role(bool)` identity. The true and false branches are thunks so only the selected branch is evaluated."
+            "Branches on the module's explicit Boolean default. The true and false branches are thunks so only the selected branch is evaluated."
         }
         "__absurd__" => "Eliminates a bottom value into any requested result type.",
         _ => "Kio' core intrinsic.",
@@ -261,7 +262,7 @@ fn intrinsic_details(name: &str) -> &'static str {
             "The value must have exactly the product type `A & B`; the result is its right component. The helper does not search a wider product spine, so a different product shape is a type error."
         }
         "__if_then_else__" => {
-            "The condition uses the unique selected `role(bool)` type identity from unqualified lexical scope. Direct host types are selected when present; aliases form the fallback pool otherwise, with repeated paths to one declaration counted once. A qualified module import alone does not add its members. Both branches are unit-domain functions returning the same `A`; the intrinsic calls only the chosen thunk. With no Boolean-role identity, more than one selected identity, a non-boolean condition, or disagreeing branch results, typechecking fails."
+            "The selected type comes from a written `default` on a local host type, type alias or named type import. Other Boolean-role types can remain in scope, but annotating the condition at one of them does not override the selection. With no Boolean default the intrinsic has no type scheme; distinct conflicting defaults are rejected even when unused. Both branches are unit-domain functions returning the same `A`; only the chosen thunk is invoked."
         }
         "__absurd__" => {
             "The argument must have bottom type `!`; because `!` has no values, a well-typed closed program cannot reach this eliminator with a constructed value. It supplies no fallback behavior: an argument of any inhabited type is rejected, and a stuck host computation returning `!` remains opaque during compile-time evaluation."
@@ -349,8 +350,12 @@ fn comptime_summary(builtin: ComptimeBuiltin) -> &'static str {
         TypeName => "Opaque handle for the named head of a reflected named type.",
         TypeArity => "Opaque arity value used by reflected type variables, names, and binders.",
         DiagnosticText => "Compile-time text used in elab diagnostics.",
-        ComptimeBool => "Compile-time boolean type with `role(bool)`.",
-        ComptimeStr => "Compile-time string type with `role(str)`.",
+        ComptimeBool => {
+            "Compile-time boolean type with `role(bool)`. The fixed `__comptime__` block import selects it as the importing module's Boolean default."
+        }
+        ComptimeStr => {
+            "Compile-time string type with `role(str)`. The fixed `__comptime__` block import selects it as the importing module's string default. These builtin selections participate in the ordinary eager conflict checks; another distinct default in either category is not an override."
+        }
         FillCtx => "Opaque immutable transcript of explicit fill relations for one marked call.",
         ReflectType => {
             "Reflects a type argument into an opaque `__Type__` handle. Elabs use it when they need to inspect a type parameter, compare types, or pass a type into checked-term construction."
@@ -650,7 +655,7 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Constructs a checked runtime bottom elimination from `bottom_value` to `result_type`. The value must have type `!`; any inhabited source type makes construction fail."
         }
         IntrinsicIfThenElse => {
-            "Constructs a checked runtime `__if_then_else__` call. The condition must use the caller's single `role(bool)` identity and both zero-argument callbacks must return `result_type`. Missing or ambiguous Boolean-role information, or a branch mismatch, makes construction fail."
+            "Constructs a checked runtime `__if_then_else__` call. The condition must use the caller's explicitly selected Boolean default and both zero-argument callbacks must return `result_type`. A missing selection or branch mismatch makes construction fail; distinct conflicting defaults are rejected before use."
         }
     }
 }

@@ -3,7 +3,7 @@ module circuit_netlist_eval/evaluator;
 import circuit_netlist_eval/domain(State, {stage});
 import circuit_netlist_eval/gates as gates;
 import elab/control(if);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
 

@@ -1,6 +1,6 @@
 module main;
 
-host type Local role(i32);
+default host type Local role(i32);
 
 host type Witness;
 

@@ -3268,6 +3268,7 @@ mod tests {
             let meta = crate::ast::Meta::new(crate::span::Span::new(0, 0));
             let _ = emitter.emit_expr(&Expr::IntLit {
                 occurrence: (),
+                diagnostic: Default::default(),
                 digits: "1".into(),
                 annotation: Type::Unit { meta: meta.clone() },
                 meta,

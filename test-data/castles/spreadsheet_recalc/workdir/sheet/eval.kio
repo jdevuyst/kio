@@ -16,7 +16,7 @@ import sheet/formula(Mul_l, Mul_r, Ref_at, Sub_l, Sub_r, Sum_hi, Sum_lo, range_c
 import sheet/formula({add_l}, {add_r}, {if_c}, {if_e}, {if_t}, {lit}, {max_hi}, {max_lo});
 import sheet/formula({mul_l}, {mul_r}, {ref_at}, {sub_l}, {sub_r}, {sum_hi}, {sum_lo});
 import sheet/list(List);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
 

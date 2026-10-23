@@ -77,6 +77,28 @@ fail to compile or change its meaning. A consumer can opt into a new
 declaration by editing its own `import` list, but a provider cannot silently
 retarget the consumer's existing code.
 
+## Adding imports without changing existing bodies
+
+Kio also protects a consumer when it adds imports. An accepted addition must
+preserve the validity and meaning of its existing function bodies: grouping,
+which declarations names refer to, and the inferred types stay unchanged.
+The compiler checks conflicts against the imports and declarations before
+looking inside bodies to see whether a conflicting item happens to be used.
+For example, importing both providers' `speak` into the same local spelling is
+rejected even if no function calls it; distinct qualified aliases remain useful.
+
+Literal defaults follow this rule too. `role` says that a type accepts a
+literal category; importing that type does not silently select it. A written
+`default` chooses one identity for the module. An ordinary import cannot
+replace it, and selecting a second distinct default in the same category is
+rejected even when unused. Aliases of the same terminal type agree. See
+[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
+
+This is broader than a numeric rule. Names, operator grammar, lexical binders
+and ordinary application rules must all preserve the existing body's reading.
+It does not freeze editor suggestion menus or the host/export contract of a
+package; changing that contract remains a versioning question.
+
 ## Explicit evidence, not ambient instance search
 
 The same problem appears in languages that search all visible typeclass

@@ -20,7 +20,7 @@ import elab/control(if);
 import seg/agg(Agg, agg, agg_min, agg_sum, combine, leaf_agg, shift);
 import seg/meter(Meter, bump_push, bump_work, new_meter, pushes, work);
 import seg/num(half, int_eq, int_lt, not);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(array_get, array_make_filled, array_set);
 import testapi/iter(loop);

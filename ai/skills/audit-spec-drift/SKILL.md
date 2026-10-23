@@ -144,6 +144,16 @@ preservation](../../topics/language-surface-tooling.md#canonical-formatting-not-
 
 ## 6. Surface and Prime semantics
 
+Trace [numeric literal values](../../topics/implementation.md#numeric-literal-values)
+from each typing route through normalization and host construction. Check the
+selected role's integer bounds and floating-point rounding rules, including
+signed minima, subnormals, overflow, underflow and signed zero. Equivalent
+spellings must agree before and after formatting, cache reuse and textual Prime
+round trips. Inspect actual host values where constant syntax or intermediate
+precision can alter them; compiler acceptance and generated text alone are not
+runtime conformance. Distinguish compiler-owned literal conversion from the
+host's responsibility for its custom carriers and supplied values.
+
 `specs/language.md`, `specs/prime.md`, and `specs/formal/elaboration.md` describe what typechecks and what doesn't. Check the typer (`typecheck_core`, `typecheck_full`, `prime::typer`) against:
 
 - Each typing rule named in the spec.

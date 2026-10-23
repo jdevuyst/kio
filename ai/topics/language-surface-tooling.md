@@ -97,6 +97,20 @@ their own witnesses.
 
 ## Impact checklist
 
+For literal/default changes, separate lexical admission from selection.
+Exercise all four categories, expected/explicit types without a default,
+same-terminal aliases including applied RHSs, eager unused conflicts,
+source-order scope and non-propagation through ordinary imports. Integer and
+float spelling categories apply in both full and Prime input, independent of
+argument order. All point-free exponent forms reject, including no sign,
+`+`, negative exponents and `-0`; decimal-point float exponents remain valid. Cover
+source-authenticated missing-dot/default fixes and stale refusal, alias
+definition/use attribution, explicit artifact selections and the independent
+loader. An accepted consumer-import extension must preserve all existing
+body grouping, identities, types and meaning; a unique default map proves
+only one part of that language-wide obligation. Keep configuration words and
+inspector declaration selectors distinct from the new type-selection modifier.
+
 A surface or semantic change is not complete until the language and tooling agree on the same accepted spelling and the same user-facing behavior. Before implementation or landing, state the impact argument: which bridge surfaces must change, which are intentionally unchanged, and why "unchanged" follows from the boundary being modified.
 
 Use that argument to choose the affected surface area:

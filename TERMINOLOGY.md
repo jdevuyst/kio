@@ -143,13 +143,18 @@ dynamically loaded Kio'; name the intended one when context is insufficient.
 See [hosting](specs/language.md#embeddability-and-portability) and
 [host guides](docs/hosts/).
 
-**Capability, host declaration, role.** A capability is an operation or facility
+**Capability, host declaration, role, default.** A capability is an operation or facility
 made available to code, including ordinary function values and dictionary
 bundles passed as arguments. Host capabilities, such as strings or I/O, enter
 through typed `host type` and `host fn` declarations. A type's `role(...)`
-associates it with specified literal or
-Boolean interpretation; it does not supply operations or an ambient standard
-library. See [dependency injection](docs/guides/dependency-injection.md) and
+admits literals of the corresponding category and determines numeric literal
+bounds or IEEE rounding; it does not select the type
+for unannotated literals or supply operations. A written `default` selects one
+module-local type per integer, float, Boolean or string category. Ordinary
+imports do not inherit a provider's selections. Expected or explicit literal
+types need no default but still obey the literal's written category.
+See [literal typing](docs/guides/typechecking.md#literal-types-and-module-local-defaults),
+[dependency injection](docs/guides/dependency-injection.md) and
 [roles](specs/package.md#roles).
 
 **Public export, host export, bridge, env, contract surface.** `pub` controls

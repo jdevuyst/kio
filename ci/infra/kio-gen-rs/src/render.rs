@@ -372,10 +372,8 @@ fn render_term_opts_with_context(
     }
     match t {
         // The explicit `(Type)` annotation form (specs/language.md
-        // § Literals). The generated package declares every base as a
-        // distinct role-bearing host type, so a bare
-        // literal has no unique tier-3 candidate — the annotation pins
-        // it.
+        // § Literals). An annotation pins each generated base identity
+        // independently of the module's selected default types.
         Term::NumLit { base, repr } => format!("{repr}({})", base.type_name()),
         Term::StrLit(s) => format!("{}(String)", render_str_lit(s)),
         Term::BoolLit(b) => format!("{}(Bool)", if *b { ".t" } else { ".f" }),

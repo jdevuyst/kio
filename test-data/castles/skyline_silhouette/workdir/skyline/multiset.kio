@@ -16,7 +16,7 @@ import elab/control(if);
 import elab/match(match);
 import skyline/list as lst;
 import skyline/logic as logic;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(leq_i32);
 import testapi/iter(loop);
 

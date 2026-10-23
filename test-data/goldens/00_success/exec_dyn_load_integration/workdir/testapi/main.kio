@@ -9,7 +9,7 @@ import loader(Diag, Loaded, Surface);
 import loader(Lr_diag, Lr_image, un_load_outcome);
 import loader({apply}, {i32_in}, {i32_out}, {lookup}, {str_in}, {str_out});
 import loader/scan(load_package);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat, string_eq);

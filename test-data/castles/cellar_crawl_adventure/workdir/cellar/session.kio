@@ -9,7 +9,7 @@ import cellar/report as report;
 import cellar/state as state;
 import elab/control(if);
 import elab/match(match);
-import testapi(Bool, String);
+import testapi(String, default Bool);
 import testapi/io(print, read_ascii_line);
 import testapi/iter(loop);
 

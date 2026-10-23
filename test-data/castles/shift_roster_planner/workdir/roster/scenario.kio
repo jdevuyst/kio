@@ -2,7 +2,7 @@ module roster/scenario;
 
 import elab/control(if);
 import roster/types(Shift, {day}, {demand}, {preference}, {skill}, {slot}, {worker});
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32);
 
 pub fn shift_count() -> I32 { 10 }

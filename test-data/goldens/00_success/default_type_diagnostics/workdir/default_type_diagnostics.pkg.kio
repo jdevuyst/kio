@@ -1,0 +1,10 @@
+package default_type_diagnostics;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

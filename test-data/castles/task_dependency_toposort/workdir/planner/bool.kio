@@ -1,7 +1,7 @@
 module planner/bool;
 
 import elab/control(if);
-import testapi(Bool);
+import testapi(default Bool);
 
 pub fn invert(value: Bool) -> Bool {
   if! value { .f } else { .t }

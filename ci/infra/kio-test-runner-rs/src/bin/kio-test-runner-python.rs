@@ -30,7 +30,8 @@ use artifact_identity::{ArtifactIdentity, ArtifactIdentityArgs};
 use host_api::{HostApi, facade_module_selector, facade_type_selector, host_module_key};
 use protocol::{
     ExportDriver, HostFnBinding, HostFnBodyKind, HostTypeBinding, HostTypeFixture,
-    ProtocolExecution, RunnerProtocol, WIDE_CALLABLE_SLOT_COUNT,
+    NUMERIC_LITERAL_SAMPLES, NumericLiteralExpected, ProtocolExecution, RunnerProtocol,
+    WIDE_CALLABLE_SLOT_COUNT,
 };
 use runner::{EXIT_RUNTIME_FAILURE, EXIT_USAGE, TestRunner};
 
@@ -309,6 +310,30 @@ fn build_driver_script_with_host(
     }
     let host_types = host_types_literal(protocol.contract().host_types);
     let driver = python_driver(protocol);
+    let mut numeric_literal_checks = String::new();
+    if protocol == RunnerProtocol::NumericLiteralValues {
+        for (leaf, expected) in NUMERIC_LITERAL_SAMPLES {
+            let member = host_api::host_name_core(leaf);
+            let call = format!("main.{member}()");
+            let check = match expected {
+                NumericLiteralExpected::Integer(_, value) => {
+                    format!("type(value) is int and value == {value}")
+                }
+                NumericLiteralExpected::F32(bits) => {
+                    let widened = f64::from(f32::from_bits(*bits)).to_bits();
+                    format!(
+                        "type(value) is float and struct.pack('>d', value).hex() == '{widened:016x}'"
+                    )
+                }
+                NumericLiteralExpected::F64(bits) => format!(
+                    "type(value) is float and struct.pack('>d', value).hex() == '{bits:016x}'"
+                ),
+            };
+            numeric_literal_checks.push_str(&format!(
+                "    value = {call}\n    if not ({check}):\n        raise RuntimeError('{leaf}')\n"
+            ));
+        }
+    }
     // The package's public factory is `create_<value-brand>`, derived from
     // the independently supplied artifact identity.
     let factory = format!("create_{}", artifact_identity::value_brand(namespace));
@@ -1177,6 +1202,11 @@ elif PROTOCOL == "export-callable-slots-roundtrip":
     check(value, 97)
     check(calls, [2, 2])
     _print("callable slots ok\n")
+elif PROTOCOL == "numeric-literal-values":
+    import struct
+    main = _base("main")
+{numeric_literal_checks}
+    _print("numeric literals ok\n")
 elif PROTOCOL == "export-scalar-roundtrip":
     main = _base("main")
     samples = [
@@ -1877,6 +1907,7 @@ fn python_driver(protocol: RunnerProtocol) -> &'static str {
             "export-structural-roundtrip"
         }
         ProtocolExecution::Invoke(ExportDriver::ScalarRoundtrip) => "export-scalar-roundtrip",
+        ProtocolExecution::Invoke(ExportDriver::NumericLiteralValues) => "numeric-literal-values",
         ProtocolExecution::Invoke(ExportDriver::SameArtifactExchange) => "same-artifact-exchange",
         ProtocolExecution::Invoke(ExportDriver::DirectSumForallBoundary) => {
             "direct-sum-forall-boundary"

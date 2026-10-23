@@ -1966,7 +1966,7 @@ v(2) {
             dts.contains("roundHost: (p0: number) => number;")
                 && dts.contains("roundWrapped: (p0: { Wrapped: number }) => { Wrapped: number };")
                 && dts.contains("roundAlias: (p0: number) => number;")
-                && dts.contains("keep: <ComptimeStr>(p0: ComptimeStr) => ComptimeStr;"),
+                && dts.contains("keep: <ComptimeStrN2>(p0: ComptimeStrN2) => ComptimeStrN2;"),
             "{dts}"
         );
     }

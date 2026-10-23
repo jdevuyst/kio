@@ -5,7 +5,7 @@ import elab/match(match);
 import join/model as m;
 import list/core as core;
 import list/list as lists;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;

@@ -24,9 +24,9 @@ import match(match);
 import control(if, scope);
 import spine_elaborators(narrow_prod, one_prod, one_sum, widen_sum);
 
-host type Int role(i32);
-host type String role(str);
-host type Bool role(bool);
+default host type Int role(i32);
+default host type String role(str);
+default host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String);
@@ -49,9 +49,9 @@ import match(match);
 import control(if, scope);
 import spine_elaborators(narrow_prod, one_prod, one_sum, widen_sum);
 
-host type Int role(i32);
-host type String role(str);
-host type Bool role(bool);
+default host type Int role(i32);
+default host type String role(str);
+default host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String);
@@ -240,17 +240,19 @@ Role-bearing host types are atomic and therefore have no type parameters. A
 roleless host type may still be parameterized, such as `host type Array[A];`;
 `host type Array[A] role(i32);` is rejected.
 
-Other roles admit numeric literals. A module can declare a type with `role(i32)` and a type for Boolean literals and conditions similarly:
+Other roles admit numeric literals. Use `default` when this module should also
+select a type for literals without an annotation or expected type, and for
+the core branching operation's Boolean condition:
 
 ```kio {variant=module}
 // arith.kio
 module arith;
 
-host type Int role(i32);
+default host type Int role(i32);
 
-host type String role(str);
+default host type String role(str);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 host fn add(p0: Int, p1: Int) -> Int;
 
@@ -271,7 +273,10 @@ bridge {
 }
 ```
 
-Inside `arith` and its submodules, the literal `42` produces an `Int`, `"hi"` produces a `String`, and `.t` / `.f` produce `Bool` values.
+Inside `arith`, these defaults let `42` produce an `Int`, `"hi"` produce a
+`String`, and `.t` / `.f` produce `Bool` values without another type cue.
+Defaults do not flow into submodules or consumers automatically: another
+module selects its own, for example `import arith(default Int, default Bool);`.
 
 Write a negative number with `-` touching the first digit, such as `-40` or
 `-3.14`. Kio reads that spelling as one literal where a new expression can
@@ -295,11 +300,37 @@ host fn add_f64(p0: F64, p1: F64) -> F64;
 pub fn adjusted() -> F64 { add_f64(19.5(F64), 0.25(F64)) }
 ```
 
-A literal's type is resolved in three tiers. First, an explicit `(Type)` annotation right on the literal — `42(Int)` — names the type directly. Second, if there's no annotation, the **expected type** from the surrounding position is used: a function-return type, or a call argument checked against a parameter type. Third, failing both, the literal resolves to the module's *unique* role-bearing host type whose shape it admits — here `arith` declares exactly one integer type, so an unannotated `42` in any position resolves to `Int`.
+Kio checks integer literals against their selected role's range: `i8`
+admits −128 through 127, for example, and `u8` admits 0 through 255.
+Leading zeros do not mean octal, and integer `-0` is zero. Floating literals
+round directly to IEEE binary32 for `f32` or binary64 for `f64`, using
+nearest-even rounding. Overflow is a type error; subnormals and negative
+zero are preserved, including when a tiny value underflows to zero. These
+rules determine literal values; the host still supplies arithmetic.
 
-Multiple host types in one scope may carry the same role. If a module has two integer-shaped host types in scope, both declarations are valid, but an unannotated integer literal in a position with no expected type is ambiguous — you'd annotate it (`42(Int)`) to pick one. A module with no integer type at all can't type an integer literal: there's nowhere for the value to land.
+A literal's type is resolved in three tiers. First, an explicit annotation
+such as `42(Int)` names the type. Second, an **expected type** from a function
+result or call argument can supply it. Neither route needs a default. Third,
+when neither applies, the module must have explicitly selected a `default`
+for that literal's category. `role` is capability metadata; `default` is a
+local choice. Merely importing another numeric type changes no existing choice.
 
-When no direct role-bearing host type is in unqualified lexical scope, type aliases in that scope provide the fallback candidate pool. A qualified module import alone does not add its members; an in-scope alias can still name its terminal host type through that qualifier. Aliases do not create extra candidates when they name the same host type: if `First` and `Second` both name `provider.Bool`, conditionals still see one Boolean type. If they name `first.Bool` and `second.Bool` from two different modules, those are two types even though both declarations use the leaf name `Bool`; a conditional then needs the scope reduced to one Boolean-role type.
+There are four categories: integer (all signed and unsigned widths), float
+(`f32`/`f64`), Boolean and string. Multiple unselected types can share a role,
+but two distinct defaults in the same category are rejected even when unused.
+An integer and a float default can coexist. A transparent alias can select an
+existing type with `default type Integer = numbers.Int;`; two selected aliases
+of the same terminal host identity agree. Ordinary imports do not inherit a
+provider's selections, and local defaults follow declaration order.
+
+Floating-point syntax requires a decimal point: `42.0`, `42.0e3` and
+`42.0e-3` are floats. Integers have no exponent notation, so `42e0`, `42E+3`,
+`42e-3` and `42e-0` all reject. Neither an expected float type nor
+`42(F64)` turns integer syntax into a float: write `42.0` or `42.0(F64)`.
+For a generic function requiring two values of the same type,
+`same(42, 42.0)` and `same(42.0, 42)` both reject.
+See [literal types and defaults](../guides/typechecking.md#literal-types-and-module-local-defaults)
+for aliases, source scope, conflicts and editor repairs.
 
 Operations on these types — `add`, `mul`, `int_to_string`, `print` — are `host fn`s. Kio does not auto-include a standard library: the host supplies whatever the bridged modules' `host` declarations ask for, and reusable Kio code arrives through ordinary modules and dependencies. The compiler provides the core and compile-time pseudo-modules named in Chapter 2, but libraries such as the structural elab palette are user Kio code that a package imports explicitly.
 
@@ -399,11 +430,11 @@ fn choose(condition: Bool, when_true: Int, when_false: Int) -> Int {
 }
 ```
 
-The condition must have the uniquely selected Boolean-role host type in the
-current scope. Direct host types are selected when present; aliases provide the
-fallback pool otherwise. A qualified module import alone does not add its
-members. Multiple paths to one host declaration still count once, while
-distinct declarations in the selected pool are ambiguous. Both arms are
+The condition must have the module's explicitly selected Boolean-default type.
+Other Boolean-role types can coexist, but annotating a condition at one of
+them does not override the selection. Missing and conflicting defaults are
+reported separately; merely importing a Boolean type does not select it.
+Both arms are
 blocks. When the surrounding position supplies an expected result type, it
 checks both arms. Without that context, the two branch results determine their
 common type together: a result that is already clear in either branch can
@@ -665,8 +696,8 @@ bridge {
 
 module kiodoc;
 
-host type Int role(i32);
-host type String role(str);
+default host type Int role(i32);
+default host type String role(str);
 host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;

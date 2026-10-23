@@ -8,7 +8,7 @@ import list/list as l;
 import rs/field as f;
 import rs/polynomial as p;
 import rs/symbols as s;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as a;
 import testapi/iter(loop);
 

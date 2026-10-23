@@ -11,7 +11,7 @@ import base32/list as list;
 import elab/control(if);
 import elab/match(match);
 import elab/spine_elaborators(widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/iter(loop);
 import testapi/text(string_eq);
 

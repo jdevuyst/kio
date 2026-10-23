@@ -1,0 +1,5 @@
+module provider;
+
+import __comptime__;
+
+pub type Flag = Comptime_bool;

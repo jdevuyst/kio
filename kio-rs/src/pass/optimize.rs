@@ -3503,7 +3503,7 @@ mod tests {
     fn let_fuse_impure_value_stays_outside_deferred_uses() {
         let sources = [
             "module x/main; import control(if); \
-             host type Bool role(bool); \
+             default host type Bool role(bool); \
              host type I32 role(i32); \
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn t(cond: Bool, x: I32) -> I32 { \
@@ -4157,7 +4157,7 @@ mod tests {
         let m = optimize_one(
             "x/main",
             "module x/main; import __intrinsics__; import control(if); \
-             import testapi(Bool); \
+             import testapi(default Bool); \
              fn t[A](a: A, b: A) -> A { \
                if! .t { a } else { b } \
              }",
@@ -4177,7 +4177,7 @@ mod tests {
         let m = optimize_one(
             "x/main",
             "module x/main; import __intrinsics__; import control(if); \
-             import testapi(Bool); \
+             import testapi(default Bool); \
              fn t[A](a: A, b: A) -> A { \
                if! .f { a } else { b } \
              }",

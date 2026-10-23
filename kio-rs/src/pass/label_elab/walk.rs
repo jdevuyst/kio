@@ -245,6 +245,7 @@ pub trait DesugaredToLowered {
     fn visit_expr_int_lit(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::IntLit {
             occurrence: _,
+            diagnostic,
             digits,
             annotation,
             meta: Meta { span, .. },
@@ -254,6 +255,7 @@ pub trait DesugaredToLowered {
         };
         Ok(Expr::IntLit {
             occurrence: Default::default(),
+            diagnostic,
             digits,
             annotation: annotation.map(|t| self.walk_type(t)).transpose()?,
             meta: Meta::new(span),
@@ -703,6 +705,7 @@ pub trait DesugaredToLowered {
     /// Walk an `TypeAlias` Desugared → Lowered.
     fn walk_alias(&mut self, a: TypeAlias<Desugared>) -> Result<TypeAlias<Lowered>, Error> {
         let TypeAlias {
+            default_span,
             vis,
             name,
             name_span,
@@ -713,6 +716,7 @@ pub trait DesugaredToLowered {
             doc,
         } = a;
         Ok(TypeAlias {
+            default_span,
             vis,
             name,
             name_span,
@@ -787,6 +791,7 @@ pub trait DesugaredToLowered {
 
     fn walk_host_type(&mut self, h: HostType<Desugared>) -> Result<HostType<Lowered>, Error> {
         let HostType {
+            default_span,
             name,
             type_params,
             role,
@@ -795,6 +800,7 @@ pub trait DesugaredToLowered {
             doc,
         } = h;
         Ok(HostType {
+            default_span,
             name,
             type_params,
             role,

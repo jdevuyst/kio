@@ -432,6 +432,10 @@ convert that selected type to and from the following private body type:
 | `f32` | `float32` | `f64` | `float64` |
 | `bool` | `bool` | `str` | `string` |
 
+Literal values obey the shared [numeric contract](../language.md#literals).
+Negative floating zero is constructed through typed variable negation,
+because Go constant conversion discards its sign.
+
 `i128` / `u128` have no fixed-width Go primitive, so they map to
 `*big.Int` from the standard library (`math/big`). This is **not** a
 per-backend carve-out: `math/big` is standard and expresses

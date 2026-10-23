@@ -28,6 +28,9 @@ This guide explains the HKT machinery — kind annotations, type-constructor app
 
 Assumed setup: a module whose host supplies `String` with `role(str)`,
 `print: String -> .`, and `string_concat: (String & String) -> String`.
+The examples select `String` as the module's default for untyped literal
+bindings such as `let suffix = "!";`; see
+[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
 
 <!--kio {harness=module placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -38,7 +41,7 @@ module kiodoc;
 
 import sequence(do);
 
-host type String role(str);
+default host type String role(str);
 host fn print(p0: String);
 host fn string_concat(p0: String, p1: String) -> String;
 

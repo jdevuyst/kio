@@ -3,7 +3,7 @@ module result;
 
 import elab/spine_elaborators(widen_sum);
 import host_descriptor(Host_fn);
-import testapi(String);
+import testapi(default String);
 import value(Value);
 
 // `result.kio` — the evaluator outcome types, factored out of `eval.kio`.

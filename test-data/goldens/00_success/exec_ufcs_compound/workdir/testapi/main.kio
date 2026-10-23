@@ -1,7 +1,7 @@
 module testapi/main;
 
 import elab/spine_elaborators(narrow_prod);
-import testapi(String);
+import testapi(default String);
 import testapi/io(print);
 
 newtype Tag : . { pub constructor mk_tag; pub projector un_tag }

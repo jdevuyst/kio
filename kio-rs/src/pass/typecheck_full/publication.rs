@@ -1,6 +1,6 @@
 //! Owner-scoped, atomic publication of Lowered typechecker results.
 //!
-//! Planning records only opaque goal-store types. Nested owners close into
+//! Goal-dependent planning records only opaque goal-store types. Nested owners close into
 //! parent-scoped retained outputs, and the root close is the sole transition
 //! to a delta that can update [`Elaborations`]. No publication state is
 //! phase-generic, cloneable, or readable as a speculative elaboration table.
@@ -177,7 +177,11 @@ enum PublicationCommand<T> {
     },
     LiteralResolution {
         literal_site: crate::ast::ExpressionSite,
-        resolved: T,
+        // Literal admission has already closed this lexical artifact annotation;
+        // owner closure must not canonicalize its paths back into solver identities.
+        resolved: InternedType,
+        runtime_erases: bool,
+        numeric_value: Option<String>,
         #[cfg(feature = "lsp")]
         lexical_role: Option<String>,
     },
@@ -337,11 +341,15 @@ impl<T> PublicationCommand<T> {
             Self::LiteralResolution {
                 literal_site,
                 resolved,
+                runtime_erases,
+                numeric_value,
                 #[cfg(feature = "lsp")]
                 lexical_role,
             } => PublicationCommand::LiteralResolution {
                 literal_site,
-                resolved: map(resolved),
+                resolved,
+                runtime_erases,
+                numeric_value,
                 #[cfg(feature = "lsp")]
                 lexical_role,
             },
@@ -1037,12 +1045,16 @@ impl PublicationBuilder {
     pub(crate) fn record_literal_resolution(
         &mut self,
         literal_site: crate::ast::ExpressionSite,
-        resolved: ScopedType,
+        resolved: InternedType,
+        runtime_erases: bool,
+        numeric_value: Option<String>,
         #[cfg(feature = "lsp")] lexical_role: Option<String>,
     ) {
         self.push_command(PublicationCommand::LiteralResolution {
             literal_site,
-            resolved: PublicationValue::goal_free(PublicationGoalInput::pending(resolved)),
+            resolved,
+            runtime_erases,
+            numeric_value,
             #[cfg(feature = "lsp")]
             lexical_role,
         });
@@ -1791,6 +1803,8 @@ impl ClosedPublicationDelta {
                 PublicationCommand::LiteralResolution {
                     literal_site,
                     resolved,
+                    runtime_erases,
+                    numeric_value,
                     #[cfg(feature = "lsp")]
                     lexical_role,
                 } => {
@@ -1801,7 +1815,9 @@ impl ClosedPublicationDelta {
                     elaborations.record_literal_resolution(
                         module_path,
                         literal_site.id,
-                        resolved.into_interned_type(),
+                        resolved,
+                        runtime_erases,
+                        numeric_value,
                     );
                 }
                 PublicationCommand::PrimeRequalificationBindings { imports, aliases } => {

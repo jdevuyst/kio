@@ -14,7 +14,7 @@ import sheet/eval(eval_cell);
 import sheet/formula(Expr);
 import sheet/graph(Deps, build_deps, cycle_cells, deps_of, topo_order);
 import sheet/list(List, append, cons, filter, len, nil, one);
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith(sub_i32);
 import testapi/iter(loop);
 

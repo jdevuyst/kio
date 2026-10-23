@@ -216,7 +216,7 @@ fn type_parameter_value_error_does_not_select_a_shadowed_nominal() {
 #[test]
 fn local_nominal_value_errors_keep_exact_declaration_kind_and_span() {
     for (declaration, kind, binding_start, binding_len) in [
-        ("host type Value;", "host type", 5, "type Value;".len()),
+        ("host type Value;", "host type", 0, "host type Value;".len()),
         ("type Value = .;", "type alias", 5, 5),
         (
             "newtype Value : . { constructor mk; projector get; };",

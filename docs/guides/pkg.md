@@ -84,14 +84,13 @@ always public and obey ordinary lexical scoping; another module reaches them
 through a plain `import`, like any other item. A `host type` may carry a
 `role(...)` annotation (`role(str)`, `role(i32)`, `role(bool)`, …) that records
 which literal shapes the declared type accepts. Multiple host types in one
-scope may carry the same role. A bare literal needs a unique admitted host
-identity when no surrounding type selects one; `if`/`else` and
-`__if_then_else__` likewise require exactly one in-scope
-`role(bool)` identity. Direct host types are selected when present; aliases are
-the fallback pool otherwise, with repeated paths to one declaration counted
-once. The pool uses unqualified lexical names: a qualified module import alone
-does not add its members, though an in-scope alias may reach its terminal host
-identity through one.
+scope may carry the same role. When no annotation or expected type chooses a
+literal's type, it needs an explicit module-local `default`; `role` alone does
+not select one. The core branching intrinsic and the reference `if!` elab's
+branching glue use the module's Boolean default too. Ordinary imports do not
+inherit a provider's selections. See
+[literal types and defaults](typechecking.md#literal-types-and-module-local-defaults)
+for the four categories, aliases and eager conflicts.
 
 A role-bearing host type is always zero-arity: type parameters and
 `role(...)` cannot appear on the same declaration. Generic host types such as
@@ -136,16 +135,17 @@ Opaque host values are still ordinary Kio values. If a host function mutates
 one, allocate it in Kio, pass the same value through a loop-driven walk, and
 return it when the walk is done. For most program code, write the walk as a
 `rec(loop)` function; see [Recursion](recursion.md) for the
-recursion form.
+recursion form. This module selects `I32` for the generic fill value's literal
+and `Bool` for the branching operation; the host roles alone do not select them.
 
 ```kio {variant=module}
 module array_fill;
 
 import control(if);
 
-host type I32 role(i32);
+default host type I32 role(i32);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 host type Array[T];
 

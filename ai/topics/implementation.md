@@ -7,6 +7,27 @@ Trigger: editing under `kio-rs/`.
 - Standard Rust tooling applies; from inside `kio-rs/`, invoke it through the repository wrapper (`sh ../ci/cargo.sh build`, `test`, `fmt`, or `clippy`) so concurrent work shares the configured scheduler resources.
 - When adding or changing actionable diagnostics, follow [the native-fix assessment and evidence requirements](language-surface-tooling.md#actionable-diagnostics-and-native-fixes).
 
+## Numeric literal values
+
+Keep numeric spelling, the selected host type, and the numeric value distinct.
+Shared checking implements the [literal contract](../../specs/language.md#literals)
+before publishing a successful literal resolution. Validate the already-selected
+role; an out-of-range value must not trigger another type or default selection.
+Trace explicit annotations, expected types, defaults, aliases and retained calls,
+and independently checked textual Kio'.
+
+Normalization and emitters consume the selected semantic value. Original spelling
+belongs to source formatting and diagnostics; an exact textual encoding of a
+checked value is not permission for each backend to reinterpret source syntax.
+Any temporary selected-value record belongs in the existing phase-local completion
+journal and must be consumed into the artifact. Neither a phase marker nor a
+deserialized encoding proves that the value fits its declared role.
+
+Check numeric identity across formatting, normalization, cache reuse and emitted
+then reparsed Kio'. Include range endpoints, rounding boundaries, subnormals and
+signed zero. Host-created values remain subject to the host's declared-type
+obligations; compile-time literal validation does not add runtime host policing.
+
 ## Phase-boundary purity
 
 The elab-specific purity, immutable-fill, retained-source, and cache
@@ -124,7 +145,9 @@ The schedule is fixed and one-shot:
    blocked value.
 3. Run the expected-only pass left to right. Consume an action whose parameter
    slot has become usable; do not use lexical literal fallback in this pass.
-4. Run the lexical-fallback pass for still-untyped literals.
+4. Run the lexical-fallback pass for still-untyped literals, using only the
+   explicit in-scope `default` for that lexical category. Never rebuild a
+   candidate pool from visible host declarations or aliases.
 5. After marked source recipes are snapshotted, run the `impl(fills)` source
    eligibility preflight before its action. Traverse every declared source and
    recipe in structural order, including ignored private slots and explicit
@@ -261,7 +284,7 @@ as the ordinary front-end.
 
 The open-world proof is structural: the domain is built only from resolved
 callee types, written arguments, enclosing expected types, and the lexical
-literal-role pool. It never scans an ambient declaration set. Adding an
+explicit literal-default map. It never scans an ambient declaration set. Adding an
 unrelated module-body declaration therefore cannot alter the domain, its fixed
 schedule, or its result.
 

@@ -674,6 +674,31 @@ first error only if that error's unchanged source span maps wholly outside this
 range. Unresolved-name diagnostics additionally carry `data.unresolvedName`
 for lazy code actions.
 
+Literal diagnostics distinguish missing default selection from category
+mismatch. A missing-default error explains that `role` admits literals
+but does not select a module-local fallback. When the current source has an
+eligible host declaration, transparent alias or named import item, separate
+maybe-incorrect actions can mark those exact occurrences `default`; they do
+not choose a winner silently or edit the provider. A supplied expected or
+explicit type can avoid fallback, but cannot cross literal categories.
+
+A point-free exponent, including `42e0`, `42E+3` or `42e-0`, is a lexical
+error explaining that integer exponent notation is not admitted. If a float
+was intended, a native fix inserts `.0` immediately before the written
+`e`/`E`. A corresponding spelling repair is offered when an integer literal
+such as `42` is explicitly or contextually required to have a float role.
+These maybe-incorrect actions preserve the sign, digits,
+separators, exponent, annotation and comments. A valid intended integer is not
+rewritten merely because a floating default is selected. For literal aliases,
+diagnostics relate the authenticated definition and use. An alias-use repair
+replaces the complete use's name with the definition's literal spelling with
+`.0` inserted, preserving its annotation and surrounding trivia. It does
+not modify the shared definition or provider, so other integer uses remain
+unchanged. A numeric-token offset is never applied inside an alias name. Published fixes
+remain tied to current source and providers and are checked after application.
+These repairs do not establish host representability or add numeric range
+validation.
+
 An analysis pass may publish several independent diagnostics from one coherent
 snapshot. Cascades from a failed prerequisite are suppressed; independent
 errors have no promised cross-category selection order. On a clean full-package
@@ -806,7 +831,9 @@ operator requires outer parentheses, as in `math/arith.(op _ + _)` or
 and `math/arith.{field}`; wrapping either in parentheses is rejected. Inner
 operator-pattern parentheses retain token quotation such as `(=)`; they cannot
 contain slots. Unparenthesized qualified operators, selector lists, import
-statements, and renaming clauses are rejected. A bare symbol is not a complete
+statements, renaming clauses and `default` selection modifiers are rejected.
+An ordinary declaration named `default` remains queryable as that identifier.
+A bare symbol is not a complete
 operator selector. These command selectors do not extend the expression grammar
 or change bare-input classification or the `:t` / `:pure` categories.
 

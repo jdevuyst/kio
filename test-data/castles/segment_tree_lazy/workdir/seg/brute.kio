@@ -10,7 +10,7 @@ module seg/brute;
 import elab/control(if);
 import seg/meter(Meter, bump_work, new_meter, work);
 import seg/num(int_eq, int_min);
-import testapi(Array, Bool, I32);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_clone, array_get, array_len, array_set);
 import testapi/iter(loop);

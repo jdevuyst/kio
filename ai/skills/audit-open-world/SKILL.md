@@ -1,12 +1,12 @@
 ---
 name: audit-open-world
-description: Scan for resolution patterns that break open-world monotonicity — adding declarations to a module body must never change the meaning of existing downstream code
+description: Check that provider growth and accepted import additions preserve existing program validity and meaning
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # Open-world audit
 
-Open-world compilation is a hard rule (see AGENTS.md § Universal rules and `specs/language.md` § Open-world design; the pitfall catalogue lives at [`ai/topics/open-world.md`](../../topics/open-world.md)). Adding new declarations to a module body must never cause a different module to fail to compile or change its meaning. This skill scans for patterns that quietly violate that property.
+Open-world compilation is a hard rule (see AGENTS.md § Universal rules and `specs/language.md` § Open-world design; the pitfall catalogue lives at [`ai/topics/open-world.md`](../../topics/open-world.md)). Check both provider-body growth and accepted additions to a consumer's imports. Neither may invalidate or change the meaning of existing function bodies within its contracted scope.
 
 Read [`ai/topics/open-world.md`](../../topics/open-world.md) and `specs/language.md` § Open-world design before starting so the rule and the listed pitfalls are fresh.
 
@@ -39,8 +39,19 @@ bindings exactly, while symbol-word and variadic-frame boundaries are determined
 from source before lookup. Test unchanged consumers against provider growth and
 unrelated import-order permutations. A missing marker or failed operand must
 not trigger shorter-word splitting, another frame interpretation or a smaller
-successful grouping. Keep this provider-growth guarantee distinct from a broader
-claim that arbitrary additions to a consumer's own imports are harmless.
+successful grouping. Also test accepted consumer-import additions, keeping
+rejected header conflicts distinct from changes to existing body grouping.
+
+For consumer imports, exercise ordinary names, module aliases, selective aliases,
+operators and explicit defaults. Conflict admission must inspect imports and
+declaration headers even when no body uses the conflicting item. Compare resolved
+identities, grouping and inferred types in retained bodies before and after an
+accepted addition; equal successful exit codes alone do not establish equal
+meaning. Include a first default added beside an already context-typed literal,
+same-terminal-identity aliases, an unused distinct-default conflict, and Boolean
+intrinsic references. Challenge retained inference and marked fills: absence of a
+default must not select a different successful inference path. Ordinary imports
+must not activate provider-local defaults.
 
 Discharged pattern — multi-reading resolution over the parser-validated module map: a "try reading A, else reading B" lookup whose readings disagree on how many trailing segments name the item (fn-in-module vs newtype-member) is safe when the readings are **name-role-disjoint** — module path segments match the exact value-name grammar while type names match the exact type-name grammar (specs/language.md § Naming conventions), so the segment that would have to be both a module leaf and a newtype name can never make both readings viable, and first-match ordering cannot be hijacked by a new declaration. This discharge holds only for resolvers over the parser-validated module map; the dyn_load_prime runtime loader consumes hand-written Kio' image text whose module names are *not* role-validated, so its one-dot lookups face a genuine fn-vs-member collision and resolve it by an explicit documented fn-first preference (its ambiguity reporting covers same-kind duplicates) — a resolver-local policy, not this role-disjointness discharge.
 
@@ -61,7 +72,7 @@ Open-world covers *module bodies*, not the package-file contract surface (host d
 
 Group findings into:
 
-1. **Likely violations** — a specific lookup or design that can change meaning when another module body grows.
+1. **Likely violations** — a specific lookup or design that can change validity or meaning under provider growth or an accepted import addition.
 2. **Missing arguments** — designs whose open-world story is not stated, even if probably fine.
 3. **Scope creep** — prose that conflates module-body open-world with the contract surface.
 

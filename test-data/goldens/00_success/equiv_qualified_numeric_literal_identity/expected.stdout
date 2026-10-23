@@ -1,0 +1,4 @@
+  pass equiv `integer_identity` in main
+  pass equiv `float_identity` in main
+
+result: 2/2 equiv blocks passed

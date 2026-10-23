@@ -7,7 +7,7 @@ import list/core as c;
 import list/list as l;
 import systems/matrix as m;
 import systems/rational as q;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;

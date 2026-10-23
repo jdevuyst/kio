@@ -73,7 +73,8 @@ It supplies the same host shape the POC's `testapi` modules declare — `Bool`,
 `I32`, `Int`, `String`, and the `add` / `int_to_string` / `print` host functions
 — plus the spine elabs and `match!`. The three worked tour expressions
 below compile separately against the real `optics` library with the host types
-they use.
+they use. The prism examples select `I32` as their module-local integer
+default so the literal source of `widen_sum!` has a type before injection.
 
 <!--kio {harness=optics placeholder="__INSERT_CODE_HERE__" accumulate}
 bridge {
@@ -122,7 +123,7 @@ module kiodoc;
 import optics(left_prism, review);
 import elab/spine_elaborators(widen_sum);
 
-host type I32 role(i32);
+default host type I32 role(i32);
 host type String role(str);
 
 fn check_prism() {

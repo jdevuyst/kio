@@ -232,7 +232,18 @@ time, and it does not consult the package's `.sig.kio` signature ledger.
 Use the loader only with precompiled output whose producer and build process
 you trust. `kio build kio-prime` typechecks a package before emitting this
 image, but `load_package` cannot establish body correctness for source that was
-subsequently modified or obtained from an untrusted producer. Three runtime gates
+subsequently modified or obtained from an untrusted producer.
+
+The loader does validate written default selections before entering bodies:
+each selected import, host type or alias must normalize to one saturated
+role-bearing host identity, including through applied aliases. Same-identity
+selections agree; distinct defaults in one category reject even when unused.
+Ordinary imports do not activate provider defaults. Boolean intrinsic selection
+uses those explicit markers with ordinary source-order scope. This header
+validation does not check literal admission or general body typing: those
+remain the trusted producer's responsibility.
+
+Three runtime gates
 still protect the host boundary, but none typechecks function bodies:
 
 - **Exact host-requirement preflight.** The image records every required host

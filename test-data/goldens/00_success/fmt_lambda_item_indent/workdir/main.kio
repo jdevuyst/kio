@@ -2,7 +2,7 @@ module main;
 
 import elab/control(if);
 
-host type Bool role(bool);
+default host type Bool role(bool);
 
 fn fold_two[A](seed: A, first_element: A, second_element: A, step: (A & A) -> A) -> A {
   step(step(seed, first_element), second_element)

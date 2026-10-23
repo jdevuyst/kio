@@ -2662,7 +2662,7 @@ v(2) {
             emitted.pkg_hs.contains(&standard_hs(&format!(
                 "{binder_export} :: forall (h :: %KIND%.Type) \
                  (m :: %KIND%.Type -> %KIND%.Type) \
-                 (t_comptimeBool :: %KIND%.Type)."
+                 (t_comptimeBoolN2 :: %KIND%.Type)."
             ))),
             "{}",
             emitted.pkg_hs
@@ -2670,7 +2670,7 @@ v(2) {
         assert!(
             emitted
                 .pkg_hs
-                .contains("FallbackProbe h m -> t_comptimeBool -> m t_comptimeBool"),
+                .contains("FallbackProbe h m -> t_comptimeBoolN2 -> m t_comptimeBoolN2"),
             "{}",
             emitted.pkg_hs
         );

@@ -66,7 +66,7 @@
     },
     "expression-document": {
       "comment": "A raw expression root cannot acquire item ownership when recovery reaches a declaration-shaped line; its remaining tail keeps lexical roles.",
-      "begin": "(?=varop\\b[ \\t]*\\()|(?=rec\\b)(?!rec\\b[ \\t]*(?:newtype\\b|labels\\b|\\{|(?<root_rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<root_rec_parens>)*\\))[ \\t]*(?:fn|pub)\\b))|(?!(?:module|import|fn|newtype|host|type|literal|labels|equiv|elab|pub|pure|rec|op|varop|dependency|lock)\\b)(?=\\S)",
+      "begin": "(?=varop\\b[ \\t]*\\()|(?=rec\\b)(?!rec\\b[ \\t]*(?:newtype\\b|labels\\b|\\{|(?<root_rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<root_rec_parens>)*\\))[ \\t]*(?:fn|pub)\\b))|(?!default\\b[ \\t]+(?:pub(?:\\([^\\n)]*\\))?[ \\t]+)?(?:host[ \\t]+(?:pub[ \\t]+)?type|type)[ \\t]+[A-Z_])(?!(?:module|import|fn|newtype|host|type|literal|labels|equiv|elab|pub|pure|rec|op|varop|dependency|lock)\\b)(?=\\S)",
       "end": "(?!)",
       "patterns": [
         {
@@ -786,6 +786,11 @@
         { "include": "#type-tokens" }
       ]
     },
+    "default-type-modifier": {
+      "comment": "Default selection is contextual at a type declaration head; same-line evidence gives a positive role without reserving ordinary default names.",
+      "match": "\\bdefault\\b(?=[ \\t]+(?:pub(?:\\([^\\n)]*\\))?[ \\t]+)?(?:host[ \\t]+(?:pub[ \\t]+)?type|type)[ \\t]+[A-Z_])",
+      "name": "keyword.declaration.kio"
+    },
     "host-type-decl": {
       "begin": "\\b(host)\\b[ \\t]+(?:(pub)[ \\t]+)?(type)\\b",
       "end": "(?=\\})|(?<=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
@@ -826,7 +831,23 @@
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
-        { "include": "#type-group" },
+        { "include": "#host-role-arguments" },
+        { "include": "#identifier" }
+      ]
+    },
+    "host-role-arguments": {
+      "begin": "\\(",
+      "beginCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "end": "\\)|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
+      "endCaptures": {
+        "0": { "name": "punctuation.bracket.kio" }
+      },
+      "patterns": [
+        { "include": "#comment-doc" },
+        { "include": "#comment" },
+        { "match": "\\b(?:i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|f32|f64|bool|str)\\b", "name": "keyword.declaration.kio" },
         { "include": "#identifier" }
       ]
     },
@@ -1310,6 +1331,9 @@
         },
         {
           "include": "#newtype-decl"
+        },
+        {
+          "include": "#default-type-modifier"
         },
         {
           "include": "#host-multiline"
@@ -1807,9 +1831,14 @@
         { "include": "#operator-builtin" },
         { "include": "#operator-user" },
         { "include": "#punctuation-separator" },
+        { "include": "#import-default-modifier" },
         { "include": "#import-identifier" },
         { "include": "#import-ambiguous-tag-name" }
       ]
+    },
+    "import-default-modifier": {
+      "match": "\\bdefault\\b(?=[ \\t]+[A-Z_][A-Za-z0-9_]*\\b)",
+      "name": "keyword.declaration.kio"
     },
     "import-identifier": {
       "begin": "\\b(?:(?:op|varop)(?=(?:\\s|//[^\\r\\n]*(?:\\r?\\n|$))*(?:as\\b|[,)]))|(?!op\\b|varop\\b)[A-Za-z_][A-Za-z0-9_]*)\\b",

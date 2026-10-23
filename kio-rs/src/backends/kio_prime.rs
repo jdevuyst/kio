@@ -506,6 +506,7 @@ impl Requalifier {
                     trailing_trivia: Vec::new(),
                     kind: ImportKind::Selective {
                         items: vec![ImportItem::Name {
+                            default_span: None,
                             leading_trivia: Vec::new(),
                             name: leaf.to_owned(),
                             span: self.span,
@@ -948,7 +949,7 @@ mod tests {
     #[test]
     fn if_else_replaced_by_intrinsic_call_in_emitted_output() {
         let src = "module main; import control(if); \
-                   host type Bool role(bool); \
+                   default host type Bool role(bool); \
                    fn pick(c: Bool) -> . { if! c { () } else { () } }";
         let parsed = parse(src).expect("parse");
         let file_path = module_file_path(&parsed);

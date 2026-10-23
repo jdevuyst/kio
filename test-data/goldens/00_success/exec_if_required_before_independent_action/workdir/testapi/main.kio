@@ -2,7 +2,7 @@ module testapi/main;
 
 import actions(finish, identity_target);
 import elab/control(if);
-import testapi(Bool);
+import testapi(default Bool);
 import testapi/io as io;
 
 fn exercise(condition: Bool) {

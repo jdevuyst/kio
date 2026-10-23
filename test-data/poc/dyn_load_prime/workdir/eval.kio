@@ -28,7 +28,7 @@ import prime(un_group_slots, un_nat, un_term);
 import result(Call_result, Ev_apply, Ev_apply_then, Ev_done, Ev_fold, Ev_stuck);
 import result(Eval_result, ev_done, ev_stuck);
 import result(stuck_reason);
-import testapi(Bool, I32, Scalar, String);
+import testapi(Scalar, default Bool, default I32, default String);
 import testapi/arith(eq_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 import value(Env, Side, Vals, Value, Value_shape);

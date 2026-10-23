@@ -1,0 +1,89 @@
+module testapi/main;
+
+import testapi as n;
+
+pub fn i8_min() -> n.I8 { -128(n.I8) }
+
+pub fn i8_max() -> n.I8 { 127(n.I8) }
+
+pub fn i16_min() -> n.I16 { -32768(n.I16) }
+
+pub fn i16_max() -> n.I16 { 32767(n.I16) }
+
+pub fn i32_min() -> n.I32 { -2147483648(n.I32) }
+
+pub fn i32_max() -> n.I32 { 2147483647(n.I32) }
+
+pub fn i64_min() -> n.I64 { -9223372036854775808(n.I64) }
+
+pub fn i64_max() -> n.I64 { 9223372036854775807(n.I64) }
+
+pub fn i128_min() -> n.I128 { -170141183460469231731687303715884105728(n.I128) }
+
+pub fn i128_max() -> n.I128 { 170141183460469231731687303715884105727(n.I128) }
+
+pub fn u8_zero() -> n.U8 { 0(n.U8) }
+
+pub fn u8_max() -> n.U8 { 255(n.U8) }
+
+pub fn u16_zero() -> n.U16 { 0(n.U16) }
+
+pub fn u16_max() -> n.U16 { 65535(n.U16) }
+
+pub fn u32_zero() -> n.U32 { 0(n.U32) }
+
+pub fn u32_max() -> n.U32 { 4294967295(n.U32) }
+
+pub fn u64_zero() -> n.U64 { 0(n.U64) }
+
+pub fn u64_max() -> n.U64 { 18446744073709551615(n.U64) }
+
+pub fn u128_zero() -> n.U128 { 0(n.U128) }
+
+pub fn u128_max() -> n.U128 { 340282366920938463463374607431768211455(n.U128) }
+
+pub fn decimal() -> n.I32 { 0010(n.I32) }
+
+pub fn negativezero() -> n.U8 { -0(n.U8) }
+
+pub fn f32_tenth() -> n.F32 { 0.1(n.F32) }
+
+pub fn f32_half() -> n.F32 { 1.000000059604644775390625(n.F32) }
+
+pub fn f32_above() -> n.F32 {
+  1.0000000596046447753906250000000000000000000000000000000000000000001(n.F32)
+}
+
+pub fn f32_oddhalf() -> n.F32 { 1.000000178813934326171875(n.F32) }
+
+pub fn f32_large() -> n.F32 { 16777217.0(n.F32) }
+
+pub fn f32_subnormal() -> n.F32 { 1.4012984643248170709237295832899161312802619418765e-45(n.F32) }
+
+pub fn f32_maximum() -> n.F32 { 3.40282346638528859811704183484516925440e38(n.F32) }
+
+pub fn f32_negativezero() -> n.F32 { -0.0(n.F32) }
+
+pub fn f32_underflow() -> n.F32 { 1.0e-9999(n.F32) }
+
+pub fn f32_negativeunderflow() -> n.F32 { -1.0e-9999(n.F32) }
+
+pub fn f64_tenth() -> n.F64 { 0.1(n.F64) }
+
+pub fn f64_half() -> n.F64 { 1.00000000000000011102230246251565404236316680908203125(n.F64) }
+
+pub fn f64_above() -> n.F64 { 1.00000000000000011102230246251565404236316680908203125000001(n.F64) }
+
+pub fn f64_oddhalf() -> n.F64 { 1.00000000000000033306690738754696212708950042724609375(n.F64) }
+
+pub fn f64_subnormal() -> n.F64 {
+  4.940656458412465441765687928682213723650598026143247644255856825e-324(n.F64)
+}
+
+pub fn f64_maximum() -> n.F64 { 1.797693134862315708145274237317043567981e308(n.F64) }
+
+pub fn f64_negativezero() -> n.F64 { -0.0(n.F64) }
+
+pub fn f64_underflow() -> n.F64 { 1.0e-9999(n.F64) }
+
+pub fn f64_negativeunderflow() -> n.F64 { -1.0e-9999(n.F64) }

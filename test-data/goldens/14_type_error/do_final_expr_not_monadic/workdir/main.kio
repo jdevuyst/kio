@@ -2,7 +2,7 @@ module main;
 
 import elab/sequence(do);
 
-host type String role(str);
+default host type String role(str);
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 

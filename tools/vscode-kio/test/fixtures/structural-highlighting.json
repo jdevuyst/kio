@@ -1,5 +1,203 @@
 [
   {
+    "name": "default_type_declaration_modifiers",
+    "source": "module source; default pub host type Int role(i64); default pub(source) type Integer = Int;",
+    "targets": [
+      {
+        "text": "default",
+        "start": 15,
+        "end": 22,
+        "kind": "keyword.declaration",
+        "owners": [
+          "host_decl"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "text": "default",
+        "start": 52,
+        "end": 59,
+        "kind": "keyword.declaration",
+        "owners": [
+          "type_alias_decl_head"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "text": "i64",
+        "start": 46,
+        "end": 49,
+        "kind": "keyword.declaration",
+        "owners": [
+          "role_annotation"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "default_import_modifier_and_ordinary_name",
+    "source": "module source; import types(default Int as Integer, default as ordinary);",
+    "targets": [
+      {
+        "text": "default",
+        "start": 28,
+        "end": 35,
+        "kind": "keyword.declaration",
+        "owners": [
+          "import_decl"
+        ],
+        "textmate": [
+          "keyword.declaration.kio"
+        ]
+      },
+      {
+        "text": "default",
+        "start": 52,
+        "end": 59,
+        "kind": "identifier",
+        "owners": [
+          "import_decl"
+        ],
+        "textmate": [
+          "variable.other.kio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "default_value_name_is_not_reserved",
+    "source": "module source; fn default(default: .) -> . { default }",
+    "targets": [
+      {
+        "text": "default",
+        "start": 18,
+        "end": 25,
+        "kind": "entity.name.function",
+        "owners": [
+          "fn_decl_head"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "text": "default",
+        "start": 26,
+        "end": 33,
+        "kind": "variable.parameter",
+        "owners": [
+          "value_param_group"
+        ]
+      },
+      {
+        "text": "default",
+        "start": 45,
+        "end": 52,
+        "kind": "identifier",
+        "owners": [
+          "expression_path"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "default_multiline_owner_evidence",
+    "source": "module source; import types(default // import policy\n Int); default // local policy\n pub host type Bool role(bool);",
+    "targets": [
+      {
+        "text": "default",
+        "start": 28,
+        "end": 35,
+        "kind": "keyword.declaration",
+        "owners": [
+          "import_decl"
+        ]
+      },
+      {
+        "text": "default",
+        "start": 60,
+        "end": 67,
+        "kind": "keyword.declaration",
+        "owners": [
+          "host_decl"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "numeric_categories_share_number_highlighting",
+    "source": "module source; fn values() { 42; 42.0e0; 42.0E+3; 42.0; 42.0e-3 }",
+    "targets": [
+      {
+        "text": "42",
+        "start": 29,
+        "end": 31,
+        "kind": "literal.number",
+        "owners": [
+          "number_literal"
+        ],
+        "textmate": [
+          "constant.numeric.kio"
+        ]
+      },
+      {
+        "text": "42.0e0",
+        "start": 33,
+        "end": 39,
+        "kind": "literal.number",
+        "owners": [
+          "number_literal"
+        ],
+        "textmate": [
+          "constant.numeric.kio"
+        ]
+      },
+      {
+        "text": "42.0E+3",
+        "start": 41,
+        "end": 48,
+        "kind": "literal.number",
+        "owners": [
+          "number_literal"
+        ],
+        "textmate": [
+          "constant.numeric.kio"
+        ]
+      },
+      {
+        "text": "42.0",
+        "start": 50,
+        "end": 54,
+        "kind": "literal.number",
+        "owners": [
+          "number_literal"
+        ],
+        "textmate": [
+          "constant.numeric.kio"
+        ]
+      },
+      {
+        "text": "42.0e-3",
+        "start": 56,
+        "end": 63,
+        "kind": "literal.number",
+        "owners": [
+          "number_literal"
+        ],
+        "textmate": [
+          "constant.numeric.kio"
+        ]
+      }
+    ]
+  },
+  {
     "name": "block_ufcs_closed_operator_receiver",
     "source": "module source; import ops(op <| _ |>); fn run() { <|value|>.>outer! { body } }",
     "targets": [

@@ -1,0 +1,248 @@
+module testapi/main;
+
+import defaults(default_host_adapter);
+import elab/control(if);
+import elab/match(match);
+import elab/spine_elaborators(widen_sum);
+import host_descriptor(Host_type, bool_role, host_id_eq, host_type_id);
+import host_descriptor(host_types_cons, mk_host_id, mk_role_host_type);
+import hostrec(make_lit_default, serve_default, test_bool_default);
+import loader(Diag, Image, Loaded, Lr_diag, Lr_image, Surface);
+import loader(diag_message, un_load_outcome, {apply}, {i32_out}, {lookup}, {unit_in});
+import loader(host_adapter_functions, host_adapter_types, instantiate, mk_host_adapter);
+import loader/scan(load_package);
+import testapi(I32, String, default Bool);
+import testapi/arith(add_i32, eq_i32, lt_i32);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/scalar(scalar_of_bool);
+import testapi/text(string_code_at, string_eq, string_len);
+import value(Value, vhost);
+
+// Diagnostic fragments are ASCII; compare code units without slicing UTF-8 text.
+fn matches_at(text: String, fragment: String, start: I32) -> Bool {
+  loop(
+  , .(offset: I32) {
+      if! eq_i32(offset, string_len(fragment)) {
+        widen_sum!(.t(Bool), I32 | Bool)
+      } else match! string_code_at(fragment, offset) {
+        (
+        , .(fragment_code: I32) {
+            match! string_code_at(text, add_i32(start, offset)) {
+              (
+              , .(text_code: I32) {
+                  if! eq_i32(fragment_code, text_code) {
+                    widen_sum!(add_i32(offset, 1(I32)), I32 | Bool)
+                  } else {
+                    widen_sum!(.f(Bool), I32 | Bool)
+                  }
+                }
+              , .(_missing_text: .) { widen_sum!(.f(Bool), I32 | Bool) }
+              )
+            }
+          }
+        , .(_missing_fragment: .) { widen_sum!(.f(Bool), I32 | Bool) }
+        )
+      }
+    }
+  , 0(I32)
+  )
+}
+
+fn contains(text: String, fragment: String) -> Bool {
+  loop(
+  , .(position: I32) {
+      let end = add_i32(position, string_len(fragment));
+      if! lt_i32(string_len(text), end) {
+        widen_sum!(.f(Bool), I32 | Bool)
+      } else if! matches_at(text, fragment, position) {
+        widen_sum!(.t(Bool), I32 | Bool)
+      } else {
+        widen_sum!(add_i32(position, 1(I32)), I32 | Bool)
+      }
+    }
+  , 0(I32)
+  )
+}
+
+fn call_value[P](surface: Surface(P)) -> String {
+  match! surface.?{lookup}("value"(String)) {
+    (
+    , .(callee: P) {
+        match! surface.?{apply}((callee, surface.?{unit_in})) {
+          (
+          , .(answer: P) {
+              match! surface.?{i32_out}(answer) {
+                (.(value: I32) { int_to_string(value) }, .(diag: Diag) { diag_message(diag) })
+              }
+            }
+          , .(diag: Diag) { diag_message(diag) }
+          )
+        }
+      }
+    , .(diag: Diag) { diag_message(diag) }
+    )
+  }
+}
+
+fn make_lit_fixture(text: String, descriptor: Host_type) -> Value {
+  if! host_id_eq(host_type_id(descriptor), mk_host_id("alternate"(String), "Bool"(String))) {
+    vhost(scalar_of_bool(string_eq(text, "t"(String))))
+  } else {
+    make_lit_default(text, descriptor)
+  }
+}
+
+fn run_image(image: Image) -> String {
+  let standard = default_host_adapter();
+  let adapter =
+    mk_host_adapter(
+    , host_types_cons(
+      , mk_role_host_type(mk_host_id("alternate"(String), "Bool"(String)), bool_role())
+      , host_adapter_types(standard)
+      )
+    , host_adapter_functions(standard)
+    );
+  match! instantiate(adapter, serve_default, make_lit_fixture, test_bool_default, image) {
+    (
+    , .(loaded: Loaded) {
+        Loaded.get(loaded)(.[P](surface: Surface(P)) { call_value(surface) })
+      }
+    , .(diag: Diag) { diag_message(diag) }
+    )
+  }
+}
+
+fn report_value(name: String, source: String) {
+  print(name);
+  print(": "(String));
+  match! un_load_outcome(load_package(source)) {
+    (
+    , .(image: Lr_image) { print(run_image(Lr_image.get(image))) }
+    , .(diag: Lr_diag) { print(diag_message(Lr_diag.get(diag))) }
+    )
+  };
+  print("\n"(String))
+}
+
+fn report_rejected(name: String, source: String, reason: String) {
+  print(name);
+  print(": "(String));
+  match! un_load_outcome(load_package(source)) {
+    (
+    , .(_image: Lr_image) { print("unexpected acceptance"(String)) }
+    , .(diag: Lr_diag) {
+        let message = diag_message(Lr_diag.get(diag));
+        if! contains(message, reason) { print("rejected"(String)) } else { print(message) }
+      }
+    )
+  };
+  print("\n"(String))
+}
+
+pub fn main() {
+  report_value(
+  , "local host"(String)
+  , "module hostapi; import __intrinsics__; default host type Bool "
+    "role(bool); host type I32 role(i32); pub fn value() -> I32 { "
+    "__if_then_else__(I32, .t(Bool), .() { 11(I32) }, .() { 19(I32) }) } "
+    "package guest; bridge { hostapi; }"(String)
+  );
+  report_value(
+  , "selected import"(String)
+  , "module hostapi; host type Bool role(bool); host type I32 role(i32); "
+    "module guest; import __intrinsics__; import hostapi(default Bool as "
+    "Truth, I32); pub fn value() -> I32 { __if_then_else__(I32, .t(Truth), "
+    ".() { 31(I32) }, .() { 37(I32) }) } package guest; bridge { guest; "
+    "hostapi; }"(String)
+  );
+  report_value(
+  , "applied aliases"(String)
+  , "module hostapi; host type Bool role(bool); host type I32 role(i32); "
+    "module alternate; host type Bool role(bool); module guest; import "
+    "__intrinsics__; import hostapi(Bool, I32); import alternate(Bool as "
+    "Other); type Identity[A] = A; default type Truth = Identity(Bool); "
+    "default type SameTruth = Truth; pub fn value() -> I32 { "
+    "__if_then_else__(I32, .f(Truth), .() { 17(I32) }, .() { 29(I32) }) } "
+    "package guest; bridge { guest; hostapi; alternate; }"(String)
+  );
+  report_value(
+  , "separate categories"(String)
+  , "module hostapi; default host type I32 role(i32); default host type F64 "
+    "role(f64); default host type String role(str); default host type Bool "
+    "role(bool); pub fn value() -> I32 { 42000(I32) } package guest; bridge { "
+    "hostapi; }"(String)
+  );
+  report_rejected(
+  , "ordinary import"(String)
+  , "module hostapi; default host type Bool role(bool); module guest; import "
+    "__intrinsics__; import hostapi(Bool); pub fn value(b: Bool) { "
+    "__if_then_else__(., b, .() { () }, .() { () }) } package guest; bridge { "
+    "guest; hostapi; }"(String)
+  , "no type is selected as the default Boolean type"(String)
+  );
+  report_rejected(
+  , "integer conflict"(String)
+  , "module numbers; host type Signed role(i32); host type Unsigned "
+    "role(u64); module guest; import numbers(default Signed, default "
+    "Unsigned); package guest; bridge { guest; numbers; }"(String)
+  , "conflicting default integer types"(String)
+  );
+  report_rejected(
+  , "float conflict"(String)
+  , "module guest; default host type Narrow role(f32); default host type Wide "
+    "role(f64); package guest; bridge { guest; }"(String)
+  , "conflicting default float types"(String)
+  );
+  report_rejected(
+  , "roleless selection"(String)
+  , "module guest; default host type Opaque; package guest; bridge { guest; }"(String)
+  , "requires a literal role"(String)
+  );
+  report_rejected(
+  , "structural alias"(String)
+  , "module guest; host type Int role(i32); default type Pair = Int & Int; "
+    "package guest; bridge { guest; }"(String)
+  , "must resolve to one role-bearing host type"(String)
+  );
+  report_rejected(
+  , "unsaturated alias"(String)
+  , "module guest; default type Identity[A] = A; package guest; bridge { "
+    "guest; }"(String)
+  , "type argument"(String)
+  );
+  report_rejected(
+  , "late alias"(String)
+  , "module hostapi; host type Bool role(bool); module guest; import "
+    "__intrinsics__; import hostapi(Bool); pub fn value(b: Bool) { "
+    "__if_then_else__(., b, .() { () }, .() { () }) } default type Truth = "
+    "Bool; package guest; bridge { guest; hostapi; }"(String)
+  , "no type is selected as the default Boolean type"(String)
+  );
+  report_rejected(
+  , "late host"(String)
+  , "module guest; import __intrinsics__; pub fn value() { "
+    "__if_then_else__(., .t(Truth), .() { () }, .() { () }) } default host "
+    "type Truth role(bool); package guest; bridge { guest; }"(String)
+  , "cannot resolve exact type `Truth`: no type binding has that spelling"(String)
+  );
+  report_rejected(
+  , "late alias dependency"(String)
+  , "module guest; default type Truth = Later; host type Later role(bool); "
+    "package guest; bridge { guest; }"(String)
+  , "Later"(String)
+  );
+  report_rejected(
+  , "integer exponent"(String)
+  , "module guest; host type Int role(i32); pub fn value() -> Int { "
+    "42e+3(Int) } package guest; bridge { guest; }"(String)
+  , "exponent notation is not supported for integer literals"(String)
+  );
+  report_rejected(
+  , "negative exponent"(String)
+  , "module guest; host type Int role(i32); pub fn value() -> Int { "
+    "42e-0(Int) } package guest; bridge { guest; }"(String)
+  , "exponent notation is not supported for integer literals"(String)
+  )
+}

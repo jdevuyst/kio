@@ -146,7 +146,7 @@ fn bodyless_validation_preserves_private_nominal_and_kind_error_ownership() {
 }
 
 #[test]
-fn bodyless_phase_preserves_the_lowered_capability_signature_policy() {
+fn bodyless_phase_keeps_ordinary_function_signatures_independent_of_purity() {
     for (source, valid) in [
         (
             "module caps; import __comptime__; pub pure fn valid(ctx: __Comptime__)(ty: __Type__) -> __Type__ { ty }",
@@ -154,11 +154,11 @@ fn bodyless_phase_preserves_the_lowered_capability_signature_policy() {
         ),
         (
             "module caps; import __comptime__; pub pure fn invalid(ty: __Type__) -> __Type__ { ty }",
-            false,
+            true,
         ),
         (
             "module caps; import __comptime__; pub pure fn invalid(ctx: __Comptime__)(x: .)(fills: __Fill_ctx__) -> . { () }",
-            false,
+            true,
         ),
     ] {
         let (ordinary, contract) = packages(&[("caps.kio", source)]);

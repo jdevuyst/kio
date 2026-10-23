@@ -8,7 +8,7 @@ import queue/core as queues;
 import queue/list/core as lists;
 import queue/list/list as traversal;
 import queue/queue as fifo;
-import testapi(Bool, I32);
+import testapi(I32, default Bool);
 import testapi/arith as arithmetic;
 import testapi/iter(loop);
 

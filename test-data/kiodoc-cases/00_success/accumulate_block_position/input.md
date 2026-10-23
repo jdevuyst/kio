@@ -12,7 +12,7 @@ bridge {
 
 module kiodoc;
 
-host type S role(str);
+default host type S role(str);
 host fn print(p0: S) -> .;
 
 pub fn main() {

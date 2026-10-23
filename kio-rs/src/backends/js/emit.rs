@@ -2125,9 +2125,7 @@ fn lower_expr(
         } => {
             // Widths up to 32 bits fit in JS Number; ≥64-bit roles emit
             // BigInt literal syntax (`<digits>n`) so the runtime keeps
-            // exact precision. Underscores in `digits` carry through —
-            // ES2021 numeric separators are valid in both Number and
-            // BigInt literal forms. Post-substitute, every literal
+            // exact precision. Post-substitute, every literal
             // carries its resolved host type in `annotation`; the
             // role's width decides Number vs BigInt.
             out.push_str(digits);
@@ -5309,7 +5307,7 @@ mod tests {
     fn string_literal_lowers_to_js_string() {
         let js = lower(
             "module main; \
-             host type String role(str); \
+             default host type String role(str); \
              fn greeting() -> String { \"hello\" }",
         );
         assert!(js.contains("\"hello\""), "got: {js}");
@@ -5319,7 +5317,7 @@ mod tests {
     fn string_literal_escapes_special_chars() {
         let js = lower(
             "module main; \
-             host type String role(str); \
+             default host type String role(str); \
              fn quoted() -> String { \"a\\\"b\\nc\" }",
         );
         // "a\"b\nc" — outer JS quotes plus escaped inner quote and newline.
@@ -5328,12 +5326,8 @@ mod tests {
 
     #[test]
     fn int_and_float_and_bool_literals_lower() {
-        // Each fn body is a bare literal in tail position. The int
-        // literal is genuinely ambiguous — its `Int` role shape admits
-        // both the `i32` and `f64` host types — so it needs the typer's
-        // tier-2 (expected-return) resolution, not just tier-3; hence
-        // `lower_typed`, which runs the elaboration-aware typer that
-        // pins each literal's host type before the Kio' boundary.
+        // These unselected role types need the typer's expected-return
+        // resolution before the literals cross the Kio' boundary.
         let js = lower_typed(
             "module main; \
              host type I32 role(i32); host type F64 role(f64); host type Bool role(bool); \

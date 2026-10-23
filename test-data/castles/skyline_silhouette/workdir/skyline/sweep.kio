@@ -15,7 +15,7 @@ import skyline/events as events;
 import skyline/list as lst;
 import skyline/logic as logic;
 import skyline/multiset as ms;
-import testapi(Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/iter(loop);
 
 /// One row of the trace: where the event fired, which edge it was, the active
